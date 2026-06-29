@@ -1,11 +1,13 @@
 # Changelog
 
-## [v3.0.0](https://github.com/kivy/kivy-ios/tree/v3.0.0)
+## [v3.0.0](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0)
 
-**Complete rewrite.** kivy-ios 3.0 replaces the recipe-based toolchain with a
-declarative, PEP 621-aligned workflow built around pre-built Python.xcframeworks
-and pip-installable iOS wheels. The `toolchain build-recipe` workflow is gone;
-see the [migration guide](docs/proposals/00-overview.md) and the updated README.
+**Complete rewrite.** kivyforge is the successor to kivy-ios, python-for-android,
+and buildozer — a declarative, PEP 621-aligned build toolchain for Kivy apps
+aimed at every platform Kivy runs on. This first release implements the **iOS**
+target, built around pre-built Python.xcframeworks and pip-installable iOS wheels.
+The recipe-based `toolchain build-recipe` workflow is gone; see the
+[migration guide](docs/proposals/00-overview.md) and the updated README.
 
 ### What's new in 3.0
 

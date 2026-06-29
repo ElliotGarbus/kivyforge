@@ -23,7 +23,7 @@ jobs:
             
             For troubleshooting advice and other frequently asked questions, consult
             the latest 
-            [Kivy for iOS FAQ](https://github.com/kivy/kivy-ios/blob/master/FAQ.md).
+            [kivyforge FAQ](https://github.com/ElliotGarbus/kivyforge/blob/master/FAQ.md).
             
             Let us know if this comment was made in error, and we'll be happy
             to reopen the issue.

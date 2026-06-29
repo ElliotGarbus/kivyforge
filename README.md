@@ -1,37 +1,44 @@
-# Kivy for iOS
+# kivyforge
 
 
 [![Backers on Open Collective](https://opencollective.com/kivy/backers/badge.svg)](https://opencollective.com/kivy)
 [![Sponsors on Open Collective](https://opencollective.com/kivy/sponsors/badge.svg)](https://opencollective.com/kivy)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](code_of_conduct.md)
 
-![PyPI - Version](https://img.shields.io/pypi/v/kivy-ios)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/kivy-ios)
+![PyPI - Version](https://img.shields.io/pypi/v/kivyforge)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/kivyforge)
 
-[![kivy-ios](https://github.com/kivy/kivy-ios/actions/workflows/kivy_ios.yml/badge.svg)](https://github.com/kivy/kivy-ios/actions/workflows/kivy_ios.yml)
+[![kivyforge](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivy_ios.yml/badge.svg)](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivy_ios.yml)
 
-Kivy for iOS (kivy-ios) is a declarative toolchain that bundles
-[Kivy](https://kivy.org) (and other Python) applications into an
-[Xcode](https://developer.apple.com/xcode/) project ready to run on
-[iOS](https://www.apple.com/ios/). You describe your app in `pyproject.toml`;
-the toolchain resolves your dependencies into a lockfile, downloads the official
-[`Python.xcframework`](https://www.python.org/downloads/) plus prebuilt iOS
-wheels, and generates the `.xcodeproj` for you.
+kivyforge is a declarative, [PEP 621](https://peps.python.org/pep-0621/)-aligned
+build toolchain for [Kivy](https://kivy.org) (and other Python) apps. You
+describe your app once in `pyproject.toml`; kivyforge resolves your dependencies
+into a lockfile and packages the app for the platform you target. It is the
+successor to **kivy-ios**, **python-for-android**, and **buildozer**, unifying
+their per-platform workflows behind a single declarative configuration.
 
-> **kivy-ios 3.0 (in development).** This branch replaces the legacy
-> recipe/compilation system with a declarative, wheel-based workflow. If you need
-> the recipe-based toolchain, use a 2.x release.
+The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
+Linux, macOS, and Windows**.
 
-The toolchain supports:
+> **Status: early development — iOS first.** Today kivyforge targets **iOS**: it
+> resolves dependencies into `pylock.ios.toml`, downloads the official
+> [`Python.xcframework`](https://www.python.org/downloads/) plus prebuilt iOS
+> wheels, and generates an [Xcode](https://developer.apple.com/xcode/) project
+> ready to run on device or simulator. Android, Linux, macOS, and Windows targets
+> are planned. If you need a shipping toolchain today, use kivy-ios 2.x,
+> python-for-android, or buildozer.
 
-- iPhone / iPad — iOS device (arm64)
+### Currently supported targets
+
+- [iOS](https://www.apple.com/ios/) device (arm64) — iPhone / iPad
 - iOS Simulator (arm64, x86_64)
 
-Because Xcode only runs on macOS, Kivy for iOS is only useful on this platform.
-
-Kivy for iOS is managed by the [Kivy Team](https://kivy.org/about.html).
+kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 
 ## Requirements
+
+Each target platform has its own host requirements. **Building for iOS requires
+macOS** (Xcode-based), so the iOS workflow below is useful only on a Mac:
 
 - macOS with [Xcode](https://developer.apple.com/xcode/) installed, either from
   the [Mac App Store](https://apps.apple.com/app/xcode/id497799835) or from the
@@ -52,18 +59,19 @@ packages in your system Python.
       python3 -m venv .venv
       . .venv/bin/activate
 
-Install kivy-ios 3.0 from this repository (3.0 is not yet published to PyPI):
+Install kivyforge from this repository (it is not yet published to PyPI):
 
       pip install -e ".[dev]"
 
 > **Detailed documentation.** For the full design and reference docs — the
 > `pyproject.toml` / `pylock.ios.toml` schemas, artifact distribution, the CLI
 > shape, and Xcode project generation — see the
-> [kivy-ios 3.0 docs](docs/proposals/00-overview.md).
+> [kivyforge docs](docs/proposals/00-overview.md).
 
-## Quick start
+## Quick start (iOS)
 
-Run every command from the directory that contains your app's `pyproject.toml`.
+The workflow below targets iOS — currently the only implemented platform. Run
+every command from the directory that contains your app's `pyproject.toml`.
 
       # 1. Seed [tool.kivy] / [tool.kivy.ios] config into pyproject.toml
       toolchain init
@@ -99,8 +107,9 @@ See the runnable examples for complete, copy-pasteable walk-throughs:
 
 Your app is described declaratively in `pyproject.toml`. Standard
 [PEP 621](https://peps.python.org/pep-0621/) `[project]` metadata supplies the
-name, version, and runtime `dependencies`; iOS-specific settings live under
-`[tool.kivy]` and `[tool.kivy.ios]`:
+name, version, and runtime `dependencies`; shared, platform-neutral settings live
+under `[tool.kivy]`, and iOS-specific settings live under `[tool.kivy.ios]`
+(other platforms will add their own `[tool.kivy.<platform>]` tables):
 
 ```toml
 [project]
@@ -143,6 +152,9 @@ is for, so you can re-enable only the few that map to widgets you actually use
 for `UrlRequest`).
 
 ## Commands
+
+The verbs are platform-neutral; the descriptions and artifacts below reflect the
+iOS target available today.
 
       toolchain init       Seed [tool.kivy] / [tool.kivy.ios] into pyproject.toml
       toolchain lock       Generate pylock.ios.toml from pyproject.toml
@@ -198,8 +210,8 @@ the generated project when you want a fresh build.
 
 Clone the repository and install it into a virtual environment:
 
-      git clone https://github.com/kivy/kivy-ios.git
-      cd kivy-ios/
+      git clone https://github.com/ElliotGarbus/kivyforge.git
+      cd kivyforge/
       python3 -m venv .venv
       . .venv/bin/activate
       pip install -e ".[dev]"
@@ -213,33 +225,33 @@ Run the test suite and the linter:
 
 For troubleshooting advice and other frequently asked questions, consult
 the latest 
-[Kivy for iOS FAQ](https://github.com/kivy/kivy-ios/blob/master/FAQ.md).
+[kivyforge FAQ](https://github.com/ElliotGarbus/kivyforge/blob/master/FAQ.md).
 
 ## License
 
-Kivy for iOS is [MIT licensed](LICENSE), actively developed by a great
-community and is supported by many projects managed by the 
+kivyforge is [MIT licensed](LICENSE), and builds on work actively developed by a
+great community and supported by many projects managed by the 
 [Kivy Organization](https://www.kivy.org/about.html).
 
 ## Support
 
-Are you having trouble using kivy-ios or any of its related projects in the Kivy
+Are you having trouble using kivyforge or any of its related projects in the Kivy
 ecosystem?
 Is there an error you don’t understand? Are you trying to figure out how to use 
 it? We have volunteers who can help!
 
 The best channels to contact us for support are listed in the latest 
-[Contact Us](https://github.com/kivy/kivy-ios/blob/master/CONTACT.md) document.
+[Contact Us](https://github.com/ElliotGarbus/kivyforge/blob/master/CONTACT.md) document.
 
 ## Contributing
 
-kivy-ios is part of the [Kivy](https://kivy.org) ecosystem - a large group of
+kivyforge builds on the [Kivy](https://kivy.org) ecosystem - a large group of
 products used by many thousands of developers for free, but it
 is built entirely by the contributions of volunteers. We welcome (and rely on) 
 users who want to give back to the community by contributing to the project.
 
 Contributions can come in many forms. See the latest 
-[Contribution Guidelines](https://github.com/kivy/kivy-ios/blob/master/CONTRIBUTING.md)
+[Contribution Guidelines](https://github.com/ElliotGarbus/kivyforge/blob/master/CONTRIBUTING.md)
 for how you can help us.
 
 ## Code of Conduct
@@ -255,7 +267,7 @@ Please consult the [latest Kivy Code of Conduct](https://github.com/kivy/kivy/bl
 ## Contributors
 
 This project exists thanks to 
-[all the people who contribute](https://github.com/kivy/kivy-ios/graphs/contributors).
+[all the people who contribute](https://github.com/ElliotGarbus/kivyforge/graphs/contributors).
 [[Become a contributor](CONTRIBUTING.md)].
 
 <img src="https://contrib.nn.ci/api?repo=kivy/python-for-android&pages=5&no_bot=true&radius=22&cols=18">

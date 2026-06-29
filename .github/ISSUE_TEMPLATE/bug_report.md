@@ -10,10 +10,10 @@ assignees: ''
 <!--
 The issue tracker is a tool to address bugs.
 Please use the Discord community or Stack Overflow for support questions,
-more information at https://github.com/kivy/kivy-ios#support
+more information at https://github.com/ElliotGarbus/kivyforge#support
 
 Before opening a new issue, make sure you do the following:
-    * check that your issue isn't already filed: https://github.com/kivy/kivy-ios/issues
+    * check that your issue isn't already filed: https://github.com/ElliotGarbus/kivyforge/issues
     * prepare a short, runnable example that reproduces the issue
     * reproduce the problem with the latest development version (`master`)
     * double-check that the issue is indeed a bug and not a support request

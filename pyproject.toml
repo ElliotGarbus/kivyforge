@@ -3,16 +3,16 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kivy-ios"
+name = "kivyforge"
 version = "3.0.0.dev0"
-description = "iOS bundler for Kivy apps — declarative, PEP 621-aligned, Python.xcframework-based"
+description = "Declarative, PEP 621-aligned build toolchain for Kivy apps — successor to kivy-ios, python-for-android, and buildozer (iOS today; Android, Linux, macOS, Windows planned)"
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.13"
 authors = [
     { name = "The Kivy Team", email = "kivy-dev@googlegroups.com" },
 ]
-keywords = ["kivy", "ios", "toolchain", "mobile"]
+keywords = ["kivy", "ios", "android", "toolchain", "packaging", "mobile", "buildozer"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -34,9 +34,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kivy/kivy-ios"
-Source = "https://github.com/kivy/kivy-ios"
-"Bug Reports" = "https://github.com/kivy/kivy-ios/issues"
+Homepage = "https://github.com/ElliotGarbus/kivyforge"
+Source = "https://github.com/ElliotGarbus/kivyforge"
+"Bug Reports" = "https://github.com/ElliotGarbus/kivyforge/issues"
 
 [project.scripts]
 # Entry point updated for 3.0 slim dispatcher; module created during implementation
