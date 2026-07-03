@@ -63,8 +63,8 @@ hashes = { sha256 = "ddc92fa36049d816aa13a5efef37927e2bedea459c692c628254bbe5e93
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-06-30T00:09:38Z"
-pyproject_sha256 = "9fd5f206e33014cfe10fcc7064fe403f2c71c93f0d510df7481e8b7b41255757"
+generated_at = "2026-07-03T21:46:48Z"
+pyproject_sha256 = "2b5b7c1955abf2250d30a8ac2727206cefc328d2803bb1b5f80df2f1a941ac7f"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]
