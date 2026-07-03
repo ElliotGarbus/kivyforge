@@ -41,12 +41,13 @@ from ._common import (
     LOCKFILE_NAME,
     MIGRATION_URL,
     ToolchainError,
-    find_pyproject,
     lockfile_path,
 )
+from ._platform import platform_option, resolve_target
 
 
 @click.command(context_settings={"ignore_unknown_options": True})
+@platform_option
 @click.option(
     "--simulator",
     "target",
@@ -85,6 +86,7 @@ from ._common import (
 )
 @click.argument("legacy_args", nargs=-1, type=click.UNPROCESSED)
 def build(
+    cli_platform: str | None,
     target: str | None,
     arch: str | None,
     no_verify_lock: bool,
@@ -106,9 +108,13 @@ def build(
             f"  See: {MIGRATION_URL}"
         )
 
+    # Resolve the target platform before any work so an unresolved target fails
+    # fast with an actionable message (common design doc 02).
+    _backend, project_root = resolve_target(cli_platform)
+
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
-    config, project_root = _load_project()
+    config = _load_config(project_root / "pyproject.toml")
     if target is not None:
         try:
             preflight_signing(config, target, team_id_flag=team_id)
@@ -309,11 +315,6 @@ def _encode_last_upgrade_check(version: str) -> str | None:
         return None
     major, minor, patch = (int(match.group(i) or 0) for i in (1, 2, 3))
     return str(major * 100 + minor * 10 + patch)
-
-
-def _load_project():
-    pyproject = find_pyproject()
-    return _load_config(pyproject), pyproject.parent
 
 
 def _load_config(pyproject: Path):

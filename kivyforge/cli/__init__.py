@@ -11,7 +11,18 @@ from __future__ import annotations
 import click
 
 from .. import __version__
-from . import build, clean, doctor, init, lock, open_cmd, run, status, upgrade
+from . import (
+    build,
+    clean,
+    doctor,
+    init,
+    lock,
+    open_cmd,
+    package,
+    run,
+    status,
+    upgrade,
+)
 from ._legacy import LEGACY_VERBS, make_legacy_command
 
 
@@ -33,6 +44,7 @@ main.add_command(lock.lock)
 main.add_command(build.build)
 main.add_command(run.run)
 main.add_command(open_cmd.open_)
+main.add_command(package.package)
 main.add_command(upgrade.upgrade)
 main.add_command(clean.clean)
 main.add_command(status.status)

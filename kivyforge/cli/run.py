@@ -23,11 +23,13 @@ from ..xcode import (
     simctl_launch,
     simctl_list,
 )
-from ._common import ToolchainError, find_pyproject
+from ._common import ToolchainError
+from ._platform import platform_option, resolve_target
 from .build import prepare_build
 
 
 @click.command()
+@platform_option
 @click.option(
     "--simulator",
     "target",
@@ -52,17 +54,20 @@ from .build import prepare_build
     help="Skip the implicit build; install + launch the existing app.",
 )
 def run(
-    target: str, destination: str | None, list_devices: bool, no_build: bool
+    cli_platform: str | None,
+    target: str,
+    destination: str | None,
+    list_devices: bool,
+    no_build: bool,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
     if list_devices:
         _list_devices()
         return
 
-    pyproject = find_pyproject()
-    project_root = pyproject.parent
+    _backend, project_root = resolve_target(cli_platform)
     try:
-        config = load_config(pyproject)
+        config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:
         raise ToolchainError(exc.format()) from exc
 

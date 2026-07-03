@@ -1,12 +1,12 @@
 # 02 — CLI + Platform Resolution
 
-kivyforge exposes a single command, `toolchain`, with a small set of verbs that are **uniform across platforms**. The platform-specific behavior of each verb (what `build` invokes, what `package` emits) lives in each platform's own doc; this document defines the cross-platform verb model, how a target platform is selected, and the `package` verb's role.
+kivyforge exposes a single command, `kivyforge` (alias `kf`), with a small set of verbs that are **uniform across platforms**. The platform-specific behavior of each verb (what `build` invokes, what `package` emits) lives in each platform's own doc; this document defines the cross-platform verb model, how a target platform is selected, and the `package` verb's role.
 
 ## Program name
 
-`toolchain` — the invoked command, implemented as a Click group (`kivyforge.cli:main`). Run `toolchain` commands from the directory that contains your `pyproject.toml`; all verbs look for it in the **current working directory only** (no parent-directory traversal).
+`kivyforge` — the invoked command, implemented as a Click group (`kivyforge.cli:main`). A short alias `kf` is installed as a second console script pointing at the same entry point. Run `kivyforge` commands from the directory that contains your `pyproject.toml`; all verbs look for it in the **current working directory only** (no parent-directory traversal).
 
-`toolchain --help` prints a one-line description per verb; `toolchain <verb> --help` prints per-verb help including the platform-specific flags.
+`kivyforge --help` prints a one-line description per verb; `kivyforge <verb> --help` prints per-verb help including the platform-specific flags.
 
 ## Selecting the target platform
 
