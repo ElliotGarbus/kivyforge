@@ -12,11 +12,12 @@ from kivyforge.platforms import (
 )
 from kivyforge.platforms.base import HostCapabilityError
 from kivyforge.platforms.ios import IosPlatform
+from kivyforge.platforms.macos import MacosPlatform
 
 
 class TestRegistry:
     def test_available_names(self):
-        assert available_platform_names() == ["ios"]
+        assert available_platform_names() == ["ios", "macos"]
 
     def test_get_platform(self):
         assert isinstance(get_platform("ios"), IosPlatform)
@@ -53,6 +54,20 @@ class TestResolveTarget:
         with pytest.raises(PlatformResolutionError, match="no target platform"):
             resolve_target(None, configured={"ios"}, env={}, host_system="Darwin")
 
+    def test_macos_is_host_default_on_darwin(self):
+        # A Mac with [tool.kivy.macos] configured resolves to macos without -p.
+        p = resolve_target(None, configured={"macos"}, env={}, host_system="Darwin")
+        assert p.name == "macos"
+
+    def test_macos_not_host_default_off_darwin(self):
+        with pytest.raises(PlatformResolutionError, match="no target platform"):
+            resolve_target(None, configured={"macos"}, env={}, host_system="Linux")
+
+    def test_macos_host_default_requires_configured(self):
+        # Darwin host but macos overlay not declared -> no host fallback.
+        with pytest.raises(PlatformResolutionError, match="no target platform"):
+            resolve_target(None, configured={"ios"}, env={}, host_system="Darwin")
+
     def test_error_lists_configured_platforms(self):
         with pytest.raises(PlatformResolutionError) as exc:
             resolve_target(None, configured={"ios"}, env={}, host_system="Linux")
@@ -73,3 +88,19 @@ class TestIosPlatform:
     def test_capability_fails_off_macos(self):
         with pytest.raises(HostCapabilityError, match="requires macOS"):
             IosPlatform().check_host_capability(host_system="Linux")
+
+
+class TestMacosPlatform:
+    def test_metadata(self):
+        p = MacosPlatform()
+        assert p.name == "macos"
+        assert p.host_system == "Darwin"
+        assert p.default_package_format == "app"
+        assert p.selectors == ("macos",)
+
+    def test_capability_ok_on_macos(self):
+        MacosPlatform().check_host_capability(host_system="Darwin")
+
+    def test_capability_fails_off_macos(self):
+        with pytest.raises(HostCapabilityError, match="requires a macOS host"):
+            MacosPlatform().check_host_capability(host_system="Linux")

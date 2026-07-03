@@ -661,3 +661,117 @@ class TestErrorFormatting:
         except ConfigError as e:
             text = e.format()
             assert "project" in text
+
+
+# Head opens [tool.kivy.macos]; extras append here; the python subtable comes
+# last so extra keys stay under [tool.kivy.macos] (TOML table scoping).
+_MACOS_HEAD = (
+    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+    "dependencies=['kivy']\n"
+    "[tool.kivy]\napp_dir='src'\ndisplay_name='Hello'\n"
+    "[tool.kivy.macos]\nschema_version=1\nbundle_id='org.example.hello'\n"
+)
+_MACOS_PY = "[tool.kivy.macos.python]\nversion='3.15.0'\n"
+_MACOS_BASE = _MACOS_HEAD + _MACOS_PY
+
+
+def _macos(extra: str = ""):
+    return load(_MACOS_HEAD + extra + _MACOS_PY, require_ios=False, require_macos=True)
+
+
+class TestMacosOverlay:
+    def test_missing_overlay_when_required(self):
+        base = "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+        with pytest.raises(ConfigError, match=r"\[tool.kivy.macos\]"):
+            load(base, require_ios=False, require_macos=True)
+
+    def test_happy_path(self):
+        cfg = _macos()
+        assert cfg.macos is not None
+        m = cfg.macos_required
+        assert m.bundle_id == "org.example.hello"
+        assert m.schema_version == 1
+        assert m.build == 1
+        assert m.minimum_system_version is None
+        assert m.archs == ("arm64", "x86_64")
+        assert m.python_version == "3.15.0"
+
+    def test_ios_and_macos_coexist(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+            "[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
+            "[tool.kivy.ios.python]\nversion='3.15.0'\n"
+            "[tool.kivy.macos]\nschema_version=1\nbundle_id='o.x.a'\n"
+            "[tool.kivy.macos.python]\nversion='3.15.0'\n"
+        )
+        cfg = load(base, require_ios=True, require_macos=True)
+        assert cfg.ios is not None
+        assert cfg.macos is not None
+
+    def test_missing_bundle_id(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.macos]\nschema_version=1\n"
+            "[tool.kivy.macos.python]\nversion='3.15.0'\n"
+        )
+        with pytest.raises(ConfigError, match="bundle_id"):
+            load(base, require_ios=False, require_macos=True)
+
+    def test_bundle_id_rejects_underscore(self):
+        with pytest.raises(ConfigError, match="invalid character"):
+            _macos_bad = _MACOS_BASE.replace(
+                "org.example.hello", "org.example.hi_there"
+            )
+            load(_macos_bad, require_ios=False, require_macos=True)
+
+    def test_missing_python_version(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.macos]\nschema_version=1\nbundle_id='o.x.a'\n"
+        )
+        with pytest.raises(ConfigError, match="python"):
+            load(base, require_ios=False, require_macos=True)
+
+    def test_schema_version_too_new(self):
+        bad = _MACOS_BASE.replace("schema_version=1", "schema_version=99")
+        with pytest.raises(ConfigError, match="newer than"):
+            load(bad, require_ios=False, require_macos=True)
+
+    def test_minimum_system_version(self):
+        cfg = _macos('minimum_system_version="12.0"\n')
+        assert cfg.macos_required.minimum_system_version == "12.0"
+
+
+class TestMacosArchs:
+    def test_default(self):
+        assert _macos().macos_required.archs == ("arm64", "x86_64")
+
+    def test_arm64_only(self):
+        assert _macos("archs=['arm64']\n").macos_required.archs == ("arm64",)
+
+    def test_dedup_preserves_order(self):
+        assert _macos("archs=['x86_64','arm64','x86_64']\n").macos_required.archs == (
+            "x86_64",
+            "arm64",
+        )
+
+    def test_empty_rejected(self):
+        with pytest.raises(ConfigError, match="must not be empty"):
+            _macos("archs=[]\n")
+
+    def test_unknown_rejected(self):
+        with pytest.raises(ConfigError, match="unknown macOS arch"):
+            _macos("archs=['ppc64']\n")
+
+
+class TestMacosRequiresPython:
+    def test_excluding_version_rejected(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.16'\n"
+            "[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.macos]\nschema_version=1\nbundle_id='o.x.a'\n"
+            "[tool.kivy.macos.python]\nversion='3.15.0'\n"
+        )
+        with pytest.raises(ConfigError, match="excludes the selected"):
+            load(base, require_ios=False, require_macos=True)

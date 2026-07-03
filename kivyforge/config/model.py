@@ -13,6 +13,14 @@ from dataclasses import dataclass, field
 # The iOS schema major version this build understands (spec 01).
 SUPPORTED_IOS_SCHEMA_VERSION = 1
 
+# The macOS overlay schema major version this build understands (macos-spec).
+SUPPORTED_MACOS_SCHEMA_VERSION = 1
+
+# macOS build architectures. Two entries => a universal2 build; one => a thin
+# build. Default is universal2 (arm64 + x86_64) unless the project narrows it.
+VALID_MACOS_ARCHS = frozenset({"arm64", "x86_64"})
+DEFAULT_MACOS_ARCHS = ("arm64", "x86_64")
+
 VALID_ORIENTATIONS = frozenset(
     {"portrait", "portrait-upside-down", "landscape-left", "landscape-right"}
 )
@@ -177,6 +185,27 @@ class IosConfig:
 
 
 @dataclass(frozen=True)
+class MacosConfig:
+    """``[tool.kivy.macos]`` overlay (macos-spec).
+
+    ``archs`` is a lock-level property: it drives which macOS wheel tags and
+    per-arch runtimes the lock must cover. ``minimum_system_version`` is
+    ``None`` when unset, meaning the bundled runtime's own floor applies.
+    """
+
+    schema_version: int
+    bundle_id: str
+    build: int = 1
+    minimum_system_version: str | None = None
+    archs: tuple[str, ...] = DEFAULT_MACOS_ARCHS
+    extra_index_urls: tuple[str, ...] = ()
+    find_links: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+    python_version: str | None = None
+    icons: IconConfig = field(default_factory=IconConfig)
+
+
+@dataclass(frozen=True)
 class KivyMeta:
     """Cross-platform ``[tool.kivy]`` table."""
 
@@ -193,6 +222,7 @@ class Config:
     project: ProjectMeta
     kivy: KivyMeta
     ios: IosConfig | None = None
+    macos: MacosConfig | None = None
 
     @property
     def display_name(self) -> str:
@@ -218,3 +248,13 @@ class Config:
                 "before accessing ios_required."
             )
         return self.ios
+
+    @property
+    def macos_required(self) -> MacosConfig:
+        """``[tool.kivy.macos]`` after ``load_config(..., require_macos=True)``."""
+        if self.macos is None:
+            raise RuntimeError(
+                "Config.macos is None; call load_config with require_macos=True "
+                "before accessing macos_required."
+            )
+        return self.macos

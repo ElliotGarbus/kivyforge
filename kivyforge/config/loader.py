@@ -18,10 +18,13 @@ from packaging.version import InvalidVersion, Version
 
 from .errors import ConfigError
 from .model import (
+    DEFAULT_MACOS_ARCHS,
     DEFAULT_SIMULATOR_ARCHS,
     MANAGED_INFO_PLIST_KEYS,
     RESERVED_BUILD_SETTINGS,
     SUPPORTED_IOS_SCHEMA_VERSION,
+    SUPPORTED_MACOS_SCHEMA_VERSION,
+    VALID_MACOS_ARCHS,
     VALID_ORIENTATIONS,
     VALID_SIMULATOR_ARCHS,
     VALID_SWIFT_REQUIREMENT_KINDS,
@@ -30,6 +33,7 @@ from .model import (
     IconConfig,
     IosConfig,
     KivyMeta,
+    MacosConfig,
     ProjectMeta,
     SigningConfig,
     SplashConfig,
@@ -38,22 +42,31 @@ from .model import (
 )
 
 
-def load_config(path: str | Path, *, require_ios: bool = True) -> Config:
+def load_config(
+    path: str | Path, *, require_ios: bool = True, require_macos: bool = False
+) -> Config:
     """Parse and validate ``pyproject.toml`` at ``path``.
 
-    ``require_ios`` enforces the presence of ``[tool.kivy.ios]`` (rule 2) —
-    every iOS command needs it; set it False for contexts that only inspect
-    the cross-platform tables.
+    ``require_ios`` / ``require_macos`` enforce the presence of the respective
+    ``[tool.kivy.<platform>]`` overlay. A platform verb requires its own overlay;
+    contexts that only inspect the cross-platform tables set both False.
     """
     path = Path(path)
     text = path.read_text(encoding="utf-8")
     return load_config_from_text(
-        text, require_ios=require_ios, project_root=path.parent
+        text,
+        require_ios=require_ios,
+        require_macos=require_macos,
+        project_root=path.parent,
     )
 
 
 def load_config_from_text(
-    text: str, *, require_ios: bool = True, project_root: Path | None = None
+    text: str,
+    *,
+    require_ios: bool = True,
+    require_macos: bool = False,
+    project_root: Path | None = None,
 ) -> Config:
     try:
         raw = tomllib.loads(text)
@@ -65,6 +78,7 @@ def load_config_from_text(
     project = _parse_project(raw, finder)
     kivy = _parse_kivy(raw, finder)
     ios = _parse_ios(raw, finder, project, project_root=project_root)
+    macos = _parse_macos(raw, finder, project, project_root=project_root)
 
     if ios is None and require_ios:
         raise ConfigError(
@@ -73,8 +87,15 @@ def load_config_from_text(
             hint="add a [tool.kivy.ios] overlay; [tool.kivy] alone is not a "
             "buildable iOS target. Run `kivyforge init`.",
         )
+    if macos is None and require_macos:
+        raise ConfigError(
+            "missing [tool.kivy.macos] table",
+            key_path="tool.kivy.macos",
+            hint="add a [tool.kivy.macos] overlay; [tool.kivy] alone is not a "
+            "buildable macOS target.",
+        )
 
-    return Config(project=project, kivy=kivy, ios=ios)
+    return Config(project=project, kivy=kivy, ios=ios, macos=macos)
 
 
 # --------------------------------------------------------------------------- #
@@ -363,6 +384,291 @@ def _parse_ios(
         info_plist=info_plist,
         build_settings=build_settings,
     )
+
+
+# --------------------------------------------------------------------------- #
+# [tool.kivy.macos]
+# --------------------------------------------------------------------------- #
+def _parse_macos(
+    raw: dict,
+    finder: _LineFinder,
+    project: ProjectMeta,
+    *,
+    project_root: Path | None = None,
+) -> MacosConfig | None:
+    tool = raw.get("tool", {})
+    kivy = tool.get("kivy", {}) if isinstance(tool, dict) else {}
+    macos = kivy.get("macos") if isinstance(kivy, dict) else None
+    if macos is None:
+        return None
+    if not isinstance(macos, dict):
+        raise ConfigError(
+            "[tool.kivy.macos] must be a table", key_path="tool.kivy.macos"
+        )
+
+    schema_version = _parse_platform_schema_version(
+        macos, finder, key_path="tool.kivy.macos.schema_version"
+    )
+
+    bundle_id = macos.get("bundle_id")
+    if not bundle_id or not isinstance(bundle_id, str):
+        raise ConfigError(
+            "missing required [tool.kivy.macos].bundle_id",
+            key_path="tool.kivy.macos.bundle_id",
+            hint='e.g. bundle_id = "org.example.myapp".',
+        )
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", bundle_id):
+        raise ConfigError(
+            f"invalid character in [tool.kivy.macos].bundle_id {bundle_id!r}",
+            key_path="tool.kivy.macos.bundle_id",
+            line=finder.line("bundle_id"),
+            hint=(
+                "bundle identifiers may contain only letters, digits, hyphen "
+                "(-), and period (.). Replace underscores with hyphens, e.g. "
+                '"org.example.hello-world".'
+            ),
+        )
+
+    build = macos.get("build", 1)
+    if not isinstance(build, int) or isinstance(build, bool):
+        raise ConfigError(
+            "[tool.kivy.macos].build must be an integer",
+            key_path="tool.kivy.macos.build",
+            line=finder.line("build"),
+        )
+
+    minimum_system_version = macos.get("minimum_system_version")
+    if minimum_system_version is not None and not isinstance(
+        minimum_system_version, str
+    ):
+        raise ConfigError(
+            "[tool.kivy.macos].minimum_system_version must be a string",
+            key_path="tool.kivy.macos.minimum_system_version",
+            line=finder.line("minimum_system_version"),
+        )
+
+    archs = _parse_macos_archs(macos, finder)
+
+    extra_index_urls = macos.get("extra_index_urls", [])
+    if not isinstance(extra_index_urls, list) or not all(
+        isinstance(u, str) for u in extra_index_urls
+    ):
+        raise ConfigError(
+            "[tool.kivy.macos].extra_index_urls must be a list of strings",
+            key_path="tool.kivy.macos.extra_index_urls",
+            line=finder.line("extra_index_urls"),
+        )
+
+    find_links = _parse_platform_find_links(
+        macos,
+        finder,
+        key_path="tool.kivy.macos.find_links",
+        project_root=project_root,
+    )
+    exclude = _parse_platform_exclude(macos, finder, key_path="tool.kivy.macos.exclude")
+
+    python_version = _parse_platform_python_version(
+        macos, key_path="tool.kivy.macos.python"
+    )
+    _check_requires_python_generic(
+        project,
+        python_version,
+        finder,
+        key_path="tool.kivy.macos.python.version",
+    )
+
+    icons = _parse_platform_icons(macos, key_path="tool.kivy.macos.icons")
+
+    return MacosConfig(
+        schema_version=schema_version,
+        bundle_id=bundle_id,
+        build=build,
+        minimum_system_version=minimum_system_version,
+        archs=archs,
+        extra_index_urls=tuple(extra_index_urls),
+        find_links=tuple(find_links),
+        exclude=tuple(exclude),
+        python_version=python_version,
+        icons=icons,
+    )
+
+
+def _parse_macos_archs(macos: dict, finder: _LineFinder) -> tuple[str, ...]:
+    raw = macos.get("archs")
+    if raw is None:
+        return DEFAULT_MACOS_ARCHS
+    line = finder.line("archs")
+    if not isinstance(raw, list) or not all(isinstance(a, str) for a in raw):
+        raise ConfigError(
+            "[tool.kivy.macos].archs must be a list of strings",
+            key_path="tool.kivy.macos.archs",
+            line=line,
+        )
+    if not raw:
+        raise ConfigError(
+            "[tool.kivy.macos].archs must not be empty",
+            key_path="tool.kivy.macos.archs",
+            line=line,
+            hint='at least one of "arm64", "x86_64" is required.',
+        )
+    unknown = [a for a in raw if a not in VALID_MACOS_ARCHS]
+    if unknown:
+        valid = ", ".join(sorted(VALID_MACOS_ARCHS))
+        raise ConfigError(
+            f"unknown macOS arch(es) {unknown} in [tool.kivy.macos].archs",
+            key_path="tool.kivy.macos.archs",
+            line=line,
+            hint=f"valid values are: {valid}.",
+        )
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for arch in raw:
+        if arch not in seen:
+            seen.add(arch)
+            ordered.append(arch)
+    return tuple(ordered)
+
+
+def _parse_platform_schema_version(
+    table: dict, finder: _LineFinder, *, key_path: str
+) -> int:
+    schema_version = table.get("schema_version")
+    if schema_version is None:
+        raise ConfigError(
+            f"missing required [{key_path.rsplit('.', 1)[0]}].schema_version",
+            key_path=key_path,
+        )
+    if not isinstance(schema_version, int) or isinstance(schema_version, bool):
+        raise ConfigError(
+            "schema_version must be an integer",
+            key_path=key_path,
+            line=finder.line("schema_version"),
+        )
+    if schema_version > SUPPORTED_MACOS_SCHEMA_VERSION:
+        raise ConfigError(
+            f"schema_version {schema_version} is newer than this kivyforge "
+            f"understands (max {SUPPORTED_MACOS_SCHEMA_VERSION})",
+            key_path=key_path,
+            line=finder.line("schema_version"),
+            hint="upgrade kivyforge.",
+        )
+    if schema_version < 1:
+        raise ConfigError(
+            f"unsupported schema_version {schema_version}",
+            key_path=key_path,
+            line=finder.line("schema_version"),
+        )
+    return schema_version
+
+
+def _parse_platform_python_version(table: dict, *, key_path: str) -> str:
+    python = table.get("python")
+    if python is None:
+        raise ConfigError(
+            f"missing required [{key_path}] table with a 'version'",
+            key_path=f"{key_path}.version",
+            hint=f'add:\n    [{key_path}]\n    version = "3.15.0"',
+        )
+    if not isinstance(python, dict):
+        raise ConfigError(f"[{key_path}] must be a table", key_path=key_path)
+    version = python.get("version")
+    if version is None:
+        raise ConfigError(
+            f"missing required [{key_path}].version", key_path=f"{key_path}.version"
+        )
+    if not isinstance(version, str) or not version.strip():
+        raise ConfigError(
+            f"[{key_path}].version must be a non-empty string",
+            key_path=f"{key_path}.version",
+        )
+    return version
+
+
+def _parse_platform_icons(table: dict, *, key_path: str) -> IconConfig:
+    icons = table.get("icons")
+    if icons is None:
+        return IconConfig()
+    if not isinstance(icons, dict):
+        raise ConfigError(f"[{key_path}] must be a table", key_path=key_path)
+    return IconConfig(source=icons.get("source"))
+
+
+def _parse_platform_find_links(
+    table: dict, finder: _LineFinder, *, key_path: str, project_root: Path | None
+) -> list[str]:
+    raw = table.get("find_links", [])
+    if not isinstance(raw, list) or not all(isinstance(p, str) for p in raw):
+        raise ConfigError(
+            f"[{key_path}] must be a list of strings",
+            key_path=key_path,
+            line=finder.line("find_links"),
+        )
+    out: list[str] = []
+    for path in raw:
+        if isabs(path) or normpath(path) == "..":
+            raise ConfigError(
+                "find_links entries must be repo-relative paths",
+                key_path=key_path,
+                line=finder.line("find_links"),
+            )
+        normalized = normpath(path).replace("\\", "/")
+        if project_root is not None:
+            _validate_find_link_scope(project_root, normalized, finder)
+        out.append(normalized)
+    return out
+
+
+def _parse_platform_exclude(
+    table: dict, finder: _LineFinder, *, key_path: str
+) -> list[str]:
+    raw = table.get("exclude", [])
+    if not isinstance(raw, list) or not all(isinstance(p, str) for p in raw):
+        raise ConfigError(
+            f"[{key_path}] must be a list of package-name strings",
+            key_path=key_path,
+            line=finder.line("exclude"),
+        )
+    return [str(p) for p in raw]
+
+
+def _check_requires_python_generic(
+    project: ProjectMeta,
+    python_version: str | None,
+    finder: _LineFinder,
+    *,
+    key_path: str,
+) -> None:
+    if not project.requires_python or not python_version:
+        return
+    try:
+        spec = SpecifierSet(project.requires_python)
+    except InvalidSpecifier:
+        raise ConfigError(
+            f"[project].requires-python is not a valid specifier: "
+            f"{project.requires_python!r}",
+            key_path="project.requires-python",
+        ) from None
+    try:
+        ver = Version(python_version)
+    except InvalidVersion:
+        raise ConfigError(
+            f"[{key_path}] is not a valid version: {python_version!r}",
+            key_path=key_path,
+        ) from None
+    if not spec.contains(ver, prereleases=True):
+        hint = "align requires-python with the platform Python version."
+        if ver.is_prerelease:
+            hint = (
+                f"pre-release runtimes such as {python_version} need an explicit "
+                f'floor (e.g. requires-python = ">={python_version}").'
+            )
+        raise ConfigError(
+            f"[project].requires-python ({project.requires_python}) excludes the "
+            f"selected Python version {python_version}",
+            key_path=key_path,
+            line=finder.line("requires-python"),
+            hint=hint,
+        )
 
 
 def _parse_simulator_archs(ios: dict, finder: _LineFinder) -> tuple[str, ...]:
