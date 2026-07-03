@@ -1,4 +1,4 @@
-"""Phase 2 — toolchain init: update path and invariants (spec 05)."""
+"""Phase 2 — kivyforge init: update path and invariants (spec 05)."""
 
 from __future__ import annotations
 
@@ -8,16 +8,16 @@ import tomllib
 import pytest
 from click.testing import CliRunner
 
-from kivy_ios.cli import init as init_mod
-from kivy_ios.cli.init import init
-from kivy_ios.cli.init_writer import (
+from kivyforge.cli import init as init_mod
+from kivyforge.cli.init import init
+from kivyforge.cli.init_writer import (
     bundle_id_segment,
     has_kivy_dep,
     normalize_package_name,
     render_kivy_tables,
     strip_kivy_tables,
 )
-from kivy_ios.config.model import SigningConfig
+from kivyforge.config.model import SigningConfig
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ class TestWriterUnits:
         assert "# [tool.kivy.ios.native.swift_packages]" in block
         assert "sentry-cocoa" in block
         # the stub must stay inert: no active swift_packages table parsed
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
 
         cfg = load_config_from_text(
             '[project]\nname = "myapp"\nversion = "1.0.0"\n\n' + block
@@ -96,7 +96,7 @@ class TestWriterUnits:
 
     @pytest.mark.parametrize("has_kivy", [False, True])
     def test_render_kivy_tables_roundtrips_through_loader(self, has_kivy):
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
 
         project = (
             "[project]\n"

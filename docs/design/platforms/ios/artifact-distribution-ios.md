@@ -16,7 +16,7 @@ The first two channels share one consumption model: **kivyforge downloads the ar
 
 A natural question: what if the *app author* writes their own native code — a Cython module, a hand-written C extension, or any package with a compiled component — that isn't published anywhere? It's neither a third-party dependency nor a Kivy artifact, so which channel does it use?
 
-The answer follows directly from the architecture's core rule: **kivyforge runs no from-source build pipeline of its own — it does not cross-compile Python C extensions; it consumes pre-built wheels.** A user-authored extension is just an artifact that doesn't exist yet, so it must be **built into an iOS wheel out-of-band and then consumed exactly like any other dependency** (channel 1 above). kivyforge has no recipe/compile step for Python extensions in `toolchain build`, by design. (The one exception to "kivyforge compiles nothing" is SPM source packages, which **Xcode** — not kivyforge — compiles via its own first-class package manager; see channel 3 above and [Swift packages](swift-packages.md). That does not apply to Python C extensions, which always arrive as wheels.)
+The answer follows directly from the architecture's core rule: **kivyforge runs no from-source build pipeline of its own — it does not cross-compile Python C extensions; it consumes pre-built wheels.** A user-authored extension is just an artifact that doesn't exist yet, so it must be **built into an iOS wheel out-of-band and then consumed exactly like any other dependency** (channel 1 above). kivyforge has no recipe/compile step for Python extensions in `kivyforge build`, by design. (The one exception to "kivyforge compiles nothing" is SPM source packages, which **Xcode** — not kivyforge — compiles via its own first-class package manager; see channel 3 above and [Swift packages](swift-packages.md). That does not apply to Python C extensions, which always arrive as wheels.)
 
 Concretely, an author with a custom extension:
 
@@ -24,11 +24,11 @@ Concretely, an author with a custom extension:
 2. Cross-builds iOS wheels for it using the standard Python iOS build tooling — `cibuildwheel` with iOS support, or the python.org / Briefcase iOS build flow. This is the same out-of-band CI path Kivy uses to publish its own iOS wheels ([recipe triage](recipe-triage.md) §"Kivy-published iOS wheels"); kivyforge does not reimplement it.
 3. Consumes the wheel one of two ways, both of which flow through `pip-deps/` and the `install_python` framework conversion like every other binary wheel:
    - **Hosted** — publish it (PyPI under a name the author owns, or a private/supplemental index) and reference it by name in `[project].dependencies`. Best when the wheel is shared across projects.
-   - **Vendored** — commit the built wheel into the repo (e.g. `wheels/`) and let the lockfile pin it by `path`. `toolchain lock` records a repo-relative `path` + SHA-256 in `[[packages.wheels]]` (see [pylock spec §"Locally built wheels"](pylock-ios-spec.md#locally-built-wheels-path)). Best when the wheel is app-specific and the author wants it versioned alongside the app.
+   - **Vendored** — commit the built wheel into the repo (e.g. `wheels/`) and let the lockfile pin it by `path`. `kivyforge lock` records a repo-relative `path` + SHA-256 in `[[packages.wheels]]` (see [pylock spec §"Locally built wheels"](pylock-ios-spec.md#locally-built-wheels-path)). Best when the wheel is app-specific and the author wants it versioned alongside the app.
 
-   Either way, the artifact is **never compiled by kivyforge** — it must already be a cross-built iOS wheel. Use a repo-relative path, not an absolute one; absolute paths aren't portable across clones or CI and are rejected by `toolchain build`.
+   Either way, the artifact is **never compiled by kivyforge** — it must already be a cross-built iOS wheel. Use a repo-relative path, not an absolute one; absolute paths aren't portable across clones or CI and are rejected by `kivyforge build`.
 
-**Corollary — `app/` is pure-Python only.** The user's `app_dir` (symlinked as `app/`, see [Xcode project generation](xcode-project-generation.md)) is for `.py` source. The `install_python` step *will* wrap any `.so` it finds in `app/` into a per-module framework, but it does **not** cross-compile — so a `.so` that the author compiled locally on macOS is a macOS-architecture binary and will fail to load on an iOS device. Native code belongs in a wheel, never loose in `app/`. `toolchain doctor` flags a non-iOS `.so` found under `app/`.
+**Corollary — `app/` is pure-Python only.** The user's `app_dir` (symlinked as `app/`, see [Xcode project generation](xcode-project-generation.md)) is for `.py` source. The `install_python` step *will* wrap any `.so` it finds in `app/` into a per-module framework, but it does **not** cross-compile — so a `.so` that the author compiled locally on macOS is a macOS-architecture binary and will fail to load on an iOS device. Native code belongs in a wheel, never loose in `app/`. `kivyforge doctor` flags a non-iOS `.so` found under `app/`.
 
 The common case — *using* `pyobjus` to reach Objective-C / system frameworks (`NSURLSession`, `Vision`, etc.) — does **not** hit any of this. `pyobjus` bridges to Objective-C dynamically at runtime, so the app author writes pure Python; `pyobjus` itself arrives as a pre-built Kivy iOS wheel ([recipe triage](recipe-triage.md)). No author-side compilation is involved.
 
@@ -38,14 +38,14 @@ The common case — *using* `pyobjus` to reach Objective-C / system frameworks (
 
 Every iOS wheel that Kivy itself publishes goes to PyPI proper under canonical names. For packages whose upstream maintainers haven't yet published iOS-tagged wheels to PyPI, `toolchain` resolves through one or more configurable supplemental indexes; each resolved wheel's URL is then pinned directly in `[[packages.wheels]]` in the lockfile.
 
-PEP 621 `[project].dependencies` entries in the user's `pyproject.toml` are resolved against PyPI. For packages not yet publishing iOS wheels on PyPI, users can declare one or more `extra_index_urls` in `[tool.kivy.ios]`; `toolchain lock` passes these to pip as `--extra-index-url` when resolving. Each resolved wheel's source URL is pinned in `[[packages.wheels]]` in the lockfile regardless of which index supplied it, keeping builds reproducible.
+PEP 621 `[project].dependencies` entries in the user's `pyproject.toml` are resolved against PyPI. For packages not yet publishing iOS wheels on PyPI, users can declare one or more `extra_index_urls` in `[tool.kivy.ios]`; `kivyforge lock` passes these to pip as `--extra-index-url` when resolving. Each resolved wheel's source URL is pinned in `[[packages.wheels]]` in the lockfile regardless of which index supplied it, keeping builds reproducible.
 
 Two categories of wheel ship through this channel:
 
 1. **Upstream-published iOS wheels** — Pillow, numpy, matplotlib, cryptography, pyyaml (as upstream publishes), pycryptodome, kiwisolver, etc. Consumed directly from PyPI under canonical names.
 2. **Kivy-owned PyPI names with iOS wheels uploaded by Kivy** — `kivy` and `pyobjus`. iOS-tagged wheels (`ios_13_0_arm64_iphoneos`, `ios_13_0_arm64_iphonesimulator`, `ios_13_0_x86_64_iphonesimulator`) are published alongside any existing desktop wheels under the same package name. Because the build host is macOS, `toolchain` passes `--platform ios_13_0_arm64_iphoneos` (and equivalent slices) to pip so that the iOS wheels are selected rather than the macOS ones.
 
-Wheel sourcing is implicit: every PEP 508 string in `[project].dependencies` resolves to a PyPI URL (or to a supplemental-index URL when PyPI doesn't carry the needed iOS slice — see the `extra_index_urls` discussion above). The user does not annotate `source = ...` per wheel; `toolchain lock` resolves each dependency and pins the resolved wheel URL in `pylock.ios.toml`:
+Wheel sourcing is implicit: every PEP 508 string in `[project].dependencies` resolves to a PyPI URL (or to a supplemental-index URL when PyPI doesn't carry the needed iOS slice — see the `extra_index_urls` discussion above). The user does not annotate `source = ...` per wheel; `kivyforge lock` resolves each dependency and pins the resolved wheel URL in `pylock.ios.toml`:
 
 ```toml
 [project]
@@ -79,7 +79,7 @@ The kivy-ios 2.x recipe model needed an explicit per-framework list (`recipe.pbx
 ### Signing and verification
 
 - All wheels published to PyPI are subject to PyPI's own integrity model (HTTPS + the [PEP 740](https://peps.python.org/pep-0740/) attestations once stable).
-- The lockfile pins each wheel's SHA-256. `toolchain build` verifies before extraction.
+- The lockfile pins each wheel's SHA-256. `kivyforge build` verifies before extraction.
 
 ## Distribution channel 2: `.xcframework` archives
 
@@ -90,9 +90,9 @@ The kivy-ios 2.x recipe model needed an explicit per-framework list (`recipe.pbx
 1. **Upstream library publishers** for libraries that ship their own iOS xcframeworks. In particular:
    - **`Python.xcframework`** — the foundational artifact. python.org publishes the iOS XCFramework directly as a release artifact alongside the existing macOS pkg, starting with [Python 3.15.0b1 (May 7, 2026)](https://www.python.org/downloads/release/python-3150b1/). URL pattern: `https://www.python.org/ftp/python/<X.Y.Z>/python-<version>-iOS-XCframework.tar.gz`.
 2. **Third-party xcframework publishers** for app-specific native dependencies that aren't bundled inside any Python wheel. Users declare these in `[tool.kivy.ios.native.xcframeworks]`. Empty in the canonical Kivy case.
-   - **Locally built / vendored frameworks** are a sub-case: an author who builds their own `.xcframework` can commit it into the repo and point `source` at a repo-relative path instead of a URL (see [iOS pyproject §`[tool.kivy.ios.native.xcframeworks]`](pyproject-ios.md#toolkivyiosnativexcframeworks)). `toolchain lock` reads the local artifact, computes its SHA-256, and pins the relative `path` in `pylock.ios.toml` — the same reproducibility model as a vendored wheel.
+   - **Locally built / vendored frameworks** are a sub-case: an author who builds their own `.xcframework` can commit it into the repo and point `source` at a repo-relative path instead of a URL (see [iOS pyproject §`[tool.kivy.ios.native.xcframeworks]`](pyproject-ios.md#toolkivyiosnativexcframeworks)). `kivyforge lock` reads the local artifact, computes its SHA-256, and pins the relative `path` in `pylock.ios.toml` — the same reproducibility model as a vendored wheel.
 
-The `source` value in `[tool.kivy.ios.native.xcframeworks]` is always **explicit** — a direct download URL or a repo-relative path (the vendored sub-case). There are no magic indirection strings; the user states exactly where the artifact comes from, and `toolchain lock` reads it to pin the SHA-256 and slice list.
+The `source` value in `[tool.kivy.ios.native.xcframeworks]` is always **explicit** — a direct download URL or a repo-relative path (the vendored sub-case). There are no magic indirection strings; the user states exactly where the artifact comes from, and `kivyforge lock` reads it to pin the SHA-256 and slice list.
 
 ### Archive formats
 
@@ -103,17 +103,17 @@ The runtime supports two archive formats for `.xcframework` artifacts:
 | `.xcframework.zip` | Default for Kivy-built artifacts | Standard zip extraction |
 | `.tar.gz` | Alternate for Kivy-built artifacts | tarfile extraction |
 
-**Locating the xcframework inside the archive.** When the archive contains exactly one top-level `.xcframework` directory (the common case), the runtime auto-detects it — no extra configuration. When an archive instead bundles **multiple** xcframeworks or sibling files alongside the one you want, the lockfile's `[[tool.kivyforge.xcframeworks]].archive_member` (see [pylock spec §`[[tool.kivyforge.xcframeworks]]`](pylock-ios-spec.md#toolkivyforgexcframeworks)) names the exact directory to extract, and `toolchain build` honors it rather than guessing. `archive_member` is omitted whenever auto-detection suffices. See the pylock spec for the full lockfile schema.
+**Locating the xcframework inside the archive.** When the archive contains exactly one top-level `.xcframework` directory (the common case), the runtime auto-detects it — no extra configuration. When an archive instead bundles **multiple** xcframeworks or sibling files alongside the one you want, the lockfile's `[[tool.kivyforge.xcframeworks]].archive_member` (see [pylock spec §`[[tool.kivyforge.xcframeworks]]`](pylock-ios-spec.md#toolkivyforgexcframeworks)) names the exact directory to extract, and `kivyforge build` honors it rather than guessing. `archive_member` is omitted whenever auto-detection suffices. See the pylock spec for the full lockfile schema.
 
 ## Distribution channel 3: Swift Package Manager packages
 
-Unlike channels 1 and 2, this channel is **not** an artifact kivyforge downloads, verifies, and stages. The user declares an SPM package in `[tool.kivy.ios.native.swift_packages]` (Git URL or local path + version requirement + products); `toolchain lock` resolves it to a concrete Git **revision** and records the pin in `pylock.ios.toml`; `toolchain build` emits the package references into the generated `.xcodeproj` and writes a `Package.resolved`. From there **Xcode** resolves, fetches, compiles (for source/hybrid packages), and embeds — kivyforge writes no build logic and computes no output hash.
+Unlike channels 1 and 2, this channel is **not** an artifact kivyforge downloads, verifies, and stages. The user declares an SPM package in `[tool.kivy.ios.native.swift_packages]` (Git URL or local path + version requirement + products); `kivyforge lock` resolves it to a concrete Git **revision** and records the pin in `pylock.ios.toml`; `kivyforge build` emits the package references into the generated `.xcodeproj` and writes a `Package.resolved`. From there **Xcode** resolves, fetches, compiles (for source/hybrid packages), and embeds — kivyforge writes no build logic and computes no output hash.
 
 Consequently this channel's registry, archive-format, and SHA-256 verification concerns (channels 1–2 above) do not apply: integrity comes from the pinned revision (and, for binary targets, SPM's own `.binaryTarget` checksum that Xcode verifies on fetch). The complete schema, resolution semantics, pbxproj wiring, and reproducibility rationale live in [Swift packages](swift-packages.md); this section exists only to give SPM a home alongside the channel 1 and channel 2 sections.
 
 ## Lockfile-entry to project-folder mapping
 
-`toolchain build` materializes the lockfile into the generated `<app>-ios/` per these rules:
+`kivyforge build` materializes the lockfile into the generated `<app>-ios/` per these rules:
 
 | Lockfile entry (in `pylock.ios.toml`) | Target folder | Why |
 |---------------------------------------|---------------|-----|
@@ -124,7 +124,7 @@ Consequently this channel's registry, archive-format, and SHA-256 verification c
 | `[tool.kivyforge.python_xcframework]` | `Python.xcframework/` at the project root | Foundational; `install_python` reads from here. |
 | `[[tool.kivyforge.swift_packages]]` | *(no folder)* — pbxproj package references + `Package.resolved` | Xcode resolves, fetches, compiles, and embeds; kivyforge stages nothing (see channel 3 and [Swift packages](swift-packages.md)). |
 
-`toolchain build` does not commingle wheels and xcframeworks; the two folders have disjoint contents and disjoint Xcode phase semantics:
+`kivyforge build` does not commingle wheels and xcframeworks; the two folders have disjoint contents and disjoint Xcode phase semantics:
 
 - `pip-deps/` (and `app/`) are processed by the **Build Python** Run Script phase via a single `install_python Python.xcframework app pip-deps` call (per [Python 3.15 iOS docs §7.2.2 step 7](https://docs.python.org/3.15/using/ios.html#adding-python-to-an-ios-project)). `install_python` walks both folders, converts each `.so` to a per-module `.framework` under the built app's `Frameworks/`, and replaces each `.so` with a `.fwork` text marker (see [Xcode project generation](xcode-project-generation.md)). The `.so` files briefly visible in the staged bundle between Copy Bundle Resources and the Run Script phase are an intermediate state, not a violation — by Embed Frameworks time and archive time, every binary lives under `Frameworks/`.
 - `Frameworks/*.xcframework` are registered in the pbxproj's **Link Binary With Libraries** and **Embed Frameworks** phases. `install_python` does not touch them; they're already in the canonical framework shape.

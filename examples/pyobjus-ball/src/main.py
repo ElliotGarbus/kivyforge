@@ -1,4 +1,4 @@
-"""pyobjus-ball — an interactive kivy-ios 3.0 example.
+"""pyobjus-ball — an interactive kivyforge 3.0 example.
 
 Demonstrates calling native iOS APIs from Python using ctypes bindings to the
 Objective-C runtime.
@@ -17,7 +17,7 @@ Two native APIs are exercised:
       introspecting UIScreen's property list on recent iOS versions.
 
 Both usages are good examples of the ctypes / ObjC-runtime pattern that
-kivy-ios apps can use for any Objective-C API that pyobjus cannot decode
+kivyforge apps can use for any Objective-C API that pyobjus cannot decode
 correctly.
 
 On the Simulator (or any environment where CoreMotion is unavailable) the app

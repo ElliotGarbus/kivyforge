@@ -2,7 +2,7 @@
 # Build pyobjus cp315 iOS wheels locally and drop them in examples/wheels.
 #
 # pyobjus is an optional Objective-C bridge for app code that calls iOS system
-# frameworks (the kivy-ios platform shim itself uses ctypes and does not depend
+# frameworks (the kivyforge platform shim itself uses ctypes and does not depend
 # on it). It is a Cython extension that links libffi + the ObjC runtime.
 #
 # This mirrors scripts/build_ios_wheels.sh (the Kivy wheel builder): cibuildwheel

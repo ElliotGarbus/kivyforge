@@ -6,7 +6,7 @@
 - **`[tool.kivy]`** — cross-platform Kivy metadata (display name, app source layout, entry point, orientation). *Shared* across all platforms.
 - **`[tool.kivy.<platform>]`** — a per-platform **additive overlay** (e.g. `[tool.kivy.ios]`, `[tool.kivy.macos]`, `[tool.kivy.android]`). Consumed only by that platform's backend.
 
-The file is hand-edited (after being seeded by `toolchain init`) and committed to version control. `toolchain lock` generates a `pylock.<platform>.toml` from it for the resolved target; `toolchain build` consumes the lock.
+The file is hand-edited (after being seeded by `kivyforge init`) and committed to version control. `kivyforge lock` generates a `pylock.<platform>.toml` from it for the resolved target; `kivyforge build` consumes the lock.
 
 This document defines the **shared** tables and the overlay pattern. The full field reference for each platform lives in its own overlay doc — e.g. [iOS `[tool.kivy.ios]`](../platforms/ios/pyproject-ios.md).
 
@@ -60,7 +60,7 @@ The two tables `[project]` and `[tool.kivy]` are **the cross-platform contract**
 
 ## `[project]` (PEP 621)
 
-Every platform backend consumes at least `name`, `version`, and `dependencies`; the rest are passed through where a platform exposes a slot for them. `dependencies` is a single PEP 508 list for all platforms — `toolchain lock` evaluates environment markers against the *resolved target* and resolves the matching subset to wheels in that target's lockfile. Each platform overlay doc lists exactly how it consumes each PEP 621 key (see, e.g., [iOS `[project]` consumption](../platforms/ios/pyproject-ios.md#project-pep-621--ios-consumption)).
+Every platform backend consumes at least `name`, `version`, and `dependencies`; the rest are passed through where a platform exposes a slot for them. `dependencies` is a single PEP 508 list for all platforms — `kivyforge lock` evaluates environment markers against the *resolved target* and resolves the matching subset to wheels in that target's lockfile. Each platform overlay doc lists exactly how it consumes each PEP 621 key (see, e.g., [iOS `[project]` consumption](../platforms/ios/pyproject-ios.md#project-pep-621--ios-consumption)).
 
 Anything PEP 621 specifies is honored by every PEP 621-compliant tool — so ruff, mypy, uv, pdm, and pip all stay happy with the same file.
 
@@ -85,7 +85,7 @@ orientation = ["portrait", "portrait-upside-down"]
 
 ### `app_dir` + `entry_point` interaction
 
-These two fields together specify *what* code runs and *where it lives*. `entry_point` defaults to `"main"`; `app_dir` has **no default and is required** — `toolchain init` seeds it to `"src"` (the recommended layout), and a project that keeps its code elsewhere adjusts it by hand.
+These two fields together specify *what* code runs and *where it lives*. `entry_point` defaults to `"main"`; `app_dir` has **no default and is required** — `kivyforge init` seeds it to `"src"` (the recommended layout), and a project that keeps its code elsewhere adjusts it by hand.
 
 > **`app_dir` must be a subdirectory — the project root (`"."`) is rejected.** Two problems make `"."` unsafe, so the toolchain refuses it outright:
 > - **Bundle bloat / dev-file leakage.** The generated app copies `app_dir` wholesale into the bundle. Pointed at the project root, it sweeps in `.git/`, `.venv/`, `tests/`, `__pycache__/`, `pyproject.toml`, and everything else at the root.

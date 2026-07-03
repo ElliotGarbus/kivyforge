@@ -102,7 +102,7 @@ hidden behind one seam, so the future switch is a re-lock, not a rewrite:
   `pylock.macos.toml` pins `provider` + `version` + per-artifact `url` + `sha256`
   (PBS ships per-arch archives, so this may be two entries — see universal2 below),
   exactly the URL+SHA-256 discipline used for the iOS `python_xcframework` pin.
-  Switching providers is therefore just `toolchain lock` regenerating the pin; the
+  Switching providers is therefore just `kivyforge lock` regenerating the pin; the
   built `.app` is provider-agnostic and nothing downstream changes.
 - **User config stays provider-neutral.** `[tool.kivy.macos.python].version` is just
   the CPython version. An optional advanced `provider` key may override the default,
@@ -161,7 +161,7 @@ is the intended end-state for this provider:
   per arch with a conservative baseline"), which the provider must accommodate.
 
 When either lands, we add `PythonOrgFrameworkProvider`, make it the default, and
-existing projects pick it up on their next `toolchain lock`. The current PBS choice
+existing projects pick it up on their next `kivyforge lock`. The current PBS choice
 is deliberately a **bridge on the same lineage** (PBS → upstreamed into CPython →
 official python.org), not a divergent path.
 
@@ -172,7 +172,7 @@ PEP 751 `[[packages]]` for wheels + a single `[tool.kivyforge]` extension table
 holding the runtime pin and provenance. The platform is identified by the
 filename. macOS wheels use standard macOS platform tags
 (`macosx_<ver>_arm64`, `macosx_<ver>_x86_64`, or `macosx_<ver>_universal2`);
-`toolchain lock` resolves wheels for every arch in `[tool.kivy.macos].archs`
+`kivyforge lock` resolves wheels for every arch in `[tool.kivy.macos].archs`
 (accepting a `universal2` wheel for either), records the arch set, and pins the
 matching **per-arch runtime artifacts** under `[tool.kivyforge]` (see
 ["Architectures"](#architectures-archs)). Pure-Python deps resolve to

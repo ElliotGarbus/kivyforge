@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kivy_ios.config import load_config_from_text
-from kivy_ios.lock import BuildError, build_lockfile, dumps, loads, semantic_equal
-from kivy_ios.lock.reader import compute_pyproject_sha256, is_in_sync
+from kivyforge.config import load_config_from_text
+from kivyforge.lock import BuildError, build_lockfile, dumps, loads, semantic_equal
+from kivyforge.lock.reader import compute_pyproject_sha256, is_in_sync
 from tests.lock.conftest import FakeResolver
 
 
@@ -227,7 +227,7 @@ class TestSwiftPackages:
         assert lock.swift_packages[0].revision is None
 
     def test_resolver_error_becomes_build_error(self, fake_python_provider):
-        from kivy_ios.lock.spm import SpmResolverError
+        from kivyforge.lock.spm import SpmResolverError
 
         class Boom:
             def resolve(self, packages, *, project_root, offline=False):

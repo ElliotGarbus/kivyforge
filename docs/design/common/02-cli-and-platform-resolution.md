@@ -28,7 +28,7 @@ If none of these yields a configured target, `toolchain` **errors with an action
 
 ```
 Error: no target platform resolved.
-  Pass one explicitly:      toolchain build --platform macos
+  Pass one explicitly:      kivyforge build --platform macos
   Or set a session default: export KIVYFORGE_PLATFORM=macos
   (Configured platforms in this pyproject.toml: ios, macos)
 ```
@@ -40,7 +40,7 @@ Error: no target platform resolved.
 Two independent checks:
 
 - **Target selection** (above) decides *what* you are building for.
-- **Host capability** decides *whether this machine can build it*. Some targets require a specific host (iOS requires macOS + Xcode; the Android emulator needs a virtualization-capable host; etc.). This is a separate, backend-supplied check surfaced by `toolchain doctor` and enforced by `build`/`package` with an actionable error — distinct from "is this platform configured in my project?".
+- **Host capability** decides *whether this machine can build it*. Some targets require a specific host (iOS requires macOS + Xcode; the Android emulator needs a virtualization-capable host; etc.). This is a separate, backend-supplied check surfaced by `kivyforge doctor` and enforced by `build`/`package` with an actionable error — distinct from "is this platform configured in my project?".
 
 ## Verbs
 

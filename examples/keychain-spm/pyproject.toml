@@ -7,7 +7,7 @@ dependencies = [
     # pyobjus is an iOS-only package; it is silently skipped on other
     # platforms at runtime (the app falls back to an in-memory store).
     # iOS wheels must be available via find_links or PyPI before running
-    # `toolchain lock`.
+    # `kivyforge lock`.
     "pyobjus",
 ]
 
@@ -43,7 +43,7 @@ version = "3.15.0b2"
 #
 # This example shows the full SPM surface in one place:
 #
-#   * KeychainAccess  — a *remote* package. `toolchain lock` resolves it with
+#   * KeychainAccess  — a *remote* package. `kivyforge lock` resolves it with
 #     Xcode's Swift toolchain and pins the exact commit into pylock.ios.toml
 #     and the project's Package.resolved.  It's pure Swift (throwing API +
 #     subscripts), so Python cannot call it directly.

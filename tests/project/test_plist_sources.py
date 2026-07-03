@@ -6,11 +6,11 @@ import plistlib
 
 import pytest
 
-from kivy_ios.config import load_config_from_text
-from kivy_ios.project.entitlements import write_entitlements
-from kivy_ios.project.plist import build_info_plist, write_info_plist
-from kivy_ios.project.privacy import STUB_MANIFEST, write_privacy_manifest
-from kivy_ios.project.sources import render_main_config_h
+from kivyforge.config import load_config_from_text
+from kivyforge.project.entitlements import write_entitlements
+from kivyforge.project.plist import build_info_plist, write_info_plist
+from kivyforge.project.privacy import STUB_MANIFEST, write_privacy_manifest
+from kivyforge.project.sources import render_main_config_h
 
 
 class TestInfoPlist:
@@ -45,7 +45,7 @@ class TestInfoPlist:
         ],
     )
     def test_managed_keys_rejected_in_info_plist(self, key, value):
-        from kivy_ios.config.errors import ConfigError
+        from kivyforge.config.errors import ConfigError
 
         with pytest.raises(ConfigError, match=key):
             load_config_from_text(

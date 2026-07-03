@@ -20,8 +20,8 @@ Desktop (quick smoke-test)::
 iOS device / simulator::
 
     cd examples/mobile-geometry
-    toolchain build .
-    toolchain run .
+    kivyforge build .
+    kivyforge run .
 
 Tap the TextInput at the bottom to show/hide the software keyboard and watch
 the "Keyboard height" row and bar update.

@@ -6,11 +6,11 @@ import struct
 
 import pytest
 
-from kivy_ios.config import load_config_from_text
-from kivy_ios.doctor import checks as C
-from kivy_ios.doctor.result import Status, worst_status
-from kivy_ios.doctor.runner import run_checks
-from kivy_ios.lock import LockedSwiftPackage, Lockfile, PythonXcframework
+from kivyforge.config import load_config_from_text
+from kivyforge.doctor import checks as C
+from kivyforge.doctor.result import Status, worst_status
+from kivyforge.doctor.runner import run_checks
+from kivyforge.lock import LockedSwiftPackage, Lockfile, PythonXcframework
 
 from .conftest import FakeProbe
 
@@ -73,11 +73,11 @@ class TestEnvironmentChecks:
         assert r.status is Status.PASS
 
     def test_toolchain_offline_pass(self):
-        r = C.check_toolchain_version(FakeProbe(), "3.0.0", offline=True)
+        r = C.check_kivyforge_version(FakeProbe(), "3.0.0", offline=True)
         assert r.status is Status.PASS
 
     def test_toolchain_newer_warns(self):
-        r = C.check_toolchain_version(FakeProbe(latest="9.0.0"), "3.0.0", offline=False)
+        r = C.check_kivyforge_version(FakeProbe(latest="9.0.0"), "3.0.0", offline=False)
         assert r.status is Status.WARN
 
 
@@ -94,7 +94,7 @@ class TestProjectChecks:
         assert C.check_signing_identity(fake_probe, config).status is Status.PASS
 
     def test_signing_manual_missing_fail(self):
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
 
         cfg = load_config_from_text(
             "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
@@ -112,7 +112,7 @@ class TestProjectChecks:
         assert C.check_app_icon(config, tmp_path).status is Status.SKIP
 
     def test_app_icon_fail_wrong_size(self, tmp_path):
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
         from tests.project.test_icon import _write_minimal_png
 
         (tmp_path / "assets").mkdir()
@@ -128,7 +128,7 @@ class TestProjectChecks:
         assert "100x100" in (result.hint or "")
 
     def test_app_icon_pass(self, tmp_path):
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
         from tests.project.test_icon import _write_minimal_png
 
         (tmp_path / "assets").mkdir()
@@ -227,14 +227,14 @@ class TestProjectChecks:
 
 class TestRunModes:
     def test_environment_mode_skips_project(self, fake_probe):
-        results = run_checks(fake_probe, toolchain_version="3.0.0", config=None)
+        results = run_checks(fake_probe, kivyforge_version="3.0.0", config=None)
         skipped = [r for r in results if r.status is Status.SKIP]
         assert len(skipped) == 10
 
     def test_project_mode_runs_all(self, fake_probe, config, tmp_path):
         results = run_checks(
             fake_probe,
-            toolchain_version="3.0.0",
+            kivyforge_version="3.0.0",
             config=config,
             project_root=tmp_path,
         )
@@ -246,7 +246,7 @@ class TestRunModes:
         assert "App-level privacy manifest" in names
 
     def test_find_links_missing_fail(self, tmp_path):
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
 
         cfg = load_config_from_text(
             "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
@@ -259,7 +259,7 @@ class TestRunModes:
         assert "missing" in result.detail
 
     def test_find_links_empty_warns(self, tmp_path):
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
 
         (tmp_path / "wheels").mkdir()
         cfg = load_config_from_text(
@@ -273,7 +273,7 @@ class TestRunModes:
         assert "no .whl files" in result.detail
 
     def test_find_links_with_wheels_passes(self, tmp_path):
-        from kivy_ios.config import load_config_from_text
+        from kivyforge.config import load_config_from_text
 
         wheels = tmp_path / "wheels"
         wheels.mkdir()
@@ -287,7 +287,7 @@ class TestRunModes:
         assert C.check_find_links(cfg, tmp_path).status is Status.PASS
 
     def test_worst_status(self):
-        from kivy_ios.doctor.result import CheckResult
+        from kivyforge.doctor.result import CheckResult
 
         results = [
             CheckResult("a", Status.PASS),
@@ -299,17 +299,17 @@ class TestRunModes:
 
 class TestMachOParser:
     def test_parses_ios_platform(self):
-        from kivy_ios.doctor.probe import _macho_platforms
+        from kivyforge.doctor.probe import _macho_platforms
 
         assert "ios" in _macho_platforms(_thin_macho(platform=2))
 
     def test_parses_macos_platform(self):
-        from kivy_ios.doctor.probe import _macho_platforms
+        from kivyforge.doctor.probe import _macho_platforms
 
         assert "macos" in _macho_platforms(_thin_macho(platform=1))
 
     def test_non_macho_returns_empty(self):
-        from kivy_ios.doctor.probe import _macho_platforms
+        from kivyforge.doctor.probe import _macho_platforms
 
         assert _macho_platforms(b"not a macho") == set()
 
@@ -326,10 +326,10 @@ def _lock_with_python_url(url: str) -> Lockfile:
         python_xcframework=PythonXcframework(
             version="3.15.0", url=url, sha256="c" * 64
         ),
-        toolchain_version="3.0.0",
+        kivyforge_version="3.0.0",
         generated_at="t",
         pyproject_sha256="d" * 64,
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
     )
 
 
@@ -338,10 +338,10 @@ def _lock_with_swift_url(url: str) -> Lockfile:
         requires_python=">=3.15",
         packages=(),
         python_xcframework=PythonXcframework(version="3.15.0", url="", sha256="c" * 64),
-        toolchain_version="3.0.0",
+        kivyforge_version="3.0.0",
         generated_at="t",
         pyproject_sha256="d" * 64,
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
         swift_packages=(
             LockedSwiftPackage(
                 name="Sentry",

@@ -13,7 +13,7 @@ and generates an [Xcode](https://developer.apple.com/xcode/) `.xcodeproj`.
 
 For the full workflow see the [README](README.md); for design and reference
 details see the [design docs](docs/design/common/00-overview.md). When something looks
-wrong, `toolchain doctor` runs environment and project health checks and is a
+wrong, `kivyforge doctor` runs environment and project health checks and is a
 good first stop.
 
 ## FAQ
@@ -32,13 +32,13 @@ The active Xcode path is not set correctly. Point `xcode-select` at your Xcode:
 
 If the command line tools are missing, install them with `xcode-select --install`.
 
-### `toolchain build` says the lock is out of sync
+### `kivyforge build` says the lock is out of sync
 
 Your `pyproject.toml` changed since `pylock.ios.toml` was generated. Re-resolve:
 
-    toolchain lock
+    kivyforge lock
 
-In CI, `toolchain lock --check` exits non-zero when the lock is stale (it writes
+In CI, `kivyforge lock --check` exits non-zero when the lock is stale (it writes
 nothing). Use `--no-verify-lock` on `build` only if you intentionally want to
 skip the drift check.
 
@@ -47,7 +47,7 @@ skip the drift check.
 `[tool.kivy.ios.python].version` must match a build that python.org actually
 publishes. iOS support is new, so during the preview period you may need a
 prerelease such as `3.15.0b2` rather than a final `3.15.0`. Set the version to a
-published release and re-run `toolchain lock`.
+published release and re-run `kivyforge lock`.
 
 ### "invalid character in Bundle Identifier"
 
@@ -57,18 +57,18 @@ A bundle identifier is a UTI: only letters, digits, hyphen (`-`), and period
 
 ### I edited my Python source but the app didn't change
 
-Editing Python source does **not** require `toolchain build`: the generated
+Editing Python source does **not** require `kivyforge build`: the generated
 project links your source directory (`app/` is a symlink to `app_dir`), so just
-relaunch — `toolchain run --simulator`, or ⌘R in Xcode. Re-run `toolchain build`
+relaunch — `kivyforge run --simulator`, or ⌘R in Xcode. Re-run `kivyforge build`
 only when you change app config or need to regenerate the project, and
-`toolchain clean` to reset the generated `<app>-ios/` folder for a fresh build.
+`kivyforge clean` to reset the generated `<app>-ios/` folder for a fresh build.
 
 ### Where are downloaded artifacts stored?
 
 `Python.xcframework` and other xcframeworks are cached under
 `~/Library/Caches/kivy-ios/artifacts/` and shared across projects. Flush the
-cache with `toolchain clean --cache`, or force a fresh download for one build
-with `toolchain build --no-cache`.
+cache with `kivyforge clean --cache`, or force a fresh download for one build
+with `kivyforge build --no-cache`.
 
 ### Can I bundle a plain Python app without Kivy?
 

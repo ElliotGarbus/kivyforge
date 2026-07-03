@@ -1,4 +1,4 @@
-"""Phase 5 — toolchain build orchestration (steps 1 & 6; collection mocked)."""
+"""Phase 5 — kivyforge build orchestration (steps 1 & 6; collection mocked)."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivy_ios.cli import build as build_cli
-from kivy_ios.cli.build import build
-from kivy_ios.lock import (
+from kivyforge.cli import build as build_cli
+from kivyforge.cli.build import build
+from kivyforge.lock import (
     Lockfile,
     PythonXcframework,
     compute_pyproject_sha256,
@@ -54,10 +54,10 @@ def _write_project(fs: str, *, in_sync: bool = True) -> Path:
         python_xcframework=PythonXcframework(
             version="3.15.0", url="https://example/py.tar.gz", sha256="c" * 64
         ),
-        toolchain_version="3.0.0.dev0",
+        kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256=sha,
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
     )
     (root / "pylock.ios.toml").write_text(dumps(lock))
     return root
@@ -165,7 +165,7 @@ class TestBuildGuards:
             root.joinpath("src").mkdir()
             result = runner.invoke(build, [])
             assert result.exit_code != 0
-            assert "toolchain lock" in result.output
+            assert "kivyforge lock" in result.output
 
     def test_legacy_recipe_args_rejected(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
@@ -216,7 +216,7 @@ class TestSigningIdentityWiring:
             "run_command",
             lambda argv, *a, **k: captured.append(argv) or _Proc(),
         )
-        monkeypatch.setenv("KIVY_IOS_SIGNING_IDENTITY", "Apple Development: Env")
+        monkeypatch.setenv("KIVYFORGE_SIGNING_IDENTITY", "Apple Development: Env")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
             result = runner.invoke(build, ["--device", "--team-id", "ABCDE12345"])
@@ -257,13 +257,13 @@ class TestSigningIdentityWiring:
 
 class TestLastUpgradeCheck:
     def test_encodes_xcode_version(self):
-        from kivy_ios.cli.build import _encode_last_upgrade_check
+        from kivyforge.cli.build import _encode_last_upgrade_check
 
         assert _encode_last_upgrade_check("26.5") == "2650"
         assert _encode_last_upgrade_check("16.2") == "1620"
         assert _encode_last_upgrade_check("16.2.1") == "1621"
 
     def test_returns_none_when_unparseable(self):
-        from kivy_ios.cli.build import _encode_last_upgrade_check
+        from kivyforge.cli.build import _encode_last_upgrade_check
 
         assert _encode_last_upgrade_check("not a version") is None

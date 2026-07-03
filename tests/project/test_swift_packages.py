@@ -7,9 +7,9 @@ import json
 import pytest
 from pbxproj import XcodeProject
 
-from kivy_ios.lock.model import LockedSwiftPackage
-from kivy_ios.project.materialize import materialize_project
-from kivy_ios.project.swift_packages import (
+from kivyforge.lock.model import LockedSwiftPackage
+from kivyforge.project.materialize import materialize_project
+from kivyforge.project.swift_packages import (
     local_relative_path,
     package_resolved_json,
     sync_swift_packages,

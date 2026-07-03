@@ -12,18 +12,18 @@ from pathlib import Path
 
 import pytest
 
-from kivy_ios.artifacts.cache import ArtifactCache
-from kivy_ios.artifacts.collect import collect_artifacts
-from kivy_ios.artifacts.verify import sha256_file
-from kivy_ios.artifacts.wheels import BuildSlice
-from kivy_ios.lock.model import (
+from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.artifacts.collect import collect_artifacts
+from kivyforge.artifacts.verify import sha256_file
+from kivyforge.artifacts.wheels import BuildSlice
+from kivyforge.lock.model import (
     LockedPackage,
     LockedWheel,
     LockedXcframework,
     Lockfile,
     PythonXcframework,
 )
-from kivy_ios.project.staging import StagingLayout
+from kivyforge.project.staging import StagingLayout
 
 
 def _make_python_tarball(root: Path) -> Path:
@@ -94,10 +94,10 @@ def test_collect_installs_python_wheels_and_frameworks(tmp_path, layout, cache):
             url="https://example/python.tar.gz",
             sha256=sha256_file(py_tar),
         ),
-        toolchain_version="3.0.0.dev0",
+        kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256="d" * 64,
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
         xcframeworks=(
             LockedXcframework(
                 name="SDL3",
@@ -172,10 +172,10 @@ def test_collect_zero_dep_app_stamps_empty_slice(tmp_path, layout, cache):
             url="https://example/python.tar.gz",
             sha256=sha256_file(py_tar),
         ),
-        toolchain_version="3.0.0.dev0",
+        kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256="d" * 64,
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
         xcframeworks=(),
     )
 
@@ -205,7 +205,7 @@ def test_collect_zero_dep_app_stamps_empty_slice(tmp_path, layout, cache):
 
 
 def test_collect_both_slices_installs_each_pip_deps(tmp_path, layout, cache):
-    # A bare `toolchain build` collects device + simulator: Python.xcframework is
+    # A bare `kivyforge build` collects device + simulator: Python.xcframework is
     # fetched once, but pip-deps is installed into BOTH slice directories so
     # either Xcode destination builds without re-running the toolchain.
     art = tmp_path / "art"
@@ -234,10 +234,10 @@ def test_collect_both_slices_installs_each_pip_deps(tmp_path, layout, cache):
             url="https://example/python.tar.gz",
             sha256=sha256_file(py_tar),
         ),
-        toolchain_version="3.0.0.dev0",
+        kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256="d" * 64,
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
     )
 
     class FakeDownloader:
@@ -292,10 +292,10 @@ def test_collect_no_packages_skips_pip(tmp_path, layout, cache):
             url="https://example/python.tar.gz",
             sha256=sha256_file(py_tar),
         ),
-        toolchain_version="3.0.0.dev0",
+        kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256="d" * 64,
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
     )
 
     class FakeDownloader:

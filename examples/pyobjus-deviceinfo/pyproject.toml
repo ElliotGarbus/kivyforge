@@ -7,7 +7,7 @@ dependencies = [
     # pyobjus is an iOS-only package; it is silently skipped on other
     # platforms at runtime (the app shows a desktop fallback).
     # iOS wheels must be available via find_links or PyPI before running
-    # `toolchain lock`.
+    # `kivyforge lock`.
     "pyobjus",
 ]
 

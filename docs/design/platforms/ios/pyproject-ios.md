@@ -20,7 +20,7 @@ kivyforge's iOS backend consumes the following PEP 621 keys directly; the rest a
 | `version`                | `CFBundleShortVersionString`. Marketing version.                                                                                                                                                                                          | yes                        |
 | `description`            | `CFBundleDisplayName` fallback when `[tool.kivy].display_name` is unset; also used for App Store metadata if present.                                                                                                                     | no                         |
 | `requires-python`        | Cross-checked against `[tool.kivy.ios.python].version` to fail fast on impossible combinations (e.g. `requires-python = ">=3.16"` with `[tool.kivy.ios.python].version = "3.15.0"`).                                                      | no, but warned on mismatch |
-| `dependencies`           | The full Python dependency set (PEP 508 strings, including environment markers for platform-specific entries). `toolchain lock` evaluates markers against the iOS target and resolves the matching subset to wheels in `pylock.ios.toml`. | yes (may be empty)         |
+| `dependencies`           | The full Python dependency set (PEP 508 strings, including environment markers for platform-specific entries). `kivyforge lock` evaluates markers against the iOS target and resolves the matching subset to wheels in `pylock.ios.toml`. | yes (may be empty)         |
 | `optional-dependencies`  | Ignored by the iOS backend unless the user opts in per-extra via a future `[tool.kivy.ios].extras` allowlist.                                                                                                                    | no                         |
 | `authors`, `maintainers` | First `authors` entry's `name` populates the bundle copyright string when no override is given.                                                                                                                                           | no                         |
 
@@ -37,7 +37,7 @@ source = "assets/icon-ios.png"   # 1024×1024 PNG
 
 | Field    | Type   | Required | Description                                                                                                                                                        |
 | -------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `source` | string | no       | Path to a 1024×1024 source PNG relative to `pyproject.toml`. `toolchain build` generates the full iOS icon set (all `AppIcon` sizes) into the Xcode asset catalog. |
+| `source` | string | no       | Path to a 1024×1024 source PNG relative to `pyproject.toml`. `kivyforge build` generates the full iOS icon set (all `AppIcon` sizes) into the Xcode asset catalog. |
 
 ### `[tool.kivy.ios.splash]`
 
@@ -70,9 +70,9 @@ deployment_target = "13.0"
 | `bundle_id`         | string  | yes      | —        | iOS bundle identifier. Init suggests `org.example.<slug>` with a comment to change it.                                                                                                                                                               |
 | `build`             | integer | no       | `1`      | Build number (`CFBundleVersion`). Increment per submission.                                                                                                                                 |
 | `deployment_target` | string  | no       | `"13.0"` | Minimum iOS version. Must be >= the floor of the selected `Python.xcframework`.                                                                                                                                                                      |
-| `simulator_archs`   | list of string | no | `["arm64", "x86_64"]` | Which **simulator** CPU architectures `toolchain lock` pins (and `toolchain build` can target). The device slice is always `arm64` and is not configurable. Valid values: `"arm64"` (Apple-Silicon simulator hosts), `"x86_64"` (Intel simulator hosts). Must be non-empty; unknown values are rejected; duplicates are de-duped preserving order. Drop `"x86_64"` once you no longer build the simulator on Intel Macs — that slice stops being required *and* stops being pinned. See "Simulator architectures (`simulator_archs`)" below and [pylock spec §"Resolution semantics"](pylock-ios-spec.md#resolution-semantics). |
-| `extra_index_urls`  | list of string | no | `[]`     | Supplemental pip index URLs consulted *in addition to* PyPI when resolving iOS wheels. `toolchain lock` passes each as `--extra-index-url` to pip. Plural-by-design, channel-agnostic, and **empty by default**; PyPI is always the primary source. Each resolved wheel's source URL is pinned in `pylock.ios.toml`'s `[[packages.wheels]]` (and its index recorded under `[packages.tool.kivyforge].source_index`) regardless of which index supplied it, keeping builds reproducible. As packages publish iOS wheels to PyPI proper, configured entries go quiet on their own. See [iOS artifact distribution §"Source registry: PyPI direct"](artifact-distribution-ios.md#source-registry-pypi-direct-plus-configurable-supplemental-indexes) and the [common overview](../../common/00-overview.md). |
-| `find_links`        | list of string | no | `[]`     | Repo-relative directories of pre-built wheels consulted during `toolchain lock` only. Each entry is passed to pip as `--find-links` (pip's name for flat wheel directories or direct wheel URLs). Use when a dependency's iOS wheels are vendored in the repo but not published to PyPI or a supplemental index yet — e.g. locally cross-built `kivy` cp315 wheels under `wheels/`. Entries must be repo-relative (not absolute, must not escape the project directory). **Not** used at `toolchain build` time; the lockfile's per-wheel `path` or `url` pins are authoritative after lock. See "Local wheel directories (`find_links`)" below and [pylock spec §"Locally built wheels"](pylock-ios-spec.md#locally-built-wheels-path). |
+| `simulator_archs`   | list of string | no | `["arm64", "x86_64"]` | Which **simulator** CPU architectures `kivyforge lock` pins (and `kivyforge build` can target). The device slice is always `arm64` and is not configurable. Valid values: `"arm64"` (Apple-Silicon simulator hosts), `"x86_64"` (Intel simulator hosts). Must be non-empty; unknown values are rejected; duplicates are de-duped preserving order. Drop `"x86_64"` once you no longer build the simulator on Intel Macs — that slice stops being required *and* stops being pinned. See "Simulator architectures (`simulator_archs`)" below and [pylock spec §"Resolution semantics"](pylock-ios-spec.md#resolution-semantics). |
+| `extra_index_urls`  | list of string | no | `[]`     | Supplemental pip index URLs consulted *in addition to* PyPI when resolving iOS wheels. `kivyforge lock` passes each as `--extra-index-url` to pip. Plural-by-design, channel-agnostic, and **empty by default**; PyPI is always the primary source. Each resolved wheel's source URL is pinned in `pylock.ios.toml`'s `[[packages.wheels]]` (and its index recorded under `[packages.tool.kivyforge].source_index`) regardless of which index supplied it, keeping builds reproducible. As packages publish iOS wheels to PyPI proper, configured entries go quiet on their own. See [iOS artifact distribution §"Source registry: PyPI direct"](artifact-distribution-ios.md#source-registry-pypi-direct-plus-configurable-supplemental-indexes) and the [common overview](../../common/00-overview.md). |
+| `find_links`        | list of string | no | `[]`     | Repo-relative directories of pre-built wheels consulted during `kivyforge lock` only. Each entry is passed to pip as `--find-links` (pip's name for flat wheel directories or direct wheel URLs). Use when a dependency's iOS wheels are vendored in the repo but not published to PyPI or a supplemental index yet — e.g. locally cross-built `kivy` cp315 wheels under `wheels/`. Entries must be repo-relative (not absolute, must not escape the project directory). **Not** used at `kivyforge build` time; the lockfile's per-wheel `path` or `url` pins are authoritative after lock. See "Local wheel directories (`find_links`)" below and [pylock spec §"Locally built wheels"](pylock-ios-spec.md#locally-built-wheels-path). |
 | `exclude`           | list of string | no | `[]`     | Canonical package names to drop from the **resolved** dependency graph when writing `pylock.ios.toml`. Use it to prune transitive dependencies a package declares but that your app never exercises at runtime on iOS — most commonly the non-runtime tail of Kivy's own wheel (`kivy-garden`, `requests` + its transitive deps, `docutils`, `pygments`). A name listed here that is *also* a direct `[project].dependencies` entry is silently ignored (you cannot exclude what you explicitly depend on). Matching is by canonical name (PEP 503). See "Excluding unused transitive dependencies (`exclude`)" below. |
 
 ### Excluding unused transitive dependencies (`exclude`)
@@ -107,7 +107,7 @@ Semantics:
   dependency is never silently removed.
 - **Canonical-name matching.** Names are compared after PEP 503 normalization, so
   `Kivy_Garden`, `kivy-garden`, and `kivy.garden` all match.
-- **`toolchain init` seeds a documented block** when `kivy` is a direct
+- **`kivyforge init` seeds a documented block** when `kivy` is a direct
   dependency, with one comment per entry naming the Kivy feature that needs it, so
   you know which lines are safe to delete for your specific app.
 
@@ -158,8 +158,8 @@ schema change.
 
 `[project].dependencies` stays PEP 508 only (`kivy>=3.0`, not a file path per package). When an iOS wheel is vendored locally, two layers are involved:
 
-1. **Lock-time discovery (pyproject)** — `find_links` tells pip where to *search* while `toolchain lock` resolves the graph. The name matches pip's `--find-links` flag deliberately: it is for directories of `.whl` files, not PEP 503 simple indexes.
-2. **Build-time pin (lockfile)** — each resolved slice is recorded in `pylock.ios.toml` as `url` (remote) or `path` (repo-relative), per PEP 751. `toolchain build` installs from those pins; it does not re-read `find_links`.
+1. **Lock-time discovery (pyproject)** — `find_links` tells pip where to *search* while `kivyforge lock` resolves the graph. The name matches pip's `--find-links` flag deliberately: it is for directories of `.whl` files, not PEP 503 simple indexes.
+2. **Build-time pin (lockfile)** — each resolved slice is recorded in `pylock.ios.toml` as `url` (remote) or `path` (repo-relative), per PEP 751. `kivyforge build` installs from those pins; it does not re-read `find_links`.
 
 This is **not** the same as:
 
@@ -176,7 +176,7 @@ dependencies = ["kivy>=3.0.0.dev0,<4"]
 find_links = ["wheels"]
 ```
 
-After `toolchain lock`, `pylock.ios.toml` holds entries such as:
+After `kivyforge lock`, `pylock.ios.toml` holds entries such as:
 
 ```toml
 [[packages.wheels]]
@@ -230,13 +230,13 @@ Per-entry fields:
 | Field     | Type   | Required                                                 | Description                                                                                                                                                                                                                                 |
 | --------- | ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `version` | string | yes                 | Exact version or semver spec. |
-| `source`  | string | yes                 | Where to fetch the xcframework artifact (zip, tar.gz, or an unpacked `.xcframework` directory). Always **explicit**: either a **direct download URL** or a **repo-relative path** to a locally built/vendored artifact. There are no indirection keywords — the value states exactly where the artifact comes from. `toolchain lock` reads the artifact to resolve its SHA-256 and slice list and pins them in `pylock.ios.toml`. See [iOS artifact distribution §"Distribution channel 2"](artifact-distribution-ios.md#distribution-channel-2-xcframework-archives). |
+| `source`  | string | yes                 | Where to fetch the xcframework artifact (zip, tar.gz, or an unpacked `.xcframework` directory). Always **explicit**: either a **direct download URL** or a **repo-relative path** to a locally built/vendored artifact. There are no indirection keywords — the value states exactly where the artifact comes from. `kivyforge lock` reads the artifact to resolve its SHA-256 and slice list and pins them in `pylock.ios.toml`. See [iOS artifact distribution §"Distribution channel 2"](artifact-distribution-ios.md#distribution-channel-2-xcframework-archives). |
 | `link`    | bool   | no (default `true`) | Add to Link Binary With Libraries phase. |
 | `embed`   | bool   | no (default `true`) | Add to Embed Frameworks phase (copies into `.app/Frameworks/`, code-signs). |
 
 Init never auto-populates this table: the canonical Kivy dependency set needs no entries because the kivy iOS wheel bundles its own native xcframeworks. An app that needs an *additional* third-party xcframework adds an entry here by hand, providing the name, version, and an explicit `source`.
 
-**`source` as a URL vs. a path.** A URL is right for published SDKs and frameworks shared across projects. A repo-relative path is right for a framework the author built and versions alongside the app — because both the artifact and the path live in the repo, it resolves identically on every clone and in CI. `toolchain build` rejects an absolute path (or one escaping the project directory) with a diagnostic. This mirrors the local-wheel mechanism in the [pylock spec](pylock-ios-spec.md) and follows PEP 751's path conventions, so users learn one rule for both wheels and xcframeworks.
+**`source` as a URL vs. a path.** A URL is right for published SDKs and frameworks shared across projects. A repo-relative path is right for a framework the author built and versions alongside the app — because both the artifact and the path live in the repo, it resolves identically on every clone and in CI. `kivyforge build` rejects an absolute path (or one escaping the project directory) with a diagnostic. This mirrors the local-wheel mechanism in the [pylock spec](pylock-ios-spec.md) and follows PEP 751's path conventions, so users learn one rule for both wheels and xcframeworks.
 
 ### `[tool.kivy.ios.native.swift_packages]`
 
@@ -291,7 +291,7 @@ upload_symbols = true
 | `identity`             | string | no       | `"Apple Development"` | Code signing identity. |
 | `provisioning_profile` | string | no       | `""`                  | Provisioning profile name or UUID (empty for auto). |
 | `auto_signing`         | bool   | no       | `true`                | Use Xcode's automatic signing (`CODE_SIGN_STYLE = Automatic`). |
-| `upload_symbols`       | bool   | no       | `true`                | Sets the `uploadSymbols` key in the generated `ExportOptions.plist` used by `--release` exports (controls dSYM inclusion in the `.ipa`; `--release` only — see [iOS CLI §`toolchain build`](cli-ios.md#toolchain-build)). Set to `false` if you don't use a crash-reporting service and want a smaller export artifact; the `.xcarchive` still retains dSYMs for manual upload. |
+| `upload_symbols`       | bool   | no       | `true`                | Sets the `uploadSymbols` key in the generated `ExportOptions.plist` used by `--release` exports (controls dSYM inclusion in the `.ipa`; `--release` only — see [iOS CLI §`kivyforge build`](cli-ios.md#toolchain-build)). Set to `false` if you don't use a crash-reporting service and want a smaller export artifact; the `.xcarchive` still retains dSYMs for manual upload. |
 
 iOS-only.
 
@@ -304,11 +304,11 @@ source = "privacy/PrivacyInfo.xcprivacy"
 
 | Field    | Type   | Required | Description                                                                                                                                                                                                                                                                                                                                                     |
 | -------- | ------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source` | string | no       | Repo-relative path to a hand-authored `PrivacyInfo.xcprivacy` plist. When set, `toolchain build` copies this file into the project's Copy Bundle Resources phase as the app-level privacy manifest. When absent, the toolchain generates a **minimal stub** (`NSPrivacyTracking = false`, empty `NSPrivacyTrackingDomains`, `NSPrivacyCollectedDataTypes`, and `NSPrivacyAccessedAPITypes` arrays). |
+| `source` | string | no       | Repo-relative path to a hand-authored `PrivacyInfo.xcprivacy` plist. When set, `kivyforge build` copies this file into the project's Copy Bundle Resources phase as the app-level privacy manifest. When absent, the toolchain generates a **minimal stub** (`NSPrivacyTracking = false`, empty `NSPrivacyTrackingDomains`, `NSPrivacyCollectedDataTypes`, and `NSPrivacyAccessedAPITypes` arrays). |
 
 **App Store requirement.** Apple has required an app-level `PrivacyInfo.xcprivacy` for all new and updated submissions since May 2024. The generated stub is valid for apps that perform no tracking, collect no data, and use none of Apple's [required-reason APIs](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files/describing-use-of-required-reason-api). Any app that *does* use required-reason APIs (file timestamps, system boot time, disk space, active keyboard, user defaults) must supply a `source` declaring them — the stub will be rejected by App Store Connect validation.
 
-**Native xcframework privacy manifests.** Each `.xcframework` in `Frameworks/` (whether wheel-embedded or user-declared via `[tool.kivy.ios.native.xcframeworks]`) must include its own `PrivacyInfo.xcprivacy` **inside the xcframework bundle** if it uses required-reason APIs. This is the responsibility of the framework or wheel author, not kivyforge. `toolchain doctor` warns if any xcframework in `Frameworks/` is missing a `PrivacyInfo.xcprivacy` entirely (see [iOS CLI](cli-ios.md)).
+**Native xcframework privacy manifests.** Each `.xcframework` in `Frameworks/` (whether wheel-embedded or user-declared via `[tool.kivy.ios.native.xcframeworks]`) must include its own `PrivacyInfo.xcprivacy` **inside the xcframework bundle** if it uses required-reason APIs. This is the responsibility of the framework or wheel author, not kivyforge. `kivyforge doctor` warns if any xcframework in `Frameworks/` is missing a `PrivacyInfo.xcprivacy` entirely (see [iOS CLI](cli-ios.md)).
 
 ### `[tool.kivy.ios.info_plist]`
 
@@ -354,7 +354,7 @@ GCC_OPTIMIZATION_LEVEL = "s"
 
 - **Type**: table of string → string.
 - **Semantics**: each key/value is written into the generated `.xcodeproj`'s build settings (`buildSettings` dictionary) for the application target. Free-form escape hatch for users who need specific Xcode build configurations not exposed elsewhere.
-- **Caveats**: `toolchain build` reserves the keys it manages. User-supplied values for any reserved key are rejected with a diagnostic that names the key and the kivyforge field that controls it. The reserved set is:
+- **Caveats**: `kivyforge build` reserves the keys it manages. User-supplied values for any reserved key are rejected with a diagnostic that names the key and the kivyforge field that controls it. The reserved set is:
 
 | Reserved key | Controlled by |
 |---|---|
@@ -429,7 +429,7 @@ auto_signing = true
 
 ## Validation rules (iOS)
 
-`toolchain lock` and `toolchain build` reject any `pyproject.toml` that:
+`kivyforge lock` and `kivyforge build` reject any `pyproject.toml` that:
 
 1. Lacks a `[project]` table or omits `[project].name` / `[project].version`.
 2. Lacks `[tool.kivy.ios]` when running an iOS command. (`[tool.kivy]` alone is not a buildable target.)

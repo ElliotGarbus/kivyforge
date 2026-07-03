@@ -1,6 +1,6 @@
 """Phase 2/3 — pylock.ios.toml reader robustness (spec 02).
 
-`toolchain lock` is the writer, so the reader only needs to fail cleanly on a
+`kivyforge lock` is the writer, so the reader only needs to fail cleanly on a
 missing, corrupt, hand-edited, or future-schema file — never leak a raw
 KeyError/TypeError.
 """
@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from kivy_ios.lock.reader import LockError, loads
+from kivyforge.lock.reader import LockError, loads
 
 # A minimal, valid lockfile body that every corruption test mutates.
 VALID = """\
 lock-version = "1.0"
-created-by = "kivy-ios"
+created-by = "kivyforge"
 requires-python = ">=3.15"
 
 [[packages]]
@@ -26,14 +26,14 @@ name = "kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
 url = "https://example.com/kivy.whl"
 hashes = { sha256 = "aa" }
 
-[tool.kivy_ios]
+[tool.kivyforge]
 schema_version = 1
-toolchain_version = "3.0.0"
+kivyforge_version = "3.0.0"
 generated_at = "2026-05-27T00:00:00Z"
 pyproject_sha256 = "deadbeef"
-tool_kivy_ios_schema_version = 1
+tool_kivyforge_schema_version = 1
 
-[tool.kivy_ios.python_xcframework]
+[tool.kivyforge.python_xcframework]
 version = "3.15.0"
 url = "https://example.com/python.tar.gz"
 sha256 = "cc"
@@ -54,7 +54,7 @@ class TestCorruption:
             loads("lock-version = \n")
 
     def test_missing_tool_table(self):
-        with pytest.raises(LockError, match=r"missing the \[tool.kivy_ios\] table"):
+        with pytest.raises(LockError, match=r"missing the \[tool.kivyforge\] table"):
             loads('lock-version = "1.0"\n')
 
     def test_package_missing_name_is_lockerror_not_keyerror(self):
@@ -96,7 +96,7 @@ class TestFutureSchema:
 
 class TestRequiredFields:
     def test_missing_python_xcframework_rejected(self):
-        body = VALID.split("[tool.kivy_ios.python_xcframework]")[0]
+        body = VALID.split("[tool.kivyforge.python_xcframework]")[0]
         with pytest.raises(LockError, match="python_xcframework"):
             loads(body)
 

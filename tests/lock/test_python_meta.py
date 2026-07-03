@@ -7,8 +7,8 @@ import plistlib
 import tarfile
 from pathlib import Path
 
-from kivy_ios.artifacts.cache import ArtifactCache
-from kivy_ios.lock.python_meta import (
+from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.lock.python_meta import (
     PythonOrgProvider,
     PythonXcframeworkError,
     archive_filename,

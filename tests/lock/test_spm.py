@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from kivy_ios.config.model import SwiftPackageDep
-from kivy_ios.lock.spm import (
+from kivyforge.config.model import SwiftPackageDep
+from kivyforge.lock.spm import (
     SpmResolverError,
     XcodeSpmResolver,
     _match_pin,

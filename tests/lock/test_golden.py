@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kivy_ios.config import load_config_from_text
-from kivy_ios.lock import build_lockfile, dumps
+from kivyforge.config import load_config_from_text
+from kivyforge.lock import build_lockfile, dumps
 
 GOLDEN = Path(__file__).parent / "data" / "golden_pylock.ios.toml"
 
@@ -14,8 +14,8 @@ GOLDEN = Path(__file__).parent / "data" / "golden_pylock.ios.toml"
 def test_golden_lockfile(
     minimal_pyproject, fake_resolver, fake_python_provider, monkeypatch
 ):
-    # Pin toolchain_version so the golden file is stable across releases.
-    import kivy_ios.lock.builder as builder
+    # Pin kivyforge_version so the golden file is stable across releases.
+    import kivyforge.lock.builder as builder
 
     monkeypatch.setattr(builder, "__version__", "3.0.0")
     cfg = load_config_from_text(minimal_pyproject)

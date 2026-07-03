@@ -1,19 +1,19 @@
 # iOS — Xcode Project Generation
 
-This document defines how `toolchain build` materializes a `pyproject.toml` (with `[tool.kivy]` + `[tool.kivy.ios]` tables) + `pylock.ios.toml` (PEP 751) into a working Xcode project. It adopts the maintainer's project-layout spec, uses programmatic `pbxproj` generation (not cookiecutter), and pins the integration with python.org's `install_python` helper.
+This document defines how `kivyforge build` materializes a `pyproject.toml` (with `[tool.kivy]` + `[tool.kivy.ios]` tables) + `pylock.ios.toml` (PEP 751) into a working Xcode project. It adopts the maintainer's project-layout spec, uses programmatic `pbxproj` generation (not cookiecutter), and pins the integration with python.org's `install_python` helper.
 
 ## Build process overview
 
 Building an iOS app with kivyforge is a four-phase pipeline across two tools:
 
-1. **Collect** (`toolchain build`) — downloads Python.xcframework, native xcframeworks, and Python wheels from python.org, PyPI, and GitHub using `pylock.ios.toml` as the pinned manifest. Artifacts are cached locally to avoid redundant downloads.
-2. **Stage** (`toolchain build`) — lays out the downloaded artifacts and the user's app code into an `<app>-ios/` staging directory, and generates the Xcode project file (`<app>.xcodeproj`) via the `pbxproj` library.
+1. **Collect** (`kivyforge build`) — downloads Python.xcframework, native xcframeworks, and Python wheels from python.org, PyPI, and GitHub using `pylock.ios.toml` as the pinned manifest. Artifacts are cached locally to avoid redundant downloads.
+2. **Stage** (`kivyforge build`) — lays out the downloaded artifacts and the user's app code into an `<app>-ios/` staging directory, and generates the Xcode project file (`<app>.xcodeproj`) via the `pbxproj` library.
 3. **Transform** (Xcode "Build Python" Run Script) — calls python.org's `install_python` helper, which converts `.so` C extensions into per-module `.frameworks` (required by the App Store) and lays out the Python stdlib inside the app bundle.
 4. **Compile & link** (Xcode) — compiles `main.m` (the Objective-C bootstrap), links against the embedded frameworks, and produces the runnable `<app>.app` bundle.
 
 ## Project layout
 
-`toolchain build` produces a `<app>-ios/` folder (sibling to `pyproject.toml`):
+`kivyforge build` produces a `<app>-ios/` folder (sibling to `pyproject.toml`):
 
 ```
 <app>-ios/
@@ -51,19 +51,19 @@ Building an iOS app with kivyforge is a four-phase pipeline across two tools:
 
 Two sources feed `<app>-ios/Frameworks/` at build time:
 
-1. **Wheel-embedded xcframeworks.** Some iOS wheels — notably the kivy iOS wheel — ship their native xcframeworks inside the wheel under a top-level `.frameworks/` directory (see `kivy/kivy` `tools/add-ios-frameworks.py`). After pip installs wheels into `pip-deps/`, `toolchain build` walks every installed wheel for a `.frameworks/` directory and copies each `<name>.xcframework` it finds into `<app>-ios/Frameworks/`. For the canonical Kivy app this is where ANGLE, the SDL3 family, and any other kivy-bundled framework arrive.
+1. **Wheel-embedded xcframeworks.** Some iOS wheels — notably the kivy iOS wheel — ship their native xcframeworks inside the wheel under a top-level `.frameworks/` directory (see `kivy/kivy` `tools/add-ios-frameworks.py`). After pip installs wheels into `pip-deps/`, `kivyforge build` walks every installed wheel for a `.frameworks/` directory and copies each `<name>.xcframework` it finds into `<app>-ios/Frameworks/`. For the canonical Kivy app this is where ANGLE, the SDL3 family, and any other kivy-bundled framework arrive.
 2. **User-declared third-party xcframeworks.** Entries in `[tool.kivy.ios.native.xcframeworks]` (pinned in `pylock.ios.toml` as `[[tool.kivyforge.xcframeworks]]`) are downloaded, SHA-verified, and extracted into `<app>-ios/Frameworks/`. Empty by default.
 
 Both sources flow into the same Xcode Link Binary With Libraries + Embed Frameworks phases. Source (1) covers the entire Kivy dependency set; source (2) is for app-specific extras the Python wheel can't deliver.
 
-> **Privacy manifests in xcframeworks.** Apple requires that any xcframework using [required-reason APIs](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files/describing-use-of-required-reason-api) include its own `PrivacyInfo.xcprivacy` **inside the xcframework bundle** (at `<Name>.xcframework/ios-arm64/PrivacyInfo.xcprivacy` or equivalent per-slice path). This is the responsibility of the framework or wheel author — kivyforge does not generate or patch privacy manifests for xcframeworks. `toolchain doctor` warns if any `.xcframework` in `Frameworks/` is missing a `PrivacyInfo.xcprivacy` file in all of its slices. The app-level `PrivacyInfo.xcprivacy` (generated or user-supplied, see [iOS pyproject](pyproject-ios.md)) is separate and does not substitute for per-xcframework manifests.
+> **Privacy manifests in xcframeworks.** Apple requires that any xcframework using [required-reason APIs](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files/describing-use-of-required-reason-api) include its own `PrivacyInfo.xcprivacy` **inside the xcframework bundle** (at `<Name>.xcframework/ios-arm64/PrivacyInfo.xcprivacy` or equivalent per-slice path). This is the responsibility of the framework or wheel author — kivyforge does not generate or patch privacy manifests for xcframeworks. `kivyforge doctor` warns if any `.xcframework` in `Frameworks/` is missing a `PrivacyInfo.xcprivacy` file in all of its slices. The app-level `PrivacyInfo.xcprivacy` (generated or user-supplied, see [iOS pyproject](pyproject-ios.md)) is separate and does not substitute for per-xcframework manifests.
 
 #### Duplicate framework policy
 
-Because two sources feed `Frameworks/` (and a single source can carry the same dependency twice — e.g. two wheels each bundling `Foo.xcframework`), `toolchain build` needs a deterministic rule when two providers contribute an xcframework with the **same framework basename** (`<name>.xcframework`):
+Because two sources feed `Frameworks/` (and a single source can carry the same dependency twice — e.g. two wheels each bundling `Foo.xcframework`), `kivyforge build` needs a deterministic rule when two providers contribute an xcframework with the **same framework basename** (`<name>.xcframework`):
 
 1. **Identical → deduplicate silently.** If the two artifacts have the same SHA-256 (or, for wheel-embedded frameworks lacking a pinned hash, the same computed content hash *and* the same version metadata), they are the same artifact. Keep one copy; emit nothing.
-2. **Conflicting → fail by default.** If the basename collides but the content hash or version metadata differs, `toolchain build` aborts with a diagnostic that names **both providers** (e.g. the two wheels, or a wheel and a `[tool.kivy.ios.native.xcframeworks]` entry), each artifact's version and SHA-256, and the colliding framework name.
+2. **Conflicting → fail by default.** If the basename collides but the content hash or version metadata differs, `kivyforge build` aborts with a diagnostic that names **both providers** (e.g. the two wheels, or a wheel and a `[tool.kivy.ios.native.xcframeworks]` entry), each artifact's version and SHA-256, and the colliding framework name.
 3. **No silent "warn and proceed."** kivyforge never picks a winner on its own. A version mismatch between two copies of the same framework can link successfully and then fail at runtime — a clear build-time failure is strictly better than a latent runtime crash.
 
 A future schema revision may add an explicit per-framework override letting the app author pin which provider wins, but the current design deliberately does not guess. The check runs after both sources have been staged and before the pbxproj Link/Embed phases are wired, so a conflict is caught before any Xcode work begins.
@@ -75,18 +75,18 @@ This section makes explicit how a user's Python edits flow through to a running 
 ### The default model
 
 - The user keeps `.py` files in their source subfolder — typically `src/` (with `app_dir = "src"`). `app_dir` must be a subdirectory; the project root (`"."`) is not allowed.
-- `toolchain build` creates `<app>-ios/app/` as a **symlink** to `app_dir` (resolved as a relative path from `<app>-ios/`). The symlink is created once on first build and refreshed only if `[tool.kivy].app_dir` changes.
+- `kivyforge build` creates `<app>-ios/app/` as a **symlink** to `app_dir` (resolved as a relative path from `<app>-ios/`). The symlink is created once on first build and refreshed only if `[tool.kivy].app_dir` changes.
 - The Xcode project's pbxproj registers `<app>-ios/app/` as a **folder reference** (blue folder, dynamic). Folder references are walked at *every* Xcode build, so any file added, modified, or deleted in the underlying source folder is picked up automatically. Group references (yellow folders, static) are explicitly not used for source code — that would force the user to manually add new files to the project.
 
 ### What the user runs after each kind of change
 
 | Change | Command to run |
 |--------|----------------|
-| Edit `main.py` or any other `.py` file under `app_dir` | Cmd-R in Xcode, or `toolchain run` |
+| Edit `main.py` or any other `.py` file under `app_dir` | Cmd-R in Xcode, or `kivyforge run` |
 | Add a `.py` file, subfolder, or asset (PNG, JSON, data file) under `app_dir` | Cmd-R in Xcode (folder reference picks it up) |
-| **Any edit to `pyproject.toml`** — dependencies, native xcframeworks, Python version, deployment target, names, bundle id, orientation, icons, splash, signing, entitlements | `toolchain lock && toolchain build` |
+| **Any edit to `pyproject.toml`** — dependencies, native xcframeworks, Python version, deployment target, names, bundle id, orientation, icons, splash, signing, entitlements | `kivyforge lock && kivyforge build` |
 
-The mental model: **`pyproject.toml` describes the *shape* of your app; your Python files are the *content*.** Any edit to `pyproject.toml` goes through `toolchain lock && toolchain build` — the lock's whole-file drift check guarantees the build always matches your committed config, so there's a single rule to remember rather than a per-field one. (A re-lock after a cosmetic change is cheap: dependency resolution is a cache hit and `lock` just rewrites the hash and metadata.) Content changes under `app_dir` flow through normal Xcode rebuilds.
+The mental model: **`pyproject.toml` describes the *shape* of your app; your Python files are the *content*.** Any edit to `pyproject.toml` goes through `kivyforge lock && kivyforge build` — the lock's whole-file drift check guarantees the build always matches your committed config, so there's a single rule to remember rather than a per-field one. (A re-lock after a cosmetic change is cheap: dependency resolution is a cache hit and `lock` just rewrites the hash and metadata.) Content changes under `app_dir` flow through normal Xcode rebuilds.
 
 ### Why symlink, not copy
 
@@ -94,8 +94,8 @@ Three alternatives, and why we chose the symlink:
 
 | Approach | Iteration UX | Verdict |
 |----------|--------------|---------|
-| **Symlink (chosen)** | Edit → Cmd-R → see change. No `toolchain build` for source edits. | Best UX. Requires Xcode to follow folder-reference symlinks (it does). |
-| Copy each build | Edit → `toolchain build` → Cmd-R → see change. Two-step every time. | Painful inner loop; rejected. |
+| **Symlink (chosen)** | Edit → Cmd-R → see change. No `kivyforge build` for source edits. | Best UX. Requires Xcode to follow folder-reference symlinks (it does). |
+| Copy each build | Edit → `kivyforge build` → Cmd-R → see change. Two-step every time. | Painful inner loop; rejected. |
 | Xcode folder reference directly to `app_dir` (no `<app>-ios/app` indirection) | Same iteration UX as symlink. | Adds awkward `../` paths inside the `.xcodeproj`; complicates `install_python`'s folder-walk argument; rejected for the readability/portability cost. |
 
 The symlink approach also has a nice property for source control: the user commits `pyproject.toml`, `pylock.ios.toml`, and their `.py` files. `<app>-ios/` is `.gitignore`-able in its entirety because it's regenerable.
@@ -133,17 +133,17 @@ source "$UTILS"
 # device and simulator builds never share compiled extension modules.
 if [ "$EFFECTIVE_PLATFORM_NAME" = "-iphonesimulator" ]; then
     PIP_DEPS_SRC="$PROJECT_DIR/pip-deps-simulator"
-    COLLECT_HINT="toolchain build --simulator"
+    COLLECT_HINT="kivyforge build --simulator"
 else
     PIP_DEPS_SRC="$PROJECT_DIR/pip-deps-device"
-    COLLECT_HINT="toolchain build --device"
+    COLLECT_HINT="kivyforge build --device"
 fi
 
 # Fail loudly if this platform's slice was never collected. Xcode picks the
 # slice from its own destination, so switching to an uncollected target would
 # otherwise ship an app with no dependencies (crash at launch).
 if [ ! -d "$PIP_DEPS_SRC" ] || [ -z "$(ls -A "$PIP_DEPS_SRC" 2>/dev/null)" ]; then
-    echo "error: $PIP_DEPS_SRC has no collected pip-deps for this platform. Run '$COLLECT_HINT' (or 'toolchain run') first, then rebuild."
+    echo "error: $PIP_DEPS_SRC has no collected pip-deps for this platform. Run '$COLLECT_HINT' (or 'kivyforge run') first, then rebuild."
     exit 1
 fi
 mkdir -p "$CODESIGNING_FOLDER_PATH/pip-deps"
@@ -169,11 +169,11 @@ Either trailing folder can be empty; `install_python` is a safe no-op for the fo
 
 > **`pip-deps` requires two registrations — both are mandatory.** Passing `pip-deps` to `install_python` handles the *build-time* side: every `.so` C extension inside it is wrapped in a per-module `.framework` and replaced with a `.fwork` marker. That step is necessary but not sufficient for importability. `main.m` must *also* register `pip-deps` as a **site directory** via `site.addsitedir()` (not merely append it to `PYTHONPATH`) — because pip-installed wheels routinely include `.pth` files (namespace packages, editable installs, path-manipulation plugins). Without `addsitedir()`, any package whose presence on `sys.path` depends on a `.pth` hook will be invisibly absent at runtime even though its files exist in the bundle. Neither half can be omitted: skipping the `install_python` argument leaves `.so` binaries outside `Frameworks/` (App Store rejection); skipping `addsitedir()` leaves `.pth`-dependent packages silently unimportable. See "`main.m` step 5" below.
 
-> **`app/` is pure-Python only.** `install_python` wraps any `.so` it finds in `app/`, but it does **not** cross-compile — a `.so` compiled on macOS targets the macOS architecture and will fail to load on an iOS device. Native or Cython extensions must be cross-compiled for iOS and delivered as iOS wheels (installed into `pip-deps/`); they cannot be dropped loose into `app/`. See [iOS artifact distribution §"App-specific native extensions"](artifact-distribution-ios.md). `toolchain doctor` flags any non-iOS `.so` found under `app/`.
+> **`app/` is pure-Python only.** `install_python` wraps any `.so` it finds in `app/`, but it does **not** cross-compile — a `.so` compiled on macOS targets the macOS architecture and will fail to load on an iOS device. Native or Cython extensions must be cross-compiled for iOS and delivered as iOS wheels (installed into `pip-deps/`); they cannot be dropped loose into `app/`. See [iOS artifact distribution §"App-specific native extensions"](artifact-distribution-ios.md). `kivyforge doctor` flags any non-iOS `.so` found under `app/`.
 
 ## `main.m` — Python embedding bootstrap
 
-The generated `main.m` is parameterized on `[tool.kivy].app_dir` + `[tool.kivy].entry_point` via generated compile-time defines. `toolchain build` writes:
+The generated `main.m` is parameterized on `[tool.kivy].app_dir` + `[tool.kivy].entry_point` via generated compile-time defines. `kivyforge build` writes:
 
 ```c
 #define APP_DIR          "@APP_DIR@"
@@ -244,11 +244,11 @@ The pbxproj generator sets the following (from the python.org docs §7.2.2 step 
 | `COPY_PHASE_STRIP` | `NO` | The SDL3 family and `Python.xcframework` ship ad-hoc code-signed; Xcode's built-in default (`YES`) tries to strip them while embedding and warns "not stripping binary because it is signed". `NO` matches Xcode's own template default and silences the warning. The app binary is still stripped via `STRIP_INSTALLED_PRODUCT` on Release archives — this only governs the copy/embed phase. |
 | `ASSETCATALOG_COMPILER_APPICON_NAME` | `AppIcon` *(only when `[tool.kivy.ios.icons].source` is set)* | Designates the generated `AppIcon` set in `Assets.xcassets` as the app icon. Without it the catalog still compiles, but Xcode assigns no icon and the `AppIcon.appiconset` is silently ignored. Emitted only when an icon is configured, so projects without one don't trigger Xcode's "missing AppIcon set" warning. |
 
-Beyond the build settings above, the generator sets the project's `LastUpgradeCheck` attribute to the **installed Xcode's version** — detected via `xcodebuild -version` and encoded as Xcode's integer version code (e.g. Xcode 26.5 → `2650`), with a built-in constant as fallback when Xcode can't be queried. Xcode shows the "Update to recommended settings" banner whenever `LastUpgradeCheck` is below the running Xcode; pinning it to the detected version suppresses that prompt without applying Xcode's recommendations — several of which (notably `ENABLE_USER_SCRIPT_SANDBOXING = YES`) would break the Build Python phase. It is refreshed on every build, so it tracks Xcode upgrades automatically rather than going stale at a hardcoded version. Detection happens in `toolchain build` (the CLI layer); the project generator itself stays hermetic and simply receives the value.
+Beyond the build settings above, the generator sets the project's `LastUpgradeCheck` attribute to the **installed Xcode's version** — detected via `xcodebuild -version` and encoded as Xcode's integer version code (e.g. Xcode 26.5 → `2650`), with a built-in constant as fallback when Xcode can't be queried. Xcode shows the "Update to recommended settings" banner whenever `LastUpgradeCheck` is below the running Xcode; pinning it to the detected version suppresses that prompt without applying Xcode's recommendations — several of which (notably `ENABLE_USER_SCRIPT_SANDBOXING = YES`) would break the Build Python phase. It is refreshed on every build, so it tracks Xcode upgrades automatically rather than going stale at a hardcoded version. Detection happens in `kivyforge build` (the CLI layer); the project generator itself stays hermetic and simply receives the value.
 
 ### Idempotency
 
-Re-running `toolchain build` on an existing project produces the same `.xcodeproj` content (modulo the UUIDs `pbxproj` generates). We sort entries deterministically inside each phase to minimize diff churn.
+Re-running `kivyforge build` on an existing project produces the same `.xcodeproj` content (modulo the UUIDs `pbxproj` generates). We sort entries deterministically inside each phase to minimize diff churn.
 
 ## Information flow
 
@@ -257,14 +257,14 @@ pyproject.toml
 ([project] + [tool.kivy.*])
      │
      ▼
-toolchain lock ──────────────────────────────────► PyPI / python.org  (resolve only)
+kivyforge lock ──────────────────────────────────► PyPI / python.org  (resolve only)
      │
      ▼
 pylock.ios.toml
 (PEP 751 + [tool.kivyforge])
      │
      ▼                          download / cache
-toolchain build ───────────►   ┌──────────────────┐◄── python.org   (Python.xcframework)
+kivyforge build ───────────►   ┌──────────────────┐◄── python.org   (Python.xcframework)
                                │                  │◄── PyPI         (wheels)
                                │                  │◄── GitHub       (xcframeworks)
                                └────────┬─────────┘
@@ -284,7 +284,7 @@ toolchain build ───────────►   ┌───────�
 
 ## Generated file inventory (per project)
 
-| File | Source | Regenerated by toolchain build? |
+| File | Source | Regenerated by kivyforge build? |
 |------|--------|----------------------------------|
 | `<app>.xcodeproj/project.pbxproj` | pbxproj generator | Yes (idempotent merge) |
 | `<app>.xcodeproj/xcshareddata/...` | static template | One-time |
@@ -301,7 +301,7 @@ toolchain build ───────────►   ┌───────�
 
 ## Final app bundle layout
 
-`toolchain build` produces the `<app>-ios/` source tree (step 1). Xcode then compiles and runs the "Build Python" Run Script phase, which calls `install_python` to transform that tree into the shipped `.app` bundle (step 2). The final bundle on-device looks like:
+`kivyforge build` produces the `<app>-ios/` source tree (step 1). Xcode then compiles and runs the "Build Python" Run Script phase, which calls `install_python` to transform that tree into the shipped `.app` bundle (step 2). The final bundle on-device looks like:
 
 ```
 <app>.app/

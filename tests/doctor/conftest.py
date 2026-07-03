@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from kivy_ios.config import load_config_from_text
+from kivyforge.config import load_config_from_text
 
 
 class FakeProbe:
@@ -42,7 +42,7 @@ class FakeProbe:
     def simulator_runtimes(self):
         return list(self._runtimes)
 
-    def latest_toolchain_version(self):
+    def latest_kivyforge_version(self):
         return self._latest
 
     def keychain_identities(self):

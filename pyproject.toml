@@ -39,8 +39,8 @@ Source = "https://github.com/ElliotGarbus/kivyforge"
 "Bug Reports" = "https://github.com/ElliotGarbus/kivyforge/issues"
 
 [project.scripts]
-# Entry point updated for 3.0 slim dispatcher; module created during implementation
-toolchain = "kivy_ios.cli:main"
+kivyforge = "kivyforge.cli:main"
+kf = "kivyforge.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -55,7 +55,7 @@ dev = [
 # ---------------------------------------------------------------------------
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["kivy_ios*"]
+include = ["kivyforge*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.md", "*.txt", "*.toml", "*.h", "*.m", "*.h.in"]
@@ -65,17 +65,17 @@ include = ["kivy_ios*"]
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--tb=short -q --cov=kivy_ios --cov-report=term-missing --cov-fail-under=80"
+addopts = "--tb=short -q --cov=kivyforge --cov-report=term-missing --cov-fail-under=80"
 
 # ---------------------------------------------------------------------------
 # coverage
 # ---------------------------------------------------------------------------
 [tool.coverage.run]
-source = ["kivy_ios"]
+source = ["kivyforge"]
 # Templates are app-runtime files placed in the built bundle, not library
 # code exercised by the test suite.
 omit = [
-    "kivy_ios/project/templates/*",
+    "kivyforge/project/templates/*",
 ]
 
 [tool.coverage.report]

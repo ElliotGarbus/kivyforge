@@ -16,7 +16,7 @@ if "pbxproj" not in sys.modules:
     sys.modules["pbxproj.pbxextensions"] = _pbx
     sys.modules["pbxproj.pbxextensions.ProjectFiles"] = _pbx
 
-from kivy_ios.doctor.probe import (  # noqa: E402
+from kivyforge.doctor.probe import (  # noqa: E402
     LC_BUILD_VERSION,
     PLATFORM_NAMES,
     RealProbe,
@@ -262,52 +262,52 @@ class TestRealProbe:
 
     def test_xcode_version_parses_output(self, monkeypatch):
         monkeypatch.setattr(
-            "kivy_ios.doctor.probe._capture",
+            "kivyforge.doctor.probe._capture",
             lambda _: "Xcode 16.0\nBuild version 16A242d\n",
         )
         assert self._probe().xcode_version() == "16.0"
 
     def test_xcode_version_empty_returns_none(self, monkeypatch):
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: "")
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().xcode_version() is None
 
     # --- pip_version ---
 
     def test_pip_version_parses_output(self, monkeypatch):
         monkeypatch.setattr(
-            "kivy_ios.doctor.probe._capture",
+            "kivyforge.doctor.probe._capture",
             lambda _: "pip 24.3.1 from /x/site-packages/pip (python 3.15)\n",
         )
         assert self._probe().pip_version() == "24.3.1"
 
     def test_pip_version_unavailable_returns_none(self, monkeypatch):
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: "")
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().pip_version() is None
 
     # --- xcode_select_path ---
 
     def test_xcode_select_path_returns_value(self, monkeypatch):
         monkeypatch.setattr(
-            "kivy_ios.doctor.probe._capture",
+            "kivyforge.doctor.probe._capture",
             lambda _: "/Applications/Xcode.app/Contents/Developer\n",
         )
         result = self._probe().xcode_select_path()
         assert result == "/Applications/Xcode.app/Contents/Developer\n"
 
     def test_xcode_select_path_empty_returns_none(self, monkeypatch):
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: "")
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().xcode_select_path() is None
 
     # --- has_xcrun_clang ---
 
     def test_has_xcrun_clang_true(self, monkeypatch):
         monkeypatch.setattr(
-            "kivy_ios.doctor.probe._capture", lambda _: "/usr/bin/clang"
+            "kivyforge.doctor.probe._capture", lambda _: "/usr/bin/clang"
         )
         assert self._probe().has_xcrun_clang() is True
 
     def test_has_xcrun_clang_false(self, monkeypatch):
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: "")
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().has_xcrun_clang() is False
 
     # --- simulator_runtimes ---
@@ -319,11 +319,11 @@ class TestRealProbe:
             "iOS 18.0 (18.0 - 22A3351) - com.apple.CoreSimulator.SimRuntime.iOS-18-0\n"
             "watchOS 11.0 (11.0 - 22R5339b) - ignored\n"
         )
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: output)
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: output)
         assert self._probe().simulator_runtimes() == ["17.5", "18.0"]
 
     def test_simulator_runtimes_empty_output(self, monkeypatch):
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: "")
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().simulator_runtimes() == []
 
     # --- keychain_identities ---
@@ -332,13 +332,13 @@ class TestRealProbe:
         output = (
             '  1) ABC123 "Apple Development: Test"\n  2) DEF456 "iPhone Distribution"\n'
         )
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: output)
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: output)
         ids = self._probe().keychain_identities()
         assert len(ids) == 2
         assert ids[0].startswith("1)")
 
     def test_keychain_identities_empty(self, monkeypatch):
-        monkeypatch.setattr("kivy_ios.doctor.probe._capture", lambda _: "")
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().keychain_identities() == []
 
     # --- tcp_reachable ---
@@ -367,18 +367,18 @@ class TestRealProbe:
         binary.write_bytes(_make_thin_macho(2))  # ios
         assert self._probe().binary_platforms(binary) == {"ios"}
 
-    # --- latest_toolchain_version ---
+    # --- latest_kivyforge_version ---
 
-    def test_latest_toolchain_version_success(self):
+    def test_latest_kivyforge_version_success(self):
         fake_resp = MagicMock()
         fake_resp.__enter__ = lambda s: s
         fake_resp.__exit__ = lambda s, *a: None
 
         with patch("urllib.request.urlopen", return_value=fake_resp):
             with patch("json.load", return_value={"info": {"version": "3.1.0"}}):
-                result = self._probe().latest_toolchain_version()
+                result = self._probe().latest_kivyforge_version()
         assert result == "3.1.0"
 
-    def test_latest_toolchain_version_network_error(self):
+    def test_latest_kivyforge_version_network_error(self):
         with patch("urllib.request.urlopen", side_effect=OSError("network")):
-            assert self._probe().latest_toolchain_version() is None
+            assert self._probe().latest_kivyforge_version() is None

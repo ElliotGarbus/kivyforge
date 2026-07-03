@@ -6,8 +6,8 @@ import textwrap
 
 import pytest
 
-from kivy_ios.config import load_config_from_text
-from kivy_ios.xcode.commands import (
+from kivyforge.config import load_config_from_text
+from kivyforge.xcode.commands import (
     SigningError,
     XcodeBuild,
     archive_command,
@@ -79,7 +79,7 @@ class TestBuildCommand:
         assert cmd[-1] == "build"
 
     def test_simulator_default_arch_matches_host(self, monkeypatch):
-        import kivy_ios.xcode.commands as commands
+        import kivyforge.xcode.commands as commands
 
         monkeypatch.setattr(commands.platform, "machine", lambda: "x86_64")
         assert commands.default_simulator_arch() == "x86_64"
@@ -183,7 +183,7 @@ class TestSigning:
         )
 
     def test_env_precedence(self, config):
-        tid = resolve_team_id(config, env={"KIVY_IOS_TEAM_ID": "ENVID"})
+        tid = resolve_team_id(config, env={"KIVYFORGE_TEAM_ID": "ENVID"})
         assert tid == "ENVID"
 
     def test_pyproject_team_id(self):
@@ -197,7 +197,7 @@ class TestSigning:
             _config('\n[tool.kivy.ios.signing]\nteam_id = "PROJID"')
         )
         tid = resolve_team_id(
-            cfg, team_id_flag="FLAG", env={"KIVY_IOS_TEAM_ID": "ENVID"}
+            cfg, team_id_flag="FLAG", env={"KIVYFORGE_TEAM_ID": "ENVID"}
         )
         assert tid == "FLAG"
 
@@ -215,7 +215,7 @@ class TestResolveSigningIdentity:
 
     def test_env_precedence(self, config):
         got = resolve_signing_identity(
-            config, env={"KIVY_IOS_SIGNING_IDENTITY": "Apple Development: Env"}
+            config, env={"KIVYFORGE_SIGNING_IDENTITY": "Apple Development: Env"}
         )
         assert got == "Apple Development: Env"
 
@@ -226,6 +226,6 @@ class TestResolveSigningIdentity:
         got = resolve_signing_identity(
             cfg,
             identity_flag="Apple Distribution: Flag",
-            env={"KIVY_IOS_SIGNING_IDENTITY": "Apple Development: Env"},
+            env={"KIVYFORGE_SIGNING_IDENTITY": "Apple Development: Env"},
         )
         assert got == "Apple Distribution: Flag"

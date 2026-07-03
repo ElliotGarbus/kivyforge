@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivy_ios.cli import doctor as doctor_mod
-from kivy_ios.cli import upgrade as upgrade_mod
-from kivy_ios.cli.clean import clean
-from kivy_ios.cli.doctor import doctor
-from kivy_ios.cli.status import _humanize, status
-from kivy_ios.cli.upgrade import upgrade
-from kivy_ios.lock import (
+from kivyforge.cli import doctor as doctor_mod
+from kivyforge.cli import upgrade as upgrade_mod
+from kivyforge.cli.clean import clean
+from kivyforge.cli.doctor import doctor
+from kivyforge.cli.status import _humanize, status
+from kivyforge.cli.upgrade import upgrade
+from kivyforge.lock import (
     LockedXcframework,
     Lockfile,
     PythonXcframework,
@@ -55,10 +55,10 @@ def _lock(text: str, *, xcframeworks=()) -> Lockfile:
         python_xcframework=PythonXcframework(
             version="3.15.0", url="https://example/py.tar.gz", sha256="c" * 64
         ),
-        toolchain_version="3.0.0.dev0",
+        kivyforge_version="3.0.0.dev0",
         generated_at="t",
         pyproject_sha256=compute_pyproject_sha256(text),
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
         xcframeworks=tuple(xcframeworks),
     )
 
@@ -118,7 +118,7 @@ class TestStatus:
     def test_lock_unreadable(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write(fs, lock=False)
-            # Valid TOML but missing [tool.kivy_ios] → LockError from reader
+            # Valid TOML but missing [tool.kivyforge] → LockError from reader
             (Path(fs) / "pylock.ios.toml").write_text("lock-version = '1.0'\n")
             result = runner.invoke(status, [])
             assert result.exit_code == 0
@@ -192,7 +192,7 @@ class TestClean:
                 cleared.append(True)
 
         monkeypatch.setattr(
-            "kivy_ios.cli.clean.ArtifactCache", lambda *a, **k: FakeCache()
+            "kivyforge.cli.clean.ArtifactCache", lambda *a, **k: FakeCache()
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write(fs)
@@ -202,7 +202,7 @@ class TestClean:
 
     def test_cache_only_without_pyproject(self, runner, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "kivy_ios.cli.clean.ArtifactCache",
+            "kivyforge.cli.clean.ArtifactCache",
             lambda *a, **k: type("C", (), {"clear": lambda self: None})(),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -273,7 +273,7 @@ class TestUpgrade:
             _write(fs, lock=False)
             result = runner.invoke(upgrade, [])
             assert result.exit_code != 0
-            assert "toolchain lock" in result.output
+            assert "kivyforge lock" in result.output
 
 
 class TestDoctor:
@@ -317,7 +317,7 @@ class TestDoctor:
         monkeypatch.setattr(doctor_mod, "RealProbe", lambda: FakeProbe())
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write(fs, lock=False)
-            # Valid TOML but missing [tool.kivy_ios] → LockError from the reader.
+            # Valid TOML but missing [tool.kivyforge] → LockError from the reader.
             (Path(fs) / "pylock.ios.toml").write_text("lock-version = '1.0'\n")
             result = runner.invoke(doctor, ["--offline"])
             assert "[FAIL] pylock.ios.toml" in result.output

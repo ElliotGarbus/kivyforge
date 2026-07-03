@@ -1,5 +1,5 @@
 lock-version = "1.0"
-created-by = "kivy-ios"
+created-by = "kivyforge"
 requires-python = ">=3.15"
 extras = []
 dependency-groups = []
@@ -11,7 +11,7 @@ version = "3.0.0"
 requires-python = ">=3.10"
 dependencies = [{ name = "more-itertools" }]
 
-[packages.tool.kivy_ios]
+[packages.tool.kivyforge]
 direct_requirement = true
 
 [[packages.wheels]]
@@ -34,7 +34,7 @@ name = "more-itertools"
 version = "10.5.0"
 requires-python = ">=3.8"
 
-[packages.tool.kivy_ios]
+[packages.tool.kivyforge]
 direct_requirement = true
 
 [[packages.wheels]]
@@ -42,14 +42,14 @@ name = "more_itertools-10.5.0-py3-none-any.whl"
 url = "https://files.pythonhosted.org/packages/bb/more_itertools-10.5.0-py3-none-any.whl"
 hashes = { sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
 
-[tool.kivy_ios]
+[tool.kivyforge]
 schema_version = 1
-toolchain_version = "3.0.0"
+kivyforge_version = "3.0.0"
 generated_at = "2026-05-27T00:00:00Z"
 pyproject_sha256 = "c92ea98cd71bdc1f60cd4294a499294ad715877fbbbdfc887765327b9538204b"
-tool_kivy_ios_schema_version = 1
+tool_kivyforge_schema_version = 1
 
-[tool.kivy_ios.python_xcframework]
+[tool.kivyforge.python_xcframework]
 version = "3.15.0"
 url = "https://www.python.org/ftp/python/3.15.0/python-3.15.0-iOS-XCframework.tar.gz"
 sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"

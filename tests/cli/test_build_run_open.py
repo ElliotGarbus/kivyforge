@@ -9,19 +9,19 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivy_ios.cli import build as build_cli
-from kivy_ios.cli import open_cmd as open_mod
-from kivy_ios.cli import run as run_mod
-from kivy_ios.cli.build import build
-from kivy_ios.cli.open_cmd import open_
-from kivy_ios.cli.run import run as run_cmd
-from kivy_ios.lock import (
+from kivyforge.cli import build as build_cli
+from kivyforge.cli import open_cmd as open_mod
+from kivyforge.cli import run as run_mod
+from kivyforge.cli.build import build
+from kivyforge.cli.open_cmd import open_
+from kivyforge.cli.run import run as run_cmd
+from kivyforge.lock import (
     Lockfile,
     PythonXcframework,
     compute_pyproject_sha256,
     dumps,
 )
-from kivy_ios.xcode import runner as runner_mod
+from kivyforge.xcode import runner as runner_mod
 
 PYPROJECT = (
     textwrap.dedent(
@@ -62,10 +62,10 @@ def _write_project(fs: str) -> Path:
         python_xcframework=PythonXcframework(
             version="3.15.0", url="https://example/py.tar.gz", sha256="c" * 64
         ),
-        toolchain_version="3.0.0.dev0",
+        kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256=compute_pyproject_sha256(PYPROJECT),
-        tool_kivy_ios_schema_version=1,
+        tool_kivyforge_schema_version=1,
     )
     (root / "pylock.ios.toml").write_text(dumps(lock))
     return root
@@ -151,7 +151,7 @@ class TestBuildStep7:
 
     def test_device_missing_team_id_fails_fast(self, runner, tmp_path, monkeypatch):
         # remove team_id from pyproject and clear env
-        monkeypatch.delenv("KIVY_IOS_TEAM_ID", raising=False)
+        monkeypatch.delenv("KIVYFORGE_TEAM_ID", raising=False)
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             root = _write_project(fs)
             text = (
@@ -167,10 +167,10 @@ class TestBuildStep7:
                 python_xcframework=PythonXcframework(
                     version="3.15.0", url="https://e/p.tar.gz", sha256="c" * 64
                 ),
-                toolchain_version="3.0.0.dev0",
+                kivyforge_version="3.0.0.dev0",
                 generated_at="t",
                 pyproject_sha256=compute_pyproject_sha256(text),
-                tool_kivy_ios_schema_version=1,
+                tool_kivyforge_schema_version=1,
             )
             root.joinpath("pylock.ios.toml").write_text(dumps(lock))
             result = runner.invoke(build, ["--device"])

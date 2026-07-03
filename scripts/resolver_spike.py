@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Resolver spike: can the current pip resolve/fetch iOS-tagged wheels?
 
-kivy-ios 3.0's `toolchain lock` needs to resolve dependencies to iOS wheels
-on a macOS *host* (cross-resolution), and `toolchain build` needs to install
+kivyforge 3.0's `kivyforge lock` needs to resolve dependencies to iOS wheels
+on a macOS *host* (cross-resolution), and `kivyforge build` needs to install
 those pinned wheels. This probes whether stock pip can do platform-tagged,
 binary-only resolution against a supplemental index, so we can decide the
 default resolver backend (pip) and whether a uv fallback is warranted.

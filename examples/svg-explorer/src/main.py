@@ -1,4 +1,4 @@
-"""SVG Explorer — an interactive kivy-ios 3.0 example.
+"""SVG Explorer — an interactive kivyforge 3.0 example.
 
 A richer Kivy app than ``hello-kivy``: it renders vector drawings with
 :class:`~kivy.uix.svg.SvgWidget` and lets you manipulate them with multitouch.

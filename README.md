@@ -91,20 +91,20 @@ The workflow below targets iOS — currently the only implemented platform. Run
 every command from the directory that contains your app's `pyproject.toml`.
 
       # 1. Seed [tool.kivy] / [tool.kivy.ios] config into pyproject.toml
-      toolchain init
+      kivyforge init
 
       # 2. Resolve dependencies into pylock.ios.toml
-      toolchain lock
+      kivyforge lock
 
       # 3. Download artifacts and generate <app>-ios/<app>.xcodeproj
-      toolchain build
+      kivyforge build
 
       # 4a. Open the project in Xcode and press Run...
-      toolchain open
+      kivyforge open
 
       # 4b. ...or build, install, and launch on the simulator from the CLI
-      toolchain build --simulator
-      toolchain run --simulator
+      kivyforge build --simulator
+      kivyforge run --simulator
 
 See the runnable examples for complete, copy-pasteable walk-throughs:
 
@@ -117,7 +117,7 @@ See the runnable examples for complete, copy-pasteable walk-throughs:
 - [`examples/pyobjus-ball`](examples/pyobjus-ball/) — calls native iOS APIs
   (CoreMotion, UIScreen) from Python via the Objective-C runtime.
 - [`examples/keychain-spm`](examples/keychain-spm/) — declares a remote Swift
-  Package (`KeychainAccess`), pins it with `toolchain lock`, and calls it from
+  Package (`KeychainAccess`), pins it with `kivyforge lock`, and calls it from
   Python through a local `@objc` shim package.
 
 ## Configuring your app
@@ -157,7 +157,7 @@ identity = "Apple Development"
 auto_signing = true
 ```
 
-`toolchain build` syncs your `app_dir` into the generated `<app>-ios/` tree on
+`kivyforge build` syncs your `app_dir` into the generated `<app>-ios/` tree on
 every run, so make changes in your source folder (e.g. `src/`), never in the
 generated project.
 
@@ -173,23 +173,23 @@ for `UrlRequest`).
 The verbs are platform-neutral; the descriptions and artifacts below reflect the
 iOS target available today.
 
-      toolchain init       Seed [tool.kivy] / [tool.kivy.ios] into pyproject.toml
-      toolchain lock       Generate pylock.ios.toml from pyproject.toml
-      toolchain build      Download artifacts, generate the Xcode project, build
-      toolchain run        Build (unless --no-build), install, and launch the app
-      toolchain open       Open <app>-ios/<app>.xcodeproj in Xcode
-      toolchain status     Show app identity, Python version, lock sync, build state
-      toolchain clean      Remove generated artifacts in the project folder
-      toolchain upgrade    Re-fetch pinned Python.xcframework / xcframework artifacts
-      toolchain doctor     Run environment and project health checks
+      kivyforge init       Seed [tool.kivy] / [tool.kivy.ios] into pyproject.toml
+      kivyforge lock       Generate pylock.ios.toml from pyproject.toml
+      kivyforge build      Download artifacts, generate the Xcode project, build
+      kivyforge run        Build (unless --no-build), install, and launch the app
+      kivyforge open       Open <app>-ios/<app>.xcodeproj in Xcode
+      kivyforge status     Show app identity, Python version, lock sync, build state
+      kivyforge clean      Remove generated artifacts in the project folder
+      kivyforge upgrade    Re-fetch pinned Python.xcframework / xcframework artifacts
+      kivyforge doctor     Run environment and project health checks
 
 Run `toolchain <command> -h` for the full set of options on any verb. A few
 common ones:
 
-- `toolchain lock --check` — CI pre-flight; exits non-zero if the lock is stale.
-- `toolchain build --simulator | --device | --release` — pick the build flavor.
-- `toolchain run --list-devices` — list available simulators and devices.
-- `toolchain clean --cache` — also flush the artifact download cache.
+- `kivyforge lock --check` — CI pre-flight; exits non-zero if the lock is stale.
+- `kivyforge build --simulator | --device | --release` — pick the build flavor.
+- `kivyforge run --list-devices` — list available simulators and devices.
+- `kivyforge clean --cache` — also flush the artifact download cache.
 
 Downloaded artifacts (`Python.xcframework` and other xcframeworks) are cached
 under `~/Library/Caches/kivy-ios/artifacts/` and shared across projects.
@@ -199,18 +199,18 @@ under `~/Library/Caches/kivy-ios/artifacts/` and shared across projects.
 A normal session is a one-time setup followed by a tight edit → run loop.
 The generated project **links** your source directory (`app/` is a symlink to
 `app_dir`), so editing Python source needs no rebuild — just relaunch. You only
-re-run `toolchain lock` when dependencies change, and `toolchain build` when you
+re-run `kivyforge lock` when dependencies change, and `kivyforge build` when you
 change app config (or need to regenerate the Xcode project).
 
 ```mermaid
 flowchart TD
-    A["toolchain init<br/>seed pyproject.toml"] --> B["Edit pyproject.toml<br/>dependencies + app config"]
+    A["kivyforge init<br/>seed pyproject.toml"] --> B["Edit pyproject.toml<br/>dependencies + app config"]
     B --> C["Write your app<br/>src/main.py"]
-    C --> D["toolchain lock<br/>→ pylock.ios.toml"]
-    D --> E["toolchain build<br/>fetch artifacts + generate .xcodeproj"]
+    C --> D["kivyforge lock<br/>→ pylock.ios.toml"]
+    D --> E["kivyforge build<br/>fetch artifacts + generate .xcodeproj"]
     E --> F{"Launch it"}
-    F -->|from the CLI| G["toolchain run --simulator"]
-    F -->|from Xcode| H["toolchain open → ⌘R"]
+    F -->|from the CLI| G["kivyforge run --simulator"]
+    F -->|from Xcode| H["kivyforge open → ⌘R"]
     G --> I(["Iterate"])
     H --> I
     I -->|changed Python source| F
@@ -218,9 +218,9 @@ flowchart TD
     I -->|changed dependencies| D
 ```
 
-Supporting commands fit around this loop: `toolchain status` shows whether your
-lock and build are current, `toolchain doctor` diagnoses environment problems,
-`toolchain upgrade` re-fetches the pinned runtime, and `toolchain clean` resets
+Supporting commands fit around this loop: `kivyforge status` shows whether your
+lock and build are current, `kivyforge doctor` diagnoses environment problems,
+`kivyforge upgrade` re-fetches the pinned runtime, and `kivyforge clean` resets
 the generated project when you want a fresh build.
 
 ## Development

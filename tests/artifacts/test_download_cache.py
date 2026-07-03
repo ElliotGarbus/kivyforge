@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from kivy_ios.artifacts.cache import DEFAULT_CACHE_ROOT, ArtifactCache
-from kivy_ios.artifacts.download import DownloadError, fetch_artifact
-from kivy_ios.artifacts.verify import HashMismatch, sha256_bytes, sha256_file
+from kivyforge.artifacts.cache import DEFAULT_CACHE_ROOT, ArtifactCache
+from kivyforge.artifacts.download import DownloadError, fetch_artifact
+from kivyforge.artifacts.verify import HashMismatch, sha256_bytes, sha256_file
 
 
 class FakeDownloader:
@@ -32,7 +32,7 @@ class TestCachePaths:
     def test_default_root(self):
         assert ArtifactCache().root == DEFAULT_CACHE_ROOT
         assert DEFAULT_CACHE_ROOT == (
-            Path.home() / "Library" / "Caches" / "kivy-ios" / "artifacts"
+            Path.home() / "Library" / "Caches" / "kivyforge" / "artifacts"
         )
 
 

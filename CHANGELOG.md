@@ -6,7 +6,7 @@
 and buildozer — a declarative, PEP 621-aligned build toolchain for Kivy apps
 aimed at every platform Kivy runs on. This first release implements the **iOS**
 target, built around pre-built Python.xcframeworks and pip-installable iOS wheels.
-The recipe-based `toolchain build-recipe` workflow is gone; see the
+The recipe-based `kivyforge build-recipe` workflow is gone; see the
 [design docs](docs/design/common/00-overview.md) and the updated README.
 
 ### What's new in 3.0
@@ -19,24 +19,24 @@ The recipe-based `toolchain build-recipe` workflow is gone; see the
   signing flags must be real booleans (a quoted `"false"` is rejected, not
   coerced to `true`), and `[tool.kivy.ios.xcode.build_settings]` values must be
   strings.
-- **Dependency locking** — `toolchain lock` resolves pure-Python and iOS wheel
+- **Dependency locking** — `kivyforge lock` resolves pure-Python and iOS wheel
   dependencies and writes `pylock.ios.toml` (PEP 751-inspired).
 - **Python.xcframework** — Python is distributed as a pre-built xcframework;
   no source compilation required on the developer machine.
 - **iOS wheels** — third-party packages are distributed as pre-built
-  `*-ios.whl` wheels; `toolchain build` downloads and integrates them.
-- **Xcode project generation** — `toolchain init` generates a complete
-  `.xcodeproj` via `pbxproj`; `toolchain open` launches Xcode.
+  `*-ios.whl` wheels; `kivyforge build` downloads and integrates them.
+- **Xcode project generation** — `kivyforge init` generates a complete
+  `.xcodeproj` via `pbxproj`; `kivyforge open` launches Xcode.
 - **SDL3** — Kivy 3.0 moves to SDL3; the generated project and Info.plist
   are configured for the SDL3 UIScene lifecycle out of the box.
 - **Mobile window/display geometry via `kivy.mobile`** — DPI, scale, safe-area
   insets, and keyboard height are provided by Kivy core's `kivy.mobile` module
   (kivy/kivy#9331), shipped in the Kivy iOS wheel. 
 - **Native iOS dependencies** — declare Swift Package Manager packages and
-  native `.xcframework` archives under `[tool.kivy.ios.native]`. `toolchain lock`
+  native `.xcframework` archives under `[tool.kivy.ios.native]`. `kivyforge lock`
   pins SPM packages to a concrete revision and resolves each xcframework archive
   (by URL or repo-relative path) into a SHA-256 + enumerated slice list in
-  `pylock.ios.toml`; `toolchain build` fetches, verifies, and wires them into the
+  `pylock.ios.toml`; `kivyforge build` fetches, verifies, and wires them into the
   Xcode project's Link / Embed phases per each entry's `link`/`embed` intent,
   pruning references for frameworks no longer present. When two sources stage the
   same `<name>.xcframework`, identical content (matching tree hash) is
@@ -47,8 +47,8 @@ The recipe-based `toolchain build-recipe` workflow is gone; see the
   a migration pointer.
 - **Requires Python ≥ 3.13 and pip ≥ 24.3** on the developer machine (macOS
   only). pip 24.3 added PEP 730 iOS platform-tag matching, which `toolchain
-  lock` relies on to resolve iOS wheels; `toolchain doctor` flags older pip and
-  `toolchain lock` fails fast with an upgrade hint.
+  lock` relies on to resolve iOS wheels; `kivyforge doctor` flags older pip and
+  `kivyforge lock` fails fast with an upgrade hint.
 
 ---
 
@@ -77,7 +77,7 @@ The recipe-based `toolchain build-recipe` workflow is gone; see the
 - Pillow not building [\#907](https://github.com/kivy/kivy-ios/issues/907)
 - Can't create a recipe  [\#906](https://github.com/kivy/kivy-ios/issues/906)
 - Linker Command Failure Error While Building Python3 [\#905](https://github.com/kivy/kivy-ios/issues/905)
-- MacOS toolchain build constantly failing \(I think due to C extension errors\) [\#901](https://github.com/kivy/kivy-ios/issues/901)
+- MacOS kivyforge build constantly failing \(I think due to C extension errors\) [\#901](https://github.com/kivy/kivy-ios/issues/901)
 - Unable to build with kivymd==2.0 [\#897](https://github.com/kivy/kivy-ios/issues/897)
 - Got dlopen error on Foundation [\#896](https://github.com/kivy/kivy-ios/issues/896)
 - Feature request: MatplotLib for iOS [\#712](https://github.com/kivy/kivy-ios/issues/712)
@@ -135,14 +135,14 @@ The recipe-based `toolchain build-recipe` workflow is gone; see the
 - Invalid Signature when adding Python to iOS App Extension [\#826](https://github.com/kivy/kivy-ios/issues/826)
 - APP crashes easily [\#824](https://github.com/kivy/kivy-ios/issues/824)
 - when creating xcodeproj using kivy-ios, how to change the default bundleIdentifier [\#823](https://github.com/kivy/kivy-ios/issues/823)
-- toolchain build: no matching architecture in universal wrapper [\#792](https://github.com/kivy/kivy-ios/issues/792)
+- kivyforge build: no matching architecture in universal wrapper [\#792](https://github.com/kivy/kivy-ios/issues/792)
 - Explanation to build recipe in iOS [\#776](https://github.com/kivy/kivy-ios/issues/776)
 - Support arm64 simulator on Apple Silicon hardware [\#751](https://github.com/kivy/kivy-ios/issues/751)
 - PyObjC import error  [\#741](https://github.com/kivy/kivy-ios/issues/741)
 - App Store Connect Operation Error Invalid Bundle Structure - The binary file '\*myapp\*.app/lib/python3.9/site-packages/google/protobuf/pyext/\_message.cpython-39-darwin.so' is not permitted. [\#702](https://github.com/kivy/kivy-ios/issues/702)
 - libzbar recipe missing libiconv dependency [\#676](https://github.com/kivy/kivy-ios/issues/676)
 - Lib Not Found [\#674](https://github.com/kivy/kivy-ios/issues/674)
--  toolchain build kivy Error [\#668](https://github.com/kivy/kivy-ios/issues/668)
+-  kivyforge build kivy Error [\#668](https://github.com/kivy/kivy-ios/issues/668)
 - leverage conda to create the host\* packages  [\#655](https://github.com/kivy/kivy-ios/issues/655)
 - ImportError: dynamic module does not define module export function \(PyInit\_\_imaging\) [\#644](https://github.com/kivy/kivy-ios/issues/644)
 - kivy ios and boto3 [\#641](https://github.com/kivy/kivy-ios/issues/641)
@@ -241,7 +241,7 @@ The recipe-based `toolchain build-recipe` workflow is gone; see the
 - dynamic module does not define module export function \(PyInit\_md\) error [\#772](https://github.com/kivy/kivy-ios/issues/772)
 - Toolchain 407 duplicate error of arm64 [\#771](https://github.com/kivy/kivy-ios/issues/771)
 - bash: toolchain: command not found [\#770](https://github.com/kivy/kivy-ios/issues/770)
-- when running toolchain build python3 kivy pillow with arch arm64 with apple sicion getting list index out of range [\#769](https://github.com/kivy/kivy-ios/issues/769)
+- when running kivyforge build python3 kivy pillow with arch arm64 with apple sicion getting list index out of range [\#769](https://github.com/kivy/kivy-ios/issues/769)
 - Error compiling SDL\_Image [\#763](https://github.com/kivy/kivy-ios/issues/763)
 - ImportError: dynamic module does not define module export function \(PyInit\_PIL\_\_imaging\) [\#711](https://github.com/kivy/kivy-ios/issues/711)
 - Build python3 with mmap module [\#659](https://github.com/kivy/kivy-ios/issues/659)

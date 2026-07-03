@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build KivyiOSBootstrap.xcframework from the kivy_ios_bootstrap.{h,m} sources.
+# Build KivyiOSBootstrap.xcframework from the kivyforge_bootstrap.{h,m} sources.
 #
 # This script is provided for reference and future automation. The xcframework
-# is NOT currently required — toolchain build compiles kivy_ios_bootstrap.m
+# is NOT currently required — kivyforge build compiles kivyforge_bootstrap.m
 # directly as part of the generated Xcode project. The xcframework step
 # would be the natural next move once the source-based approach is validated.
 #
@@ -16,18 +16,18 @@
 #
 #   Defaults:
 #     SDL3_XCFW_DIR   .build/ios-wheels/kivy/ios-kivy-dependencies/dist/Frameworks/SDL3.xcframework
-#     PYTHON_XCFW_DIR ~/Library/Caches/kivy-ios/artifacts/Python.xcframework
+#     PYTHON_XCFW_DIR ~/Library/Caches/kivyforge/artifacts/Python.xcframework
 #
-# Output: kivy_ios/project/frameworks/KivyiOSBootstrap.xcframework
+# Output: kivyforge/project/frameworks/KivyiOSBootstrap.xcframework
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$ROOT/kivy_ios/project/templates"
-OUT="$ROOT/kivy_ios/project/frameworks/KivyiOSBootstrap.xcframework"
+SRC="$ROOT/kivyforge/project/templates"
+OUT="$ROOT/kivyforge/project/frameworks/KivyiOSBootstrap.xcframework"
 
 SDL3_XCFW="${1:-$ROOT/.build/ios-wheels/kivy/ios-kivy-dependencies/dist/Frameworks/SDL3.xcframework}"
-PYTHON_XCFW="${2:-$HOME/Library/Caches/kivy-ios/artifacts/Python.xcframework}"
+PYTHON_XCFW="${2:-$HOME/Library/Caches/kivyforge/artifacts/Python.xcframework}"
 
 if [[ ! -d "$SDL3_XCFW" ]]; then
     echo "SDL3.xcframework not found at: $SDL3_XCFW"
@@ -37,11 +37,11 @@ fi
 
 if [[ ! -d "$PYTHON_XCFW" ]]; then
     echo "Python.xcframework not found at: $PYTHON_XCFW"
-    echo "Run 'toolchain build' once to download it, or pass path as \$2."
+    echo "Run 'kivyforge build' once to download it, or pass path as \$2."
     exit 1
 fi
 
-BUILD="$(mktemp -d /tmp/kivy-ios-bootstrap.XXXXXX)"
+BUILD="$(mktemp -d /tmp/kivyforge-bootstrap.XXXXXX)"
 trap 'rm -rf "$BUILD"' EXIT
 
 # SDL3 header paths per slice
@@ -67,7 +67,7 @@ compile_slice() {
         -I"$py_headers" \
         -I"$SRC" \
         -fmodules -fobjc-arc \
-        -c "$SRC/kivy_ios_bootstrap.m" \
+        -c "$SRC/kivyforge_bootstrap.m" \
         -o "$out"
 }
 
@@ -96,7 +96,7 @@ xcrun lipo -create \
     -output "$BUILD/simulator.a"
 
 mkdir -p "$BUILD/headers"
-cp "$SRC/kivy_ios_bootstrap.h" "$BUILD/headers/"
+cp "$SRC/kivyforge_bootstrap.h" "$BUILD/headers/"
 
 echo "Assembling xcframework ..."
 rm -rf "$OUT"

@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from kivy_ios.artifacts.verify import sha256_file
-from kivy_ios.config.model import XcframeworkDep
-from kivy_ios.lock.xcframework import (
+from kivyforge.artifacts.verify import sha256_file
+from kivyforge.config.model import XcframeworkDep
+from kivyforge.lock.xcframework import (
     XcframeworkResolverError,
     resolve_xcframeworks,
 )

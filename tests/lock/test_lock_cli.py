@@ -1,12 +1,12 @@
-"""Phase 3 — toolchain lock CLI: write, in-sync no-op, --update, --check (spec 05)."""
+"""Phase 3 — kivyforge lock CLI: write, in-sync no-op, --update, --check (spec 05)."""
 
 from __future__ import annotations
 
 import pytest
 from click.testing import CliRunner
 
-from kivy_ios.cli import lock as lock_cli
-from kivy_ios.cli.lock import lock
+from kivyforge.cli import lock as lock_cli
+from kivyforge.cli.lock import lock
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def runner():
 @pytest.fixture(autouse=True)
 def patch_backends(monkeypatch, fake_resolver, fake_python_provider):
     """Make the CLI use the hermetic fakes instead of pip/python.org."""
-    import kivy_ios.lock.builder as builder
+    import kivyforge.lock.builder as builder
 
     real_build = builder.build_lockfile
 

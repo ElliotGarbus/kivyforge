@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from kivy_ios.config import load_config_from_text
-from kivy_ios.lock import BuildError, build_lockfile
-from kivy_ios.lock.find_links import (
+from kivyforge.config import load_config_from_text
+from kivyforge.lock import BuildError, build_lockfile
+from kivyforge.lock.find_links import (
     FindLinksError,
     find_links_doctor_detail,
     find_links_resolution_hint,
@@ -58,7 +58,7 @@ class TestValidateFindLinks:
         validate_find_links(app, ("../wheels",))
 
     def test_error_includes_hint(self, tmp_path):
-        with pytest.raises(FindLinksError, match="toolchain lock"):
+        with pytest.raises(FindLinksError, match="kivyforge lock"):
             validate_find_links(tmp_path, ("wheels",))
 
 
@@ -176,7 +176,7 @@ class TestBuildUsesFindLinksValidation:
         assert resolver.calls == []
 
     def test_normalize_sibling_wheel_path(self, tmp_path):
-        from kivy_ios.lock.builder import _normalize_wheel_source
+        from kivyforge.lock.builder import _normalize_wheel_source
 
         app = tmp_path / "app"
         shared = tmp_path / "wheels"

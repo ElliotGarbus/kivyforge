@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from kivy_ios.config import load_config_from_text
+from kivyforge.config import load_config_from_text
 
 
 def _cfg(extra: str = "") -> str:

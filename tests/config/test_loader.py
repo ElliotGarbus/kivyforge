@@ -6,8 +6,8 @@ import textwrap
 
 import pytest
 
-from kivy_ios.config import ConfigError, load_config, load_config_from_text
-from kivy_ios.config.model import SwiftPackageDep, XcframeworkDep
+from kivyforge.config import ConfigError, load_config, load_config_from_text
+from kivyforge.config.model import SwiftPackageDep, XcframeworkDep
 
 
 def load(toml: str, **kw):
@@ -291,12 +291,12 @@ class TestRule3SchemaVersion:
             )
 
     def test_too_new(self):
-        with pytest.raises(ConfigError, match="newer than this kivy-ios") as exc:
+        with pytest.raises(ConfigError, match="newer than this kivyforge") as exc:
             load(
                 "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
                 "[tool.kivy.ios]\nschema_version=99\nbundle_id='org.x.a'"
             )
-        assert "upgrade kivy-ios" in exc.value.format()
+        assert "upgrade kivyforge" in exc.value.format()
 
 
 class TestRule4BundleId:

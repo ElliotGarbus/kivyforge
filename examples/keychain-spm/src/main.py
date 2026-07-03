@@ -1,10 +1,10 @@
-"""keychain-spm — a kivy-ios 3.0 Swift Package Manager example.
+"""keychain-spm — a kivyforge 3.0 Swift Package Manager example.
 
 Demonstrates the full SPM feature plus the `@objc` shim pattern:
 
   * A *remote* SPM package (``KeychainAccess``) is declared in
-    ``pyproject.toml``, resolved + pinned by ``toolchain lock``, and embedded
-    into the app by ``toolchain build``.
+    ``pyproject.toml``, resolved + pinned by ``kivyforge lock``, and embedded
+    into the app by ``kivyforge build``.
   * A *local* shim package (``KeychainBridge``, under ``swift-shims/``) wraps
     KeychainAccess's pure-Swift API behind a small ``@objc`` class.
   * This Python app calls that shim through ``pyobjus`` to store, load, and

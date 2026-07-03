@@ -19,7 +19,7 @@ directory that contains your `pyproject.toml`.
 | `lock` | Resolve `[project].dependencies` and `[tool.kivy.ios.native.xcframeworks]`; write `pylock.ios.toml`. `--check` exits non-zero if the lock is out of date without writing (CI pre-flight). |
 | `build` | Download artifacts, populate `pip-deps/` and `Frameworks/`, and (re)generate the `<app>-ios/` Xcode project. Without target flags, stops here — the project is ready to open in Xcode IDE. |
 | `build --simulator\|--device\|--release` | Same as `build`, then invokes `xcodebuild`. `--simulator` / `--device`: Debug build. `--release`: archives and exports a `.ipa` to `<app>-ios/build/<app>.ipa` (App Store / TestFlight). |
-| `open` | Open the generated `<app>-ios/<app>.xcodeproj` in Xcode. Typical developer flow: `toolchain build` → `toolchain open` → select device in Xcode → ⌘R. |
+| `open` | Open the generated `<app>-ios/<app>.xcodeproj` in Xcode. Typical developer flow: `kivyforge build` → `kivyforge open` → select device in Xcode → ⌘R. |
 | `run [--simulator\|--device] [--destination NAME_OR_UDID]` | Build (unless `--no-build`), install, and launch the app on a simulator or connected device. Single-command alternative to the Xcode IDE flow. |
 | `upgrade` | Re-download pinned `Python.xcframework` and xcframework artifacts per the existing lock. Does not touch pip-deps, the Xcode project, or app code. |
 | `clean [--cache]` | Remove generated artifacts in the project folder. With `--cache`, also flush the artifact download cache. |
@@ -28,13 +28,13 @@ directory that contains your `pyproject.toml`.
 
 ## Verb-by-verb specifics
 
-### `toolchain init`
+### `kivyforge init`
 
 Flags:
 
 - `--force` (overwrite an existing `[tool.kivy.ios]` table)
 
-`toolchain init` is a pure file-in / file-out operation: it reads the user's `pyproject.toml`, auto-fills metadata, and writes `[tool.kivy]` + `[tool.kivy.ios]`. A `pyproject.toml` is required — init does not migrate `requirements.txt` automatically.
+`kivyforge init` is a pure file-in / file-out operation: it reads the user's `pyproject.toml`, auto-fills metadata, and writes `[tool.kivy]` + `[tool.kivy.ios]`. A `pyproject.toml` is required — init does not migrate `requirements.txt` automatically.
 
 **If `requirements.txt` is found but no `pyproject.toml`**, init exits non-zero with a migration pointer:
 
@@ -51,12 +51,12 @@ Error: requirements.txt found but no pyproject.toml.
         # ... paste your other requirements here
     ]
 
-  Then re-run toolchain init.
+  Then re-run kivyforge init.
 ```
 
-Version pinning of `[project].dependencies` is **not** init's job — that is `toolchain lock`'s responsibility (it resolves the full graph to exact wheels in `pylock.ios.toml`). Init never rewrites an existing `[project]`. A venv is not required; if one is active, init uses it only to **warn** when an installed version falls outside a declared specifier (an informational nudge, never a rewrite).
+Version pinning of `[project].dependencies` is **not** init's job — that is `kivyforge lock`'s responsibility (it resolves the full graph to exact wheels in `pylock.ios.toml`). Init never rewrites an existing `[project]`. A venv is not required; if one is active, init uses it only to **warn** when an installed version falls outside a declared specifier (an informational nudge, never a rewrite).
 
-**Write path (`pyproject.toml` already exists):** init *only* adds or updates the `[tool.kivy]` and `[tool.kivy.ios]` tables. It never modifies `[project]`, `[tool.poetry]`, `[tool.pdm]`, or any other non-kivy namespace. Authoritative version pinning happens later, in `pylock.ios.toml`, via `toolchain lock`.
+**Write path (`pyproject.toml` already exists):** init *only* adds or updates the `[tool.kivy]` and `[tool.kivy.ios]` tables. It never modifies `[project]`, `[tool.poetry]`, `[tool.pdm]`, or any other non-kivy namespace. Authoritative version pinning happens later, in `pylock.ios.toml`, via `kivyforge lock`.
 
 **`app_dir` / `entry_point`**: init seeds `app_dir = "src"` and `entry_point = "main"` (the recommended layout). `app_dir` is required and must name a subdirectory — the project root (`"."`) is rejected (see [common pyproject spec §"`app_dir` + `entry_point` interaction"](../../common/01-pyproject-kivy-spec.md#app_dir--entry_point-interaction)). A project that keeps its code somewhere other than `src/` adjusts the seeded value by hand, the same way it fills in `bundle_id` and `signing.team_id`.
 
@@ -64,7 +64,7 @@ Version pinning of `[project].dependencies` is **not** init's job — that is `t
 
 **`--force`**: without it, init exits non-zero if `[tool.kivy.ios]` already exists. With it, the `[tool.kivy.*]` tables are regenerated, but the **user-specific values that init can't re-derive are preserved** rather than reset: the full `[tool.kivy.ios.signing]` table (`team_id`, `identity`, `provisioning_profile`, `auto_signing`), the pinned `[tool.kivy.ios.python].version`, the `simulator_archs` list, and the `[tool.kivy.ios.icons]` / `[tool.kivy.ios.splash]` sources/background. Each is preserved only when the user actually set it; an untouched commented stub is re-emitted as a stub so the default still holds. Silently resetting any of these would break a project that already has working signing, a chosen Python pin, a narrowed simulator set, or configured assets. (Other fields — `deployment_target`, `orientation`, the `exclude` block, etc. — are regenerated to their template defaults on `--force`.)
 
-### `toolchain lock`
+### `kivyforge lock`
 
 Flags:
 
@@ -74,13 +74,13 @@ Flags:
 
 Lock acts on the current working directory's `pyproject.toml`. Exits non-zero with a clear error if no pyproject is present or it lacks `[tool.kivy.ios]`.
 
-**`--check` mode.** Performs the full resolution (same as a normal `toolchain lock` run) but writes nothing. If the computed lockfile matches the existing `pylock.ios.toml` exactly, exits 0. If it differs, prints a summary of what changed (packages added/removed/updated, xcframework version changes) and exits non-zero. Typical CI use:
+**`--check` mode.** Performs the full resolution (same as a normal `kivyforge lock` run) but writes nothing. If the computed lockfile matches the existing `pylock.ios.toml` exactly, exits 0. If it differs, prints a summary of what changed (packages added/removed/updated, xcframework version changes) and exits non-zero. Typical CI use:
 
 ```yaml
-- run: toolchain lock --check   # fail PR if pyproject.toml was edited without re-locking
+- run: kivyforge lock --check   # fail PR if pyproject.toml was edited without re-locking
 ```
 
-### `toolchain build`
+### `kivyforge build`
 
 Flags:
 
@@ -97,7 +97,7 @@ Flags:
 1. Verify `pyproject.toml` and `pylock.ios.toml` are present and in sync (drift check on `[tool.kivyforge].pyproject_sha256`).
 2. Download (or cache hit) `Python.xcframework` from `[tool.kivyforge.python_xcframework]`, extract into `<app>-ios/Python.xcframework/`.
 3. Download (or cache hit) every `[[tool.kivyforge.xcframeworks]]` artifact into `<app>-ios/Frameworks/`.
-4. Install the pinned wheels for every `[[packages]]` entry with iOS cross-install flags (see step details below) into the per-target slice directory — `pip-deps-device/` or `pip-deps-simulator/` — never a shared `pip-deps/`, so device and simulator builds never mix compiled `.so` extensions. A targeted `build` populates only the slice it is about to build; a bare `build` (no target) populates both. The Xcode "Build Python" run script later `rsync`s the slice matching the active destination into the app bundle, and fails the build with an actionable error if that slice was never collected (see [Xcode project generation](xcode-project-generation.md)). The lock already holds the full transitive set with resolved URLs/hashes, so `--no-deps` is used and pip does not re-resolve. This does **not** go through pip's experimental `-r pylock.toml` reader (which, as of pip 26.1, ignores these platform-selection flags); `toolchain build` installs the pinned wheels itself.
+4. Install the pinned wheels for every `[[packages]]` entry with iOS cross-install flags (see step details below) into the per-target slice directory — `pip-deps-device/` or `pip-deps-simulator/` — never a shared `pip-deps/`, so device and simulator builds never mix compiled `.so` extensions. A targeted `build` populates only the slice it is about to build; a bare `build` (no target) populates both. The Xcode "Build Python" run script later `rsync`s the slice matching the active destination into the app bundle, and fails the build with an actionable error if that slice was never collected (see [Xcode project generation](xcode-project-generation.md)). The lock already holds the full transitive set with resolved URLs/hashes, so `--no-deps` is used and pip does not re-resolve. This does **not** go through pip's experimental `-r pylock.toml` reader (which, as of pip 26.1, ignores these platform-selection flags); `kivyforge build` installs the pinned wheels itself.
 5. Walk every installed wheel in `pip-deps/` for a `.frameworks/` subdirectory; copy each `<name>.xcframework` found into `<app>-ios/Frameworks/`. This is how wheel-embedded xcframeworks arrive — for the canonical Kivy app, ANGLE and the SDL3 family ride inside the kivy wheel and land here. See [Xcode project generation §"Populating Frameworks/"](xcode-project-generation.md#populating-frameworks).
 6. (Re)generate `<app>-ios/<app>.xcodeproj` via `pbxproj` per [Xcode project generation](xcode-project-generation.md).
 7. *(Only when `--simulator`, `--device`, or `--release` is passed)* Invoke `xcodebuild` for the selected configuration.
@@ -107,7 +107,7 @@ Flags:
      Error: code signing required for --device/--release, but no team_id is set.
        Set it one of these ways:
          • [tool.kivy.ios.signing].team_id = "ABCDE12345" in pyproject.toml, then re-lock
-         • toolchain build --release --team-id ABCDE12345
+         • kivyforge build --release --team-id ABCDE12345
          • export KIVYFORGE_TEAM_ID=ABCDE12345
      ```
 
@@ -131,7 +131,7 @@ The `--platform` tag passed to pip is derived from the build target and `--arch`
 
 `<target>` uses the platform-tag form with dots replaced by underscores (e.g. `13.0` → `13_0`). End users never type a raw pip command; the flags are derived from the lockfile and the CLI args.
 
-### `toolchain run`
+### `kivyforge run`
 
 Flags:
 
@@ -142,13 +142,13 @@ Flags:
 
 > **Note:** `--device` and `--destination` serve different roles and must not be conflated. `--device` is a boolean mode selector (iphoneos SDK); `--destination` is a string option naming the exact target. This mirrors xcodebuild's own `-destination` vocabulary.
 
-**Implicit build step.** By default `toolchain run` performs a full `toolchain build` (steps 1–6) for the selected target before installing and launching. This makes `toolchain run` a single command from source to running app, without requiring the user to remember to build first. Specifically:
+**Implicit build step.** By default `kivyforge run` performs a full `kivyforge build` (steps 1–6) for the selected target before installing and launching. This makes `kivyforge run` a single command from source to running app, without requiring the user to remember to build first. Specifically:
 
-- `toolchain run` → equivalent to `toolchain build --simulator && install && launch`
-- `toolchain run --device` → equivalent to `toolchain build --device && install && launch`
-- `toolchain run --no-build` → skip steps 1–6; go straight to install + launch (requires a previously compiled `.app`)
+- `kivyforge run` → equivalent to `kivyforge build --simulator && install && launch`
+- `kivyforge run --device` → equivalent to `kivyforge build --device && install && launch`
+- `kivyforge run --no-build` → skip steps 1–6; go straight to install + launch (requires a previously compiled `.app`)
 
-If the lock is out of date (drift check fails in step 1), `run` propagates the same error as `toolchain build` and exits non-zero before doing anything else.
+If the lock is out of date (drift check fails in step 1), `run` propagates the same error as `kivyforge build` and exits non-zero before doing anything else.
 
 **Install and launch sequence:**
 
@@ -157,22 +157,22 @@ If the lock is out of date (drift check fails in step 1), `run` propagates the s
 
 Implementation uses `xcrun simctl` for simulators and `xcrun devicectl` (or `ios-deploy` if needed) for devices.
 
-### `toolchain open`
+### `kivyforge open`
 
 Opens the generated Xcode project in Xcode IDE:
 
 ```bash
-toolchain open        # equivalent to: open <app>-ios/<app>.xcodeproj
+kivyforge open        # equivalent to: open <app>-ios/<app>.xcodeproj
 ```
 
-No flags. Exits with a clear error if `toolchain build` hasn't been run yet (i.e. the `.xcodeproj` doesn't exist). The typical Xcode-IDE-centred workflow is:
+No flags. Exits with a clear error if `kivyforge build` hasn't been run yet (i.e. the `.xcodeproj` doesn't exist). The typical Xcode-IDE-centred workflow is:
 
 ```bash
-toolchain init && toolchain lock && toolchain build
-toolchain open   # → select simulator/device in Xcode → ⌘R
+kivyforge init && kivyforge lock && kivyforge build
+kivyforge open   # → select simulator/device in Xcode → ⌘R
 ```
 
-### `toolchain upgrade`
+### `kivyforge upgrade`
 
 Flags:
 
@@ -182,18 +182,18 @@ Flags:
 
 `upgrade` re-fetches the pinned `Python.xcframework` and/or `[[tool.kivyforge.xcframeworks]]` artifacts per the **existing lockfile** — it does not reinstall pip-deps, does not regenerate the Xcode project, and does not invoke xcodebuild. Its purpose is narrowly "refresh a downloaded artifact without touching the rest of the project": use it when an artifact was deleted from the local cache, when you want to verify the cached copy against the pinned SHA-256 again, or when a CI job needs a clean artifact cache warmed before the build step.
 
-To pick up *newer* versions, the user edits `pyproject.toml` and re-runs `toolchain lock` — then `toolchain build` (or `toolchain run`) materializes the new lock. Separation of concerns: `lock` changes versions; `upgrade` re-downloads the current pins; `build` installs everything and regenerates the project.
+To pick up *newer* versions, the user edits `pyproject.toml` and re-runs `kivyforge lock` — then `kivyforge build` (or `kivyforge run`) materializes the new lock. Separation of concerns: `lock` changes versions; `upgrade` re-downloads the current pins; `build` installs everything and regenerates the project.
 
-If none of `--python`, `--xcframeworks`, or `--name` is given, all pinned artifact downloads (Python.xcframework + every `[[tool.kivyforge.xcframeworks]]` entry) are refreshed. Pip-deps wheels are never touched by `upgrade`; re-running `toolchain build` handles those.
+If none of `--python`, `--xcframeworks`, or `--name` is given, all pinned artifact downloads (Python.xcframework + every `[[tool.kivyforge.xcframeworks]]` entry) are refreshed. Pip-deps wheels are never touched by `upgrade`; re-running `kivyforge build` handles those.
 
-### `toolchain clean`
+### `kivyforge clean`
 
 Flags:
 
 - `--cache` (also flush `~/Library/Caches/kivyforge/artifacts/` — the macOS-standard cache location)
 - `--project-only` (only the generated `<app>-ios/` folder; default)
 
-### `toolchain status`
+### `kivyforge status`
 
 No flags. Read-only; exits 0 always (even when the project is out of sync — it reports state, it does not enforce it).
 
@@ -213,13 +213,13 @@ Build:
 | App name | `[project].name` / `[tool.kivy].display_name` |
 | Bundle ID | `[tool.kivy.ios].bundle_id` |
 | Python version | `[tool.kivy.ios.python].version` (from pyproject) |
-| Lock | compares `pyproject_sha256` in lock against current `pyproject.toml` hash — reports `in sync`, `out of date` (run `toolchain lock`), or `missing` |
+| Lock | compares `pyproject_sha256` in lock against current `pyproject.toml` hash — reports `in sync`, `out of date` (run `kivyforge lock`), or `missing` |
 | Build / simulator | presence and mtime of the simulator `.app` in `DerivedData` or `<app>-ios/build/` |
 | Build / device | same for the device build |
 
-`status` is intentionally read-only and has no side effects. It answers "what state is my project in?" without the system-health scope of `toolchain doctor`. Exits non-zero only if no `pyproject.toml` is found in CWD.
+`status` is intentionally read-only and has no side effects. It answers "what state is my project in?" without the system-health scope of `kivyforge doctor`. Exits non-zero only if no `pyproject.toml` is found in CWD.
 
-### `toolchain doctor`
+### `kivyforge doctor`
 
 Substantive checks (not a placeholder), inspired by `flutter doctor`:
 
@@ -241,7 +241,7 @@ Substantive checks (not a placeholder), inspired by `flutter doctor`:
 | find_links directories | project | If `[tool.kivy.ios].find_links` is set, validate each entry: FAIL if it is not an existing directory; WARN if it exists but contains no `.whl` files. SKIP if not configured. |
 | Required hosts reachable | project | TCP connect to every host the lockfile will actually fetch from — the union of hosts in all `[[packages.wheels]].url` entries (PyPI, supplemental indexes, or direct sources), all `[[tool.kivyforge.xcframeworks]].url` entries, and `[tool.kivyforge.python_xcframework].url` (normally `www.python.org`). The host list is derived from `pylock.ios.toml`; no hosts are hardcoded. `path`-based (vendored) entries are skipped — there is nothing to reach. |
 | App-local native binaries | project | Scan `app_dir` for `.so`/`.dylib` files; FAIL on any non-iOS-architecture binary (a macOS-compiled extension dropped in `app/` won't load on device — native code belongs in an iOS wheel, see [iOS artifact distribution §"App-specific native extensions"](artifact-distribution-ios.md)). WARN on any binary whose platform can't be read (truncated, corrupt, or not a Mach-O) — it can't be confirmed iOS-safe. |
-| App-level privacy manifest | project | WARN if `<app>-ios/PrivacyInfo.xcprivacy` is absent (project not yet built, or file was deleted). INFO note that the toolchain generates a minimal stub on next `toolchain build`; if the app uses required-reason APIs the user must supply a `[tool.kivy.ios.privacy_manifest].source`. |
+| App-level privacy manifest | project | WARN if `<app>-ios/PrivacyInfo.xcprivacy` is absent (project not yet built, or file was deleted). INFO note that the toolchain generates a minimal stub on next `kivyforge build`; if the app uses required-reason APIs the user must supply a `[tool.kivy.ios.privacy_manifest].source`. |
 | xcframework privacy manifests | project | For each `.xcframework` in `<app>-ios/Frameworks/`, WARN if no `PrivacyInfo.xcprivacy` is found in any of its slices. The warning names the framework and notes that its author must add one; kivyforge cannot add it on their behalf. |
 
 `doctor` reports each check as PASS / WARN / FAIL with a remediation hint. Exit code is non-zero only on FAIL.
@@ -250,7 +250,7 @@ Substantive checks (not a placeholder), inspired by `flutter doctor`:
 
 Kivy apps need runtime geometry the platform owns — display DPI, scale, safe-area insets, and live software-keyboard height. Earlier previews of the toolchain vendored this as a pure-Python `ios.py` (plus a `mobile.py` preview) into every generated project at `<app>-ios/platform/`. That was always a placeholder: the implementation belongs in Kivy, not the build tool.
 
-As of [kivy/kivy#9331](https://github.com/kivy/kivy/pull/9331) it lives in **Kivy core** as `kivy.mobile`, shipped inside the Kivy iOS wheel. `kivy.mobile._platform.ios` provides the same geometry via the ObjC runtime (`ctypes`, no extra dependency); Kivy's own `metrics.py` and `core/window` import from `kivy.mobile` instead of a bare `import ios`. **kivyforge no longer vendors any platform shim** — `toolchain build` writes no `platform/` directory.
+As of [kivy/kivy#9331](https://github.com/kivy/kivy/pull/9331) it lives in **Kivy core** as `kivy.mobile`, shipped inside the Kivy iOS wheel. `kivy.mobile._platform.ios` provides the same geometry via the ObjC runtime (`ctypes`, no extra dependency); Kivy's own `metrics.py` and `core/window` import from `kivy.mobile` instead of a bare `import ios`. **kivyforge no longer vendors any platform shim** — `kivyforge build` writes no `platform/` directory.
 
 ### Public API (provided by Kivy)
 
@@ -303,9 +303,9 @@ The legacy `toolchain.py` monolith exposed: `build`, `recipes`, `status`, `creat
 
 | Legacy verb | Fate | Replacement |
 |-------------|------|-------------|
-| `build` | **Repurposed** — same name, completely different semantics. No backward compat: 2.x's `build python3 kivy` no longer makes sense. Calling `toolchain build python3 kivy` exits with a clear error pointing at the migration guide. |
-| `recipes` | Removed. No recipes. Suggested replacement: `toolchain doctor` shows what's pinned in the lock. |
-| `status` | **Repurposed** — same name, new read-only semantics. 2.x's `status` reported the recipe build state; the new `status` reports project identity, Python version, lock-sync state, and per-target build output (see the `toolchain status` section above). No recipe state is reported because there are no recipes. |
+| `build` | **Repurposed** — same name, completely different semantics. No backward compat: 2.x's `build python3 kivy` no longer makes sense. Calling `kivyforge build python3 kivy` exits with a clear error pointing at the migration guide. |
+| `recipes` | Removed. No recipes. Suggested replacement: `kivyforge doctor` shows what's pinned in the lock. |
+| `status` | **Repurposed** — same name, new read-only semantics. 2.x's `status` reported the recipe build state; the new `status` reports project identity, Python version, lock-sync state, and per-target build output (see the `kivyforge status` section above). No recipe state is reported because there are no recipes. |
 | `create` | Removed. Replaced by `init`. |
 | `update` | Removed. Replaced by `upgrade`. |
 | `pip` / `pip3` | Removed. Users edit `[project].dependencies` and run `lock`. The maintainer's `install_deps.sh` framing is explicitly **rejected**. |
@@ -319,6 +319,6 @@ A removed verb that the user calls explicitly emits a one-line deprecation point
 ```
 $ toolchain create MyApp ~/code/myapp
 Error: 'create' is not a verb in kivyforge.
-  Migration: cd ~/code/myapp && toolchain init
+  Migration: cd ~/code/myapp && kivyforge init
   See: https://kivy.org/docs/migration-2.x-to-3.0.html
 ```

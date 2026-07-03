@@ -75,7 +75,7 @@ from pbxproj import PBXGenericObject, PBXList, XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import FileOptions
 from pbxproj.pbxsections.XCLocalSwiftPackageReference import XCLocalSwiftPackageReference
 sys.path.insert(0, sys.argv[3])  # repo root
-from kivy_ios.project.skeleton import skeleton_pbxproj
+from kivyforge.project.skeleton import skeleton_pbxproj
 
 APP, BUNDLE, DT = "SpikeApp", "com.kivyios.spike", "13.0"
 TARGET_ID = "1A0000000000000000000030"

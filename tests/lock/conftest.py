@@ -6,9 +6,9 @@ import textwrap
 
 import pytest
 
-from kivy_ios.lock.python_meta import PythonXcframeworkInfo
-from kivy_ios.lock.resolver import ResolvedPackage, ResolvedWheel, slice_tags
-from kivy_ios.lock.spm import ResolvedSwiftPackage
+from kivyforge.lock.python_meta import PythonXcframeworkInfo
+from kivyforge.lock.resolver import ResolvedPackage, ResolvedWheel, slice_tags
+from kivyforge.lock.spm import ResolvedSwiftPackage
 
 
 class FakeResolver:

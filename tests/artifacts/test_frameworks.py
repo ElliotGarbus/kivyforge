@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kivy_ios.artifacts.frameworks import (
+from kivyforge.artifacts.frameworks import (
     FrameworkConflict,
     copy_wheel_frameworks,
     extract_xcframework_archive,

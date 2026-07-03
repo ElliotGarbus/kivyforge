@@ -1,4 +1,4 @@
-"""pyobjus-deviceinfo — a working pyobjus example for kivy-ios 3.0.
+"""pyobjus-deviceinfo — a working pyobjus example for kivyforge 3.0.
 
 Reads device and OS facts from two stock Apple frameworks using pyobjus'
 ``autoclass`` — no Swift, no SPM, no hand-rolled ctypes:

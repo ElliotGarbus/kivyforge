@@ -14,16 +14,16 @@ Every platform follows the same four-stage pipeline — *declarative config → 
 
 ```mermaid
 flowchart LR
-    pp["pyproject.toml\n[project] + [tool.kivy]\n+ [tool.kivy.<platform>] overlays"] --> lock["toolchain lock\n(resolve for the target)"]
+    pp["pyproject.toml\n[project] + [tool.kivy]\n+ [tool.kivy.<platform>] overlays"] --> lock["kivyforge lock\n(resolve for the target)"]
     lock --> pl["pylock.<platform>.toml\nPEP 751 + [tool.kivyforge]"]
-    pl --> build["toolchain build\n(acquire runtime + wheels,\ngenerate native project)"]
+    pl --> build["kivyforge build\n(acquire runtime + wheels,\ngenerate native project)"]
     build --> tc["platform toolchain\n(Xcode / linker / Gradle / ...)"]
     tc --> art["runnable, signed artifact\n(.app / .ipa / app folder / .apk ...)"]
 ```
 
 1. **Declare.** One `pyproject.toml` holds standard `[project]` metadata (PEP 621), shared Kivy settings in `[tool.kivy]`, and one additive `[tool.kivy.<platform>]` overlay per target you build.
-2. **Lock.** `toolchain lock` resolves `[project].dependencies` for the *resolved target*, evaluating PEP 508 markers and selecting platform-tagged wheels, and writes a PEP 751 `pylock.<platform>.toml` pinned by URL + SHA-256.
-3. **Build.** `toolchain build` acquires the prebuilt Python runtime and the pinned wheels/native artifacts, then materializes the platform's native project.
+2. **Lock.** `kivyforge lock` resolves `[project].dependencies` for the *resolved target*, evaluating PEP 508 markers and selecting platform-tagged wheels, and writes a PEP 751 `pylock.<platform>.toml` pinned by URL + SHA-256.
+3. **Build.** `kivyforge build` acquires the prebuilt Python runtime and the pinned wheels/native artifacts, then materializes the platform's native project.
 4. **Produce.** The platform's own toolchain compiles, links, signs, and emits the runnable artifact.
 
 ## Design principles

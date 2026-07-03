@@ -1,7 +1,7 @@
 # Resolver spike findings (Phase 0)
 
 **Question:** Can the current `pip` perform the iOS cross-resolution that
-`toolchain lock` / `toolchain build` need, or must we adopt `uv` for
+`kivyforge lock` / `kivyforge build` need, or must we adopt `uv` for
 development? (Reproduce with `python scripts/resolver_spike.py`.)
 
 ## Environment
@@ -35,13 +35,13 @@ PyPI directly; the supplemental index is only consulted via `extra_index_urls`.
    `--abi`, `--python-version`, `--implementation`, `--only-binary`). This is
    the `PipResolver` backend. We do **not** depend on pip's `-r pylock.toml`
    reader (experimental as of pip 26.1; it replicates a lock into the host
-   environment only and performs no target-platform selection); `toolchain build`
+   environment only and performs no target-platform selection); `kivyforge build`
    installs the pinned wheels itself, exactly as specced.
 2. **Do not over-constrain `--abi`.** Some packages ship `abi3`/limited-API or
    a different `cp` tag than the host. The lock resolver should pass the abi
    set pip accepts for the target (e.g. `cp313`, `abi3`, `none`) rather than a
    single hardcoded value, so abi3 wheels are not missed.
-3. **Per-package, per-slice availability varies.** `toolchain lock` must fail
+3. **Per-package, per-slice availability varies.** `kivyforge lock` must fail
    fast and name the specific package+slice that could not be resolved
    (host-independent error), rather than failing later at build time on one
    runner — consistent with the iOS pylock "pin all three slices" rule.

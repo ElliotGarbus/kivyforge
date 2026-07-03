@@ -1,6 +1,6 @@
 # 03 — Lockfile Concept
 
-Every target platform produces a **reproducibility artifact**: a per-platform lockfile that pins the exact Python wheels, the exact runtime, and any exact native artifacts a build will use — by URL and SHA-256. `toolchain lock` generates it from `pyproject.toml`; `toolchain build` consumes it.
+Every target platform produces a **reproducibility artifact**: a per-platform lockfile that pins the exact Python wheels, the exact runtime, and any exact native artifacts a build will use — by URL and SHA-256. `kivyforge lock` generates it from `pyproject.toml`; `kivyforge build` consumes it.
 
 This document defines the cross-platform lockfile *pattern*. The concrete schema for each platform lives in its own doc (e.g. [iOS `pylock.ios.toml`](../platforms/ios/pylock-ios-spec.md)).
 
@@ -29,7 +29,7 @@ kivyforge drives the install itself from the pinned per-wheel URLs and hashes ra
 
 The exact contents are platform-specific, but the pattern is consistent. `[tool.kivyforge]` typically holds:
 
-- **Scalar provenance / integrity fields** — `schema_version` (of the extension table), `toolchain_version`, `generated_at`, and `pyproject_sha256` (the SHA-256 of the source `pyproject.toml`, used for **drift detection**: `toolchain build` recomputes it and refuses a lock that no longer matches, unless `--no-verify-lock`).
+- **Scalar provenance / integrity fields** — `schema_version` (of the extension table), `toolchain_version`, `generated_at`, and `pyproject_sha256` (the SHA-256 of the source `pyproject.toml`, used for **drift detection**: `kivyforge build` recomputes it and refuses a lock that no longer matches, unless `--no-verify-lock`).
 - **The platform runtime pin** — e.g. the iOS `[tool.kivyforge.python_xcframework]` (version + URL + SHA-256). Other platforms pin their own runtime equivalent.
 - **Native artifact pins** — repeatable sub-arrays for platform-native dependencies (e.g. iOS `[[tool.kivyforge.xcframeworks]]`, `[[tool.kivyforge.swift_packages]]`).
 - **Per-package tool metadata** — via PEP 751's per-package `[packages.tool.kivyforge]` (e.g. `direct_requirement`, `source_index`), invisible to other PEP 751 consumers.
@@ -46,7 +46,7 @@ A lock carries several version numbers that evolve on different cadences:
 
 ## Resolution + integrity, in brief
 
-`toolchain lock` for a target:
+`kivyforge lock` for a target:
 
 1. Parses and validates `pyproject.toml` (`[project]`, `[tool.kivy]`, the target's overlay).
 2. Pins the platform runtime.

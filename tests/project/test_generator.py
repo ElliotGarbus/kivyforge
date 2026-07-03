@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from pbxproj import XcodeProject
 
-from kivy_ios.project.generator import XcodeProjectGenerator
-from kivy_ios.project.materialize import materialize_project
-from kivy_ios.project.staging import StagingError, create_staging
+from kivyforge.project.generator import XcodeProjectGenerator
+from kivyforge.project.materialize import materialize_project
+from kivyforge.project.staging import StagingError, create_staging
 
 
 def _objects(project):
@@ -97,7 +97,7 @@ class TestPbxprojGeneration:
         # Guards against quoting regressions in the embedded run script.
         import subprocess
 
-        from kivy_ios.project.buildsettings import BUILD_PYTHON_SCRIPT
+        from kivyforge.project.buildsettings import BUILD_PYTHON_SCRIPT
 
         result = subprocess.run(
             ["bash", "-n"], input=BUILD_PYTHON_SCRIPT, text=True, capture_output=True
@@ -188,7 +188,7 @@ class TestPbxprojGeneration:
     def test_last_upgrade_check_current(self, config, project_root):
         # Xcode prompts "Update to recommended settings" when LastUpgradeCheck
         # is stale; the generator keeps it current on every build.
-        from kivy_ios.project.generator import RECOMMENDED_LAST_UPGRADE_CHECK
+        from kivyforge.project.generator import RECOMMENDED_LAST_UPGRADE_CHECK
 
         layout = materialize_project(config, project_root)
         project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
@@ -196,7 +196,7 @@ class TestPbxprojGeneration:
         assert proj["attributes"]["LastUpgradeCheck"] == RECOMMENDED_LAST_UPGRADE_CHECK
 
     def test_last_upgrade_check_uses_provided_value(self, config, project_root):
-        # `toolchain build` passes the installed Xcode's encoded version so the
+        # `kivyforge build` passes the installed Xcode's encoded version so the
         # "Update to recommended settings" banner never appears; an explicit
         # value overrides the fallback constant.
         layout = materialize_project(config, project_root, last_upgrade_check="2699")
@@ -219,7 +219,7 @@ class TestPbxprojGeneration:
         assert len(script_phases) == 1
         # source files must be referenced exactly once after re-generation.
         assert len(project.get_files_by_name("main.m")) == 1
-        assert len(project.get_files_by_name("kivy_ios_bootstrap.m")) == 1
+        assert len(project.get_files_by_name("kivyforge_bootstrap.m")) == 1
         assert len(project.get_files_by_name("PrivacyInfo.xcprivacy")) == 1
         assert len(project.get_files_by_name("pip-deps")) == 1
 
@@ -227,23 +227,23 @@ class TestPbxprojGeneration:
         layout = materialize_project(config, project_root)
         assert (layout.root / "main.m").is_file()
         assert (layout.root / "main_config.h").is_file()
-        assert (layout.root / "kivy_ios_bootstrap.h").is_file()
-        assert (layout.root / "kivy_ios_bootstrap.m").is_file()
+        assert (layout.root / "kivyforge_bootstrap.h").is_file()
+        assert (layout.root / "kivyforge_bootstrap.m").is_file()
         assert (layout.root / "touchtracer-Info.plist").is_file()
         assert (layout.root / "PrivacyInfo.xcprivacy").is_file()
 
     def test_no_platform_shim_written(self, config, project_root):
         # Mobile geometry now ships in Kivy core as kivy.mobile (kivy/kivy#9331);
-        # kivy-ios no longer vendors a platform/ shim into the bundle.
+        # kivyforge no longer vendors a platform/ shim into the bundle.
         layout = materialize_project(config, project_root)
         assert not (layout.root / "platform").exists()
 
     def test_main_m_is_trivial_wrapper(self, config, project_root):
         layout = materialize_project(config, project_root)
         main_m = (layout.root / "main.m").read_text(encoding="utf-8")
-        assert "kivy_ios_main" in main_m
+        assert "kivyforge_main" in main_m
         assert "ENTRY_POINT" in main_m
-        # No SDL or Python includes — those live in kivy_ios_bootstrap.m
+        # No SDL or Python includes — those live in kivyforge_bootstrap.m
         assert "#include <SDL3/" not in main_m
         assert "#include <Python.h>" not in main_m
 
@@ -251,13 +251,13 @@ class TestPbxprojGeneration:
         # The vendored platform/ shim is gone (kivy.mobile ships in Kivy core),
         # so it is no longer placed on PYTHONPATH.
         layout = materialize_project(config, project_root)
-        bootstrap = (layout.root / "kivy_ios_bootstrap.m").read_text(encoding="utf-8")
+        bootstrap = (layout.root / "kivyforge_bootstrap.m").read_text(encoding="utf-8")
         assert "platformPath" not in bootstrap
 
     def test_bootstrap_in_sources_phase(self, config, project_root):
         layout = materialize_project(config, project_root)
         project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
-        assert project.get_files_by_name("kivy_ios_bootstrap.m")
+        assert project.get_files_by_name("kivyforge_bootstrap.m")
 
     def test_platform_folder_not_in_resources(self, config, project_root):
         # No vendored platform/ shim, so it is not a Copy Bundle Resources ref.

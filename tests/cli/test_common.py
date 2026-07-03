@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from kivy_ios.cli._common import ToolchainError, find_pyproject, lockfile_path
+from kivyforge.cli._common import ToolchainError, find_pyproject, lockfile_path
 
 
 def test_find_pyproject_in_cwd(tmp_path):

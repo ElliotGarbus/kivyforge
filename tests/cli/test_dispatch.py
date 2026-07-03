@@ -6,8 +6,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from kivy_ios.cli import main
-from kivy_ios.cli._legacy import LEGACY_VERBS
+from kivyforge.cli import main
+from kivyforge.cli._legacy import LEGACY_VERBS
 
 REAL_VERBS = [
     "init",
@@ -47,7 +47,7 @@ class TestTopLevel:
             assert verb not in listed, f"legacy verb {verb} should be hidden"
 
     def test_version(self, runner):
-        from kivy_ios import __version__
+        from kivyforge import __version__
 
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
@@ -74,15 +74,15 @@ class TestLegacyVerbs:
     def test_legacy_verb_emits_pointer(self, runner, verb):
         result = runner.invoke(main, [verb])
         assert result.exit_code != 0
-        assert f"'{verb}' is not a verb in kivy-ios 3.0" in result.output
+        assert f"'{verb}' is not a verb in kivyforge 3.0" in result.output
         assert "kivy.org/docs/migration" in result.output
 
     def test_legacy_build_recipe_form(self, runner):
-        # `toolchain build python3 kivy` (2.x form) gets a targeted message.
+        # `kivyforge build python3 kivy` (2.x form) gets a targeted message.
         result = runner.invoke(main, ["build", "python3", "kivy"])
         assert result.exit_code != 0
         assert "kivy-ios 2.x form" in result.output
-        assert "toolchain init && toolchain lock && toolchain build" in result.output
+        assert "kivyforge init && kivyforge lock && kivyforge build" in result.output
 
     def test_unknown_verb_errors(self, runner):
         result = runner.invoke(main, ["frobnicate"])

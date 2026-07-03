@@ -17,7 +17,7 @@ to classify their dependency.
 ## How this reconciles with the "no on-mac compilation" principle
 
 The overall architecture states that the user's mac never compiles native code
-during a `toolchain build` — it only consumes artifacts. Read literally that is
+during a `kivyforge build` — it only consumes artifacts. Read literally that is
 already untrue (kivyforge compiles `main.m`, and Xcode links/embeds frameworks
 every build), so the principle needs to be stated as what it actually means:
 
@@ -47,9 +47,9 @@ preserved.
 **Xcode, not kivyforge, owns the entire SPM lifecycle** — resolution, fetching,
 compilation (for source/hybrid), and embedding. kivyforge's job shrinks to:
 
-1. At `toolchain lock`: resolve each declared package to a concrete Git
+1. At `kivyforge lock`: resolve each declared package to a concrete Git
    **revision** and record the pin in `pylock.ios.toml`.
-2. At `toolchain build`: emit the package references + product dependencies into
+2. At `kivyforge build`: emit the package references + product dependencies into
    the generated `.xcodeproj`, and write a `Package.resolved` reflecting the
    locked revisions. Xcode does the rest.
 
@@ -89,8 +89,8 @@ Sentry = { url = "https://github.com/getsentry/sentry-cocoa", requirement = { fr
 ```
 
 - **Type**: table of name → inline table.
-- **Semantics**: each entry declares an SPM package dependency. `toolchain lock`
-  resolves it to a concrete revision; `toolchain build` wires the package
+- **Semantics**: each entry declares an SPM package dependency. `kivyforge lock`
+  resolves it to a concrete revision; `kivyforge build` wires the package
   reference and product dependencies into the `.xcodeproj`. Xcode resolves,
   builds (if source), and embeds.
 - **Default**: empty.
@@ -123,11 +123,11 @@ own version rules (and to the `requirement` object pbxproj emits in the
 
 A `branch` or `revision` requirement still resolves to a concrete commit recorded
 in the lock, so even a floating branch produces a reproducible build until the
-next `toolchain lock`.
+next `kivyforge lock`.
 
 ## `pylock.ios.toml`: `[[tool.kivyforge.swift_packages]]`
 
-`toolchain lock` records each resolved package as a repeatable array under the
+`kivyforge lock` records each resolved package as a repeatable array under the
 kivyforge extension table (invisible to other PEP 751 consumers).
 
 ```toml
@@ -149,7 +149,7 @@ embed = true
 |-------|------|----------|-------------|
 | `name` | string | yes | Matches the `[tool.kivy.ios.native.swift_packages]` key. |
 | `url` *or* `path` | exactly one | yes | Mirrors the pyproject declaration. |
-| `requirement` | inline table | yes (remote) | The version rule, carried verbatim so `toolchain lock --check` can diff intent, not just the resolved pin. |
+| `requirement` | inline table | yes (remote) | The version rule, carried verbatim so `kivyforge lock --check` can diff intent, not just the resolved pin. |
 | `revision` | string | yes (remote) | The exact commit SPM resolved — the reproducibility anchor. |
 | `version` | string | no | Resolved semantic version when the requirement resolved via a tag. |
 | `products` | list of string | yes | Resolved product names. |
@@ -163,7 +163,7 @@ and reproducibility comes from the pinned `revision` + the generated
 
 ## Resolution semantics (extends the pylock resolution semantics)
 
-`toolchain lock` adds a step after the native-xcframeworks step. For each entry in
+`kivyforge lock` adds a step after the native-xcframeworks step. For each entry in
 `[tool.kivy.ios.native.swift_packages]`:
 
 1. Resolve the package with SPM/Xcode in a scratch checkout (e.g. `xcodebuild
@@ -177,14 +177,14 @@ and reproducibility comes from the pinned `revision` + the generated
 Ordering is deterministic (sorted by `name`) for clean diffs, consistent with the
 rest of the lockfile.
 
-> **Network at lock time.** SPM resolution happens during `toolchain lock` (which
+> **Network at lock time.** SPM resolution happens during `kivyforge lock` (which
 > already contacts PyPI/python.org). `--offline` lock uses the SPM cache and
-> errors if it is incomplete. `toolchain build` does not re-resolve floating
+> errors if it is incomplete. `kivyforge build` does not re-resolve floating
 > requirements — it pins Xcode to the locked revisions via `Package.resolved`.
 
 ## Xcode project generation (extends the pbxproj wiring)
 
-`toolchain build` (every-build, idempotent sync):
+`kivyforge build` (every-build, idempotent sync):
 
 1. For each `[[tool.kivyforge.swift_packages]]` entry, ensure a package reference
    exists on the project:
@@ -230,7 +230,7 @@ artifacts kivyforge stages into `<app>-ios/Frameworks/` itself (wheel-embedded a
 `native.xcframeworks`). SPM products are resolved and embedded by **Xcode**, not
 staged by kivyforge, so they are outside that staging check. If an SPM product and
 a kivyforge-staged framework collide by basename at the bundle level, the failure
-surfaces as an Xcode duplicate-output error. `toolchain doctor` may warn when a
+surfaces as an Xcode duplicate-output error. `kivyforge doctor` may warn when a
 declared SPM product name matches a known wheel-embedded framework, but kivyforge
 does not attempt to reconcile the two providers automatically.
 
@@ -322,14 +322,14 @@ consequence:
 - **Shim only** (simplest). Declare just the local shim. Xcode resolves the
   upstream from the shim's `Package.swift` and pins it in the project's
   `Package.resolved` at resolve time. kivyforge does **not** record the upstream
-  in `pylock.ios.toml`, so the pin is Xcode-managed, not `toolchain lock`-managed.
+  in `pylock.ios.toml`, so the pin is Xcode-managed, not `kivyforge lock`-managed.
 
-- **Pin it in the lock too** (reproducible via `toolchain lock`). Also declare
+- **Pin it in the lock too** (reproducible via `kivyforge lock`). Also declare
   the upstream remote package — but with **`link = false, embed = false`**:
 
 ```toml
 [tool.kivy.ios.native.swift_packages]
-# Upstream: declared only so `toolchain lock` pins its commit. The shim links
+# Upstream: declared only so `kivyforge lock` pins its commit. The shim links
 # and embeds it; the app never touches it directly.
 SomePureSwiftSDK = { url = "https://…", requirement = { from = "X.Y.Z" }, products = ["SomePureSwiftSDK"], link = false, embed = false }
 # The shim the app actually calls (link + embed default to true).
@@ -365,7 +365,7 @@ runtime as a pyobjus `objc_getClass` / selector failure.
 
 ## Validation (extends the iOS validation rules)
 
-`toolchain lock` / `toolchain build` reject a `pyproject.toml` that:
+`kivyforge lock` / `kivyforge build` reject a `pyproject.toml` that:
 
 1. Declares a `swift_packages` entry with neither `url` nor `path`, or both.
 2. Declares a remote entry (`url`) with no `requirement`, or a `requirement` that
@@ -378,7 +378,7 @@ classification or rejection step exists. A package that fails to *resolve* or
 *build* surfaces its error through Xcode/SPM, with kivyforge passing the diagnostic
 through.
 
-## `toolchain doctor` (extends [iOS CLI §`toolchain doctor`](cli-ios.md#toolchain-doctor))
+## `kivyforge doctor` (extends [iOS CLI §`kivyforge doctor`](cli-ios.md#toolchain-doctor))
 
 - **SPM toolchain available** (project mode, only when `swift_packages` is
   non-empty): SPM resolution at lock time and compilation at build time require
