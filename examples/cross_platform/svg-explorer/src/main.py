@@ -36,20 +36,21 @@ LIGHT_BG = (0.95, 0.95, 0.97, 1)
 def safe_area_insets():
     """Device safe-area insets as Kivy pixels: ``[left, top, right, bottom]``.
 
-    Returns zeros off-iOS, or when the vendored ``ios`` shim is unavailable,
-    so the app is unchanged on desktop and degrades gracefully.
-    ``ios.get_safe_area()`` reports UIKit points; the window's pixel space uses
-    the device scale, so points are converted with ``ios.get_scale()`` (the
-    shim's own scale, rather than ``Metrics.density`` which may lag it).
+    Geometry comes from Kivy core's ``kivy.mobile`` (shipped in the Kivy iOS
+    wheel); kivyforge no longer vendors an ``ios`` shim. Returns zeros off-iOS,
+    or when ``kivy.mobile`` is unavailable, so the app is unchanged on desktop
+    and degrades gracefully. ``get_safe_area()`` reports UIKit points; the
+    window's pixel space uses the device scale, so points are converted with
+    ``get_scale()`` (points -> Kivy window pixels).
     """
     if platform != "ios":
         return [0, 0, 0, 0]
     try:
-        import ios
+        from kivy.mobile import get_safe_area, get_scale
     except ImportError:
         return [0, 0, 0, 0]
-    insets = ios.get_safe_area()  # UIKit points
-    scale = ios.get_scale()  # -> Kivy window pixels
+    insets = get_safe_area()  # UIKit points
+    scale = get_scale()  # -> Kivy window pixels
     return [
         insets["left"] * scale,
         insets["top"] * scale,
