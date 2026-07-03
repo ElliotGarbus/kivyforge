@@ -7,7 +7,7 @@ and buildozer — a declarative, PEP 621-aligned build toolchain for Kivy apps
 aimed at every platform Kivy runs on. This first release implements the **iOS**
 target, built around pre-built Python.xcframeworks and pip-installable iOS wheels.
 The recipe-based `toolchain build-recipe` workflow is gone; see the
-[migration guide](docs/proposals/00-overview.md) and the updated README.
+[design docs](docs/design/common/00-overview.md) and the updated README.
 
 ### What's new in 3.0
 

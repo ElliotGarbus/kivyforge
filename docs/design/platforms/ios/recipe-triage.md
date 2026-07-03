@@ -1,15 +1,16 @@
-# 04 — Recipe Triage
+# iOS — Recipe Triage
 
-**Status:** rfc-v1 (draft)
-**Depends on:** [00-overview](00-overview.md), [03-artifact-distribution](03-artifact-distribution.md)
-
-This spec assigns every recipe in `kivy_ios/recipes/` to one of five outcomes. The recipe system is removed entirely in kivy-ios 3.0; each recipe either disappears, is replaced by an upstream artifact, or becomes a published wheel or xcframework.
+This document assigns every recipe in the legacy `kivy_ios/recipes/` tree to one
+of five outcomes. kivyforge has **no recipe system**; each legacy recipe either
+disappears, is replaced by an upstream artifact, or becomes a published wheel or
+xcframework.
 
 ---
 
 ## Deleted recipes
 
-These recipes are removed when kivy-ios 3.0 ships. No replacement within kivy-ios — see the "Replacement" column for where users go instead.
+These recipes are removed. No replacement within kivyforge — see the
+"Replacement" column for where users go instead.
 
 | Recipe | Replacement |
 |--------|-------------|
@@ -33,7 +34,7 @@ These recipes are removed when kivy-ios 3.0 ships. No replacement within kivy-io
 | `kivent_core` | Never on PyPI; p4a already removed support. Port to a maintained ECS library |
 | `audiostream` | Still 0.2-alpha; build errors reported. Use AVFoundation via `pyobjus` (`AVAudioEngine`/`AVAudioSession`) |
 | `photolibrary` | Last pushed 2015; wraps the deprecated `UIImagePickerController`. Use `PHPickerViewController` via `pyobjus` |
-| `ios` recipe — Kivy platform bridge (`ios.pyx`, `ios_mail.m`, `ios_browser.m`, `ios_filechooser.m`, `ios_utils.m`) | This Obj-C bridge predates mature `pyobjus`. Every function it wraps can be called from Python via the optional `pyobjus` bridge: `UIApplication.shared.openURL(_:)` (browser), `MFMailComposeViewController` (mail). The filechooser wraps the deprecated `UIImagePickerController` (deprecated iOS 14) and is dropped entirely. The remainder (screen scale, DPI, keyboard height, safe-area insets) is provided by Kivy core's **`kivy.mobile`** module ([kivy/kivy#9331](https://github.com/kivy/kivy/pull/9331)), which ships in the Kivy iOS wheel and makes the same ObjC-runtime calls via `ctypes` — no extra dependency, and nothing for kivy-ios to vendor. Kivy uses it internally for `Metrics`/`Window`; app code calls `kivy.mobile.get_safe_area()` (or binds `Window.safe_area`) for notch / Dynamic Island padding. See [spec 05 §"Mobile window/display geometry: `kivy.mobile`"](05-cli-shape.md#mobile-windowdisplay-geometry-kivymobile). |
+| `ios` recipe — Kivy platform bridge (`ios.pyx`, `ios_mail.m`, `ios_browser.m`, `ios_filechooser.m`, `ios_utils.m`) | This Obj-C bridge predates mature `pyobjus`. Every function it wraps can be called from Python via the optional `pyobjus` bridge: `UIApplication.shared.openURL(_:)` (browser), `MFMailComposeViewController` (mail). The filechooser wraps the deprecated `UIImagePickerController` (deprecated iOS 14) and is dropped entirely. The remainder (screen scale, DPI, keyboard height, safe-area insets) is provided by Kivy core's **`kivy.mobile`** module ([kivy/kivy#9331](https://github.com/kivy/kivy/pull/9331)), which ships in the Kivy iOS wheel and makes the same ObjC-runtime calls via `ctypes` — no extra dependency, and nothing for kivyforge to vendor. Kivy uses it internally for `Metrics`/`Window`; app code calls `kivy.mobile.get_safe_area()` (or binds `Window.safe_area`) for notch / Dynamic Island padding. See [iOS CLI §"Mobile window/display geometry: `kivy.mobile`"](cli-ios.md#mobile-windowdisplay-geometry-kivymobile). |
 
 ---
 
@@ -43,7 +44,7 @@ The lockfile points directly at an upstream-published URL; no Kivy CI involvemen
 
 | Artifact | Source |
 |----------|--------|
-| `Python.xcframework` | [python.org releases](https://www.python.org/downloads/) — available from 3.15.0b1 (May 2026). URL pattern: `https://www.python.org/ftp/python/<X.Y.Z>/python-<version>-iOS-XCframework.tar.gz`. Pinned in the lockfile's `[tool.kivy_ios.python_xcframework]` block; mandatory and singular, not a `[[tool.kivy_ios.xcframeworks]]` row. |
+| `Python.xcframework` | [python.org releases](https://www.python.org/downloads/) — available from 3.15.0b1 (May 2026). URL pattern: `https://www.python.org/ftp/python/<X.Y.Z>/python-<version>-iOS-XCframework.tar.gz`. Pinned in the lockfile's `[tool.kivyforge.python_xcframework]` block; mandatory and singular, not a `[[tool.kivyforge.xcframeworks]]` row. |
 
 ---
 
@@ -64,16 +65,13 @@ PyPI is the primary resolution source. The Python ecosystem is mid-transition to
 | `numpy` | Same (primary transition candidate) |
 | `netifaces` | Same |
 
-
-
 ---
 
 ## Kivy-published iOS wheels
 
-These packages have C extensions that Kivy builds and publishes as iOS-tagged wheels to PyPI. Both must be rebuilt against Python 3.15 and published around the sametime kivy-ios 3.0 ships.
+These packages have C extensions that Kivy builds and publishes as iOS-tagged wheels to PyPI. Both must be rebuilt against Python 3.15 and published around the same time kivyforge's iOS support ships.
 
 | Recipe | Notes |
 |--------|-------|
-| `kivy` | The kivy iOS wheel bundles every native xcframework it links against (ANGLE, SDL3 family, Skia); kivy-ios consumes it like any other Python wheel. |
+| `kivy` | The kivy iOS wheel bundles every native xcframework it links against (ANGLE, SDL3 family, Skia); kivyforge consumes it like any other Python wheel. |
 | `pyobjus` | Already on PyPI (v1.2.4, Dec 2025); Kivy adds `cp315-cp315-ios_*` wheels to the existing publish pipeline. |
-

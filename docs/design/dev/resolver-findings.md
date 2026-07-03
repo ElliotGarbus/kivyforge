@@ -33,9 +33,10 @@ PyPI directly; the supplemental index is only consulted via `extra_index_urls`.
 1. **Resolver backend = pip.** It supports the exact platform-tagged,
    binary-only, host-independent resolution the lock needs (`--platform`,
    `--abi`, `--python-version`, `--implementation`, `--only-binary`). This is
-   the `PipResolver` backend (Phase 3). We do **not** depend on pip's
-   experimental `-r pylock.toml` reader (it ignores platform-selection flags);
-   `toolchain build` installs the pinned wheels itself, exactly as specced.
+   the `PipResolver` backend. We do **not** depend on pip's `-r pylock.toml`
+   reader (experimental as of pip 26.1; it replicates a lock into the host
+   environment only and performs no target-platform selection); `toolchain build`
+   installs the pinned wheels itself, exactly as specced.
 2. **Do not over-constrain `--abi`.** Some packages ship `abi3`/limited-API or
    a different `cp` tag than the host. The lock resolver should pass the abi
    set pip accepts for the target (e.g. `cp313`, `abi3`, `none`) rather than a
@@ -43,10 +44,9 @@ PyPI directly; the supplemental index is only consulted via `extra_index_urls`.
 3. **Per-package, per-slice availability varies.** `toolchain lock` must fail
    fast and name the specific package+slice that could not be resolved
    (host-independent error), rather than failing later at build time on one
-   runner — consistent with the spec 02 "pin all three slices" rule.
+   runner — consistent with the iOS pylock "pin all three slices" rule.
 
 ## How this feeds the implementation
 
-- Phase 3 implements `kivy_ios/lock/resolver.py` with a `Resolver` protocol and
-  a `PipResolver` default; the worker index is used in integration tests as an
-  `extra_index_urls` source.
+- The lock resolver exposes a `Resolver` protocol and a `PipResolver` default;
+  the worker index is used in integration tests as an `extra_index_urls` source.

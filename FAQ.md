@@ -12,7 +12,7 @@ lockfile, downloads the official `Python.xcframework` plus prebuilt iOS wheels,
 and generates an [Xcode](https://developer.apple.com/xcode/) `.xcodeproj`.
 
 For the full workflow see the [README](README.md); for design and reference
-details see the [3.0 docs](docs/proposals/00-overview.md). When something looks
+details see the [design docs](docs/design/common/00-overview.md). When something looks
 wrong, `toolchain doctor` runs environment and project health checks and is a
 good first stop.
 

@@ -1,7 +1,7 @@
-# Swift-linking spike findings (Phase 0, spec 07)
+# Swift-linking spike findings (Phase 0, iOS Swift packages)
 
-**Question:** When kivy-ios wires a Swift Swift Package Manager (SPM) product into
-its generated **pure-Objective-C** app target (`main.m` + `kivy_ios_bootstrap.m`,
+**Question:** When kivyforge wires a Swift Package Manager (SPM) product into
+its generated **pure-Objective-C** app target (`main.m` + bootstrap,
 no Swift sources), what is the *minimal, authoritative* set of project changes
 that lets the app link, embed, and **launch** the Swift dependency at the iOS 13
 deployment floor? In particular: is the widely-repeated "add an empty `.swift`
@@ -19,13 +19,13 @@ evidence from Xcode's own build output for our exact code path.
   `arm64`.
 - Device: **iPhone 13 Pro Max on iOS 26.5**, signed development build
   (`minimal` and `noembed` confirmed on hardware).
-- `pbxproj` 4.3.3 (the pinned dependency), driven exactly as Phase 3 will drive
+- `pbxproj` 4.3.3 (the pinned dependency), driven exactly as the generator drives
   it.
 
 ## Method
 
 A pure-ObjC app target (only `main.m`, built with the repo's real
-`kivy_ios.project.skeleton.skeleton_pbxproj`) links a **local dynamic Swift
+project skeleton) links a **local dynamic Swift
 package** `SwiftKit`, wired via `pbxproj`'s `add_package_dependency` +
 `XCLocalSwiftPackageReference`. The Swift code is exported with `@_cdecl` and
 called from `main.m`, so the linker cannot dead-strip it and any runtime wiring
@@ -93,9 +93,9 @@ runtime ships in the OS and is linked by absolute path for deployment targets
    other change *breaks the build*: `error: SWIFT_VERSION '' is unsupported`.
    Adding a Swift source forces the *app target* into Swift compilation, which
    then demands `SWIFT_VERSION` and gains nothing over `minimal`
-   (`stub-swiftver` only matches what `minimal` already does). kivy-ios will
+   (`stub-swiftver` only matches what `minimal` already does). kivyforge will
    **not** emit a stub `.swift`.
-3. **Embedding is a real Phase 3 requirement that `pbxproj` does not handle.**
+3. **Embedding is a real requirement that `pbxproj` does not handle.**
    `add_package_dependency` only adds the product to *Link Binary With
    Libraries*; it does **not** add an *Embed Frameworks* phase. Without an
    explicit Copy-Files/Embed phase (with `CodeSignOnCopy`), the dynamic
@@ -123,7 +123,7 @@ runtime ships in the OS and is linked by absolute path for deployment targets
   (runtime in-OS for iOS 12.2+). No Apple document addresses the modern
   "ObjC app consumes a Swift SPM package" case head-on.
 
-## How this feeds the implementation (Phase 3)
+## How this feeds the implementation
 
 - The generator wires SPM products with `add_package_dependency` **plus an
   explicit Embed Frameworks phase** (`PBXCopyFilesBuildPhase`, `dstSubfolderSpec

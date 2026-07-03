@@ -63,10 +63,27 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 
       pip install -e ".[dev]"
 
+> **Early-stage: build the example wheels first.** kivyforge consumes prebuilt,
+> platform-tagged wheels, but Kivy's iOS wheels are not yet published to PyPI. To
+> run the Kivy-based and pyobjus examples you must first cross-build the required
+> `cp315` iOS wheels locally; they land in the shared
+> [`examples/wheels/`](examples/wheels/) directory:
+>
+>       # Kivy iOS wheels — needed by every Kivy example (all except hello-world)
+>       scripts/build_ios_wheels.sh
+>
+>       # pyobjus iOS wheels — needed by pyobjus-ball, pyobjus-deviceinfo, keychain-spm
+>       scripts/build_pyobjus_ios_wheels.sh
+>
+> These scripts require macOS, Xcode, and network access. The pure-Python
+> [`examples/hello-world`](examples/hello-world/) uses only the python.org
+> `Python.xcframework` and needs no wheels.
+
 > **Detailed documentation.** For the full design and reference docs — the
-> `pyproject.toml` / `pylock.ios.toml` schemas, artifact distribution, the CLI
-> shape, and Xcode project generation — see the
-> [kivyforge docs](docs/proposals/00-overview.md).
+> cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
+> artifact distribution, the CLI shape, and the per-platform backends (iOS,
+> macOS) — start with the
+> [kivyforge design overview](docs/design/common/00-overview.md).
 
 ## Quick start (iOS)
 
