@@ -501,28 +501,42 @@ def _parse_find_links(
     return out
 
 
+def _repo_root(start: Path) -> Path | None:
+    """Nearest ancestor (inclusive) containing a ``.git`` marker, else None."""
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
 def _validate_find_link_scope(
     project_root: Path, entry: str, finder: _LineFinder
 ) -> None:
-    """Allow in-project paths and sibling dirs under the same parent (e.g. ../wheels)."""
+    """Constrain find_links to repo-relative locations.
+
+    Permitted: inside the project, a sibling under the same parent (e.g.
+    ``../wheels``), or — when the project lives in a git checkout — anywhere
+    within that repository (e.g. a shared ``examples/wheels/`` reached from a
+    nested ``examples/<group>/<app>/`` via ``../../wheels``). This keeps wheels
+    inside the tree while supporting one shared wheelhouse for grouped examples.
+    """
     resolved = (project_root / entry).resolve()
     root = project_root.resolve()
-    try:
-        resolved.relative_to(root)
-        return
-    except ValueError:
-        pass
-    try:
-        resolved.relative_to(root.parent)
-    except ValueError:
-        raise ConfigError(
-            "find_links entries must stay within the project directory or a "
-            "sibling directory under the same parent",
-            key_path="tool.kivy.ios.find_links",
-            line=finder.line("find_links"),
-            hint='e.g. "wheels" inside the project or "../wheels" for a shared '
-            "examples/wheels/ directory.",
-        ) from None
+    allowed = [root, root.parent]
+    repo = _repo_root(root)
+    if repo is not None:
+        allowed.append(repo)
+    for base in allowed:
+        if resolved == base or base in resolved.parents:
+            return
+    raise ConfigError(
+        "find_links entries must stay within the project directory, a sibling "
+        "directory under the same parent, or the enclosing repository",
+        key_path="tool.kivy.ios.find_links",
+        line=finder.line("find_links"),
+        hint='e.g. "wheels" inside the project, "../wheels" for a sibling dir, '
+        'or "../../wheels/ios" for a shared examples wheelhouse.',
+    )
 
 
 def _parse_exclude(ios: dict, finder: _LineFinder) -> list[str]:

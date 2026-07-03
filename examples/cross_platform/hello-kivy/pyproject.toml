@@ -1,28 +1,24 @@
 [project]
-name = "pyobjus-deviceinfo"
+name = "hello-kivy"
 version = "0.1.0"
 requires-python = ">=3.15.0b2"
 dependencies = [
     "kivy>=3.0.0.dev0,<4",
-    # pyobjus is an iOS-only package; it is silently skipped on other
-    # platforms at runtime (the app shows a desktop fallback).
-    # iOS wheels must be available via find_links or PyPI before running
-    # `kivyforge lock`.
-    "pyobjus",
+    "more-itertools>=10.5",
 ]
 
 [tool.kivy]
-display_name = "pyobjus Device Info"
+display_name = "Hello Kivy"
 app_dir = "src"
 entry_point = "main"
 orientation = ["portrait"]
 
 [tool.kivy.ios]
 schema_version = 1
-bundle_id = "org.kivy.pyobjus-deviceinfo"
+bundle_id = "org.kivy.hello-kivy"
 build = 1
 deployment_target = "16.0"
-find_links = ["../wheels"]
+find_links = ["../../wheels/ios"]
 # Kivy's wheel declares deps that are not needed at runtime on iOS.
 # Remove an entry only if your app actually uses that feature.
 exclude = [
@@ -32,7 +28,7 @@ exclude = [
     # packages — add them to [project].dependencies instead.
     "kivy-garden",
     # requests and its transitive deps (below) are used by
-    # kivy.network.urlrequest.UrlRequest.
+    # kivy.network.urlrequest.UrlRequest 
     # Remove these lines only if your app uses UrlRequest for HTTP calls.
     "requests",
     "certifi",

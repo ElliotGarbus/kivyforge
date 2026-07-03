@@ -17,7 +17,7 @@ schema_version = 1
 bundle_id = "org.kivy.mobile-geometry"
 build = 1
 deployment_target = "16.0"
-find_links = ["../wheels"]
+find_links = ["../../wheels/ios"]
 exclude = [
     "kivy-garden",
     "requests",

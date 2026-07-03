@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build pyobjus cp315 iOS wheels locally and drop them in examples/wheels.
+# Build pyobjus cp315 iOS wheels locally and drop them in examples/wheels/ios.
 #
 # pyobjus is an optional Objective-C bridge for app code that calls iOS system
 # frameworks (the kivyforge platform shim itself uses ctypes and does not depend
@@ -36,7 +36,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUTPUT_DIR="${1:-$ROOT/examples/wheels}"
+OUTPUT_DIR="${1:-$ROOT/examples/wheels/ios}"
 BUILD_ROOT="${BUILD_ROOT:-$ROOT/.build/ios-wheels}"
 PYOBJUS_SRC="${PYOBJUS_SRC:-$BUILD_ROOT/pyobjus}"
 PYOBJUS_REF="${PYOBJUS_REF:-master}"

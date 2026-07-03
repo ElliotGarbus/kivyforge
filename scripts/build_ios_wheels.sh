@@ -2,7 +2,7 @@
 # Build Kivy cp315 iOS wheels locally (Path A for Kivy examples).
 #
 # Mirrors kivy/kivy .github/workflows/ios_wheels.yml on the current machine.
-# Wheels land in OUTPUT_DIR (default: examples/wheels).
+# Wheels land in OUTPUT_DIR (default: examples/wheels/ios).
 #
 # Usage:
 #   scripts/build_ios_wheels.sh [OUTPUT_DIR]
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUTPUT_DIR="${1:-$ROOT/examples/wheels}"
+OUTPUT_DIR="${1:-$ROOT/examples/wheels/ios}"
 BUILD_ROOT="${BUILD_ROOT:-$ROOT/.build/ios-wheels}"
 KIVY_SRC="${KIVY_SRC:-$BUILD_ROOT/kivy}"
 KIVY_REF="${KIVY_REF:-master}"

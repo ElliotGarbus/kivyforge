@@ -56,17 +56,17 @@ direct_requirement = true
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-path = "../wheels/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+path = "../../wheels/ios/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
 hashes = { sha256 = "9bd343eb6493a010dbf5665bcbb8410f410f4739be2532366fab88e9ae9ae8a1" }
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-path = "../wheels/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+path = "../../wheels/ios/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
 hashes = { sha256 = "c5dd880917ca53d52bfb9867d22636d2aba5651e22e8c21ec7756ccdc308fe91" }
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-path = "../wheels/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
+path = "../../wheels/ios/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
 hashes = { sha256 = "1fde7d1afa462efab3c598cd7fb31dcbdc27e65270348444a7bb07f01dd6f31d" }
 
 [[packages]]

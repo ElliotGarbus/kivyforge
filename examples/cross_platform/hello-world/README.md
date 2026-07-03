@@ -23,7 +23,7 @@ pip install -e ".[dev]"
 From this directory:
 
 ```bash
-cd examples/hello-world
+cd examples/cross_platform/hello-world
 kivyforge clean    # optional: drop a stale hello-world-ios/ tree
 kivyforge build
 ```

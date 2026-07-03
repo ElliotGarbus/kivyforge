@@ -186,3 +186,16 @@ class TestBuildUsesFindLinksValidation:
         wheel.write_bytes(b"whl")
         _, path = _normalize_wheel_source(wheel.as_uri(), project_root=app)
         assert path == "../wheels/kivy-1.whl"
+
+    def test_normalize_shared_wheelhouse_within_repo(self, tmp_path):
+        from kivyforge.lock.builder import _normalize_wheel_source
+
+        (tmp_path / ".git").mkdir()
+        app = tmp_path / "examples" / "cross_platform" / "hello-kivy"
+        shared = tmp_path / "examples" / "wheels" / "ios"
+        app.mkdir(parents=True)
+        shared.mkdir(parents=True)
+        wheel = shared / "kivy-1.whl"
+        wheel.write_bytes(b"whl")
+        _, path = _normalize_wheel_source(wheel.as_uri(), project_root=app)
+        assert path == "../../wheels/ios/kivy-1.whl"

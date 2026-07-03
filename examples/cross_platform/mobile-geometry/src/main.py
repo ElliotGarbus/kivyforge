@@ -14,12 +14,12 @@ How to run
 ----------
 Desktop (quick smoke-test)::
 
-    cd examples/mobile-geometry
+    cd examples/cross_platform/mobile-geometry
     python src/main.py
 
 iOS device / simulator::
 
-    cd examples/mobile-geometry
+    cd examples/cross_platform/mobile-geometry
     kivyforge build .
     kivyforge run .
 

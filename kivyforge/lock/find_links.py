@@ -127,9 +127,9 @@ def find_links_doctor_detail(
 def _find_links_hint(project_root: Path, entries: tuple[str, ...]) -> str:
     del entries  # reserved for future per-entry hints
     shared_note = ""
-    if project_root.parent.name == "examples" and project_root.name != "wheels":
+    if "examples" in project_root.parts and project_root.name != "wheels":
         shared_note = (
-            "  Shared example wheels live under examples/wheels/ — run "
+            "  Shared example wheels live under examples/wheels/ios/ — run "
             "`scripts/build_ios_wheels.sh` from the repo root.\n"
         )
     return (
@@ -145,16 +145,23 @@ def _display_path(project_root: Path, path: Path, entry: str) -> str:
         return entry
 
 
+def _repo_root(start: Path) -> Path | None:
+    """Nearest ancestor (inclusive) containing a ``.git`` marker, else None."""
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
 def _ensure_find_link_scope(project_root: Path, resolved: Path) -> None:
-    try:
-        resolved.relative_to(project_root)
-        return
-    except ValueError:
-        pass
-    try:
-        resolved.relative_to(project_root.parent)
-    except ValueError as exc:
-        raise FindLinksError(
-            f"find_links path {resolved} is outside the project directory and "
-            "its parent"
-        ) from exc
+    allowed = [project_root, project_root.parent]
+    repo = _repo_root(project_root)
+    if repo is not None:
+        allowed.append(repo)
+    for base in allowed:
+        if resolved == base or base in resolved.parents:
+            return
+    raise FindLinksError(
+        f"find_links path {resolved} is outside the project directory, its "
+        "parent, and the enclosing repository"
+    )

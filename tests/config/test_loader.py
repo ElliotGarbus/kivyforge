@@ -464,6 +464,37 @@ class TestFindLinks:
         with pytest.raises(ConfigError, match="sibling directory"):
             load_config(app / "pyproject.toml")
 
+    def test_shared_wheelhouse_within_repo_ok(self, tmp_path):
+        # examples/<group>/<app>/ reaching a shared examples/wheels/ios/
+        (tmp_path / ".git").mkdir()
+        app = tmp_path / "examples" / "cross_platform" / "hello-kivy"
+        wheels = tmp_path / "examples" / "wheels" / "ios"
+        app.mkdir(parents=True)
+        wheels.mkdir(parents=True)
+        toml = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
+            'find_links = ["../../wheels/ios"]\n'
+            "[tool.kivy.ios.python]\nversion='3.15.0'"
+        )
+        (app / "pyproject.toml").write_text(toml)
+        cfg = load_config(app / "pyproject.toml")
+        assert cfg.ios_required.find_links == ("../../wheels/ios",)
+
+    def test_escape_beyond_repo_rejected(self, tmp_path):
+        # Same two-levels-up shape, but no repo marker → falls back to strict rule.
+        app = tmp_path / "examples" / "cross_platform" / "hello-kivy"
+        app.mkdir(parents=True)
+        toml = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
+            'find_links = ["../../wheels/ios"]\n'
+            "[tool.kivy.ios.python]\nversion='3.15.0'"
+        )
+        (app / "pyproject.toml").write_text(toml)
+        with pytest.raises(ConfigError, match="enclosing repository"):
+            load_config(app / "pyproject.toml")
+
 
 class TestSimulatorArchs:
     _BASE = (

@@ -25,17 +25,17 @@ direct_requirement = true
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-path = "../wheels/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+path = "../../wheels/ios/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
 hashes = { sha256 = "9bd343eb6493a010dbf5665bcbb8410f410f4739be2532366fab88e9ae9ae8a1" }
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-path = "../wheels/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+path = "../../wheels/ios/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
 hashes = { sha256 = "c5dd880917ca53d52bfb9867d22636d2aba5651e22e8c21ec7756ccdc308fe91" }
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-path = "../wheels/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
+path = "../../wheels/ios/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
 hashes = { sha256 = "1fde7d1afa462efab3c598cd7fb31dcbdc27e65270348444a7bb07f01dd6f31d" }
 
 [[packages]]
@@ -47,17 +47,17 @@ direct_requirement = true
 
 [[packages.wheels]]
 name = "pyobjus-1.2.4-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-path = "../wheels/pyobjus-1.2.4-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+path = "../../wheels/ios/pyobjus-1.2.4-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
 hashes = { sha256 = "f8833074f6493cc9fa25259180ca8aa36c961b0901d5f0c58546612e5a208ac7" }
 
 [[packages.wheels]]
 name = "pyobjus-1.2.4-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-path = "../wheels/pyobjus-1.2.4-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+path = "../../wheels/ios/pyobjus-1.2.4-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
 hashes = { sha256 = "edbcb6866c2696eb01815789765dcb2fc56032de468e448ec936370f907e1405" }
 
 [[packages.wheels]]
 name = "pyobjus-1.2.4-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-path = "../wheels/pyobjus-1.2.4-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
+path = "../../wheels/ios/pyobjus-1.2.4-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
 hashes = { sha256 = "ddc92fa36049d816aa13a5efef37927e2bedea459c692c628254bbe5e93633ef" }
 
 [tool.kivyforge]

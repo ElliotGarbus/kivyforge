@@ -67,7 +67,7 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 > platform-tagged wheels, but Kivy's iOS wheels are not yet published to PyPI. To
 > run the Kivy-based and pyobjus examples you must first cross-build the required
 > `cp315` iOS wheels locally; they land in the shared
-> [`examples/wheels/`](examples/wheels/) directory:
+> [`examples/wheels/ios/`](examples/wheels/ios/) directory:
 >
 >       # Kivy iOS wheels — needed by every Kivy example (all except hello-world)
 >       scripts/build_ios_wheels.sh
@@ -76,8 +76,8 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 >       scripts/build_pyobjus_ios_wheels.sh
 >
 > These scripts require macOS, Xcode, and network access. The pure-Python
-> [`examples/hello-world`](examples/hello-world/) uses only the python.org
-> `Python.xcframework` and needs no wheels.
+> [`examples/cross_platform/hello-world`](examples/cross_platform/hello-world/)
+> uses only the python.org `Python.xcframework` and needs no wheels.
 
 > **Detailed documentation.** For the full design and reference docs — the
 > cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
@@ -108,15 +108,17 @@ every command from the directory that contains your app's `pyproject.toml`.
 
 See the runnable examples for complete, copy-pasteable walk-throughs:
 
-- [`examples/hello-world`](examples/hello-world/) — pure-Python smoke test using
-  the official python.org `Python.xcframework` (no Kivy, no wheels).
-- [`examples/hello-kivy`](examples/hello-kivy/) — minimal Kivy UI that uses
-  locally built `cp315` iOS wheels from the shared [`examples/wheels/`](examples/wheels/) directory.
-- [`examples/svg-explorer`](examples/svg-explorer/) — interactive SVG viewer
-  (multitouch pan/zoom/rotate) using the same shared wheels.
-- [`examples/pyobjus-ball`](examples/pyobjus-ball/) — calls native iOS APIs
+- [`examples/cross_platform/hello-world`](examples/cross_platform/hello-world/) —
+  pure-Python smoke test using the official python.org `Python.xcframework`
+  (no Kivy, no wheels).
+- [`examples/cross_platform/hello-kivy`](examples/cross_platform/hello-kivy/) —
+  minimal Kivy UI that uses locally built `cp315` iOS wheels from the shared
+  [`examples/wheels/ios/`](examples/wheels/ios/) directory.
+- [`examples/cross_platform/svg-explorer`](examples/cross_platform/svg-explorer/) —
+  interactive SVG viewer (multitouch pan/zoom/rotate) using the same shared wheels.
+- [`examples/ios/pyobjus-ball`](examples/ios/pyobjus-ball/) — calls native iOS APIs
   (CoreMotion, UIScreen) from Python via the Objective-C runtime.
-- [`examples/keychain-spm`](examples/keychain-spm/) — declares a remote Swift
+- [`examples/ios/keychain-spm`](examples/ios/keychain-spm/) — declares a remote Swift
   Package (`KeychainAccess`), pins it with `kivyforge lock`, and calls it from
   Python through a local `@objc` shim package.
 
@@ -145,7 +147,7 @@ orientation = ["portrait"]
 bundle_id = "org.example.hello-world"   # reverse-DNS; UTI characters only (no underscores)
 build = 1
 deployment_target = "13.0"
-# find_links = ["../wheels"]            # repo-relative wheel directory for lock
+# find_links = ["../../wheels/ios"]     # repo-relative wheel directory for lock
 # exclude = ["docutils", "pygments"]    # drop transitive deps you don't use at runtime
 
 [tool.kivy.ios.python]
@@ -163,7 +165,7 @@ generated project.
 
 Kivy's wheel declares dependencies that are not all needed at runtime on iOS.
 The `exclude` list trims them; the
-[hello-kivy example](examples/hello-kivy/pyproject.toml) documents what each one
+[hello-kivy example](examples/cross_platform/hello-kivy/pyproject.toml) documents what each one
 is for, so you can re-enable only the few that map to widgets you actually use
 (e.g. `docutils` for `RSTDocument`, `pygments` for `CodeInput`, or `requests`
 for `UrlRequest`).
