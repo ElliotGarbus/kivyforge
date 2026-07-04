@@ -4,8 +4,8 @@ Orchestrates the pieces: resolve the assembly arch set from the lock + ``--arch`
 stage the runtime + wheels, copy the app sources, render the icon + Info.plist +
 launcher, and ad-hoc sign. Produces the layout documented in macos-spec:
 
-    <Name>.app/Contents/{Info.plist, MacOS/<exe>, Resources/{app,lib,<exe>.icns},
-                         Frameworks/python}
+    <Name>.app/Contents/{Info.plist, MacOS/<exe>,
+                         Resources/{app,lib,python,<exe>.icns}}
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from ..config.model import Config
 from ..lock.macos import MacosLockfile
 from . import AppBundleError
 from .icns import generate_icns
-from .launcher import write_launcher
+from .launcher import build_launcher
 from .plist import build_info_plist
 from .runtime_stage import stage_runtime
 from .signing import sign_bundle_adhoc
@@ -109,7 +109,11 @@ def build_app_bundle(
     _copy_app_sources(config, project_root, resources / "app")
     icon_file = _stage_icon(config, project_root, resources, exe)
 
-    write_launcher(contents / "MacOS" / exe, entry_point=config.kivy.entry_point)
+    build_launcher(
+        contents / "MacOS" / exe,
+        entry_point=config.kivy.entry_point,
+        archs=archs,
+    )
 
     plist = build_info_plist(config, executable=exe, icon_file=icon_file)
     with (contents / "Info.plist").open("wb") as fh:

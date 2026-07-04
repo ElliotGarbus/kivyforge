@@ -76,7 +76,7 @@ class TestResolveAssemblyArchs:
 @pytest.fixture
 def faked(monkeypatch):
     """Replace the heavy staging/signing steps with recorders."""
-    calls = {"runtime": [], "wheels": [], "sign": [], "icns": []}
+    calls = {"runtime": [], "wheels": [], "sign": [], "icns": [], "launcher": None}
 
     def fake_runtime(runtime, archs, home, **k):
         home.mkdir(parents=True, exist_ok=True)
@@ -89,8 +89,14 @@ def faked(monkeypatch):
         lib.mkdir(parents=True, exist_ok=True)
         calls["wheels"].append(tuple(archs))
 
+    def fake_launcher(dest, *, entry_point, archs):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\xcf\xfa\xed\xfe")  # Mach-O magic placeholder
+        calls["launcher"] = (entry_point, tuple(archs))
+
     monkeypatch.setattr(bundle, "stage_runtime", fake_runtime)
     monkeypatch.setattr(bundle, "stage_wheels", fake_wheels)
+    monkeypatch.setattr(bundle, "build_launcher", fake_launcher)
     monkeypatch.setattr(
         bundle, "sign_bundle_adhoc", lambda app: calls["sign"].append(app) or 1
     )

@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import os
+import platform
+import shutil
 import stat
 
+import pytest
+
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.macos.launcher import write_launcher
+from kivyforge.macos import AppBundleError
+from kivyforge.macos.launcher import build_launcher, render_launcher_source
+from kivyforge.macos.machotools import is_macho, macho_arches
 from kivyforge.macos.plist import DEFAULT_MINIMUM_SYSTEM_VERSION, build_info_plist
 
 _BASE = (
@@ -50,13 +56,39 @@ class TestInfoPlist:
         assert plist["CFBundleIconFile"] == "x.icns"
 
 
-class TestLauncher:
-    def test_writes_executable_script(self, tmp_path):
+class TestLauncherSource:
+    def test_embeds_entry_and_layout(self):
+        src = render_launcher_source("main")
+        assert 'static const char *ENTRY = "main";' in src
+        assert "Resources/python" in src
+        assert "Resources/app" in src
+        assert "Resources/lib" in src
+        assert "execv(py, child)" in src
+
+    def test_rejects_non_identifier_entry(self):
+        with pytest.raises(AppBundleError, match="not a valid module name"):
+            render_launcher_source("main.py")
+
+
+_HAS_CLANG = shutil.which("clang") is not None
+
+
+@pytest.mark.skipif(not _HAS_CLANG, reason="clang (Xcode CLT) not available")
+class TestLauncherCompile:
+    def test_builds_thin_macho(self, tmp_path):
+        host = "arm64" if platform.machine() == "arm64" else "x86_64"
         path = tmp_path / "MacOS" / "myapp"
-        write_launcher(path, entry_point="main")
-        text = path.read_text()
-        assert text.startswith("#!/bin/sh")
-        assert 'exec "$home/bin/python3" "$app/main.py"' in text
-        assert "Resources/python" in text
-        mode = os.stat(path).st_mode
-        assert mode & stat.S_IXUSR
+        build_launcher(path, entry_point="main", archs=(host,))
+        assert is_macho(path)
+        assert macho_arches(path) == (host,)
+        assert os.stat(path).st_mode & stat.S_IXUSR
+
+    def test_builds_universal2_macho(self, tmp_path):
+        path = tmp_path / "MacOS" / "myapp"
+        build_launcher(path, entry_point="main", archs=("arm64", "x86_64"))
+        assert is_macho(path)
+        assert set(macho_arches(path)) == {"arm64", "x86_64"}
+
+    def test_requires_at_least_one_arch(self, tmp_path):
+        with pytest.raises(AppBundleError, match="at least one arch"):
+            build_launcher(tmp_path / "x", entry_point="main", archs=())

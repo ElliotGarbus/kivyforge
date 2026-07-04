@@ -13,7 +13,7 @@ and the `Platform` backend interface).
 > signing, and macOS `doctor` checks. A couple of implementation details differ
 > from the original design and are noted inline below (the bundled runtime lives
 > under `Contents/Resources/` rather than `Contents/Frameworks/`, and the
-> launcher is a POSIX shell script).
+> launcher is a tiny compiled Mach-O stub rather than a shell script).
 
 ## Scope
 
@@ -193,7 +193,7 @@ MyApp.app/
 ├── Contents/
 │   ├── Info.plist                 ← from [project] + [tool.kivy.macos]
 │   ├── MacOS/
-│   │   └── MyApp                  ← launcher (POSIX shell script; sets env, execs Python)
+│   │   └── MyApp                  ← launcher (compiled Mach-O stub; sets env, execs Python)
 │   └── Resources/
 │       ├── MyApp.icns             ← from [tool.kivy.macos.icons].source
 │       ├── app/                   ← user code (from [tool.kivy].app_dir)
@@ -214,12 +214,23 @@ canonical layout regardless of provider).
 > and each nested Mach-O (the interpreter, `libpython`, `.dylib`s, wheel `.so`s)
 > is still signed individually — so the bundle both signs and runs correctly.
 
-The launcher is a small POSIX shell script (no C stub, so the bundler needs no
-compiler): it resolves the bundle relative to itself, points `PYTHONHOME` at the
-bundled runtime and `PYTHONPATH` at `Resources/app` + `Resources/lib`, then execs
-`Resources/python/bin/python3 Resources/app/<entry_point>.py` — the desktop
-analog of the iOS `main.m` bootstrap. The Mach-O binaries that *must* be
-ad-hoc-signed live in the runtime + wheels and are signed separately.
+> **Implementation note — the launcher is a compiled Mach-O, not a shell
+> script.** The bundle's `CFBundleExecutable` must be a real Mach-O binary. When
+> it is a text script, Finder/LaunchServices treats it as a *document* and opens
+> a Terminal/console window alongside the app (and a script can't be
+> ad-hoc-signed as the bundle's main image). This is why every real bundler
+> (py2app, Briefcase, PyInstaller) ships a compiled stub. kivyforge compiles a
+> ~40-line C launcher with `clang` — always present, since `codesign` already
+> requires the Xcode command-line tools — for the assembled `archs` (universal2
+> when both). It's a trivial addition to the toolchain requirement, not a new
+> one.
+
+The launcher resolves the bundle relative to itself (via `_NSGetExecutablePath`,
+so the `.app` stays relocatable), points `PYTHONHOME` at the bundled runtime and
+`PYTHONPATH` at `Resources/app` + `Resources/lib`, sets `PYTHONNOUSERSITE`, then
+`execv`s `Resources/python/bin/python3 Resources/app/<entry_point>.py` — the
+desktop analog of the iOS `main.m` bootstrap. It is itself ad-hoc-signed along
+with the Mach-O binaries in the runtime + wheels.
 
 ## `build` / `run` / `package`
 
