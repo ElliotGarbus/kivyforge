@@ -10,7 +10,12 @@ conversion — the lock is simpler than iOS.
 
 from __future__ import annotations
 
-from .builder import MacosBuildError, build_macos_lockfile
+from .builder import (
+    MacosBuildError,
+    build_macos_lockfile,
+    diff_summary,
+    semantic_equal,
+)
 from .model import MacosLockfile, MacosPythonRuntime, RuntimeArtifact
 from .resolver import MacosResolver, MacosResolverError, get_macos_resolver
 from .runtime import (
@@ -31,8 +36,10 @@ __all__ = [
     "RuntimeProvider",
     "RuntimeProviderError",
     "build_macos_lockfile",
+    "diff_summary",
     "dumps",
     "get_macos_resolver",
     "load",
     "loads",
+    "semantic_equal",
 ]

@@ -11,8 +11,15 @@ from pathlib import Path
 import click
 
 PYPROJECT_NAME = "pyproject.toml"
+# iOS lockfile name, kept for the iOS verbs' backward-compatible call sites.
+# New/platform-aware code uses ``lockfile_name``/``lockfile_path_for``.
 LOCKFILE_NAME = "pylock.ios.toml"
 MIGRATION_URL = "https://kivy.org/docs/migration-2.x-to-3.0.html"
+
+
+def lockfile_name(platform: str) -> str:
+    """The per-platform lockfile filename, e.g. ``pylock.macos.toml``."""
+    return f"pylock.{platform}.toml"
 
 
 class ToolchainError(click.ClickException):
@@ -48,3 +55,9 @@ def lockfile_path(start: Path | None = None) -> Path:
     """Return the path where ``pylock.ios.toml`` lives (sibling to pyproject)."""
     base = Path.cwd() if start is None else start
     return base / LOCKFILE_NAME
+
+
+def lockfile_path_for(platform: str, start: Path | None = None) -> Path:
+    """Return the ``pylock.<platform>.toml`` path (sibling to pyproject)."""
+    base = Path.cwd() if start is None else start
+    return base / lockfile_name(platform)
