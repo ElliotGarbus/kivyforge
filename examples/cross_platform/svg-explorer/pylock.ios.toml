@@ -1,6 +1,6 @@
 lock-version = "1.0"
 created-by = "kivyforge"
-requires-python = ">=3.15.0b2"
+requires-python = ">=3.14"
 extras = []
 dependency-groups = []
 default-groups = []
@@ -94,8 +94,8 @@ hashes = { sha256 = "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef72
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-07-03T21:47:57Z"
-pyproject_sha256 = "fca8c8a74b3a11454a8cb65b027c82b0d8fbbadd13c4fd272e3d81c39afdb797"
+generated_at = "2026-07-04T02:17:28Z"
+pyproject_sha256 = "4a6452040a4c0e8ae7df09cfa1a4899f56d061d7db5bf9d04d4f57086936cab9"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]

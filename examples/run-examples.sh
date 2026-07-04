@@ -65,15 +65,26 @@ done
 export KIVYFORGE_PLATFORM="$PLATFORM"
 LOCK="pylock.${PLATFORM}.toml"
 
-# Default set: every example dir except hello-world, in a sensible order.
-DEFAULT_EXAMPLES=(
-    hello-kivy
-    keychain-spm
-    mobile-geometry
-    pyobjus-ball
-    pyobjus-deviceinfo
-    svg-explorer
-)
+# Default set per platform. iOS runs the full simulator suite; macOS runs the
+# examples that build from public PyPI wheels (the Kivy-3.0 examples need
+# locally-built wheels first — see scripts/build_macos_wheels.sh).
+if [[ "$PLATFORM" == "macos" ]]; then
+    DEFAULT_EXAMPLES=(
+        hello-world
+        dice-roller
+        notes
+        desktop-viewer
+    )
+else
+    DEFAULT_EXAMPLES=(
+        hello-kivy
+        keychain-spm
+        mobile-geometry
+        pyobjus-ball
+        pyobjus-deviceinfo
+        svg-explorer
+    )
+fi
 
 if [[ ${#ARGS[@]} -gt 0 ]]; then
     EXAMPLES=("${ARGS[@]}")
@@ -85,7 +96,7 @@ fi
 resolve_example_dir() {
     local name="$1"
     local group
-    for group in cross_platform ios; do
+    for group in cross_platform ios macos; do
         if [[ -d "$EXAMPLES_DIR/$group/$name" ]]; then
             echo "$EXAMPLES_DIR/$group/$name"
             return 0
@@ -129,15 +140,22 @@ for ex in "${EXAMPLES[@]}"; do
 
     ok=1
     rm -f "$LOCK" && echo ">>> removed $LOCK" || ok=0
-    [[ $ok -eq 1 ]] && { run_step "clean" kivyforge clean                            || ok=0; }
-    [[ $ok -eq 1 ]] && { run_step "lock"  kivyforge lock                             || ok=0; }
-    [[ $ok -eq 1 ]] && { run_step "build" kivyforge build -p "$PLATFORM" --simulator || ok=0; }
-    [[ $ok -eq 1 ]] && { run_step "run"   kivyforge run   -p "$PLATFORM" --simulator || ok=0; }
+    [[ $ok -eq 1 ]] && { run_step "clean" kivyforge clean || ok=0; }
+    [[ $ok -eq 1 ]] && { run_step "lock"  kivyforge lock  || ok=0; }
+    if [[ "$PLATFORM" == "macos" ]]; then
+        # No simulator on macOS; build the .app, then open it (non-blocking) so
+        # the verification loop can continue while the window is up.
+        [[ $ok -eq 1 ]] && { run_step "build" kivyforge build -p macos || ok=0; }
+        [[ $ok -eq 1 ]] && { run_step "open"  open build/macos/*.app   || ok=0; }
+    else
+        [[ $ok -eq 1 ]] && { run_step "build" kivyforge build -p "$PLATFORM" --simulator || ok=0; }
+        [[ $ok -eq 1 ]] && { run_step "run"   kivyforge run   -p "$PLATFORM" --simulator || ok=0; }
+    fi
 
     popd >/dev/null
 
     if [[ $ok -eq 1 ]]; then
-        echo "+++ $ex: launched on simulator"
+        echo "+++ $ex: launched"
         PASSED+=("$ex")
     else
         echo "--- $ex: FAILED"

@@ -1,7 +1,8 @@
 [project]
 name = "svg-explorer"
 version = "0.1.0"
-requires-python = ">=3.15.0b2"
+# Floor across platforms: macOS bundles CPython 3.14.6 (PBS), iOS 3.15.0b2.
+requires-python = ">=3.14"
 dependencies = [
     "kivy>=3.0.0.dev0,<4",
 ]
@@ -11,6 +12,27 @@ display_name = "SVG Explorer"
 app_dir = "src"
 entry_point = "main"
 orientation = ["portrait", "landscape-left", "landscape-right"]
+
+# macOS uses Kivy 3.0 wheels too, which have no public macOS build yet — build
+# them into examples/wheels/macos/ first (scripts/build_macos_wheels.sh), then
+# `kivyforge lock -p macos`. See the repo README.
+[tool.kivy.macos]
+schema_version = 1
+bundle_id = "org.kivy.svg-explorer"
+build = 1
+archs = ["arm64", "x86_64"]
+find_links = ["../../wheels/macos"]
+exclude = [
+    "kivy-garden",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.macos.icons]
+source = "src/assets/compass.png"
+
+[tool.kivy.macos.python]
+version = "3.14.6"
 
 [tool.kivy.ios]
 schema_version = 1

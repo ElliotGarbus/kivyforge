@@ -1,27 +1,26 @@
 [project]
-name = "mobile-geometry"
+name = "dice-roller"
 version = "0.1.0"
-# Floor across platforms: macOS bundles CPython 3.14.6 (PBS), iOS 3.15.0b2.
-requires-python = ">=3.14"
+# macOS bundles CPython 3.13.14 (PBS) with Kivy 2.3.1 wheels from PyPI; iOS uses
+# the 3.15 wheels vendored under examples/wheels/ios.
+requires-python = ">=3.13"
 dependencies = [
-    "kivy>=3.0.0.dev0,<4",
+    "kivy>=2.3.1",
 ]
 
 [tool.kivy]
-display_name = "Mobile Geometry"
+display_name = "Dice Roller"
 app_dir = "src"
 entry_point = "main"
-orientation = ["portrait", "landscape-left", "landscape-right"]
+orientation = ["portrait"]
 
-# macOS uses Kivy 3.0 wheels too, which have no public macOS build yet — build
-# them into examples/wheels/macos/ first (scripts/build_macos_wheels.sh), then
-# `kivyforge lock -p macos`. See the repo README.
 [tool.kivy.macos]
 schema_version = 1
-bundle_id = "org.kivy.mobile-geometry"
+bundle_id = "org.example.dice-roller"
 build = 1
 archs = ["arm64", "x86_64"]
-find_links = ["../../wheels/macos"]
+# Kivy's macOS wheel declares deps unused by this app; prune them so the lock
+# stays lean (RST/CodeInput/UrlRequest widgets are not used here).
 exclude = [
     "kivy-garden",
     "requests",
@@ -34,11 +33,11 @@ exclude = [
 ]
 
 [tool.kivy.macos.python]
-version = "3.14.6"
+version = "3.13.14"
 
 [tool.kivy.ios]
 schema_version = 1
-bundle_id = "org.kivy.mobile-geometry"
+bundle_id = "org.example.dice-roller"
 build = 1
 deployment_target = "16.0"
 find_links = ["../../wheels/ios"]

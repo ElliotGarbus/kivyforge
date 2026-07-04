@@ -1,0 +1,35 @@
+[project]
+name = "desktop-viewer"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "kivy>=2.3.1",
+]
+
+[tool.kivy]
+display_name = "Desktop Viewer"
+app_dir = "src"
+entry_point = "main"
+
+# macOS-only example: desktop-native UX (resizable window, keyboard shortcuts, a
+# file-open dialog) that has no meaning on a touch phone, so there is no
+# [tool.kivy.ios] overlay.
+[tool.kivy.macos]
+schema_version = 1
+bundle_id = "org.example.desktop-viewer"
+build = 1
+minimum_system_version = "12.0"
+archs = ["arm64", "x86_64"]
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.macos.python]
+version = "3.13.14"

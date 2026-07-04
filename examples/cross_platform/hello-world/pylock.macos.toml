@@ -1,0 +1,30 @@
+lock-version = "1.0"
+created-by = "kivyforge"
+requires-python = ">=3.14"
+extras = []
+dependency-groups = []
+default-groups = []
+
+[tool.kivyforge]
+schema_version = 1
+kivyforge_version = "3.0.0.dev0"
+generated_at = "2026-07-04T02:12:53Z"
+pyproject_sha256 = "5acea4731be728bc794e03e2a6970fc792969d978ca63ddbefc00896ed168f47"
+tool_kivyforge_schema_version = 1
+archs = ["arm64", "x86_64"]
+
+[tool.kivyforge.python_runtime]
+provider = "python-build-standalone"
+version = "3.14.6"
+
+[[tool.kivyforge.python_runtime.artifacts]]
+arch = "arm64"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.14.6%2B20260623-aarch64-apple-darwin-install_only.tar.gz"
+sha256 = "44f31db9afd16f714194580f2362e66d8b1784bf3a3e2d0ac86e7b392f32d75b"
+archive_format = "tar.gz"
+
+[[tool.kivyforge.python_runtime.artifacts]]
+arch = "x86_64"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.14.6%2B20260623-x86_64-apple-darwin-install_only.tar.gz"
+sha256 = "ad7e98f99975051ac4831c7062e6446b4fa21d04bfe112f3b60ef279dab4f4c5"
+archive_format = "tar.gz"
