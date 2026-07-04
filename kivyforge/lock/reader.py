@@ -9,14 +9,12 @@ from pathlib import Path
 from .model import (
     LOCK_VERSION,
     TOOL_SCHEMA_VERSION,
-    LockedPackage,
     LockedSwiftPackage,
-    LockedWheel,
     LockedXcframework,
     Lockfile,
-    PackageDep,
     PythonXcframework,
 )
+from .pep751 import parse_package as _parse_package
 
 # Highest major lock-version (PEP 751 top-level) this reader accepts.
 SUPPORTED_LOCK_VERSION_MAJOR = int(LOCK_VERSION.split(".", 1)[0])
@@ -145,36 +143,6 @@ def _as_list(table: dict, key: str) -> list:
     if not isinstance(value, list):
         raise LockError(f"pylock.ios.toml {key!r} must be an array of tables.")
     return value
-
-
-def _parse_package(p: dict) -> LockedPackage:
-    tool = p.get("tool", {}).get("kivyforge", {})
-    deps = tuple(
-        PackageDep(name=d["name"], marker=d.get("marker"))
-        for d in p.get("dependencies", [])
-    )
-    wheels = tuple(_parse_wheel(w) for w in p.get("wheels", []))
-    return LockedPackage(
-        name=p["name"],
-        version=p["version"],
-        wheels=wheels,
-        requires_python=p.get("requires-python"),
-        dependencies=deps,
-        marker=p.get("marker"),
-        direct_requirement=bool(tool.get("direct_requirement", False)),
-        source_index=tool.get("source_index"),
-    )
-
-
-def _parse_wheel(w: dict) -> LockedWheel:
-    return LockedWheel(
-        name=w["name"],
-        sha256=w.get("hashes", {}).get("sha256", ""),
-        url=w.get("url"),
-        path=w.get("path"),
-        upload_time=w.get("upload-time"),
-        size=w.get("size"),
-    )
 
 
 def _parse_xcframework(x: dict) -> LockedXcframework:

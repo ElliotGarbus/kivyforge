@@ -9,12 +9,14 @@ wheels by filename) so diffs across runs show only real changes.
 from __future__ import annotations
 
 from .model import (
-    LockedPackage,
     LockedSwiftPackage,
-    LockedWheel,
     LockedXcframework,
     Lockfile,
 )
+from .pep751 import arr as _arr
+from .pep751 import b as _b
+from .pep751 import emit_package as _emit_package
+from .pep751 import s as _s
 
 
 def dumps(lock: Lockfile) -> str:
@@ -59,48 +61,6 @@ def dumps(lock: Lockfile) -> str:
         _emit_swift_package(lines, sp)
 
     return "\n".join(lines) + "\n"
-
-
-def _emit_package(lines: list[str], pkg: LockedPackage) -> None:
-    lines.append("[[packages]]")
-    lines.append(f"name = {_s(pkg.name)}")
-    lines.append(f"version = {_s(pkg.version)}")
-    if pkg.requires_python:
-        lines.append(f"requires-python = {_s(pkg.requires_python)}")
-    if pkg.marker:
-        lines.append(f"marker = {_s(pkg.marker)}")
-    if pkg.dependencies:
-        deps = ", ".join(_dep_inline(d) for d in pkg.dependencies)
-        lines.append(f"dependencies = [{deps}]")
-
-    if pkg.direct_requirement or pkg.source_index:
-        lines.append("")
-        lines.append("[packages.tool.kivyforge]")
-        if pkg.direct_requirement:
-            lines.append("direct_requirement = true")
-        if pkg.source_index:
-            lines.append(f"source_index = {_s(pkg.source_index)}")
-
-    for wheel in sorted(pkg.wheels, key=lambda w: w.name):
-        lines.append("")
-        _emit_wheel(lines, wheel)
-    lines.append("")
-
-
-def _emit_wheel(lines: list[str], wheel: LockedWheel) -> None:
-    lines.append("[[packages.wheels]]")
-    lines.append(f"name = {_s(wheel.name)}")
-    if wheel.upload_time:
-        lines.append(f"upload-time = {_s(wheel.upload_time)}")
-    if wheel.url:
-        lines.append(f"url = {_s(wheel.url)}")
-    else:
-        path = wheel.path
-        assert path is not None
-        lines.append(f"path = {_s(path)}")
-    lines.append(f"hashes = {{ sha256 = {_s(wheel.sha256)} }}")
-    if wheel.size is not None:
-        lines.append(f"size = {wheel.size}")
 
 
 def _emit_xcframework(lines: list[str], xc: LockedXcframework) -> None:
@@ -151,30 +111,3 @@ def _requirement_inline(requirement: dict[str, object]) -> str:
     if isinstance(value, list):
         return f"{{ {kind} = {_arr([str(v) for v in value])} }}"
     return f"{{ {kind} = {_s(str(value))} }}"
-
-
-def _dep_inline(dep) -> str:
-    if dep.marker:
-        return f"{{ name = {_s(dep.name)}, marker = {_s(dep.marker)} }}"
-    return f"{{ name = {_s(dep.name)} }}"
-
-
-def _s(value: str) -> str:
-    """Emit a TOML basic string with minimal escaping."""
-    escaped = (
-        value.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\t", "\\t")
-    )
-    return f'"{escaped}"'
-
-
-def _arr(values) -> str:
-    if not values:
-        return "[]"
-    return "[" + ", ".join(_s(v) for v in values) + "]"
-
-
-def _b(value: bool) -> str:
-    return "true" if value else "false"
