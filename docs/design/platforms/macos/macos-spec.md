@@ -7,9 +7,13 @@ after iOS, and it exercises the cross-platform architecture (shared
 `[project]`/`[tool.kivy]`, a `[tool.kivy.macos]` overlay, a `pylock.macos.toml`,
 and the `Platform` backend interface).
 
-> **Status: planned (design).** This document specifies the intended macOS
-> backend. Remaining implementation-time details are resolved in Phase 3 and this
-> spec is updated to match.
+> **Status: implemented (Phase 3).** The macOS backend ships: `[tool.kivy.macos]`
+> parsing, `pylock.macos.toml` resolution (PBS runtime + macOS-tagged wheels),
+> the `.app` generator, `build`/`run`/`package -f app` with `--arch`, ad-hoc
+> signing, and macOS `doctor` checks. A couple of implementation details differ
+> from the original design and are noted inline below (the bundled runtime lives
+> under `Contents/Resources/` rather than `Contents/Frameworks/`, and the
+> launcher is a POSIX shell script).
 
 ## Scope
 
@@ -189,20 +193,33 @@ MyApp.app/
 ├── Contents/
 │   ├── Info.plist                 ← from [project] + [tool.kivy.macos]
 │   ├── MacOS/
-│   │   └── MyApp                  ← launcher executable (sets up env, starts Python)
-│   ├── Resources/
-│   │   ├── MyApp.icns             ← from [tool.kivy.macos.icons].source
-│   │   ├── app/                   ← user code (from [tool.kivy].app_dir)
-│   │   └── lib/                   ← installed wheels (site-packages)
-│   └── Frameworks/ (or python/)   ← bundled CPython runtime + stdlib
+│   │   └── MyApp                  ← launcher (POSIX shell script; sets env, execs Python)
+│   └── Resources/
+│       ├── MyApp.icns             ← from [tool.kivy.macos.icons].source
+│       ├── app/                   ← user code (from [tool.kivy].app_dir)
+│       ├── lib/                   ← installed wheels (site-packages)
+│       └── python/                ← bundled CPython runtime + stdlib
 ```
 
 The bundled runtime is the active provider's normalized, relocatable CPython tree
-placed under `Frameworks/` (PBS today, the official python.org framework later — the
-bundler consumes the canonical layout regardless of provider).
-The launcher sets `PYTHONHOME`/`sys.path` to the bundled runtime and
-site-packages, then imports `[tool.kivy].entry_point` — the desktop analog of the
-iOS `main.m` bootstrap.
+(PBS today, the official python.org framework later — the bundler consumes the
+canonical layout regardless of provider).
+
+> **Implementation note — runtime under `Resources/`, not `Frameworks/`.** A
+> python-build-standalone tree is a *unix prefix* (`bin/`, `lib/python3.x/`,
+> `lib/tk*`), not an Apple framework bundle. Placing it under
+> `Contents/Frameworks/` triggers `codesign`'s framework auto-discovery on the
+> non-framework subdirectories (it rejects `lib/tk9.0` with "bundle format
+> unrecognized"). Under `Contents/Resources/python/` the tree is sealed as data,
+> and each nested Mach-O (the interpreter, `libpython`, `.dylib`s, wheel `.so`s)
+> is still signed individually — so the bundle both signs and runs correctly.
+
+The launcher is a small POSIX shell script (no C stub, so the bundler needs no
+compiler): it resolves the bundle relative to itself, points `PYTHONHOME` at the
+bundled runtime and `PYTHONPATH` at `Resources/app` + `Resources/lib`, then execs
+`Resources/python/bin/python3 Resources/app/<entry_point>.py` — the desktop
+analog of the iOS `main.m` bootstrap. The Mach-O binaries that *must* be
+ad-hoc-signed live in the runtime + wheels and are signed separately.
 
 ## `build` / `run` / `package`
 

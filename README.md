@@ -20,18 +20,22 @@ their per-platform workflows behind a single declarative configuration.
 The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
 Linux, macOS, and Windows**.
 
-> **Status: early development — iOS first.** Today kivyforge targets **iOS**: it
-> resolves dependencies into `pylock.ios.toml`, downloads the official
-> [`Python.xcframework`](https://www.python.org/downloads/) plus prebuilt iOS
-> wheels, and generates an [Xcode](https://developer.apple.com/xcode/) project
-> ready to run on device or simulator. Android, Linux, macOS, and Windows targets
-> are planned. If you need a shipping toolchain today, use kivy-ios 2.x,
+> **Status: early development — iOS + macOS.** kivyforge targets **iOS** (resolve
+> into `pylock.ios.toml`, download the official
+> [`Python.xcframework`](https://www.python.org/downloads/) + prebuilt iOS
+> wheels, generate an [Xcode](https://developer.apple.com/xcode/) project) and
+> **macOS** (resolve into `pylock.macos.toml`, bundle a relocatable
+> [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+> CPython + wheels into a signed, double-clickable `.app`). Android, Linux, and
+> Windows are planned. If you need a shipping toolchain today, use kivy-ios 2.x,
 > python-for-android, or buildozer.
 
 ### Currently supported targets
 
 - [iOS](https://www.apple.com/ios/) device (arm64) — iPhone / iPad
 - iOS Simulator (arm64, x86_64)
+- [macOS](https://www.apple.com/macos/) `.app` — Apple Silicon (arm64), Intel
+  (x86_64), or universal2 (both), ad-hoc signed
 
 kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 
@@ -78,6 +82,14 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 > These scripts require macOS, Xcode, and network access. The pure-Python
 > [`examples/cross_platform/hello-world`](examples/cross_platform/hello-world/)
 > uses only the python.org `Python.xcframework` and needs no wheels.
+>
+> **macOS wheels.** The macOS examples that build straight from PyPI
+> (`dice-roller`, `notes`, `desktop-viewer`) need no wheel-building step — Kivy
+> 2.3.1 ships universal2 macOS wheels. The Kivy-3.0 examples (`hello-kivy`,
+> `mobile-geometry`, `svg-explorer`) need locally-built macOS wheels, which land
+> in [`examples/wheels/macos/`](examples/wheels/macos/):
+>
+>       scripts/build_macos_wheels.sh
 
 > **Detailed documentation.** For the full design and reference docs — the
 > cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
@@ -106,14 +118,45 @@ every command from the directory that contains your app's `pyproject.toml`.
       kivyforge build --simulator
       kivyforge run --simulator
 
+## Quick start (macOS)
+
+macOS needs only the Xcode command-line tools (`codesign`), not the full Xcode
+IDE. The macOS backend bundles a relocatable CPython + your wheels into a signed
+`.app`:
+
+      # 1. Seed [tool.kivy] / [tool.kivy.macos] config (or add the overlay by hand)
+      kivyforge init            # then add a [tool.kivy.macos] table
+
+      # 2. Resolve dependencies + pin the runtime into pylock.macos.toml
+      kivyforge lock -p macos
+
+      # 3. Build the .app (universal2 by default; --arch arm64 for a thin build)
+      kivyforge build -p macos
+
+      # 4a. Launch it (foreground, so you see stdout/tracebacks)
+      kivyforge run -p macos
+
+      # 4b. ...or produce the finished, ad-hoc-signed distributable
+      kivyforge package -p macos      # -> build/macos/<App>.app
+
+`kivyforge doctor -p macos` reports environment + project health (host, codesign,
+arch coverage, runtime floor, reachable hosts).
+
 See the runnable examples for complete, copy-pasteable walk-throughs:
 
 - [`examples/cross_platform/hello-world`](examples/cross_platform/hello-world/) —
-  pure-Python smoke test using the official python.org `Python.xcframework`
-  (no Kivy, no wheels).
+  pure-Python smoke test; builds on iOS (python.org `Python.xcframework`) **and**
+  macOS (python-build-standalone), no wheels.
+- [`examples/cross_platform/dice-roller`](examples/cross_platform/dice-roller/) —
+  minimal Kivy UI that **builds & runs on macOS today** from PyPI (Kivy 2.3.1).
+- [`examples/cross_platform/notes`](examples/cross_platform/notes/) — Kivy app with
+  a pure-Python dependency (`platformdirs`); builds on macOS from PyPI.
+- [`examples/macos/desktop-viewer`](examples/macos/desktop-viewer/) — a macOS-only
+  Kivy app (resizable window, ⌘ keyboard shortcuts, file-open dialog).
 - [`examples/cross_platform/hello-kivy`](examples/cross_platform/hello-kivy/) —
-  minimal Kivy UI that uses locally built `cp315` iOS wheels from the shared
-  [`examples/wheels/ios/`](examples/wheels/ios/) directory.
+  minimal Kivy UI; iOS uses locally built `cp315` wheels from
+  [`examples/wheels/ios/`](examples/wheels/ios/), macOS uses Kivy-3.0 wheels from
+  [`examples/wheels/macos/`](examples/wheels/macos/).
 - [`examples/cross_platform/svg-explorer`](examples/cross_platform/svg-explorer/) —
   interactive SVG viewer (multitouch pan/zoom/rotate) using the same shared wheels.
 - [`examples/ios/pyobjus-ball`](examples/ios/pyobjus-ball/) — calls native iOS APIs
