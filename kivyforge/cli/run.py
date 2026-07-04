@@ -24,6 +24,7 @@ from ..xcode import (
     simctl_list,
 )
 from ._common import ToolchainError
+from ._macos import macos_run
 from ._platform import platform_option, resolve_target
 from .build import prepare_build
 
@@ -41,6 +42,12 @@ from .build import prepare_build
     "--device", "target", flag_value="device", help="Target a connected device."
 )
 @click.option(
+    "--arch",
+    type=click.Choice(["arm64", "x86_64", "universal2"]),
+    default=None,
+    help="macOS: assemble a subset of the locked archs for a faster run.",
+)
+@click.option(
     "--destination", default=None, help="Specific simulator/device by name or UDID."
 )
 @click.option(
@@ -56,6 +63,7 @@ from .build import prepare_build
 def run(
     cli_platform: str | None,
     target: str,
+    arch: str | None,
     destination: str | None,
     list_devices: bool,
     no_build: bool,
@@ -65,7 +73,11 @@ def run(
         _list_devices()
         return
 
-    _backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform)
+
+    if backend.name == "macos":
+        macos_run(project_root, arch=arch, no_build=no_build)
+        return
     try:
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:

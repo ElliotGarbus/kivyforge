@@ -12,6 +12,7 @@ import click
 
 from ..xcode import CommandError, SigningError, XcodeBuild
 from ._common import ToolchainError
+from ._macos import macos_package
 from ._platform import platform_option, resolve_target
 from .build import _load_config, _xcodebuild_step7, prepare_build
 
@@ -24,6 +25,12 @@ from .build import _load_config, _xcodebuild_step7, prepare_build
     "fmt",
     default=None,
     help="Artifact format for the target (defaults to the platform's default).",
+)
+@click.option(
+    "--arch",
+    type=click.Choice(["arm64", "x86_64", "universal2"]),
+    default=None,
+    help="macOS: assemble a subset of the locked archs.",
 )
 @click.option(
     "--team-id", default=None, help="Override [tool.kivy.ios.signing].team_id."
@@ -46,6 +53,7 @@ from .build import _load_config, _xcodebuild_step7, prepare_build
 def package(
     cli_platform: str | None,
     fmt: str | None,
+    arch: str | None,
     team_id: str | None,
     signing_identity: str | None,
     export_method: str,
@@ -55,6 +63,15 @@ def package(
     """Build the signed, distributable artifact for the resolved platform."""
     backend, project_root = resolve_target(cli_platform)
     fmt = _resolve_format(backend, fmt)
+
+    if backend.name == "macos":
+        macos_package(
+            project_root,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+        )
+        return
 
     if backend.name != "ios":
         raise ToolchainError(f"`package` for {backend.name!r} is not implemented yet.")

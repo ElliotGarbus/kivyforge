@@ -35,12 +35,14 @@ def clean(flush_cache: bool, project_only: bool) -> None:
             config = load_config(pyproject)
         except ConfigError as exc:
             raise ToolchainError(exc.format()) from exc
-        staging = cwd / f"{config.app_slug}-ios"
-        if staging.is_dir():
-            shutil.rmtree(staging)
-            click.echo(f"Removed {staging.name}/")
+        # Generated staging trees: iOS <app>-ios/ and macOS build/macos/.
+        targets = [cwd / f"{config.app_slug}-ios", cwd / "build" / "macos"]
+        removed = [t for t in targets if _remove(t)]
+        if removed:
+            for t in removed:
+                click.echo(f"Removed {t.relative_to(cwd)}/")
         else:
-            click.echo(f"Nothing to clean ({staging.name}/ does not exist).")
+            click.echo("Nothing to clean (no generated artifacts found).")
     elif not flush_cache:
         raise ToolchainError(
             f"no {PYPROJECT_NAME} found in the current directory.\n"
@@ -52,3 +54,10 @@ def clean(flush_cache: bool, project_only: bool) -> None:
         cache = ArtifactCache()
         cache.clear()
         click.echo("Flushed the artifact download cache.")
+
+
+def _remove(path: Path) -> bool:
+    if path.is_dir():
+        shutil.rmtree(path)
+        return True
+    return False

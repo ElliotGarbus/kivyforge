@@ -43,6 +43,7 @@ from ._common import (
     ToolchainError,
     lockfile_path,
 )
+from ._macos import macos_build
 from ._platform import platform_option, resolve_target
 
 
@@ -62,9 +63,9 @@ from ._platform import platform_option, resolve_target
 )
 @click.option(
     "--arch",
-    type=click.Choice(["arm64", "x86_64"]),
+    type=click.Choice(["arm64", "x86_64", "universal2"]),
     default=None,
-    help="Override the simulator architecture.",
+    help="iOS: simulator arch. macOS: assemble a subset of the locked archs.",
 )
 @click.option(
     "--no-verify-lock", is_flag=True, help="Skip the pyproject drift check (CI only)."
@@ -110,7 +111,17 @@ def build(
 
     # Resolve the target platform before any work so an unresolved target fails
     # fast with an actionable message (common design doc 02).
-    _backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform)
+
+    if backend.name == "macos":
+        _reject_ios_flags_for_macos(target)
+        macos_build(
+            project_root,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+        )
+        return
 
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
@@ -315,6 +326,16 @@ def _encode_last_upgrade_check(version: str) -> str | None:
         return None
     major, minor, patch = (int(match.group(i) or 0) for i in (1, 2, 3))
     return str(major * 100 + minor * 10 + patch)
+
+
+def _reject_ios_flags_for_macos(target: str | None) -> None:
+    if target is not None:
+        raise ToolchainError(
+            f"--{target} is an iOS target; macOS has no simulator/device/release "
+            "targets.\n"
+            "  Use `kivyforge build -p macos` (optionally --arch) to build the "
+            ".app, or `kivyforge package -p macos` for the signed distributable."
+        )
 
 
 def _load_config(pyproject: Path):
