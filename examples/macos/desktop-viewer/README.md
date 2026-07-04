@@ -1,8 +1,9 @@
 # Desktop Viewer — macOS-only Kivy example
 
 A deliberately **desktop-only** Kivy app: a resizable text viewer with a minimum
-window size, Command-key shortcuts, and a file-open dialog — none of which map to
-a touch phone, so there is **no `[tool.kivy.ios]` overlay**.
+window size, Command-key shortcuts, and the **native macOS open panel** (Finder's
+own file chooser, via `osascript`'s `choose file` — no extra dependencies) —
+none of which map to a touch phone, so there is **no `[tool.kivy.ios]` overlay**.
 
 | Shortcut | Action |
 |----------|--------|

@@ -152,7 +152,7 @@ See the runnable examples for complete, copy-pasteable walk-throughs:
 - [`examples/cross_platform/notes`](examples/cross_platform/notes/) — Kivy app with
   a pure-Python dependency (`platformdirs`); builds on macOS from PyPI.
 - [`examples/macos/desktop-viewer`](examples/macos/desktop-viewer/) — a macOS-only
-  Kivy app (resizable window, ⌘ keyboard shortcuts, file-open dialog).
+  Kivy app (resizable window, ⌘ keyboard shortcuts, the native macOS open panel).
 - [`examples/cross_platform/hello-kivy`](examples/cross_platform/hello-kivy/) —
   minimal Kivy UI; iOS uses locally built `cp315` wheels from
   [`examples/wheels/ios/`](examples/wheels/ios/), macOS uses Kivy-3.0 wheels from
