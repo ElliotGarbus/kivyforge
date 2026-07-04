@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config.model import Config
+from ..lock.macos import MacosLockfile
 from ..lock.model import Lockfile
 from . import checks as C
+from . import checks_macos as M
 from .probe import Probe
 from .result import CheckResult, Status
 
@@ -57,5 +59,46 @@ def run_checks(
         C.check_app_native_binaries(probe, config, project_root),
         C.check_app_privacy_manifest(config, project_root),
         C.check_xcframework_privacy_manifests(config, project_root),
+    ]
+    return results
+
+
+def run_macos_checks(
+    probe: Probe,
+    *,
+    kivyforge_version: str,
+    config: Config | None = None,
+    project_root: Path | None = None,
+    lock: MacosLockfile | None = None,
+    offline: bool = False,
+) -> list[CheckResult]:
+    """Run macOS doctor checks (macos-spec). Project checks SKIP without config."""
+    project_root = project_root or Path.cwd()
+    results = [
+        M.check_macos_host(probe),
+        M.check_codesign(probe),
+        C.check_pip_version(probe),
+        C.check_kivyforge_version(probe, kivyforge_version, offline=offline),
+    ]
+
+    if config is None:
+        for name in (
+            "App source directory",
+            "Architecture coverage",
+            "Runtime floor",
+            "App icon",
+            "find_links directories",
+            "Required hosts reachable",
+        ):
+            results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
+        return results
+
+    results += [
+        C.check_app_dir(config, project_root),
+        M.check_macos_arch_coverage(config, lock),
+        M.check_macos_runtime_floor(config, lock),
+        M.check_macos_app_icon(config, project_root),
+        M.check_macos_find_links(config, project_root),
+        M.check_macos_hosts_reachable(probe, lock),
     ]
     return results

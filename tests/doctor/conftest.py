@@ -23,6 +23,14 @@ class FakeProbe:
         self._reachable = overrides.get("reachable", True)
         self._platforms = overrides.get("platforms", {})
         self._pip = overrides.get("pip", "24.3.1")
+        self._host = overrides.get("host", "Darwin")
+        self._codesign = overrides.get("codesign", True)
+
+    def host_system(self):
+        return self._host
+
+    def has_codesign(self):
+        return self._codesign
 
     def xcode_version(self):
         return self._xcode

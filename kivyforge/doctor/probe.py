@@ -7,6 +7,8 @@ object with the same methods, so the check logic never shells out.
 
 from __future__ import annotations
 
+import platform as _platform
+import shutil
 import socket
 import struct
 import subprocess
@@ -39,9 +41,17 @@ class Probe(Protocol):
     def keychain_identities(self) -> list[str]: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
     def binary_platforms(self, path: Path) -> set[str]: ...
+    def host_system(self) -> str: ...
+    def has_codesign(self) -> bool: ...
 
 
 class RealProbe:
+    def host_system(self) -> str:
+        return _platform.system()
+
+    def has_codesign(self) -> bool:
+        return shutil.which("codesign") is not None
+
     def xcode_version(self) -> str | None:
         out = _capture(["xcodebuild", "-version"])
         if not out:
