@@ -22,6 +22,11 @@ from kivy.uix.textinput import TextInput
 
 _HELP = "Cmd+O open    Cmd+ / Cmd- font size    Cmd+W / Cmd+Q quit"
 
+# Kivy keycodes for the numeric-keypad +/- keys (distinct from the main-row keys,
+# so a numpad-equipped keyboard needs them handled explicitly).
+_KP_ADD = 270
+_KP_SUBTRACT = 269
+
 
 def native_open_panel() -> str | None:
     """Show the native macOS open panel and return the chosen POSIX path.
@@ -89,9 +94,9 @@ class DesktopViewerApp(App):
             self.viewer.open_file()
         elif key in (ord("q"), ord("w")):
             self.stop()
-        elif key in (ord("="), ord("+")):
+        elif key in (ord("="), ord("+"), _KP_ADD):
             self.viewer.bump_font(2)
-        elif key == ord("-"):
+        elif key in (ord("-"), _KP_SUBTRACT):
             self.viewer.bump_font(-2)
         else:
             return False
