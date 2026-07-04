@@ -1,10 +1,10 @@
-"""Serialize/parse ``pylock.macos.toml``.
+"""Serialize/parse ``pylock.<platform>.toml`` for the wheel+runtime family.
 
 Reuses the platform-neutral PEP 751 ``[[packages]]`` emitter/parser
-(``kivyforge.lock.pep751``) and adds the macOS ``[tool.kivyforge]`` extension:
-the arch set plus the bundled Python runtime pin (provider + per-arch
-artifacts). Deterministic ordering (packages by name/version, wheels by
-filename, artifacts by arch) keeps diffs meaningful.
+(``kivyforge.lock.pep751``) and adds the ``[tool.kivyforge]`` extension: the arch
+set plus the bundled Python runtime pin (provider + per-arch artifacts). The
+platform is carried by the filename, so ``loads``/``load`` take it explicitly
+(used only for clear error messages and to stamp the model).
 """
 
 from __future__ import annotations
@@ -19,17 +19,17 @@ from ..pep751 import parse_package as _parse_package
 from ..pep751 import s as _s
 from ..reader import LockError
 from .model import (
-    MACOS_TOOL_SCHEMA_VERSION,
-    MacosLockfile,
-    MacosPythonRuntime,
+    TOOL_SCHEMA_VERSION,
+    PythonRuntime,
     RuntimeArtifact,
+    WheelRuntimeLock,
 )
 
 SUPPORTED_LOCK_VERSION_MAJOR = int(LOCK_VERSION.split(".", 1)[0])
-SUPPORTED_TOOL_SCHEMA_VERSION = MACOS_TOOL_SCHEMA_VERSION
+SUPPORTED_TOOL_SCHEMA_VERSION = TOOL_SCHEMA_VERSION
 
 
-def dumps(lock: MacosLockfile) -> str:
+def dumps(lock: WheelRuntimeLock) -> str:
     lines: list[str] = []
 
     lines.append(f"lock-version = {_s(lock.lock_version)}")
@@ -70,41 +70,43 @@ def dumps(lock: MacosLockfile) -> str:
     return "\n".join(lines) + "\n"
 
 
-def loads(text: str) -> MacosLockfile:
+def loads(text: str, *, platform: str) -> WheelRuntimeLock:
+    name = f"pylock.{platform}.toml"
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
-        raise LockError(f"pylock.macos.toml is not valid TOML: {exc}") from exc
+        raise LockError(f"{name} is not valid TOML: {exc}") from exc
     if not isinstance(raw, dict):
-        raise LockError("pylock.macos.toml must be a TOML table.")
+        raise LockError(f"{name} must be a TOML table.")
     try:
-        return _from_raw(raw)
+        return _from_raw(raw, platform=platform, name=name)
     except LockError:
         raise
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
-        raise LockError(f"pylock.macos.toml is malformed: {exc!r}") from exc
+        raise LockError(f"{name} is malformed: {exc!r}") from exc
 
 
-def load(path: str | Path) -> MacosLockfile:
-    return loads(Path(path).read_text(encoding="utf-8"))
+def load(path: str | Path, *, platform: str) -> WheelRuntimeLock:
+    return loads(Path(path).read_text(encoding="utf-8"), platform=platform)
 
 
-def _from_raw(raw: dict) -> MacosLockfile:
-    lock_version = _check_lock_version(raw)
+def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
+    lock_version = _check_lock_version(raw, name)
 
     tool_raw = raw.get("tool", {})
     if not isinstance(tool_raw, dict):
-        raise LockError("pylock.macos.toml [tool] must be a table.")
+        raise LockError(f"{name} [tool] must be a table.")
     tool = tool_raw.get("kivyforge", {})
     if not isinstance(tool, dict) or not tool:
-        raise LockError("pylock.macos.toml is missing the [tool.kivyforge] table.")
+        raise LockError(f"{name} is missing the [tool.kivyforge] table.")
 
     schema_version = _check_tool_schema_version(tool)
-    runtime = _parse_runtime(tool)
+    runtime = _parse_runtime(tool, name)
 
-    packages = tuple(_parse_package(p) for p in _as_list(raw, "packages"))
+    packages = tuple(_parse_package(p) for p in _as_list(raw, "packages", name))
 
-    return MacosLockfile(
+    return WheelRuntimeLock(
+        platform=platform,
         requires_python=raw.get("requires-python", ">=3.15"),
         packages=packages,
         python_runtime=runtime,
@@ -122,20 +124,17 @@ def _from_raw(raw: dict) -> MacosLockfile:
     )
 
 
-def _check_lock_version(raw: dict) -> str:
+def _check_lock_version(raw: dict, name: str) -> str:
     lock_version = raw.get("lock-version", LOCK_VERSION)
     if not isinstance(lock_version, str):
-        raise LockError("pylock.macos.toml lock-version must be a string.")
+        raise LockError(f"{name} lock-version must be a string.")
     major = lock_version.split(".", 1)[0]
     if not major.isdigit():
-        raise LockError(
-            f"pylock.macos.toml lock-version {lock_version!r} is not a valid version."
-        )
+        raise LockError(f"{name} lock-version {lock_version!r} is not a valid version.")
     if int(major) > SUPPORTED_LOCK_VERSION_MAJOR:
         raise LockError(
-            f"pylock.macos.toml lock-version {lock_version} is newer than this "
-            f"kivyforge understands (max {SUPPORTED_LOCK_VERSION_MAJOR}.x). "
-            "Upgrade kivyforge."
+            f"{name} lock-version {lock_version} is newer than this kivyforge "
+            f"understands (max {SUPPORTED_LOCK_VERSION_MAJOR}.x). Upgrade kivyforge."
         )
     return lock_version
 
@@ -153,10 +152,10 @@ def _check_tool_schema_version(tool: dict) -> int:
     return schema_version
 
 
-def _parse_runtime(tool: dict) -> MacosPythonRuntime:
+def _parse_runtime(tool: dict, name: str) -> PythonRuntime:
     rt = tool.get("python_runtime")
     if not isinstance(rt, dict) or not rt:
-        raise LockError("pylock.macos.toml is missing [tool.kivyforge.python_runtime].")
+        raise LockError(f"{name} is missing [tool.kivyforge.python_runtime].")
     for field in ("provider", "version"):
         value = rt.get(field)
         if not isinstance(value, str) or not value:
@@ -184,7 +183,7 @@ def _parse_runtime(tool: dict) -> MacosPythonRuntime:
                 archive_format=a.get("archive_format", "tar.gz"),
             )
         )
-    return MacosPythonRuntime(
+    return PythonRuntime(
         provider=rt["provider"],
         version=rt["version"],
         artifacts=tuple(artifacts),
@@ -192,8 +191,8 @@ def _parse_runtime(tool: dict) -> MacosPythonRuntime:
     )
 
 
-def _as_list(table: dict, key: str) -> list:
+def _as_list(table: dict, key: str, name: str) -> list:
     value = table.get(key, [])
     if not isinstance(value, list):
-        raise LockError(f"pylock.macos.toml {key!r} must be an array of tables.")
+        raise LockError(f"{name} {key!r} must be an array of tables.")
     return value

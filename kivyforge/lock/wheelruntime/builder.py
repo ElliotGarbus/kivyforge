@@ -1,4 +1,10 @@
-"""Assemble a ``MacosLockfile`` from a validated ``Config`` (macos-spec)."""
+"""Assemble a ``WheelRuntimeLock`` from a ``Config`` + a platform profile.
+
+Generic orchestration shared by every wheel+runtime platform: validate/resolve
+find_links, pin the runtime, resolve wheels per variant, fail-fast on any variant
+a compiled dependency does not cover, and assemble the lock. The only
+platform-specific inputs come from the ``PlatformLockProfile``.
+"""
 
 from __future__ import annotations
 
@@ -19,100 +25,87 @@ from ..find_links import (
 )
 from ..model import LockedPackage, LockedWheel, PackageDep, canonical_name
 from ..reader import compute_pyproject_sha256
-from .model import MacosLockfile
-from .resolver import (
-    DEFAULT_MACOS_FLOOR,
-    MacosResolver,
-    MacosResolverError,
-    get_macos_resolver,
-    wheel_arch,
-)
-from .runtime import (
-    PythonBuildStandaloneProvider,
-    RuntimeProvider,
-    RuntimeProviderError,
-)
+from .model import WheelRuntimeLock
+from .profile import PlatformLockProfile
+from .resolver import WheelResolver, WheelResolverError
+from .runtime import RuntimeProvider, RuntimeProviderError
 
 
-class MacosBuildError(Exception):
-    """A macOS lock build failure surfaced with an actionable message."""
+class WheelRuntimeBuildError(Exception):
+    """A wheel+runtime lock build failure surfaced with an actionable message."""
 
 
-def build_macos_lockfile(
+def build_wheel_runtime_lock(
+    profile: PlatformLockProfile,
     config: Config,
     pyproject_text: str,
     *,
     project_root: Path | None = None,
-    resolver: MacosResolver | None = None,
+    resolver: WheelResolver | None = None,
     runtime_provider: RuntimeProvider | None = None,
     offline: bool = False,
     now: datetime | None = None,
-) -> MacosLockfile:
-    if config.macos is None:
-        raise MacosBuildError(
-            "pyproject.toml has no [tool.kivy.macos] table; nothing to lock."
-        )
-    macos = config.macos
-    resolver = resolver or get_macos_resolver("pip")
-    runtime_provider = runtime_provider or PythonBuildStandaloneProvider()
+) -> WheelRuntimeLock:
+    if profile.overlay(config) is None:
+        raise WheelRuntimeBuildError(profile.missing_overlay_error())
+
+    resolver = resolver or profile.wheel_resolver()
+    runtime_provider = runtime_provider or profile.runtime_provider(config)
     root = (project_root or Path.cwd()).resolve()
 
-    python_version = macos.python_version or "3.15.0"
-    floor = macos.minimum_system_version or DEFAULT_MACOS_FLOOR
+    python_version = profile.python_version(config)
+    variants = profile.variants(config)
+    archs = profile.archs(config)
 
-    find_links_entries = macos.find_links
+    find_links_entries = profile.find_links(config)
     try:
         validate_find_links(root, find_links_entries)
     except FindLinksError as exc:
-        raise MacosBuildError(str(exc)) from exc
+        raise WheelRuntimeBuildError(str(exc)) from exc
     find_links = resolve_find_links(root, find_links_entries)
 
     try:
-        runtime = runtime_provider.resolve(python_version, macos.archs, offline=offline)
+        runtime = runtime_provider.resolve(python_version, archs, offline=offline)
     except RuntimeProviderError as exc:
-        raise MacosBuildError(str(exc)) from exc
+        raise WheelRuntimeBuildError(str(exc)) from exc
 
-    # A user-declared minimum must be >= the runtime's own floor (if reported).
+    declared_floor = profile.declared_floor(config)
     if (
-        macos.minimum_system_version
+        declared_floor
         and runtime.floor
-        and _version_tuple(macos.minimum_system_version) < _version_tuple(runtime.floor)
+        and _version_tuple(declared_floor) < _version_tuple(runtime.floor)
     ):
-        raise MacosBuildError(
-            f"minimum_system_version {macos.minimum_system_version} is below the "
-            f"macOS {runtime.floor} floor required by the Python "
-            f"{python_version} runtime.\n"
-            f"  Raise [tool.kivy.macos].minimum_system_version to at least "
-            f"{runtime.floor}."
+        raise WheelRuntimeBuildError(
+            profile.floor_error(declared_floor, runtime.floor, python_version)
         )
 
     direct = {canonical_name(_req_name(d)) for d in config.project.dependencies}
-    excluded = {canonical_name(e) for e in macos.exclude} - direct
+    excluded = {canonical_name(e) for e in profile.exclude(config)} - direct
 
     try:
         resolved = resolver.resolve(
             list(config.project.dependencies),
             python_version=python_version,
-            archs=tuple(macos.archs),
-            floor=floor,
-            extra_index_urls=list(macos.extra_index_urls),
+            variants=variants,
+            extra_index_urls=list(profile.extra_index_urls(config)),
             find_links=find_links,
             offline=offline,
         )
-    except MacosResolverError as exc:
+    except WheelResolverError as exc:
         hint = find_links_resolution_hint(root, find_links_entries, pip_stderr=str(exc))
         if hint:
-            raise MacosBuildError(f"{exc}\n{hint}") from exc
-        raise MacosBuildError(str(exc)) from exc
+            raise WheelRuntimeBuildError(f"{exc}\n{hint}") from exc
+        raise WheelRuntimeBuildError(str(exc)) from exc
 
     packages = []
     for rp in resolved:
         if canonical_name(rp.name) in excluded:
             continue
         wheels = tuple(
-            _locked_wheel_from_resolved(w, project_root=root) for w in rp.wheels
+            _locked_wheel_from_resolved(profile, w, project_root=root)
+            for w in rp.wheels
         )
-        _check_archs_complete(rp.name, wheels, macos.archs)
+        _check_variants_complete(profile, rp.name, wheels, archs)
         packages.append(
             LockedPackage(
                 name=rp.name,
@@ -125,25 +118,28 @@ def build_macos_lockfile(
             )
         )
 
-    return MacosLockfile(
+    return WheelRuntimeLock(
+        platform=profile.platform,
         requires_python=config.project.requires_python or ">=3.15",
         packages=tuple(packages),
         python_runtime=runtime,
-        archs=tuple(macos.archs),
+        archs=archs,
         kivyforge_version=__version__,
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         pyproject_sha256=compute_pyproject_sha256(pyproject_text),
-        tool_kivyforge_schema_version=macos.schema_version,
+        tool_kivyforge_schema_version=profile.schema_version(config),
     )
 
 
-def _locked_wheel_from_resolved(w, *, project_root: Path) -> LockedWheel:
-    url, path = _normalize_wheel_source(w.url, project_root=project_root)
+def _locked_wheel_from_resolved(
+    profile: PlatformLockProfile, w, *, project_root: Path
+) -> LockedWheel:
+    url, path = _normalize_wheel_source(profile, w.url, project_root=project_root)
     sha256 = w.sha256
     if not sha256 and path:
         sha256 = sha256_file((project_root / path).resolve())
     if not sha256:
-        raise MacosBuildError(
+        raise WheelRuntimeBuildError(
             f"could not determine SHA-256 for wheel {w.filename!r}; "
             f"re-run lock with network access or check the vendored file."
         )
@@ -158,7 +154,7 @@ def _locked_wheel_from_resolved(w, *, project_root: Path) -> LockedWheel:
 
 
 def _normalize_wheel_source(
-    url: str, *, project_root: Path
+    profile: PlatformLockProfile, url: str, *, project_root: Path
 ) -> tuple[str | None, str | None]:
     if url.startswith(("http://", "https://")):
         return url, None
@@ -171,51 +167,42 @@ def _normalize_wheel_source(
     try:
         rel = wheel_path_from_project_root(root, resolved)
     except FindLinksError as exc:
-        raise MacosBuildError(
+        raise WheelRuntimeBuildError(
             f"wheel resolved to {resolved}, which is outside the allowed "
             f"find_links scope for project directory {root}.\n"
-            f"  Vendored wheels must live under the project directory, a sibling "
-            f"directory, or the enclosing repository (e.g. examples/wheels/macos/)."
+            f"  {profile.wheel_scope_hint()}"
         ) from exc
     return None, rel
 
 
-def _check_archs_complete(
-    name: str, wheels: tuple[LockedWheel, ...], archs: tuple[str, ...]
+def _check_variants_complete(
+    profile: PlatformLockProfile,
+    name: str,
+    wheels: tuple[LockedWheel, ...],
+    archs: tuple[str, ...],
 ) -> None:
-    """Fail fast if a compiled package is missing a required macOS arch.
+    """Fail fast if a compiled package is missing a required variant.
 
-    A ``universal2`` wheel covers every arch; a per-arch wheel covers its own.
     Pure-Python packages (a single ``py3-none-any`` wheel) are always complete.
     """
     if any(w.is_pure_python for w in wheels):
         return
     covered: set[str] = set()
     for wheel in wheels:
-        arch = wheel_arch(wheel.platform_tag)
-        if arch == "universal2":
-            covered.update(archs)
-        elif arch is not None:
-            covered.add(arch)
+        covered.update(profile.wheel_covers(wheel.platform_tag, archs))
     missing = [a for a in archs if a not in covered]
     if missing:
-        raise MacosBuildError(
-            f"{name} is missing macOS wheel(s) for arch(es): {', '.join(missing)}.\n"
-            f"  A compiled package must publish a per-arch or universal2 wheel for "
-            f"every targeted arch to be locked reproducibly.\n"
-            f"  If this dependency has no Intel wheels, set "
-            f'[tool.kivy.macos].archs = ["arm64"] and re-lock.'
-        )
+        raise WheelRuntimeBuildError(profile.coverage_error(name, missing))
 
 
-def semantic_equal(a: MacosLockfile, b: MacosLockfile) -> bool:
-    """Compare two macOS lockfiles ignoring the volatile ``generated_at`` field."""
+def semantic_equal(a: WheelRuntimeLock, b: WheelRuntimeLock) -> bool:
+    """Compare two locks ignoring the volatile ``generated_at`` field."""
     return dataclasses.replace(a, generated_at="") == dataclasses.replace(
         b, generated_at=""
     )
 
 
-def diff_summary(old: MacosLockfile, new: MacosLockfile) -> list[str]:
+def diff_summary(old: WheelRuntimeLock, new: WheelRuntimeLock) -> list[str]:
     out: list[str] = []
     old_pkgs = {canonical_name(p.name): p for p in old.packages}
     new_pkgs = {canonical_name(p.name): p for p in new.packages}

@@ -11,6 +11,9 @@ from kivyforge.lock.macos.runtime import (
     get_runtime_provider,
     pbs_asset_name,
 )
+from kivyforge.lock.wheelruntime.runtime import RuntimeProviderError as CoreRPError
+
+assert RuntimeProviderError is CoreRPError  # macOS re-exports the core error
 
 
 class FakeFetcher:
@@ -53,7 +56,7 @@ class TestProvider:
         assert rt.artifact_for("x86_64") is None
 
     def test_unknown_arch(self):
-        with pytest.raises(RuntimeProviderError, match="no macOS build"):
+        with pytest.raises(RuntimeProviderError, match="no build for arch"):
             PythonBuildStandaloneProvider(FakeFetcher()).resolve("3.15.0", ("ppc64",))
 
     def test_no_archs(self):

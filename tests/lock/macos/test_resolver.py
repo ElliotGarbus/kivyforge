@@ -1,10 +1,10 @@
-"""macOS resolver pure helpers (tag construction, arch extraction)."""
+"""macOS profile helpers (tag construction, arch extraction) + resolver factory."""
 
 from __future__ import annotations
 
 import pytest
 
-from kivyforge.lock.macos.resolver import (
+from kivyforge.lock.macos import (
     MacosResolverError,
     get_macos_resolver,
     macos_platform_tag,

@@ -1,14 +1,15 @@
 """GitHub-backed python-build-standalone (PBS) release metadata lookup.
 
-PBS publishes its builds as GitHub release assets on
+PBS publishes builds as GitHub release assets on
 ``astral-sh/python-build-standalone``. Each release is tagged by date and ships,
 per platform, an ``install_only`` archive plus a companion ``.sha256`` file. This
-fetcher finds the newest release providing the requested version + triple and
-returns its download URL + pinned SHA-256.
+fetcher finds the newest release providing the requested version + target triple
+and returns its download URL + pinned SHA-256. It is triple-agnostic, so macOS
+and (later) Linux share it unchanged.
 
-This is the only networked part of the macOS runtime provider; it is exercised
-against the live API at the Phase 3 stop rather than in hermetic unit tests
-(which inject a fake ``MetadataFetcher``).
+This is the only networked part of the runtime provider; it is exercised against
+the live API at the phase stop rather than in hermetic unit tests (which inject a
+fake ``MetadataFetcher``).
 """
 
 from __future__ import annotations
@@ -32,16 +33,15 @@ class GithubPbsMetadataFetcher:
         self._releases_url = releases_url
 
     def fetch(
-        self, version: str, arch_triple: str, *, offline: bool = False
+        self, version: str, target_triple: str, *, offline: bool = False
     ) -> ReleaseAsset:
         if offline:
             raise RuntimeProviderError(
                 "cannot resolve a python-build-standalone runtime offline; "
                 "re-run `kivyforge lock` with network access."
             )
-        # install_only archive for this exact version + triple, any dated tag.
         pattern = re.compile(
-            rf"^cpython-{re.escape(version)}\+\d+-{re.escape(arch_triple)}"
+            rf"^cpython-{re.escape(version)}\+\d+-{re.escape(target_triple)}"
             r"-install_only\.tar\.gz$"
         )
         releases = self._get_json(self._releases_url)
@@ -55,7 +55,7 @@ class GithubPbsMetadataFetcher:
             return ReleaseAsset(url=url, sha256=sha256)
         raise RuntimeProviderError(
             f"no python-build-standalone install_only build found for CPython "
-            f"{version} ({arch_triple}).\n"
+            f"{version} ({target_triple}).\n"
             f"  Check available versions at "
             f"https://github.com/astral-sh/python-build-standalone/releases."
         )

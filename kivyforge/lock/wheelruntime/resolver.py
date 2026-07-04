@@ -1,19 +1,17 @@
-"""macOS wheel resolver (macos-spec §"pylock.macos.toml").
+"""Generic wheel resolver for the wheel+runtime family.
 
-Resolves ``[project].dependencies`` to fully-pinned macOS wheels, host- and
-arch-independent: pip runs once per requested architecture with that arch's
-macOS platform tag, and the results are merged. A ``universal2`` wheel satisfies
-either arch. A compiled package missing a required arch (with no universal2
-fallback) is a fail-fast at lock time — the macOS analog of a missing iOS slice.
-
-The pip mechanics mirror the iOS resolver (dry-run ``--report`` per platform
-tag); the shared, platform-neutral helpers live in ``kivyforge.lock.resolver``.
+Resolves ``[project].dependencies`` to fully-pinned wheels, host-independent: pip
+runs once per *variant* (an arch/ABI + its pip ``--platform`` tag) and the
+results are merged. A wheel that satisfies several variants (e.g. macOS
+``universal2``) is deduplicated by filename. The pip mechanics are identical to
+the iOS resolver (dry-run ``--report`` per platform tag); only the tag list — and
+the coverage rule, which lives in the platform profile — differ. The
+platform-neutral pip helpers are shared from ``kivyforge.lock.resolver``.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import sys
 import tempfile
@@ -31,17 +29,17 @@ from ..resolver import (
     version_str,
 )
 
-# Default macOS deployment floor used to build the pip ``--platform`` request
-# when the project sets no ``minimum_system_version``. pip matches wheels tagged
-# at or below this floor (plus universal2), so a conservative floor maximizes
-# compatible wheels while still excluding wheels that need a newer OS.
-DEFAULT_MACOS_FLOOR = "11.0"
 
-VALID_WHEEL_ARCHS = frozenset({"arm64", "x86_64", "universal2"})
+class WheelResolverError(Exception):
+    """A resolution failure (missing variant, non-wheel, backend error)."""
 
 
-class MacosResolverError(Exception):
-    """A macOS resolution failure (missing arch, non-wheel, backend error)."""
+@dataclass(frozen=True)
+class Variant:
+    """One build variant: an arch/ABI identifier + its pip ``--platform`` tag."""
+
+    arch: str
+    platform_tag: str
 
 
 @dataclass(frozen=True)
@@ -63,43 +61,22 @@ class ResolvedPackage:
     source_index: str | None = None
 
 
-def macos_platform_tag(floor: str, arch: str) -> str:
-    """The pip ``--platform`` tag for a macOS deployment floor + arch."""
-    return f"macosx_{floor.replace('.', '_')}_{arch}"
-
-
-def wheel_arch(platform_tag: str) -> str | None:
-    """The architecture a macOS wheel platform tag targets, or ``None``.
-
-    ``macosx_11_0_arm64`` -> ``arm64``; ``macosx_11_0_x86_64`` -> ``x86_64``;
-    ``..._universal2`` -> ``universal2``. A non-macOS/pure-python tag returns
-    ``None``. The arch is what follows the ``macosx_<major>_<minor>_`` prefix
-    (note ``x86_64`` itself contains an underscore, so a naive rsplit is wrong).
-    """
-    match = re.fullmatch(r"macosx_\d+_\d+_(.+)", platform_tag)
-    if match is None:
-        return None
-    arch = match.group(1)
-    return arch if arch in VALID_WHEEL_ARCHS else None
-
-
-class MacosResolver(Protocol):
+class WheelResolver(Protocol):
     def resolve(
         self,
         requirements: list[str],
         *,
         python_version: str,
-        archs: tuple[str, ...],
-        floor: str,
+        variants: tuple[Variant, ...],
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
     ) -> list[ResolvedPackage]:
-        """Resolve requirements to macOS wheels for every requested arch."""
+        """Resolve requirements to wheels covering every requested variant."""
         ...
 
 
-class PipMacosResolver:
+class PipWheelResolver:
     """Default backend: stock pip cross-resolution via ``pip install --report``."""
 
     def __init__(self, python_executable: str | None = None) -> None:
@@ -110,8 +87,7 @@ class PipMacosResolver:
         requirements: list[str],
         *,
         python_version: str,
-        archs: tuple[str, ...],
-        floor: str,
+        variants: tuple[Variant, ...],
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
@@ -123,12 +99,11 @@ class PipMacosResolver:
         merged: dict[str, ResolvedPackage] = {}
         seen_filenames: dict[str, set[str]] = {}
 
-        for arch in archs:
-            tag = macos_platform_tag(floor, arch)
+        for variant in variants:
             report = self._run_report(
                 requirements,
                 python_version=python_version,
-                platform_tag=tag,
+                platform_tag=variant.platform_tag,
                 abis=abis,
                 extra_index_urls=extra_index_urls,
                 find_links=find_links or [],
@@ -142,9 +117,9 @@ class PipMacosResolver:
     def _require_modern_pip(self) -> None:
         version = pip_version(self._python)
         if version is not None and version < MIN_PIP_VERSION:
-            raise MacosResolverError(
+            raise WheelResolverError(
                 f"kivyforge needs pip >= {version_str(MIN_PIP_VERSION)} to resolve "
-                f"macOS wheels, but {self._python} has pip {version_str(version)}.\n"
+                f"wheels, but {self._python} has pip {version_str(version)}.\n"
                 f"  Upgrade it: {self._python} -m pip install --upgrade pip"
             )
 
@@ -155,9 +130,9 @@ class PipMacosResolver:
         download = item.get("download_info", {})
         url = download.get("url", "")
         if not url.endswith(".whl"):
-            raise MacosResolverError(
+            raise WheelResolverError(
                 f"{name} {version} resolved to a non-wheel source ({url}); "
-                "kivyforge installs only macOS wheels (no on-host compile)."
+                "kivyforge installs only wheels (no on-host compile)."
             )
         archive = download.get("archive_info", {})
         hashes = archive.get("hashes", {})
@@ -175,10 +150,10 @@ class PipMacosResolver:
             merged[key] = pkg
             seen_filenames[key] = set()
         elif version != pkg.version:
-            raise MacosResolverError(
-                f"{name} resolved to inconsistent versions across macOS arches: "
-                f"{pkg.version!r} and {version!r}. Every arch of a package must "
-                "pin the same version."
+            raise WheelResolverError(
+                f"{name} resolved to inconsistent versions across variants: "
+                f"{pkg.version!r} and {version!r}. Every variant of a package "
+                "must pin the same version."
             )
         if filename not in seen_filenames[key]:
             seen_filenames[key].add(filename)
@@ -195,7 +170,7 @@ class PipMacosResolver:
         find_links: list[str],
         offline: bool,
     ) -> dict:
-        with tempfile.TemporaryDirectory(prefix="kivy-macos-lock-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="kivy-wheel-lock-") as tmp:
             report_path = Path(tmp) / "report.json"
             cmd = [
                 self._python,
@@ -228,22 +203,22 @@ class PipMacosResolver:
 
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode != 0:
-                raise MacosResolverError(
-                    f"pip could not resolve macOS wheels for {platform_tag!r}.\n"
-                    f"  This usually means a dependency has no macOS wheel for "
-                    f"that arch upstream.\n"
+                raise WheelResolverError(
+                    f"pip could not resolve wheels for {platform_tag!r}.\n"
+                    f"  This usually means a dependency has no wheel for that "
+                    f"variant upstream.\n"
                     f"  pip said:\n{_indent(proc.stderr or proc.stdout)}"
                 )
             try:
                 return json.loads(report_path.read_text())
             except (OSError, json.JSONDecodeError) as exc:
-                raise MacosResolverError(f"could not read pip report: {exc}") from exc
+                raise WheelResolverError(f"could not read pip report: {exc}") from exc
 
 
-def get_macos_resolver(backend: str = "pip", **kwargs) -> MacosResolver:
+def get_wheel_resolver(backend: str = "pip", **kwargs) -> WheelResolver:
     if backend == "pip":
-        return PipMacosResolver(**kwargs)
-    raise MacosResolverError(f"unknown resolver backend {backend!r} (expected pip)")
+        return PipWheelResolver(**kwargs)
+    raise WheelResolverError(f"unknown resolver backend {backend!r} (expected pip)")
 
 
 def _indent(text: str) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.lock.macos.builder import MacosBuildError, build_macos_lockfile
+from kivyforge.lock.macos import MacosBuildError, build_macos_lockfile
 
 from .conftest import FakeMacosResolver, FakeRuntimeProvider
 
@@ -33,7 +33,7 @@ class TestBuild:
         assert {a.arch for a in lock.python_runtime.artifacts} == {"arm64", "x86_64"}
         assert lock.pyproject_sha256
 
-    def test_resolver_gets_arch_and_floor(self, macos_pyproject, tmp_path):
+    def test_resolver_gets_arch_and_default_floor(self, macos_pyproject, tmp_path):
         cfg = _config(macos_pyproject, tmp_path)
         resolver = FakeMacosResolver()
         build_macos_lockfile(
@@ -45,7 +45,9 @@ class TestBuild:
         )
         call = resolver.calls[0]
         assert call["archs"] == ("arm64", "x86_64")
-        assert call["floor"] == "11.0"  # DEFAULT_MACOS_FLOOR
+        # Default floor 11.0 is baked into each variant's pip --platform tag.
+        tags = {v.platform_tag for v in call["variants"]}
+        assert tags == {"macosx_11_0_arm64", "macosx_11_0_x86_64"}
 
     def test_minimum_system_version_drives_floor(self, tmp_path):
         text = (
@@ -65,7 +67,8 @@ class TestBuild:
             resolver=resolver,
             runtime_provider=FakeRuntimeProvider(),
         )
-        assert resolver.calls[0]["floor"] == "12.0"
+        tags = {v.platform_tag for v in resolver.calls[0]["variants"]}
+        assert tags == {"macosx_12_0_arm64", "macosx_12_0_x86_64"}
 
     def test_universal2_covers_both(self, macos_pyproject, tmp_path):
         cfg = _config(macos_pyproject, tmp_path)

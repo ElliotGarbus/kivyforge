@@ -6,15 +6,21 @@ import textwrap
 
 import pytest
 
-from kivyforge.lock.macos.model import MacosPythonRuntime, RuntimeArtifact
-from kivyforge.lock.macos.resolver import ResolvedPackage, ResolvedWheel
+from kivyforge.lock.macos import (
+    MacosPythonRuntime,
+    ResolvedPackage,
+    ResolvedWheel,
+    RuntimeArtifact,
+)
 
 
 class FakeMacosResolver:
     """Deterministic resolver: kivy (compiled, per-arch) + a pure-Python dep.
 
-    ``universal2=True`` returns a single universal2 wheel instead of per-arch
-    wheels; ``drop_arch`` omits one arch to exercise the coverage check.
+    Implements the generic ``WheelResolver`` interface (resolves over
+    ``variants``). ``universal2=True`` returns a single universal2 wheel instead
+    of per-arch wheels; ``drop_arch`` omits one arch to exercise the coverage
+    check.
     """
 
     def __init__(self, *, universal2: bool = False, drop_arch: str | None = None):
@@ -27,8 +33,7 @@ class FakeMacosResolver:
         requirements,
         *,
         python_version,
-        archs,
-        floor,
+        variants,
         extra_index_urls,
         find_links=None,
         offline=False,
@@ -37,8 +42,8 @@ class FakeMacosResolver:
             {
                 "requirements": list(requirements),
                 "python_version": python_version,
-                "archs": tuple(archs),
-                "floor": floor,
+                "variants": tuple(variants),
+                "archs": tuple(v.arch for v in variants),
                 "extra_index_urls": list(extra_index_urls),
                 "find_links": list(find_links or []),
                 "offline": offline,
@@ -47,7 +52,8 @@ class FakeMacosResolver:
         if not requirements:
             return []
         abi = "cp" + "".join(python_version.split(".")[:2])
-        f = floor.replace(".", "_")
+        # Every variant's tag shares the same macosx_<floor> prefix.
+        f = variants[0].platform_tag.split("_", 1)[1].rsplit("_", 1)[0]
         kivy_wheels = []
         if self._universal2:
             fname = f"kivy-3.0.0-{abi}-{abi}-macosx_{f}_universal2.whl"
@@ -59,10 +65,10 @@ class FakeMacosResolver:
                 )
             )
         else:
-            for arch in archs:
-                if arch == self._drop_arch:
+            for variant in variants:
+                if variant.arch == self._drop_arch:
                     continue
-                fname = f"kivy-3.0.0-{abi}-{abi}-macosx_{f}_{arch}.whl"
+                fname = f"kivy-3.0.0-{abi}-{abi}-macosx_{f}_{variant.arch}.whl"
                 kivy_wheels.append(
                     ResolvedWheel(
                         filename=fname,
