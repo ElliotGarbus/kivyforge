@@ -1,0 +1,48 @@
+[project]
+name = "mobile-geometry"
+version = "0.1.0"
+# iOS bundles CPython 3.15.0b2. Kivy 3.0 (pre-release) is vendored under
+# examples/wheels/ios; desktop builds are intentionally not provided (they'd
+# require a local Kivy 3.0 build — desktop examples live under examples/desktop
+# and use Kivy 2.3.1 from PyPI instead).
+requires-python = ">=3.14"
+dependencies = [
+    "kivy>=3.0.0.dev0,<4",
+]
+
+[tool.kivy]
+display_name = "Mobile Geometry"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait", "landscape-left", "landscape-right"]
+
+[tool.kivy.ios]
+schema_version = 1
+bundle_id = "org.kivy.mobile-geometry"
+build = 1
+deployment_target = "16.0"
+find_links = ["../../wheels/ios"]
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.ios.icons]
+# iOS: 1024x1024 *opaque*, full-bleed PNG (transparency not allowed).
+source = "assets/icon-ios.png"
+
+[tool.kivy.ios.python]
+version = "3.15.0b2"
+
+[tool.kivy.ios.signing]
+team_id = ""
+identity = "Apple Development"
+provisioning_profile = ""
+auto_signing = true
+upload_symbols = true

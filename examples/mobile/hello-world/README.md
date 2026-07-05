@@ -1,0 +1,75 @@
+# Hello World — minimal kivyforge mobile smoke test
+
+Pure Python (**no Kivy**, no dependencies, no wheels). Imports `src/main.py`,
+which prints `Hello World` to the platform console/log. Because it has no Kivy
+dependency it isolates the *toolchain* — the platform Python runtime + app
+bundling — from anything Kivy-related, which makes it the first example to run
+when bringing up a backend. It runs on **iOS today**, and is the natural home for
+an `[tool.kivy.android]` overlay once the Android backend lands.
+
+On iOS it uses the official **python.org** `Python.xcframework` preview
+(**3.15.0b2**). The lockfile pins the archive URL and SHA-256.
+
+## Prerequisites
+
+- macOS with Xcode installed (`xcode-select --install` if needed)
+- Xcode license accepted: `sudo xcodebuild -license`
+- kivyforge 3.0 from this repo:
+
+```bash
+cd /path/to/kivyforge
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+## Generate the Xcode project
+
+From this directory:
+
+```bash
+cd examples/mobile/hello-world
+kivyforge clean    # optional: drop a stale hello-world-ios/ tree
+kivyforge build
+```
+
+If you already generated the project before a kivyforge update, run `kivyforge build`
+again so the `.xcodeproj` picks up `app/` and `pip-deps/` in Copy Bundle Resources.
+
+This downloads `Python.xcframework` (~83 MB, cached under
+`~/Library/Caches/kivyforge/artifacts/`), creates `hello-world-ios/`, and writes
+`hello-world.xcodeproj`. No pip wheels are installed (`dependencies = []`).
+
+To refresh the lock after editing `pyproject.toml`:
+
+```bash
+kivyforge lock
+```
+
+## Run in Xcode (see console output)
+
+```bash
+kivyforge open
+```
+
+In Xcode:
+
+1. Select an **iOS Simulator** as the run destination (e.g. iPhone 16).
+2. **Product → Run** (⌘R).
+3. Open the **debug console** (View → Debug Area → Activate Console).
+4. Look for: `Hello World`
+
+Alternatively, build and launch from the CLI (after the Xcode license is accepted):
+
+```bash
+kivyforge build --simulator
+kivyforge run --simulator
+```
+
+## Files
+
+| Path | Purpose |
+|------|---------|
+| `pyproject.toml` | App identity + `[tool.kivy.ios]` config |
+| `pylock.ios.toml` | Pinned python.org Python 3.15.0b2 runtime (no PyPI wheels) |
+| `src/main.py` | Prints `Hello World` at import time |
+| `hello-world-ios/` | Generated Xcode tree (gitignored; recreated by `kivyforge build`) |

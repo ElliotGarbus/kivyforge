@@ -73,7 +73,7 @@ with `kivyforge build --no-cache`.
 ### Can I bundle a plain Python app without Kivy?
 
 Yes. List no Kivy in `dependencies` and the toolchain bundles a pure-Python app
-(this is what `examples/cross_platform/hello-world` does). It runs Python directly with no UI —
+(this is what `examples/mobile/hello-world` does). It runs Python directly with no UI —
 ideal as a smoke test of the toolchain or for validating pure-Python code
 on-device. To ship an actual app you still need a UI layer: Kivy (via SDL), or a
 native bridge such as `rubicon-objc`/`pyobjus` that your Python code drives.

@@ -1,2 +1,0 @@
-# Vendored macOS wheels (built by scripts/build_macos_wheels.sh); not committed.
-*.whl

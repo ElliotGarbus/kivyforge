@@ -191,7 +191,7 @@ class TestBuildUsesFindLinksValidation:
         from kivyforge.lock.builder import _normalize_wheel_source
 
         (tmp_path / ".git").mkdir()
-        app = tmp_path / "examples" / "cross_platform" / "hello-kivy"
+        app = tmp_path / "examples" / "mobile" / "hello-kivy"
         shared = tmp_path / "examples" / "wheels" / "ios"
         app.mkdir(parents=True)
         shared.mkdir(parents=True)

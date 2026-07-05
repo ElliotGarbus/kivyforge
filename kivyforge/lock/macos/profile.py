@@ -100,5 +100,6 @@ class MacosProfile(PlatformLockProfile):
     def wheel_scope_hint(self) -> str:
         return (
             "Vendored wheels must live under the project directory, a sibling "
-            "directory, or the enclosing repository (e.g. examples/wheels/macos/)."
+            "directory, or the enclosing repository (e.g. a wheels/ directory "
+            "beside pyproject.toml)."
         )

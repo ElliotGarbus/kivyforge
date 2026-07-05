@@ -1,0 +1,35 @@
+[project]
+name = "hello-world"
+version = "0.1.0"
+# Kivy-free mobile toolchain smoke test: no dependencies, no wheels — it only
+# exercises the platform Python runtime + app bundling (iOS today via the
+# python.org Python.xcframework; Android when that backend lands). It has no
+# UI; main.py prints "Hello World" to the platform console/log.
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.kivy]
+display_name = "Hello World"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.ios]
+schema_version = 1
+bundle_id = "org.example.hello-world"  # TODO: change to your reverse-DNS bundle identifier
+build = 1
+deployment_target = "13.0"
+
+[tool.kivy.ios.icons]
+# iOS: 1024x1024 *opaque*, full-bleed PNG (transparency not allowed).
+source = "assets/icon-ios.png"
+
+[tool.kivy.ios.python]
+version = "3.15.0b2"
+
+[tool.kivy.ios.signing]
+team_id = ""
+identity = "Apple Development"
+provisioning_profile = ""
+auto_signing = true
+upload_symbols = true

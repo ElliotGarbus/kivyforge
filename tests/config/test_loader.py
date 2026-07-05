@@ -467,7 +467,7 @@ class TestFindLinks:
     def test_shared_wheelhouse_within_repo_ok(self, tmp_path):
         # examples/<group>/<app>/ reaching a shared examples/wheels/ios/
         (tmp_path / ".git").mkdir()
-        app = tmp_path / "examples" / "cross_platform" / "hello-kivy"
+        app = tmp_path / "examples" / "mobile" / "hello-kivy"
         wheels = tmp_path / "examples" / "wheels" / "ios"
         app.mkdir(parents=True)
         wheels.mkdir(parents=True)
@@ -483,7 +483,7 @@ class TestFindLinks:
 
     def test_escape_beyond_repo_rejected(self, tmp_path):
         # Same two-levels-up shape, but no repo marker → falls back to strict rule.
-        app = tmp_path / "examples" / "cross_platform" / "hello-kivy"
+        app = tmp_path / "examples" / "mobile" / "hello-kivy"
         app.mkdir(parents=True)
         toml = (
             "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"

@@ -1,0 +1,53 @@
+lock-version = "1.0"
+created-by = "kivyforge"
+requires-python = ">=3.13"
+extras = []
+dependency-groups = []
+default-groups = []
+
+[[packages]]
+name = "filetype"
+version = "1.2.0"
+
+[[packages.wheels]]
+name = "filetype-1.2.0-py2.py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/18/79/1b8fa1bb3568781e84c9200f951c735f3f157429f44be0495da55894d620/filetype-1.2.0-py2.py3-none-any.whl"
+hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25" }
+
+[[packages]]
+name = "Kivy"
+version = "2.3.1"
+requires-python = ">=3.8"
+dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }, { name = "kivy-deps.angle" }, { name = "kivy-deps.sdl2" }, { name = "kivy-deps.glew" }, { name = "pypiwin32" }, { name = "kivy-deps.angle" }, { name = "pillow" }, { name = "pytest" }, { name = "pytest-cov" }, { name = "pytest-asyncio" }, { name = "pytest-timeout" }, { name = "pytest-benchmark" }, { name = "pyinstaller" }, { name = "sphinx" }, { name = "sphinxcontrib-jquery" }, { name = "flake8" }, { name = "pre-commit" }, { name = "responses" }, { name = "kivy-deps.gstreamer-dev" }, { name = "kivy-deps.sdl2-dev" }, { name = "kivy-deps.glew-dev" }, { name = "pillow" }, { name = "ffpyplayer" }, { name = "kivy-deps.gstreamer" }, { name = "kivy-deps.glew" }, { name = "kivy-deps.gstreamer" }, { name = "ffpyplayer" }, { name = "kivy-deps.gstreamer" }, { name = "kivy-deps.sdl2" }, { name = "oscpy" }]
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "Kivy-2.3.1-cp313-cp313-macosx_10_15_universal2.whl"
+url = "https://files.pythonhosted.org/packages/c9/6c/2c7d7e9a1fe593de7e14cdd3eed8a17c22c62078ac41cfcde2e5f8af5f9c/Kivy-2.3.1-cp313-cp313-macosx_10_15_universal2.whl"
+hashes = { sha256 = "d8d9e57501961c5d45e5a2c5af0caef24e48f43a0cd88f607eb3b517198cfec4" }
+
+[tool.kivyforge]
+schema_version = 1
+kivyforge_version = "3.0.0.dev0"
+generated_at = "2026-07-05T21:18:33Z"
+pyproject_sha256 = "b3ef27b804037d97ad89206180a8f8f73f0777b163d6ebe6a6623e589a8c6d80"
+tool_kivyforge_schema_version = 1
+archs = ["arm64", "x86_64"]
+
+[tool.kivyforge.python_runtime]
+provider = "python-build-standalone"
+version = "3.13.14"
+
+[[tool.kivyforge.python_runtime.artifacts]]
+arch = "arm64"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.13.14%2B20260623-aarch64-apple-darwin-install_only.tar.gz"
+sha256 = "804c86c8665b18eb0df5070a79d828229018d145baea38a71a5c74c03f9b11d4"
+archive_format = "tar.gz"
+
+[[tool.kivyforge.python_runtime.artifacts]]
+arch = "x86_64"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260623/cpython-3.13.14%2B20260623-x86_64-apple-darwin-install_only.tar.gz"
+sha256 = "cd0023fb84de358d285c8e116cffd2f433086b943e752955dade521c12e78cab"
+archive_format = "tar.gz"

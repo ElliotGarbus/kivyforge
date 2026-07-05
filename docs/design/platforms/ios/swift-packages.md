@@ -309,7 +309,7 @@ the app wants — so it belongs to the app, in the same category as `main.py`.
 kivyforge provides the **mechanism** (the local-package channel), not the shim.
 
 A complete, runnable instance of this pattern lives in
-[`examples/ios/keychain-spm`](../../../../examples/ios/keychain-spm/) (a pure-Swift
+[`examples/mobile/keychain-spm`](../../../../examples/mobile/keychain-spm/) (a pure-Swift
 `KeychainAccess` dependency reached through a `KeychainBridge` `@objc` shim).
 
 #### Pinning the upstream package reached through a shim

@@ -1,0 +1,40 @@
+[project]
+name = "dice-roller"
+version = "0.1.0"
+# Desktop-only example: macOS bundles CPython 3.13.14 (PBS) with Kivy 2.3.1
+# wheels from PyPI. (Mobile needs Kivy 3.0 — see examples/mobile.)
+requires-python = ">=3.13"
+dependencies = [
+    "kivy>=2.3.1",
+]
+
+[tool.kivy]
+display_name = "Dice Roller"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.macos]
+schema_version = 1
+bundle_id = "org.example.dice-roller"
+build = 1
+archs = ["arm64", "x86_64"]
+# Kivy's macOS wheel declares deps unused by this app; prune them so the lock
+# stays lean (RST/CodeInput/UrlRequest widgets are not used here).
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.macos.icons]
+# macOS: a 1024x1024 PNG with transparent rounded corners (rendered to .icns).
+source = "assets/icon.png"
+
+[tool.kivy.macos.python]
+version = "3.13.14"

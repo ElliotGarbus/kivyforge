@@ -79,17 +79,18 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 >       # pyobjus iOS wheels — needed by pyobjus-ball, pyobjus-deviceinfo, keychain-spm
 >       scripts/build_pyobjus_ios_wheels.sh
 >
-> These scripts require macOS, Xcode, and network access. The pure-Python
-> [`examples/cross_platform/hello-world`](examples/cross_platform/hello-world/)
-> uses only the python.org `Python.xcframework` and needs no wheels.
+> These scripts require macOS, Xcode, and network access, and are only needed by
+> the mobile examples under [`examples/mobile/`](examples/mobile/) (which target
+> Kivy 3.0 on iOS/Android). The pure-Python
+> [`examples/mobile/hello-world`](examples/mobile/hello-world/) uses only the
+> python.org `Python.xcframework` and needs no wheels.
 >
-> **macOS wheels.** The macOS examples that build straight from PyPI
-> (`dice-roller`, `notes`, `desktop-viewer`) need no wheel-building step — Kivy
-> 2.3.1 ships universal2 macOS wheels. The Kivy-3.0 examples (`hello-kivy`,
-> `mobile-geometry`, `svg-explorer`) need locally-built macOS wheels, which land
-> in [`examples/wheels/macos/`](examples/wheels/macos/):
->
->       scripts/build_macos_wheels.sh
+> **Desktop needs no wheel-building.** The desktop examples under
+> [`examples/desktop/`](examples/desktop/) build straight from PyPI — Kivy 2.3.1
+> ships universal2 macOS wheels — so there is no macOS wheel-building step. Kivy
+> 3.0 has no public desktop wheels yet; rather than build it locally, **desktop
+> examples stay on Kivy 2.3.1 and mobile examples use the vendored 3.0 wheels.**
+> The structural changes that make mobile require 3.0 don't apply to desktop.
 
 > **Detailed documentation.** For the full design and reference docs — the
 > cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
@@ -142,28 +143,35 @@ IDE. The macOS backend bundles a relocatable CPython + your wheels into a signed
 `kivyforge doctor -p macos` reports environment + project health (host, codesign,
 arch coverage, runtime floor, reachable hosts).
 
-See the runnable examples for complete, copy-pasteable walk-throughs:
+See the runnable examples for complete, copy-pasteable walk-throughs. They are
+split by runtime requirement — **desktop uses Kivy 2.3.1 from PyPI, mobile uses
+Kivy 3.0** (vendored, pre-release):
 
-- [`examples/cross_platform/hello-world`](examples/cross_platform/hello-world/) —
-  pure-Python smoke test; builds on iOS (python.org `Python.xcframework`) **and**
-  macOS (python-build-standalone), no wheels.
-- [`examples/cross_platform/dice-roller`](examples/cross_platform/dice-roller/) —
-  minimal Kivy UI that **builds & runs on macOS today** from PyPI (Kivy 2.3.1).
-- [`examples/cross_platform/notes`](examples/cross_platform/notes/) — Kivy app with
-  a pure-Python dependency (`platformdirs`); builds on macOS from PyPI.
-- [`examples/macos/desktop-viewer`](examples/macos/desktop-viewer/) — a macOS-only
-  Kivy app (resizable window, ⌘ keyboard shortcuts, the native macOS open panel).
-- [`examples/cross_platform/hello-kivy`](examples/cross_platform/hello-kivy/) —
-  minimal Kivy UI; iOS uses locally built `cp315` wheels from
-  [`examples/wheels/ios/`](examples/wheels/ios/), macOS uses Kivy-3.0 wheels from
-  [`examples/wheels/macos/`](examples/wheels/macos/).
-- [`examples/cross_platform/svg-explorer`](examples/cross_platform/svg-explorer/) —
-  interactive SVG viewer (multitouch pan/zoom/rotate) using the same shared wheels.
-- [`examples/ios/pyobjus-ball`](examples/ios/pyobjus-ball/) — calls native iOS APIs
+**Desktop** ([`examples/desktop/`](examples/desktop/)) — macOS/Linux/Windows:
+
+- [`dice-roller`](examples/desktop/dice-roller/) — minimal Kivy UI that **builds &
+  runs on macOS today** from PyPI (Kivy 2.3.1).
+- [`notes`](examples/desktop/notes/) — Kivy app with a pure-Python dependency
+  (`platformdirs`); builds on macOS from PyPI.
+- [`desktop-viewer`](examples/desktop/desktop-viewer/) — a desktop-focused Kivy app
+  (resizable window, ⌘ keyboard shortcuts, the native macOS open panel).
+
+**Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS/Android, Kivy 3.0 from
+[`examples/wheels/ios/`](examples/wheels/ios/):
+
+- [`hello-world`](examples/mobile/hello-world/) — Kivy-free toolchain smoke test;
+  no dependencies, no wheels (builds on iOS via the python.org `Python.xcframework`;
+  the first example to bring up a new backend).
+- [`hello-kivy`](examples/mobile/hello-kivy/) — minimal Kivy 3.0 UI.
+- [`mobile-geometry`](examples/mobile/mobile-geometry/) — showcases the
+  `kivy.mobile` runtime-geometry API (DPI, safe-area insets, keyboard height).
+- [`svg-explorer`](examples/mobile/svg-explorer/) — interactive SVG viewer
+  (multitouch pan/zoom/rotate).
+- [`pyobjus-ball`](examples/mobile/pyobjus-ball/) — calls native iOS APIs
   (CoreMotion, UIScreen) from Python via the Objective-C runtime.
-- [`examples/ios/keychain-spm`](examples/ios/keychain-spm/) — declares a remote Swift
-  Package (`KeychainAccess`), pins it with `kivyforge lock`, and calls it from
-  Python through a local `@objc` shim package.
+- [`keychain-spm`](examples/mobile/keychain-spm/) — declares a remote Swift Package
+  (`KeychainAccess`), pins it with `kivyforge lock`, and calls it from Python
+  through a local `@objc` shim package.
 
 ## Configuring your app
 
@@ -208,7 +216,7 @@ generated project.
 
 Kivy's wheel declares dependencies that are not all needed at runtime on iOS.
 The `exclude` list trims them; the
-[hello-kivy example](examples/cross_platform/hello-kivy/pyproject.toml) documents what each one
+[hello-kivy example](examples/mobile/hello-kivy/pyproject.toml) documents what each one
 is for, so you can re-enable only the few that map to widgets you actually use
 (e.g. `docutils` for `RSTDocument`, `pygments` for `CodeInput`, or `requests`
 for `UrlRequest`).

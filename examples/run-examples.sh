@@ -3,12 +3,12 @@
 # run-examples.sh — rebuild every example from scratch and launch it on the
 # target platform's simulator/host for visual verification.
 #
-# Examples now live in per-audience groups:
-#   examples/cross_platform/<app>/   — run on every platform
-#   examples/ios/<app>/              — iOS-only (pyobjus / Swift interop)
+# Examples live in two groups, split by Kivy runtime requirement:
+#   examples/desktop/<app>/   — macOS/Linux/Windows; Kivy 2.3.1 from PyPI
+#   examples/mobile/<app>/    — iOS/Android; Kivy 3.0 (vendored, pre-release)
 # Wheels shared by the examples live in examples/wheels/<platform>/.
 #
-# For each example (all except hello-world) it:
+# For each example it:
 #   1. deletes the lock file (pylock.<platform>.toml)
 #   2. cleans the generated project      (kivyforge clean)
 #   3. re-locks                          (kivyforge lock)
@@ -65,18 +65,18 @@ done
 export KIVYFORGE_PLATFORM="$PLATFORM"
 LOCK="pylock.${PLATFORM}.toml"
 
-# Default set per platform. iOS runs the full simulator suite; macOS runs the
-# examples that build from public PyPI wheels (the Kivy-3.0 examples need
-# locally-built wheels first — see scripts/build_macos_wheels.sh).
+# Default set per platform. iOS runs the mobile suite (Kivy 3.0); macOS runs the
+# desktop suite, which builds from public PyPI wheels (Kivy 2.3.1) with no
+# wheel-building step.
 if [[ "$PLATFORM" == "macos" ]]; then
     DEFAULT_EXAMPLES=(
-        hello-world
         dice-roller
         notes
         desktop-viewer
     )
 else
     DEFAULT_EXAMPLES=(
+        hello-world
         hello-kivy
         keychain-spm
         mobile-geometry
@@ -92,11 +92,11 @@ else
     EXAMPLES=("${DEFAULT_EXAMPLES[@]}")
 fi
 
-# Locate an example by name across the group directories (cross_platform, ios).
+# Locate an example by name across the group directories (desktop, mobile).
 resolve_example_dir() {
     local name="$1"
     local group
-    for group in cross_platform ios macos; do
+    for group in desktop mobile; do
         if [[ -d "$EXAMPLES_DIR/$group/$name" ]]; then
             echo "$EXAMPLES_DIR/$group/$name"
             return 0
@@ -131,7 +131,7 @@ for ex in "${EXAMPLES[@]}"; do
 
     dir="$(resolve_example_dir "$ex")"
     if [[ -z "$dir" ]]; then
-        echo "!!! $ex: directory not found under cross_platform/ or ios/"
+        echo "!!! $ex: directory not found under desktop/ or mobile/"
         FAILED+=("$ex")
         continue
     fi

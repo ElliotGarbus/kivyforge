@@ -6,6 +6,7 @@ import os
 import platform
 import shutil
 import stat
+import sys
 
 import pytest
 
@@ -70,10 +71,17 @@ class TestLauncherSource:
             render_launcher_source("main.py")
 
 
-_HAS_CLANG = shutil.which("clang") is not None
+# The launcher is a Mach-O stub built with `clang -arch ...`; that is a macOS-only
+# operation (Linux clang rejects `-arch`/can't emit Mach-O), matching the fact
+# that the whole `.app` build only runs on macOS hosts. The macOS integration CI
+# job exercises these; skip them elsewhere.
+_CAN_BUILD_MACHO = sys.platform == "darwin" and shutil.which("clang") is not None
 
 
-@pytest.mark.skipif(not _HAS_CLANG, reason="clang (Xcode CLT) not available")
+@pytest.mark.skipif(
+    not _CAN_BUILD_MACHO,
+    reason="Mach-O launcher build requires macOS + clang (Xcode CLT)",
+)
 class TestLauncherCompile:
     def test_builds_thin_macho(self, tmp_path):
         host = "arm64" if platform.machine() == "arm64" else "x86_64"
