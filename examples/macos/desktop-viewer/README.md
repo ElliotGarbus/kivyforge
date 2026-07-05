@@ -31,3 +31,21 @@ universal2 wheel from PyPI.
 | `pyproject.toml` | Identity + `[tool.kivy.macos]` overlay (no iOS) |
 | `pylock.macos.toml` | Pinned CPython 3.13 (PBS) + Kivy 2.3.1 universal2 wheel |
 | `src/main.py` | The app |
+| `src/icon.png` | 512×512 runtime window/Dock icon (bundled with the app) |
+| `assets/icon.png` | 1024×1024 master app icon (rendered into the bundle's `.icns`) |
+
+## App icon
+
+There are **two** icons, because they're set by two different systems:
+
+1. **Bundle icon** (Finder, `/Applications`, and the Dock/Cmd-Tab entry for the
+   *installed* app). `[tool.kivy.macos.icons].source` points at a **1024×1024
+   PNG**; at build time kivyforge renders it into
+   `Contents/Resources/desktop-viewer.icns` (via `sips` + `iconutil`) and sets
+   `CFBundleIconFile`.
+2. **Runtime window icon** (the Dock/taskbar icon *while the app is running*).
+   Kivy shows its own default logo unless the app sets it, so `src/main.py` calls
+   `Window.set_icon()` (and sets `App.icon`) with `src/icon.png`. It lives under
+   `src/` so the bundler copies it into `Contents/Resources/app/` and a path
+   relative to `main.py` resolves both in the `.app` and during a plain
+   `python src/main.py` dev run.

@@ -12,6 +12,7 @@ a desktop:
 None of these translate to a touch phone, which is why it has no iOS overlay.
 """
 
+import os
 import subprocess
 
 from kivy.app import App
@@ -21,6 +22,11 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 
 _HELP = "Cmd+O open    Cmd+ / Cmd- font size    Cmd+W / Cmd+Q quit"
+
+# Runtime window/Dock icon. The bundler copies this app dir to Resources/app, so
+# a path relative to this file resolves both in the .app and during dev runs.
+# (The bundle's Finder/.icns icon is set separately via [tool.kivy.macos.icons].)
+_ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
 
 # Kivy keycodes for the numeric-keypad +/- keys (distinct from the main-row keys,
 # so a numpad-equipped keyboard needs them handled explicitly).
@@ -78,10 +84,14 @@ class Viewer(BoxLayout):
 
 
 class DesktopViewerApp(App):
+    icon = _ICON
+
     def build(self):
         self.title = "Desktop Viewer"
         Window.minimum_width, Window.minimum_height = 480, 360
         Window.size = (800, 600)
+        if os.path.isfile(_ICON):
+            Window.set_icon(_ICON)
         self.viewer = Viewer()
         Window.bind(on_key_down=self._on_key_down)
         return self.viewer

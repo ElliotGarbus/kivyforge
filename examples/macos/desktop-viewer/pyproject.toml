@@ -31,5 +31,9 @@ exclude = [
     "pygments",
 ]
 
+[tool.kivy.macos.icons]
+# 1024x1024 PNG; kivyforge renders it into the bundle's .icns via sips/iconutil.
+source = "assets/icon.png"
+
 [tool.kivy.macos.python]
 version = "3.13.14"
