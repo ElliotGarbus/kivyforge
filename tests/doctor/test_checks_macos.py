@@ -196,6 +196,49 @@ class TestFindLinks:
         assert r.status is Status.PASS
 
 
+_SIGNING = (
+    "[tool.kivy.macos.signing]\n"
+    "identity = 'Developer ID Application: Jane Doe (ABC1234)'\n"
+)
+
+
+class TestSigningIdentity:
+    def test_skip_when_unconfigured(self):
+        r = M.check_macos_signing_identity(FakeProbe(), _macos_config())
+        assert r.status is Status.SKIP
+        assert "ad-hoc" in r.detail
+
+    def test_pass_when_in_keychain(self):
+        probe = FakeProbe(
+            identities=['1) ABCD "Developer ID Application: Jane Doe (ABC1234)"']
+        )
+        r = M.check_macos_signing_identity(probe, _macos_config(_SIGNING))
+        assert r.status is Status.PASS
+
+    def test_fail_when_missing(self):
+        probe = FakeProbe(identities=['1) EF12 "Apple Development: Someone Else"'])
+        r = M.check_macos_signing_identity(probe, _macos_config(_SIGNING))
+        assert r.status is Status.FAIL
+        assert "not in keychain" in r.detail
+
+
+class TestNotarySetup:
+    def test_skip_without_profile(self):
+        r = M.check_macos_notary_setup(FakeProbe(), _macos_config())
+        assert r.status is Status.SKIP
+
+    def test_pass_with_profile_and_tool(self):
+        cfg = _macos_config(_SIGNING + "notary_profile = 'kf-notary'\n")
+        r = M.check_macos_notary_setup(FakeProbe(), cfg)
+        assert r.status is Status.PASS
+        assert "kf-notary" in r.detail
+
+    def test_fail_without_notarytool(self):
+        cfg = _macos_config(_SIGNING + "notary_profile = 'kf-notary'\n")
+        r = M.check_macos_notary_setup(FakeProbe(notarytool=False), cfg)
+        assert r.status is Status.FAIL
+
+
 class TestAppIcon:
     def test_skip_when_unset(self, tmp_path):
         assert M.check_macos_app_icon(_macos_config(), tmp_path).status is Status.SKIP

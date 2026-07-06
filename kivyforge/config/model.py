@@ -185,6 +185,25 @@ class IosConfig:
 
 
 @dataclass(frozen=True)
+class MacosSigningConfig:
+    """``[tool.kivy.macos.signing]`` (macos-spec, Developer ID workstream).
+
+    ``identity`` empty means Developer ID signing is not configured and
+    ``package`` falls back to the ad-hoc floor. ``notary_profile`` names a
+    keychain profile created with ``xcrun notarytool store-credentials`` —
+    credentials stay in the keychain, never in ``pyproject.toml``.
+    """
+
+    identity: str = ""
+    team_id: str = ""
+    notary_profile: str = ""
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.identity)
+
+
+@dataclass(frozen=True)
 class MacosConfig:
     """``[tool.kivy.macos]`` overlay (macos-spec).
 
@@ -203,6 +222,8 @@ class MacosConfig:
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
+    entitlements: dict[str, object] = field(default_factory=dict)
+    signing: MacosSigningConfig = field(default_factory=MacosSigningConfig)
 
 
 @dataclass(frozen=True)

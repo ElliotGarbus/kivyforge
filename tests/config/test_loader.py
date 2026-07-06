@@ -765,6 +765,53 @@ class TestMacosArchs:
             _macos("archs=['ppc64']\n")
 
 
+class TestMacosSigning:
+    def test_default_unconfigured(self):
+        signing = _macos().macos_required.signing
+        assert signing.identity == ""
+        assert signing.team_id == ""
+        assert signing.notary_profile == ""
+        assert not signing.configured
+
+    def test_full_table(self):
+        cfg = _macos(
+            "[tool.kivy.macos.signing]\n"
+            "identity='Developer ID Application: Jane Doe (ABC123)'\n"
+            "team_id='ABC123'\n"
+            "notary_profile='kivyforge-notary'\n"
+        )
+        signing = cfg.macos_required.signing
+        assert signing.identity == "Developer ID Application: Jane Doe (ABC123)"
+        assert signing.team_id == "ABC123"
+        assert signing.notary_profile == "kivyforge-notary"
+        assert signing.configured
+
+    def test_non_table_rejected(self):
+        with pytest.raises(ConfigError, match=r"signing.*must be a table"):
+            _macos("signing='Developer ID'\n")
+
+    def test_non_string_field_rejected(self):
+        with pytest.raises(ConfigError, match="identity must be a string"):
+            _macos("[tool.kivy.macos.signing]\nidentity=1\n")
+
+
+class TestMacosEntitlements:
+    def test_default_empty(self):
+        assert _macos().macos_required.entitlements == {}
+
+    def test_table_passthrough(self):
+        cfg = _macos(
+            '[tool.kivy.macos.entitlements]\n"com.apple.security.device.camera"=true\n'
+        )
+        assert cfg.macos_required.entitlements == {
+            "com.apple.security.device.camera": True
+        }
+
+    def test_non_table_rejected(self):
+        with pytest.raises(ConfigError, match=r"entitlements.*must be a table"):
+            _macos("entitlements='camera'\n")
+
+
 class TestMacosRequiresPython:
     def test_excluding_version_rejected(self):
         base = (

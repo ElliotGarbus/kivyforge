@@ -7,13 +7,15 @@ after iOS, and it exercises the cross-platform architecture (shared
 `[project]`/`[tool.kivy]`, a `[tool.kivy.macos]` overlay, a `pylock.macos.toml`,
 and the `Platform` backend interface).
 
-> **Status: implemented (Phase 3).** The macOS backend ships: `[tool.kivy.macos]`
-> parsing, `pylock.macos.toml` resolution (PBS runtime + macOS-tagged wheels),
-> the `.app` generator, `build`/`run`/`package -f app` with `--arch`, ad-hoc
-> signing, and macOS `doctor` checks. A couple of implementation details differ
-> from the original design and are noted inline below (the bundled runtime lives
-> under `Contents/Resources/` rather than `Contents/Frameworks/`, and the
-> launcher is a tiny compiled Mach-O stub rather than a shell script).
+> **Status: implemented (Phase 3 + 3b).** The macOS backend ships:
+> `[tool.kivy.macos]` parsing, `pylock.macos.toml` resolution (PBS runtime +
+> macOS-tagged wheels), the `.app` generator, `build`/`run`/`package -f app`
+> with `--arch`, ad-hoc signing, macOS `doctor` checks, and (Phase 3b) the full
+> **Developer ID sign + notarize + staple** distribution path. A couple of
+> implementation details differ from the original design and are noted inline
+> below (the bundled runtime lives under `Contents/Resources/` rather than
+> `Contents/Frameworks/`, and the launcher is a tiny compiled Mach-O stub
+> rather than a shell script).
 
 ## Scope
 
@@ -26,10 +28,14 @@ In scope for the first macOS phase:
 - **Ad-hoc** code signing (the mandatory Apple-Silicon floor).
 - macOS `doctor` checks.
 
-Out of scope for the first macOS phase:
+Added in Phase 3b:
+
+- **Full Developer ID signing + notarization + stapling** — see
+  ["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple-phase-3b) below.
+
+Out of scope for kivyforge (permanently, not deferred):
 
 - **`.dmg` creation** — wrap the `.app` with an external tool (`create-dmg`, `dmgbuild`, DropDMG). See [common packaging scope](../../common/06-packaging-scope.md).
-- **Full Developer ID signing + notarization + stapling** — a later workstream, outlined at the end of this document.
 
 ## `[tool.kivy.macos]` overlay
 
@@ -69,6 +75,12 @@ Proposed field set (finalized in implementation):
 
 Icons: `[tool.kivy.macos.icons].source` (1024×1024 PNG) is converted to a macOS
 `.icns` asset. Splash screens are not a macOS concept and have no subtable.
+
+Signing: `[tool.kivy.macos.signing]` (`identity`, `team_id`, `notary_profile`)
+and the free-form `[tool.kivy.macos.entitlements]` table configure the
+Developer ID distribution path — see
+["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple-phase-3b).
+Both are optional; without them `package` ships the ad-hoc floor.
 
 Shared `[tool.kivy]` keys consumed: `display_name` (→ `CFBundleName` /
 `CFBundleDisplayName`), `app_dir`, `entry_point`. `orientation` is not meaningful
@@ -266,35 +278,70 @@ be at least ad-hoc signed or the kernel refuses to run them. It provides
 kivyforge signs the bundled binaries as part of producing a correct artifact
 (signing operates on the bundle's Mach-O files); this stays inside the tool.
 
-### Developer ID sign + notarize + staple (later workstream)
+### Developer ID sign + notarize + staple (Phase 3b)
 
 The typical distribution path for most macOS apps is **sign + notarize + staple**
-(signing alone is insufficient since macOS 10.15). This is deferred because it is
-a real workstream for a Python bundle, not a one-liner:
+(signing alone is insufficient since macOS 10.15). Requires Apple Developer
+Program membership (paid) and a *Developer ID Application* certificate; without
+one, `package` keeps producing the ad-hoc artifact.
 
-- Config under `[tool.kivy.macos.signing]` (`team_id`, `identity` = *Developer ID
-  Application*, entitlements), reusing iOS signing-config patterns where sensible;
-  secure notary credentials (app-specific password or App Store Connect API key),
-  CI-friendly.
-- **Nested, inside-out signing**: sign every bundled Mach-O (`.so`/`.dylib`/
-  frameworks from Python + wheels like Kivy/SDL) first, then the `.app` last. This
-  ordered deep-signing of dozens of binaries is the main complexity.
-- **Hardened Runtime** (`--options runtime`) + secure `--timestamp`; entitlements
-  as needed (e.g. `com.apple.security.cs.disable-library-validation` to load
-  third-party unsigned `.so`s).
-- **Notarize + staple the app**: zip the signed `.app` → `xcrun notarytool submit`
-  (submit → poll → report) → `xcrun stapler staple MyApp.app`. Result: Gatekeeper
-  trusts the app offline, and any external `.dmg` just wraps an already-trusted app.
-- Requires Apple Developer Program membership and a Developer ID Application
-  certificate.
+**Config** — `[tool.kivy.macos.signing]` plus optional entitlements:
+
+```toml
+[tool.kivy.macos.signing]
+identity = "Developer ID Application: Jane Doe (ABC1234XYZ)"
+team_id = "ABC1234XYZ"                  # informational; notary auth uses the profile
+notary_profile = "kivyforge-notary"     # keychain profile (see below)
+
+[tool.kivy.macos.entitlements]          # optional; merged over the defaults
+"com.apple.security.device.camera" = true
+```
+
+Notary credentials never live in `pyproject.toml`: `notary_profile` names a
+**keychain profile** created once (locally or in a CI keychain) with:
+
+```bash
+xcrun notarytool store-credentials kivyforge-notary \
+    --apple-id you@example.com --team-id ABC1234XYZ --password <app-specific>
+```
+
+**Behavior of `package -p macos`** (config-driven, flag-overridable):
+
+- No `identity` configured → the ad-hoc floor (unchanged Phase-3 behavior).
+- `identity` set (or `--signing-identity`) → **Developer ID deep sign**:
+  every bundled Mach-O (the runtime's `python3`/`libpython`/`.dylib`s and the
+  wheels' `.so`s) is signed inside-out (deepest first, the `.app` seal last)
+  with **Hardened Runtime** (`--options runtime`) + secure `--timestamp`.
+- `notary_profile` also set → **notarize + staple** by default: `ditto -c -k
+  --keepParent` zip → `xcrun notarytool submit --wait` → on acceptance
+  `xcrun stapler staple`. On rejection the notary log's per-file issues are
+  surfaced in the error. `--no-notarize` skips the submission (sign only);
+  `--notarize` forces it (an error when no profile is available);
+  `--notary-profile` overrides the config.
+
+The `.app` seal carries the merged entitlements — defaults a hardened Python
+bundle needs, with `[tool.kivy.macos.entitlements]` layered on top (user wins):
+
+- `com.apple.security.cs.allow-unsigned-executable-memory` — ctypes/cffi
+  trampolines allocate W+X pages the Hardened Runtime otherwise forbids.
+- `com.apple.security.cs.disable-library-validation` — the app loads wheel
+  `.so`/`.dylib` binaries signed by other teams.
+
+`build` / `run` stay ad-hoc regardless of config — Developer ID signing (and its
+keychain prompts / timestamp round-trips) belongs to the distribution verb, not
+the dev loop.
 
 **`.dmg`-level signing/notarization stays external** (a post-packaging step on a
-container kivyforge does not build). The docs will include a copy-paste snippet
-(`codesign` → `notarytool submit` → `stapler staple` on the `.dmg`) for users who
-distribute a `.dmg` and want it notarized too. An optional small generic
-"notarize + staple this file" helper (usable on a `.zip`/`.dmg`/`.pkg`, since the
-mechanics are container-agnostic) may be added — but kivyforge still never builds
-`.dmg`s.
+container kivyforge does not build — `.dmg` creation is permanently out of
+kivyforge's scope). For users who wrap the already-notarized `.app` in a `.dmg`
+and want the container notarized too, the mechanics are the same and
+copy-paste-able:
+
+```bash
+codesign --sign "Developer ID Application: Jane Doe (ABC1234XYZ)" MyApp.dmg
+xcrun notarytool submit MyApp.dmg --keychain-profile kivyforge-notary --wait
+xcrun stapler staple MyApp.dmg
+```
 
 ## `doctor` checks (macOS)
 
@@ -309,7 +356,8 @@ mechanics are container-agnostic) may be added — but kivyforge still never bui
 | App icon | project | If `[tool.kivy.macos.icons].source` is set, FAIL unless a valid 1024×1024 PNG. SKIP if unset. |
 | find_links directories | project | If set, each entry is an existing directory containing `.whl` files. |
 | Required hosts reachable | project | TCP-connect to every host the lockfile fetches from (derived from `pylock.macos.toml`). |
-| Signing identity (later) | project | When Developer ID signing is configured, the identity is present in the keychain. |
+| Signing identity | project | When Developer ID signing is configured, the identity is present in the keychain (`security find-identity`). SKIP when unconfigured (ad-hoc floor). |
+| Notary setup | project | When `notary_profile` is configured, `xcrun notarytool` is available. Profile *validity* needs a network round-trip and is verified at submit time. |
 
 `doctor` reports each check as PASS / WARN / FAIL with a remediation hint; exit
 code is non-zero only on FAIL.
@@ -319,5 +367,6 @@ code is non-zero only on FAIL.
 - A macOS host (Apple Silicon or Intel). The Xcode command-line tools provide
   `codesign`; the full Xcode IDE is **not** required for a macOS `.app` (unlike
   iOS).
-- No Apple Developer account is needed for ad-hoc signing; a Developer ID
-  certificate is needed only for the later notarization workstream.
+- No Apple Developer account is needed for ad-hoc signing. Developer ID signing
+  + notarization needs a **paid** Apple Developer Program membership (a free
+  Apple ID cannot issue Developer ID certificates or use the notary service).

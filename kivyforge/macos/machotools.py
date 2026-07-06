@@ -69,6 +69,31 @@ def codesign_adhoc(path: Path) -> None:
     _run(["codesign", "--force", "--sign", "-", "--timestamp=none", str(path)])
 
 
+def codesign_identity(
+    path: Path, identity: str, *, entitlements: Path | None = None
+) -> None:
+    """Developer ID sign a Mach-O / bundle with Hardened Runtime + timestamp.
+
+    ``--options runtime`` (Hardened Runtime) and a secure ``--timestamp`` are
+    both notarization requirements. *entitlements* only applies to the main
+    executable, so callers pass it when sealing the ``.app`` (and the launcher),
+    not for nested dylib/so binaries.
+    """
+    cmd = [
+        "codesign",
+        "--force",
+        "--sign",
+        identity,
+        "--options",
+        "runtime",
+        "--timestamp",
+    ]
+    if entitlements is not None:
+        cmd += ["--entitlements", str(entitlements)]
+    cmd.append(str(path))
+    _run(cmd)
+
+
 def codesign_verify(path: Path) -> bool:
     """True if *path* has a valid signature (``codesign --verify``)."""
     return _run(["codesign", "--verify", str(path)], check=False).returncode == 0

@@ -137,11 +137,19 @@ IDE. The macOS backend bundles a relocatable CPython + your wheels into a signed
       # 4a. Launch it (foreground, so you see stdout/tracebacks)
       kivyforge run -p macos
 
-      # 4b. ...or produce the finished, ad-hoc-signed distributable
+      # 4b. ...or produce the finished, signed distributable
       kivyforge package -p macos      # -> build/macos/<App>.app
 
+`package` is config-driven: with no signing config it ships the **ad-hoc**-signed
+`.app` (runs locally; downloaded copies hit Gatekeeper). For distribution to
+other Macs, configure `[tool.kivy.macos.signing]` with a *Developer ID
+Application* identity (paid Apple Developer Program) and a `notary_profile`
+(created with `xcrun notarytool store-credentials`) — then the same command
+deep-signs with Hardened Runtime, **notarizes, and staples** the `.app` so
+Gatekeeper trusts it everywhere. `--no-notarize` skips the submission.
+
 `kivyforge doctor -p macos` reports environment + project health (host, codesign,
-arch coverage, runtime floor, reachable hosts).
+arch coverage, runtime floor, signing identity, notary setup, reachable hosts).
 
 See the runnable examples for complete, copy-pasteable walk-throughs. They are
 split by runtime requirement — **desktop uses Kivy 2.3.1 from PyPI, mobile uses

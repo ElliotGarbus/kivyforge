@@ -144,6 +144,53 @@ def check_macos_runtime_floor(
     return CheckResult("Runtime floor", Status.PASS, f"{declared} >= {floor}")
 
 
+def check_macos_signing_identity(probe: Probe, config: Config) -> CheckResult:
+    """When Developer ID signing is configured, the identity is in the keychain."""
+    signing = config.macos_required.signing
+    if not signing.configured:
+        return CheckResult(
+            "Signing identity",
+            Status.SKIP,
+            "not configured (ad-hoc floor applies)",
+        )
+    identities = probe.keychain_identities()
+    if not any(signing.identity in line for line in identities):
+        return CheckResult(
+            "Signing identity",
+            Status.FAIL,
+            f"identity {signing.identity!r} not in keychain",
+            hint="import your 'Developer ID Application' certificate (Xcode -> "
+            "Settings -> Accounts -> Manage Certificates), or fix "
+            "[tool.kivy.macos.signing].identity.",
+        )
+    return CheckResult("Signing identity", Status.PASS, signing.identity)
+
+
+def check_macos_notary_setup(probe: Probe, config: Config) -> CheckResult:
+    """When a notary profile is configured, notarytool must be available.
+
+    Profile *validity* needs a network round-trip to Apple, so it is verified
+    at submit time; doctor only validates the local tooling.
+    """
+    signing = config.macos_required.signing
+    if not signing.notary_profile:
+        return CheckResult("Notary setup", Status.SKIP, "no notary_profile")
+    if not probe.has_notarytool():
+        return CheckResult(
+            "Notary setup",
+            Status.FAIL,
+            "xcrun notarytool not found",
+            hint="notarytool ships with recent Xcode command-line tools; run "
+            "`xcode-select --install` / update the CLT.",
+        )
+    return CheckResult(
+        "Notary setup",
+        Status.PASS,
+        f"profile {signing.notary_profile!r}; notarytool present "
+        "(profile validity is checked at submit time)",
+    )
+
+
 def check_macos_hosts_reachable(
     probe: Probe, lock: MacosLockfile | None
 ) -> CheckResult:

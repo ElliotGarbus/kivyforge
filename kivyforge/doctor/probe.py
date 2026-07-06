@@ -43,6 +43,7 @@ class Probe(Protocol):
     def binary_platforms(self, path: Path) -> set[str]: ...
     def host_system(self) -> str: ...
     def has_codesign(self) -> bool: ...
+    def has_notarytool(self) -> bool: ...
 
 
 class RealProbe:
@@ -51,6 +52,9 @@ class RealProbe:
 
     def has_codesign(self) -> bool:
         return shutil.which("codesign") is not None
+
+    def has_notarytool(self) -> bool:
+        return bool(_capture(["xcrun", "--find", "notarytool"]))
 
     def xcode_version(self) -> str | None:
         out = _capture(["xcodebuild", "-version"])

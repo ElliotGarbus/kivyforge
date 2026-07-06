@@ -38,13 +38,25 @@ from .build import _load_config, _xcodebuild_step7, prepare_build
 @click.option(
     "--signing-identity",
     default=None,
-    help="Override [tool.kivy.ios.signing].identity.",
+    help="Override [tool.kivy.<platform>.signing].identity.",
 )
 @click.option(
     "--export-method",
     type=click.Choice(["app-store", "ad-hoc", "development"]),
     default="app-store",
     help="iOS export method.",
+)
+@click.option(
+    "--notarize/--no-notarize",
+    "notarize",
+    default=None,
+    help="macOS: notarize + staple the signed .app (default: when "
+    "[tool.kivy.macos.signing].notary_profile is configured).",
+)
+@click.option(
+    "--notary-profile",
+    default=None,
+    help="macOS: override [tool.kivy.macos.signing].notary_profile.",
 )
 @click.option(
     "--no-verify-lock", is_flag=True, help="Skip the pyproject drift check (CI only)."
@@ -57,6 +69,8 @@ def package(
     team_id: str | None,
     signing_identity: str | None,
     export_method: str,
+    notarize: bool | None,
+    notary_profile: str | None,
     no_verify_lock: bool,
     no_cache: bool,
 ) -> None:
@@ -70,6 +84,9 @@ def package(
             arch=arch,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
+            signing_identity=signing_identity,
+            notarize=notarize,
+            notary_profile=notary_profile,
         )
         return
 

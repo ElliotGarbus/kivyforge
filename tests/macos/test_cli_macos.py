@@ -29,10 +29,20 @@ PYPROJECT = (
     "[tool.kivy.macos.python]\nversion='3.14.5'\n"
 )
 
+_IDENTITY = "Developer ID Application: Jane Doe (ABC1234)"
+PYPROJECT_DEV_ID = PYPROJECT + (
+    f"[tool.kivy.macos.signing]\nidentity='{_IDENTITY}'\nnotary_profile='kf-notary'\n"
+)
+PYPROJECT_DEV_ID_NO_PROFILE = PYPROJECT + (
+    f"[tool.kivy.macos.signing]\nidentity='{_IDENTITY}'\n"
+)
 
-def _write_project(fs: str, *, in_sync: bool = True) -> Path:
+
+def _write_project(
+    fs: str, *, in_sync: bool = True, pyproject: str = PYPROJECT
+) -> Path:
     root = Path(fs)
-    (root / "pyproject.toml").write_text(PYPROJECT)
+    (root / "pyproject.toml").write_text(pyproject)
     (root / "src").mkdir()
     (root / "src" / "main.py").write_text("print('hi')\n")
     lock = WheelRuntimeLock(
@@ -50,7 +60,7 @@ def _write_project(fs: str, *, in_sync: bool = True) -> Path:
         archs=("arm64", "x86_64"),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(compute_pyproject_sha256(PYPROJECT) if in_sync else "0" * 64),
+        pyproject_sha256=(compute_pyproject_sha256(pyproject) if in_sync else "0" * 64),
         tool_kivyforge_schema_version=1,
     )
     (root / "pylock.macos.toml").write_text(dumps(lock))
@@ -156,3 +166,81 @@ class TestPackage:
             result = runner.invoke(package, ["-p", "macos", "-f", "ipa"])
             assert result.exit_code != 0
             assert "unknown package format" in result.output
+
+
+class TestPackageDeveloperId:
+    @pytest.fixture(autouse=True)
+    def fake_signing(self, monkeypatch):
+        calls = {"sign": [], "notarize": []}
+
+        def fake_sign(app, identity, *, extra_entitlements=None):
+            calls["sign"].append((app, identity, extra_entitlements))
+            return 3
+
+        def fake_notarize(app, *, profile, **k):
+            calls["notarize"].append((app, profile))
+
+        monkeypatch.setattr(_macos, "sign_bundle_developer_id", fake_sign)
+        monkeypatch.setattr(_macos, "notarize_and_staple", fake_notarize)
+        return calls
+
+    def test_config_driven_sign_and_notarize(
+        self, runner, tmp_path, fake_bundler, fake_signing
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, pyproject=PYPROJECT_DEV_ID)
+            result = runner.invoke(package, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            # Assembled unsigned; the Developer ID pass seals everything.
+            assert fake_bundler["sign"] == [False]
+            assert [i for _, i, _ in fake_signing["sign"]] == [_IDENTITY]
+            assert [p for _, p in fake_signing["notarize"]] == ["kf-notary"]
+            assert "notarized + stapled" in result.output
+
+    def test_no_notarize_flag_skips_submission(
+        self, runner, tmp_path, fake_bundler, fake_signing
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, pyproject=PYPROJECT_DEV_ID)
+            result = runner.invoke(package, ["-p", "macos", "--no-notarize"])
+            assert result.exit_code == 0, result.output
+            assert fake_signing["sign"] and not fake_signing["notarize"]
+            assert "not notarized" in result.output
+
+    def test_identity_without_profile_signs_only(
+        self, runner, tmp_path, fake_bundler, fake_signing
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, pyproject=PYPROJECT_DEV_ID_NO_PROFILE)
+            result = runner.invoke(package, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            assert fake_signing["sign"] and not fake_signing["notarize"]
+
+    def test_notarize_without_profile_fails(
+        self, runner, tmp_path, fake_bundler, fake_signing
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, pyproject=PYPROJECT_DEV_ID_NO_PROFILE)
+            result = runner.invoke(package, ["-p", "macos", "--notarize"])
+            assert result.exit_code != 0
+            assert "notary keychain profile" in result.output
+            assert not fake_signing["notarize"]
+
+    def test_notarize_without_identity_fails(
+        self, runner, tmp_path, fake_bundler, fake_signing
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(package, ["-p", "macos", "--notarize"])
+            assert result.exit_code != 0
+            assert "no identity is configured" in result.output
+
+    def test_cli_identity_override(self, runner, tmp_path, fake_bundler, fake_signing):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(
+                package,
+                ["-p", "macos", "--signing-identity", _IDENTITY, "--no-notarize"],
+            )
+            assert result.exit_code == 0, result.output
+            assert [i for _, i, _ in fake_signing["sign"]] == [_IDENTITY]

@@ -34,6 +34,7 @@ from .model import (
     IosConfig,
     KivyMeta,
     MacosConfig,
+    MacosSigningConfig,
     ProjectMeta,
     SigningConfig,
     SplashConfig,
@@ -478,6 +479,8 @@ def _parse_macos(
     )
 
     icons = _parse_platform_icons(macos, key_path="tool.kivy.macos.icons")
+    entitlements = _parse_macos_entitlements(macos)
+    signing = _parse_macos_signing(macos, finder)
 
     return MacosConfig(
         schema_version=schema_version,
@@ -490,6 +493,44 @@ def _parse_macos(
         exclude=tuple(exclude),
         python_version=python_version,
         icons=icons,
+        entitlements=entitlements,
+        signing=signing,
+    )
+
+
+def _parse_macos_entitlements(macos: dict) -> dict[str, object]:
+    ent = macos.get("entitlements")
+    if ent is None:
+        return {}
+    if not isinstance(ent, dict):
+        raise ConfigError(
+            "[tool.kivy.macos.entitlements] must be a table",
+            key_path="tool.kivy.macos.entitlements",
+        )
+    return dict(ent)
+
+
+def _parse_macos_signing(macos: dict, finder: _LineFinder) -> MacosSigningConfig:
+    signing = macos.get("signing")
+    if signing is None:
+        return MacosSigningConfig()
+    if not isinstance(signing, dict):
+        raise ConfigError(
+            "[tool.kivy.macos.signing] must be a table",
+            key_path="tool.kivy.macos.signing",
+        )
+    for key in ("identity", "team_id", "notary_profile"):
+        value = signing.get(key, "")
+        if not isinstance(value, str):
+            raise ConfigError(
+                f"[tool.kivy.macos.signing].{key} must be a string",
+                key_path=f"tool.kivy.macos.signing.{key}",
+                line=finder.line(key),
+            )
+    return MacosSigningConfig(
+        identity=signing.get("identity", ""),
+        team_id=signing.get("team_id", ""),
+        notary_profile=signing.get("notary_profile", ""),
     )
 
 

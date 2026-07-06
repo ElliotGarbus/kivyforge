@@ -19,6 +19,8 @@ from ..lock.macos import load as load_macos_lock
 from ..lock.reader import LockError, is_in_sync
 from ..macos import AppBundleError
 from ..macos.bundle import build_app_bundle
+from ..macos.notarize import notarize_and_staple
+from ..macos.signing import sign_bundle_developer_id
 from ..platforms import HostCapabilityError, get_platform
 from ._common import ToolchainError, lockfile_path_for
 
@@ -95,17 +97,81 @@ def macos_package(
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
+    signing_identity: str | None = None,
+    notarize: bool | None = None,
+    notary_profile: str | None = None,
 ) -> Path:
-    """Produce the finished, ad-hoc-signed ``.app`` distributable."""
+    """Produce the finished, signed ``.app`` distributable.
+
+    Signing tier is config-driven: with ``[tool.kivy.macos.signing].identity``
+    set (or ``--signing-identity``), the bundle is Developer-ID deep-signed
+    (Hardened Runtime + timestamp) and — when a notary profile is configured —
+    notarized and stapled. Without an identity, the ad-hoc floor applies.
+    """
+    _require_macos_host()
+    config = _load_config(project_root)
+    signing = config.macos_required.signing
+    identity = signing_identity or signing.identity
+    profile = notary_profile or signing.notary_profile
+    # None = config-driven: notarize whenever a profile is configured.
+    do_notarize = notarize if notarize is not None else bool(profile)
+
+    if not identity:
+        if notarize:
+            raise ToolchainError(
+                "--notarize requires Developer ID signing, but no identity is "
+                "configured.\n"
+                "  Set [tool.kivy.macos.signing].identity to your 'Developer ID "
+                "Application: ...' certificate (or pass --signing-identity)."
+            )
+        app = macos_build(
+            project_root,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+            sign=True,
+        )
+        click.echo(
+            f"Packaged {app.relative_to(project_root)} (ad-hoc signed).\n"
+            "  Distribute the .app directly, or wrap it in a .dmg with an "
+            "external tool (see docs). For Gatekeeper-trusted distribution, "
+            "configure [tool.kivy.macos.signing]."
+        )
+        return app
+
+    if do_notarize and not profile:
+        raise ToolchainError(
+            "notarization needs a notary keychain profile.\n"
+            "  Create one: `xcrun notarytool store-credentials <name> "
+            "--apple-id <id> --team-id <team>` and set "
+            '[tool.kivy.macos.signing].notary_profile = "<name>" '
+            "(or pass --notary-profile)."
+        )
+
+    # Assemble unsigned; the Developer ID deep-sign below seals every Mach-O.
     app = macos_build(
         project_root,
         arch=arch,
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
-        sign=True,
+        sign=False,
     )
+    try:
+        click.echo(f"Developer ID signing with {identity!r} ...")
+        count = sign_bundle_developer_id(
+            app,
+            identity,
+            extra_entitlements=config.macos_required.entitlements,
+        )
+        click.echo(f"  signed {count} Mach-O binaries + the bundle")
+        if do_notarize:
+            notarize_and_staple(app, profile=profile)
+    except AppBundleError as exc:
+        raise ToolchainError(str(exc)) from exc
+
+    trust = "notarized + stapled" if do_notarize else "signed (not notarized)"
     click.echo(
-        f"Packaged {app.relative_to(project_root)} (ad-hoc signed).\n"
+        f"Packaged {app.relative_to(project_root)} (Developer ID {trust}).\n"
         "  Distribute the .app directly, or wrap it in a .dmg with an external "
         "tool (see docs)."
     )

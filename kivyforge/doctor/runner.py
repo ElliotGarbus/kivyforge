@@ -88,6 +88,8 @@ def run_macos_checks(
             "Runtime floor",
             "App icon",
             "find_links directories",
+            "Signing identity",
+            "Notary setup",
             "Required hosts reachable",
         ):
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
@@ -99,6 +101,8 @@ def run_macos_checks(
         M.check_macos_runtime_floor(config, lock),
         M.check_macos_app_icon(config, project_root),
         M.check_macos_find_links(config, project_root),
+        M.check_macos_signing_identity(probe, config),
+        M.check_macos_notary_setup(probe, config),
         M.check_macos_hosts_reachable(probe, lock),
     ]
     return results

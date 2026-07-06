@@ -25,12 +25,16 @@ class FakeProbe:
         self._pip = overrides.get("pip", "24.3.1")
         self._host = overrides.get("host", "Darwin")
         self._codesign = overrides.get("codesign", True)
+        self._notarytool = overrides.get("notarytool", True)
 
     def host_system(self):
         return self._host
 
     def has_codesign(self):
         return self._codesign
+
+    def has_notarytool(self):
+        return self._notarytool
 
     def xcode_version(self):
         return self._xcode
