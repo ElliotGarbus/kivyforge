@@ -38,3 +38,8 @@ source = "assets/icon.png"
 
 [tool.kivy.macos.python]
 version = "3.13.14"
+
+[tool.kivy.macos.signing]
+identity = "Developer ID Application: ELLIOT DREW GARBUS (R5PKSQLUZY)"
+team_id = "R5PKSQLUZY"
+notary_profile = "kivyforge-notary"
