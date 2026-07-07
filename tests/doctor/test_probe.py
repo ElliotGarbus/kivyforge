@@ -341,6 +341,35 @@ class TestRealProbe:
         monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().keychain_identities() == []
 
+    # --- login_keychain_identities ---
+
+    def test_login_keychain_identities_scopes_to_login_keychain(self, monkeypatch):
+        seen_cmd = {}
+
+        def fake_capture(cmd):
+            seen_cmd["cmd"] = cmd
+            return '  1) ABC123 "Developer ID Application: Jane Doe (ABC1234)"\n'
+
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", fake_capture)
+        ids = self._probe().login_keychain_identities()
+        assert len(ids) == 1
+        assert seen_cmd["cmd"][:4] == ["security", "find-identity", "-v", "-p"]
+        assert seen_cmd["cmd"][-1].endswith("login.keychain-db")
+
+    def test_login_keychain_identities_empty(self, monkeypatch):
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
+        assert self._probe().login_keychain_identities() == []
+
+    # --- is_root ---
+
+    def test_is_root_true(self, monkeypatch):
+        monkeypatch.setattr("kivyforge.doctor.probe.os.geteuid", lambda: 0, raising=False)
+        assert self._probe().is_root() is True
+
+    def test_is_root_false(self, monkeypatch):
+        monkeypatch.setattr("kivyforge.doctor.probe.os.geteuid", lambda: 501, raising=False)
+        assert self._probe().is_root() is False
+
     # --- tcp_reachable ---
 
     def test_tcp_reachable_success(self, monkeypatch):

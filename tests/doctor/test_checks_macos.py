@@ -161,6 +161,11 @@ class TestRunner:
             r.name == "Architecture coverage" and r.status is Status.SKIP
             for r in results
         )
+        assert any(
+            r.name == "Signing identity type" and r.status is Status.SKIP
+            for r in results
+        )
+        assert "Not running as root" in names
 
     def test_project_mode_runs_all(self, tmp_path):
         (tmp_path / "src").mkdir()
@@ -172,7 +177,13 @@ class TestRunner:
             lock=_lock(),
         )
         names = {r.name for r in results}
-        assert {"Architecture coverage", "Runtime floor", "App icon"} <= names
+        assert {
+            "Architecture coverage",
+            "Runtime floor",
+            "App icon",
+            "Signing identity type",
+            "Not running as root",
+        } <= names
 
 
 class TestFindLinks:
@@ -220,6 +231,71 @@ class TestSigningIdentity:
         r = M.check_macos_signing_identity(probe, _macos_config(_SIGNING))
         assert r.status is Status.FAIL
         assert "not in keychain" in r.detail
+
+    def test_warn_when_in_login_keychain(self):
+        line = '1) ABCD "Developer ID Application: Jane Doe (ABC1234)"'
+        probe = FakeProbe(identities=[line], login_identities=[line])
+        r = M.check_macos_signing_identity(probe, _macos_config(_SIGNING))
+        assert r.status is Status.WARN
+        assert "login keychain" in r.detail
+        assert "dedicated keychain" in r.hint
+
+    def test_pass_when_in_keychain_but_not_login(self):
+        probe = FakeProbe(
+            identities=['1) ABCD "Developer ID Application: Jane Doe (ABC1234)"'],
+            login_identities=[],
+        )
+        r = M.check_macos_signing_identity(probe, _macos_config(_SIGNING))
+        assert r.status is Status.PASS
+
+    def test_fail_when_ambiguous_across_keychains(self):
+        probe = FakeProbe(
+            identities=[
+                '1) ABCD "Developer ID Application: Jane Doe (ABC1234)"',
+                '2) EF01 "Developer ID Application: Jane Doe (ABC1234)"',
+            ]
+        )
+        r = M.check_macos_signing_identity(probe, _macos_config(_SIGNING))
+        assert r.status is Status.FAIL
+        assert "2 certificates match" in r.detail
+        assert "ambiguous" in r.hint
+
+
+class TestSigningIdentityType:
+    def test_skip_when_unconfigured(self):
+        r = M.check_macos_signing_identity_type(_macos_config())
+        assert r.status is Status.SKIP
+
+    def test_pass_for_developer_id_application(self):
+        r = M.check_macos_signing_identity_type(_macos_config(_SIGNING))
+        assert r.status is Status.PASS
+
+    def test_pass_for_developer_id_installer(self):
+        cfg = _macos_config(
+            "[tool.kivy.macos.signing]\n"
+            "identity = 'Developer ID Installer: Jane Doe (ABC1234)'\n"
+        )
+        r = M.check_macos_signing_identity_type(cfg)
+        assert r.status is Status.PASS
+
+    def test_warn_for_non_developer_id_identity(self):
+        cfg = _macos_config(
+            "[tool.kivy.macos.signing]\nidentity = 'Apple Development: Jane Doe (ABC1234)'\n"
+        )
+        r = M.check_macos_signing_identity_type(cfg)
+        assert r.status is Status.WARN
+        assert "Developer ID" in r.hint
+
+
+class TestNotRoot:
+    def test_pass_when_not_root(self):
+        r = M.check_macos_not_root(FakeProbe(root=False))
+        assert r.status is Status.PASS
+
+    def test_warn_when_root(self):
+        r = M.check_macos_not_root(FakeProbe(root=True))
+        assert r.status is Status.WARN
+        assert "root" in r.detail
 
 
 class TestNotarySetup:

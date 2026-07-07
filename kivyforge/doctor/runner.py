@@ -77,6 +77,7 @@ def run_macos_checks(
     results = [
         M.check_macos_host(probe),
         M.check_codesign(probe),
+        M.check_macos_not_root(probe),
         C.check_pip_version(probe),
         C.check_kivyforge_version(probe, kivyforge_version, offline=offline),
     ]
@@ -89,6 +90,7 @@ def run_macos_checks(
             "App icon",
             "find_links directories",
             "Signing identity",
+            "Signing identity type",
             "Notary setup",
             "Required hosts reachable",
         ):
@@ -102,6 +104,7 @@ def run_macos_checks(
         M.check_macos_app_icon(config, project_root),
         M.check_macos_find_links(config, project_root),
         M.check_macos_signing_identity(probe, config),
+        M.check_macos_signing_identity_type(config),
         M.check_macos_notary_setup(probe, config),
         M.check_macos_hosts_reachable(probe, lock),
     ]

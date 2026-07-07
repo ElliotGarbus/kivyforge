@@ -367,18 +367,27 @@ xcrun stapler staple MyApp.dmg
 |-------|-------|-------------------|
 | Host is macOS | environment | The macOS backend requires a macOS host (host-capability check). |
 | Codesign available | environment | `codesign` present (ships with the Xcode command-line tools). |
-| Toolchain version | environment | Self-version; warn if newer on PyPI (best-effort). |
+| Not running as root | environment | WARN if `kivyforge` itself is running as root/sudo — Apple DTS notes this mixes execution contexts and is a common source of `errSecInternalComponent` (see [FAQ.md](../../../../FAQ.md#macos-developer-id-signing-fails-with-errsecinternalcomponent)). |
+| kivyforge version | environment | Self-version; warn if newer on PyPI (best-effort). |
 | App source directory | project | `[tool.kivy].app_dir` resolves to an existing directory. |
 | Runtime floor vs. `minimum_system_version` | project | `[tool.kivy.macos].minimum_system_version` ≥ the bundled runtime's floor. |
 | Architecture coverage | project | Every arch in `[tool.kivy.macos].archs` has a resolvable wheel (per-arch or universal2) for each compiled dependency, and a per-arch runtime is available; FAIL names the offending package/arch. |
 | App icon | project | If `[tool.kivy.macos.icons].source` is set, FAIL unless a valid 1024×1024 PNG. SKIP if unset. |
 | find_links directories | project | If set, each entry is an existing directory containing `.whl` files. |
 | Required hosts reachable | project | TCP-connect to every host the lockfile fetches from (derived from `pylock.macos.toml`). |
-| Signing identity | project | When Developer ID signing is configured, the identity is present in the keychain (`security find-identity`). SKIP when unconfigured (ad-hoc floor). |
+| Signing identity | project | When Developer ID signing is configured, the identity is present in exactly one keychain (`security find-identity`). SKIP when unconfigured (ad-hoc floor). FAIL if it's present in more than one keychain (`codesign` refuses to disambiguate). WARN if it's found scoped to `login.keychain-db` — Apple's "Care and Feeding of Developer ID" recommends a dedicated keychain so unrelated login-keychain churn can't corrupt the signing key's ACL. |
+| Signing identity type | project | WARN if the configured identity isn't a `Developer ID Application`/`Developer ID Installer` certificate — notarization rejects any other type (e.g. `Apple Development`). SKIP when unconfigured. |
 | Notary setup | project | When `notary_profile` is configured, `xcrun notarytool` is available. Profile *validity* needs a network round-trip and is verified at submit time. |
 
 `doctor` reports each check as PASS / WARN / FAIL with a remediation hint; exit
 code is non-zero only on FAIL.
+
+Config-time (`kivyforge lock`/`build`/`package`, not `doctor`): setting
+`com.apple.security.get-task-allow = true` in `[tool.kivy.macos.entitlements]`
+while `[tool.kivy.macos.signing]` is configured is a hard `ConfigError` —
+notarization always rejects that entitlement (see Apple's "Resolving common
+notarization issues"), so failing fast at config-load time beats a slow
+build-then-notarize round trip.
 
 ## Host requirements
 

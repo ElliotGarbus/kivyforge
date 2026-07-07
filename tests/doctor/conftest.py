@@ -20,12 +20,14 @@ class FakeProbe:
         self._runtimes = overrides.get("runtimes", ["18.0"])
         self._latest = overrides.get("latest", None)
         self._identities = overrides.get("identities", [])
+        self._login_identities = overrides.get("login_identities", [])
         self._reachable = overrides.get("reachable", True)
         self._platforms = overrides.get("platforms", {})
         self._pip = overrides.get("pip", "24.3.1")
         self._host = overrides.get("host", "Darwin")
         self._codesign = overrides.get("codesign", True)
         self._notarytool = overrides.get("notarytool", True)
+        self._root = overrides.get("root", False)
 
     def host_system(self):
         return self._host
@@ -35,6 +37,9 @@ class FakeProbe:
 
     def has_notarytool(self):
         return self._notarytool
+
+    def is_root(self):
+        return self._root
 
     def xcode_version(self):
         return self._xcode
@@ -59,6 +64,9 @@ class FakeProbe:
 
     def keychain_identities(self):
         return list(self._identities)
+
+    def login_keychain_identities(self):
+        return list(self._login_identities)
 
     def tcp_reachable(self, host, port):
         if isinstance(self._reachable, dict):

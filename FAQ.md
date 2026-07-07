@@ -127,6 +127,10 @@ prompts, SSH/CI contexts) — as opposed to the specific corrupted-item case
 above — see Apple DTS's
 [Resolving errSecInternalComponent errors during code signing](https://developer.apple.com/forums/thread/712005).
 
+`kivyforge doctor` checks for this proactively: the `Signing identity` check
+WARNs if your configured identity is found in `login.keychain-db`, before you
+ever hit a corrupted-ACL failure.
+
 ### Why does the Python `multiprocessing`/`subprocess` module not work?
 
 The iOS application model does not support spawning subprocesses in a

@@ -43,6 +43,23 @@ def check_codesign(probe: Probe) -> CheckResult:
     return CheckResult("Codesign available", Status.PASS, "codesign present")
 
 
+def check_macos_not_root(probe: Probe) -> CheckResult:
+    """Apple DTS: signing as root/sudo mixes execution contexts and is a common
+    source of keychain errors (e.g. ``errSecInternalComponent``) — see
+    "Resolving errSecInternalComponent errors during code signing".
+    """
+    if probe.is_root():
+        return CheckResult(
+            "Not running as root",
+            Status.WARN,
+            "running as root/sudo",
+            hint="codesign relies on the keychain, which is tied to a login "
+            "security context; running as root (or via sudo) often breaks "
+            "that context. Run `kivyforge package` as your normal user.",
+        )
+    return CheckResult("Not running as root", Status.PASS, "normal user")
+
+
 def check_macos_app_icon(config: Config, project_root: Path) -> CheckResult:
     source = config.macos_required.icons.source
     if not source:
@@ -145,7 +162,14 @@ def check_macos_runtime_floor(
 
 
 def check_macos_signing_identity(probe: Probe, config: Config) -> CheckResult:
-    """When Developer ID signing is configured, the identity is in the keychain."""
+    """When Developer ID signing is configured, the identity is in the keychain.
+
+    Also nudges towards Apple's "Care and Feeding of Developer ID" best practice
+    of keeping the identity out of ``login.keychain-db``: a dedicated keychain
+    isolates the private key from unrelated login-keychain churn (password
+    resets, iCloud Keychain sync, etc.) that can corrupt its ACL and produce a
+    hard-to-diagnose ``errSecInternalComponent`` from ``codesign`` (see FAQ).
+    """
     signing = config.macos_required.signing
     if not signing.configured:
         return CheckResult(
@@ -154,7 +178,8 @@ def check_macos_signing_identity(probe: Probe, config: Config) -> CheckResult:
             "not configured (ad-hoc floor applies)",
         )
     identities = probe.keychain_identities()
-    if not any(signing.identity in line for line in identities):
+    matches = [line for line in identities if signing.identity in line]
+    if not matches:
         return CheckResult(
             "Signing identity",
             Status.FAIL,
@@ -163,7 +188,54 @@ def check_macos_signing_identity(probe: Probe, config: Config) -> CheckResult:
             "Settings -> Accounts -> Manage Certificates), or fix "
             "[tool.kivy.macos.signing].identity.",
         )
+    if len(matches) > 1:
+        return CheckResult(
+            "Signing identity",
+            Status.FAIL,
+            f"{len(matches)} certificates match {signing.identity!r} across your "
+            "keychains",
+            hint="codesign refuses to pick between identically-named "
+            "certificates in different keychains ('ambiguous'). Delete the "
+            "stale/duplicate copy (Keychain Access -> Certificates tab) so "
+            "only one remains.",
+        )
+    login_identities = probe.login_keychain_identities()
+    if any(signing.identity in line for line in login_identities):
+        return CheckResult(
+            "Signing identity",
+            Status.WARN,
+            f"{signing.identity} is in your login keychain",
+            hint="Apple recommends keeping Developer ID identities out of "
+            "login.keychain-db in a dedicated keychain, so unrelated login-"
+            "keychain issues can't corrupt the signing key. See FAQ.md "
+            "('macOS Developer ID signing fails with errSecInternalComponent') "
+            "for the migration steps.",
+        )
     return CheckResult("Signing identity", Status.PASS, signing.identity)
+
+
+def check_macos_signing_identity_type(config: Config) -> CheckResult:
+    """Notarization only accepts a 'Developer ID Application' identity (or
+    'Developer ID Installer' for pkgs); other identity types (e.g. 'Apple
+    Development', used for day-to-day debugging) fail with "The binary is not
+    signed with a valid Developer ID certificate." — see Apple's "Resolving
+    common notarization issues".
+    """
+    signing = config.macos_required.signing
+    if not signing.configured:
+        return CheckResult(
+            "Signing identity type", Status.SKIP, "not configured (ad-hoc floor applies)"
+        )
+    if "Developer ID Application" in signing.identity or "Developer ID Installer" in signing.identity:
+        return CheckResult("Signing identity type", Status.PASS, "Developer ID")
+    return CheckResult(
+        "Signing identity type",
+        Status.WARN,
+        f"{signing.identity!r} doesn't look like a Developer ID identity",
+        hint="notarization requires a 'Developer ID Application' (or "
+        "'Developer ID Installer') certificate — not 'Apple Development' or "
+        "another type, which is for local debugging only.",
+    )
 
 
 def check_macos_notary_setup(probe: Probe, config: Config) -> CheckResult:

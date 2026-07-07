@@ -812,6 +812,30 @@ class TestMacosEntitlements:
             _macos("entitlements='camera'\n")
 
 
+class TestMacosEntitlementsNotarizable:
+    def test_get_task_allow_rejected_when_signing_configured(self):
+        with pytest.raises(ConfigError, match="get-task-allow.*to true"):
+            _macos(
+                '[tool.kivy.macos.entitlements]\n"com.apple.security.get-task-allow"=true\n'
+                "[tool.kivy.macos.signing]\n"
+                "identity='Developer ID Application: Jane Doe (ABC123)'\n"
+            )
+
+    def test_get_task_allow_allowed_without_signing(self):
+        cfg = _macos(
+            '[tool.kivy.macos.entitlements]\n"com.apple.security.get-task-allow"=true\n'
+        )
+        assert cfg.macos_required.entitlements["com.apple.security.get-task-allow"] is True
+
+    def test_get_task_allow_false_allowed_with_signing(self):
+        cfg = _macos(
+            '[tool.kivy.macos.entitlements]\n"com.apple.security.get-task-allow"=false\n'
+            "[tool.kivy.macos.signing]\n"
+            "identity='Developer ID Application: Jane Doe (ABC123)'\n"
+        )
+        assert cfg.macos_required.entitlements["com.apple.security.get-task-allow"] is False
+
+
 class TestMacosRequiresPython:
     def test_excluding_version_rejected(self):
         base = (

@@ -481,6 +481,7 @@ def _parse_macos(
     icons = _parse_platform_icons(macos, key_path="tool.kivy.macos.icons")
     entitlements = _parse_macos_entitlements(macos)
     signing = _parse_macos_signing(macos, finder)
+    _check_macos_entitlements_notarizable(entitlements, signing, finder)
 
     return MacosConfig(
         schema_version=schema_version,
@@ -508,6 +509,34 @@ def _parse_macos_entitlements(macos: dict) -> dict[str, object]:
             key_path="tool.kivy.macos.entitlements",
         )
     return dict(ent)
+
+
+def _check_macos_entitlements_notarizable(
+    entitlements: dict[str, object],
+    signing: MacosSigningConfig,
+    finder: _LineFinder,
+) -> None:
+    """Reject ``get-task-allow: true`` when Developer ID signing is configured.
+
+    Apple's notary service always rejects a submission carrying this
+    entitlement ("The executable requests the com.apple.security.get-task-
+    allow entitlement.") — see "Resolving common notarization issues". It's
+    only meaningful for local-debug (ad-hoc) builds, which never receive
+    ``[tool.kivy.macos.entitlements]`` (see ``sign_bundle_adhoc``), so this is
+    only checked once Developer ID signing is configured.
+    """
+    if not signing.configured:
+        return
+    key = "com.apple.security.get-task-allow"
+    if entitlements.get(key) is True:
+        raise ConfigError(
+            f"[tool.kivy.macos.entitlements] sets {key!r} to true, but "
+            "Developer ID signing is configured",
+            key_path=f"tool.kivy.macos.entitlements.{key}",
+            line=finder.line(key),
+            hint="notarization always rejects this entitlement; remove it (or "
+            "set it to false) before packaging for distribution.",
+        )
 
 
 def _parse_macos_signing(macos: dict, finder: _LineFinder) -> MacosSigningConfig:

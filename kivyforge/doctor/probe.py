@@ -7,6 +7,7 @@ object with the same methods, so the check logic never shells out.
 
 from __future__ import annotations
 
+import os
 import platform as _platform
 import shutil
 import socket
@@ -39,11 +40,13 @@ class Probe(Protocol):
     def simulator_runtimes(self) -> list[str]: ...
     def latest_kivyforge_version(self) -> str | None: ...
     def keychain_identities(self) -> list[str]: ...
+    def login_keychain_identities(self) -> list[str]: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
     def binary_platforms(self, path: Path) -> set[str]: ...
     def host_system(self) -> str: ...
     def has_codesign(self) -> bool: ...
     def has_notarytool(self) -> bool: ...
+    def is_root(self) -> bool: ...
 
 
 class RealProbe:
@@ -55,6 +58,9 @@ class RealProbe:
 
     def has_notarytool(self) -> bool:
         return bool(_capture(["xcrun", "--find", "notarytool"]))
+
+    def is_root(self) -> bool:
+        return hasattr(os, "geteuid") and os.geteuid() == 0
 
     def xcode_version(self) -> str | None:
         out = _capture(["xcodebuild", "-version"])
@@ -107,6 +113,14 @@ class RealProbe:
 
     def keychain_identities(self) -> list[str]:
         out = _capture(["security", "find-identity", "-v", "-p", "codesigning"])
+        return [line.strip() for line in out.splitlines() if line.strip()]
+
+    def login_keychain_identities(self) -> list[str]:
+        """Identities scoped to ``login.keychain-db`` (Apple recommends keeping
+        Developer ID identities out of it; see the ``Signing identity`` check).
+        """
+        login_keychain = str(Path.home() / "Library" / "Keychains" / "login.keychain-db")
+        out = _capture(["security", "find-identity", "-v", "-p", "codesigning", login_keychain])
         return [line.strip() for line in out.splitlines() if line.strip()]
 
     def tcp_reachable(self, host: str, port: int) -> bool:
