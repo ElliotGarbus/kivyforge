@@ -83,3 +83,55 @@ class TestToolWrappers:
             lambda *a, **k: subprocess.CompletedProcess(a[0], 0, "", ""),
         )
         assert machotools.codesign_verify("/app") is True
+
+
+class TestCodesignIdentityRetry:
+    """errSecInternalComponent is transient keychain flakiness -> retry."""
+
+    def test_retries_transient_error_then_succeeds(self, monkeypatch):
+        calls = []
+
+        def flaky(*a, **k):
+            calls.append(a[0])
+            if len(calls) < 3:
+                return subprocess.CompletedProcess(
+                    a[0], 1, "", "...: errSecInternalComponent"
+                )
+            return subprocess.CompletedProcess(a[0], 0, "", "")
+
+        monkeypatch.setattr(subprocess, "run", flaky)
+        monkeypatch.setattr(machotools.time, "sleep", lambda s: None)
+
+        machotools.codesign_identity("/bin/x", "Developer ID Application: Me")
+
+        assert len(calls) == 3
+
+    def test_gives_up_after_max_attempts(self, monkeypatch):
+        calls = []
+
+        def always_flaky(*a, **k):
+            calls.append(a[0])
+            return subprocess.CompletedProcess(a[0], 1, "", "errSecInternalComponent")
+
+        monkeypatch.setattr(subprocess, "run", always_flaky)
+        monkeypatch.setattr(machotools.time, "sleep", lambda s: None)
+
+        with pytest.raises(AppBundleError, match="errSecInternalComponent"):
+            machotools.codesign_identity("/bin/x", "Developer ID Application: Me")
+
+        assert len(calls) == machotools._CODESIGN_MAX_ATTEMPTS
+
+    def test_non_transient_error_raises_immediately(self, monkeypatch):
+        calls = []
+
+        def fail(*a, **k):
+            calls.append(a[0])
+            return subprocess.CompletedProcess(a[0], 1, "", "no identity found")
+
+        monkeypatch.setattr(subprocess, "run", fail)
+        monkeypatch.setattr(machotools.time, "sleep", lambda s: None)
+
+        with pytest.raises(AppBundleError, match="no identity found"):
+            machotools.codesign_identity("/bin/x", "Developer ID Application: Me")
+
+        assert len(calls) == 1

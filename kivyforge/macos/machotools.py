@@ -11,9 +11,19 @@ from __future__ import annotations
 
 import struct
 import subprocess
+import time
 from pathlib import Path
 
 from . import AppBundleError
+
+# codesign, when signing with a real (keychain-backed) identity, intermittently
+# fails with errSecInternalComponent under rapid successive invocations — a
+# long-standing macOS securityd flakiness (not a config problem; ad-hoc signing
+# uses no keychain and never hits it). A short retry with backoff reliably
+# clears it; see e.g. https://developer.apple.com/forums/thread/700333.
+_CODESIGN_TRANSIENT_ERRORS = ("errSecInternalComponent",)
+_CODESIGN_MAX_ATTEMPTS = 5
+_CODESIGN_RETRY_DELAY_S = 1.0
 
 # Mach-O magic numbers (little/big-endian, 32/64-bit) and the fat/universal
 # magics. A file that starts with any of these is a Mach-O we may lipo/sign.
@@ -91,12 +101,30 @@ def codesign_identity(
     if entitlements is not None:
         cmd += ["--entitlements", str(entitlements)]
     cmd.append(str(path))
-    _run(cmd)
+    _run_with_retry(cmd)
 
 
 def codesign_verify(path: Path) -> bool:
     """True if *path* has a valid signature (``codesign --verify``)."""
     return _run(["codesign", "--verify", str(path)], check=False).returncode == 0
+
+
+def _run_with_retry(cmd: list[str]) -> None:
+    """Run *cmd* (a codesign invocation), retrying transient keychain flakiness.
+
+    Only retries errors matching ``_CODESIGN_TRANSIENT_ERRORS``; anything else
+    (a genuinely missing/expired identity, a bad entitlements plist, ...)
+    raises immediately.
+    """
+    for attempt in range(1, _CODESIGN_MAX_ATTEMPTS + 1):
+        try:
+            _run(cmd)
+            return
+        except AppBundleError as exc:
+            transient = any(m in str(exc) for m in _CODESIGN_TRANSIENT_ERRORS)
+            if not transient or attempt == _CODESIGN_MAX_ATTEMPTS:
+                raise
+            time.sleep(_CODESIGN_RETRY_DELAY_S * attempt)
 
 
 def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
