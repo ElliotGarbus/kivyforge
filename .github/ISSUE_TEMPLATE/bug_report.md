@@ -31,7 +31,7 @@ Before opening a new issue, make sure you do the following:
 // REPLACE ME: A clear and concise description of what the bug is.
 
 **To Reproduce**
-// REPLACE ME: Add your `toolchain.py ....` command or a complete explanation of what you did so We can reproduce your error.
+// REPLACE ME: Add your `kivyforge ....` command or a complete explanation of what you did so We can reproduce your error.
 
 **Expected behavior**
 // REPLACE ME: A clear and concise description of what you expected to happen.
@@ -43,7 +43,7 @@ Before opening a new issue, make sure you do the following:
 
 **Screenshots**
 <!--
-ONLY for XCode related errors, use the LOGS section for toolchain.py related problems!
+ONLY for XCode related errors, use the LOGS section for kivyforge related problems!
  If applicable, add screenshots to help explain your problem.
 -->
 

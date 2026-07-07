@@ -29,7 +29,7 @@ kivyforge drives the install itself from the pinned per-wheel URLs and hashes ra
 
 The exact contents are platform-specific, but the pattern is consistent. `[tool.kivyforge]` typically holds:
 
-- **Scalar provenance / integrity fields** — `schema_version` (of the extension table), `toolchain_version`, `generated_at`, and `pyproject_sha256` (the SHA-256 of the source `pyproject.toml`, used for **drift detection**: `kivyforge build` recomputes it and refuses a lock that no longer matches, unless `--no-verify-lock`).
+- **Scalar provenance / integrity fields** — `schema_version` (of the extension table), `kivyforge_version`, `generated_at`, and `pyproject_sha256` (the SHA-256 of the source `pyproject.toml`, used for **drift detection**: `kivyforge build` recomputes it and refuses a lock that no longer matches, unless `--no-verify-lock`).
 - **The platform runtime pin** — e.g. the iOS `[tool.kivyforge.python_xcframework]` (version + URL + SHA-256). Other platforms pin their own runtime equivalent.
 - **Native artifact pins** — repeatable sub-arrays for platform-native dependencies (e.g. iOS `[[tool.kivyforge.xcframeworks]]`, `[[tool.kivyforge.swift_packages]]`).
 - **Per-package tool metadata** — via PEP 751's per-package `[packages.tool.kivyforge]` (e.g. `direct_requirement`, `source_index`), invisible to other PEP 751 consumers.

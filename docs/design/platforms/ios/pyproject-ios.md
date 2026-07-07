@@ -191,8 +191,8 @@ hashes = { sha256 = "..." }
 
 - Additive changes (new optional fields, new optional subtables) **do not** bump `[tool.kivy.ios].schema_version`.
 - Backward-incompatible changes (rename, remove, semantics change, required-field added) **must** bump it.
-- The toolchain supports reading the latest N major iOS schema versions (initially N=1). A separate `toolchain migrate` verb in a future minor release converts older `[tool.kivy.ios]` blocks to the latest schema.
-- When schema bumps occur, `pylock.ios.toml` records the source iOS schema version in its `[tool.kivyforge]` block as `tool_kivy_ios_schema_version`.
+- The tool supports reading the latest N major iOS schema versions (initially N=1). A separate `kivyforge migrate` verb in a future minor release converts older `[tool.kivy.ios]` blocks to the latest schema.
+- When schema bumps occur, `pylock.ios.toml` records the source iOS schema version in its `[tool.kivyforge]` block as `tool_kivyforge_schema_version`.
 - If the iOS backend extends a field that lives under the shared `[tool.kivy]` table (e.g. it starts consuming a newly-added `[tool.kivy].background_color`), that adoption is an iOS-side change and bumps `[tool.kivy.ios].schema_version`. Other platforms decide independently when (or whether) to adopt the same key.
 
 ### `[tool.kivy.ios.python]`
@@ -291,7 +291,7 @@ upload_symbols = true
 | `identity`             | string | no       | `"Apple Development"` | Code signing identity. |
 | `provisioning_profile` | string | no       | `""`                  | Provisioning profile name or UUID (empty for auto). |
 | `auto_signing`         | bool   | no       | `true`                | Use Xcode's automatic signing (`CODE_SIGN_STYLE = Automatic`). |
-| `upload_symbols`       | bool   | no       | `true`                | Sets the `uploadSymbols` key in the generated `ExportOptions.plist` used by `--release` exports (controls dSYM inclusion in the `.ipa`; `--release` only — see [iOS CLI §`kivyforge build`](cli-ios.md#toolchain-build)). Set to `false` if you don't use a crash-reporting service and want a smaller export artifact; the `.xcarchive` still retains dSYMs for manual upload. |
+| `upload_symbols`       | bool   | no       | `true`                | Sets the `uploadSymbols` key in the generated `ExportOptions.plist` used by `--release` exports (controls dSYM inclusion in the `.ipa`; `--release` only — see [iOS CLI §`kivyforge build`](cli-ios.md#kivyforge-build)). Set to `false` if you don't use a crash-reporting service and want a smaller export artifact; the `.xcarchive` still retains dSYMs for manual upload. |
 
 iOS-only.
 

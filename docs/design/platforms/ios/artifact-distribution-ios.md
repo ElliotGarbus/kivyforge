@@ -36,14 +36,14 @@ The common case — *using* `pyobjus` to reach Objective-C / system frameworks (
 
 ### Source registry: PyPI direct, plus configurable supplemental indexes
 
-Every iOS wheel that Kivy itself publishes goes to PyPI proper under canonical names. For packages whose upstream maintainers haven't yet published iOS-tagged wheels to PyPI, `toolchain` resolves through one or more configurable supplemental indexes; each resolved wheel's URL is then pinned directly in `[[packages.wheels]]` in the lockfile.
+Every iOS wheel that Kivy itself publishes goes to PyPI proper under canonical names. For packages whose upstream maintainers haven't yet published iOS-tagged wheels to PyPI, `kivyforge` resolves through one or more configurable supplemental indexes; each resolved wheel's URL is then pinned directly in `[[packages.wheels]]` in the lockfile.
 
 PEP 621 `[project].dependencies` entries in the user's `pyproject.toml` are resolved against PyPI. For packages not yet publishing iOS wheels on PyPI, users can declare one or more `extra_index_urls` in `[tool.kivy.ios]`; `kivyforge lock` passes these to pip as `--extra-index-url` when resolving. Each resolved wheel's source URL is pinned in `[[packages.wheels]]` in the lockfile regardless of which index supplied it, keeping builds reproducible.
 
 Two categories of wheel ship through this channel:
 
 1. **Upstream-published iOS wheels** — Pillow, numpy, matplotlib, cryptography, pyyaml (as upstream publishes), pycryptodome, kiwisolver, etc. Consumed directly from PyPI under canonical names.
-2. **Kivy-owned PyPI names with iOS wheels uploaded by Kivy** — `kivy` and `pyobjus`. iOS-tagged wheels (`ios_13_0_arm64_iphoneos`, `ios_13_0_arm64_iphonesimulator`, `ios_13_0_x86_64_iphonesimulator`) are published alongside any existing desktop wheels under the same package name. Because the build host is macOS, `toolchain` passes `--platform ios_13_0_arm64_iphoneos` (and equivalent slices) to pip so that the iOS wheels are selected rather than the macOS ones.
+2. **Kivy-owned PyPI names with iOS wheels uploaded by Kivy** — `kivy` and `pyobjus`. iOS-tagged wheels (`ios_13_0_arm64_iphoneos`, `ios_13_0_arm64_iphonesimulator`, `ios_13_0_x86_64_iphonesimulator`) are published alongside any existing desktop wheels under the same package name. Because the build host is macOS, `kivyforge` passes `--platform ios_13_0_arm64_iphoneos` (and equivalent slices) to pip so that the iOS wheels are selected rather than the macOS ones.
 
 Wheel sourcing is implicit: every PEP 508 string in `[project].dependencies` resolves to a PyPI URL (or to a supplemental-index URL when PyPI doesn't carry the needed iOS slice — see the `extra_index_urls` discussion above). The user does not annotate `source = ...` per wheel; `kivyforge lock` resolves each dependency and pins the resolved wheel URL in `pylock.ios.toml`:
 

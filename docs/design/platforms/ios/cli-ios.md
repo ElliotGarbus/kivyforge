@@ -8,7 +8,7 @@ verbs. For the cross-platform verb model, the `--platform` / `-p` selector, the
 [common CLI + platform resolution](../../common/02-cli-and-platform-resolution.md).
 
 All verbs look for `pyproject.toml` in the **current working directory only**; no
-parent-directory traversal is performed. Run `toolchain` commands from the
+parent-directory traversal is performed. Run `kivyforge` commands from the
 directory that contains your `pyproject.toml`.
 
 ## Verbs (iOS behavior)

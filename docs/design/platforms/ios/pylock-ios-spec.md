@@ -178,10 +178,10 @@ Everything iOS-specific that PEP 751 doesn't model lives here:
 ```toml
 [tool.kivyforge]
 schema_version = 1
-toolchain_version = "3.0.0"
+kivyforge_version = "3.0.0"
 generated_at = "2026-05-27T00:00:00Z"
 pyproject_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-tool_kivy_ios_schema_version = 1
+tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]
 version = "3.15.0"
@@ -197,10 +197,10 @@ sha256 = "abd43fc362bb6e40a5233a499aa3fa96bf49306ca10b4cbcb27418778e429eb8"
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `schema_version` | integer | yes | This lockfile's `[tool.kivyforge]` schema version (independent from PEP 751's `lock-version` and from `[tool.kivy.ios].schema_version` in `pyproject.toml`; all three start at 1). |
-| `toolchain_version` | string | yes | Version of `kivyforge` that generated this lock. |
+| `kivyforge_version` | string | yes | Version of `kivyforge` that generated this lock. |
 | `generated_at` | string | yes | ISO 8601 UTC timestamp. |
 | `pyproject_sha256` | string | yes | SHA-256 of the source `pyproject.toml` at lock time. `kivyforge build` recomputes the hash and exits with an error if it doesn't match. See "Drift detection" below. |
-| `tool_kivy_ios_schema_version` | integer | yes | Mirrors `[tool.kivy.ios].schema_version` from the source pyproject — lets future `toolchain` versions know which iOS overlay schema produced this lock. This is an iOS-only lockfile; a lock for another platform records that platform's overlay schema version instead. |
+| `tool_kivyforge_schema_version` | integer | yes | Mirrors `[tool.kivy.ios].schema_version` from the source pyproject — lets future `kivyforge` versions know which iOS overlay schema produced this lock. This is an iOS-only lockfile; a lock for another platform records that platform's overlay schema version instead. |
 
 ### `[tool.kivyforge.python_xcframework]`
 
@@ -358,10 +358,10 @@ hashes = { sha256 = "..." }
 
 [tool.kivyforge]
 schema_version = 1
-toolchain_version = "3.0.0"
+kivyforge_version = "3.0.0"
 generated_at = "2026-05-27T00:00:00Z"
 pyproject_sha256 = "e3b0c4..."
-tool_kivy_ios_schema_version = 1
+tool_kivyforge_schema_version = 1
 [tool.kivyforge.python_xcframework]
 version = "3.15.0"
 url = "https://www.python.org/ftp/python/3.15.0/python-3.15.0-iOS-XCframework.tar.gz"

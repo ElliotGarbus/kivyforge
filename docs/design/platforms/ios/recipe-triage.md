@@ -50,7 +50,7 @@ The lockfile points directly at an upstream-published URL; no Kivy CI involvemen
 
 ## Resolved via PyPI or a configured supplemental index
 
-PyPI is the primary resolution source. The Python ecosystem is mid-transition to iOS-tagged wheels, so `toolchain` supports configuring one or more supplemental `pip --extra-index-url` indexes. The list is plural-by-design, channel-agnostic, and **empty by default**; specific channel choices are a per-user or per-Kivy-deployment decision.
+PyPI is the primary resolution source. The Python ecosystem is mid-transition to iOS-tagged wheels, so `kivyforge` supports configuring one or more supplemental `pip --extra-index-url` indexes. The list is plural-by-design, channel-agnostic, and **empty by default**; specific channel choices are a per-user or per-Kivy-deployment decision.
 
 `kivyforge lock` records the resolved wheel URL and source index in `[[packages.wheels]]`; `kivyforge build` passes `--platform ios_13_0_arm64_iphoneos --only-binary :all:` so pip fetches iOS slices rather than macOS ones.
 

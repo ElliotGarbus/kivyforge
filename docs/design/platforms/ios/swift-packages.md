@@ -378,7 +378,7 @@ classification or rejection step exists. A package that fails to *resolve* or
 *build* surfaces its error through Xcode/SPM, with kivyforge passing the diagnostic
 through.
 
-## `kivyforge doctor` (extends [iOS CLI §`kivyforge doctor`](cli-ios.md#toolchain-doctor))
+## `kivyforge doctor` (extends [iOS CLI §`kivyforge doctor`](cli-ios.md#kivyforge-doctor))
 
 - **SPM toolchain available** (project mode, only when `swift_packages` is
   non-empty): SPM resolution at lock time and compilation at build time require
