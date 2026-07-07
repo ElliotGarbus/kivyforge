@@ -18,11 +18,11 @@ good first stop.
 
 ## FAQ
 
-### `toolchain: command not found`
+### `kivyforge: command not found`
 
-The `toolchain` script is installed into your virtual environment. Activate it
-(`. .venv/bin/activate`) and make sure kivyforge is installed
-(`pip install -e ".[dev]"` from the repo).
+The `kivyforge` script (and its `kf` alias) is installed into your virtual
+environment. Activate it (`. .venv/bin/activate`) and make sure kivyforge is
+installed (`pip install -e ".[dev]"` from the repo).
 
 ### Error: SDK "iphonesimulator" cannot be located
 
@@ -77,6 +77,55 @@ Yes. List no Kivy in `dependencies` and the toolchain bundles a pure-Python app
 ideal as a smoke test of the toolchain or for validating pure-Python code
 on-device. To ship an actual app you still need a UI layer: Kivy (via SDL), or a
 native bridge such as `rubicon-objc`/`pyobjus` that your Python code drives.
+
+### macOS Developer ID signing fails with `errSecInternalComponent`
+
+If `kivyforge package -p macos` (with `[tool.kivy.macos.signing]` configured)
+fails on every Mach-O with `errSecInternalComponent` — even after retrying,
+even on files that ad-hoc sign fine — your login keychain's private key ACL is
+likely corrupted rather than the error being transient. This has been observed
+after using Keychain Access's "reset my default keychain" flow; the corruption
+can persist across reboots and re-issuing the certificate.
+
+Check for the smoking gun:
+
+    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k <password> login.keychain-db
+
+If this aborts with `SecKeychainItemCopyAccess: The specified item is no
+longer valid`, the fix is to stop fighting the corrupted keychain and isolate
+signing into a fresh one:
+
+    security create-keychain -p <new-password> signing.keychain-db
+    security list-keychains -d user -s signing.keychain-db login.keychain-db
+    security unlock-keychain -p <new-password> signing.keychain-db
+    security set-keychain-settings signing.keychain-db
+    security default-keychain -s signing.keychain-db
+    # In Xcode: Settings → Accounts → Manage Certificates → + → Developer ID Application
+    # (it's created in signing.keychain-db since that's now default)
+    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k <new-password> signing.keychain-db
+    security default-keychain -s login.keychain-db   # restore normal default
+
+If `codesign` then reports `ambiguous` (a same-named certificate matches in
+both keychains), delete the broken copy from `login.keychain-db` (Keychain
+Access → Certificates tab, right-click → Delete) so only the working one in
+`signing.keychain-db` remains. Recreate your `xcrun notarytool
+store-credentials` profile too if it was wiped by the same reset — pass
+`--keychain ~/Library/Keychains/signing.keychain-db` to keep it alongside the
+signing identity, immune to future login-keychain resets. See the
+["Developer ID sign + notarize + staple"](docs/design/platforms/macos/macos-spec.md#developer-id-sign--notarize--staple)
+section of the macOS spec for the full config reference.
+
+This isolated-keychain approach isn't a workaround unique to kivyforge — it's
+Apple's own recommendation. Apple DTS's
+[The Care and Feeding of Developer ID](https://developer.apple.com/forums/thread/732320)
+suggests keeping a Developer ID identity in its own keychain (separate
+password/locking policy from the login keychain) precisely because these
+identities are hard to replace, and also recommends exporting a `.p12` backup
+so a corrupted or reset keychain never puts you in this position again. For
+the general `errSecInternalComponent` failure mode (locked keychains, ACL
+prompts, SSH/CI contexts) — as opposed to the specific corrupted-item case
+above — see Apple DTS's
+[Resolving errSecInternalComponent errors during code signing](https://developer.apple.com/forums/thread/712005).
 
 ### Why does the Python `multiprocessing`/`subprocess` module not work?
 

@@ -58,6 +58,7 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 | 04 | [Artifact distribution](04-artifact-distribution.md) | Where artifacts come from, how they're verified and consumed |
 | 05 | [Platform architecture](05-platform-architecture.md) | `core` + `platforms` interface/registry; how to add a platform |
 | 06 | [Packaging scope](06-packaging-scope.md) | Build-and-sign-the-artifact vs. external-installer principle |
+| 07 | [Runtime provider pattern](07-runtime-provider-pattern.md) | The shared `RuntimeProvider` abstraction desktop platforms (macOS, Linux, Windows) use to bridge to a relocatable CPython |
 
 ### iOS
 

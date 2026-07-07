@@ -146,7 +146,10 @@ other Macs, configure `[tool.kivy.macos.signing]` with a *Developer ID
 Application* identity (paid Apple Developer Program) and a `notary_profile`
 (created with `xcrun notarytool store-credentials`) — then the same command
 deep-signs with Hardened Runtime, **notarizes, and staples** the `.app` so
-Gatekeeper trusts it everywhere. `--no-notarize` skips the submission.
+Gatekeeper trusts it everywhere. `--no-notarize` skips the submission. (Hit
+`errSecInternalComponent` from `codesign`? See the
+[FAQ entry](FAQ.md#macos-developer-id-signing-fails-with-errsecinternalcomponent)
+on corrupted keychain ACLs.)
 
 `kivyforge doctor -p macos` reports environment + project health (host, codesign,
 arch coverage, runtime floor, signing identity, notary setup, reachable hosts).
@@ -244,8 +247,8 @@ iOS target available today.
       kivyforge upgrade    Re-fetch pinned Python.xcframework / xcframework artifacts
       kivyforge doctor     Run environment and project health checks
 
-Run `toolchain <command> -h` for the full set of options on any verb. A few
-common ones:
+Run `kivyforge <command> -h` (or `kf <command> -h`) for the full set of
+options on any verb. A few common ones:
 
 - `kivyforge lock --check` — CI pre-flight; exits non-zero if the lock is stale.
 - `kivyforge build --simulator | --device | --release` — pick the build flavor.

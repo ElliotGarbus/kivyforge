@@ -7,11 +7,15 @@ after iOS, and it exercises the cross-platform architecture (shared
 `[project]`/`[tool.kivy]`, a `[tool.kivy.macos]` overlay, a `pylock.macos.toml`,
 and the `Platform` backend interface).
 
-> **Status: implemented (Phase 3 + 3b).** The macOS backend ships:
+> **Status: implemented and verified.** The macOS backend ships:
 > `[tool.kivy.macos]` parsing, `pylock.macos.toml` resolution (PBS runtime +
 > macOS-tagged wheels), the `.app` generator, `build`/`run`/`package -f app`
-> with `--arch`, ad-hoc signing, macOS `doctor` checks, and (Phase 3b) the full
-> **Developer ID sign + notarize + staple** distribution path. A couple of
+> with `--arch`, ad-hoc signing, macOS `doctor` checks, and the full
+> **Developer ID sign + notarize + staple** distribution path. The latter has
+> been exercised end-to-end on real hardware with a real, paid-account
+> Developer ID Application certificate: `package -p macos` deep-signed all
+> bundled Mach-O binaries with Hardened Runtime, submitted to the notary
+> service, and got the ticket back accepted and stapled. A couple of
 > implementation details differ from the original design and are noted inline
 > below (the bundled runtime lives under `Contents/Resources/` rather than
 > `Contents/Frameworks/`, and the launcher is a tiny compiled Mach-O stub
@@ -19,19 +23,16 @@ and the `Platform` backend interface).
 
 ## Scope
 
-In scope for the first macOS phase:
+In scope for the macOS backend:
 
 - `[tool.kivy.macos]` overlay parsing + a `MacosConfig` dataclass.
 - `pylock.macos.toml` resolution (macOS Python runtime + macOS-tagged wheels).
 - A `.app` bundle generator (Info.plist, bundled Python + wheels + app source, a launcher).
 - `build` / `run` (launch the `.app`) and `package -f app`.
 - **Ad-hoc** code signing (the mandatory Apple-Silicon floor).
-- macOS `doctor` checks.
-
-Added in Phase 3b:
-
 - **Full Developer ID signing + notarization + stapling** — see
-  ["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple-phase-3b) below.
+  ["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple) below.
+- macOS `doctor` checks.
 
 Out of scope for kivyforge (permanently, not deferred):
 
@@ -79,7 +80,7 @@ Icons: `[tool.kivy.macos.icons].source` (1024×1024 PNG) is converted to a macOS
 Signing: `[tool.kivy.macos.signing]` (`identity`, `team_id`, `notary_profile`)
 and the free-form `[tool.kivy.macos.entitlements]` table configure the
 Developer ID distribution path — see
-["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple-phase-3b).
+["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple).
 Both are optional; without them `package` ships the ad-hoc floor.
 
 Shared `[tool.kivy]` keys consumed: `display_name` (→ `CFBundleName` /
@@ -96,35 +97,20 @@ to `/Library/Frameworks` (absolute link references); embedding it in a `.app` wo
 require rewriting dylib `install_name`/`@rpath`, re-signing, and trimming.
 
 **Decision: use [`python-build-standalone`](https://github.com/astral-sh/python-build-standalone)
-(PBS) now, behind a swappable "runtime provider" abstraction that lets us adopt the
-official python.org relocatable framework the moment it ships** (see the watch item
-below). PBS is purpose-built to be relocatable/embeddable, is actively maintained
-(Astral-stewarded, tracks CPython releases closely), and its patches are being
-upstreamed into CPython — so it is both the pragmatic choice today and directly on
-the path to the official artifact.
+(PBS) now**, behind the shared
+[`RuntimeProvider` abstraction](../../common/07-runtime-provider-pattern.md)
+that lets us adopt an official python.org relocatable framework the moment it
+ships (see the watch item there). PBS is purpose-built to be
+relocatable/embeddable, is actively maintained (Astral-stewarded, tracks
+CPython releases closely), and its patches are being upstreamed into CPython —
+so it is both the pragmatic choice today and directly on the path to the
+official artifact.
 
-### The runtime-provider abstraction
-
-The whole point is that the *source* of the runtime is an implementation detail
-hidden behind one seam, so the future switch is a re-lock, not a rewrite:
-
-- **`RuntimeProvider` interface** (macOS backend). A provider resolves a CPython
-  version to a concrete, pinned artifact and normalizes it to a **canonical
-  relocatable layout** the `.app` bundler consumes. Implementations:
-  `PythonBuildStandaloneProvider` (now) and a future `PythonOrgFrameworkProvider`
-  (when python.org's relocatable framework lands). The bundler, launcher, signing,
-  and `doctor` code depend only on the canonical layout — never on the provider.
-- **The lock records the provider, not just the version.** `[tool.kivyforge]` in
-  `pylock.macos.toml` pins `provider` + `version` + per-artifact `url` + `sha256`
-  (PBS ships per-arch archives, so this may be two entries — see universal2 below),
-  exactly the URL+SHA-256 discipline used for the iOS `python_xcframework` pin.
-  Switching providers is therefore just `kivyforge lock` regenerating the pin; the
-  built `.app` is provider-agnostic and nothing downstream changes.
-- **User config stays provider-neutral.** `[tool.kivy.macos.python].version` is just
-  the CPython version. An optional advanced `provider` key may override the default,
-  but the default is chosen by kivyforge (PBS now → python.org later). When the
-  official artifact ships, flipping the default requires **no change to anyone's
-  `pyproject.toml`** — only a re-lock.
+The macOS backend's concrete `RuntimeProvider` implementation is
+`PythonBuildStandaloneProvider` (a future `PythonOrgFrameworkProvider` lands
+when the official framework ships). `pylock.macos.toml` pins `provider` +
+`version` + per-artifact `url` + `sha256` — PBS ships **per-architecture**
+macOS archives, so a universal2 lock has two artifact entries (see below).
 
 ### Architectures (`archs`)
 
@@ -159,8 +145,9 @@ Architecture propagates through three stages:
 
 ### Watch item: official python.org relocatable macOS build
 
-There is active upstream work to make an official relocatable macOS runtime, which
-is the intended end-state for this provider:
+See the [common watch item](../../common/07-runtime-provider-pattern.md#watch-item-official-prebuilt-cpython-pythonprebuilt-cpython)
+for the cross-platform `python/prebuilt-cpython` effort. macOS-specific
+upstream tracking:
 
 - **[cpython#86680](https://github.com/python/cpython/issues/86680)** ("Relocatable
   framework for macOS") + in-flight PR
@@ -170,16 +157,11 @@ is the intended end-state for this provider:
   (a "macOS Embedded" download, analogous to the Windows embeddable build), shipped
   **separately** from the non-relocatable `.pkg` installer. Main holdup: macOS
   release-process automation.
-- **[python/prebuilt-cpython](https://github.com/python/prebuilt-cpython)** — the
-  PSF's effort to distribute official prebuilt, **relocatable** CPython from
-  python.org (signed by official keys), unblocked by upstreaming PBS patches; a PEP
-  is imminent. Note early discussion leans toward **per-arch** ("one distribution
-  per arch with a conservative baseline"), which the provider must accommodate.
 
-When either lands, we add `PythonOrgFrameworkProvider`, make it the default, and
-existing projects pick it up on their next `kivyforge lock`. The current PBS choice
-is deliberately a **bridge on the same lineage** (PBS → upstreamed into CPython →
-official python.org), not a divergent path.
+Whichever of these lands first, we add `PythonOrgFrameworkProvider`, make it
+the default, and existing projects pick it up on their next `kivyforge lock`.
+The current PBS choice is deliberately a **bridge on the same lineage** (PBS →
+upstreamed into CPython → official python.org), not a divergent path.
 
 ## `pylock.macos.toml`
 
@@ -278,12 +260,17 @@ be at least ad-hoc signed or the kernel refuses to run them. It provides
 kivyforge signs the bundled binaries as part of producing a correct artifact
 (signing operates on the bundle's Mach-O files); this stays inside the tool.
 
-### Developer ID sign + notarize + staple (Phase 3b)
+### Developer ID sign + notarize + staple
 
 The typical distribution path for most macOS apps is **sign + notarize + staple**
-(signing alone is insufficient since macOS 10.15). Requires Apple Developer
-Program membership (paid) and a *Developer ID Application* certificate; without
-one, `package` keeps producing the ad-hoc artifact.
+(signing alone is insufficient since macOS 10.15) — see Apple's
+[Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution),
+[Customizing the notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+(the `notarytool`/`stapler` CLI path kivyforge automates), and
+[Resolving common notarization issues](https://developer.apple.com/documentation/security/resolving-common-notarization-issues).
+Requires Apple Developer Program membership (paid) and a *Developer ID
+Application* certificate; without one, `package` keeps producing the ad-hoc
+artifact.
 
 **Config** — `[tool.kivy.macos.signing]` plus optional entitlements:
 
@@ -304,6 +291,37 @@ Notary credentials never live in `pyproject.toml`: `notary_profile` names a
 xcrun notarytool store-credentials kivyforge-notary \
     --apple-id you@example.com --team-id ABC1234XYZ --password <app-specific>
 ```
+
+> **Troubleshooting: `codesign failed: ... errSecInternalComponent`.** If every
+> real-identity `codesign` call fails immediately with this error — including
+> on files that ad-hoc sign fine, and even after `kivyforge`'s own retry
+> (`machotools.codesign_identity` retries a few times for genuinely transient
+> `securityd` flakiness) — the private key's Access/ACL object in your login
+> keychain is likely corrupted rather than the failure being transient. This
+> has been observed after using Keychain Access's "reset my default keychain"
+> flow. Symptoms: `security set-key-partition-list ...` on `login.keychain-db`
+> aborts with `SecKeychainItemCopyAccess: The specified item is no longer
+> valid`, and the problem survives rebooting and re-issuing the certificate.
+> The fix is to stop fighting the corrupted keychain: create a dedicated
+> keychain for signing (`security create-keychain`), make it temporarily
+> default so Xcode's *Manage Certificates → +* writes the new key pair there
+> instead, add it to the keychain search list (`security list-keychains -d
+> user -s <new>.keychain-db login.keychain-db`), and run
+> `set-key-partition-list` scoped to just that keychain. If the same
+> certificate name ends up matching in both keychains, `codesign` refuses to
+> guess and reports `ambiguous` — delete the broken copy from
+> `login.keychain-db` (Keychain Access → Certificates tab) so only the working
+> one remains. Storing the `notarytool` credential profile with `--keychain
+> <new>.keychain-db` keeps everything for Developer ID distribution in one
+> known-good place, immune to future login-keychain resets. This isn't an
+> ad-hoc workaround: Apple DTS's
+> [The Care and Feeding of Developer ID](https://developer.apple.com/forums/thread/732320)
+> recommends keeping a Developer ID identity in its own keychain (separate
+> password/locking policy) precisely because these identities are hard to
+> replace, and recommends an independent `.p12` export as a backup. For the
+> general `errSecInternalComponent` failure mode (locked keychains, ACL
+> prompts, SSH/CI contexts), see Apple DTS's
+> [Resolving errSecInternalComponent errors during code signing](https://developer.apple.com/forums/thread/712005).
 
 **Behavior of `package -p macos`** (config-driven, flag-overridable):
 
