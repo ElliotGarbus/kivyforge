@@ -72,11 +72,11 @@ class TestEnvironmentChecks:
         r = C.check_simulator_runtimes(FakeProbe(runtimes=["13.0", "18.0"]), config)
         assert r.status is Status.PASS
 
-    def test_toolchain_offline_pass(self):
+    def test_kivyforge_version_offline_pass(self):
         r = C.check_kivyforge_version(FakeProbe(), "3.0.0", offline=True)
         assert r.status is Status.PASS
 
-    def test_toolchain_newer_warns(self):
+    def test_kivyforge_version_newer_warns(self):
         r = C.check_kivyforge_version(FakeProbe(latest="9.0.0"), "3.0.0", offline=False)
         assert r.status is Status.WARN
 

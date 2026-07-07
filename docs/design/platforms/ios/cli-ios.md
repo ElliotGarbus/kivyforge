@@ -233,7 +233,7 @@ Substantive checks (not a placeholder), inspired by `flutter doctor`:
 | Xcode version | environment | At least the toolchain's documented minimum Xcode version |
 | Command-line tools | environment | `xcode-select -p` resolves; `xcrun clang` present |
 | Simulator runtimes | environment | At least one iOS simulator runtime installed; in project mode, matched against `[tool.kivy.ios].deployment_target` |
-| Toolchain version | environment | Self-version + warn if a newer one is on PyPI (best-effort, suppressed by `--offline`) |
+| kivyforge version | environment | Self-version + warn if a newer one is on PyPI (best-effort, suppressed by `--offline`) |
 | App source directory | project | `[tool.kivy].app_dir` resolves to an existing directory. Config validation only checks the *string*; FAIL here if the directory is missing, since the build would otherwise ship an app with no Python source. |
 | Signing identity | project | If `[tool.kivy.ios.signing].auto_signing = false`, the named identity is present in keychain |
 | Provisioning profile | project | If `[tool.kivy.ios.signing].provisioning_profile` is set, it exists |

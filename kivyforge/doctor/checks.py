@@ -116,16 +116,16 @@ def check_kivyforge_version(
     probe: Probe, current: str, *, offline: bool
 ) -> CheckResult:
     if offline:
-        return CheckResult("Toolchain version", Status.PASS, f"{current} (offline)")
+        return CheckResult("kivyforge version", Status.PASS, f"{current} (offline)")
     latest = probe.latest_kivyforge_version()
     if latest and _ver_tuple(latest) > _ver_tuple(current):
         return CheckResult(
-            "Toolchain version",
+            "kivyforge version",
             Status.WARN,
             f"{current} (latest {latest})",
             hint="upgrade with `pip install -U kivyforge`.",
         )
-    return CheckResult("Toolchain version", Status.PASS, current)
+    return CheckResult("kivyforge version", Status.PASS, current)
 
 
 # ---- project checks -----------------------------------------------------
