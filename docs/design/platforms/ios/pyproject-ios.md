@@ -288,7 +288,7 @@ upload_symbols = true
 | Field                  | Type   | Required | Default               | Description                                                  |
 | ---------------------- | ------ | -------- | --------------------- | ------------------------------------------------------------ |
 | `team_id`              | string | no       | `""`                  | Apple Developer team identifier. Required for device builds and release exports. |
-| `identity`             | string | no       | `"Apple Development"` | Code signing identity. |
+| `identity`             | string | no       | `"Apple Development"` | Code signing identity, applied to `--device` debug builds. **Not applied to `--release`** — a distribution archive/export needs Xcode's automatic signing to pick the Distribution certificate matching `--export-method`; pin one explicitly via `--signing-identity`/`KIVYFORGE_SIGNING_IDENTITY` if needed (see [iOS CLI §`kivyforge build`](cli-ios.md#kivyforge-build)). |
 | `provisioning_profile` | string | no       | `""`                  | Provisioning profile name or UUID (empty for auto). |
 | `auto_signing`         | bool   | no       | `true`                | Use Xcode's automatic signing (`CODE_SIGN_STYLE = Automatic`). |
 | `upload_symbols`       | bool   | no       | `true`                | Sets the `uploadSymbols` key in the generated `ExportOptions.plist` used by `--release` exports (controls dSYM inclusion in the `.ipa`; `--release` only — see [iOS CLI §`kivyforge build`](cli-ios.md#kivyforge-build)). Set to `false` if you don't use a crash-reporting service and want a smaller export artifact; the `.xcarchive` still retains dSYMs for manual upload. |
