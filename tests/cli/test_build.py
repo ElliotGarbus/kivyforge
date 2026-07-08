@@ -254,6 +254,59 @@ class TestSigningIdentityWiring:
         assert any("CODE_SIGN_IDENTITY=Apple Distribution: Me" in c for c in captured)
         assert options["signingCertificate"] == "Apple Distribution: Me"
 
+    def test_release_ignores_pyproject_default_identity(
+        self, runner, tmp_path, mock_collect, monkeypatch
+    ):
+        """The pyproject default ("Apple Development", for --device debug
+        builds) must not leak onto a --release archive/export — that would
+        request a Development profile instead of a Distribution one and fail
+        (see xcode/commands.py archive_command)."""
+        captured: list[list[str]] = []
+        monkeypatch.setattr(
+            build_cli,
+            "run_command",
+            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["--release", "--team-id", "ABCDE12345"])
+            assert result.exit_code == 0, result.output
+        assert not any(
+            c.startswith("CODE_SIGN_IDENTITY=") for cmd in captured for c in cmd
+        )
+
+    def test_release_passes_allow_provisioning_updates_when_auto_signing(
+        self, runner, tmp_path, mock_collect, monkeypatch
+    ):
+        captured: list[list[str]] = []
+        monkeypatch.setattr(
+            build_cli,
+            "run_command",
+            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["--release", "--team-id", "ABCDE12345"])
+            assert result.exit_code == 0, result.output
+        # Both the archive and export invocations need the flag for automatic
+        # signing to register the App ID / fetch or create profiles from the CLI.
+        assert sum("-allowProvisioningUpdates" in cmd for cmd in captured) == 2
+
+    def test_device_passes_allow_provisioning_updates_when_auto_signing(
+        self, runner, tmp_path, mock_collect, monkeypatch
+    ):
+        captured: list[list[str]] = []
+        monkeypatch.setattr(
+            build_cli,
+            "run_command",
+            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["--device", "--team-id", "ABCDE12345"])
+            assert result.exit_code == 0, result.output
+        assert "-allowProvisioningUpdates" in captured[-1]
+
 
 class TestLastUpgradeCheck:
     def test_encodes_xcode_version(self):

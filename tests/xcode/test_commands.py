@@ -110,6 +110,19 @@ class TestBuildCommand:
         cmd = build_command(xb, "simulator", signing_identity="Apple Distribution: Me")
         assert not any(c.startswith("CODE_SIGN_IDENTITY=") for c in cmd)
 
+    def test_device_allow_provisioning_updates(self, xb):
+        cmd = build_command(xb, "device", allow_provisioning_updates=True)
+        assert "-allowProvisioningUpdates" in cmd
+
+    def test_device_no_allow_provisioning_updates_by_default(self, xb):
+        cmd = build_command(xb, "device")
+        assert "-allowProvisioningUpdates" not in cmd
+
+    def test_simulator_ignores_allow_provisioning_updates(self, xb):
+        # Simulator builds are unsigned; the flag would be meaningless there.
+        cmd = build_command(xb, "simulator", allow_provisioning_updates=True)
+        assert "-allowProvisioningUpdates" not in cmd
+
     def test_product_path(self, tmp_path):
         p = product_app_path(tmp_path / "dd", "myapp", "simulator")
         assert p == (
@@ -134,11 +147,26 @@ class TestArchiveExport:
         cmd = archive_command(xb, signing_identity="Apple Distribution: Me")
         assert "CODE_SIGN_IDENTITY=Apple Distribution: Me" in cmd
 
+    def test_archive_allow_provisioning_updates(self, xb):
+        cmd = archive_command(xb, allow_provisioning_updates=True)
+        assert "-allowProvisioningUpdates" in cmd
+
+    def test_archive_no_allow_provisioning_updates_by_default(self, xb):
+        cmd = archive_command(xb)
+        assert "-allowProvisioningUpdates" not in cmd
+
     def test_export(self, xb, tmp_path):
         cmd = export_command(xb, tmp_path / "ExportOptions.plist")
         assert "-exportArchive" in cmd
         assert "-exportOptionsPlist" in cmd
         assert str(tmp_path / "ExportOptions.plist") in cmd
+        assert "-allowProvisioningUpdates" not in cmd
+
+    def test_export_allow_provisioning_updates(self, xb, tmp_path):
+        cmd = export_command(
+            xb, tmp_path / "ExportOptions.plist", allow_provisioning_updates=True
+        )
+        assert "-allowProvisioningUpdates" in cmd
 
     def test_export_options_plist(self):
         plist = export_options_plist(method="ad-hoc", team_id="ABCDE12345")

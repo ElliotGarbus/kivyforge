@@ -54,8 +54,8 @@ hashes = { sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd54212
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-07-04T02:17:23Z"
-pyproject_sha256 = "8dfd89bc22f473e1ca33ed93377754aeafbf035502c6a35608702ac7756b52dc"
+generated_at = "2026-07-08T03:38:35Z"
+pyproject_sha256 = "d7b20f045b67ad5575de88c41a4b29cca1448d5623838a91738e29db63ca57f6"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]

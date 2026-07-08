@@ -12,6 +12,7 @@ Build performs, in order:
 
 from __future__ import annotations
 
+import os
 import plistlib
 import re
 from pathlib import Path
@@ -36,7 +37,11 @@ from ..xcode import (
     export_options_plist,
     run_command,
 )
-from ..xcode.commands import preflight_signing, resolve_signing_identity
+from ..xcode.commands import (
+    SIGNING_IDENTITY_ENV,
+    preflight_signing,
+    resolve_signing_identity,
+)
 from ._common import (
     LOCKFILE_NAME,
     MIGRATION_URL,
@@ -232,15 +237,31 @@ def _xcodebuild_step7(
     signing_identity_flag: str | None,
     export_method: str,
 ) -> None:
-    # Effective signing identity: --signing-identity → env → pyproject.
-    identity = resolve_signing_identity(config, identity_flag=signing_identity_flag)
+    auto_signing = config.ios.signing.auto_signing
     if target in ("simulator", "device"):
+        # Effective signing identity: --signing-identity → env → pyproject.
+        # The pyproject default ("Apple Development") is meant for exactly this
+        # case — a device debug build.
+        identity = resolve_signing_identity(config, identity_flag=signing_identity_flag)
         sim_arch = arch if target == "simulator" else None
         click.echo(f"xcodebuild build ({target}) ...")
-        run_command(build_command(xb, target, arch=sim_arch, signing_identity=identity))
+        run_command(
+            build_command(
+                xb,
+                target,
+                arch=sim_arch,
+                signing_identity=identity,
+                allow_provisioning_updates=auto_signing and target == "device",
+            )
+        )
         return
 
     # --release: archive, then export a signed .ipa (spec 05 step 7).
+    # Only an *explicit* --signing-identity flag or KIVYFORGE_SIGNING_IDENTITY
+    # env var applies here — the pyproject default is for --device debug builds
+    # and would force the wrong certificate type (Development) onto what needs
+    # to be a Distribution-signed archive/export (see archive_command).
+    release_identity = signing_identity_flag or os.environ.get(SIGNING_IDENTITY_ENV)
     resolved_team_id = preflight_signing(config, "release", team_id_flag=team_id_flag)
     if resolved_team_id is None:
         # preflight_signing only returns None for --simulator; unreachable here.
@@ -249,20 +270,28 @@ def _xcodebuild_step7(
         )
     xb.build_dir.mkdir(parents=True, exist_ok=True)
     click.echo("xcodebuild archive ...")
-    run_command(archive_command(xb, signing_identity=identity))
+    run_command(
+        archive_command(
+            xb,
+            signing_identity=release_identity,
+            allow_provisioning_updates=auto_signing,
+        )
+    )
 
     options = export_options_plist(
         method=export_method,
         team_id=resolved_team_id,
         upload_symbols=config.ios.signing.upload_symbols,
-        signing_identity=identity,
+        signing_identity=release_identity,
     )
     options_path = xb.build_dir / "ExportOptions.plist"
     with open(options_path, "wb") as fh:
         plistlib.dump(options, fh)
 
     click.echo("xcodebuild -exportArchive ...")
-    run_command(export_command(xb, options_path))
+    run_command(
+        export_command(xb, options_path, allow_provisioning_updates=auto_signing)
+    )
     click.echo(f"Exported {xb.ipa_path.relative_to(xb.project_root)}")
 
 

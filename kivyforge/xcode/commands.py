@@ -165,13 +165,19 @@ def build_command(
     arch: str | None = None,
     derived_data_path: str | Path | None = None,
     signing_identity: str | None = None,
+    allow_provisioning_updates: bool = False,
 ) -> list[str]:
     """`xcodebuild build` argv for --simulator/--device (Debug).
 
     ``derived_data_path`` pins where the ``.app`` is written so ``kivyforge run``
     can locate the product deterministically. ``signing_identity`` overrides the
     project's baked ``CODE_SIGN_IDENTITY`` for device builds (simulator builds are
-    unsigned, so it is ignored there).
+    unsigned, so it is ignored there). ``allow_provisioning_updates`` passes
+    ``-allowProvisioningUpdates`` — required for automatic signing to actually
+    register the App ID / fetch or create a matching profile when driven from
+    the command line (Xcode's IDE does this silently; bare ``xcodebuild`` does
+    not unless asked — see "Resolving common notarization issues"-adjacent
+    Apple guidance on ``xcodebuild`` + automatic signing).
     """
     cmd = [
         "xcodebuild",
@@ -190,8 +196,11 @@ def build_command(
     # (arm64 x86_64) produces an invalid path. Pin a single arch for CLI builds.
     if target == "simulator":
         cmd += [f"ARCHS={arch or default_simulator_arch()}", "ONLY_ACTIVE_ARCH=NO"]
-    elif signing_identity:
-        cmd.append(f"CODE_SIGN_IDENTITY={signing_identity}")
+    else:
+        if signing_identity:
+            cmd.append(f"CODE_SIGN_IDENTITY={signing_identity}")
+        if allow_provisioning_updates:
+            cmd.append("-allowProvisioningUpdates")
     cmd.append("build")
     return cmd
 
@@ -210,12 +219,18 @@ def product_app_path(derived_data_path: str | Path, scheme: str, target: str) ->
 
 
 def archive_command(
-    xb: XcodeBuild, *, signing_identity: str | None = None
+    xb: XcodeBuild,
+    *,
+    signing_identity: str | None = None,
+    allow_provisioning_updates: bool = False,
 ) -> list[str]:
     """`xcodebuild archive` argv for --release (step 7.1).
 
     ``signing_identity`` overrides the project's baked ``CODE_SIGN_IDENTITY`` for
-    the archive's signing step.
+    the archive's signing step — only pass this for an *explicit* user override;
+    forcing the pyproject default (typically "Apple Development", meant for
+    ``--device`` debug builds) onto a distribution archive requests the wrong
+    profile type and fails. ``allow_provisioning_updates``: see ``build_command``.
     """
     cmd = [
         "xcodebuild",
@@ -233,12 +248,16 @@ def archive_command(
     ]
     if signing_identity:
         cmd.append(f"CODE_SIGN_IDENTITY={signing_identity}")
+    if allow_provisioning_updates:
+        cmd.append("-allowProvisioningUpdates")
     return cmd
 
 
-def export_command(xb: XcodeBuild, options_plist: Path) -> list[str]:
+def export_command(
+    xb: XcodeBuild, options_plist: Path, *, allow_provisioning_updates: bool = False
+) -> list[str]:
     """`xcodebuild -exportArchive` argv for --release (step 7.2)."""
-    return [
+    cmd = [
         "xcodebuild",
         "-exportArchive",
         "-archivePath",
@@ -248,6 +267,9 @@ def export_command(xb: XcodeBuild, options_plist: Path) -> list[str]:
         "-exportOptionsPlist",
         str(options_plist),
     ]
+    if allow_provisioning_updates:
+        cmd.append("-allowProvisioningUpdates")
+    return cmd
 
 
 def export_options_plist(
