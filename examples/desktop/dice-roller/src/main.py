@@ -14,7 +14,6 @@ import os
 import random
 
 from kivy.app import App
-from kivy.core.window import Window
 from kivy.graphics import Color, Ellipse, Line, RoundedRectangle
 from kivy.properties import NumericProperty
 from kivy.uix.boxlayout import BoxLayout
