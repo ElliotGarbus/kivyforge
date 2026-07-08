@@ -224,9 +224,14 @@ def check_macos_signing_identity_type(config: Config) -> CheckResult:
     signing = config.macos_required.signing
     if not signing.configured:
         return CheckResult(
-            "Signing identity type", Status.SKIP, "not configured (ad-hoc floor applies)"
+            "Signing identity type",
+            Status.SKIP,
+            "not configured (ad-hoc floor applies)",
         )
-    if "Developer ID Application" in signing.identity or "Developer ID Installer" in signing.identity:
+    if (
+        "Developer ID Application" in signing.identity
+        or "Developer ID Installer" in signing.identity
+    ):
         return CheckResult("Signing identity type", Status.PASS, "Developer ID")
     return CheckResult(
         "Signing identity type",

@@ -119,8 +119,12 @@ class RealProbe:
         """Identities scoped to ``login.keychain-db`` (Apple recommends keeping
         Developer ID identities out of it; see the ``Signing identity`` check).
         """
-        login_keychain = str(Path.home() / "Library" / "Keychains" / "login.keychain-db")
-        out = _capture(["security", "find-identity", "-v", "-p", "codesigning", login_keychain])
+        login_keychain = str(
+            Path.home() / "Library" / "Keychains" / "login.keychain-db"
+        )
+        out = _capture(
+            ["security", "find-identity", "-v", "-p", "codesigning", login_keychain]
+        )
         return [line.strip() for line in out.splitlines() if line.strip()]
 
     def tcp_reachable(self, host: str, port: int) -> bool:

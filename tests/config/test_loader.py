@@ -825,7 +825,9 @@ class TestMacosEntitlementsNotarizable:
         cfg = _macos(
             '[tool.kivy.macos.entitlements]\n"com.apple.security.get-task-allow"=true\n'
         )
-        assert cfg.macos_required.entitlements["com.apple.security.get-task-allow"] is True
+        assert (
+            cfg.macos_required.entitlements["com.apple.security.get-task-allow"] is True
+        )
 
     def test_get_task_allow_false_allowed_with_signing(self):
         cfg = _macos(
@@ -833,7 +835,10 @@ class TestMacosEntitlementsNotarizable:
             "[tool.kivy.macos.signing]\n"
             "identity='Developer ID Application: Jane Doe (ABC123)'\n"
         )
-        assert cfg.macos_required.entitlements["com.apple.security.get-task-allow"] is False
+        assert (
+            cfg.macos_required.entitlements["com.apple.security.get-task-allow"]
+            is False
+        )
 
 
 class TestMacosRequiresPython:

@@ -363,11 +363,15 @@ class TestRealProbe:
     # --- is_root ---
 
     def test_is_root_true(self, monkeypatch):
-        monkeypatch.setattr("kivyforge.doctor.probe.os.geteuid", lambda: 0, raising=False)
+        monkeypatch.setattr(
+            "kivyforge.doctor.probe.os.geteuid", lambda: 0, raising=False
+        )
         assert self._probe().is_root() is True
 
     def test_is_root_false(self, monkeypatch):
-        monkeypatch.setattr("kivyforge.doctor.probe.os.geteuid", lambda: 501, raising=False)
+        monkeypatch.setattr(
+            "kivyforge.doctor.probe.os.geteuid", lambda: 501, raising=False
+        )
         assert self._probe().is_root() is False
 
     # --- tcp_reachable ---
