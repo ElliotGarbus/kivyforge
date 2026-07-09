@@ -48,6 +48,7 @@ from ._common import (
     ToolchainError,
     lockfile_path,
 )
+from ._linux import linux_build
 from ._macos import macos_build
 from ._platform import platform_option, resolve_target
 
@@ -119,8 +120,18 @@ def build(
     backend, project_root = resolve_target(cli_platform)
 
     if backend.name == "macos":
-        _reject_ios_flags_for_macos(target)
+        _reject_ios_flags_for_desktop(backend.name, target)
         macos_build(
+            project_root,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+        )
+        return
+
+    if backend.name == "linux":
+        _reject_ios_flags_for_desktop(backend.name, target)
+        linux_build(
             project_root,
             arch=arch,
             no_verify_lock=no_verify_lock,
@@ -357,13 +368,15 @@ def _encode_last_upgrade_check(version: str) -> str | None:
     return str(major * 100 + minor * 10 + patch)
 
 
-def _reject_ios_flags_for_macos(target: str | None) -> None:
+def _reject_ios_flags_for_desktop(platform: str, target: str | None) -> None:
     if target is not None:
+        artifact = ".app" if platform == "macos" else "AppDir"
         raise ToolchainError(
-            f"--{target} is an iOS target; macOS has no simulator/device/release "
-            "targets.\n"
-            "  Use `kivyforge build -p macos` (optionally --arch) to build the "
-            ".app, or `kivyforge package -p macos` for the signed distributable."
+            f"--{target} is an iOS target; {platform} has no simulator/device/"
+            "release targets.\n"
+            f"  Use `kivyforge build -p {platform}` (optionally --arch) to build "
+            f"the {artifact}, or `kivyforge package -p {platform}` for the "
+            "distributable."
         )
 
 

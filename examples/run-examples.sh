@@ -20,6 +20,8 @@
 #   ./run-examples.sh hello-kivy ...      # only the named examples
 #   ./run-examples.sh --no-pause          # don't wait for Enter between examples
 #   ./run-examples.sh -p ios              # target platform (default: ios)
+#   ./run-examples.sh -p macos            # desktop suite -> .app bundles
+#   ./run-examples.sh -p linux            # desktop suite -> AppDir + ./AppRun
 #
 set -u
 
@@ -65,10 +67,10 @@ done
 export KIVYFORGE_PLATFORM="$PLATFORM"
 LOCK="pylock.${PLATFORM}.toml"
 
-# Default set per platform. iOS runs the mobile suite (Kivy 3.0); macOS runs the
-# desktop suite, which builds from public PyPI wheels (Kivy 2.3.1) with no
-# wheel-building step.
-if [[ "$PLATFORM" == "macos" ]]; then
+# Default set per platform. iOS runs the mobile suite (Kivy 3.0); macOS and
+# Linux run the desktop suite, which builds from public PyPI wheels (Kivy 2.3.1)
+# with no wheel-building step.
+if [[ "$PLATFORM" == "macos" || "$PLATFORM" == "linux" ]]; then
     DEFAULT_EXAMPLES=(
         dice-roller
         notes
@@ -147,6 +149,13 @@ for ex in "${EXAMPLES[@]}"; do
         # the verification loop can continue while the window is up.
         [[ $ok -eq 1 ]] && { run_step "build" kivyforge build -p macos || ok=0; }
         [[ $ok -eq 1 ]] && { run_step "open"  open build/macos/*.app   || ok=0; }
+    elif [[ "$PLATFORM" == "linux" ]]; then
+        # No simulator on Linux; build the AppDir, then run ./AppRun directly —
+        # the fast dev loop needs no AppImage/FUSE. `run` blocks until the window
+        # is closed (that IS the visual check); for headless CI wrap this script's
+        # `run` step in `xvfb-run -a` with software GL (LIBGL_ALWAYS_SOFTWARE=1).
+        [[ $ok -eq 1 ]] && { run_step "build" kivyforge build -p linux || ok=0; }
+        [[ $ok -eq 1 ]] && { run_step "run"   kivyforge run   -p linux || ok=0; }
     else
         [[ $ok -eq 1 ]] && { run_step "build" kivyforge build -p "$PLATFORM" --simulator || ok=0; }
         [[ $ok -eq 1 ]] && { run_step "run"   kivyforge run   -p "$PLATFORM" --simulator || ok=0; }

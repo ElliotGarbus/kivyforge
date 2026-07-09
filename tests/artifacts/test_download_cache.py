@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from kivyforge.artifacts.cache import DEFAULT_CACHE_ROOT, ArtifactCache
+from kivyforge.artifacts.cache import (
+    DEFAULT_CACHE_ROOT,
+    ArtifactCache,
+    _default_cache_root,
+)
 from kivyforge.artifacts.download import DownloadError, fetch_artifact
 from kivyforge.artifacts.verify import HashMismatch, sha256_bytes, sha256_file
 
@@ -31,8 +35,23 @@ def cache(tmp_path):
 class TestCachePaths:
     def test_default_root(self):
         assert ArtifactCache().root == DEFAULT_CACHE_ROOT
-        assert DEFAULT_CACHE_ROOT == (
+
+    def test_macos_cache_root(self, monkeypatch):
+        monkeypatch.setattr("platform.system", lambda: "Darwin")
+        assert _default_cache_root() == (
             Path.home() / "Library" / "Caches" / "kivyforge" / "artifacts"
+        )
+
+    def test_linux_cache_root_xdg(self, monkeypatch):
+        monkeypatch.setattr("platform.system", lambda: "Linux")
+        monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/xdgcache")
+        assert _default_cache_root() == Path("/tmp/xdgcache/kivyforge/artifacts")
+
+    def test_linux_cache_root_default(self, monkeypatch):
+        monkeypatch.setattr("platform.system", lambda: "Linux")
+        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+        assert _default_cache_root() == (
+            Path.home() / ".cache" / "kivyforge" / "artifacts"
         )
 
 

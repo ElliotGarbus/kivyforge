@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config.model import Config
+from ..lock.linux import LinuxLockfile
 from ..lock.macos import MacosLockfile
 from ..lock.model import Lockfile
 from . import checks as C
+from . import checks_linux as L
 from . import checks_macos as M
 from .probe import Probe
 from .result import CheckResult, Status
@@ -107,5 +109,48 @@ def run_macos_checks(
         M.check_macos_signing_identity_type(config),
         M.check_macos_notary_setup(probe, config),
         M.check_macos_hosts_reachable(probe, lock),
+    ]
+    return results
+
+
+def run_linux_checks(
+    probe: Probe,
+    *,
+    kivyforge_version: str,
+    config: Config | None = None,
+    project_root: Path | None = None,
+    lock: LinuxLockfile | None = None,
+    offline: bool = False,
+) -> list[CheckResult]:
+    """Run Linux doctor checks (linux-spec). Project checks SKIP without config."""
+    project_root = project_root or Path.cwd()
+    results = [
+        L.check_linux_host(probe),
+        L.check_gl_libraries(probe),
+        L.check_display_session(probe),
+        C.check_kivyforge_version(probe, kivyforge_version, offline=offline),
+    ]
+
+    if config is None:
+        for name in (
+            "App source directory",
+            "glibc floor",
+            "Architecture coverage",
+            "App icon",
+            "Desktop entry valid",
+            "find_links directories",
+            "Required hosts reachable",
+        ):
+            results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
+        return results
+
+    results += [
+        C.check_app_dir(config, project_root),
+        L.check_linux_glibc_floor(config, lock),
+        L.check_linux_arch_coverage(config, lock),
+        L.check_linux_app_icon(config, project_root),
+        L.check_linux_desktop_entry(probe, config),
+        L.check_linux_find_links(config, project_root),
+        L.check_linux_hosts_reachable(probe, config, lock),
     ]
     return results

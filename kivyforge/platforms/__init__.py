@@ -14,6 +14,7 @@ from collections.abc import Collection, Mapping
 
 from .base import HostCapabilityError, Platform
 from .ios import IosPlatform
+from .linux import LinuxPlatform
 from .macos import MacosPlatform
 
 __all__ = [
@@ -29,7 +30,7 @@ __all__ = [
 PLATFORM_ENV_VAR = "KIVYFORGE_PLATFORM"
 
 # Registered backends, in display order. Add new platforms here.
-_REGISTRY: tuple[Platform, ...] = (IosPlatform(), MacosPlatform())
+_REGISTRY: tuple[Platform, ...] = (IosPlatform(), MacosPlatform(), LinuxPlatform())
 
 # name/alias -> backend
 _BY_SELECTOR: dict[str, Platform] = {

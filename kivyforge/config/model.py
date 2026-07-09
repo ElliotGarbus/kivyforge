@@ -16,10 +16,22 @@ SUPPORTED_IOS_SCHEMA_VERSION = 1
 # The macOS overlay schema major version this build understands (macos-spec).
 SUPPORTED_MACOS_SCHEMA_VERSION = 1
 
+# The Linux overlay schema major version this build understands (linux-spec).
+SUPPORTED_LINUX_SCHEMA_VERSION = 1
+
 # macOS build architectures. Two entries => a universal2 build; one => a thin
 # build. Default is universal2 (arm64 + x86_64) unless the project narrows it.
 VALID_MACOS_ARCHS = frozenset({"arm64", "x86_64"})
 DEFAULT_MACOS_ARCHS = ("arm64", "x86_64")
+
+# Linux build architectures. Only x86_64 is allowed this phase; the field stays
+# list-shaped so aarch64 is purely additive later (linux-spec). Unlike macOS
+# there is no fat binary — each arch would be a separate AppImage.
+VALID_LINUX_ARCHS = frozenset({"x86_64"})
+DEFAULT_LINUX_ARCHS = ("x86_64",)
+
+# Default freedesktop main category for the generated .desktop entry.
+DEFAULT_DESKTOP_CATEGORIES = ("Utility",)
 
 VALID_ORIENTATIONS = frozenset(
     {"portrait", "portrait-upside-down", "landscape-left", "landscape-right"}
@@ -227,6 +239,35 @@ class MacosConfig:
 
 
 @dataclass(frozen=True)
+class DesktopConfig:
+    """``[tool.kivy.linux.desktop]`` — freedesktop ``.desktop`` entry options."""
+
+    categories: tuple[str, ...] = DEFAULT_DESKTOP_CATEGORIES
+
+
+@dataclass(frozen=True)
+class LinuxConfig:
+    """``[tool.kivy.linux]`` overlay (linux-spec).
+
+    ``archs`` drives which manylinux wheel tags and per-arch runtime the lock
+    must cover. ``glibc_floor`` is ``None`` when unset, meaning the bundled
+    runtime's own glibc floor (2.17) applies; setting it higher admits
+    newer-manylinux-only wheels at the cost of raising the artifact's host floor.
+    """
+
+    schema_version: int
+    app_id: str
+    glibc_floor: str | None = None
+    archs: tuple[str, ...] = DEFAULT_LINUX_ARCHS
+    extra_index_urls: tuple[str, ...] = ()
+    find_links: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+    python_version: str | None = None
+    icons: IconConfig = field(default_factory=IconConfig)
+    desktop: DesktopConfig = field(default_factory=DesktopConfig)
+
+
+@dataclass(frozen=True)
 class KivyMeta:
     """Cross-platform ``[tool.kivy]`` table."""
 
@@ -244,6 +285,7 @@ class Config:
     kivy: KivyMeta
     ios: IosConfig | None = None
     macos: MacosConfig | None = None
+    linux: LinuxConfig | None = None
 
     @property
     def display_name(self) -> str:
@@ -279,3 +321,13 @@ class Config:
                 "before accessing macos_required."
             )
         return self.macos
+
+    @property
+    def linux_required(self) -> LinuxConfig:
+        """``[tool.kivy.linux]`` after ``load_config(..., require_linux=True)``."""
+        if self.linux is None:
+            raise RuntimeError(
+                "Config.linux is None; call load_config with require_linux=True "
+                "before accessing linux_required."
+            )
+        return self.linux

@@ -18,21 +18,26 @@ from packaging.version import InvalidVersion, Version
 
 from .errors import ConfigError
 from .model import (
+    DEFAULT_DESKTOP_CATEGORIES,
+    DEFAULT_LINUX_ARCHS,
     DEFAULT_MACOS_ARCHS,
     DEFAULT_SIMULATOR_ARCHS,
     MANAGED_INFO_PLIST_KEYS,
     RESERVED_BUILD_SETTINGS,
     SUPPORTED_IOS_SCHEMA_VERSION,
     SUPPORTED_MACOS_SCHEMA_VERSION,
+    VALID_LINUX_ARCHS,
     VALID_MACOS_ARCHS,
     VALID_ORIENTATIONS,
     VALID_SIMULATOR_ARCHS,
     VALID_SWIFT_REQUIREMENT_KINDS,
     Author,
     Config,
+    DesktopConfig,
     IconConfig,
     IosConfig,
     KivyMeta,
+    LinuxConfig,
     MacosConfig,
     MacosSigningConfig,
     ProjectMeta,
@@ -44,13 +49,18 @@ from .model import (
 
 
 def load_config(
-    path: str | Path, *, require_ios: bool = True, require_macos: bool = False
+    path: str | Path,
+    *,
+    require_ios: bool = True,
+    require_macos: bool = False,
+    require_linux: bool = False,
 ) -> Config:
     """Parse and validate ``pyproject.toml`` at ``path``.
 
-    ``require_ios`` / ``require_macos`` enforce the presence of the respective
-    ``[tool.kivy.<platform>]`` overlay. A platform verb requires its own overlay;
-    contexts that only inspect the cross-platform tables set both False.
+    ``require_ios`` / ``require_macos`` / ``require_linux`` enforce the presence
+    of the respective ``[tool.kivy.<platform>]`` overlay. A platform verb
+    requires its own overlay; contexts that only inspect the cross-platform
+    tables set them all False.
     """
     path = Path(path)
     text = path.read_text(encoding="utf-8")
@@ -58,6 +68,7 @@ def load_config(
         text,
         require_ios=require_ios,
         require_macos=require_macos,
+        require_linux=require_linux,
         project_root=path.parent,
     )
 
@@ -67,6 +78,7 @@ def load_config_from_text(
     *,
     require_ios: bool = True,
     require_macos: bool = False,
+    require_linux: bool = False,
     project_root: Path | None = None,
 ) -> Config:
     try:
@@ -80,6 +92,7 @@ def load_config_from_text(
     kivy = _parse_kivy(raw, finder)
     ios = _parse_ios(raw, finder, project, project_root=project_root)
     macos = _parse_macos(raw, finder, project, project_root=project_root)
+    linux = _parse_linux(raw, finder, project, project_root=project_root)
 
     if ios is None and require_ios:
         raise ConfigError(
@@ -95,8 +108,15 @@ def load_config_from_text(
             hint="add a [tool.kivy.macos] overlay; [tool.kivy] alone is not a "
             "buildable macOS target.",
         )
+    if linux is None and require_linux:
+        raise ConfigError(
+            "missing [tool.kivy.linux] table",
+            key_path="tool.kivy.linux",
+            hint="add a [tool.kivy.linux] overlay; [tool.kivy] alone is not a "
+            "buildable Linux target.",
+        )
 
-    return Config(project=project, kivy=kivy, ios=ios, macos=macos)
+    return Config(project=project, kivy=kivy, ios=ios, macos=macos, linux=linux)
 
 
 # --------------------------------------------------------------------------- #
@@ -597,6 +617,163 @@ def _parse_macos_archs(macos: dict, finder: _LineFinder) -> tuple[str, ...]:
             seen.add(arch)
             ordered.append(arch)
     return tuple(ordered)
+
+
+# --------------------------------------------------------------------------- #
+# [tool.kivy.linux]
+# --------------------------------------------------------------------------- #
+def _parse_linux(
+    raw: dict,
+    finder: _LineFinder,
+    project: ProjectMeta,
+    *,
+    project_root: Path | None = None,
+) -> LinuxConfig | None:
+    tool = raw.get("tool", {})
+    kivy = tool.get("kivy", {}) if isinstance(tool, dict) else {}
+    linux = kivy.get("linux") if isinstance(kivy, dict) else None
+    if linux is None:
+        return None
+    if not isinstance(linux, dict):
+        raise ConfigError(
+            "[tool.kivy.linux] must be a table", key_path="tool.kivy.linux"
+        )
+
+    schema_version = _parse_platform_schema_version(
+        linux, finder, key_path="tool.kivy.linux.schema_version"
+    )
+
+    app_id = linux.get("app_id")
+    if not app_id or not isinstance(app_id, str):
+        raise ConfigError(
+            "missing required [tool.kivy.linux].app_id",
+            key_path="tool.kivy.linux.app_id",
+            hint='e.g. app_id = "org.example.myapp".',
+        )
+    # app_id names the <app_id>.desktop file, Icon= key, and StartupWMClass;
+    # restrict it to a valid .desktop basename (mirrors macOS bundle_id).
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", app_id):
+        raise ConfigError(
+            f"invalid character in [tool.kivy.linux].app_id {app_id!r}",
+            key_path="tool.kivy.linux.app_id",
+            line=finder.line("app_id"),
+            hint=(
+                "app_id may contain only letters, digits, hyphen (-), and period "
+                '(.). Replace underscores with hyphens, e.g. "org.example.hello".'
+            ),
+        )
+
+    glibc_floor = linux.get("glibc_floor")
+    if glibc_floor is not None and not isinstance(glibc_floor, str):
+        raise ConfigError(
+            "[tool.kivy.linux].glibc_floor must be a string",
+            key_path="tool.kivy.linux.glibc_floor",
+            line=finder.line("glibc_floor"),
+        )
+
+    archs = _parse_linux_archs(linux, finder)
+
+    extra_index_urls = linux.get("extra_index_urls", [])
+    if not isinstance(extra_index_urls, list) or not all(
+        isinstance(u, str) for u in extra_index_urls
+    ):
+        raise ConfigError(
+            "[tool.kivy.linux].extra_index_urls must be a list of strings",
+            key_path="tool.kivy.linux.extra_index_urls",
+            line=finder.line("extra_index_urls"),
+        )
+
+    find_links = _parse_platform_find_links(
+        linux,
+        finder,
+        key_path="tool.kivy.linux.find_links",
+        project_root=project_root,
+    )
+    exclude = _parse_platform_exclude(linux, finder, key_path="tool.kivy.linux.exclude")
+
+    python_version = _parse_platform_python_version(
+        linux, key_path="tool.kivy.linux.python"
+    )
+    _check_requires_python_generic(
+        project,
+        python_version,
+        finder,
+        key_path="tool.kivy.linux.python.version",
+    )
+
+    icons = _parse_platform_icons(linux, key_path="tool.kivy.linux.icons")
+    desktop = _parse_desktop(linux, finder)
+
+    return LinuxConfig(
+        schema_version=schema_version,
+        app_id=app_id,
+        glibc_floor=glibc_floor,
+        archs=archs,
+        extra_index_urls=tuple(extra_index_urls),
+        find_links=tuple(find_links),
+        exclude=tuple(exclude),
+        python_version=python_version,
+        icons=icons,
+        desktop=desktop,
+    )
+
+
+def _parse_linux_archs(linux: dict, finder: _LineFinder) -> tuple[str, ...]:
+    raw = linux.get("archs")
+    if raw is None:
+        return DEFAULT_LINUX_ARCHS
+    line = finder.line("archs")
+    if not isinstance(raw, list) or not all(isinstance(a, str) for a in raw):
+        raise ConfigError(
+            "[tool.kivy.linux].archs must be a list of strings",
+            key_path="tool.kivy.linux.archs",
+            line=line,
+        )
+    if not raw:
+        raise ConfigError(
+            "[tool.kivy.linux].archs must not be empty",
+            key_path="tool.kivy.linux.archs",
+            line=line,
+            hint='only "x86_64" is supported this phase.',
+        )
+    unknown = [a for a in raw if a not in VALID_LINUX_ARCHS]
+    if unknown:
+        valid = ", ".join(sorted(VALID_LINUX_ARCHS))
+        raise ConfigError(
+            f"unsupported Linux arch(es) {unknown} in [tool.kivy.linux].archs",
+            key_path="tool.kivy.linux.archs",
+            line=line,
+            hint=f"only {valid} is supported this phase (aarch64 is planned).",
+        )
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for arch in raw:
+        if arch not in seen:
+            seen.add(arch)
+            ordered.append(arch)
+    return tuple(ordered)
+
+
+def _parse_desktop(linux: dict, finder: _LineFinder) -> DesktopConfig:
+    desktop = linux.get("desktop")
+    if desktop is None:
+        return DesktopConfig()
+    if not isinstance(desktop, dict):
+        raise ConfigError(
+            "[tool.kivy.linux.desktop] must be a table",
+            key_path="tool.kivy.linux.desktop",
+        )
+    raw = desktop.get("categories")
+    if raw is None:
+        return DesktopConfig()
+    if not isinstance(raw, list) or not all(isinstance(c, str) and c for c in raw):
+        raise ConfigError(
+            "[tool.kivy.linux.desktop].categories must be a list of non-empty "
+            "strings",
+            key_path="tool.kivy.linux.desktop.categories",
+            line=finder.line("categories"),
+        )
+    return DesktopConfig(categories=tuple(raw) or DEFAULT_DESKTOP_CATEGORIES)
 
 
 def _parse_platform_schema_version(

@@ -28,6 +28,11 @@ class FakeProbe:
         self._codesign = overrides.get("codesign", True)
         self._notarytool = overrides.get("notarytool", True)
         self._root = overrides.get("root", False)
+        self._libc = overrides.get("libc", "glibc")
+        self._libraries = overrides.get("libraries", {"libGL.so.1", "libEGL.so.1"})
+        self._sessions = overrides.get("sessions", {"x11"})
+        self._desktop_validate = overrides.get("desktop_validate", True)
+        self._desktop_errors = overrides.get("desktop_errors", None)
 
     def host_system(self):
         return self._host
@@ -75,6 +80,21 @@ class FakeProbe:
 
     def binary_platforms(self, path):
         return set(self._platforms.get(path.name, set()))
+
+    def linux_libc(self):
+        return self._libc
+
+    def shared_libraries(self):
+        return frozenset(self._libraries)
+
+    def display_session(self):
+        return set(self._sessions)
+
+    def has_desktop_file_validate(self):
+        return self._desktop_validate
+
+    def desktop_file_errors(self, path):
+        return self._desktop_errors
 
 
 @pytest.fixture

@@ -49,6 +49,11 @@ dev = [
     "ruff>=0.9",
     "Pillow>=10",
 ]
+# Linux backend icon resizing (hicolor size set + AppImage root icon). Pillow is
+# pure-manylinux and ubiquitous; kept optional so the core install stays lean.
+linux = [
+    "Pillow>=10",
+]
 
 # ---------------------------------------------------------------------------
 # Setuptools package discovery

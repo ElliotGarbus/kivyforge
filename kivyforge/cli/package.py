@@ -12,6 +12,7 @@ import click
 
 from ..xcode import CommandError, SigningError, XcodeBuild
 from ._common import ToolchainError
+from ._linux import linux_package
 from ._macos import macos_package
 from ._platform import platform_option, resolve_target
 from .build import _load_config, _xcodebuild_step7, prepare_build
@@ -87,6 +88,16 @@ def package(
             signing_identity=signing_identity,
             notarize=notarize,
             notary_profile=notary_profile,
+        )
+        return
+
+    if backend.name == "linux":
+        linux_package(
+            project_root,
+            fmt=fmt,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
         )
         return
 

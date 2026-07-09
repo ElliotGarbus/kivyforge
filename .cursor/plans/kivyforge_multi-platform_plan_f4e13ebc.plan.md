@@ -140,7 +140,14 @@ Follows the typical developer path (**sign + notarize + staple the app**; signin
 - **Dmg-level signing/notarization stays external** (post-packaging step on a container kivyforge does not build). The docs include a copy-paste snippet (`codesign` -> `notarytool submit` -> `stapler staple` on the `.dmg`) for users who distribute a dmg and want it notarized too. **Optional:** a small generic "notarize + staple this file" helper usable on a `.zip`/`.dmg`/`.pkg` (mechanics are container-agnostic) - low cost, only if wanted; kivyforge still never builds dmgs.
 - **Stop / review:** a notarized + stapled `.app` launches cleanly from a quarantined download on a second Mac (no dmg required).
 
-### Phase 4 - Linux (on the Windows machine via WSL2)
+### Phase 4 - Linux (on the Windows machine via WSL2) — ✅ COMPLETE
+
+**Status: complete.** The Linux backend ships `lock`/`build`/`run`/`package -p
+linux` (AppImage default + AppDir substrate), the `[tool.kivy.linux]` overlay,
+`pylock.linux.toml`, `doctor -p linux`, and Linux overlays on the three desktop
+examples, all verified on the WSL2/WSLg host. Realized-vs-designed deltas are
+recorded as inline implementation notes in
+[`docs/design/platforms/linux/linux-spec.md`](../../docs/design/platforms/linux/linux-spec.md).
 
 **Detailed step-by-step plan: [kivyforge_linux_phase4.plan.md](kivyforge_linux_phase4.plan.md)** (supersedes this summary; first step there is writing `docs/design/platforms/linux/linux-spec.md`, mirroring the macOS-spec-before-implementation precedent).
 

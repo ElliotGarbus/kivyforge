@@ -18,12 +18,33 @@ kivyforge run  -p macos
 macOS bundles a python-build-standalone CPython 3.13 runtime plus Kivy 2.3.1 and
 `platformdirs` from PyPI (universal2 / pure-Python wheels).
 
+## Linux (builds today from PyPI)
+
+The same overlay pattern targets Linux; `platformdirs` puts the note under
+`$XDG_DATA_HOME` (default `~/.local/share`). The folder artifact is an AppDir;
+`package` wraps it into an AppImage with an embedded static-FUSE runtime.
+
+```bash
+cd examples/desktop/notes
+kivyforge lock    -p linux
+kivyforge build   -p linux      # -> build/linux/Notes.AppDir
+kivyforge run     -p linux      # runs ./AppRun directly (no FUSE)
+kivyforge package -p linux      # -> dist/linux/notes-0.1.0-x86_64.AppImage
+```
+
+**Host contract:** the host provides glibc ≥ the effective floor (2.17 here),
+`libGL.so.1`/`libEGL.so.1`, and an X11/Wayland session — the bundle vendors
+neither GL nor a display server. No `libfuse2` needed (static-FUSE runtime);
+`--appimage-extract-and-run` is the universal no-FUSE fallback. Check the host
+with `kivyforge doctor -p linux`.
+
 ## Files
 
 | Path | Purpose |
 |------|---------|
-| `pyproject.toml` | Deps (`kivy`, `platformdirs`) + `[tool.kivy.macos]` overlay |
+| `pyproject.toml` | Deps (`kivy`, `platformdirs`) + `[tool.kivy.macos]` / `[tool.kivy.linux]` overlays |
 | `pylock.macos.toml` | Pinned CPython 3.13 (PBS) + Kivy 2.3.1 + platformdirs |
+| `pylock.linux.toml` | Pinned CPython 3.13 (PBS gnu) + Kivy 2.3.1 manylinux + platformdirs |
 | `src/main.py` | The app |
 | `src/icon.png` | 512×512 runtime window/Dock icon (bundled with the app) |
 | `assets/icon.png` | 1024×1024 macOS icon — transparent rounded corners → `.icns` |

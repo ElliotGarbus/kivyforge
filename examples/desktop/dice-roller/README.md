@@ -19,12 +19,34 @@ kivyforge run  -p macos         # launches the .app
 kivyforge package -p macos      # -> build/macos/Dice Roller.app
 ```
 
+## Linux (builds today from PyPI)
+
+The same `pyproject.toml` — now with a `[tool.kivy.linux]` overlay — bundles a
+PBS CPython 3.13 gnu/glibc runtime and the Kivy 2.3.1 manylinux wheel from PyPI.
+The folder artifact is an [AppDir](https://docs.appimage.org/); `package`
+wraps it into a single AppImage with an embedded static-FUSE runtime.
+
+```bash
+cd examples/desktop/dice-roller
+kivyforge lock    -p linux
+kivyforge build   -p linux      # -> build/linux/Dice Roller.AppDir
+kivyforge run     -p linux      # runs ./AppRun directly (no FUSE)
+kivyforge package -p linux      # -> dist/linux/dice-roller-0.1.0-x86_64.AppImage
+```
+
+**Host contract:** the AppImage bundles Python + wheels but never libGL/libEGL or
+a display server. The host must provide glibc ≥ the effective floor (2.17 here),
+`libGL.so.1`/`libEGL.so.1`, and an X11 or Wayland session. No `libfuse2` is
+needed (static-FUSE runtime); `./app.AppImage --appimage-extract-and-run` is the
+universal no-FUSE fallback. Run `kivyforge doctor -p linux` to check the host.
+
 ## Files
 
 | Path | Purpose |
 |------|---------|
-| `pyproject.toml` | Identity + `[tool.kivy.macos]` overlay |
+| `pyproject.toml` | Identity + `[tool.kivy.macos]` / `[tool.kivy.linux]` overlays |
 | `pylock.macos.toml` | Pinned CPython 3.13 (PBS) + Kivy 2.3.1 universal2 wheel |
+| `pylock.linux.toml` | Pinned CPython 3.13 (PBS gnu) + Kivy 2.3.1 manylinux wheel |
 | `src/main.py` | The app (dice faces are canvas-drawn, not font glyphs) |
 | `src/icon.png` | 512×512 runtime window/Dock icon (bundled with the app) |
 | `assets/icon.png` | 1024×1024 macOS icon — transparent rounded corners → `.icns` |

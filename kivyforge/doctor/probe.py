@@ -47,6 +47,11 @@ class Probe(Protocol):
     def has_codesign(self) -> bool: ...
     def has_notarytool(self) -> bool: ...
     def is_root(self) -> bool: ...
+    def linux_libc(self) -> str: ...
+    def shared_libraries(self) -> frozenset[str]: ...
+    def display_session(self) -> set[str]: ...
+    def has_desktop_file_validate(self) -> bool: ...
+    def desktop_file_errors(self, path: Path) -> str | None: ...
 
 
 class RealProbe:
@@ -141,6 +146,52 @@ class RealProbe:
         except OSError:
             return set()
         return _macho_platforms(data)
+
+    def linux_libc(self) -> str:
+        """The host C library family: ``"glibc"``, ``"musl"``, or ``""``.
+
+        The bundled python-build-standalone runtime is a gnu/glibc ELF build,
+        so a musl host (Alpine) can't run it — doctor warns on that.
+        """
+        name = _platform.libc_ver()[0].lower()
+        if "glibc" in name or name == "libc":
+            return "glibc"
+        if any(Path("/lib").glob("ld-musl-*.so.1")):
+            return "musl"
+        return name
+
+    def shared_libraries(self) -> frozenset[str]:
+        """The sonames the dynamic linker's cache knows about (``ldconfig -p``)."""
+        out = _capture(["ldconfig", "-p"]) or _capture(["/sbin/ldconfig", "-p"])
+        libs: set[str] = set()
+        for line in out.splitlines():
+            token = line.strip().split(" ", 1)[0]
+            if token and token.startswith("lib"):
+                libs.add(token)
+        return frozenset(libs)
+
+    def display_session(self) -> set[str]:
+        """The display servers this session exposes via the environment."""
+        sessions: set[str] = set()
+        if os.environ.get("WAYLAND_DISPLAY"):
+            sessions.add("wayland")
+        if os.environ.get("DISPLAY"):
+            sessions.add("x11")
+        return sessions
+
+    def has_desktop_file_validate(self) -> bool:
+        return shutil.which("desktop-file-validate") is not None
+
+    def desktop_file_errors(self, path: Path) -> str | None:
+        try:
+            proc = subprocess.run(
+                ["desktop-file-validate", str(path)], capture_output=True, text=True
+            )
+        except (OSError, ValueError):
+            return None
+        if proc.returncode == 0:
+            return None
+        return (proc.stdout + proc.stderr).strip() or "validation failed"
 
 
 def _capture(argv: list[str]) -> str:

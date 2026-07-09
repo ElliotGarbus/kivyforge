@@ -19,10 +19,12 @@ from ..doctor import (
     RealProbe,
     Status,
     run_checks,
+    run_linux_checks,
     run_macos_checks,
     worst_status,
 )
 from ..lock import LockError, load
+from ..lock.linux import load as load_linux_lock
 from ..lock.macos import load as load_macos_lock
 from ..platforms import PlatformResolutionError
 from ..platforms import resolve_target as _resolve_platform
@@ -39,6 +41,8 @@ def doctor(cli_platform: str | None, offline: bool) -> None:
     platform = _resolve_doctor_platform(cli_platform, cwd)
     if platform == "macos":
         results = _macos_doctor(cwd, offline)
+    elif platform == "linux":
+        results = _linux_doctor(cwd, offline)
     else:
         results = _ios_doctor(cwd, offline)
 
@@ -110,6 +114,32 @@ def _macos_doctor(cwd: Path, offline: bool) -> list[CheckResult]:
             except LockError as exc:
                 parse_results.append(_lock_parse_fail("macos", exc))
     return parse_results + run_macos_checks(
+        RealProbe(),
+        kivyforge_version=__version__,
+        config=config,
+        project_root=cwd,
+        lock=lock,
+        offline=offline,
+    )
+
+
+def _linux_doctor(cwd: Path, offline: bool) -> list[CheckResult]:
+    pyproject = cwd / PYPROJECT_NAME
+    config = None
+    lock = None
+    parse_results: list[CheckResult] = []
+    if pyproject.is_file():
+        try:
+            config = load_config(pyproject, require_ios=False, require_linux=True)
+        except ConfigError as exc:
+            parse_results.append(CheckResult(PYPROJECT_NAME, Status.FAIL, exc.format()))
+        lockfile = cwd / lockfile_name("linux")
+        if lockfile.is_file():
+            try:
+                lock = load_linux_lock(lockfile)
+            except LockError as exc:
+                parse_results.append(_lock_parse_fail("linux", exc))
+    return parse_results + run_linux_checks(
         RealProbe(),
         kivyforge_version=__version__,
         config=config,

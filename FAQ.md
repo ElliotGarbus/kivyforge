@@ -138,3 +138,54 @@ cross-platform-compatible way. The platform focuses on minimizing processor
 usage (and therefore power consumption) and promotes an
 [alternative concurrency model](https://developer.apple.com/library/archive/documentation/General/Conceptual/ConcurrencyProgrammingGuide/Introduction/Introduction.html).
 Use threads or async concurrency instead.
+
+### My Linux AppImage fails with a libfuse2 / "dlopen(): error loading libfuse.so.2" error
+
+kivyforge builds AppImages with a **pinned static-FUSE (type2) runtime**
+embedded (`appimagetool --runtime-file`), so a correctly built kivyforge
+AppImage does **not** need the host's `libfuse2`. If you still hit a FUSE error
+(e.g. an old runtime, a container, or a locked-down CI box), use the universal
+no-FUSE fallback — the AppImage extracts itself to a temp dir and runs from
+there:
+
+    ./MyApp-1.0.0-x86_64.AppImage --appimage-extract-and-run
+    # or, equivalently:
+    APPIMAGE_EXTRACT_AND_RUN=1 ./MyApp-1.0.0-x86_64.AppImage
+
+kivyforge already sets `APPIMAGE_EXTRACT_AND_RUN=1` when it invokes
+`appimagetool` at *build* time, so building an AppImage never needs FUSE on the
+build host (WSL2 / containers / CI just work).
+
+### Can I build and run the Linux backend under WSL2?
+
+Yes — the Linux backend is developed and tested on WSL2 Ubuntu.
+[WSLg](https://github.com/microsoft/wslg) provides an X11/Wayland session and
+OpenGL (Mesa via D3D12), so `kivyforge run -p linux` opens a real window. If GL
+misbehaves, force software rendering with `LIBGL_ALWAYS_SOFTWARE=1`. A harmless
+`libmtdev.so.1: cannot open shared object file` warning from Kivy just means the
+host has no multitouch device; it does not stop the app.
+
+### How do I build or test on a headless Linux box (CI, no display)?
+
+Locking and building need no display — only `run` (and launching the packaged
+AppImage) opens a window. For headless smoke tests, wrap the run under a virtual
+framebuffer with software GL:
+
+    xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./MyApp-1.0.0-x86_64.AppImage
+
+`kivyforge doctor -p linux` reports a WARN with this hint when neither `DISPLAY`
+nor `WAYLAND_DISPLAY` is set.
+
+### What is the Linux "glibc floor", and why does it matter?
+
+A kivyforge AppImage bundles Python and your wheels, but it never bundles the C
+library, `libGL`/`libEGL`, or a display server — those come from the host. The
+bundled [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+runtime is a gnu/glibc build with a **glibc ≥ 2.17** floor (manylinux2014-class),
+so the AppImage runs on any host that new or newer. The artifact's *effective*
+floor is `max(runtime floor, highest manylinux level among your locked wheels)`;
+`kivyforge doctor -p linux` prints it. You can raise the floor deliberately with
+`[tool.kivy.linux].glibc_floor = "2.28"` to admit newer-manylinux-only wheels —
+at the cost of requiring a newer host. Setting it *below* 2.17 is a config
+error. **musl** hosts (Alpine) are out of scope: the gnu runtime won't run
+there, and Kivy publishes no musllinux wheels.

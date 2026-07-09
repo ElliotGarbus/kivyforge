@@ -20,15 +20,17 @@ their per-platform workflows behind a single declarative configuration.
 The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
 Linux, macOS, and Windows**.
 
-> **Status: early development — iOS + macOS.** kivyforge targets **iOS** (resolve
-> into `pylock.ios.toml`, download the official
+> **Status: early development — iOS + macOS + Linux.** kivyforge targets **iOS**
+> (resolve into `pylock.ios.toml`, download the official
 > [`Python.xcframework`](https://www.python.org/downloads/) + prebuilt iOS
-> wheels, generate an [Xcode](https://developer.apple.com/xcode/) project) and
+> wheels, generate an [Xcode](https://developer.apple.com/xcode/) project),
 > **macOS** (resolve into `pylock.macos.toml`, bundle a relocatable
 > [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-> CPython + wheels into a signed, double-clickable `.app`). Android, Linux, and
-> Windows are planned. If you need a shipping toolchain today, use kivy-ios 2.x,
-> python-for-android, or buildozer.
+> CPython + wheels into a signed, double-clickable `.app`), and **Linux** (resolve
+> into `pylock.linux.toml`, bundle a PBS gnu/glibc CPython + manylinux wheels into
+> an [AppImage](https://appimage.org/) — with a run-from-folder AppDir substrate).
+> Android and Windows are planned. If you need a shipping toolchain today, use
+> kivy-ios 2.x, python-for-android, or buildozer.
 
 ### Currently supported targets
 
@@ -36,6 +38,8 @@ Linux, macOS, and Windows**.
 - iOS Simulator (arm64, x86_64)
 - [macOS](https://www.apple.com/macos/) `.app` — Apple Silicon (arm64), Intel
   (x86_64), or universal2 (both), ad-hoc signed
+- [Linux](https://appimage.org/) `.AppImage` / AppDir — x86_64 (glibc ≥ 2.17),
+  self-contained runtime + wheels; libGL/EGL and X11/Wayland come from the host
 
 kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 
@@ -154,6 +158,38 @@ on corrupted keychain ACLs.)
 `kivyforge doctor -p macos` reports environment + project health (host, codesign,
 arch coverage, runtime floor, signing identity, notary setup, reachable hosts).
 
+## Quick start (Linux)
+
+The Linux backend bundles a relocatable CPython + your manylinux wheels into an
+[AppImage](https://appimage.org/) (the default) or a run-from-folder **AppDir**.
+It needs a Linux host (the runtime is a gnu/glibc build); no compiler or FUSE is
+required at build time.
+
+      # 1. Add a [tool.kivy.linux] table to pyproject.toml (app_id, icons, ...)
+
+      # 2. Resolve dependencies + pin the runtime into pylock.linux.toml
+      kivyforge lock -p linux
+
+      # 3. Build the AppDir (build/linux/<App>.AppDir)
+      kivyforge build -p linux
+
+      # 4a. Launch it (runs ./AppRun directly — the fast dev loop, no FUSE)
+      kivyforge run -p linux
+
+      # 4b. ...or produce the distributable
+      kivyforge package -p linux              # -> dist/linux/<app>-<ver>-x86_64.AppImage
+      kivyforge package -p linux -f folder    # -> the AppDir itself
+
+The AppImage embeds a **static-FUSE runtime**, so recipients need no `libfuse2`;
+`./<App>.AppImage --appimage-extract-and-run` is the universal no-FUSE fallback.
+The **host contract** is explicit: the bundle never vendors libGL/libEGL or a
+display server, so the host must provide glibc ≥ the artifact's effective floor,
+`libGL.so.1`/`libEGL.so.1`, and an X11 or Wayland session.
+
+`kivyforge doctor -p linux` reports environment + project health (Linux/glibc
+host, GL libraries, display session, glibc floor, arch coverage, generated
+`.desktop` validity, reachable hosts).
+
 See the runnable examples for complete, copy-pasteable walk-throughs. They are
 split by runtime requirement — **desktop uses Kivy 2.3.1 from PyPI, mobile uses
 Kivy 3.0** (vendored, pre-release):
@@ -161,11 +197,12 @@ Kivy 3.0** (vendored, pre-release):
 **Desktop** ([`examples/desktop/`](examples/desktop/)) — macOS/Linux/Windows:
 
 - [`dice-roller`](examples/desktop/dice-roller/) — minimal Kivy UI that **builds &
-  runs on macOS today** from PyPI (Kivy 2.3.1).
+  runs on macOS and Linux today** from PyPI (Kivy 2.3.1).
 - [`notes`](examples/desktop/notes/) — Kivy app with a pure-Python dependency
-  (`platformdirs`); builds on macOS from PyPI.
+  (`platformdirs`); builds on macOS and Linux from PyPI.
 - [`desktop-viewer`](examples/desktop/desktop-viewer/) — a desktop-focused Kivy app
-  (resizable window, ⌘ keyboard shortcuts, the native macOS open panel).
+  (resizable window, ⌘ keyboard shortcuts, the native macOS open panel; the panel
+  is a no-op on Linux).
 
 **Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS/Android, Kivy 3.0 from
 [`examples/wheels/ios/`](examples/wheels/ios/):

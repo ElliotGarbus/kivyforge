@@ -36,10 +36,24 @@ class WheelResolverError(Exception):
 
 @dataclass(frozen=True)
 class Variant:
-    """One build variant: an arch/ABI identifier + its pip ``--platform`` tag."""
+    """One build variant: an arch/ABI identifier + its pip ``--platform`` tag(s).
+
+    ``platform_tag`` is the primary/identity tag. ``extra_platform_tags`` lets a
+    variant request additional pip ``--platform`` tags in the *same* pip
+    invocation — Linux needs this because pip does not expand the manylinux
+    hierarchy from a single explicit ``--platform`` (see linux-spec), so the
+    profile passes the whole compatible tag ladder and pip resolves one
+    consistent version accepting a wheel matching any of them. macOS variants
+    carry a single tag (``extra_platform_tags`` empty).
+    """
 
     arch: str
     platform_tag: str
+    extra_platform_tags: tuple[str, ...] = ()
+
+    @property
+    def request_tags(self) -> tuple[str, ...]:
+        return (self.platform_tag, *self.extra_platform_tags)
 
 
 @dataclass(frozen=True)
@@ -103,7 +117,7 @@ class PipWheelResolver:
             report = self._run_report(
                 requirements,
                 python_version=python_version,
-                platform_tag=variant.platform_tag,
+                platform_tags=variant.request_tags,
                 abis=abis,
                 extra_index_urls=extra_index_urls,
                 find_links=find_links or [],
@@ -164,7 +178,7 @@ class PipWheelResolver:
         requirements: list[str],
         *,
         python_version: str,
-        platform_tag: str,
+        platform_tags: tuple[str, ...],
         abis: tuple[str, ...],
         extra_index_urls: list[str],
         find_links: list[str],
@@ -184,13 +198,15 @@ class PipWheelResolver:
                 pip_python_version(python_version),
                 "--implementation",
                 "cp",
-                "--platform",
-                platform_tag,
                 "--target",
                 str(Path(tmp) / "target"),
                 "--report",
                 str(report_path),
             ]
+            # pip accepts --platform multiple times; a wheel matching ANY of the
+            # tags is eligible while a single consistent version set is resolved.
+            for tag in platform_tags:
+                cmd += ["--platform", tag]
             for abi in abis:
                 cmd += ["--abi", abi]
             for index in extra_index_urls:
@@ -203,8 +219,9 @@ class PipWheelResolver:
 
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode != 0:
+                tags = ", ".join(platform_tags)
                 raise WheelResolverError(
-                    f"pip could not resolve wheels for {platform_tag!r}.\n"
+                    f"pip could not resolve wheels for platform tag(s) {tags}.\n"
                     f"  This usually means a dependency has no wheel for that "
                     f"variant upstream.\n"
                     f"  pip said:\n{_indent(proc.stderr or proc.stdout)}"

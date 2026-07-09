@@ -43,3 +43,30 @@ version = "3.13.14"
 identity = "Developer ID Application: ELLIOT DREW GARBUS (R5PKSQLUZY)"
 team_id = "R5PKSQLUZY"
 notary_profile = "kivyforge-notary"
+
+# One pyproject.toml, two desktop lockfiles: the same [project]/[tool.kivy] now
+# also targets Linux (AppImage/AppDir) from the same PyPI Kivy 2.3.1 wheels.
+[tool.kivy.linux]
+schema_version = 1
+app_id = "org.example.dice-roller"
+archs = ["x86_64"]
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.linux.icons]
+# 1024x1024 PNG resized into the freedesktop hicolor set + root icon (Pillow).
+source = "assets/icon.png"
+
+[tool.kivy.linux.desktop]
+categories = ["Game"]
+
+[tool.kivy.linux.python]
+version = "3.13.14"

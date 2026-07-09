@@ -18,7 +18,7 @@ The seam is clean: kivyforge emits the finished, signed artifact; an external to
 | iOS | Xcode-built app / `.ipa` | App Store submission |
 | macOS | `.app` bundle (`package -f app`) | `.dmg`/installer; store submission |
 | Windows | application folder + launcher `.exe` (onedir bundle) | MSI / Inno Setup / NSIS installer |
-| Linux | user-selectable via `package -f`: `folder` or `appimage` | `.deb` / `.rpm` / Flatpak |
+| Linux | `.AppImage` (`package -f appimage`, the default) with a run-from-folder **AppDir** substrate/fallback (`package -f folder`) | `.deb` / `.rpm` / Flatpak |
 | Android | `.apk` / `.aab` (artifact *and* installable unit) | Play Store submission |
 
 Android is the one case where the runnable artifact and the installable unit are the same thing — an `.apk`/`.aab` is both — so producing it is fully in scope (only store submission is external).

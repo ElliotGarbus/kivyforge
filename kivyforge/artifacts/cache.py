@@ -1,19 +1,41 @@
 """Content-addressed artifact cache (spec 03).
 
 Artifacts (wheels, xcframework archives, Python.xcframework) are cached by
-SHA-256 under ``~/Library/Caches/kivyforge/artifacts/`` so repeated builds and
+SHA-256 in a per-user, OS-appropriate cache directory so repeated builds and
 ``--no-cache`` opt-outs are cheap and deterministic. The cache key is the
 content hash, so a tampered/replaced upstream artifact can never silently
 satisfy a cache hit for a different hash.
+
+The cache root follows each host's convention: ``~/Library/Caches/kivyforge``
+on macOS, ``$XDG_CACHE_HOME/kivyforge`` (default ``~/.cache/kivyforge``) on
+Linux and other Unixes, and ``%LOCALAPPDATA%\\kivyforge\\Cache`` on Windows.
 """
 
 from __future__ import annotations
 
+import os
+import platform as _platform
 import shutil
 from pathlib import Path
 
 APP_NAME = "kivyforge"
-DEFAULT_CACHE_ROOT = Path.home() / "Library" / "Caches" / APP_NAME / "artifacts"
+
+
+def _default_cache_root() -> Path:
+    """The per-user artifact cache directory for the current host OS."""
+    system = _platform.system()
+    if system == "Darwin":
+        return Path.home() / "Library" / "Caches" / APP_NAME / "artifacts"
+    if system == "Windows":
+        base = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+        return Path(base) / APP_NAME / "Cache" / "artifacts"
+    # Linux and other Unixes: the XDG Base Directory spec.
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg) if xdg else (Path.home() / ".cache")
+    return base / APP_NAME / "artifacts"
+
+
+DEFAULT_CACHE_ROOT = _default_cache_root()
 
 
 class ArtifactCache:

@@ -42,6 +42,7 @@ class _LockOps:
     build_error: type[Exception]
     require_ios: bool
     require_macos: bool
+    require_linux: bool = False
 
 
 def _lock_ops(platform: str) -> _LockOps:
@@ -71,6 +72,20 @@ def _lock_ops(platform: str) -> _LockOps:
             require_ios=False,
             require_macos=True,
         )
+    if platform == "linux":
+        from ..lock import linux as linux_lock
+
+        return _LockOps(
+            build=linux_lock.build_linux_lockfile,
+            dumps=linux_lock.dumps,
+            load=linux_lock.load,
+            semantic_equal=linux_lock.semantic_equal,
+            diff_summary=linux_lock.diff_summary,
+            build_error=linux_lock.LinuxBuildError,
+            require_ios=False,
+            require_macos=False,
+            require_linux=True,
+        )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."
     )
@@ -96,7 +111,10 @@ def lock(cli_platform: str | None, update: bool, offline: bool, check: bool) -> 
 
     try:
         config = load_config(
-            pyproject, require_ios=ops.require_ios, require_macos=ops.require_macos
+            pyproject,
+            require_ios=ops.require_ios,
+            require_macos=ops.require_macos,
+            require_linux=ops.require_linux,
         )
     except ConfigError as exc:
         raise ToolchainError(exc.format()) from exc

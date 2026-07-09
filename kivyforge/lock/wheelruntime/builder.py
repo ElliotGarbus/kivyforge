@@ -121,7 +121,10 @@ def build_wheel_runtime_lock(
     return WheelRuntimeLock(
         platform=profile.platform,
         requires_python=config.project.requires_python or ">=3.15",
-        packages=tuple(packages),
+        # Canonical (serializer) order so a freshly built lock compares equal to
+        # its round-tripped form; ``lock --check`` re-resolves and compares
+        # order-sensitively against the on-disk (sorted) lock.
+        packages=tuple(sorted(packages, key=lambda p: p.sort_key)),
         python_runtime=runtime,
         archs=archs,
         kivyforge_version=__version__,

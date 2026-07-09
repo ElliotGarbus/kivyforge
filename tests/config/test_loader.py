@@ -851,3 +851,119 @@ class TestMacosRequiresPython:
         )
         with pytest.raises(ConfigError, match="excludes the selected"):
             load(base, require_ios=False, require_macos=True)
+
+
+# Head opens [tool.kivy.linux]; extras append here; the python subtable comes
+# last so extra keys stay under [tool.kivy.linux] (TOML table scoping).
+_LINUX_HEAD = (
+    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+    "dependencies=['kivy']\n"
+    "[tool.kivy]\napp_dir='src'\ndisplay_name='Hello'\n"
+    "[tool.kivy.linux]\nschema_version=1\napp_id='org.example.hello'\n"
+)
+_LINUX_PY = "[tool.kivy.linux.python]\nversion='3.15.0'\n"
+
+
+def _linux(extra: str = ""):
+    return load(_LINUX_HEAD + extra + _LINUX_PY, require_ios=False, require_linux=True)
+
+
+class TestLinuxOverlay:
+    def test_missing_overlay_when_required(self):
+        base = "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+        with pytest.raises(ConfigError, match=r"\[tool.kivy.linux\]"):
+            load(base, require_ios=False, require_linux=True)
+
+    def test_happy_path(self):
+        cfg = _linux()
+        assert cfg.linux is not None
+        lx = cfg.linux_required
+        assert lx.app_id == "org.example.hello"
+        assert lx.schema_version == 1
+        assert lx.glibc_floor is None
+        assert lx.archs == ("x86_64",)
+        assert lx.python_version == "3.15.0"
+        assert lx.desktop.categories == ("Utility",)
+
+    def test_glibc_floor(self):
+        assert _linux('glibc_floor="2.28"\n').linux_required.glibc_floor == "2.28"
+
+    def test_missing_app_id(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.linux]\nschema_version=1\n"
+            "[tool.kivy.linux.python]\nversion='3.15.0'\n"
+        )
+        with pytest.raises(ConfigError, match="app_id"):
+            load(base, require_ios=False, require_linux=True)
+
+    def test_invalid_app_id_char(self):
+        with pytest.raises(ConfigError, match="invalid character"):
+            _linux_bad = _LINUX_HEAD.replace(
+                "org.example.hello", "org.example.hello_app"
+            )
+            load(_linux_bad + _LINUX_PY, require_ios=False, require_linux=True)
+
+    def test_missing_python_version(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.linux]\nschema_version=1\napp_id='o.x.a'\n"
+        )
+        with pytest.raises(ConfigError, match="python"):
+            load(base, require_ios=False, require_linux=True)
+
+
+class TestLinuxArchs:
+    def test_default(self):
+        assert _linux().linux_required.archs == ("x86_64",)
+
+    def test_explicit_x86_64(self):
+        assert _linux("archs=['x86_64']\n").linux_required.archs == ("x86_64",)
+
+    def test_empty_rejected(self):
+        with pytest.raises(ConfigError, match="must not be empty"):
+            _linux("archs=[]\n")
+
+    def test_aarch64_rejected_this_phase(self):
+        with pytest.raises(ConfigError, match="unsupported Linux arch"):
+            _linux("archs=['aarch64']\n")
+
+
+class TestLinuxDesktop:
+    def test_default_categories(self):
+        assert _linux().linux_required.desktop.categories == ("Utility",)
+
+    def test_custom_categories(self):
+        cfg = _linux("[tool.kivy.linux.desktop]\ncategories=['Game','Education']\n")
+        assert cfg.linux_required.desktop.categories == ("Game", "Education")
+
+    def test_bad_categories(self):
+        with pytest.raises(ConfigError, match="categories"):
+            _linux("[tool.kivy.linux.desktop]\ncategories='Utility'\n")
+
+
+class TestLinuxIcons:
+    def test_default_none(self):
+        assert _linux().linux_required.icons.source is None
+
+    def test_source(self):
+        cfg = _linux("[tool.kivy.linux.icons]\nsource='assets/icon.png'\n")
+        assert cfg.linux_required.icons.source == "assets/icon.png"
+
+
+class TestIosAndLinuxCoexist:
+    def test_all_three_platforms(self):
+        base = (
+            "[project]\nname='hello'\nversion='1'\ndependencies=['kivy']\n"
+            "[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
+            "[tool.kivy.ios.python]\nversion='3.15.0'\n"
+            "[tool.kivy.macos]\nschema_version=1\nbundle_id='o.x.a'\n"
+            "[tool.kivy.macos.python]\nversion='3.15.0'\n"
+            "[tool.kivy.linux]\nschema_version=1\napp_id='o.x.a'\n"
+            "[tool.kivy.linux.python]\nversion='3.15.0'\n"
+        )
+        cfg = load(base, require_ios=True, require_macos=True, require_linux=True)
+        assert cfg.ios is not None
+        assert cfg.macos is not None
+        assert cfg.linux is not None

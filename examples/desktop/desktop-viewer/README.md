@@ -24,12 +24,35 @@ kivyforge package -p macos      # -> build/macos/Desktop Viewer.app (ad-hoc sign
 Bundles a python-build-standalone CPython 3.13 runtime and Kivy 2.3.1's
 universal2 wheel from PyPI.
 
+## Linux (builds today from PyPI)
+
+The same overlay pattern targets Linux (AppDir + AppImage). The window,
+resizable layout, and font-size shortcuts all work; the **native open panel is
+macOS-only** — `⌘O` calls `osascript`, which is absent on Linux, so it's a
+graceful no-op there (the app doesn't crash). A cross-platform file chooser is
+out of scope for this deliberately macOS-flavoured demo.
+
+```bash
+cd examples/desktop/desktop-viewer
+kivyforge lock    -p linux
+kivyforge build   -p linux      # -> build/linux/Desktop Viewer.AppDir
+kivyforge run     -p linux      # runs ./AppRun directly (no FUSE)
+kivyforge package -p linux      # -> dist/linux/desktop-viewer-0.1.0-x86_64.AppImage
+```
+
+**Host contract:** the host provides glibc ≥ the effective floor (2.17 here),
+`libGL.so.1`/`libEGL.so.1`, and an X11/Wayland session; the bundle vendors
+neither. No `libfuse2` needed (static-FUSE runtime);
+`--appimage-extract-and-run` is the universal no-FUSE fallback. Check the host
+with `kivyforge doctor -p linux`.
+
 ## Files
 
 | Path | Purpose |
 |------|---------|
-| `pyproject.toml` | Identity + `[tool.kivy.macos]` overlay (no iOS) |
+| `pyproject.toml` | Identity + `[tool.kivy.macos]` / `[tool.kivy.linux]` overlays (no iOS) |
 | `pylock.macos.toml` | Pinned CPython 3.13 (PBS) + Kivy 2.3.1 universal2 wheel |
+| `pylock.linux.toml` | Pinned CPython 3.13 (PBS gnu) + Kivy 2.3.1 manylinux wheel |
 | `src/main.py` | The app |
 | `src/icon.png` | 512×512 runtime window/Dock icon (bundled with the app) |
 | `assets/icon.png` | 1024×1024 master app icon (rendered into the bundle's `.icns`) |

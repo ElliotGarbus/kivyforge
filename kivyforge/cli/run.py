@@ -24,6 +24,7 @@ from ..xcode import (
     simctl_list,
 )
 from ._common import ToolchainError
+from ._linux import linux_run
 from ._macos import macos_run
 from ._platform import platform_option, resolve_target
 from .build import prepare_build
@@ -77,6 +78,10 @@ def run(
 
     if backend.name == "macos":
         macos_run(project_root, arch=arch, no_build=no_build)
+        return
+
+    if backend.name == "linux":
+        linux_run(project_root, arch=arch, no_build=no_build)
         return
     try:
         config = load_config(project_root / "pyproject.toml")

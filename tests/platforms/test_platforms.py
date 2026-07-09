@@ -12,12 +12,13 @@ from kivyforge.platforms import (
 )
 from kivyforge.platforms.base import HostCapabilityError
 from kivyforge.platforms.ios import IosPlatform
+from kivyforge.platforms.linux import LinuxPlatform
 from kivyforge.platforms.macos import MacosPlatform
 
 
 class TestRegistry:
     def test_available_names(self):
-        assert available_platform_names() == ["ios", "macos"]
+        assert available_platform_names() == ["ios", "macos", "linux"]
 
     def test_get_platform(self):
         assert isinstance(get_platform("ios"), IosPlatform)
@@ -104,3 +105,24 @@ class TestMacosPlatform:
     def test_capability_fails_off_macos(self):
         with pytest.raises(HostCapabilityError, match="requires a macOS host"):
             MacosPlatform().check_host_capability(host_system="Linux")
+
+
+class TestLinuxPlatform:
+    def test_metadata(self):
+        p = LinuxPlatform()
+        assert p.name == "linux"
+        assert p.host_system == "Linux"
+        assert p.default_package_format == "appimage"
+        assert p.package_formats == ("appimage", "folder")
+        assert p.selectors == ("linux",)
+
+    def test_capability_ok_on_linux(self):
+        LinuxPlatform().check_host_capability(host_system="Linux")
+
+    def test_capability_fails_off_linux(self):
+        with pytest.raises(HostCapabilityError, match="requires a Linux host"):
+            LinuxPlatform().check_host_capability(host_system="Darwin")
+
+    def test_linux_is_host_default_on_linux(self):
+        p = resolve_target(None, configured={"linux"}, env={}, host_system="Linux")
+        assert p.name == "linux"

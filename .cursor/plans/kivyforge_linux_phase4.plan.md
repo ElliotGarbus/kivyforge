@@ -4,31 +4,31 @@ overview: Detailed, step-by-step plan for the Linux backend - [tool.kivy.linux] 
 todos:
   - id: step0-host-bringup
     content: "Step 0: WSL2 host bring-up - dev env on WSL2 Ubuntu, full test suite green on a Linux host (fix any macOS-host assumptions, XDG cache path ~/.cache/kivyforge), verify WSLg GL, add an ubuntu-latest job to CI (headless pytest)."
-    status: pending
+    status: completed
   - id: step1-linux-spec
     content: "Step 1: Write docs/design/platforms/linux/linux-spec.md (mirror macos-spec.md structure) encoding all decisions below; validate the pip manylinux --platform expansion behavior with a small spike before freezing the lock design."
-    status: pending
+    status: completed
   - id: step2-config-overlay
     content: "Step 2: [tool.kivy.linux] overlay parsing + LinuxConfig dataclass (schema_version, app_id, archs=[x86_64], glibc_floor, python.version, icons, desktop.categories, extra_index_urls/find_links/exclude) + loader tests."
-    status: pending
+    status: completed
   - id: step3-lock
     content: "Step 3: pylock.linux.toml - LinuxProfile (manylinux platform tags, wheel_covers, floor validation) + LinuxPbsProvider (x86_64-unknown-linux-gnu) + golden-lock fixture tests + one live PBS resolution check at the step boundary."
-    status: pending
+    status: completed
   - id: step4-bundle-build-run
     content: "Step 4: kivyforge/linux/ AppDir bundler (runtime stage, wheels stage, app source, AppRun shell launcher, generated .desktop + icons, SDL WM_CLASS env) + build/run verbs; interactive smoke test on WSLg."
-    status: pending
+    status: completed
   - id: step5-package
     content: "Step 5: package -f appimage (default) / -f folder - pinned appimagetool + type2 static-FUSE runtime acquisition via the artifacts cache, APPIMAGE_EXTRACT_AND_RUN=1 invocation, output naming; verify the AppImage on WSLg and (recommended) one clean distro VM."
-    status: pending
+    status: completed
   - id: step6-doctor
     content: "Step 6: doctor/checks_linux.py - host/GL/session checks, glibc floor validation, arch coverage, icon, desktop-file-validate, required hosts reachable (incl. appimagetool assets)."
-    status: pending
+    status: completed
   - id: step7-examples
     content: "Step 7: add [tool.kivy.linux] overlays + pylock.linux.toml to examples/desktop/{desktop-viewer,dice-roller,notes}; make run-examples.sh handle --platform linux; verify all three on WSLg."
-    status: pending
+    status: completed
   - id: step8-docs-review
     content: "Step 8: docs sweep (README, FAQ, packaging-scope doc, guides placeholder), CHANGELOG, final regression gate (pytest+ruff green on macOS AND Linux hosts, iOS/macOS examples unaffected). Stop for review."
-    status: pending
+    status: completed
 isProject: false
 ---
 

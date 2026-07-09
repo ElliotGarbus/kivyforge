@@ -1,5 +1,48 @@
 # Changelog
 
+## [Unreleased]
+
+### Linux backend (AppImage / AppDir)
+
+- **New `linux` target.** `kivyforge lock/build/run/package -p linux` resolves
+  into `pylock.linux.toml`, bundles a relocatable
+  [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+  gnu/glibc CPython plus manylinux wheels, and produces an
+  [AppImage](https://appimage.org/) (the `package` default) with a
+  run-from-folder **AppDir** as the substrate/fallback (`package -f folder`).
+  x86_64 only this phase; the config stays list-shaped for additive `aarch64`
+  later.
+- **`[tool.kivy.linux]` overlay** — `app_id` (reverse-DNS; names the generated
+  `.desktop`, `Icon=`, and `StartupWMClass`), `archs`, optional `glibc_floor`,
+  `python.version`, `icons.source`, `desktop.categories`, and the shared
+  `extra_index_urls`/`find_links`/`exclude`. Invalid `app_id` characters are a
+  fail-fast config error.
+- **manylinux resolution** — because pip does not expand the manylinux hierarchy
+  from a single `--platform`, the resolver requests the full compatible tag
+  ladder at/below the glibc floor in one invocation. The artifact's *effective*
+  glibc floor = `max(runtime floor 2.17, highest locked wheel manylinux level)`.
+- **AppImage packaging** — a pinned static `appimagetool` + pinned type2
+  static-FUSE runtime are fetched through the shared artifact cache; the shipped
+  AppImage needs no host `libfuse2`, and `APPIMAGE_EXTRACT_AND_RUN=1` means the
+  build host needs no FUSE either. A generated `AppRun` (POSIX shell) sets
+  `PYTHONHOME`/`PYTHONPATH`/`SDL_VIDEO_*_WMCLASS` — no compiled launcher, no
+  native build at package time.
+- **Generated desktop integration** — `.desktop` entry + hicolor icon set from
+  `pyproject.toml` (Pillow for resize via the optional `kivyforge[linux]` extra;
+  a default icon is generated with only the stdlib when no source is set).
+- **`kivyforge doctor -p linux`** — host libc (WARN on musl), `libGL`/`libEGL`
+  via `ldconfig`, display session, glibc floor vs. runtime, manylinux arch
+  coverage, app icon, generated `.desktop` validity (`desktop-file-validate`),
+  and reachable hosts (lock + appimagetool/runtime assets).
+- **Host contract (documented, never vendored)** — the bundle relies on the host
+  for glibc ≥ the effective floor, `libGL`/`libEGL`, and an X11/Wayland session.
+- **Examples** — `desktop-viewer`, `dice-roller`, and `notes` gained
+  `[tool.kivy.linux]` overlays + committed `pylock.linux.toml`;
+  `examples/run-examples.sh -p linux` builds and runs them.
+- **CI** — added an `ubuntu-latest` headless job (the cross-platform core now
+  runs on both macOS and Linux hosts). Artifact cache respects
+  `$XDG_CACHE_HOME` on Linux (`~/.cache/kivyforge`).
+
 ## [v3.0.0](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0)
 
 **Complete rewrite.** kivyforge is the successor to kivy-ios, python-for-android,
