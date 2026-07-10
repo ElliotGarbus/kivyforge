@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from kivyforge.macos import AppBundleError, machotools
+from kivyforge.platforms.macos import AppBundleError, machotools
 
 
 def _write_magic(path, magic: int) -> None:

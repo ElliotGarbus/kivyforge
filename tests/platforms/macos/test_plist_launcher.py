@@ -11,10 +11,13 @@ import sys
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.macos import AppBundleError
-from kivyforge.macos.launcher import build_launcher, render_launcher_source
-from kivyforge.macos.machotools import is_macho, macho_arches
-from kivyforge.macos.plist import DEFAULT_MINIMUM_SYSTEM_VERSION, build_info_plist
+from kivyforge.platforms.macos import AppBundleError
+from kivyforge.platforms.macos.launcher import build_launcher, render_launcher_source
+from kivyforge.platforms.macos.machotools import is_macho, macho_arches
+from kivyforge.platforms.macos.plist import (
+    DEFAULT_MINIMUM_SYSTEM_VERSION,
+    build_info_plist,
+)
 
 _BASE = (
     "[project]\nname='myapp'\nversion='2.5.0'\nrequires-python='>=3.14'\n"

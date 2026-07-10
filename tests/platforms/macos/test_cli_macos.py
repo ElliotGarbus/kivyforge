@@ -8,17 +8,17 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivyforge.cli import _macos
 from kivyforge.cli.build import build
 from kivyforge.cli.package import package
 from kivyforge.cli.run import run
-from kivyforge.lock.macos import dumps
 from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
     WheelRuntimeLock,
 )
+from kivyforge.platforms.macos import cli as _macos
+from kivyforge.platforms.macos.lock import dumps
 
 PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.0.0'\nrequires-python='>=3.14'\n"

@@ -5,17 +5,16 @@ from __future__ import annotations
 import textwrap
 
 from kivyforge.config import load_config_from_text
-from kivyforge.doctor import checks_macos as M
 from kivyforge.doctor.result import Status
-from kivyforge.doctor.runner import run_macos_checks
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
     WheelRuntimeLock,
 )
-
-from .conftest import FakeProbe
+from kivyforge.platforms.macos import doctor as M
+from kivyforge.platforms.macos.doctor import run_macos_checks
+from tests.doctor.probe_fakes import FakeProbe
 
 
 def _macos_config(extra: str = "", archs="['arm64','x86_64']"):

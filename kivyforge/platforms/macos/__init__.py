@@ -13,6 +13,10 @@ import platform as _platform
 from ..base import HostCapabilityError, Platform
 
 
+class AppBundleError(Exception):
+    """A macOS ``.app`` bundling failure surfaced with an actionable message."""
+
+
 class MacosPlatform(Platform):
     name = "macos"
     # macOS is a desktop target built on its own OS, so Darwin maps to it as the

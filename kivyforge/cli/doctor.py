@@ -20,14 +20,14 @@ from ..doctor import (
     Status,
     run_checks,
     run_linux_checks,
-    run_macos_checks,
     worst_status,
 )
 from ..lock import LockError, load
 from ..lock.linux import load as load_linux_lock
-from ..lock.macos import load as load_macos_lock
 from ..platforms import PlatformResolutionError
 from ..platforms import resolve_target as _resolve_platform
+from ..platforms.macos.doctor import run_macos_checks
+from ..platforms.macos.lock import load as load_macos_lock
 from ._common import PYPROJECT_NAME, lockfile_name
 from ._platform import configured_platforms, platform_option
 

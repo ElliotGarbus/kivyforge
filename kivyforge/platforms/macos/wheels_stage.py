@@ -16,11 +16,12 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from ..artifacts.cache import ArtifactCache
-from ..artifacts.download import DownloadError, fetch_artifact
-from ..lock.macos import wheel_arch
-from ..lock.model import LockedPackage, LockedWheel
+from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.artifacts.download import DownloadError, fetch_artifact
+from kivyforge.lock.model import LockedPackage, LockedWheel
+
 from . import AppBundleError
+from .lock import wheel_arch
 from .machotools import is_macho, lipo_create
 
 

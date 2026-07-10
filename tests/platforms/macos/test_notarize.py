@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from kivyforge.macos import AppBundleError, notarize
+from kivyforge.platforms.macos import AppBundleError, notarize
 
 
 class FakeRuns:

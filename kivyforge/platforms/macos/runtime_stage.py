@@ -16,13 +16,14 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from ..artifacts.cache import ArtifactCache
-from ..artifacts.download import DownloadError, fetch_artifact
-from ..lock.wheelruntime.model import PythonRuntime
-from ..lock.wheelruntime.runtime import (
+from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.artifacts.download import DownloadError, fetch_artifact
+from kivyforge.lock.wheelruntime.model import PythonRuntime
+from kivyforge.lock.wheelruntime.runtime import (
     RuntimeProviderError,
     normalized_runtime_root,
 )
+
 from . import AppBundleError
 from .machotools import is_macho, lipo_create
 

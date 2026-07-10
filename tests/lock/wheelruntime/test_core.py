@@ -9,7 +9,6 @@ thin profile — not copying the engine.
 from __future__ import annotations
 
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.lock.macos import MacosProfile
 from kivyforge.lock.wheelruntime import (
     PythonRuntime,
     ResolvedPackage,
@@ -21,6 +20,7 @@ from kivyforge.lock.wheelruntime import (
     loads,
 )
 from kivyforge.lock.wheelruntime.profile import PlatformLockProfile
+from kivyforge.platforms.macos.lock import MacosProfile
 
 
 class FauxLinuxProfile(PlatformLockProfile):

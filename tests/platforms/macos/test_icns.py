@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from kivyforge.macos import AppBundleError, icns
+from kivyforge.platforms.macos import AppBundleError, icns
 
 
 def _png_1024(path):

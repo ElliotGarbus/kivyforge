@@ -6,7 +6,7 @@ discipline); there is no user Info.plist merge on macOS in this phase.
 
 from __future__ import annotations
 
-from ..config.model import Config
+from kivyforge.config.model import Config
 
 # LSMinimumSystemVersion when the project sets none. Matches the macOS lock's
 # default pip floor so the plist and the resolved wheels agree.

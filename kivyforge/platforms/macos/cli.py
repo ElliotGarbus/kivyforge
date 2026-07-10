@@ -13,16 +13,17 @@ from pathlib import Path
 
 import click
 
-from ..config import ConfigError, load_config
-from ..lock.macos import MacosLockfile
-from ..lock.macos import load as load_macos_lock
-from ..lock.reader import LockError, is_in_sync
-from ..macos import AppBundleError
-from ..macos.bundle import build_app_bundle
-from ..macos.notarize import notarize_and_staple
-from ..macos.signing import sign_bundle_developer_id
-from ..platforms import HostCapabilityError, get_platform
-from ._common import ToolchainError, lockfile_path_for
+from kivyforge.cli._common import ToolchainError, lockfile_path_for
+from kivyforge.config import ConfigError, load_config
+from kivyforge.lock.reader import LockError, is_in_sync
+
+from .. import HostCapabilityError, get_platform
+from . import AppBundleError
+from .bundle import build_app_bundle
+from .lock import MacosLockfile
+from .lock import load as load_macos_lock
+from .notarize import notarize_and_staple
+from .signing import sign_bundle_developer_id
 
 
 def macos_build(

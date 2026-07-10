@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 
 from ..config import ConfigError, load_config
+from ..platforms.macos.cli import macos_run
 from ..xcode import (
     CommandError,
     SigningError,
@@ -25,7 +26,6 @@ from ..xcode import (
 )
 from ._common import ToolchainError
 from ._linux import linux_run
-from ._macos import macos_run
 from ._platform import platform_option, resolve_target
 from .build import prepare_build
 

@@ -6,7 +6,7 @@ import textwrap
 
 import pytest
 
-from kivyforge.lock.macos import (
+from kivyforge.platforms.macos.lock import (
     MacosPythonRuntime,
     ResolvedPackage,
     ResolvedWheel,

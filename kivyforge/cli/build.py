@@ -24,6 +24,7 @@ from ..artifacts.wheels import BuildSlice
 from ..config import ConfigError, load_config
 from ..icon import IconSourceError
 from ..lock import LockError, is_in_sync, load
+from ..platforms.macos.cli import macos_build
 from ..project.materialize import materialize_project
 from ..project.staging import StagingError, create_staging
 from ..xcode import (
@@ -49,7 +50,6 @@ from ._common import (
     lockfile_path,
 )
 from ._linux import linux_build
-from ._macos import macos_build
 from ._platform import platform_option, resolve_target
 
 

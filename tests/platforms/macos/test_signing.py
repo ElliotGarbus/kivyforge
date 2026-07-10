@@ -6,7 +6,7 @@ import plistlib
 import struct
 from pathlib import Path
 
-from kivyforge.macos import signing
+from kivyforge.platforms.macos import signing
 
 
 def _macho(path):

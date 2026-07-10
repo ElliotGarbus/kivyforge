@@ -11,13 +11,15 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ..config.model import Config
-from ..icon import APP_ICON_SIZE, icon_source_problem
-from ..lock.find_links import find_links_doctor_detail
-from ..lock.macos import MacosLockfile, wheel_arch
-from .checks import _ver_tuple
-from .probe import Probe
-from .result import CheckResult, Status
+from kivyforge.config.model import Config
+from kivyforge.doctor import checks as C
+from kivyforge.doctor.checks import _ver_tuple
+from kivyforge.doctor.probe import Probe
+from kivyforge.doctor.result import CheckResult, Status
+from kivyforge.icon import APP_ICON_SIZE, icon_source_problem
+from kivyforge.lock.find_links import find_links_doctor_detail
+
+from .lock import MacosLockfile, wheel_arch
 
 
 def check_macos_host(probe: Probe) -> CheckResult:
@@ -304,3 +306,51 @@ def _add_host(hosts: set[str], url: str) -> None:
     netloc = urlparse(url).hostname
     if netloc:
         hosts.add(netloc)
+
+
+def run_macos_checks(
+    probe: Probe,
+    *,
+    kivyforge_version: str,
+    config: Config | None = None,
+    project_root: Path | None = None,
+    lock: MacosLockfile | None = None,
+    offline: bool = False,
+) -> list[CheckResult]:
+    """Run macOS doctor checks (macos-spec). Project checks SKIP without config."""
+    project_root = project_root or Path.cwd()
+    results = [
+        check_macos_host(probe),
+        check_codesign(probe),
+        check_macos_not_root(probe),
+        C.check_pip_version(probe),
+        C.check_kivyforge_version(probe, kivyforge_version, offline=offline),
+    ]
+
+    if config is None:
+        for name in (
+            "App source directory",
+            "Architecture coverage",
+            "Runtime floor",
+            "App icon",
+            "find_links directories",
+            "Signing identity",
+            "Signing identity type",
+            "Notary setup",
+            "Required hosts reachable",
+        ):
+            results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
+        return results
+
+    results += [
+        C.check_app_dir(config, project_root),
+        check_macos_arch_coverage(config, lock),
+        check_macos_runtime_floor(config, lock),
+        check_macos_app_icon(config, project_root),
+        check_macos_find_links(config, project_root),
+        check_macos_signing_identity(probe, config),
+        check_macos_signing_identity_type(config),
+        check_macos_notary_setup(probe, config),
+        check_macos_hosts_reachable(probe, lock),
+    ]
+    return results

@@ -7,7 +7,7 @@ resolution + injectable metadata fetcher.
 
 from __future__ import annotations
 
-from ..wheelruntime.runtime import (
+from kivyforge.lock.wheelruntime.runtime import (
     MetadataFetcher,
     PbsProvider,
     ReleaseAsset,

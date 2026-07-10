@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from kivyforge.lock.macos.runtime import (
+from kivyforge.lock.wheelruntime.runtime import RuntimeProviderError as CoreRPError
+from kivyforge.platforms.macos.lock.runtime import (
     PythonBuildStandaloneProvider,
     ReleaseAsset,
     RuntimeProviderError,
     get_runtime_provider,
     pbs_asset_name,
 )
-from kivyforge.lock.wheelruntime.runtime import RuntimeProviderError as CoreRPError
 
 assert RuntimeProviderError is CoreRPError  # macOS re-exports the core error
 

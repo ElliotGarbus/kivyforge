@@ -13,11 +13,11 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from ...config.model import Config
-from ..wheelruntime import (
+from kivyforge.config.model import Config
+from kivyforge.lock.wheelruntime import (
     PythonRuntime as MacosPythonRuntime,
 )
-from ..wheelruntime import (
+from kivyforge.lock.wheelruntime import (
     ResolvedPackage,
     ResolvedWheel,
     RuntimeArtifact,
@@ -33,7 +33,8 @@ from ..wheelruntime import (
     get_wheel_resolver,
     semantic_equal,
 )
-from ..wheelruntime import serialize as _ser
+from kivyforge.lock.wheelruntime import serialize as _ser
+
 from .profile import MacosProfile, macos_platform_tag, wheel_arch
 from .runtime import PythonBuildStandaloneProvider
 

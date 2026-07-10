@@ -20,7 +20,7 @@ def runner():
 @pytest.fixture(autouse=True)
 def patch_macos_build(monkeypatch):
     """Inject hermetic fakes into the macOS lock build."""
-    import kivyforge.lock.macos as macos_lock
+    import kivyforge.platforms.macos.lock as macos_lock
 
     real_build = macos_lock.build_macos_lockfile
 

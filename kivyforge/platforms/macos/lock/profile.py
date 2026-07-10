@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import re
 
-from ...config.model import Config
-from ..wheelruntime.profile import PlatformLockProfile
-from ..wheelruntime.resolver import Variant
-from ..wheelruntime.runtime import RuntimeProvider
+from kivyforge.config.model import Config
+from kivyforge.lock.wheelruntime.profile import PlatformLockProfile
+from kivyforge.lock.wheelruntime.resolver import Variant
+from kivyforge.lock.wheelruntime.runtime import RuntimeProvider
+
 from .runtime import PythonBuildStandaloneProvider
 
 # Default macOS deployment floor for the pip ``--platform`` request when the

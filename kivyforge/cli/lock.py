@@ -63,7 +63,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=False,
         )
     if platform == "macos":
-        from ..lock import macos as macos_lock
+        from ..platforms.macos import lock as macos_lock
 
         return _LockOps(
             build=macos_lock.build_macos_lockfile,

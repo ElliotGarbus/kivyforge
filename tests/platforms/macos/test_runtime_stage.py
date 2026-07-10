@@ -8,7 +8,7 @@ import tarfile
 import pytest
 
 from kivyforge.lock.wheelruntime.model import PythonRuntime, RuntimeArtifact
-from kivyforge.macos import AppBundleError, runtime_stage
+from kivyforge.platforms.macos import AppBundleError, runtime_stage
 
 
 def _make_pbs_archive(path, *, marker: bytes) -> None:

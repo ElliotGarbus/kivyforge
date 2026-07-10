@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.lock.macos import MacosBuildError, build_macos_lockfile
+from kivyforge.platforms.macos.lock import MacosBuildError, build_macos_lockfile
 
 from .conftest import FakeMacosResolver, FakeRuntimeProvider
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from kivyforge.lock.macos import (
+from kivyforge.platforms.macos.lock import (
     MacosResolverError,
     get_macos_resolver,
     macos_platform_tag,

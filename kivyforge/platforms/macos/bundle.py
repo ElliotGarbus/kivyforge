@@ -16,12 +16,13 @@ from pathlib import Path
 
 import click
 
-from ..artifacts.cache import ArtifactCache
-from ..config.model import Config
-from ..lock.macos import MacosLockfile
+from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.config.model import Config
+
 from . import AppBundleError
 from .icns import generate_icns
 from .launcher import build_launcher
+from .lock import MacosLockfile
 from .plist import build_info_plist
 from .runtime_stage import stage_runtime
 from .signing import sign_bundle_adhoc

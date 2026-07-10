@@ -7,7 +7,7 @@ import zipfile
 import pytest
 
 from kivyforge.lock.model import LockedPackage, LockedWheel
-from kivyforge.macos import AppBundleError, wheels_stage
+from kivyforge.platforms.macos import AppBundleError, wheels_stage
 
 
 def _wheel(name: str) -> LockedWheel:

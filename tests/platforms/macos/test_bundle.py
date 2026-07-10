@@ -12,7 +12,7 @@ from kivyforge.lock.wheelruntime.model import (
     RuntimeArtifact,
     WheelRuntimeLock,
 )
-from kivyforge.macos import AppBundleError, bundle
+from kivyforge.platforms.macos import AppBundleError, bundle
 
 _PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.2.0'\nrequires-python='>=3.14'\n"
