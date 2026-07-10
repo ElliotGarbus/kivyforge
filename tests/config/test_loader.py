@@ -941,6 +941,17 @@ class TestLinuxDesktop:
         with pytest.raises(ConfigError, match="categories"):
             _linux("[tool.kivy.linux.desktop]\ncategories='Utility'\n")
 
+    def test_non_main_category_rejected(self):
+        # A typo / non-main freedesktop category is rejected at config time.
+        with pytest.raises(ConfigError, match="invalid.*categories"):
+            _linux("[tool.kivy.linux.desktop]\ncategories=['Utillity']\n")
+
+    def test_additional_category_rejected(self):
+        # "Building" is a freedesktop *additional* (not main) category.
+        with pytest.raises(ConfigError, match="invalid.*categories") as exc:
+            _linux("[tool.kivy.linux.desktop]\ncategories=['Building']\n")
+        assert "freedesktop main categories" in (exc.value.hint or "")
+
 
 class TestLinuxIcons:
     def test_default_none(self):

@@ -70,6 +70,10 @@ def _wheel(name):
     return LockedWheel(name=name, url=f"https://files/{name}", sha256="a" * 64)
 
 
+def _vendored_wheel(name):
+    return LockedWheel(name=name, path=f"wheels/{name}", sha256="a" * 64)
+
+
 class TestHost:
     def test_pass_on_glibc(self):
         r = L.check_linux_host(FakeProbe(host="Linux", libc="glibc"))
@@ -163,6 +167,28 @@ class TestArchCoverage:
         r = L.check_linux_arch_coverage(_linux_config(), _lock(archs=()))
         assert r.status is Status.FAIL
 
+    def test_plain_linux_from_index_fails(self):
+        # A plain linux_x86_64 wheel not sourced from find_links makes no glibc
+        # promise and must not count toward coverage.
+        pkg = LockedPackage(
+            name="foo",
+            version="1",
+            wheels=(_wheel("foo-1-cp314-cp314-linux_x86_64.whl"),),
+        )
+        r = L.check_linux_arch_coverage(_linux_config(), _lock(packages=[pkg]))
+        assert r.status is Status.FAIL
+        assert "foo" in r.detail
+
+    def test_plain_linux_vendored_warns(self):
+        pkg = LockedPackage(
+            name="foo",
+            version="1",
+            wheels=(_vendored_wheel("foo-1-cp314-cp314-linux_x86_64.whl"),),
+        )
+        r = L.check_linux_arch_coverage(_linux_config(), _lock(packages=[pkg]))
+        assert r.status is Status.WARN
+        assert "no glibc promise" in r.hint
+
     def test_skip_without_lock(self):
         assert L.check_linux_arch_coverage(_linux_config(), None).status is Status.SKIP
 
@@ -230,8 +256,7 @@ class TestRunner:
             for r in results
         )
         assert any(
-            r.name == "Desktop entry valid" and r.status is Status.SKIP
-            for r in results
+            r.name == "Desktop entry valid" and r.status is Status.SKIP for r in results
         )
 
     def test_project_mode_runs_all(self, tmp_path):

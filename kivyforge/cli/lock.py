@@ -43,6 +43,9 @@ class _LockOps:
     require_ios: bool
     require_macos: bool
     require_linux: bool = False
+    # Wheel+runtime backends (macOS/Linux) surface non-fatal lock warnings
+    # (e.g. accepting a vendored plain linux_* wheel) via an on_warning callback.
+    emits_warnings: bool = False
 
 
 def _lock_ops(platform: str) -> _LockOps:
@@ -71,6 +74,7 @@ def _lock_ops(platform: str) -> _LockOps:
             build_error=macos_lock.MacosBuildError,
             require_ios=False,
             require_macos=True,
+            emits_warnings=True,
         )
     if platform == "linux":
         from ..lock import linux as linux_lock
@@ -85,6 +89,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_ios=False,
             require_macos=False,
             require_linux=True,
+            emits_warnings=True,
         )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."
@@ -168,12 +173,16 @@ def _run_check(
 def _build(
     ops: _LockOps, config, pyproject_text: str, project_root: Path, offline: bool
 ):
+    kwargs = {}
+    if ops.emits_warnings:
+        kwargs["on_warning"] = lambda msg: click.echo(msg, err=True)
     try:
         return ops.build(
             config,
             pyproject_text,
             project_root=project_root,
             offline=offline,
+            **kwargs,
         )
     except ops.build_error as exc:
         raise ToolchainError(str(exc)) from exc

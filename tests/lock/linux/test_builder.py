@@ -100,6 +100,47 @@ class TestBuild:
                 runtime_provider=FakeRuntimeProvider(),
             )
 
+    def test_plain_linux_from_index_fails_coverage(self, linux_pyproject, tmp_path):
+        # A plain linux_x86_64 wheel pulled from PyPI/an extra index makes no
+        # glibc promise and must NOT count toward coverage (spec: accepted only
+        # from find_links). Lock fails fast rather than silently pinning it.
+        cfg = _config(linux_pyproject, tmp_path)
+        with pytest.raises(LinuxBuildError, match="no manylinux wheel"):
+            build_linux_lockfile(
+                cfg,
+                linux_pyproject,
+                project_root=tmp_path,
+                resolver=FakeLinuxResolver(plain_linux=True),
+                runtime_provider=FakeRuntimeProvider(),
+            )
+
+    def test_plain_linux_from_find_links_warns(self, tmp_path):
+        text = (
+            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15'\n"
+            "dependencies=['kivy']\n"
+            "[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.linux]\nschema_version=1\napp_id='o.x.a'\n"
+            "find_links=['wheels']\n"
+            "[tool.kivy.linux.python]\nversion='3.15.0'\n"
+        )
+        wheels = tmp_path / "wheels"
+        wheels.mkdir()
+        (wheels / "kivy-3.0.0-cp315-cp315-linux_x86_64.whl").write_bytes(b"x")
+        cfg = _config(text, tmp_path)
+        warnings: list[str] = []
+        lock = build_linux_lockfile(
+            cfg,
+            text,
+            project_root=tmp_path,
+            resolver=FakeLinuxResolver(plain_linux=True, vendored=True),
+            runtime_provider=FakeRuntimeProvider(),
+            on_warning=warnings.append,
+        )
+        # The vendored plain wheel is accepted (path-sourced) and locked...
+        assert "kivy" in {p.name for p in lock.packages}
+        # ...but the mandated no-glibc-promise warning is emitted.
+        assert any("no glibc promise" in w for w in warnings)
+
     def test_floor_below_runtime_fails(self, tmp_path):
         text = (
             "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15'\n"

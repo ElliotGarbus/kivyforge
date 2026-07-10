@@ -32,6 +32,16 @@ __all__ = [
 # The manylinux2014-class glibc floor PBS's linux-gnu builds inherit from their
 # build host. Recorded on the runtime so the lock/doctor can state (and the
 # builder can validate against) the artifact's host requirement.
+#
+# IMPORTANT — this is a *pinned assumption* about PBS's build baseline, not a
+# value derived from inspecting the resolved artifact. PBS's ``install_only``
+# archives carry no structured glibc metadata, and `kivyforge lock` records only
+# the artifact URL + SHA-256 (it does not download the runtime), so there is
+# nothing to derive from at lock time. This constant is versioned with kivyforge:
+# if PBS ever raises its linux-gnu baseline above 2.17, THIS VALUE MUST BE
+# BUMPED IN LOCKSTEP, otherwise the lock/doctor would advertise a floor the
+# binary no longer meets. (A deeper, deferred safeguard would ELF-inspect the
+# staged ``bin/python3`` version-needs at build time to prove the floor.)
 DEFAULT_GLIBC_FLOOR = "2.17"
 
 # kivyforge arch name -> PBS/LLVM linux target triple (baseline microarch).

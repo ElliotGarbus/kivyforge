@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -19,13 +20,22 @@ class FakeLinuxResolver:
 
     Implements the generic ``WheelResolver`` interface (resolves over
     ``variants``). ``drop_wheel`` omits kivy's manylinux wheel to exercise the
-    coverage check. ``plain_linux`` returns a bare ``linux_x86_64`` tag.
+    coverage check. ``plain_linux`` returns a bare ``linux_x86_64`` tag;
+    ``vendored`` additionally sources that wheel from the first ``find_links``
+    directory (a local path) instead of PyPI.
     """
 
-    def __init__(self, *, drop_wheel: bool = False, plain_linux: bool = False):
+    def __init__(
+        self,
+        *,
+        drop_wheel: bool = False,
+        plain_linux: bool = False,
+        vendored: bool = False,
+    ):
         self.calls: list[dict] = []
         self._drop_wheel = drop_wheel
         self._plain_linux = plain_linux
+        self._vendored = vendored
 
     def resolve(
         self,
@@ -59,13 +69,11 @@ class FakeLinuxResolver:
             else:
                 tag = "manylinux_2_17_x86_64.manylinux2014_x86_64"
             fname = f"kivy-3.0.0-{abi}-{abi}-{tag}.whl"
-            kivy_wheels.append(
-                ResolvedWheel(
-                    filename=fname,
-                    url=f"https://files.pythonhosted.org/packages/aa/{fname}",
-                    sha256="a" * 64,
-                )
-            )
+            if self._vendored and find_links:
+                url = str(Path(find_links[0]) / fname)
+            else:
+                url = f"https://files.pythonhosted.org/packages/aa/{fname}"
+            kivy_wheels.append(ResolvedWheel(filename=fname, url=url, sha256="a" * 64))
         kivy = ResolvedPackage(
             name="kivy",
             version="3.0.0",

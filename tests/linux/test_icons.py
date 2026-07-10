@@ -43,9 +43,12 @@ class TestStageIcons:
         # A valid PNG at the AppImage root icon size.
         assert Image.open(root).size == (icons.ROOT_ICON_SIZE, icons.ROOT_ICON_SIZE)
         assert (
-            appdir
-            / "usr/share/icons/hicolor/256x256/apps/org.example.myapp.png"
+            appdir / "usr/share/icons/hicolor/256x256/apps/org.example.myapp.png"
         ).exists()
+        # .DirIcon is written for folder-artifact consumers, matching the root.
+        diricon = appdir / ".DirIcon"
+        assert diricon.exists()
+        assert diricon.read_bytes() == root.read_bytes()
 
     def test_generates_hicolor_and_root(self, tmp_path):
         _write_png(tmp_path / "assets" / "icon.png")
@@ -56,6 +59,9 @@ class TestStageIcons:
         root = appdir / "org.example.myapp.png"
         assert root.exists()
         assert Image.open(root).size == (icons.ROOT_ICON_SIZE, icons.ROOT_ICON_SIZE)
+        diricon = appdir / ".DirIcon"
+        assert diricon.exists()
+        assert diricon.read_bytes() == root.read_bytes()
         for size in icons.HICOLOR_SIZES:
             icon = (
                 appdir

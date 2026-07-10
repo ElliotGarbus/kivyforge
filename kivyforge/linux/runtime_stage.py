@@ -3,10 +3,13 @@
 Consumes the provider-agnostic runtime pin from ``pylock.linux.toml`` (the
 single ``x86_64`` artifact this phase — one arch per AppImage), fetches +
 verifies its archive, extracts it, and materializes the relocatable CPython tree
-at ``usr/python``. The PBS linux-gnu ``install_only`` archive is the same
-unix-prefix layout as the darwin ones and uses ``$ORIGIN``-relative rpaths, so
-it is relocatable as-shipped — no patchelf pass, and (unlike macOS) no ``lipo``
-merge, since Linux ships one arch per AppImage.
+at ``usr/python``. The extracted archive is normalized to its canonical root via
+``normalized_runtime_root`` keyed on the lock's recorded ``provider`` — staging
+never hard-codes a provider's archive internals (spec 07). The PBS linux-gnu
+``install_only`` archive is the same unix-prefix layout as the darwin ones and
+uses ``$ORIGIN``-relative rpaths, so it is relocatable as-shipped — no patchelf
+pass, and (unlike macOS) no ``lipo`` merge, since Linux ships one arch per
+AppImage.
 """
 
 from __future__ import annotations
@@ -19,10 +22,11 @@ from pathlib import Path
 from ..artifacts.cache import ArtifactCache
 from ..artifacts.download import DownloadError, fetch_artifact
 from ..lock.wheelruntime.model import PythonRuntime
+from ..lock.wheelruntime.runtime import (
+    RuntimeProviderError,
+    normalized_runtime_root,
+)
 from . import AppDirError
-
-# The directory name PBS install_only archives extract into.
-_PBS_ROOT = "python"
 
 
 def stage_runtime(
@@ -51,7 +55,7 @@ def stage_runtime(
     tmp = Path(tempfile.mkdtemp(prefix="kivy-runtime-"))
     try:
         archive = _fetch(artifact, arch, project_root, cache, no_cache)
-        extracted = _extract(archive, tmp)
+        extracted = _extract(archive, tmp, runtime.provider)
         if home.exists():
             shutil.rmtree(home)
         home.parent.mkdir(parents=True, exist_ok=True)
@@ -77,20 +81,17 @@ def _fetch(artifact, arch, project_root, cache, no_cache) -> Path:
         raise AppDirError(str(exc)) from exc
 
 
-def _extract(archive: Path, into: Path) -> Path:
+def _extract(archive: Path, into: Path, provider: str) -> Path:
     into.mkdir(parents=True, exist_ok=True)
     try:
         with tarfile.open(archive, "r:*") as tf:
             _safe_extractall(tf, into)
     except (tarfile.TarError, OSError) as exc:
         raise AppDirError(f"failed to extract {archive.name}: {exc}") from exc
-    root = into / _PBS_ROOT
-    if not root.is_dir():
-        raise AppDirError(
-            f"{archive.name} did not contain a top-level {_PBS_ROOT}/ directory; "
-            "this does not look like a python-build-standalone install_only archive."
-        )
-    return root
+    try:
+        return normalized_runtime_root(provider, into)
+    except RuntimeProviderError as exc:
+        raise AppDirError(f"{archive.name}: {exc}") from exc
 
 
 def _safe_extractall(tf: tarfile.TarFile, into: Path) -> None:

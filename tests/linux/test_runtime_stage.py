@@ -67,7 +67,13 @@ class TestExtract:
         with tarfile.open(bad, "w:gz") as tf:
             tf.add(tmp_path / "other", arcname="other")
         with pytest.raises(AppDirError, match="top-level python/"):
-            runtime_stage._extract(bad, tmp_path / "out")
+            runtime_stage._extract(bad, tmp_path / "out", "python-build-standalone")
+
+    def test_rejects_unknown_provider(self, tmp_path):
+        archive = tmp_path / "x86.tar.gz"
+        _make_pbs_archive(archive)
+        with pytest.raises(AppDirError, match="no runtime staging layout"):
+            runtime_stage._extract(archive, tmp_path / "out", "mystery-provider")
 
     def test_rejects_path_traversal(self, tmp_path):
         evil = tmp_path / "evil.tar.gz"
@@ -79,4 +85,4 @@ class TestExtract:
             with (payload / "f").open("rb") as fh:
                 tf.addfile(ti, fh)
         with pytest.raises(AppDirError, match="unsafe path"):
-            runtime_stage._extract(evil, tmp_path / "out")
+            runtime_stage._extract(evil, tmp_path / "out", "python-build-standalone")

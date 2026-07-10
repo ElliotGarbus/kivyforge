@@ -100,6 +100,14 @@ concept and have no subtable.
 > using **only the standard library** (`zlib`), so Pillow stays an opt-in extra
 > needed only for resizing a real source image.
 
+> **`.DirIcon`.** kivyforge also writes `.DirIcon` (a copy of the root
+> `<app_id>.png`) at the AppDir root. `appimagetool` derives `.DirIcon` from the
+> `.desktop` `Icon=` key at package time, but the **`-f folder` artifact** is
+> consumed directly by file managers / AppImage tooling that read `.DirIcon` for
+> the directory icon, so the backend emits it for a consistent icon across both
+> artifacts. It is a plain copy (not a symlink) to keep the folder artifact
+> self-contained and relocatable.
+
 Desktop entry: `[tool.kivy.linux.desktop].categories` supplies the freedesktop
 main categories written into the `.desktop` `Categories=` key (default
 `Utility`).
@@ -194,6 +202,17 @@ user's own vendored wheels and portability is their call.
 demand** from the locked wheels (by `doctor` and the docs) rather than stored as
 a separate field, keeping the shared lock model platform-agnostic.
 
+> **The recorded runtime floor (2.17) is a pinned assumption, not a derived
+> value.** PBS's `install_only` archives expose no structured glibc metadata, and
+> `kivyforge lock` records only the runtime's URL + SHA-256 (it does not download
+> the archive), so there is nothing to inspect at lock time. The floor is
+> therefore a constant tracked in kivyforge (`DEFAULT_GLIBC_FLOOR`) and versioned
+> with releases: **if PBS raises its linux-gnu build baseline above glibc 2.17,
+> that constant must be bumped in the same release**, or the lock/doctor would
+> advertise compatibility the binary no longer meets. A deeper safeguard —
+> ELF-inspecting the staged `bin/python3` version-needs at build time to *prove*
+> the floor — is a deferred fast-follow, recorded here rather than built.
+
 ## AppDir / AppImage layout
 
 **The folder artifact *is* an AppDir** — one tree serves `-f folder`,
@@ -204,6 +223,7 @@ build/linux/MyApp.AppDir/
 ├── AppRun                          ← POSIX sh launcher (generated)
 ├── <app_id>.desktop                ← generated from [project] + [tool.kivy.linux]
 ├── <app_id>.png                    ← root icon (appimagetool requirement)
+├── .DirIcon                        ← copy of the root icon (folder-artifact icon)
 └── usr/
     ├── app/                        ← user code (from [tool.kivy].app_dir)
     ├── lib/                        ← installed wheels (site-packages)
@@ -226,7 +246,10 @@ compiled Mach-O stub on macOS. It resolves its own directory via
   `.desktop`'s `StartupWMClass` and the app groups under its own icon
 
 and `exec`s `"$HERE/usr/python/bin/python3" "$HERE/usr/app/<entry_point>.py"
-"$@"`. There is **no `LD_LIBRARY_PATH`**: PBS rpaths are `$ORIGIN`-relative and
+"$@"`. A dotted `entry_point` (e.g. `pkg.start`, per the shared
+[`app_dir`/`entry_point` contract](../../common/01-pyproject-kivy-spec.md#app_dir--entry_point-interaction))
+maps to the nested source path `usr/app/pkg/start.py`. There is **no
+`LD_LIBRARY_PATH`**: PBS rpaths are `$ORIGIN`-relative and
 manylinux wheels vendor their native libs (auditwheel), so the environment stays
 clean for the host's own libGL.
 
@@ -285,9 +308,15 @@ Update-embedding / zsync is out of scope.
 
 ### FUSE / host contract (user-facing)
 
-The static-FUSE runtime means the *shipped* AppImage needs no `libfuse2`.
-`--appimage-extract-and-run` (or `APPIMAGE_EXTRACT_AND_RUN=1`) is documented as
-the universal no-FUSE fallback regardless.
+The embedded static-FUSE type2 runtime means the *shipped* AppImage needs no
+host **`libfuse2` package** — that removes the libfuse2-vs-libfuse3 packaging
+pain, **not** the kernel's FUSE support. To self-mount, the runtime still needs
+the kernel **`/dev/fuse`** device available at launch; a locked-down environment
+(hardened container, some CI, restrictive sandbox) that lacks `/dev/fuse` will
+fail to mount. `--appimage-extract-and-run` (or `APPIMAGE_EXTRACT_AND_RUN=1`) is
+the universal, no-kernel-FUSE fallback and is surfaced in the `package` output
+and docs. So precisely: no `libfuse2` *package* is ever required; kernel FUSE is
+required only for the default self-mount path, and extract-and-run needs neither.
 
 `libGL`/`libEGL` and an X11 or Wayland session come **from the host** — nobody
 vendors these. The docs and `doctor` state this as an explicit requirement so it
@@ -331,8 +360,12 @@ the macOS `bundle_id` fail-fast.
 - For `run` / interactive testing: `libGL`/`libEGL` and an X11 or Wayland
   session (on WSL2 this is WSLg; `LIBGL_ALWAYS_SOFTWARE=1` is the software-GL
   fallback and `xvfb-run` the headless path).
-- No FUSE is required to *build* an AppImage (`APPIMAGE_EXTRACT_AND_RUN=1`) or to
-  *run* the shipped one (embedded static-FUSE runtime).
+- No `libfuse2` **package** is required to *build* an AppImage
+  (`APPIMAGE_EXTRACT_AND_RUN=1`) or to *run* the shipped one (the embedded
+  static-FUSE runtime is statically linked). Kernel FUSE (`/dev/fuse`) is still
+  needed for the shipped AppImage's default self-mount; where it is unavailable,
+  run with `--appimage-extract-and-run` (or `APPIMAGE_EXTRACT_AND_RUN=1`), which
+  needs no FUSE at all.
 - `desktop-file-validate` (from `desktop-file-utils`) is optional — used by the
   `doctor` check when present.
 

@@ -19,11 +19,12 @@ from pathlib import Path
 from ..artifacts.cache import ArtifactCache
 from ..artifacts.download import DownloadError, fetch_artifact
 from ..lock.wheelruntime.model import PythonRuntime
+from ..lock.wheelruntime.runtime import (
+    RuntimeProviderError,
+    normalized_runtime_root,
+)
 from . import AppBundleError
 from .machotools import is_macho, lipo_create
-
-# The directory name PBS install_only archives extract into.
-_PBS_ROOT = "python"
 
 
 def stage_runtime(
@@ -60,7 +61,7 @@ def stage_runtime(
                     f"{', '.join(a.arch for a in runtime.artifacts)})."
                 )
             archive = _fetch(artifact, arch, project_root, cache, no_cache)
-            per_arch[arch] = _extract(archive, tmp / arch)
+            per_arch[arch] = _extract(archive, tmp / arch, runtime.provider)
 
         if home.exists():
             shutil.rmtree(home)
@@ -91,20 +92,17 @@ def _fetch(artifact, arch, project_root, cache, no_cache) -> Path:
         raise AppBundleError(str(exc)) from exc
 
 
-def _extract(archive: Path, into: Path) -> Path:
+def _extract(archive: Path, into: Path, provider: str) -> Path:
     into.mkdir(parents=True, exist_ok=True)
     try:
         with tarfile.open(archive, "r:*") as tf:
             _safe_extractall(tf, into)
     except (tarfile.TarError, OSError) as exc:
         raise AppBundleError(f"failed to extract {archive.name}: {exc}") from exc
-    root = into / _PBS_ROOT
-    if not root.is_dir():
-        raise AppBundleError(
-            f"{archive.name} did not contain a top-level {_PBS_ROOT}/ directory; "
-            "this does not look like a python-build-standalone install_only archive."
-        )
-    return root
+    try:
+        return normalized_runtime_root(provider, into)
+    except RuntimeProviderError as exc:
+        raise AppBundleError(f"{archive.name}: {exc}") from exc
 
 
 def _safe_extractall(tf: tarfile.TarFile, into: Path) -> None:

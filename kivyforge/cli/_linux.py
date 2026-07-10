@@ -82,17 +82,17 @@ def linux_package(
     click.echo(
         f"Packaged {result.relative_to(project_root)}.\n"
         "  Distribute the .AppImage directly (chmod +x, then run). The host needs "
-        "glibc ≥ the effective floor, libGL/libEGL, and an X11/Wayland session; no "
-        "FUSE is required (static-FUSE runtime embedded)."
+        "glibc ≥ the effective floor, libGL/libEGL, and an X11/Wayland session.\n"
+        "  No libfuse2 package is required (static-FUSE runtime embedded). If the "
+        "host lacks kernel FUSE (/dev/fuse) — e.g. some containers/CI — run it "
+        "with --appimage-extract-and-run (or APPIMAGE_EXTRACT_AND_RUN=1)."
     )
     return result
 
 
 def _assemble(config, lock, project_root, *, arch, no_cache) -> Path:
     try:
-        return build_appdir(
-            config, lock, project_root, arch=arch, no_cache=no_cache
-        )
+        return build_appdir(config, lock, project_root, arch=arch, no_cache=no_cache)
     except AppDirError as exc:
         raise ToolchainError(str(exc)) from exc
 

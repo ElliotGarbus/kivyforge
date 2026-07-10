@@ -20,9 +20,17 @@ class TestRenderApprun:
         assert 'SDL_VIDEO_WAYLAND_WMCLASS="org.example.app"' in src
         assert 'exec "$HERE/usr/python/bin/python3" "$HERE/usr/app/main.py" "$@"' in src
 
+    def test_dotted_entry_point_maps_to_nested_path(self):
+        src = launcher.render_apprun(entry_point="pkg.start", app_id="a")
+        assert '"$HERE/usr/app/pkg/start.py"' in src
+
     def test_rejects_bad_entry_point(self):
         with pytest.raises(AppDirError, match="not a valid module name"):
             launcher.render_apprun(entry_point="not-an-ident", app_id="a")
+
+    def test_rejects_dotted_entry_point_with_bad_segment(self):
+        with pytest.raises(AppDirError, match="not a valid module name"):
+            launcher.render_apprun(entry_point="pkg.import", app_id="a")
 
 
 class TestBuildApprun:

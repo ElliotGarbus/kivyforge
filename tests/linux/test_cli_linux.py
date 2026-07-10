@@ -47,9 +47,7 @@ def _write_project(fs: str, *, in_sync: bool = True) -> Path:
         archs=("x86_64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(
-            compute_pyproject_sha256(PYPROJECT) if in_sync else "0" * 64
-        ),
+        pyproject_sha256=(compute_pyproject_sha256(PYPROJECT) if in_sync else "0" * 64),
         tool_kivyforge_schema_version=1,
     )
     (root / "pylock.linux.toml").write_text(dumps(lock))
@@ -142,7 +140,9 @@ class TestPackage:
             assert "AppDir folder" in result.output
             assert (Path(fs) / "build" / "linux" / "My App.AppDir").exists()
 
-    def test_package_appimage_default(self, runner, tmp_path, fake_bundler, monkeypatch):
+    def test_package_appimage_default(
+        self, runner, tmp_path, fake_bundler, monkeypatch
+    ):
         built = {}
 
         def fake_appimage(appdir, output, arch, **k):

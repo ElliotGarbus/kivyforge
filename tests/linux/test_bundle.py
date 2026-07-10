@@ -91,11 +91,15 @@ def faked(monkeypatch):
         dest.write_text("[Desktop Entry]\n")
         calls["desktop"] = dest
 
+    def fake_validate_desktop(dest):
+        calls["validated"] = dest
+
     monkeypatch.setattr(bundle, "stage_runtime", fake_runtime)
     monkeypatch.setattr(bundle, "stage_wheels", fake_wheels)
     monkeypatch.setattr(bundle, "stage_icons", fake_icons)
     monkeypatch.setattr(bundle, "build_apprun", fake_apprun)
     monkeypatch.setattr(bundle, "write_desktop_entry", fake_desktop)
+    monkeypatch.setattr(bundle, "validate_desktop_file", fake_validate_desktop)
     return calls
 
 
@@ -119,18 +123,77 @@ class TestBuildAppdir:
         assert faked["runtime"] == ["x86_64"]
         assert faked["wheels"] == ["x86_64"]
         assert faked["apprun"] == ("main", "org.example.myapp")
+        # The generated .desktop is validated during assembly (in the temp tree,
+        # before the atomic swap-in).
+        assert faked["validated"].name == "org.example.myapp.desktop"
+
+    def test_dotted_entry_point_maps_to_nested_source(self, tmp_path, faked):
+        (tmp_path / "src" / "pkg").mkdir(parents=True)
+        (tmp_path / "src" / "pkg" / "start.py").write_text("print('hi')")
+        text = _PYPROJECT.replace("entry_point='main'", "entry_point='pkg.start'")
+        appdir = bundle.build_appdir(
+            _config(text),
+            _lock(),
+            tmp_path,
+            staging_dir=tmp_path / "out",
+            echo=lambda *a: None,
+        )
+        assert (appdir / "usr" / "app" / "pkg" / "start.py").exists()
+        assert faked["apprun"] == ("pkg.start", "org.example.myapp")
+
+    def test_missing_dotted_entry_point_fails(self, tmp_path, faked):
+        (tmp_path / "src").mkdir()  # no pkg/start.py
+        text = _PYPROJECT.replace("entry_point='main'", "entry_point='pkg.start'")
+        with pytest.raises(AppDirError, match="entry point pkg/start.py not found"):
+            bundle.build_appdir(
+                _config(text),
+                _lock(),
+                tmp_path,
+                staging_dir=tmp_path / "o",
+                echo=lambda *a: None,
+            )
 
     def test_missing_entry_point_fails(self, tmp_path, faked):
         (tmp_path / "src").mkdir()  # no main.py
         with pytest.raises(AppDirError, match="entry point main.py not found"):
             bundle.build_appdir(
-                _config(), _lock(), tmp_path, staging_dir=tmp_path / "o",
+                _config(),
+                _lock(),
+                tmp_path,
+                staging_dir=tmp_path / "o",
                 echo=lambda *a: None,
             )
 
     def test_missing_app_dir_fails(self, tmp_path, faked):
         with pytest.raises(AppDirError, match="not\\s+a directory"):
             bundle.build_appdir(
-                _config(), _lock(), tmp_path, staging_dir=tmp_path / "o",
+                _config(),
+                _lock(),
+                tmp_path,
+                staging_dir=tmp_path / "o",
                 echo=lambda *a: None,
             )
+
+    def test_failed_build_preserves_previous_appdir(self, tmp_path, faked, monkeypatch):
+        root = _project(tmp_path)
+        out = tmp_path / "out"
+        appdir = bundle.build_appdir(
+            _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+        )
+        marker = appdir / "usr" / "app" / "main.py"
+        assert marker.exists()
+
+        # A build that fails mid-assembly must leave the previous, working AppDir
+        # intact and must not litter temp staging trees.
+        def boom(*a, **k):
+            raise AppDirError("simulated fetch failure")
+
+        monkeypatch.setattr(bundle, "stage_runtime", boom)
+        with pytest.raises(AppDirError, match="simulated fetch failure"):
+            bundle.build_appdir(
+                _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+            )
+
+        assert appdir.exists()
+        assert marker.exists()
+        assert not list(out.glob(f".{appdir.name}.tmp-*"))

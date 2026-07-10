@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import subprocess
+
+import pytest
+
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.linux import desktop
+from kivyforge.linux import AppDirError, desktop
 
 _PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.0.0'\ndescription='A demo app'\n"
@@ -48,3 +52,38 @@ class TestRenderDesktopEntry:
         dest = tmp_path / "org.example.myapp.desktop"
         desktop.write_desktop_entry(_config(), dest)
         assert dest.read_text().startswith("[Desktop Entry]")
+
+
+class TestValidateDesktopFile:
+    def test_skips_when_tool_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(desktop.shutil, "which", lambda _: None)
+        # No tool → no-op (must not raise even for a bogus file).
+        desktop.validate_desktop_file(tmp_path / "does-not-matter.desktop")
+
+    def test_passes_on_valid(self, tmp_path, monkeypatch):
+        dest = tmp_path / "org.example.myapp.desktop"
+        desktop.write_desktop_entry(_config(), dest)
+        monkeypatch.setattr(desktop.shutil, "which", lambda _: "/usr/bin/dfv")
+
+        def fake_run(argv, **kw):
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+        desktop.validate_desktop_file(dest)  # no raise
+
+    def test_hard_fails_on_errors(self, tmp_path, monkeypatch):
+        dest = tmp_path / "org.example.myapp.desktop"
+        desktop.write_desktop_entry(_config(), dest)
+        monkeypatch.setattr(desktop.shutil, "which", lambda _: "/usr/bin/dfv")
+
+        def fake_run(argv, **kw):
+            return subprocess.CompletedProcess(
+                argv,
+                1,
+                stdout="error: value ... contains an invalid category",
+                stderr="",
+            )
+
+        monkeypatch.setattr(desktop.subprocess, "run", fake_run)
+        with pytest.raises(AppDirError, match="failed desktop-file-validate"):
+            desktop.validate_desktop_file(dest)

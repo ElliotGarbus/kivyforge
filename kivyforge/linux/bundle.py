@@ -14,6 +14,7 @@ launcher + ``.desktop`` entry. Produces the layout documented in linux-spec:
 from __future__ import annotations
 
 import shutil
+import tempfile
 from pathlib import Path
 
 import click
@@ -22,9 +23,9 @@ from ..artifacts.cache import ArtifactCache
 from ..config.model import Config
 from ..lock.linux import LinuxLockfile
 from . import AppDirError
-from .desktop import write_desktop_entry
+from .desktop import validate_desktop_file, write_desktop_entry
 from .icons import stage_icons
-from .launcher import build_apprun
+from .launcher import build_apprun, entry_point_rel_path
 from .runtime_stage import stage_runtime
 from .wheels_stage import stage_wheels
 
@@ -68,40 +69,57 @@ def build_appdir(
     staging_dir = staging_dir or (project_root / "build" / "linux")
     appdir = staging_dir / f"{config.display_name}.AppDir"
 
+    # Assemble into a temp tree and swap it in only on success, so a failure
+    # mid-assembly (e.g. a transient runtime/wheel fetch error) leaves the
+    # previous, working AppDir untouched instead of a half-written one.
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(dir=staging_dir, prefix=f".{appdir.name}.tmp-"))
+    try:
+        (work / "usr").mkdir(parents=True)
+
+        echo(
+            f"Staging CPython {lock.python_runtime.version} runtime ({target_arch}) ..."
+        )
+        stage_runtime(
+            lock.python_runtime,
+            target_arch,
+            work / "usr" / "python",
+            project_root=project_root,
+            cache=cache,
+            no_cache=no_cache,
+        )
+
+        echo(f"Installing {len(lock.packages)} locked packages ...")
+        stage_wheels(
+            lock.packages,
+            target_arch,
+            work / "usr" / "lib",
+            project_root=project_root,
+            cache=cache,
+            no_cache=no_cache,
+        )
+
+        _copy_app_sources(config, project_root, work / "usr" / "app")
+        stage_icons(config, project_root, work)
+
+        build_apprun(
+            work / "AppRun",
+            entry_point=config.kivy.entry_point,
+            app_id=config.linux_required.app_id,
+        )
+        desktop_path = work / f"{config.linux_required.app_id}.desktop"
+        write_desktop_entry(config, desktop_path)
+        validate_desktop_file(desktop_path)
+    except BaseException:
+        shutil.rmtree(work, ignore_errors=True)
+        raise
+
+    # Swap the freshly built tree in for the previous one. The rename is atomic
+    # within staging_dir; the brief unlink→rename window only exists after a
+    # fully successful build.
     if appdir.exists():
         shutil.rmtree(appdir)
-    (appdir / "usr").mkdir(parents=True)
-
-    echo(f"Staging CPython {lock.python_runtime.version} runtime ({target_arch}) ...")
-    stage_runtime(
-        lock.python_runtime,
-        target_arch,
-        appdir / "usr" / "python",
-        project_root=project_root,
-        cache=cache,
-        no_cache=no_cache,
-    )
-
-    echo(f"Installing {len(lock.packages)} locked packages ...")
-    stage_wheels(
-        lock.packages,
-        target_arch,
-        appdir / "usr" / "lib",
-        project_root=project_root,
-        cache=cache,
-        no_cache=no_cache,
-    )
-
-    _copy_app_sources(config, project_root, appdir / "usr" / "app")
-    stage_icons(config, project_root, appdir)
-
-    build_apprun(
-        appdir / "AppRun",
-        entry_point=config.kivy.entry_point,
-        app_id=config.linux_required.app_id,
-    )
-    write_desktop_entry(config, appdir / f"{config.linux_required.app_id}.desktop")
-
+    work.replace(appdir)
     return appdir
 
 
@@ -112,10 +130,13 @@ def _copy_app_sources(config: Config, project_root: Path, dest: Path) -> None:
             f"[tool.kivy].app_dir points to {config.kivy.app_dir!r}, which is not "
             f"a directory under {project_root}."
         )
-    entry = src / f"{config.kivy.entry_point}.py"
+    # A dotted entry_point (e.g. "pkg.start") maps to a nested source file
+    # (src/pkg/start.py), matching the shared app_dir/entry_point layout.
+    entry_rel = f"{entry_point_rel_path(config.kivy.entry_point)}.py"
+    entry = src / entry_rel
     if not entry.is_file():
         raise AppDirError(
-            f"entry point {config.kivy.entry_point}.py not found in "
+            f"entry point {entry_rel} not found in "
             f"{config.kivy.app_dir}/ (set [tool.kivy].entry_point)."
         )
     shutil.copytree(src, dest, ignore=_IGNORE)

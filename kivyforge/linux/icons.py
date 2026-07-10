@@ -13,6 +13,7 @@ its ``.desktop`` ``Icon=`` key names — always has one to embed.
 
 from __future__ import annotations
 
+import shutil
 import struct
 import zlib
 from pathlib import Path
@@ -51,17 +52,34 @@ def stage_icons(config: Config, project_root: Path, appdir: Path) -> bool:
         dest.parent.mkdir(parents=True, exist_ok=True)
         _resize(image, size).save(dest, format="PNG")
 
-    _resize(image, ROOT_ICON_SIZE).save(appdir / f"{app_id}.png", format="PNG")
+    root_icon = appdir / f"{app_id}.png"
+    _resize(image, ROOT_ICON_SIZE).save(root_icon, format="PNG")
+    _write_diricon(appdir, root_icon)
     return True
 
 
 def _write_default(appdir: Path, app_id: str) -> None:
     """Emit a plain solid-colour root + 256px hicolor icon (no Pillow needed)."""
     png = _solid_png(ROOT_ICON_SIZE, _DEFAULT_RGBA)
-    (appdir / f"{app_id}.png").write_bytes(png)
+    root_icon = appdir / f"{app_id}.png"
+    root_icon.write_bytes(png)
     hicolor = appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps"
     hicolor.mkdir(parents=True, exist_ok=True)
     (hicolor / f"{app_id}.png").write_bytes(png)
+    _write_diricon(appdir, root_icon)
+
+
+def _write_diricon(appdir: Path, root_icon: Path) -> None:
+    """Write ``.DirIcon`` (a copy of the root icon) at the AppDir root.
+
+    ``.DirIcon`` is the freedesktop AppDir convention file managers and AppImage
+    consumers read to show the directory/app icon. ``appimagetool`` generates it
+    from ``Icon=`` at package time, but the ``-f folder`` artifact is consumed
+    directly, so kivyforge writes it too for a consistent icon across both. A
+    plain copy (not a symlink) keeps the folder artifact self-contained and
+    relocatable.
+    """
+    shutil.copyfile(root_icon, appdir / ".DirIcon")
 
 
 def _solid_png(size: int, rgba: tuple[int, int, int, int]) -> bytes:

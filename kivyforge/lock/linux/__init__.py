@@ -9,6 +9,7 @@ the generic package directly.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -36,8 +37,11 @@ from ..wheelruntime import serialize as _ser
 from .profile import (
     LinuxProfile,
     effective_glibc_floor,
+    is_plain_linux_tag,
     linux_wheel_arch,
+    linux_wheel_coverage,
     manylinux_platform_tags,
+    plain_linux_wheel_warning,
     wheel_glibc_level,
 )
 from .runtime import PythonBuildStandaloneProvider
@@ -68,10 +72,13 @@ __all__ = [
     "dumps",
     "effective_glibc_floor",
     "get_linux_resolver",
+    "is_plain_linux_tag",
     "linux_wheel_arch",
+    "linux_wheel_coverage",
     "load",
     "loads",
     "manylinux_platform_tags",
+    "plain_linux_wheel_warning",
     "semantic_equal",
     "wheel_glibc_level",
 ]
@@ -86,6 +93,7 @@ def build_linux_lockfile(
     runtime_provider: RuntimeProvider | None = None,
     offline: bool = False,
     now: datetime | None = None,
+    on_warning: Callable[[str], None] | None = None,
 ) -> LinuxLockfile:
     return build_wheel_runtime_lock(
         _PROFILE,
@@ -96,6 +104,7 @@ def build_linux_lockfile(
         runtime_provider=runtime_provider,
         offline=offline,
         now=now,
+        on_warning=on_warning,
     )
 
 

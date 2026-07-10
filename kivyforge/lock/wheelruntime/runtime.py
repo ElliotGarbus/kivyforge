@@ -17,11 +17,44 @@ GitHub-backed fetcher is validated at the phase stop.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from .model import PythonRuntime, RuntimeArtifact
 
 PBS_PROVIDER_NAME = "python-build-standalone"
+
+# Per-provider archive layout: the sub-directory an extracted runtime archive
+# places its canonical relocatable CPython tree under. Staging (macOS/Linux)
+# consults this by the runtime's recorded ``provider`` field instead of assuming
+# a fixed layout, so the bundler depends only on the canonical contract and a
+# new provider is registered here in one place (spec 07).
+_PROVIDER_ARCHIVE_ROOTS = {
+    PBS_PROVIDER_NAME: "python",
+}
+
+
+def normalized_runtime_root(provider: str, extracted: Path) -> Path:
+    """Return the canonical relocatable CPython root within *extracted*.
+
+    Encapsulates each provider's archive layout so bundlers never hard-code a
+    specific provider's internals. Raises :class:`RuntimeProviderError` for an
+    unregistered provider or an archive that does not match its expected layout.
+    """
+    try:
+        root_name = _PROVIDER_ARCHIVE_ROOTS[provider]
+    except KeyError:
+        raise RuntimeProviderError(
+            f"no runtime staging layout registered for provider {provider!r}; "
+            f"known providers: {', '.join(sorted(_PROVIDER_ARCHIVE_ROOTS))}."
+        ) from None
+    root = extracted / root_name
+    if not root.is_dir():
+        raise RuntimeProviderError(
+            f"the extracted runtime is missing the expected top-level "
+            f"{root_name}/ directory required by the {provider!r} runtime provider."
+        )
+    return root
 
 
 class RuntimeProviderError(Exception):

@@ -4,8 +4,10 @@ Acquires two **pinned build tools** through the shared ``kivyforge/artifacts``
 download / cache / SHA-256-verify machinery — a static ``appimagetool`` and a
 type2 **static-FUSE** runtime file — then runs ``appimagetool --runtime-file``
 to produce the output. Embedding a static-FUSE runtime means the *shipped*
-AppImage needs no host ``libfuse2``; invoking with ``APPIMAGE_EXTRACT_AND_RUN=1``
-means the *build host* needs no FUSE either (WSL2 / containers / CI just work).
+AppImage needs no host ``libfuse2`` *package* (it does still use the kernel's
+``/dev/fuse`` to self-mount unless run with ``--appimage-extract-and-run``);
+invoking appimagetool with ``APPIMAGE_EXTRACT_AND_RUN=1`` means the *build host*
+needs no FUSE at all (WSL2 / containers / CI just work).
 
 The pins are constants here (versioned with kivyforge releases): they are build
 tools, not app dependencies, so they never enter the app's lockfile.

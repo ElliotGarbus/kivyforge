@@ -33,6 +33,27 @@ DEFAULT_LINUX_ARCHS = ("x86_64",)
 # Default freedesktop main category for the generated .desktop entry.
 DEFAULT_DESKTOP_CATEGORIES = ("Utility",)
 
+# The freedesktop **main** categories (desktop-entry menu spec). A generated
+# ``.desktop`` must carry categories from this set so it registers correctly in
+# menus/search; a typo/invalid value is rejected at config time (linux-spec).
+FREEDESKTOP_MAIN_CATEGORIES = frozenset(
+    {
+        "AudioVideo",
+        "Audio",
+        "Video",
+        "Development",
+        "Education",
+        "Game",
+        "Graphics",
+        "Network",
+        "Office",
+        "Science",
+        "Settings",
+        "System",
+        "Utility",
+    }
+)
+
 VALID_ORIENTATIONS = frozenset(
     {"portrait", "portrait-upside-down", "landscape-left", "landscape-right"}
 )

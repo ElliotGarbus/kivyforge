@@ -76,6 +76,51 @@ def linux_wheel_arch(tag: str) -> str | None:
     return match.group("arch") if match else None
 
 
+def is_plain_linux_tag(sub_tag: str) -> bool:
+    """A bare ``linux_<arch>`` platform tag (no manylinux/musllinux prefix).
+
+    Plain ``linux_*`` wheels carry **no glibc promise** — the tag says nothing
+    about which glibc the wheel was built against — so a distro-built one tied
+    to a newer glibc would abort the AppImage on older hosts.
+    """
+    return sub_tag.startswith("linux_")
+
+
+def plain_linux_wheel_warning(wheel_name: str, sub_tag: str) -> str:
+    """The mandated warning for accepting a vendored plain ``linux_*`` wheel."""
+    return (
+        f"warning: accepting vendored wheel {wheel_name} on its {sub_tag} tag; "
+        f"plain linux_* wheels make no glibc promise, so the AppImage may fail "
+        f"on hosts with an older glibc than this wheel's build host. Portability "
+        f"is your call (prefer a manylinux-tagged wheel where available)."
+    )
+
+
+def linux_wheel_coverage(wheel, archs: tuple[str, ...]) -> tuple[set[str], str | None]:
+    """Archs a locked *wheel* covers on Linux, plus an optional warning.
+
+    A manylinux/legacy tag covers its arch unconditionally. A plain
+    ``linux_<arch>`` tag covers **only when the wheel is vendored via
+    find_links** (``wheel.path`` is set) — a plain wheel pulled from
+    PyPI/an extra index makes no glibc promise and does *not* count toward
+    coverage — and yields the mandated warning when it does.
+    """
+    from_find_links = wheel.path is not None
+    covered: set[str] = set()
+    warning: str | None = None
+    for sub in wheel.platform_tag.split("."):
+        arch = linux_wheel_arch(sub)
+        if arch not in archs:
+            continue
+        if is_plain_linux_tag(sub):
+            if from_find_links:
+                covered.add(arch)
+                warning = plain_linux_wheel_warning(wheel.name, sub)
+        else:
+            covered.add(arch)
+    return covered, warning
+
+
 def _subtag_glibc_level(tag: str) -> tuple[int, int] | None:
     """The (major, minor) glibc a single manylinux sub-tag requires, or None."""
     if tag.startswith("musllinux"):
@@ -158,6 +203,13 @@ class LinuxProfile(PlatformLockProfile):
             if arch in archs:
                 covered.add(arch)
         return covered
+
+    def wheel_coverage(
+        self, wheel, archs: tuple[str, ...]
+    ) -> tuple[set[str], str | None]:
+        # Source-gate plain linux_* wheels (accepted only from find_links) and
+        # emit the mandated no-glibc-promise warning (linux-spec coverage rule).
+        return linux_wheel_coverage(wheel, archs)
 
     def runtime_provider(self, config: Config) -> RuntimeProvider:
         return PythonBuildStandaloneProvider()

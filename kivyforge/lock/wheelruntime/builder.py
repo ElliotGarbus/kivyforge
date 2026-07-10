@@ -9,6 +9,7 @@ platform-specific inputs come from the ``PlatformLockProfile``.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -45,6 +46,7 @@ def build_wheel_runtime_lock(
     runtime_provider: RuntimeProvider | None = None,
     offline: bool = False,
     now: datetime | None = None,
+    on_warning: Callable[[str], None] | None = None,
 ) -> WheelRuntimeLock:
     if profile.overlay(config) is None:
         raise WheelRuntimeBuildError(profile.missing_overlay_error())
@@ -59,7 +61,7 @@ def build_wheel_runtime_lock(
 
     find_links_entries = profile.find_links(config)
     try:
-        validate_find_links(root, find_links_entries)
+        validate_find_links(root, find_links_entries, platform=profile.platform)
     except FindLinksError as exc:
         raise WheelRuntimeBuildError(str(exc)) from exc
     find_links = resolve_find_links(root, find_links_entries)
@@ -92,7 +94,9 @@ def build_wheel_runtime_lock(
             offline=offline,
         )
     except WheelResolverError as exc:
-        hint = find_links_resolution_hint(root, find_links_entries, pip_stderr=str(exc))
+        hint = find_links_resolution_hint(
+            root, find_links_entries, pip_stderr=str(exc), platform=profile.platform
+        )
         if hint:
             raise WheelRuntimeBuildError(f"{exc}\n{hint}") from exc
         raise WheelRuntimeBuildError(str(exc)) from exc
@@ -105,7 +109,7 @@ def build_wheel_runtime_lock(
             _locked_wheel_from_resolved(profile, w, project_root=root)
             for w in rp.wheels
         )
-        _check_variants_complete(profile, rp.name, wheels, archs)
+        _check_variants_complete(profile, rp.name, wheels, archs, on_warning=on_warning)
         packages.append(
             LockedPackage(
                 name=rp.name,
@@ -183,16 +187,24 @@ def _check_variants_complete(
     name: str,
     wheels: tuple[LockedWheel, ...],
     archs: tuple[str, ...],
+    *,
+    on_warning: Callable[[str], None] | None = None,
 ) -> None:
     """Fail fast if a compiled package is missing a required variant.
 
     Pure-Python packages (a single ``py3-none-any`` wheel) are always complete.
+    Coverage is source-aware: a platform may decline a wheel (and/or attach a
+    non-fatal warning) based on where it came from — see
+    :meth:`PlatformLockProfile.wheel_coverage`.
     """
     if any(w.is_pure_python for w in wheels):
         return
     covered: set[str] = set()
     for wheel in wheels:
-        covered.update(profile.wheel_covers(wheel.platform_tag, archs))
+        wheel_archs, warning = profile.wheel_coverage(wheel, archs)
+        covered.update(wheel_archs)
+        if warning and on_warning is not None:
+            on_warning(warning)
     missing = [a for a in archs if a not in covered]
     if missing:
         raise WheelRuntimeBuildError(profile.coverage_error(name, missing))

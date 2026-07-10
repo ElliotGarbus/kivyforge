@@ -47,6 +47,18 @@ class PlatformLockProfile(ABC):
         wheel returns its own; an unrelated tag returns the empty set.
         """
 
+    def wheel_coverage(
+        self, wheel, archs: tuple[str, ...]
+    ) -> tuple[set[str], str | None]:
+        """Archs a resolved *wheel* covers, plus an optional non-fatal warning.
+
+        Default: the pure tag→arch rule (:meth:`wheel_covers`) with no warning.
+        A platform may override to gate coverage on the wheel's *source* — e.g.
+        Linux accepts a plain ``linux_*`` (no-glibc-promise) wheel only when it
+        was vendored via ``find_links``, and warns when it does.
+        """
+        return self.wheel_covers(wheel.platform_tag, archs), None
+
     @abstractmethod
     def runtime_provider(self, config: Config) -> RuntimeProvider:
         """The default runtime provider for this platform."""

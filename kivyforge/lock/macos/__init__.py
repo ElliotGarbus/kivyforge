@@ -9,6 +9,7 @@ generic package directly.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -78,6 +79,7 @@ def build_macos_lockfile(
     runtime_provider: RuntimeProvider | None = None,
     offline: bool = False,
     now: datetime | None = None,
+    on_warning: Callable[[str], None] | None = None,
 ) -> MacosLockfile:
     return build_wheel_runtime_lock(
         _PROFILE,
@@ -88,6 +90,7 @@ def build_macos_lockfile(
         runtime_provider=runtime_provider,
         offline=offline,
         now=now,
+        on_warning=on_warning,
     )
 
 

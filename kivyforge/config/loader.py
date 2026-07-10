@@ -22,9 +22,11 @@ from .model import (
     DEFAULT_LINUX_ARCHS,
     DEFAULT_MACOS_ARCHS,
     DEFAULT_SIMULATOR_ARCHS,
+    FREEDESKTOP_MAIN_CATEGORIES,
     MANAGED_INFO_PLIST_KEYS,
     RESERVED_BUILD_SETTINGS,
     SUPPORTED_IOS_SCHEMA_VERSION,
+    SUPPORTED_LINUX_SCHEMA_VERSION,
     SUPPORTED_MACOS_SCHEMA_VERSION,
     VALID_LINUX_ARCHS,
     VALID_MACOS_ARCHS,
@@ -428,7 +430,10 @@ def _parse_macos(
         )
 
     schema_version = _parse_platform_schema_version(
-        macos, finder, key_path="tool.kivy.macos.schema_version"
+        macos,
+        finder,
+        key_path="tool.kivy.macos.schema_version",
+        supported=SUPPORTED_MACOS_SCHEMA_VERSION,
     )
 
     bundle_id = macos.get("bundle_id")
@@ -640,7 +645,10 @@ def _parse_linux(
         )
 
     schema_version = _parse_platform_schema_version(
-        linux, finder, key_path="tool.kivy.linux.schema_version"
+        linux,
+        finder,
+        key_path="tool.kivy.linux.schema_version",
+        supported=SUPPORTED_LINUX_SCHEMA_VERSION,
     )
 
     app_id = linux.get("app_id")
@@ -768,17 +776,32 @@ def _parse_desktop(linux: dict, finder: _LineFinder) -> DesktopConfig:
         return DesktopConfig()
     if not isinstance(raw, list) or not all(isinstance(c, str) and c for c in raw):
         raise ConfigError(
-            "[tool.kivy.linux.desktop].categories must be a list of non-empty "
-            "strings",
+            "[tool.kivy.linux.desktop].categories must be a list of non-empty strings",
             key_path="tool.kivy.linux.desktop.categories",
             line=finder.line("categories"),
+        )
+    # Categories must be freedesktop *main* categories (linux-spec); reject typos
+    # here so an invalid value never ships in a .desktop that breaks menu/search
+    # integration (also enforced by desktop-file-validate at build/package time).
+    unknown = [c for c in raw if c not in FREEDESKTOP_MAIN_CATEGORIES]
+    if unknown:
+        valid = ", ".join(sorted(FREEDESKTOP_MAIN_CATEGORIES))
+        raise ConfigError(
+            f"invalid [tool.kivy.linux.desktop].categories value(s): "
+            f"{', '.join(unknown)}",
+            key_path="tool.kivy.linux.desktop.categories",
+            line=finder.line("categories"),
+            hint=f"use freedesktop main categories: {valid}.",
         )
     return DesktopConfig(categories=tuple(raw) or DEFAULT_DESKTOP_CATEGORIES)
 
 
 def _parse_platform_schema_version(
-    table: dict, finder: _LineFinder, *, key_path: str
+    table: dict, finder: _LineFinder, *, key_path: str, supported: int
 ) -> int:
+    # Each platform overlay carries its *own* schema_version and evolves
+    # independently (spec 01), so the ceiling is the caller's platform constant
+    # — never another platform's (e.g. Linux must not be gated by the macOS max).
     schema_version = table.get("schema_version")
     if schema_version is None:
         raise ConfigError(
@@ -791,10 +814,10 @@ def _parse_platform_schema_version(
             key_path=key_path,
             line=finder.line("schema_version"),
         )
-    if schema_version > SUPPORTED_MACOS_SCHEMA_VERSION:
+    if schema_version > supported:
         raise ConfigError(
             f"schema_version {schema_version} is newer than this kivyforge "
-            f"understands (max {SUPPORTED_MACOS_SCHEMA_VERSION})",
+            f"understands (max {supported})",
             key_path=key_path,
             line=finder.line("schema_version"),
             hint="upgrade kivyforge.",
@@ -860,7 +883,9 @@ def _parse_platform_find_links(
             )
         normalized = normpath(path).replace("\\", "/")
         if project_root is not None:
-            _validate_find_link_scope(project_root, normalized, finder)
+            _validate_find_link_scope(
+                project_root, normalized, finder, key_path=key_path
+            )
         out.append(normalized)
     return out
 
@@ -1063,7 +1088,11 @@ def _repo_root(start: Path) -> Path | None:
 
 
 def _validate_find_link_scope(
-    project_root: Path, entry: str, finder: _LineFinder
+    project_root: Path,
+    entry: str,
+    finder: _LineFinder,
+    *,
+    key_path: str = "tool.kivy.ios.find_links",
 ) -> None:
     """Constrain find_links to repo-relative locations.
 
@@ -1072,6 +1101,8 @@ def _validate_find_link_scope(
     within that repository (e.g. a shared ``examples/wheels/`` reached from a
     nested ``examples/<group>/<app>/`` via ``../../wheels``). This keeps wheels
     inside the tree while supporting one shared wheelhouse for grouped examples.
+    ``key_path`` names the offending overlay so the error points at the right
+    platform (find_links is a shared iOS/macOS/Linux surface).
     """
     resolved = (project_root / entry).resolve()
     root = project_root.resolve()
@@ -1085,10 +1116,10 @@ def _validate_find_link_scope(
     raise ConfigError(
         "find_links entries must stay within the project directory, a sibling "
         "directory under the same parent, or the enclosing repository",
-        key_path="tool.kivy.ios.find_links",
+        key_path=key_path,
         line=finder.line("find_links"),
         hint='e.g. "wheels" inside the project, "../wheels" for a sibling dir, '
-        'or "../../wheels/ios" for a shared examples wheelhouse.',
+        'or "../../wheels" for a shared examples wheelhouse.',
     )
 
 

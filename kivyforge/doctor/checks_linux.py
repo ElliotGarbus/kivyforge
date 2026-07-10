@@ -22,7 +22,7 @@ from ..lock.find_links import find_links_doctor_detail
 from ..lock.linux import (
     LinuxLockfile,
     effective_glibc_floor,
-    linux_wheel_arch,
+    linux_wheel_coverage,
 )
 from ..lock.linux.runtime import DEFAULT_GLIBC_FLOOR
 from ..project.icon import APP_ICON_SIZE, icon_source_problem
@@ -88,9 +88,7 @@ def check_display_session(probe: Probe) -> CheckResult:
 # ---- project checks -----------------------------------------------------
 
 
-def check_linux_glibc_floor(
-    config: Config, lock: LinuxLockfile | None
-) -> CheckResult:
+def check_linux_glibc_floor(config: Config, lock: LinuxLockfile | None) -> CheckResult:
     declared = config.linux_required.glibc_floor
     runtime_floor = (lock.python_runtime.floor if lock else None) or DEFAULT_GLIBC_FLOOR
     if declared and _ver_tuple(declared) < _ver_tuple(runtime_floor):
@@ -125,15 +123,18 @@ def check_linux_arch_coverage(
             hint="re-run `kivyforge lock -p linux` after setting archs.",
         )
 
+    plain_linux_warnings: list[str] = []
     for pkg in lock.packages:
         if any(w.is_pure_python for w in pkg.wheels):
             continue
+        # Source-aware coverage: a plain linux_* wheel counts only when vendored
+        # via find_links, and yields the mandated no-glibc-promise warning.
         covered: set[str] = set()
         for wheel in pkg.wheels:
-            for sub in wheel.platform_tag.split("."):
-                arch = linux_wheel_arch(sub)
-                if arch in archs:
-                    covered.add(arch)
+            wheel_archs, warning = linux_wheel_coverage(wheel, archs)
+            covered.update(wheel_archs)
+            if warning:
+                plain_linux_warnings.append(f"{pkg.name}: {warning}")
         missing = [a for a in archs if a not in covered]
         if missing:
             return CheckResult(
@@ -144,6 +145,13 @@ def check_linux_arch_coverage(
                 "[tool.kivy.linux].glibc_floor or supply it via "
                 "extra_index_urls/find_links, then re-lock.",
             )
+    if plain_linux_warnings:
+        return CheckResult(
+            "Architecture coverage",
+            Status.WARN,
+            f"covers {', '.join(archs)} but relies on vendored plain linux_* wheel(s)",
+            hint="; ".join(plain_linux_warnings),
+        )
     return CheckResult(
         "Architecture coverage", Status.PASS, f"all deps cover {', '.join(archs)}"
     )
@@ -191,7 +199,7 @@ def check_linux_find_links(config: Config, project_root: Path) -> CheckResult:
     ok: list[str] = []
     for entry in entries:
         path = (root / entry).resolve()
-        detail, hint = find_links_doctor_detail(root, entry, path)
+        detail, hint = find_links_doctor_detail(root, entry, path, platform="linux")
         if not path.is_dir():
             problems.append((detail, hint))
         elif not any(path.glob("*.whl")):

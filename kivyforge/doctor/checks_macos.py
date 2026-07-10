@@ -80,7 +80,7 @@ def check_macos_find_links(config: Config, project_root: Path) -> CheckResult:
     ok: list[str] = []
     for entry in entries:
         path = (root / entry).resolve()
-        detail, hint = find_links_doctor_detail(root, entry, path)
+        detail, hint = find_links_doctor_detail(root, entry, path, platform="macos")
         if not path.is_dir():
             problems.append((detail, hint))
         elif not any(path.glob("*.whl")):

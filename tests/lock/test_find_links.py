@@ -61,6 +61,23 @@ class TestValidateFindLinks:
         with pytest.raises(FindLinksError, match="kivyforge lock"):
             validate_find_links(tmp_path, ("wheels",))
 
+    def test_default_platform_is_ios(self, tmp_path):
+        with pytest.raises(FindLinksError, match=r"\[tool\.kivy\.ios\]\.find_links"):
+            validate_find_links(tmp_path, ("wheels",))
+
+    def test_linux_platform_wording(self, tmp_path):
+        with pytest.raises(FindLinksError) as exc:
+            validate_find_links(tmp_path, ("wheels",), platform="linux")
+        msg = str(exc.value)
+        assert "[tool.kivy.linux].find_links" in msg
+        assert "ios" not in msg.lower()
+        assert "linux wheels" in msg
+
+    def test_macos_platform_wording(self, tmp_path):
+        with pytest.raises(FindLinksError) as exc:
+            validate_find_links(tmp_path, ("wheels",), platform="macos")
+        assert "[tool.kivy.macos].find_links" in str(exc.value)
+
 
 class TestFindLinksResolutionHint:
     def test_empty_entries_returns_none(self, tmp_path):

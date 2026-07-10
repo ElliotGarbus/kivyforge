@@ -7,11 +7,21 @@ import pytest
 from kivyforge.lock.linux import (
     LinuxResolverError,
     get_linux_resolver,
+    is_plain_linux_tag,
     linux_wheel_arch,
+    linux_wheel_coverage,
     manylinux_platform_tags,
     wheel_glibc_level,
 )
 from kivyforge.lock.linux.profile import LinuxProfile
+from kivyforge.lock.model import LockedWheel
+
+
+def _wheel(tag: str, *, vendored: bool) -> LockedWheel:
+    name = f"foo-1.0-cp312-cp312-{tag}.whl"
+    if vendored:
+        return LockedWheel(name=name, sha256="x", path=f"wheels/{name}")
+    return LockedWheel(name=name, sha256="x", url=f"https://pypi.example/{name}")
 
 
 class TestManylinuxTags:
@@ -63,6 +73,50 @@ class TestWheelCovers:
     def test_musllinux_never_covers(self):
         profile = LinuxProfile()
         assert profile.wheel_covers("musllinux_1_1_x86_64", ("x86_64",)) == set()
+
+
+class TestPlainLinuxTag:
+    def test_plain_linux_is_plain(self):
+        assert is_plain_linux_tag("linux_x86_64")
+
+    def test_manylinux_is_not_plain(self):
+        assert not is_plain_linux_tag("manylinux2014_x86_64")
+        assert not is_plain_linux_tag("manylinux_2_17_x86_64")
+
+    def test_musllinux_is_not_plain(self):
+        assert not is_plain_linux_tag("musllinux_1_1_x86_64")
+
+
+class TestWheelCoverageSourceGating:
+    def test_manylinux_covers_regardless_of_source(self):
+        covered, warning = linux_wheel_coverage(
+            _wheel("manylinux2014_x86_64", vendored=False), ("x86_64",)
+        )
+        assert covered == {"x86_64"}
+        assert warning is None
+
+    def test_plain_linux_from_pypi_does_not_cover(self):
+        covered, warning = linux_wheel_coverage(
+            _wheel("linux_x86_64", vendored=False), ("x86_64",)
+        )
+        assert covered == set()
+        assert warning is None
+
+    def test_plain_linux_from_find_links_covers_with_warning(self):
+        covered, warning = linux_wheel_coverage(
+            _wheel("linux_x86_64", vendored=True), ("x86_64",)
+        )
+        assert covered == {"x86_64"}
+        assert warning is not None
+        assert "no glibc promise" in warning
+
+    def test_profile_delegates_to_source_gated_coverage(self):
+        profile = LinuxProfile()
+        covered, warning = profile.wheel_coverage(
+            _wheel("linux_x86_64", vendored=False), ("x86_64",)
+        )
+        assert covered == set()
+        assert warning is None
 
 
 class TestGlibcLevel:
