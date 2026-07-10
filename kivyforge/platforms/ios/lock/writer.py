@@ -8,15 +8,16 @@ wheels by filename) so diffs across runs show only real changes.
 
 from __future__ import annotations
 
+from kivyforge.lock.pep751 import arr as _arr
+from kivyforge.lock.pep751 import b as _b
+from kivyforge.lock.pep751 import emit_package as _emit_package
+from kivyforge.lock.pep751 import s as _s
+
 from .model import (
     LockedSwiftPackage,
     LockedXcframework,
     Lockfile,
 )
-from .pep751 import arr as _arr
-from .pep751 import b as _b
-from .pep751 import emit_package as _emit_package
-from .pep751 import s as _s
 
 
 def dumps(lock: Lockfile) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config.model import Config
-from ..lock.model import Lockfile
+from ..platforms.ios.lock.model import Lockfile
 from . import checks as C
 from . import checks_common as CC
 from .probe import Probe

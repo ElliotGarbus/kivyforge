@@ -12,7 +12,7 @@ import pytest
 
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.config.model import XcframeworkDep
-from kivyforge.lock.xcframework import (
+from kivyforge.platforms.ios.lock.xcframework import (
     XcframeworkResolverError,
     resolve_xcframeworks,
 )

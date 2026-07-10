@@ -21,9 +21,10 @@ from ..doctor import (
     run_checks,
     worst_status,
 )
-from ..lock import LockError, load
+from ..lock import LockError
 from ..platforms import PlatformResolutionError
 from ..platforms import resolve_target as _resolve_platform
+from ..platforms.ios.lock import load
 from ..platforms.linux.doctor import run_linux_checks
 from ..platforms.linux.lock import load as load_linux_lock
 from ..platforms.macos.doctor import run_macos_checks

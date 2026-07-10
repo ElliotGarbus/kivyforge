@@ -8,7 +8,8 @@ from pathlib import Path
 import click
 
 from ..config import ConfigError, load_config
-from ..lock import LockError, is_in_sync, load
+from ..lock import LockError, is_in_sync
+from ..platforms.ios.lock import load
 from ..xcode.commands import default_simulator_arch, product_app_path
 from ._common import LOCKFILE_NAME, ToolchainError, find_pyproject
 

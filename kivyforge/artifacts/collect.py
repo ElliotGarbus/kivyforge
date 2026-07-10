@@ -15,7 +15,8 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from ..lock.model import LockedWheel, Lockfile
+from ..lock.model import LockedWheel
+from ..platforms.ios.lock.model import Lockfile
 from .cache import ArtifactCache
 from .download import Downloader, fetch_artifact
 from .frameworks import (

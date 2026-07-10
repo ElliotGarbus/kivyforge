@@ -17,7 +17,7 @@ def runner():
 @pytest.fixture(autouse=True)
 def patch_backends(monkeypatch, fake_resolver, fake_python_provider):
     """Make the CLI use the hermetic fakes instead of pip/python.org."""
-    import kivyforge.lock.builder as builder
+    import kivyforge.platforms.ios.lock.builder as builder
 
     real_build = builder.build_lockfile
 

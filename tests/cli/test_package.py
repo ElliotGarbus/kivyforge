@@ -11,13 +11,13 @@ from click.testing import CliRunner
 from kivyforge.cli import build as build_cli
 from kivyforge.cli._common import ToolchainError
 from kivyforge.cli.package import _resolve_format, package
-from kivyforge.lock import (
+from kivyforge.platforms.ios import IosPlatform
+from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
     compute_pyproject_sha256,
     dumps,
 )
-from kivyforge.platforms.ios import IosPlatform
 
 PYPROJECT = (
     textwrap.dedent(

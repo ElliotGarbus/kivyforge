@@ -8,7 +8,8 @@ import click
 
 from ..artifacts.download import DownloadError, fetch_artifact
 from ..artifacts.verify import HashMismatch
-from ..lock import LockError, load
+from ..lock import LockError
+from ..platforms.ios.lock import load
 from ._common import LOCKFILE_NAME, ToolchainError, find_pyproject, lockfile_path
 
 

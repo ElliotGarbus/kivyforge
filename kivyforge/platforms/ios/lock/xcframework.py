@@ -19,18 +19,19 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..artifacts.frameworks import (
+from kivyforge.artifacts.frameworks import (
     FrameworkConflict,
     extract_xcframework_archive,
     read_xcframework_slices,
 )
-from ..artifacts.verify import sha256_file
-from ..config.model import XcframeworkDep
-from .find_links import FindLinksError, wheel_path_from_project_root
+from kivyforge.artifacts.verify import sha256_file
+from kivyforge.config.model import XcframeworkDep
+from kivyforge.lock.find_links import FindLinksError, wheel_path_from_project_root
+
 from .model import LockedXcframework
 
 if TYPE_CHECKING:
-    from ..artifacts.download import Downloader
+    from kivyforge.artifacts.download import Downloader
 
 
 class XcframeworkResolverError(Exception):
@@ -121,7 +122,7 @@ def _download(
 ) -> Path:
     # Imported lazily: artifacts.download imports lock.find_links, so a top-level
     # import here would close an import cycle (lock <-> artifacts).
-    from ..artifacts.download import DownloadError, UrllibDownloader
+    from kivyforge.artifacts.download import DownloadError, UrllibDownloader
 
     if offline:
         raise XcframeworkResolverError(

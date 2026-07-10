@@ -17,7 +17,8 @@ from pathlib import Path
 import click
 
 from ..config import ConfigError, load_config
-from ..lock import (
+from ..lock.reader import LockError, is_in_sync
+from ..platforms.ios.lock import (
     BuildError,
     build_lockfile,
     diff_summary,
@@ -25,7 +26,6 @@ from ..lock import (
     load,
     semantic_equal,
 )
-from ..lock.reader import LockError, is_in_sync
 from ._common import ToolchainError, lockfile_path_for
 from ._platform import platform_option, resolve_target
 

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..config.model import SwiftPackageDep
+from kivyforge.config.model import SwiftPackageDep
 
 
 class SpmResolverError(Exception):

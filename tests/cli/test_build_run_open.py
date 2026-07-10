@@ -15,7 +15,7 @@ from kivyforge.cli import run as run_mod
 from kivyforge.cli.build import build
 from kivyforge.cli.open_cmd import open_
 from kivyforge.cli.run import run as run_cmd
-from kivyforge.lock import (
+from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
     compute_pyproject_sha256,

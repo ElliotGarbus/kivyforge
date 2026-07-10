@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from kivyforge.lock.reader import LockError, loads
+from kivyforge.platforms.ios.lock.reader import LockError, loads
 
 # A minimal, valid lockfile body that every corruption test mutates.
 VALID = """\

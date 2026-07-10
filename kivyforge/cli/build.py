@@ -23,7 +23,8 @@ from ..artifacts.collect import CollectError, collect_artifacts
 from ..artifacts.wheels import BuildSlice
 from ..config import ConfigError, load_config
 from ..icon import IconSourceError
-from ..lock import LockError, is_in_sync, load
+from ..lock import LockError, is_in_sync
+from ..platforms.ios.lock import load
 from ..platforms.linux.cli import linux_build
 from ..platforms.macos.cli import macos_build
 from ..project.materialize import materialize_project

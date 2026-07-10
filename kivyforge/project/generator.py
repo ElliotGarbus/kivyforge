@@ -16,7 +16,7 @@ from pbxproj import XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import FileOptions, ProjectFiles, TreeType
 
 from ..config.model import Config
-from ..lock.model import LockedSwiftPackage, LockedXcframework
+from ..platforms.ios.lock.model import LockedSwiftPackage, LockedXcframework
 from .buildsettings import (
     BUILD_PYTHON_SCRIPT,
     managed_settings,

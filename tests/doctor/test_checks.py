@@ -10,7 +10,7 @@ from kivyforge.config import load_config_from_text
 from kivyforge.doctor import checks as C
 from kivyforge.doctor.result import Status, worst_status
 from kivyforge.doctor.runner import run_checks
-from kivyforge.lock import LockedSwiftPackage, Lockfile, PythonXcframework
+from kivyforge.platforms.ios.lock import LockedSwiftPackage, Lockfile, PythonXcframework
 
 from .conftest import FakeProbe
 

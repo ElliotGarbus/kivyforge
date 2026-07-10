@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config.model import Config
-from ..lock.model import LockedSwiftPackage, LockedXcframework
+from ..platforms.ios.lock.model import LockedSwiftPackage, LockedXcframework
 from .assets import generate_asset_catalog, write_launch_screen
 from .entitlements import write_entitlements
 from .generator import XcodeProjectGenerator

@@ -8,7 +8,7 @@ import tarfile
 from pathlib import Path
 
 from kivyforge.artifacts.cache import ArtifactCache
-from kivyforge.lock.python_meta import (
+from kivyforge.platforms.ios.lock.python_meta import (
     PythonOrgProvider,
     PythonXcframeworkError,
     archive_filename,

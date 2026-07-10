@@ -20,8 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..artifacts.cache import ArtifactCache
-from ..artifacts.verify import sha256_file
+from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.artifacts.verify import sha256_file
 
 # python.org publishes the official iOS xcframework from 3.15.0b1 onward.
 PYTHON_ORG_URL = "https://www.python.org/ftp/python/{version}/python-{version}-iOS-XCframework.tar.gz"

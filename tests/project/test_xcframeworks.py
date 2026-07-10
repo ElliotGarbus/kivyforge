@@ -7,7 +7,7 @@ import plistlib
 from pbxproj import XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import TreeType
 
-from kivyforge.lock.model import LockedXcframework
+from kivyforge.platforms.ios.lock.model import LockedXcframework
 from kivyforge.project.generator import XcodeProjectGenerator
 from kivyforge.project.materialize import materialize_project
 

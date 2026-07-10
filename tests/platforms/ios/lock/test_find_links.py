@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 
 from kivyforge.config import load_config_from_text
-from kivyforge.lock import BuildError, build_lockfile
 from kivyforge.lock.find_links import (
     FindLinksError,
     find_links_doctor_detail,
     find_links_resolution_hint,
     validate_find_links,
 )
+from kivyforge.platforms.ios.lock import BuildError, build_lockfile
 
 from .conftest import FakePythonProvider, FakeResolver
 
@@ -193,7 +193,7 @@ class TestBuildUsesFindLinksValidation:
         assert resolver.calls == []
 
     def test_normalize_sibling_wheel_path(self, tmp_path):
-        from kivyforge.lock.builder import _normalize_wheel_source
+        from kivyforge.platforms.ios.lock.builder import _normalize_wheel_source
 
         app = tmp_path / "app"
         shared = tmp_path / "wheels"
@@ -205,7 +205,7 @@ class TestBuildUsesFindLinksValidation:
         assert path == "../wheels/kivy-1.whl"
 
     def test_normalize_shared_wheelhouse_within_repo(self, tmp_path):
-        from kivyforge.lock.builder import _normalize_wheel_source
+        from kivyforge.platforms.ios.lock.builder import _normalize_wheel_source
 
         (tmp_path / ".git").mkdir()
         app = tmp_path / "examples" / "mobile" / "hello-kivy"

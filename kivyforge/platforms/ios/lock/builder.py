@@ -8,27 +8,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlparse
 
-from .. import __version__
-from ..artifacts.verify import sha256_file
-from ..config.model import Config, SwiftPackageDep, XcframeworkDep
-from .find_links import (
+from kivyforge import __version__
+from kivyforge.artifacts.verify import sha256_file
+from kivyforge.config.model import Config, SwiftPackageDep, XcframeworkDep
+from kivyforge.lock.find_links import (
     FindLinksError,
     find_links_resolution_hint,
     resolve_find_links,
     validate_find_links,
     wheel_path_from_project_root,
 )
-from .model import (
+from kivyforge.lock.model import (
     LockedPackage,
-    LockedSwiftPackage,
     LockedWheel,
-    Lockfile,
     PackageDep,
-    PythonXcframework,
     canonical_name,
 )
+from kivyforge.lock.reader import compute_pyproject_sha256
+
+from .model import (
+    LockedSwiftPackage,
+    Lockfile,
+    PythonXcframework,
+)
 from .python_meta import PythonOrgProvider, PythonXcframeworkProvider
-from .reader import compute_pyproject_sha256
 from .resolver import Resolver, ResolverError, get_resolver
 from .spm import (
     ResolvedSwiftPackage,
@@ -39,7 +42,7 @@ from .spm import (
 from .xcframework import XcframeworkResolverError, resolve_xcframeworks
 
 if TYPE_CHECKING:
-    from ..artifacts.download import Downloader
+    from kivyforge.artifacts.download import Downloader
 
 
 class BuildError(Exception):

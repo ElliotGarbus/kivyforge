@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 from kivyforge.cli import build as build_cli
 from kivyforge.cli.build import build
-from kivyforge.lock import (
+from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
     compute_pyproject_sha256,

@@ -16,9 +16,8 @@ from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.collect import collect_artifacts
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.artifacts.wheels import BuildSlice
-from kivyforge.lock.model import (
-    LockedPackage,
-    LockedWheel,
+from kivyforge.lock.model import LockedPackage, LockedWheel
+from kivyforge.platforms.ios.lock.model import (
     LockedXcframework,
     Lockfile,
     PythonXcframework,

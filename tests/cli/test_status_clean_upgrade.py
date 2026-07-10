@@ -14,7 +14,7 @@ from kivyforge.cli.clean import clean
 from kivyforge.cli.doctor import doctor
 from kivyforge.cli.status import _humanize, status
 from kivyforge.cli.upgrade import upgrade
-from kivyforge.lock import (
+from kivyforge.platforms.ios.lock import (
     LockedXcframework,
     Lockfile,
     PythonXcframework,

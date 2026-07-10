@@ -7,9 +7,15 @@ from datetime import UTC, datetime
 import pytest
 
 from kivyforge.config import load_config_from_text
-from kivyforge.lock import BuildError, build_lockfile, dumps, loads, semantic_equal
 from kivyforge.lock.reader import compute_pyproject_sha256, is_in_sync
-from tests.lock.conftest import FakeResolver
+from kivyforge.platforms.ios.lock import (
+    BuildError,
+    build_lockfile,
+    dumps,
+    loads,
+    semantic_equal,
+)
+from tests.platforms.ios.lock.conftest import FakeResolver
 
 
 def _build(toml, resolver, provider, **kw):
@@ -98,7 +104,7 @@ class TestSimulatorArchs:
     def test_arm64_only_does_not_require_x86_64(self, fake_python_provider):
         # A resolver that has no x86_64 slice at all must still satisfy an
         # arm64-only project (the dropped slice isn't a targeted one).
-        from tests.lock.conftest import FakeResolver
+        from tests.platforms.ios.lock.conftest import FakeResolver
 
         resolver = FakeResolver(drop_slice="ios_13_0_x86_64_iphonesimulator")
         lock = _build(self._ARM64_ONLY, resolver, fake_python_provider)
@@ -111,14 +117,14 @@ class TestSimulatorArchs:
 
 class TestFailFast:
     def test_missing_slice_fails(self, minimal_pyproject, fake_python_provider):
-        from tests.lock.conftest import FakeResolver
+        from tests.platforms.ios.lock.conftest import FakeResolver
 
         resolver = FakeResolver(drop_slice="ios_13_0_x86_64_iphonesimulator")
         with pytest.raises(BuildError, match="missing iOS wheel slice"):
             _build(minimal_pyproject, resolver, fake_python_provider)
 
     def test_deployment_target_below_floor(self, fake_resolver):
-        from tests.lock.conftest import FakePythonProvider
+        from tests.platforms.ios.lock.conftest import FakePythonProvider
 
         toml = (
             "[project]\nname='a'\nversion='1'\ndependencies=[]\n"
@@ -227,7 +233,7 @@ class TestSwiftPackages:
         assert lock.swift_packages[0].revision is None
 
     def test_resolver_error_becomes_build_error(self, fake_python_provider):
-        from kivyforge.lock.spm import SpmResolverError
+        from kivyforge.platforms.ios.lock.spm import SpmResolverError
 
         class Boom:
             def resolve(self, packages, *, project_root, offline=False):

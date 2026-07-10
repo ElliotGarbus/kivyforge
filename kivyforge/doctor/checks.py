@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from ..config.model import Config
 from ..icon import APP_ICON_SIZE, icon_source_problem
 from ..lock.find_links import find_links_doctor_detail
-from ..lock.model import Lockfile
+from ..platforms.ios.lock.model import Lockfile
 from .checks_common import (
     SKIP_NOTE,
     _ver_tuple,

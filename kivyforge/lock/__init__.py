@@ -1,65 +1,42 @@
-"""kivyforge lock layer: resolver backends + ``pylock.ios.toml`` (spec 02)."""
+"""kivyforge shared lock core (spec 02).
+
+Platform-neutral lock building blocks shared by every backend: the PEP 751
+``[[packages]]`` model, the drift check, the neutral pip helpers, and the
+generic wheel+runtime engine (``kivyforge.lock.wheelruntime``). The iOS lock
+surface lives in ``kivyforge.platforms.ios.lock``; the macOS/Linux surfaces in
+``kivyforge.platforms.<os>.lock``.
+"""
 
 from __future__ import annotations
 
-from .builder import BuildError, build_lockfile, diff_summary, semantic_equal
 from .model import (
+    LOCK_VERSION,
     LockedPackage,
-    LockedSwiftPackage,
     LockedWheel,
-    LockedXcframework,
-    Lockfile,
-    PythonXcframework,
+    PackageDep,
+    canonical_name,
 )
-from .reader import LockError, compute_pyproject_sha256, is_in_sync, load, loads
+from .reader import LockError, compute_pyproject_sha256, is_in_sync
 from .resolver import (
-    PipResolver,
-    ResolvedPackage,
-    ResolvedWheel,
-    Resolver,
-    ResolverError,
-    get_resolver,
-    slice_tags,
+    MIN_PIP_VERSION,
+    abi_tags,
+    pip_python_version,
+    pip_version,
+    version_str,
 )
-from .spm import (
-    ResolvedSwiftPackage,
-    SpmResolver,
-    SpmResolverError,
-    XcodeSpmResolver,
-    get_spm_resolver,
-)
-from .writer import dumps
-from .xcframework import XcframeworkResolverError, resolve_xcframeworks
 
 __all__ = [
-    "BuildError",
-    "build_lockfile",
-    "diff_summary",
-    "semantic_equal",
-    "Lockfile",
+    "LOCK_VERSION",
     "LockedPackage",
-    "LockedSwiftPackage",
     "LockedWheel",
-    "LockedXcframework",
-    "PythonXcframework",
+    "PackageDep",
+    "canonical_name",
     "LockError",
     "compute_pyproject_sha256",
     "is_in_sync",
-    "load",
-    "loads",
-    "dumps",
-    "PipResolver",
-    "Resolver",
-    "ResolvedPackage",
-    "ResolvedWheel",
-    "ResolverError",
-    "get_resolver",
-    "slice_tags",
-    "ResolvedSwiftPackage",
-    "SpmResolver",
-    "SpmResolverError",
-    "XcodeSpmResolver",
-    "get_spm_resolver",
-    "XcframeworkResolverError",
-    "resolve_xcframeworks",
+    "MIN_PIP_VERSION",
+    "abi_tags",
+    "pip_python_version",
+    "pip_version",
+    "version_str",
 ]
