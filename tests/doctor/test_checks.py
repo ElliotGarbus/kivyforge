@@ -113,7 +113,7 @@ class TestProjectChecks:
 
     def test_app_icon_fail_wrong_size(self, tmp_path):
         from kivyforge.config import load_config_from_text
-        from tests.project.test_icon import _write_minimal_png
+        from tests.test_icon import _write_minimal_png
 
         (tmp_path / "assets").mkdir()
         _write_minimal_png(tmp_path / "assets" / "icon.png", 100, 100)
@@ -129,7 +129,7 @@ class TestProjectChecks:
 
     def test_app_icon_pass(self, tmp_path):
         from kivyforge.config import load_config_from_text
-        from tests.project.test_icon import _write_minimal_png
+        from tests.test_icon import _write_minimal_png
 
         (tmp_path / "assets").mkdir()
         _write_minimal_png(tmp_path / "assets" / "icon.png", 1024, 1024)

@@ -7,14 +7,13 @@ import json
 import pytest
 from PIL import Image
 
+from kivyforge.icon import IconSourceError
 from kivyforge.project.assets import (
     _parse_hex_color,
     generate_asset_catalog,
     write_launch_screen,
 )
-from kivyforge.project.icon import IconSourceError
-
-from .test_icon import _write_minimal_png
+from tests.test_icon import _write_minimal_png
 
 
 class TestAppIcon:

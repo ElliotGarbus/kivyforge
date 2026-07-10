@@ -19,7 +19,7 @@ import zlib
 from pathlib import Path
 
 from ..config.model import Config
-from ..project.icon import validate_icon_source
+from ..icon import validate_icon_source
 from . import AppDirError
 
 # freedesktop hicolor sizes to emit. The root AppDir icon is the 256px render.

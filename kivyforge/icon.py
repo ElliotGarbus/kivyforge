@@ -1,7 +1,9 @@
-"""Validate ``[tool.kivy.ios.icons].source`` (spec 01).
+"""Validate a configured ``[tool.kivy.<platform>.icons].source`` (spec 01).
 
-Apple's single-size ``AppIcon`` catalog entry must be exactly 1024x1024 PNG.
-kivyforge does not resize - the source file must already match.
+Shared across the iOS, macOS, and Linux backends: the icon source must be an
+existing 1024x1024 PNG. This module only validates the source file; each
+platform decides what to do with it (iOS uses the single-size ``AppIcon``
+catalog entry as-is, macOS/Linux resize into their icon sets).
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
 
 class IconSourceError(Exception):
-    """``[tool.kivy.ios.icons].source`` failed validation."""
+    """A configured ``[tool.kivy.<platform>.icons].source`` failed validation."""
 
 
 def png_dimensions(path: Path) -> tuple[int, int]:
@@ -31,7 +33,7 @@ def validate_icon_source(path: Path) -> None:
     if not path.is_file():
         raise IconSourceError(
             f"app icon not found: {path}\n"
-            "  [tool.kivy.ios.icons].source must point to an existing "
+            "  [tool.kivy.<platform>.icons].source must point to an existing "
             f"{APP_ICON_SIZE}x{APP_ICON_SIZE} PNG."
         )
     try:

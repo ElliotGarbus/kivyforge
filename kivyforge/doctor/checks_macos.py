@@ -12,9 +12,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ..config.model import Config
+from ..icon import APP_ICON_SIZE, icon_source_problem
 from ..lock.find_links import find_links_doctor_detail
 from ..lock.macos import MacosLockfile, wheel_arch
-from ..project.icon import APP_ICON_SIZE, icon_source_problem
 from .checks import _ver_tuple
 from .probe import Probe
 from .result import CheckResult, Status

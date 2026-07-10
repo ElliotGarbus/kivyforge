@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ..config.model import Config
+from ..icon import APP_ICON_SIZE, icon_source_problem
 from ..linux import AppDirError
 from ..linux.appimage import appimagetool_asset, type2_runtime_asset
 from ..linux.desktop import render_desktop_entry
@@ -25,7 +26,6 @@ from ..lock.linux import (
     linux_wheel_coverage,
 )
 from ..lock.linux.runtime import DEFAULT_GLIBC_FLOOR
-from ..project.icon import APP_ICON_SIZE, icon_source_problem
 from .checks import _ver_tuple
 from .probe import Probe
 from .result import CheckResult, Status

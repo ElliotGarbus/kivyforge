@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from ..project.icon import IconSourceError, validate_icon_source
+from ..icon import IconSourceError, validate_icon_source
 from . import AppBundleError
 
 # (pixel size, iconset filename) pairs Apple's iconutil expects. Retina (@2x)

@@ -22,8 +22,8 @@ import click
 from ..artifacts.collect import CollectError, collect_artifacts
 from ..artifacts.wheels import BuildSlice
 from ..config import ConfigError, load_config
+from ..icon import IconSourceError
 from ..lock import LockError, is_in_sync, load
-from ..project.icon import IconSourceError
 from ..project.materialize import materialize_project
 from ..project.staging import StagingError, create_staging
 from ..xcode import (

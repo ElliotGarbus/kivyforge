@@ -304,7 +304,7 @@ class TestPbxprojGeneration:
 
 class TestAssetCatalog:
     def test_catalog_generated_from_icon(self, make_config, project_root):
-        from tests.project.test_icon import _write_minimal_png
+        from tests.test_icon import _write_minimal_png
 
         (project_root / "assets").mkdir()
         _write_minimal_png(project_root / "assets" / "icon.png", 1024, 1024)
@@ -317,7 +317,7 @@ class TestAssetCatalog:
     def test_appicon_name_set_when_icon_configured(self, make_config, project_root):
         # Without ASSETCATALOG_COMPILER_APPICON_NAME the catalog compiles but
         # Xcode assigns no app icon, so the generated AppIcon set is ignored.
-        from tests.project.test_icon import _write_minimal_png
+        from tests.test_icon import _write_minimal_png
 
         (project_root / "assets").mkdir()
         _write_minimal_png(project_root / "assets" / "icon.png", 1024, 1024)
