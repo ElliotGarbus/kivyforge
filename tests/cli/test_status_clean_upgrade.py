@@ -47,6 +47,30 @@ PYPROJECT = (
     + "\n"
 )
 
+DESKTOP_ONLY_PYPROJECT = (
+    textwrap.dedent(
+        """
+        [project]
+        name = "myapp"
+        version = "1.0.0"
+        requires-python = ">=3.13"
+        dependencies = ["kivy"]
+
+        [tool.kivy]
+        app_dir = "src"
+        display_name = "My App"
+
+        [tool.kivy.linux]
+        schema_version = 1
+        app_id = "org.example.myapp"
+
+        [tool.kivy.linux.python]
+        version = "3.13.14"
+        """
+    ).strip()
+    + "\n"
+)
+
 
 def _lock(text: str, *, xcframeworks=()) -> Lockfile:
     return Lockfile(
@@ -176,6 +200,37 @@ class TestClean:
             assert result.exit_code == 0, result.output
             assert not (Path(fs) / "myapp-ios").exists()
             assert "Removed myapp-ios/" in result.output
+
+    def test_removes_linux_and_macos_trees(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            root = Path(fs)
+            (root / "build" / "macos").mkdir(parents=True)
+            (root / "build" / "linux" / "My App.AppDir").mkdir(parents=True)
+            (root / "dist" / "linux").mkdir(parents=True)
+            (root / "dist" / "linux" / "x.AppImage").write_text("x")
+            result = runner.invoke(clean, [])
+            assert result.exit_code == 0, result.output
+            assert not (root / "build" / "macos").exists()
+            assert not (root / "build" / "linux").exists()
+            assert not (root / "dist" / "linux").exists()
+            # Emptied build/ and dist/ husks are pruned.
+            assert not (root / "build").exists()
+            assert not (root / "dist").exists()
+            assert "Removed build/macos/" in result.output
+            assert "Removed build/linux/" in result.output
+            assert "Removed dist/linux/" in result.output
+
+    def test_desktop_only_project_cleans(self, runner, tmp_path):
+        """A project with no [tool.kivy.ios] overlay must still clean."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            (Path(fs) / "pyproject.toml").write_text(DESKTOP_ONLY_PYPROJECT)
+            root = Path(fs)
+            (root / "build" / "linux" / "My App.AppDir").mkdir(parents=True)
+            result = runner.invoke(clean, [])
+            assert result.exit_code == 0, result.output
+            assert not (root / "build" / "linux").exists()
+            assert "Removed build/linux/" in result.output
 
     def test_nothing_to_clean(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

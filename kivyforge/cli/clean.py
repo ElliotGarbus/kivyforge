@@ -23,7 +23,7 @@ from ._common import PYPROJECT_NAME, ToolchainError
     "--project-only",
     is_flag=True,
     default=False,
-    help="Only the generated <app>-ios/ folder (default).",
+    help="Only the generated project artifacts, not the artifact cache (default).",
 )
 def clean(flush_cache: bool, project_only: bool) -> None:
     """Remove generated artifacts in the project folder."""
@@ -32,12 +32,23 @@ def clean(flush_cache: bool, project_only: bool) -> None:
 
     if pyproject.is_file():
         try:
-            config = load_config(pyproject)
+            # A desktop-only project has no [tool.kivy.ios] overlay; clean must
+            # work for any target, so it requires no platform overlay at all.
+            config = load_config(pyproject, require_ios=False)
         except ConfigError as exc:
             raise ToolchainError(exc.format()) from exc
-        # Generated staging trees: iOS <app>-ios/ and macOS build/macos/.
-        targets = [cwd / f"{config.app_slug}-ios", cwd / "build" / "macos"]
+        # Every platform's generated staging/output trees: iOS <app>-ios/,
+        # macOS build/macos/, and Linux build/linux/ + dist/linux/.
+        targets = [
+            cwd / f"{config.app_slug}-ios",
+            cwd / "build" / "macos",
+            cwd / "build" / "linux",
+            cwd / "dist" / "linux",
+        ]
         removed = [t for t in targets if _remove(t)]
+        # Drop build/ and dist/ if emptied so no stray husks are left behind.
+        for parent in (cwd / "build", cwd / "dist"):
+            _remove_if_empty(parent)
         if removed:
             for t in removed:
                 click.echo(f"Removed {t.relative_to(cwd)}/")
@@ -61,3 +72,8 @@ def _remove(path: Path) -> bool:
         shutil.rmtree(path)
         return True
     return False
+
+
+def _remove_if_empty(path: Path) -> None:
+    if path.is_dir() and not any(path.iterdir()):
+        path.rmdir()
