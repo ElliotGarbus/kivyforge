@@ -12,8 +12,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from kivyforge.config.model import Config
-from kivyforge.doctor import checks as C
-from kivyforge.doctor.checks import _ver_tuple
+from kivyforge.doctor import checks_common as C
+from kivyforge.doctor.checks_common import _ver_tuple
 from kivyforge.doctor.probe import Probe
 from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.icon import APP_ICON_SIZE, icon_source_problem

@@ -7,6 +7,7 @@ from pathlib import Path
 from ..config.model import Config
 from ..lock.model import Lockfile
 from . import checks as C
+from . import checks_common as CC
 from .probe import Probe
 from .result import CheckResult, Status
 
@@ -25,9 +26,9 @@ def run_checks(
     results = [
         C.check_xcode_version(probe),
         C.check_command_line_tools(probe),
-        C.check_pip_version(probe),
+        CC.check_pip_version(probe),
         C.check_simulator_runtimes(probe, config),
-        C.check_kivyforge_version(probe, kivyforge_version, offline=offline),
+        CC.check_kivyforge_version(probe, kivyforge_version, offline=offline),
     ]
 
     if config is None:
@@ -43,11 +44,11 @@ def run_checks(
             "App-level privacy manifest",
             "xcframework privacy manifests",
         ):
-            results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
+            results.append(CheckResult(name, Status.SKIP, CC.SKIP_NOTE))
         return results
 
     results += [
-        C.check_app_dir(config, project_root),
+        CC.check_app_dir(config, project_root),
         C.check_signing_identity(probe, config),
         C.check_provisioning_profile(config, project_root),
         C.check_app_icon(config, project_root),
