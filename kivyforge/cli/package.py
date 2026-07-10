@@ -10,9 +10,6 @@ from __future__ import annotations
 
 import click
 
-from ..platforms.ios.cli import ios_package
-from ..platforms.linux.cli import linux_package
-from ..platforms.macos.cli import macos_package
 from ._common import ToolchainError
 from ._platform import platform_option, resolve_target
 
@@ -78,36 +75,15 @@ def package(
     backend, project_root = resolve_target(cli_platform)
     fmt = _resolve_format(backend, fmt)
 
-    if backend.name == "macos":
-        macos_package(
-            project_root,
-            arch=arch,
-            no_verify_lock=no_verify_lock,
-            no_cache=no_cache,
-            signing_identity=signing_identity,
-            notarize=notarize,
-            notary_profile=notary_profile,
-        )
-        return
-
-    if backend.name == "linux":
-        linux_package(
-            project_root,
-            fmt=fmt,
-            arch=arch,
-            no_verify_lock=no_verify_lock,
-            no_cache=no_cache,
-        )
-        return
-
-    if backend.name != "ios":
-        raise ToolchainError(f"`package` for {backend.name!r} is not implemented yet.")
-
-    ios_package(
+    backend.package(
         project_root,
+        fmt=fmt,
+        arch=arch,
         team_id=team_id,
         signing_identity=signing_identity,
         export_method=export_method,
+        notarize=notarize,
+        notary_profile=notary_profile,
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
     )

@@ -14,13 +14,15 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import Config
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
-from kivyforge.doctor.probe import Probe
+from kivyforge.doctor.probe import Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.icon import APP_ICON_SIZE, icon_source_problem
 from kivyforge.lock.find_links import find_links_doctor_detail
+from kivyforge.lock.reader import LockError
 
 from . import AppDirError
 from .appimage import appimagetool_asset, type2_runtime_asset
@@ -29,6 +31,7 @@ from .lock import (
     LinuxLockfile,
     effective_glibc_floor,
     linux_wheel_coverage,
+    load,
 )
 from .lock.runtime import DEFAULT_GLIBC_FLOOR
 
@@ -309,3 +312,34 @@ def run_linux_checks(
         check_linux_hosts_reachable(probe, config, lock),
     ]
     return results
+
+
+def linux_doctor(
+    cwd: Path, *, kivyforge_version: str, offline: bool
+) -> list[CheckResult]:
+    """Load the Linux project + lock (if present) and run the Linux check set."""
+    pyproject = cwd / "pyproject.toml"
+    config = None
+    lock = None
+    parse_results: list[CheckResult] = []
+    if pyproject.is_file():
+        try:
+            config = load_config(pyproject, require_ios=False, require_linux=True)
+        except ConfigError as exc:
+            parse_results.append(
+                CheckResult("pyproject.toml", Status.FAIL, exc.format())
+            )
+        lockfile = cwd / "pylock.linux.toml"
+        if lockfile.is_file():
+            try:
+                lock = load(lockfile)
+            except LockError as exc:
+                parse_results.append(C.lock_parse_fail("linux", exc))
+    return parse_results + run_linux_checks(
+        RealProbe(),
+        kivyforge_version=kivyforge_version,
+        config=config,
+        project_root=cwd,
+        lock=lock,
+        offline=offline,
+    )

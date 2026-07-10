@@ -14,9 +14,6 @@ from __future__ import annotations
 
 import click
 
-from ..platforms.ios.cli import ios_build
-from ..platforms.linux.cli import linux_build
-from ..platforms.macos.cli import macos_build
 from ._common import (
     MIGRATION_URL,
     ToolchainError,
@@ -90,27 +87,7 @@ def build(
     # fast with an actionable message (common design doc 02).
     backend, project_root = resolve_target(cli_platform)
 
-    if backend.name == "macos":
-        _reject_ios_flags_for_desktop(backend.name, target)
-        macos_build(
-            project_root,
-            arch=arch,
-            no_verify_lock=no_verify_lock,
-            no_cache=no_cache,
-        )
-        return
-
-    if backend.name == "linux":
-        _reject_ios_flags_for_desktop(backend.name, target)
-        linux_build(
-            project_root,
-            arch=arch,
-            no_verify_lock=no_verify_lock,
-            no_cache=no_cache,
-        )
-        return
-
-    ios_build(
+    backend.build(
         project_root,
         target=target,
         arch=arch,
@@ -120,15 +97,3 @@ def build(
         signing_identity=signing_identity,
         export_method=export_method,
     )
-
-
-def _reject_ios_flags_for_desktop(platform: str, target: str | None) -> None:
-    if target is not None:
-        artifact = ".app" if platform == "macos" else "AppDir"
-        raise ToolchainError(
-            f"--{target} is an iOS target; {platform} has no simulator/device/"
-            "release targets.\n"
-            f"  Use `kivyforge build -p {platform}` (optionally --arch) to build "
-            f"the {artifact}, or `kivyforge package -p {platform}` for the "
-            "distributable."
-        )

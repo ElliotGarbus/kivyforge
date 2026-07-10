@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import click
 
-from ..platforms.ios.cli import ios_open
 from ._platform import platform_option, resolve_target
 
 
@@ -12,5 +11,5 @@ from ._platform import platform_option, resolve_target
 @platform_option
 def open_(cli_platform: str | None) -> None:
     """Open <app>-ios/<app>.xcodeproj in Xcode."""
-    _backend, project_root = resolve_target(cli_platform)
-    ios_open(project_root)
+    backend, project_root = resolve_target(cli_platform)
+    backend.open_project(project_root)

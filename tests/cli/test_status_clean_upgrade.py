@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivyforge.cli import doctor as doctor_mod
 from kivyforge.cli import upgrade as upgrade_mod
 from kivyforge.cli.clean import clean
 from kivyforge.cli.doctor import doctor
 from kivyforge.cli.status import status
 from kivyforge.cli.upgrade import upgrade
+from kivyforge.platforms.ios import doctor as doctor_mod
 from kivyforge.platforms.ios.cli import _humanize
 from kivyforge.platforms.ios.lock import (
     LockedXcframework,

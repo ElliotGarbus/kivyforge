@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import click
 
-from ..platforms.ios.cli import ios_list_devices, ios_run
-from ..platforms.linux.cli import linux_run
-from ..platforms.macos.cli import macos_run
+from ..platforms.ios.cli import ios_list_devices
 from ._platform import platform_option, resolve_target
 
 
@@ -55,13 +53,10 @@ def run(
         return
 
     backend, project_root = resolve_target(cli_platform)
-
-    if backend.name == "macos":
-        macos_run(project_root, arch=arch, no_build=no_build)
-        return
-
-    if backend.name == "linux":
-        linux_run(project_root, arch=arch, no_build=no_build)
-        return
-
-    ios_run(project_root, target=target, destination=destination, no_build=no_build)
+    backend.run(
+        project_root,
+        target=target,
+        arch=arch,
+        destination=destination,
+        no_build=no_build,
+    )

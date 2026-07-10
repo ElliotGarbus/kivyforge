@@ -12,14 +12,17 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import Config
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
-from kivyforge.doctor.probe import Probe
+from kivyforge.doctor.probe import Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.icon import APP_ICON_SIZE, icon_source_problem
 from kivyforge.lock.find_links import find_links_doctor_detail
+from kivyforge.lock.reader import LockError
 
+from .lock import load
 from .lock.model import Lockfile
 
 MIN_XCODE = "15.0"  # devicectl (run --device) requires Xcode 15+
@@ -374,3 +377,34 @@ def run_ios_checks(
         check_xcframework_privacy_manifests(config, project_root),
     ]
     return results
+
+
+def ios_doctor(
+    cwd: Path, *, kivyforge_version: str, offline: bool
+) -> list[CheckResult]:
+    """Load the iOS project + lock (if present) and run the iOS check set."""
+    pyproject = cwd / "pyproject.toml"
+    config = None
+    lock = None
+    parse_results: list[CheckResult] = []
+    if pyproject.is_file():
+        try:
+            config = load_config(pyproject)
+        except ConfigError as exc:
+            parse_results.append(
+                CheckResult("pyproject.toml", Status.FAIL, exc.format())
+            )
+        lockfile = cwd / "pylock.ios.toml"
+        if lockfile.is_file():
+            try:
+                lock = load(lockfile)
+            except LockError as exc:
+                parse_results.append(C.lock_parse_fail("ios", exc))
+    return parse_results + run_ios_checks(
+        RealProbe(),
+        kivyforge_version=kivyforge_version,
+        config=config,
+        project_root=cwd,
+        lock=lock,
+        offline=offline,
+    )

@@ -1,16 +1,20 @@
-"""iOS platform backend.
+"""iOS platform backend: metadata, host capability, and verb dispatch.
 
-Seam-first: this backend currently carries iOS metadata + host capability. The
-iOS build/run/open/package *logic* still lives in ``kivyforge.cli`` and the
-iOS-specific ``project``/``xcode`` modules; it moves behind this backend when
-macOS becomes the second consumer (extract-by-need).
+The iOS build/run/package/open/status/doctor logic lives in ``.cli`` and
+``.doctor``; the verb methods here lazily import them so importing the backend
+class stays cheap and cycle-free.
 """
 
 from __future__ import annotations
 
 import platform as _platform
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..base import HostCapabilityError, Platform
+
+if TYPE_CHECKING:
+    from kivyforge.doctor.result import CheckResult
 
 
 class IosPlatform(Platform):
@@ -32,3 +36,83 @@ class IosPlatform(Platform):
                 "macOS host — there is no on-device or off-macOS build path.\n"
                 "  Run `kivyforge doctor -p ios` on a Mac to check Xcode setup."
             )
+
+    def build(
+        self,
+        project_root: Path,
+        *,
+        target: str | None,
+        arch: str | None,
+        no_verify_lock: bool,
+        no_cache: bool,
+        team_id: str | None,
+        signing_identity: str | None,
+        export_method: str,
+    ) -> None:
+        from .cli import ios_build
+
+        ios_build(
+            project_root,
+            target=target,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+            team_id=team_id,
+            signing_identity=signing_identity,
+            export_method=export_method,
+        )
+
+    def run(
+        self,
+        project_root: Path,
+        *,
+        target: str,
+        arch: str | None,
+        destination: str | None,
+        no_build: bool,
+    ) -> None:
+        from .cli import ios_run
+
+        ios_run(
+            project_root,
+            target=target,
+            destination=destination,
+            no_build=no_build,
+        )
+
+    def package(
+        self,
+        project_root: Path,
+        *,
+        fmt: str,
+        arch: str | None,
+        team_id: str | None,
+        signing_identity: str | None,
+        export_method: str,
+        notarize: bool | None,
+        notary_profile: str | None,
+        no_verify_lock: bool,
+        no_cache: bool,
+    ) -> None:
+        from .cli import ios_package
+
+        ios_package(
+            project_root,
+            team_id=team_id,
+            signing_identity=signing_identity,
+            export_method=export_method,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+        )
+
+    def open_project(self, project_root: Path) -> None:
+        from .cli import ios_open
+
+        ios_open(project_root)
+
+    def doctor(
+        self, cwd: Path, *, kivyforge_version: str, offline: bool
+    ) -> list[CheckResult]:
+        from .doctor import ios_doctor
+
+        return ios_doctor(cwd, kivyforge_version=kivyforge_version, offline=offline)

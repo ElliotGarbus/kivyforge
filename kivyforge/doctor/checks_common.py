@@ -17,6 +17,16 @@ from .result import CheckResult, Status
 SKIP_NOTE = "no pyproject.toml found in current directory"
 
 
+def lock_parse_fail(platform: str, exc: Exception) -> CheckResult:
+    """A FAIL result for an unreadable ``pylock.<platform>.toml``."""
+    return CheckResult(
+        f"pylock.{platform}.toml",
+        Status.FAIL,
+        f"failed to parse: {exc}",
+        hint=f"Regenerate it with `kivyforge lock -p {platform}`.",
+    )
+
+
 def _ver_tuple(v: str) -> tuple[int, ...]:
     parts = []
     for chunk in v.split("."):

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivyforge.cli.doctor import _resolve_doctor_platform, doctor
+from kivyforge.cli.doctor import _resolve_doctor_backend, doctor
 
 MACOS_PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.0.0'\n"
@@ -32,12 +32,12 @@ def runner():
 
 
 def test_resolve_prefers_cli_platform(tmp_path):
-    assert _resolve_doctor_platform("macos", tmp_path) == "macos"
+    assert _resolve_doctor_backend("macos", tmp_path).name == "macos"
 
 
 def test_resolve_falls_back_to_ios(tmp_path, monkeypatch):
     monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
-    assert _resolve_doctor_platform(None, tmp_path) == "ios"
+    assert _resolve_doctor_backend(None, tmp_path).name == "ios"
 
 
 def test_doctor_macos_project_header(runner, tmp_path):

@@ -11,15 +11,17 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import Config
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
-from kivyforge.doctor.probe import Probe
+from kivyforge.doctor.probe import Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.icon import APP_ICON_SIZE, icon_source_problem
 from kivyforge.lock.find_links import find_links_doctor_detail
+from kivyforge.lock.reader import LockError
 
-from .lock import MacosLockfile, wheel_arch
+from .lock import MacosLockfile, load, wheel_arch
 
 
 def check_macos_host(probe: Probe) -> CheckResult:
@@ -354,3 +356,34 @@ def run_macos_checks(
         check_macos_hosts_reachable(probe, lock),
     ]
     return results
+
+
+def macos_doctor(
+    cwd: Path, *, kivyforge_version: str, offline: bool
+) -> list[CheckResult]:
+    """Load the macOS project + lock (if present) and run the macOS check set."""
+    pyproject = cwd / "pyproject.toml"
+    config = None
+    lock = None
+    parse_results: list[CheckResult] = []
+    if pyproject.is_file():
+        try:
+            config = load_config(pyproject, require_ios=False, require_macos=True)
+        except ConfigError as exc:
+            parse_results.append(
+                CheckResult("pyproject.toml", Status.FAIL, exc.format())
+            )
+        lockfile = cwd / "pylock.macos.toml"
+        if lockfile.is_file():
+            try:
+                lock = load(lockfile)
+            except LockError as exc:
+                parse_results.append(C.lock_parse_fail("macos", exc))
+    return parse_results + run_macos_checks(
+        RealProbe(),
+        kivyforge_version=kivyforge_version,
+        config=config,
+        project_root=cwd,
+        lock=lock,
+        offline=offline,
+    )

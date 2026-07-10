@@ -9,8 +9,13 @@ the bundled python-build-standalone runtime is a gnu/glibc ELF build.
 from __future__ import annotations
 
 import platform as _platform
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..base import HostCapabilityError, Platform
+
+if TYPE_CHECKING:
+    from kivyforge.doctor.result import CheckResult
 
 
 class AppDirError(Exception):
@@ -36,3 +41,69 @@ class LinuxPlatform(Platform):
                 "  Run `kivyforge doctor -p linux` on a Linux box to check the "
                 "setup."
             )
+
+    def build(
+        self,
+        project_root: Path,
+        *,
+        target: str | None,
+        arch: str | None,
+        no_verify_lock: bool,
+        no_cache: bool,
+        team_id: str | None,
+        signing_identity: str | None,
+        export_method: str,
+    ) -> None:
+        self.reject_ios_only_target(target)
+        from .cli import linux_build
+
+        linux_build(
+            project_root,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+        )
+
+    def run(
+        self,
+        project_root: Path,
+        *,
+        target: str,
+        arch: str | None,
+        destination: str | None,
+        no_build: bool,
+    ) -> None:
+        from .cli import linux_run
+
+        linux_run(project_root, arch=arch, no_build=no_build)
+
+    def package(
+        self,
+        project_root: Path,
+        *,
+        fmt: str,
+        arch: str | None,
+        team_id: str | None,
+        signing_identity: str | None,
+        export_method: str,
+        notarize: bool | None,
+        notary_profile: str | None,
+        no_verify_lock: bool,
+        no_cache: bool,
+    ) -> None:
+        from .cli import linux_package
+
+        linux_package(
+            project_root,
+            fmt=fmt,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+        )
+
+    def doctor(
+        self, cwd: Path, *, kivyforge_version: str, offline: bool
+    ) -> list[CheckResult]:
+        from .doctor import linux_doctor
+
+        return linux_doctor(cwd, kivyforge_version=kivyforge_version, offline=offline)
