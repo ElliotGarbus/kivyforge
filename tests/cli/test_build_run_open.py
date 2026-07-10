@@ -9,19 +9,17 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivyforge.cli import build as build_cli
-from kivyforge.cli import open_cmd as open_mod
-from kivyforge.cli import run as run_mod
 from kivyforge.cli.build import build
 from kivyforge.cli.open_cmd import open_
 from kivyforge.cli.run import run as run_cmd
+from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
     compute_pyproject_sha256,
     dumps,
 )
-from kivyforge.xcode import runner as runner_mod
+from kivyforge.platforms.ios.xcode import runner as runner_mod
 
 PYPROJECT = (
     textwrap.dedent(
@@ -101,7 +99,7 @@ def runner():
 @pytest.fixture(autouse=True)
 def stub_collect(monkeypatch):
     """Skip artifact collection in build/run orchestration tests."""
-    monkeypatch.setattr(build_cli, "collect_artifacts", lambda *a, **k: None)
+    monkeypatch.setattr(ios_cli, "collect_artifacts", lambda *a, **k: None)
 
 
 @pytest.fixture
@@ -120,10 +118,8 @@ def record_xcodebuild(monkeypatch):
             proc.stdout = _SIMCTL_JSON
         return proc
 
-    monkeypatch.setattr(build_cli, "run_command", fake)
-    monkeypatch.setattr(run_mod, "run_command", fake)
+    monkeypatch.setattr(ios_cli, "run_command", fake)
     monkeypatch.setattr(runner_mod, "run_command", fake)
-    monkeypatch.setattr(open_mod, "run_command", fake)
     return calls
 
 

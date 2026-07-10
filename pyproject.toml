@@ -80,7 +80,7 @@ source = ["kivyforge"]
 # Templates are app-runtime files placed in the built bundle, not library
 # code exercised by the test suite.
 omit = [
-    "kivyforge/project/templates/*",
+    "kivyforge/platforms/ios/templates/*",
 ]
 
 [tool.coverage.report]

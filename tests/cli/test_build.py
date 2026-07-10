@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivyforge.cli import build as build_cli
 from kivyforge.cli.build import build
+from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
@@ -81,13 +81,13 @@ def mock_collect(monkeypatch):
     def fake_collect(lock, layout, *, build_slices, project_root, no_cache=False, **kw):
         calls.append({"slices": build_slices, "layout": layout, "no_cache": no_cache})
 
-    monkeypatch.setattr(build_cli, "collect_artifacts", fake_collect)
+    monkeypatch.setattr(ios_cli, "collect_artifacts", fake_collect)
     # Pin the host-derived simulator arch so slice assertions are deterministic
     # regardless of whether the test runs on Apple Silicon or an Intel host.
-    monkeypatch.setattr(build_cli, "default_simulator_arch", lambda: "arm64")
+    monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "arm64")
     # Step 7 invokes xcodebuild; stub it so these orchestration tests stay
     # hermetic (they assert on the resolved slice, not on a real build).
-    monkeypatch.setattr(build_cli, "run_command", lambda *a, **k: _Proc())
+    monkeypatch.setattr(ios_cli, "run_command", lambda *a, **k: _Proc())
     return calls
 
 
@@ -127,7 +127,7 @@ class TestBuildOrchestration:
     ):
         # On an Intel host (no --arch), the bare and targeted simulator builds
         # must collect the x86_64 slice the machine can actually run, not arm64.
-        monkeypatch.setattr(build_cli, "default_simulator_arch", lambda: "x86_64")
+        monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "x86_64")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
             runner.invoke(build, [])
@@ -187,7 +187,7 @@ class TestSigningIdentityWiring:
     ):
         captured: list[list[str]] = []
         monkeypatch.setattr(
-            build_cli,
+            ios_cli,
             "run_command",
             lambda argv, *a, **k: captured.append(argv) or _Proc(),
         )
@@ -212,7 +212,7 @@ class TestSigningIdentityWiring:
     ):
         captured: list[list[str]] = []
         monkeypatch.setattr(
-            build_cli,
+            ios_cli,
             "run_command",
             lambda argv, *a, **k: captured.append(argv) or _Proc(),
         )
@@ -230,7 +230,7 @@ class TestSigningIdentityWiring:
 
         captured: list[list[str]] = []
         monkeypatch.setattr(
-            build_cli,
+            ios_cli,
             "run_command",
             lambda argv, *a, **k: captured.append(argv) or _Proc(),
         )
@@ -263,7 +263,7 @@ class TestSigningIdentityWiring:
         (see xcode/commands.py archive_command)."""
         captured: list[list[str]] = []
         monkeypatch.setattr(
-            build_cli,
+            ios_cli,
             "run_command",
             lambda argv, *a, **k: captured.append(argv) or _Proc(),
         )
@@ -280,7 +280,7 @@ class TestSigningIdentityWiring:
     ):
         captured: list[list[str]] = []
         monkeypatch.setattr(
-            build_cli,
+            ios_cli,
             "run_command",
             lambda argv, *a, **k: captured.append(argv) or _Proc(),
         )
@@ -297,7 +297,7 @@ class TestSigningIdentityWiring:
     ):
         captured: list[list[str]] = []
         monkeypatch.setattr(
-            build_cli,
+            ios_cli,
             "run_command",
             lambda argv, *a, **k: captured.append(argv) or _Proc(),
         )
@@ -310,13 +310,13 @@ class TestSigningIdentityWiring:
 
 class TestLastUpgradeCheck:
     def test_encodes_xcode_version(self):
-        from kivyforge.cli.build import _encode_last_upgrade_check
+        from kivyforge.platforms.ios.cli import _encode_last_upgrade_check
 
         assert _encode_last_upgrade_check("26.5") == "2650"
         assert _encode_last_upgrade_check("16.2") == "1620"
         assert _encode_last_upgrade_check("16.2.1") == "1621"
 
     def test_returns_none_when_unparseable(self):
-        from kivyforge.cli.build import _encode_last_upgrade_check
+        from kivyforge.platforms.ios.cli import _encode_last_upgrade_check
 
         assert _encode_last_upgrade_check("not a version") is None

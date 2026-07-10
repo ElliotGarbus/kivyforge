@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from kivyforge.cli import build as build_cli
 from kivyforge.cli._common import ToolchainError
 from kivyforge.cli.package import _resolve_format, package
 from kivyforge.platforms.ios import IosPlatform
+from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
@@ -77,9 +77,9 @@ def runner():
 
 @pytest.fixture(autouse=True)
 def mock_build(monkeypatch):
-    monkeypatch.setattr(build_cli, "collect_artifacts", lambda *a, **k: None)
-    monkeypatch.setattr(build_cli, "default_simulator_arch", lambda: "arm64")
-    monkeypatch.setattr(build_cli, "run_command", lambda *a, **k: _Proc())
+    monkeypatch.setattr(ios_cli, "collect_artifacts", lambda *a, **k: None)
+    monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "arm64")
+    monkeypatch.setattr(ios_cli, "run_command", lambda *a, **k: _Proc())
 
 
 class TestFormatResolution:

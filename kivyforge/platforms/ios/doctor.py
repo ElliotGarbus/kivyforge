@@ -1,32 +1,26 @@
-"""Individual doctor checks (spec 05). Pure over a ``Probe``."""
+"""iOS-specific doctor checks (spec 05). Pure over a ``Probe``.
+
+Reuses the platform-neutral checks (pip, toolchain version, app source dir) from
+``checks_common`` and adds the iOS environment (Xcode, command-line tools,
+simulator runtimes) and project checks (signing, provisioning, icon, Swift
+toolchain, find_links, reachable hosts, native binaries, privacy manifests) over
+the ``pylock.ios.toml`` model.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ..config.model import Config
-from ..icon import APP_ICON_SIZE, icon_source_problem
-from ..lock.find_links import find_links_doctor_detail
-from ..platforms.ios.lock.model import Lockfile
-from .checks_common import (
-    SKIP_NOTE,
-    _ver_tuple,
-    check_app_dir,
-    check_kivyforge_version,
-    check_pip_version,
-)
-from .probe import Probe
-from .result import CheckResult, Status
+from kivyforge.config.model import Config
+from kivyforge.doctor import checks_common as C
+from kivyforge.doctor.checks_common import _ver_tuple
+from kivyforge.doctor.probe import Probe
+from kivyforge.doctor.result import CheckResult, Status
+from kivyforge.icon import APP_ICON_SIZE, icon_source_problem
+from kivyforge.lock.find_links import find_links_doctor_detail
 
-# Re-exported so existing ``from kivyforge.doctor import checks`` callers keep
-# working; the canonical home for these neutral checks is ``checks_common``.
-__all__ = [
-    "SKIP_NOTE",
-    "check_app_dir",
-    "check_kivyforge_version",
-    "check_pip_version",
-]
+from .lock.model import Lockfile
 
 MIN_XCODE = "15.0"  # devicectl (run --device) requires Xcode 15+
 
@@ -330,3 +324,53 @@ def _git_host(url: str) -> str | None:
     if "@" in url and ":" in url:
         return url.split("@", 1)[1].split(":", 1)[0] or None
     return urlparse(url).hostname
+
+
+def run_ios_checks(
+    probe: Probe,
+    *,
+    kivyforge_version: str,
+    config: Config | None = None,
+    project_root: Path | None = None,
+    lock: Lockfile | None = None,
+    offline: bool = False,
+) -> list[CheckResult]:
+    """Run all iOS checks. Project checks SKIP in environment mode (no config)."""
+    project_root = project_root or Path.cwd()
+    results = [
+        check_xcode_version(probe),
+        check_command_line_tools(probe),
+        C.check_pip_version(probe),
+        check_simulator_runtimes(probe, config),
+        C.check_kivyforge_version(probe, kivyforge_version, offline=offline),
+    ]
+
+    if config is None:
+        for name in (
+            "App source directory",
+            "Signing identity",
+            "Provisioning profile",
+            "App icon",
+            "Swift package toolchain",
+            "find_links directories",
+            "Required hosts reachable",
+            "App-local native binaries",
+            "App-level privacy manifest",
+            "xcframework privacy manifests",
+        ):
+            results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
+        return results
+
+    results += [
+        C.check_app_dir(config, project_root),
+        check_signing_identity(probe, config),
+        check_provisioning_profile(config, project_root),
+        check_app_icon(config, project_root),
+        check_swift_toolchain(probe, config),
+        check_find_links(config, project_root),
+        check_hosts_reachable(probe, lock),
+        check_app_native_binaries(probe, config, project_root),
+        check_app_privacy_manifest(config, project_root),
+        check_xcframework_privacy_manifests(config, project_root),
+    ]
+    return results

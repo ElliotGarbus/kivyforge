@@ -15,14 +15,15 @@ from typing import Any, cast
 from pbxproj import XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import FileOptions, ProjectFiles, TreeType
 
-from ..config.model import Config
-from ..platforms.ios.lock.model import LockedSwiftPackage, LockedXcframework
+from kivyforge.config.model import Config
+
 from .buildsettings import (
     BUILD_PYTHON_SCRIPT,
     managed_settings,
     signing_settings,
     user_build_settings,
 )
+from .lock.model import LockedSwiftPackage, LockedXcframework
 from .skeleton import skeleton_pbxproj
 from .staging import StagingError, StagingLayout
 from .swift_packages import sync_swift_packages, write_package_resolved

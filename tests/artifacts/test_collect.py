@@ -22,7 +22,7 @@ from kivyforge.platforms.ios.lock.model import (
     Lockfile,
     PythonXcframework,
 )
-from kivyforge.project.staging import StagingLayout
+from kivyforge.platforms.ios.staging import StagingLayout
 
 
 def _make_python_tarball(root: Path) -> Path:

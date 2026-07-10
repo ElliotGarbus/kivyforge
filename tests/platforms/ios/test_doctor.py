@@ -7,12 +7,39 @@ import struct
 import pytest
 
 from kivyforge.config import load_config_from_text
-from kivyforge.doctor import checks as C
+from kivyforge.doctor import checks_common as CC
 from kivyforge.doctor.result import Status, worst_status
-from kivyforge.doctor.runner import run_checks
+from kivyforge.platforms.ios import doctor as C
+from kivyforge.platforms.ios.doctor import run_ios_checks as run_checks
 from kivyforge.platforms.ios.lock import LockedSwiftPackage, Lockfile, PythonXcframework
+from tests.doctor.probe_fakes import FakeProbe
 
-from .conftest import FakeProbe
+_DOCTOR_CONFIG = """
+[project]
+name = "myapp"
+version = "1.0.0"
+
+[tool.kivy]
+app_dir = "src"
+
+[tool.kivy.ios]
+schema_version = 1
+bundle_id = "org.example.myapp"
+deployment_target = "13.0"
+
+[tool.kivy.ios.python]
+version = "3.15.0"
+""".strip()
+
+
+@pytest.fixture
+def fake_probe():
+    return FakeProbe()
+
+
+@pytest.fixture
+def config():
+    return load_config_from_text(_DOCTOR_CONFIG)
 
 
 def _config_with_swift_package():
@@ -40,16 +67,16 @@ class TestEnvironmentChecks:
         assert r.status is Status.PASS
 
     def test_pip_ok(self):
-        r = C.check_pip_version(FakeProbe(pip="24.3.1"))
+        r = CC.check_pip_version(FakeProbe(pip="24.3.1"))
         assert r.status is Status.PASS
 
     def test_pip_too_old_fails(self):
-        r = C.check_pip_version(FakeProbe(pip="24.2"))
+        r = CC.check_pip_version(FakeProbe(pip="24.2"))
         assert r.status is Status.FAIL
         assert "need >= 24.3" in r.detail
 
     def test_pip_unknown_warns(self):
-        r = C.check_pip_version(FakeProbe(pip=None))
+        r = CC.check_pip_version(FakeProbe(pip=None))
         assert r.status is Status.WARN
 
     def test_clt_missing_path(self):
@@ -73,22 +100,24 @@ class TestEnvironmentChecks:
         assert r.status is Status.PASS
 
     def test_kivyforge_version_offline_pass(self):
-        r = C.check_kivyforge_version(FakeProbe(), "3.0.0", offline=True)
+        r = CC.check_kivyforge_version(FakeProbe(), "3.0.0", offline=True)
         assert r.status is Status.PASS
 
     def test_kivyforge_version_newer_warns(self):
-        r = C.check_kivyforge_version(FakeProbe(latest="9.0.0"), "3.0.0", offline=False)
+        r = CC.check_kivyforge_version(
+            FakeProbe(latest="9.0.0"), "3.0.0", offline=False
+        )
         assert r.status is Status.WARN
 
 
 class TestProjectChecks:
     def test_app_dir_missing_fails(self, config, tmp_path):
         # tmp_path has no src/ directory
-        assert C.check_app_dir(config, tmp_path).status is Status.FAIL
+        assert CC.check_app_dir(config, tmp_path).status is Status.FAIL
 
     def test_app_dir_present_passes(self, config, tmp_path):
         (tmp_path / "src").mkdir()
-        assert C.check_app_dir(config, tmp_path).status is Status.PASS
+        assert CC.check_app_dir(config, tmp_path).status is Status.PASS
 
     def test_signing_auto_pass(self, config, fake_probe):
         assert C.check_signing_identity(fake_probe, config).status is Status.PASS

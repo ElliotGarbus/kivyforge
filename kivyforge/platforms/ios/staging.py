@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config.model import Config
+from kivyforge.config.model import Config
 
 
 class StagingError(Exception):

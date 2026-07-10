@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from kivyforge.icon import IconSourceError
-from kivyforge.project.assets import (
+from kivyforge.platforms.ios.assets import (
     _parse_hex_color,
     generate_asset_catalog,
     write_launch_screen,

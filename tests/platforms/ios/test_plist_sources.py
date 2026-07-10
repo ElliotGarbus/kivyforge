@@ -7,10 +7,10 @@ import plistlib
 import pytest
 
 from kivyforge.config import load_config_from_text
-from kivyforge.project.entitlements import write_entitlements
-from kivyforge.project.plist import build_info_plist, write_info_plist
-from kivyforge.project.privacy import STUB_MANIFEST, write_privacy_manifest
-from kivyforge.project.sources import render_main_config_h
+from kivyforge.platforms.ios.entitlements import write_entitlements
+from kivyforge.platforms.ios.plist import build_info_plist, write_info_plist
+from kivyforge.platforms.ios.privacy import STUB_MANIFEST, write_privacy_manifest
+from kivyforge.platforms.ios.sources import render_main_config_h
 
 
 class TestInfoPlist:

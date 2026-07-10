@@ -15,11 +15,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config.model import Config
-from ..platforms.ios.lock.model import LockedSwiftPackage, LockedXcframework
+from kivyforge.config.model import Config
+
 from .assets import generate_asset_catalog, write_launch_screen
 from .entitlements import write_entitlements
 from .generator import XcodeProjectGenerator
+from .lock.model import LockedSwiftPackage, LockedXcframework
 from .plist import write_info_plist
 from .privacy import write_privacy_manifest
 from .sources import write_sources

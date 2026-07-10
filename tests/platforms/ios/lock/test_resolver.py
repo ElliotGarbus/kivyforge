@@ -35,7 +35,9 @@ def _modern_host_pip(monkeypatch):
     """Default every test to a modern host pip so resolve() isn't gated on the
     machine running the suite. Guard-specific tests re-patch this as needed.
     """
-    monkeypatch.setattr("kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: (99, 0))
+    monkeypatch.setattr(
+        "kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: (99, 0)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +281,9 @@ class TestPipVersionParsing:
 
 class TestPipVersionGuard:
     def test_old_pip_is_rejected(self, monkeypatch):
-        monkeypatch.setattr("kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: (24, 2))
+        monkeypatch.setattr(
+            "kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: (24, 2)
+        )
         pr = PipResolver()
         with pytest.raises(ResolverError, match=r"pip >= 24\.3"):
             pr.resolve(
@@ -292,7 +296,9 @@ class TestPipVersionGuard:
     def test_unknown_pip_does_not_block(self, monkeypatch):
         # If pip's version can't be determined we proceed; a truly broken pip
         # surfaces its own error in _run_report.
-        monkeypatch.setattr("kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: None)
+        monkeypatch.setattr(
+            "kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: None
+        )
         monkeypatch.setattr(PipResolver, "_run_report", lambda *a, **k: {"install": []})
         pr = PipResolver()
         assert (
@@ -306,7 +312,9 @@ class TestPipVersionGuard:
         )
 
     def test_modern_pip_proceeds(self, monkeypatch):
-        monkeypatch.setattr("kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: (24, 3))
+        monkeypatch.setattr(
+            "kivyforge.platforms.ios.lock.resolver.pip_version", lambda _exe: (24, 3)
+        )
         monkeypatch.setattr(PipResolver, "_run_report", lambda *a, **k: {"install": []})
         pr = PipResolver()
         assert (

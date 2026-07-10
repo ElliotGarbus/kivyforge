@@ -18,12 +18,12 @@ from ..doctor import (
     CheckResult,
     RealProbe,
     Status,
-    run_checks,
     worst_status,
 )
 from ..lock import LockError
 from ..platforms import PlatformResolutionError
 from ..platforms import resolve_target as _resolve_platform
+from ..platforms.ios.doctor import run_ios_checks
 from ..platforms.ios.lock import load
 from ..platforms.linux.doctor import run_linux_checks
 from ..platforms.linux.lock import load as load_linux_lock
@@ -88,7 +88,7 @@ def _ios_doctor(cwd: Path, offline: bool) -> list[CheckResult]:
                 lock = load(lockfile)
             except LockError as exc:
                 parse_results.append(_lock_parse_fail("ios", exc))
-    return parse_results + run_checks(
+    return parse_results + run_ios_checks(
         RealProbe(),
         kivyforge_version=__version__,
         config=config,

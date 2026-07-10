@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ..config.model import Config
+from kivyforge.config.model import Config
+
 from .staging import StagingLayout
 
 BUILD_PYTHON_SCRIPT = (

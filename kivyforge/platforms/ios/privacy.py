@@ -11,7 +11,7 @@ import plistlib
 import shutil
 from pathlib import Path
 
-from ..config.model import Config
+from kivyforge.config.model import Config
 
 # Minimal valid privacy manifest: declares no tracking and no collected data.
 STUB_MANIFEST: dict = {

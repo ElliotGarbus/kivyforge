@@ -5,7 +5,7 @@ from __future__ import annotations
 import plistlib
 from pathlib import Path
 
-from ..config.model import Config
+from kivyforge.config.model import Config
 
 
 def has_entitlements(config: Config) -> bool:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from kivyforge.xcode.runner import (
+from kivyforge.platforms.ios.xcode.runner import (
     CommandError,
     devicectl_install,
     devicectl_launch,

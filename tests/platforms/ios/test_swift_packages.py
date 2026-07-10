@@ -8,8 +8,8 @@ import pytest
 from pbxproj import XcodeProject
 
 from kivyforge.platforms.ios.lock.model import LockedSwiftPackage
-from kivyforge.project.materialize import materialize_project
-from kivyforge.project.swift_packages import (
+from kivyforge.platforms.ios.materialize import materialize_project
+from kivyforge.platforms.ios.swift_packages import (
     local_relative_path,
     package_resolved_json,
     sync_swift_packages,

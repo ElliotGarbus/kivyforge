@@ -7,7 +7,7 @@ import textwrap
 import pytest
 
 from kivyforge.config import load_config_from_text
-from kivyforge.xcode.commands import (
+from kivyforge.platforms.ios.xcode.commands import (
     SigningError,
     XcodeBuild,
     archive_command,
@@ -79,7 +79,7 @@ class TestBuildCommand:
         assert cmd[-1] == "build"
 
     def test_simulator_default_arch_matches_host(self, monkeypatch):
-        import kivyforge.xcode.commands as commands
+        import kivyforge.platforms.ios.xcode.commands as commands
 
         monkeypatch.setattr(commands.platform, "machine", lambda: "x86_64")
         assert commands.default_simulator_arch() == "x86_64"

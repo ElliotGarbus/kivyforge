@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..config.model import Config
+from kivyforge.config.model import Config
 
 
 def default_simulator_arch() -> str:

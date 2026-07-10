@@ -1,7 +1,7 @@
 include CHANGELOG.md
 recursive-include kivyforge *.py
 # Objective-C bootstrap templates and the asset-catalog helper ship with the wheel.
-recursive-include kivyforge/project/templates *
+recursive-include kivyforge/platforms/ios/templates *
 recursive-include kivyforge/tools *.py
 
 prune .git

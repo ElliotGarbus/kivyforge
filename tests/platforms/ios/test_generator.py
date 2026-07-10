@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from pbxproj import XcodeProject
 
-from kivyforge.project.generator import XcodeProjectGenerator
-from kivyforge.project.materialize import materialize_project
-from kivyforge.project.staging import StagingError, create_staging
+from kivyforge.platforms.ios.generator import XcodeProjectGenerator
+from kivyforge.platforms.ios.materialize import materialize_project
+from kivyforge.platforms.ios.staging import StagingError, create_staging
 
 
 def _objects(project):
@@ -97,7 +97,7 @@ class TestPbxprojGeneration:
         # Guards against quoting regressions in the embedded run script.
         import subprocess
 
-        from kivyforge.project.buildsettings import BUILD_PYTHON_SCRIPT
+        from kivyforge.platforms.ios.buildsettings import BUILD_PYTHON_SCRIPT
 
         result = subprocess.run(
             ["bash", "-n"], input=BUILD_PYTHON_SCRIPT, text=True, capture_output=True
@@ -188,7 +188,7 @@ class TestPbxprojGeneration:
     def test_last_upgrade_check_current(self, config, project_root):
         # Xcode prompts "Update to recommended settings" when LastUpgradeCheck
         # is stale; the generator keeps it current on every build.
-        from kivyforge.project.generator import RECOMMENDED_LAST_UPGRADE_CHECK
+        from kivyforge.platforms.ios.generator import RECOMMENDED_LAST_UPGRADE_CHECK
 
         layout = materialize_project(config, project_root)
         project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))

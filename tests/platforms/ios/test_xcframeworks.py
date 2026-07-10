@@ -7,9 +7,9 @@ import plistlib
 from pbxproj import XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import TreeType
 
+from kivyforge.platforms.ios.generator import XcodeProjectGenerator
 from kivyforge.platforms.ios.lock.model import LockedXcframework
-from kivyforge.project.generator import XcodeProjectGenerator
-from kivyforge.project.materialize import materialize_project
+from kivyforge.platforms.ios.materialize import materialize_project
 
 EMBED_DST = "10"  # PBXCopyFilesBuildPhase dstSubfolderSpec for Embed Frameworks
 

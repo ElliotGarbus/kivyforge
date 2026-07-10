@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config.model import Config
+from kivyforge.config.model import Config
 
 _TEMPLATES = Path(__file__).parent / "templates"
 

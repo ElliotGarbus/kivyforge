@@ -11,7 +11,8 @@ from __future__ import annotations
 import plistlib
 from pathlib import Path
 
-from ..config.model import MANAGED_INFO_PLIST_KEYS, Config
+from kivyforge.config.model import MANAGED_INFO_PLIST_KEYS, Config
+
 from .assets import launch_screen_needed
 
 ORIENTATION_TO_UIKEY = {

@@ -32,7 +32,7 @@ from pbxproj.pbxsections.XCLocalSwiftPackageReference import (
     XCLocalSwiftPackageReference,
 )
 
-from ..platforms.ios.lock.model import LockedSwiftPackage
+from .lock.model import LockedSwiftPackage
 
 # pbxproj ships no type stubs and builds objects dynamically (PBXGenericObject),
 # so the project graph is treated as ``Any`` throughout this interop module.
