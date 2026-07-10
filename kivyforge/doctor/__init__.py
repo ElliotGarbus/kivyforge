@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .probe import Probe, RealProbe
 from .result import CheckResult, Status, worst_status
-from .runner import run_checks, run_linux_checks
+from .runner import run_checks
 
 __all__ = [
     "Probe",
@@ -18,5 +18,4 @@ __all__ = [
     "Status",
     "worst_status",
     "run_checks",
-    "run_linux_checks",
 ]

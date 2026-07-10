@@ -77,7 +77,7 @@ def _lock_ops(platform: str) -> _LockOps:
             emits_warnings=True,
         )
     if platform == "linux":
-        from ..lock import linux as linux_lock
+        from ..platforms.linux import lock as linux_lock
 
         return _LockOps(
             build=linux_lock.build_linux_lockfile,

@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import click
 
+from ..platforms.linux.cli import linux_package
 from ..platforms.macos.cli import macos_package
 from ..xcode import CommandError, SigningError, XcodeBuild
 from ._common import ToolchainError
-from ._linux import linux_package
 from ._platform import platform_option, resolve_target
 from .build import _load_config, _xcodebuild_step7, prepare_build
 

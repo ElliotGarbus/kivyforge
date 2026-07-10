@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 
 from ..config import ConfigError, load_config
+from ..platforms.linux.cli import linux_run
 from ..platforms.macos.cli import macos_run
 from ..xcode import (
     CommandError,
@@ -25,7 +26,6 @@ from ..xcode import (
     simctl_list,
 )
 from ._common import ToolchainError
-from ._linux import linux_run
 from ._platform import platform_option, resolve_target
 from .build import prepare_build
 

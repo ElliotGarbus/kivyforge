@@ -13,6 +13,10 @@ import platform as _platform
 from ..base import HostCapabilityError, Platform
 
 
+class AppDirError(Exception):
+    """A Linux AppDir bundling failure surfaced with an actionable message."""
+
+
 class LinuxPlatform(Platform):
     name = "linux"
     # Linux is a desktop target built on its own OS, so Linux maps to it as the
