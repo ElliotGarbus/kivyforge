@@ -62,10 +62,11 @@ def runner():
 @pytest.fixture(autouse=True)
 def fake_bundler(monkeypatch):
     """build_appdir just materializes a minimal AppDir; no host tools run."""
-    calls = {"arch": []}
+    calls = {"arch": [], "no_cache": []}
 
-    def fake_build(config, lock, project_root, *, arch=None, **k):
+    def fake_build(config, lock, project_root, *, arch=None, no_cache=False, **k):
         calls["arch"].append(arch)
+        calls["no_cache"].append(no_cache)
         appdir = project_root / "build" / "linux" / f"{config.display_name}.AppDir"
         appdir.mkdir(parents=True, exist_ok=True)
         (appdir / "AppRun").write_text("#!/bin/sh\n")
@@ -107,6 +108,27 @@ class TestBuild:
             result = runner.invoke(build, ["-p", "linux", "--release"])
             assert result.exit_code != 0
             assert "iOS target" in result.output
+
+    def test_arch_flows_to_bundler(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["-p", "linux", "--arch", "x86_64"])
+            assert result.exit_code == 0, result.output
+            assert fake_bundler["arch"] == ["x86_64"]
+
+    def test_no_cache_flows_to_bundler(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["-p", "linux", "--no-cache"])
+            assert result.exit_code == 0, result.output
+            assert fake_bundler["no_cache"] == [True]
+
+    def test_no_verify_lock_allows_stale(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, in_sync=False)
+            result = runner.invoke(build, ["-p", "linux", "--no-verify-lock"])
+            assert result.exit_code == 0, result.output
+            assert (Path(fs) / "build" / "linux" / "My App.AppDir").exists()
 
 
 class TestRun:
@@ -167,3 +189,10 @@ class TestPackage:
             result = runner.invoke(package, ["-p", "linux", "-f", "deb"])
             assert result.exit_code != 0
             assert "unknown package format" in result.output
+
+    def test_package_arch_not_in_lock_rejected(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)  # lock covers x86_64 only
+            result = runner.invoke(package, ["-p", "linux", "--arch", "arm64"])
+            assert result.exit_code != 0
+            assert "not in the lock" in result.output

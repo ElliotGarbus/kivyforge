@@ -6,6 +6,8 @@ import zipfile
 
 import pytest
 
+from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.artifacts.verify import sha256_file
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.platforms.linux import AppDirError, wheels_stage
 
@@ -97,3 +99,55 @@ class TestStageWheels:
         wheels_stage.stage_wheels(packages, "x86_64", lib, project_root=tmp_path)
         assert (lib / "a" / "__init__.py").exists()
         assert (lib / "b" / "_ext.so").exists()
+
+    def test_vendored_path_wheel_is_used(self, tmp_path):
+        """A wheel pinned by vendored ``path`` staged end-to-end (real _fetch)."""
+        wheels_dir = tmp_path / "wheels"
+        wheels_dir.mkdir()
+        vendored = wheels_dir / "a-1.0-py3-none-any.whl"
+        _wheel_zip(vendored, {"a/__init__.py": "vendored"})
+        pkg = _pkg(
+            "a",
+            [
+                LockedWheel(
+                    name=vendored.name,
+                    path="wheels/a-1.0-py3-none-any.whl",
+                    sha256=sha256_file(vendored),
+                )
+            ],
+        )
+        lib = tmp_path / "appdir" / "usr" / "lib"
+        wheels_stage.stage_wheels(
+            (pkg,),
+            "x86_64",
+            lib,
+            project_root=tmp_path,
+            cache=ArtifactCache(tmp_path / "cache"),
+        )
+        assert (lib / "a" / "__init__.py").read_text() == "vendored"
+
+
+class TestFetch:
+    def test_vendored_path_returns_resolved_file(self, tmp_path):
+        wheels_dir = tmp_path / "wheels"
+        wheels_dir.mkdir()
+        vendored = wheels_dir / "a-1.0-py3-none-any.whl"
+        _wheel_zip(vendored, {"a/__init__.py": "x"})
+        wheel = LockedWheel(
+            name=vendored.name,
+            path="wheels/a-1.0-py3-none-any.whl",
+            sha256=sha256_file(vendored),
+        )
+        got = wheels_stage._fetch(
+            wheel, tmp_path, ArtifactCache(tmp_path / "cache"), False
+        )
+        assert got == vendored.resolve()
+
+    def test_download_error_wrapped_as_appdir_error(self, tmp_path):
+        # An absolute vendored path is rejected by fetch_artifact (DownloadError),
+        # which the stager must re-raise as an actionable AppDirError.
+        wheel = LockedWheel(name="a.whl", path="/etc/passwd", sha256="0" * 64)
+        with pytest.raises(AppDirError):
+            wheels_stage._fetch(
+                wheel, tmp_path, ArtifactCache(tmp_path / "cache"), False
+            )
