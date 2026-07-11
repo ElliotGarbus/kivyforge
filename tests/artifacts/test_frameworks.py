@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import plistlib
 import tarfile
 import zipfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from kivyforge.artifacts.frameworks import (
     FrameworkConflict,
     copy_wheel_frameworks,
     extract_xcframework_archive,
+    read_xcframework_slices,
 )
 
 
@@ -193,3 +195,55 @@ class TestArchiveExtraction:
             extract_xcframework_archive(
                 archive, tmp_path / "Frameworks", name="ambiguous"
             )
+
+
+def _write_xcframework_plist(root: Path, identifiers) -> Path:
+    xc = root / "Widget.xcframework"
+    xc.mkdir(parents=True)
+    plist = {
+        "CFBundlePackageType": "XFWK",
+        "XCFrameworkFormatVersion": "1.0",
+        "AvailableLibraries": [
+            {"LibraryIdentifier": ident, "LibraryPath": "Widget.framework"}
+            for ident in identifiers
+        ],
+    }
+    with open(xc / "Info.plist", "wb") as fh:
+        plistlib.dump(plist, fh)
+    return xc
+
+
+class TestReadSlices:
+    def test_returns_sorted_identifiers(self, tmp_path):
+        xc = _write_xcframework_plist(
+            tmp_path,
+            ["ios-arm64_x86_64-simulator", "ios-arm64"],
+        )
+        assert read_xcframework_slices(xc) == (
+            "ios-arm64",
+            "ios-arm64_x86_64-simulator",
+        )
+
+    def test_no_available_libraries_is_empty(self, tmp_path):
+        xc = _write_xcframework_plist(tmp_path, [])
+        assert read_xcframework_slices(xc) == ()
+
+    def test_ignores_entries_without_identifier(self, tmp_path):
+        xc = tmp_path / "Widget.xcframework"
+        xc.mkdir()
+        plist = {
+            "AvailableLibraries": [
+                {"LibraryIdentifier": "ios-arm64", "LibraryPath": "W.framework"},
+                {"LibraryPath": "W.framework"},  # missing identifier
+                "not-a-dict",
+            ]
+        }
+        with open(xc / "Info.plist", "wb") as fh:
+            plistlib.dump(plist, fh)
+        assert read_xcframework_slices(xc) == ("ios-arm64",)
+
+    def test_missing_plist_raises(self, tmp_path):
+        xc = tmp_path / "Widget.xcframework"
+        xc.mkdir()
+        with pytest.raises(FileNotFoundError, match="Info.plist"):
+            read_xcframework_slices(xc)

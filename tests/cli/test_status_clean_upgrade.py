@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kivyforge.artifacts.download import DownloadError
+from kivyforge.artifacts.verify import HashMismatch
 from kivyforge.cli import upgrade as upgrade_mod
 from kivyforge.cli.clean import clean
 from kivyforge.cli.doctor import doctor
@@ -323,6 +325,88 @@ class TestUpgrade:
             assert result.exit_code == 0
             assert "Local" not in fetched
             assert "Skipped 1 vendored" in result.output
+
+    def test_name_selects_single_xcframework(self, runner, tmp_path, monkeypatch):
+        fetched = []
+        monkeypatch.setattr(
+            upgrade_mod,
+            "fetch_artifact",
+            lambda *, name, **kw: fetched.append(name) or Path("/x"),
+        )
+        xc = LockedXcframework(
+            name="SDL3",
+            version="3.0.0",
+            sha256="a" * 64,
+            slices=("ios-arm64",),
+            url="https://example/SDL3.zip",
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs, xcframeworks=[xc])
+            result = runner.invoke(upgrade, ["--name", "SDL3"])
+            assert result.exit_code == 0, result.output
+            assert fetched == ["SDL3"]
+            assert "Python.xcframework" not in fetched
+
+    def test_name_selects_python_only(self, runner, tmp_path, monkeypatch):
+        fetched = []
+        monkeypatch.setattr(
+            upgrade_mod,
+            "fetch_artifact",
+            lambda *, name, **kw: fetched.append(name) or Path("/x"),
+        )
+        xc = LockedXcframework(
+            name="SDL3",
+            version="3.0.0",
+            sha256="a" * 64,
+            slices=("ios-arm64",),
+            url="https://example/SDL3.zip",
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs, xcframeworks=[xc])
+            result = runner.invoke(upgrade, ["--name", "Python.xcframework"])
+            assert result.exit_code == 0, result.output
+            assert fetched == ["Python.xcframework"]
+
+    def test_name_unknown_errors(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            upgrade_mod, "fetch_artifact", lambda *, name, **kw: Path("/x")
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            result = runner.invoke(upgrade, ["--name", "DoesNotExist"])
+            assert result.exit_code != 0
+            assert "no artifact named 'DoesNotExist'" in result.output
+
+    def test_hash_mismatch_surfaces_as_toolchain_error(
+        self, runner, tmp_path, monkeypatch
+    ):
+        def boom(*, name, sha256, filename, url=None, **kw):
+            raise HashMismatch(
+                name=name,
+                source=url or filename,
+                expected=sha256,
+                actual="0" * 64,
+            )
+
+        monkeypatch.setattr(upgrade_mod, "fetch_artifact", boom)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            result = runner.invoke(upgrade, ["--python"])
+            assert result.exit_code != 0
+            assert "SHA-256 mismatch" in result.output
+
+    def test_download_error_surfaces_as_toolchain_error(
+        self, runner, tmp_path, monkeypatch
+    ):
+        def boom(*, name, **kw):
+            raise DownloadError("network down")
+
+        monkeypatch.setattr(upgrade_mod, "fetch_artifact", boom)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            result = runner.invoke(upgrade, ["--python"])
+            assert result.exit_code != 0
+            assert "network down" in result.output
 
     def test_missing_lock_errors(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

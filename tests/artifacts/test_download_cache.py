@@ -12,7 +12,12 @@ from kivyforge.artifacts.cache import (
     _default_cache_root,
 )
 from kivyforge.artifacts.download import DownloadError, fetch_artifact
-from kivyforge.artifacts.verify import HashMismatch, sha256_bytes, sha256_file
+from kivyforge.artifacts.verify import (
+    HashMismatch,
+    sha256_bytes,
+    sha256_file,
+    verify_file,
+)
 
 
 class FakeDownloader:
@@ -239,3 +244,31 @@ class TestLocalPath:
                 path="x",
                 project_root=tmp_path,
             )
+
+
+class TestVerifyFile:
+    def test_matching_hash_passes(self, tmp_path):
+        f = tmp_path / "artifact.bin"
+        f.write_bytes(b"payload")
+        sha = sha256_bytes(b"payload")
+        # No exception == pass.
+        verify_file(f, sha, name="artifact", source="https://e/a")
+
+    def test_mismatch_raises_with_details(self, tmp_path):
+        f = tmp_path / "artifact.bin"
+        f.write_bytes(b"tampered")
+        with pytest.raises(HashMismatch) as exc:
+            verify_file(
+                f, "0" * 64, name="artifact", source="https://e/a"
+            )
+        assert exc.value.name == "artifact"
+        assert exc.value.source == "https://e/a"
+        assert exc.value.expected == "0" * 64
+        assert exc.value.actual == sha256_bytes(b"tampered")
+
+    def test_accepts_str_path(self, tmp_path):
+        f = tmp_path / "artifact.bin"
+        f.write_bytes(b"payload")
+        verify_file(
+            str(f), sha256_bytes(b"payload"), name="a", source="s"
+        )
