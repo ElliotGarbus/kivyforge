@@ -28,6 +28,25 @@ flowchart TD
 - **`core/doctor`** — a probe + runner framework; backends contribute their own checks (including host-capability checks for the target).
 - **`core/cli`** — the Click group, verb dispatch, and the `--platform` → `KIVYFORGE_PLATFORM` → host resolution chain; verbs delegate to the resolved backend (see [02 — CLI + platform resolution](02-cli-and-platform-resolution.md)).
 
+### Realized module layout
+
+The conceptual `core/*` groupings above live at the top level of the package:
+`kivyforge/config`, `kivyforge/lock` (the shared wheel+runtime engine and neutral
+lock model/reader/resolver helpers), `kivyforge/artifacts`, `kivyforge/doctor`
+(`probe`, `result`, `checks_common`), and `kivyforge/cli`. Everything
+platform-specific is consolidated under one self-contained package per target at
+`kivyforge/platforms/<name>/`:
+
+- `__init__.py` — the `Platform` subclass (metadata + host capability + the
+  `build`/`run`/`package`/`open_project`/`doctor` verb methods, each lazily
+  importing the modules below to keep backend import cheap and cycle-free).
+- bundler modules — the native project/artifact generator.
+- `lock/` — the platform's lock profile over the shared engine (desktop) or the
+  carved-out iOS lock stack.
+- `cli.py` — the verb implementations the backend dispatches to.
+- `doctor.py` — the platform checks plus its `<name>_doctor` orchestration,
+  reusing `kivyforge/doctor/checks_common.py`.
+
 ## The `Platform` interface
 
 A backend implements a common interface; the exact method set evolves with the codebase, but conceptually a backend provides:
@@ -50,7 +69,7 @@ The **registry** maps a platform name (`ios`, `macos`, …) to its backend and i
 
 Adding a platform is additive and localized:
 
-1. Create `kivyforge/platforms/<name>/` and register the backend in the registry.
+1. Create the self-contained `kivyforge/platforms/<name>/` package (backend `__init__.py`, bundler modules, `lock/`, `cli.py`, `doctor.py`) and register the backend in the registry.
 2. Define the `[tool.kivy.<name>]` overlay schema + config dataclass (reuse shared `[tool.kivy]` keys; add only what's platform-specific).
 3. Implement runtime acquisition and wheel-tag selection so `core/lock` can emit `pylock.<name>.toml`.
 4. Implement the native-project generation + `build` / `run` / `package` (with its `-f` formats) and signing of the runnable artifact.

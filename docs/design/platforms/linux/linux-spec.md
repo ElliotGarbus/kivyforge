@@ -371,16 +371,20 @@ the macOS `bundle_id` fail-fast.
 
 ## Module layout
 
-Follows the realized repo conventions (not the master plan's aspirational
-`platforms/linux/` split for the bundler):
+Everything Linux-specific lives under the self-contained `kivyforge/platforms/linux/`
+package (platform-first consolidation):
 
-- `kivyforge/linux/` — the AppDir bundler + AppImage packaging
-  (`bundle.py`, `runtime_stage.py`, `wheels_stage.py`, `launcher.py`,
+- `kivyforge/platforms/linux/__init__.py` — the `LinuxPlatform` backend
+  (`host_system = "Linux"`, `package_formats = ("appimage", "folder")`) with its
+  `build`/`run`/`package`/`doctor` verb methods (each lazily imports the module
+  below).
+- `kivyforge/platforms/linux/` (bundler modules) — the AppDir bundler + AppImage
+  packaging (`bundle.py`, `runtime_stage.py`, `wheels_stage.py`, `launcher.py`,
   `desktop.py`, `icons.py`, `appimage.py`).
-- `kivyforge/lock/linux/` — the lock profile + runtime provider
-  (`profile.py`, `runtime.py`).
-- `kivyforge/cli/_linux.py` — Linux dispatch for the shared `build`/`run`/
-  `package` verbs.
-- `kivyforge/doctor/checks_linux.py` — Linux `doctor` checks.
-- `kivyforge/platforms/linux/` — the small `LinuxPlatform` backend
-  (`host_system = "Linux"`, `package_formats = ("appimage", "folder")`).
+- `kivyforge/platforms/linux/lock/` — the lock profile + runtime provider
+  (`profile.py`, `runtime.py`), built on the shared `kivyforge/lock/` wheel+runtime
+  engine.
+- `kivyforge/platforms/linux/cli.py` — Linux implementation of the shared
+  `build`/`run`/`package` verbs (dispatched from `LinuxPlatform`).
+- `kivyforge/platforms/linux/doctor.py` — Linux `doctor` checks + `linux_doctor`
+  orchestration, reusing the neutral checks in `kivyforge/doctor/checks_common.py`.
