@@ -27,7 +27,6 @@
 # Usage:
 #   ./verify-linux-examples.sh                  # default set (dice-roller, notes)
 #   ./verify-linux-examples.sh dice-roller      # only the named example(s)
-#   ./verify-linux-examples.sh desktop-viewer   # macOS-focused; opt-in by name only
 #   ./verify-linux-examples.sh --no-pause       # don't wait for Enter between examples
 #   ./verify-linux-examples.sh --no-gui         # skip the two GUI launches (run + AppImage)
 #   ./verify-linux-examples.sh --keep-lock      # keep the regenerated lock (don't restore committed)
@@ -84,10 +83,8 @@ done
 export KIVYFORGE_PLATFORM="$PLATFORM"
 LOCK="pylock.${PLATFORM}.toml"
 
-# desktop-viewer is intentionally excluded from the default set: it builds and
-# packages on Linux, but its UX is macOS-specific (Command-key shortcuts + a
-# native osascript open panel), so it can't be meaningfully exercised here. Run
-# it explicitly by name if you just want to smoke-test its Linux build/package.
+# desktop-viewer is intentionally absent: it is a macOS-only example (no
+# [tool.kivy.linux] overlay), so it has no Linux target to verify here.
 DEFAULT_EXAMPLES=(dice-roller notes)
 if [[ ${#ARGS[@]} -gt 0 ]]; then
     EXAMPLES=("${ARGS[@]}")
