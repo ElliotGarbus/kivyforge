@@ -2,8 +2,14 @@
 
 One write path:
 
-* **update** — a ``pyproject.toml`` exists. Only add/replace ``[tool.kivy*]``;
-  ``[project]`` and every other namespace are left untouched. No venv required.
+* **update** — a ``pyproject.toml`` exists. Only add/replace the target
+  platform's ``[tool.kivy]`` + ``[tool.kivy.<platform>]``; ``[project]`` and
+  every other namespace are left untouched. No venv required.
+
+Platform-aware: resolves the target the same way as every other verb
+(``-p`` / ``KIVYFORGE_PLATFORM``), plus two init-only fallbacks that make sense
+only when *configuring* a platform for the first time — see
+``_resolve_init_platform``.
 
 If ``requirements.txt`` is found but no ``pyproject.toml``, init exits non-zero
 with a migration pointer rather than auto-migrating.
@@ -11,6 +17,8 @@ with a migration pointer rather than auto-migrating.
 
 from __future__ import annotations
 
+import os
+import platform as _platform_mod
 import sys
 import tomllib
 from importlib import metadata
@@ -18,14 +26,20 @@ from pathlib import Path
 
 import click
 
-from ..config.model import SigningConfig
+from ..config.model import MacosSigningConfig, SigningConfig
+from ..platforms import PLATFORM_ENV_VAR, available_platform_names, get_platform
 from ._common import PYPROJECT_NAME, ToolchainError
+from ._platform import configured_platforms, platform_option
 from .init_writer import (
-    append_kivy_tables,
+    append_block,
     has_kivy_dep,
-    has_kivyforge_table,
+    has_platform_overlay,
+    has_shared_table,
     normalize_package_name,
-    strip_kivy_tables,
+    render_kivy_tables,
+    render_linux_tables,
+    render_macos_tables,
+    strip_platform_tables,
 )
 
 REQUIREMENTS_NAME = "requirements.txt"
@@ -46,17 +60,19 @@ _REQUIREMENTS_MSG = (
 
 
 @click.command()
+@platform_option
 @click.option(
     "--force", is_flag=True, help="Regenerate [tool.kivy*] (preserves signing)."
 )
-def init(force: bool) -> None:
-    """Seed [tool.kivy] / [tool.kivy.ios] into pyproject.toml."""
+def init(cli_platform: str | None, force: bool) -> None:
+    """Seed [tool.kivy] + the target platform's overlay into pyproject.toml."""
     cwd = Path.cwd()
     pyproject = cwd / PYPROJECT_NAME
     requirements = cwd / REQUIREMENTS_NAME
 
     if pyproject.is_file():
-        _run_update_path(pyproject, force=force)
+        platform_name = _resolve_init_platform(cli_platform, pyproject)
+        _run_update_path(pyproject, force=force, platform_name=platform_name)
     elif requirements.is_file():
         raise ToolchainError(_REQUIREMENTS_MSG)
     else:
@@ -73,7 +89,61 @@ def init(force: bool) -> None:
         )
 
 
-def _run_update_path(pyproject: Path, *, force: bool) -> None:
+def _resolve_init_platform(cli_platform: str | None, pyproject: Path) -> str:
+    """Resolve init's target platform.
+
+    Same top two steps as every other verb (``-p`` then ``KIVYFORGE_PLATFORM``),
+    but init additionally needs to handle the case it alone faces: *configuring*
+    a platform for the first time, when nothing is "configured" yet. So instead
+    of the shared ``resolve_target`` (whose host-default step requires the
+    platform to already be configured — the right call for build/run/etc., but
+    backwards for init), this:
+
+    1. ``--platform`` / ``-p``.
+    2. ``KIVYFORGE_PLATFORM``.
+    3. The project's one already-configured overlay, if exactly one exists
+       (the ``--force``-regenerate case — no flag needed to update what's
+       already there).
+    4. The host OS's own platform (unconditionally — this *is* how it gets
+       configured the first time). iOS never matches here (no host maps to
+       it); it always needs an explicit choice, same as everywhere else.
+    """
+    if cli_platform:
+        return cli_platform
+
+    env_platform = os.environ.get(PLATFORM_ENV_VAR)
+    if env_platform:
+        if env_platform not in available_platform_names():
+            raise ToolchainError(
+                f"unknown platform {env_platform!r} in ${PLATFORM_ENV_VAR}; "
+                f"registered: {', '.join(available_platform_names())}"
+            )
+        return env_platform
+
+    configured = configured_platforms(pyproject)
+    if len(configured) == 1:
+        return next(iter(configured))
+    if len(configured) > 1:
+        example = sorted(configured)[0]
+        raise ToolchainError(
+            "multiple platforms configured in this pyproject.toml "
+            f"({', '.join(sorted(configured))}); pass one explicitly:\n"
+            f"  kivyforge init --platform {example}"
+        )
+
+    host = _platform_mod.system()
+    for name in available_platform_names():
+        if get_platform(name).host_system == host:
+            return name
+
+    raise ToolchainError(
+        "cannot infer a target platform on this host.\n"
+        "  Pass one explicitly:      kivyforge init --platform macos\n"
+        f"  Or set a session default: export {PLATFORM_ENV_VAR}=macos"
+    )
+
+
+def _run_update_path(pyproject: Path, *, force: bool, platform_name: str) -> None:
     text = pyproject.read_text(encoding="utf-8")
     raw = _safe_parse(text, pyproject)
 
@@ -84,47 +154,97 @@ def _run_update_path(pyproject: Path, *, force: bool) -> None:
             "an existing file. Add a minimal [project] (name + version) first."
         )
 
-    existing_ios = has_kivyforge_table(text)
-    if existing_ios and not force:
+    table_key = f"tool.kivy.{platform_name}"
+    existing_overlay = has_platform_overlay(text, platform_name)
+    if existing_overlay and not force:
         raise ToolchainError(
-            "[tool.kivy.ios] already exists. Re-run with --force to regenerate "
-            "it (your [tool.kivy.ios.signing] is preserved)."
+            f"[{table_key}] already exists. Re-run with --force to regenerate "
+            f"it (your [{table_key}.signing] is preserved)."
         )
 
     app_slug = _project_slug(raw)
     deps = raw.get("project", {}).get("dependencies", [])
     kivy = has_kivy_dep(deps) if isinstance(deps, list) else False
+    include_shared = not has_shared_table(text)
+    table = _platform_table(raw, platform_name)
 
-    if existing_ios and force:
-        signing = _read_signing(raw)
-        python_version = _read_python_version(raw)
-        simulator_archs = _read_simulator_archs(raw)
-        icon_source = _read_icon_source(raw)
-        splash_source, splash_background = _read_splash(raw)
-        stripped = strip_kivy_tables(text)
-        new_text = append_kivy_tables(
-            stripped,
+    if existing_overlay and force:
+        stripped = strip_platform_tables(text, platform_name)
+        block = _render_overlay(
+            platform_name,
             app_slug,
-            signing=signing,
-            python_version=python_version,
+            table,
             has_kivy=kivy,
-            simulator_archs=simulator_archs,
-            icon_source=icon_source,
-            splash_source=splash_source,
-            splash_background=splash_background,
+            include_shared=include_shared,
+            preserve=True,
         )
+        new_text = append_block(stripped, block)
         pyproject.write_text(new_text, encoding="utf-8")
-        click.echo(
-            "Regenerated [tool.kivy*] (signing, python version, simulator_archs, "
-            "icon, and splash preserved)."
-        )
+        click.echo(f"Regenerated [{table_key}] (signing/python/icon settings preserved).")
     else:
-        new_text = append_kivy_tables(text, app_slug, signing=None, has_kivy=kivy)
+        block = _render_overlay(
+            platform_name,
+            app_slug,
+            table,
+            has_kivy=kivy,
+            include_shared=include_shared,
+            preserve=False,
+        )
+        new_text = append_block(text, block)
         pyproject.write_text(new_text, encoding="utf-8")
-        click.echo("Added [tool.kivy] + [tool.kivy.ios] to pyproject.toml.")
+        added = f"[{table_key}]" if not include_shared else f"[tool.kivy] + [{table_key}]"
+        click.echo(f"Added {added} to pyproject.toml.")
 
     _maybe_warn_drift(raw)
-    click.echo("Next: fill in bundle_id / signing.team_id, then `kivyforge lock`.")
+    click.echo(
+        f"Next: fill in the TODOs in [{table_key}], then `kivyforge lock -p {platform_name}`."
+    )
+
+
+def _render_overlay(
+    platform_name: str,
+    app_slug: str,
+    table: dict,
+    *,
+    has_kivy: bool,
+    include_shared: bool,
+    preserve: bool,
+) -> str:
+    """Render the (optional) shared ``[tool.kivy]`` + the target platform's overlay."""
+    if platform_name == "ios":
+        splash_source, splash_background = _read_splash(table) if preserve else (None, None)
+        return render_kivy_tables(
+            app_slug,
+            signing=_read_signing(table) if preserve else None,
+            python_version=_read_python_version(table) if preserve else None,
+            has_kivy=has_kivy,
+            simulator_archs=_read_str_list(table, "simulator_archs") if preserve else None,
+            icon_source=_read_icon_source(table) if preserve else None,
+            splash_source=splash_source,
+            splash_background=splash_background,
+            include_shared=include_shared,
+        )
+    if platform_name == "macos":
+        return render_macos_tables(
+            app_slug,
+            signing=_read_macos_signing(table) if preserve else None,
+            python_version=_read_python_version(table) if preserve else None,
+            has_kivy=has_kivy,
+            archs=_read_str_list(table, "archs") if preserve else None,
+            icon_source=_read_icon_source(table) if preserve else None,
+            include_shared=include_shared,
+        )
+    if platform_name == "linux":
+        return render_linux_tables(
+            app_slug,
+            python_version=_read_python_version(table) if preserve else None,
+            has_kivy=has_kivy,
+            archs=_read_str_list(table, "archs") if preserve else None,
+            icon_source=_read_icon_source(table) if preserve else None,
+            categories=_read_categories(table) if preserve else None,
+            include_shared=include_shared,
+        )
+    raise ToolchainError(f"`kivyforge init` does not support platform {platform_name!r} yet.")
 
 
 # --------------------------------------------------------------------------- #
@@ -163,35 +283,35 @@ def _project_slug(raw: dict) -> str:
     return "app"
 
 
-def _read_python_version(raw: dict) -> str | None:
+def _platform_table(raw: dict, platform_name: str) -> dict:
     try:
-        version = raw["tool"]["kivy"]["ios"]["python"]["version"]
+        table = raw["tool"]["kivy"][platform_name]
+    except (KeyError, TypeError):
+        return {}
+    return table if isinstance(table, dict) else {}
+
+
+def _read_python_version(table: dict) -> str | None:
+    try:
+        version = table["python"]["version"]
     except (KeyError, TypeError):
         return None
     return version if isinstance(version, str) and version else None
 
 
-def _ios_table(raw: dict) -> dict:
-    try:
-        ios = raw["tool"]["kivy"]["ios"]
-    except (KeyError, TypeError):
-        return {}
-    return ios if isinstance(ios, dict) else {}
-
-
-def _read_simulator_archs(raw: dict) -> list[str] | None:
-    """Return a user-set simulator_archs list, or None when absent/invalid.
+def _read_str_list(table: dict, key: str) -> list[str] | None:
+    """Return a user-set list-of-strings field, or None when absent/invalid.
 
     None preserves the commented stub on ``--force`` so the default still holds.
     """
-    archs = _ios_table(raw).get("simulator_archs")
-    if isinstance(archs, list) and all(isinstance(a, str) for a in archs) and archs:
-        return archs
+    values = table.get(key)
+    if isinstance(values, list) and values and all(isinstance(v, str) for v in values):
+        return values
     return None
 
 
-def _read_icon_source(raw: dict) -> str | None:
-    icons = _ios_table(raw).get("icons")
+def _read_icon_source(table: dict) -> str | None:
+    icons = table.get("icons")
     if isinstance(icons, dict):
         source = icons.get("source")
         if isinstance(source, str) and source:
@@ -199,8 +319,8 @@ def _read_icon_source(raw: dict) -> str | None:
     return None
 
 
-def _read_splash(raw: dict) -> tuple[str | None, str | None]:
-    splash = _ios_table(raw).get("splash")
+def _read_splash(table: dict) -> tuple[str | None, str | None]:
+    splash = table.get("splash")
     if not isinstance(splash, dict):
         return None, None
     source = splash.get("source")
@@ -211,11 +331,8 @@ def _read_splash(raw: dict) -> tuple[str | None, str | None]:
     )
 
 
-def _read_signing(raw: dict) -> SigningConfig | None:
-    try:
-        signing = raw["tool"]["kivy"]["ios"]["signing"]
-    except (KeyError, TypeError):
-        return None
+def _read_signing(table: dict) -> SigningConfig | None:
+    signing = table.get("signing")
     if not isinstance(signing, dict):
         return None
     return SigningConfig(
@@ -225,6 +342,27 @@ def _read_signing(raw: dict) -> SigningConfig | None:
         auto_signing=bool(signing.get("auto_signing", True)),
         upload_symbols=bool(signing.get("upload_symbols", True)),
     )
+
+
+def _read_macos_signing(table: dict) -> MacosSigningConfig | None:
+    signing = table.get("signing")
+    if not isinstance(signing, dict):
+        return None
+    identity = signing.get("identity", "")
+    if not identity:
+        return None
+    return MacosSigningConfig(
+        identity=identity,
+        team_id=signing.get("team_id", ""),
+        notary_profile=signing.get("notary_profile", ""),
+    )
+
+
+def _read_categories(table: dict) -> list[str] | None:
+    desktop = table.get("desktop")
+    if not isinstance(desktop, dict):
+        return None
+    return _read_str_list(desktop, "categories")
 
 
 def _maybe_warn_drift(raw: dict) -> None:

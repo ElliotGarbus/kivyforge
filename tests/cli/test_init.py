@@ -13,9 +13,14 @@ from kivyforge.cli.init import init
 from kivyforge.cli.init_writer import (
     bundle_id_segment,
     has_kivy_dep,
+    has_platform_overlay,
+    has_shared_table,
     normalize_package_name,
     render_kivy_tables,
+    render_linux_tables,
+    render_macos_tables,
     strip_kivy_tables,
+    strip_platform_tables,
 )
 from kivyforge.config.model import SigningConfig
 
@@ -173,6 +178,108 @@ class TestWriterUnits:
         assert "[tool.kivy]" not in out
         assert "[tool.kivy.ios]" not in out
 
+    def test_render_macos_tables_template(self):
+        block = render_macos_tables("myapp")
+        assert "[tool.kivy]" in block  # include_shared defaults to True
+        assert "[tool.kivy.macos]" in block
+        assert 'bundle_id = "org.example.myapp"' in block
+        assert "[tool.kivy.macos.python]" in block
+        assert "[tool.kivy.macos.signing]" in block
+        assert "exclude" not in block
+        # valid, loadable TOML
+        from kivyforge.config import load_config_from_text
+
+        cfg = load_config_from_text(
+            '[project]\nname = "myapp"\nversion = "1.0.0"\n\n' + block,
+            require_ios=False,
+            require_macos=True,
+        )
+        assert cfg.macos_required.bundle_id == "org.example.myapp"
+
+    def test_render_macos_tables_omits_shared_when_requested(self):
+        block = render_macos_tables("myapp", include_shared=False)
+        assert "[tool.kivy]" not in block
+        assert "[tool.kivy.macos]" in block
+
+    def test_render_macos_tables_preserves_signing(self):
+        from kivyforge.config.model import MacosSigningConfig
+
+        signing = MacosSigningConfig(
+            identity="Developer ID Application: Jane Doe (TEAM123456)",
+            team_id="TEAM123456",
+            notary_profile="my-profile",
+        )
+        block = render_macos_tables("myapp", signing=signing)
+        assert 'identity = "Developer ID Application: Jane Doe (TEAM123456)"' in block
+        assert 'team_id = "TEAM123456"' in block
+        assert 'notary_profile = "my-profile"' in block
+
+    def test_render_macos_tables_with_kivy_exclude(self):
+        block = render_macos_tables("myapp", has_kivy=True)
+        assert "exclude = [" in block
+        assert '"kivy-garden"' in block
+
+    def test_render_linux_tables_template(self):
+        block = render_linux_tables("myapp")
+        assert "[tool.kivy]" in block
+        assert "[tool.kivy.linux]" in block
+        assert 'app_id = "org.example.myapp"' in block
+        assert "[tool.kivy.linux.python]" in block
+        assert "[tool.kivy.linux.desktop]" in block
+        assert 'categories = ["Utility"]' in block
+        from kivyforge.config import load_config_from_text
+
+        cfg = load_config_from_text(
+            '[project]\nname = "myapp"\nversion = "1.0.0"\n\n' + block,
+            require_ios=False,
+            require_linux=True,
+        )
+        assert cfg.linux_required.app_id == "org.example.myapp"
+
+    def test_render_linux_tables_omits_shared_when_requested(self):
+        block = render_linux_tables("myapp", include_shared=False)
+        assert "[tool.kivy]" not in block
+        assert "[tool.kivy.linux]" in block
+
+    def test_has_shared_table(self):
+        assert has_shared_table("[tool.kivy]\napp_dir = 'src'\n")
+        assert not has_shared_table("[tool.kivy.ios]\nschema_version = 1\n")
+
+    def test_has_platform_overlay(self):
+        text = "[tool.kivy]\napp_dir = 'src'\n\n[tool.kivy.macos]\nschema_version = 1\n"
+        assert has_platform_overlay(text, "macos")
+        assert not has_platform_overlay(text, "ios")
+        assert not has_platform_overlay(text, "linux")
+
+    def test_has_platform_overlay_matches_subtables(self):
+        text = "[tool.kivy.ios.signing]\nteam_id = 'ABCDE12345'\n"
+        assert has_platform_overlay(text, "ios")
+
+    def test_strip_platform_tables_preserves_other_platforms(self):
+        text = textwrap.dedent(
+            """
+            [project]
+            name = "x"
+
+            [tool.kivy]
+            app_dir = "src"
+
+            [tool.kivy.macos]
+            schema_version = 1
+
+            [tool.kivy.macos.python]
+            version = "3.13.14"
+
+            [tool.kivy.ios]
+            schema_version = 1
+            """
+        ).strip()
+        out = strip_platform_tables(text, "macos")
+        assert "[tool.kivy]" in out
+        assert "[tool.kivy.macos]" not in out
+        assert "[tool.kivy.macos.python]" not in out
+        assert "[tool.kivy.ios]" in out
+
 
 class TestNoManifest:
     def test_no_pyproject_no_requirements_errors(self, runner, tmp_path):
@@ -329,3 +436,162 @@ class TestUpdatePath:
             result = runner.invoke(init, [])
         assert result.exit_code != 0
         assert "no [project] table" in result.output
+
+
+class TestPlatformAware:
+    """Regression coverage for the ``init`` corruption bug + platform dispatch.
+
+    ``init`` used to always render the iOS overlay regardless of platform or
+    host, unconditionally appending a *second* ``[tool.kivy]`` table onto any
+    project that already had one — producing invalid TOML for any
+    macOS/Linux-only project. These tests cover the fix: platform resolution
+    (``-p`` / ``KIVYFORGE_PLATFORM`` / host default / already-configured), and
+    that adding or regenerating one platform's overlay never touches another's.
+    """
+
+    PYPROJECT_MACOS = textwrap.dedent(
+        """
+        [project]
+        name = "dice-roller"
+        version = "1.0.0"
+        dependencies = ["kivy>=3.0"]
+
+        [tool.kivy]
+        display_name = "Dice Roller"
+        app_dir = "src"
+        entry_point = "main"
+        orientation = ["portrait"]
+
+        [tool.kivy.macos]
+        schema_version = 1
+        bundle_id = "org.example.dice-roller"
+        build = 1
+        archs = ["arm64", "x86_64"]
+
+        [tool.kivy.macos.python]
+        version = "3.13.14"
+        """
+    ).strip()
+
+    def test_macos_fresh_project_seeds_shared_and_macos_tables(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert data["tool"]["kivy"]["app_dir"] == "src"
+        assert data["tool"]["kivy"]["macos"]["bundle_id"] == "org.example.myapp"
+
+    def test_linux_fresh_project_seeds_shared_and_linux_tables(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, ["-p", "linux"])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert data["tool"]["kivy"]["app_dir"] == "src"
+        assert data["tool"]["kivy"]["linux"]["app_id"] == "org.example.myapp"
+
+    def test_adding_second_platform_does_not_duplicate_shared_table(
+        self, runner, tmp_path
+    ):
+        """The corruption bug: init used to blindly append a 2nd [tool.kivy]."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text(self.PYPROJECT_MACOS + "\n")
+            result = runner.invoke(init, ["-p", "ios"])
+            assert result.exit_code == 0, result.output
+            text = pp.read_text()
+            data = tomllib.loads(text)  # raises if [tool.kivy] was duplicated
+        assert text.count("[tool.kivy]") == 1
+        assert data["tool"]["kivy"]["macos"]["bundle_id"] == "org.example.dice-roller"
+        assert data["tool"]["kivy"]["ios"]["bundle_id"] == "org.example.dice-roller"
+
+    def test_force_regenerate_preserves_other_platforms_overlay(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text(self.PYPROJECT_MACOS + "\n")
+            runner.invoke(init, ["-p", "ios"])  # add a second platform first
+            result = runner.invoke(init, ["-p", "macos", "--force"])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert "ios" in data["tool"]["kivy"]
+        assert "macos" in data["tool"]["kivy"]
+
+    def test_force_regenerate_preserves_macos_signing(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            runner.invoke(init, ["-p", "macos"])
+            text = pp.read_text().replace(
+                '# identity = "Developer ID Application: Your Name (TEAMID1234)"  '
+                "# TODO: set for Gatekeeper-trusted distribution (ad-hoc signing is "
+                "the default without it)",
+                'identity = "Developer ID Application: Jane Doe (TEAM123456)"',
+            )
+            pp.write_text(text)
+            result = runner.invoke(init, ["-p", "macos", "--force"])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert (
+            data["tool"]["kivy"]["macos"]["signing"]["identity"]
+            == "Developer ID Application: Jane Doe (TEAM123456)"
+        )
+
+    def test_refuses_existing_macos_overlay_without_force(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text(self.PYPROJECT_MACOS + "\n")
+            result = runner.invoke(init, ["-p", "macos"])
+        assert result.exit_code != 0
+        assert "--force" in result.output
+
+    def test_ambiguous_multiple_configured_platforms_requires_explicit_flag(
+        self, runner, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text(self.PYPROJECT_MACOS + "\n")
+            runner.invoke(init, ["-p", "ios"])  # now both ios + macos configured
+            result = runner.invoke(init, [])  # no -p, no env
+        assert result.exit_code != 0
+        assert "multiple platforms configured" in result.output
+
+    def test_single_configured_platform_resolved_without_flag(
+        self, runner, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text(self.PYPROJECT_MACOS + "\n")
+            # No -p / no env, but exactly one platform (macos) already configured.
+            result = runner.invoke(init, ["--force"])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert "macos" in data["tool"]["kivy"]
+        assert "ios" not in data["tool"]["kivy"]
+
+    def test_unknown_env_platform_is_actionable(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setenv("KIVYFORGE_PLATFORM", "windows")
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, [])
+        assert result.exit_code != 0
+        assert "unknown platform" in result.output
+
+    def test_host_default_used_when_nothing_configured_or_specified(
+        self, runner, tmp_path, monkeypatch
+    ):
+        """On a fresh project with no flag/env/existing overlay, init falls
+        back to the host OS's own platform (this test runs on macOS)."""
+        monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, [])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert "macos" in data["tool"]["kivy"]

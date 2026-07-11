@@ -15,21 +15,24 @@ import re
 
 from packaging.requirements import InvalidRequirement, Requirement
 
-from ..config.model import SigningConfig
+from ..config.model import MacosSigningConfig, SigningConfig
 
 # Default Python.xcframework version init seeds (spec 01).
 DEFAULT_PYTHON_VERSION = "3.15.0b2"
 DEFAULT_DEPLOYMENT_TARGET = "13.0"
+# Default python-build-standalone version seeded for macOS/Linux (desktop
+# targets pin a released runtime, not a beta xcframework).
+DEFAULT_DESKTOP_PYTHON_VERSION = "3.13.14"
 
 # Exclude block emitted when kivy is a direct dependency.  Each entry is
 # documented with the Kivy feature that requires it so users know which lines
 # are safe to remove for their specific app.
 _KIVY_EXCLUDE_LINES = [
-    "# Kivy's wheel declares deps that are not needed at runtime on iOS.",
+    "# Kivy's wheel declares deps that are not needed at runtime for most apps.",
     "# Remove an entry only if your app actually uses that feature.",
     "exclude = [",
-    "    # kivy-garden: the extension registry / download CLI.  Never needed at",
-    "    # runtime on iOS (the App Store prohibits dynamic package installation).",
+    "    # kivy-garden: the extension registry / download CLI.  Rarely needed at",
+    "    # runtime (app stores generally prohibit dynamic package installation).",
     "    # Individual garden widgets (e.g. kivy-garden.mapview) are separate",
     "    # packages — add them to [project].dependencies instead.",
     '    "kivy-garden",',
@@ -110,6 +113,7 @@ def render_kivy_tables(
     icon_source: str | None = None,
     splash_source: str | None = None,
     splash_background: str | None = None,
+    include_shared: bool = True,
 ) -> str:
     """Render the ``[tool.kivy]`` + ``[tool.kivy.ios]`` block.
 
@@ -124,6 +128,11 @@ def render_kivy_tables(
     preserve path: when set, they are emitted as active TOML; when ``None`` (the
     initial-add path, or a value the user never set) a commented TODO stub is
     emitted instead so the build-time default stays in effect.
+
+    ``include_shared`` controls whether the cross-platform ``[tool.kivy]``
+    table is emitted. Set it to ``False`` when the project already declares
+    ``[tool.kivy]`` (e.g. adding iOS alongside an existing macOS/Linux overlay)
+    so init never emits a second, TOML-invalidating ``[tool.kivy]`` table.
     """
     display = app_slug.replace("_", " ").title()
     if simulator_archs is not None:
@@ -135,13 +144,17 @@ def render_kivy_tables(
             '# drop "x86_64" once you no longer run the simulator on Intel Macs '
             "(default pins both)"
         )
-    lines = [
-        "[tool.kivy]",
-        f'display_name = "{display}"',
-        'app_dir = "src"',
-        'entry_point = "main"',
-        'orientation = ["portrait"]',
-        "",
+    lines: list[str] = []
+    if include_shared:
+        lines += [
+            "[tool.kivy]",
+            f'display_name = "{display}"',
+            'app_dir = "src"',
+            'entry_point = "main"',
+            'orientation = ["portrait"]',
+            "",
+        ]
+    lines += [
         "[tool.kivy.ios]",
         "schema_version = 1",
         f'bundle_id = "org.example.{bundle_id_segment(app_slug)}"  '
@@ -215,9 +228,19 @@ _SWIFT_PACKAGES_STUB = [
 
 def has_kivyforge_table(text: str) -> bool:
     """True if the text already declares a [tool.kivy.ios] table."""
-    return _section_keys(text).intersection({"tool.kivy.ios"}) != set() or any(
-        k.startswith("tool.kivy.ios.") for k in _section_keys(text)
-    )
+    return has_platform_overlay(text, "ios")
+
+
+def has_shared_table(text: str) -> bool:
+    """True if the text already declares the bare, cross-platform [tool.kivy] table."""
+    return "tool.kivy" in _section_keys(text)
+
+
+def has_platform_overlay(text: str, platform: str) -> bool:
+    """True if the text already declares [tool.kivy.<platform>] (or a sub-table)."""
+    prefix = f"tool.kivy.{platform}"
+    keys = _section_keys(text)
+    return prefix in keys or any(k.startswith(f"{prefix}.") for k in keys)
 
 
 def _section_keys(text: str) -> set[str]:
@@ -253,6 +276,33 @@ def strip_kivy_tables(text: str) -> str:
     return result + "\n" if result else ""
 
 
+def strip_platform_tables(text: str, platform: str) -> str:
+    """Remove only ``[tool.kivy.<platform>]`` and its sub-tables.
+
+    Unlike :func:`strip_kivy_tables` (which drops the shared ``[tool.kivy]``
+    table too, safe only when there is exactly one platform), this preserves
+    ``[tool.kivy]`` and every *other* platform's overlay — required so
+    regenerating one platform's overlay (``init --force -p macos``) in a
+    multi-platform ``pyproject.toml`` never touches iOS/Linux's tables.
+    """
+    prefix = f"tool.kivy.{platform}"
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    dropping = False
+    for line in lines:
+        m = _TABLE_HEADER.match(line.rstrip("\n"))
+        if m:
+            key = m.group("key").strip()
+            dropping = key == prefix or key.startswith(prefix + ".")
+            if dropping:
+                continue
+        if dropping:
+            continue
+        out.append(line)
+    result = "".join(out).rstrip("\n")
+    return result + "\n" if result else ""
+
+
 def append_kivy_tables(
     text: str,
     app_slug: str,
@@ -264,9 +314,9 @@ def append_kivy_tables(
     icon_source: str | None = None,
     splash_source: str | None = None,
     splash_background: str | None = None,
+    include_shared: bool = True,
 ) -> str:
     """Append freshly rendered kivy tables to existing pyproject text."""
-    base = text.rstrip("\n")
     block = render_kivy_tables(
         app_slug,
         signing,
@@ -276,5 +326,154 @@ def append_kivy_tables(
         icon_source=icon_source,
         splash_source=splash_source,
         splash_background=splash_background,
+        include_shared=include_shared,
     )
+    return append_block(text, block)
+
+
+def append_block(text: str, block: str) -> str:
+    """Append a rendered ``[tool.kivy*]`` block to existing pyproject text."""
+    base = text.rstrip("\n")
+    if not base:
+        return block
     return f"{base}\n\n{block}"
+
+
+# --------------------------------------------------------------------------- #
+# macOS / Linux overlays — same text-surgery approach as iOS above.
+# --------------------------------------------------------------------------- #
+
+
+def render_macos_tables(
+    app_slug: str,
+    signing: MacosSigningConfig | None = None,
+    *,
+    python_version: str | None = None,
+    has_kivy: bool = False,
+    archs: list[str] | tuple[str, ...] | None = None,
+    icon_source: str | None = None,
+    include_shared: bool = True,
+) -> str:
+    """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.macos]`` block."""
+    display = app_slug.replace("_", " ").title()
+    if archs is not None:
+        archs_toml = ", ".join(f'"{a}"' for a in archs)
+        archs_line = f"archs = [{archs_toml}]"
+    else:
+        archs_line = (
+            'archs = ["arm64", "x86_64"]  # two entries = universal2; one = a thin build'
+        )
+    lines: list[str] = []
+    if include_shared:
+        lines += [
+            "[tool.kivy]",
+            f'display_name = "{display}"',
+            'app_dir = "src"',
+            'entry_point = "main"',
+            'orientation = ["portrait"]',
+            "",
+        ]
+    lines += [
+        "[tool.kivy.macos]",
+        "schema_version = 1",
+        f'bundle_id = "org.example.{bundle_id_segment(app_slug)}"  '
+        "# TODO: change to your reverse-DNS bundle identifier",
+        "build = 1",
+        archs_line,
+    ]
+    if has_kivy:
+        lines += [""] + _KIVY_EXCLUDE_LINES
+    if icon_source is not None:
+        icon_lines = [f'source = "{icon_source}"']
+    else:
+        icon_lines = [
+            '# source = "assets/icon.png"  '
+            "# TODO: 1024x1024 PNG app icon (rendered to .icns)"
+        ]
+    lines += [
+        "",
+        "[tool.kivy.macos.python]",
+        f'version = "{python_version or DEFAULT_DESKTOP_PYTHON_VERSION}"',
+        "",
+        "[tool.kivy.macos.icons]",
+        *icon_lines,
+        "",
+        "[tool.kivy.macos.signing]",
+    ]
+    if signing is not None and signing.identity:
+        lines.append(f'identity = "{signing.identity}"')
+        if signing.team_id:
+            lines.append(f'team_id = "{signing.team_id}"')
+        if signing.notary_profile:
+            lines.append(f'notary_profile = "{signing.notary_profile}"')
+    else:
+        lines += [
+            '# identity = "Developer ID Application: Your Name (TEAMID1234)"  '
+            "# TODO: set for Gatekeeper-trusted distribution (ad-hoc signing is "
+            "the default without it)",
+            '# notary_profile = "kivyforge-notary"  '
+            "# TODO: `xcrun notarytool store-credentials` profile name",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def render_linux_tables(
+    app_slug: str,
+    *,
+    python_version: str | None = None,
+    has_kivy: bool = False,
+    archs: list[str] | tuple[str, ...] | None = None,
+    icon_source: str | None = None,
+    categories: list[str] | tuple[str, ...] | None = None,
+    include_shared: bool = True,
+) -> str:
+    """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.linux]`` block."""
+    display = app_slug.replace("_", " ").title()
+    if archs is not None:
+        archs_toml = ", ".join(f'"{a}"' for a in archs)
+        archs_line = f"archs = [{archs_toml}]"
+    else:
+        archs_line = 'archs = ["x86_64"]'
+    lines: list[str] = []
+    if include_shared:
+        lines += [
+            "[tool.kivy]",
+            f'display_name = "{display}"',
+            'app_dir = "src"',
+            'entry_point = "main"',
+            'orientation = ["portrait"]',
+            "",
+        ]
+    lines += [
+        "[tool.kivy.linux]",
+        "schema_version = 1",
+        f'app_id = "org.example.{bundle_id_segment(app_slug)}"  '
+        "# TODO: change to your reverse-DNS app id",
+        archs_line,
+    ]
+    if has_kivy:
+        lines += [""] + _KIVY_EXCLUDE_LINES
+    if icon_source is not None:
+        icon_lines = [f'source = "{icon_source}"']
+    else:
+        icon_lines = [
+            '# source = "assets/icon.png"  '
+            "# TODO: 1024x1024 PNG app icon (resized into the hicolor set)"
+        ]
+    if categories is not None:
+        cats_toml = ", ".join(f'"{c}"' for c in categories)
+        cats_line = f"categories = [{cats_toml}]"
+    else:
+        cats_line = 'categories = ["Utility"]'
+    lines += [
+        "",
+        "[tool.kivy.linux.python]",
+        f'version = "{python_version or DEFAULT_DESKTOP_PYTHON_VERSION}"',
+        "",
+        "[tool.kivy.linux.icons]",
+        *icon_lines,
+        "",
+        "[tool.kivy.linux.desktop]",
+        cats_line,
+    ]
+    return "\n".join(lines) + "\n"
