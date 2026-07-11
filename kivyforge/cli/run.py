@@ -52,7 +52,7 @@ def run(
         ios_list_devices()
         return
 
-    backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform, verb="run")
     backend.run(
         project_root,
         target=target,

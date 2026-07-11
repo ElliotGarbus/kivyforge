@@ -64,12 +64,15 @@ def resolve_target(
     configured: Collection[str],
     env: Mapping[str, str] | None = None,
     host_system: str | None = None,
+    verb: str = "build",
 ) -> Platform:
     """Resolve the target platform per the documented chain.
 
     ``configured`` is the set of platform names whose overlay this project's
     ``pyproject.toml`` actually declares (e.g. ``{"ios"}`` for ``[tool.kivy.ios]``).
-    ``env``/``host_system`` are injectable for testing.
+    ``env``/``host_system`` are injectable for testing. ``verb`` names the CLI
+    command that called this (e.g. ``"lock"``, ``"run"``) purely so the error
+    message's example command is accurate; it never affects resolution.
     """
     env = env if env is not None else {}
 
@@ -89,15 +92,15 @@ def resolve_target(
             return backend
 
     # 4. actionable error
-    raise PlatformResolutionError(_resolution_help(configured))
+    raise PlatformResolutionError(_resolution_help(configured, verb))
 
 
-def _resolution_help(configured: Collection[str]) -> str:
+def _resolution_help(configured: Collection[str], verb: str = "build") -> str:
     configured_list = ", ".join(sorted(configured)) or "none"
     example = sorted(configured)[0] if configured else "macos"
     return (
         "no target platform resolved.\n"
-        f"  Pass one explicitly:      kivyforge build --platform {example}\n"
+        f"  Pass one explicitly:      kivyforge {verb} --platform {example}\n"
         f"  Or set a session default: export {PLATFORM_ENV_VAR}={example}\n"
         f"  (Configured platforms in this pyproject.toml: {configured_list})"
     )

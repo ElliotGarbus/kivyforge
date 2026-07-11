@@ -107,7 +107,7 @@ def _lock_ops(platform: str) -> _LockOps:
 )
 def lock(cli_platform: str | None, update: bool, offline: bool, check: bool) -> None:
     """Generate pylock.<platform>.toml from pyproject.toml."""
-    backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform, verb="lock")
     ops = _lock_ops(backend.name)
 
     pyproject = project_root / "pyproject.toml"

@@ -11,5 +11,5 @@ from ._platform import platform_option, resolve_target
 @platform_option
 def open_(cli_platform: str | None) -> None:
     """Open <app>-ios/<app>.xcodeproj in Xcode."""
-    backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform, verb="open")
     backend.open_project(project_root)

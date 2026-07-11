@@ -54,7 +54,7 @@ def upgrade(
     name: str | None,
 ) -> None:
     """Re-fetch pinned runtime/native artifacts for the resolved platform's lock."""
-    backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform, verb="upgrade")
 
     if backend.name == "ios":
         _upgrade_ios(project_root, python_only, xcframeworks_only, name)

@@ -45,11 +45,15 @@ def configured_platforms(pyproject: Path) -> set[str]:
     return {name for name in available_platform_names() if name in kivy}
 
 
-def resolve_target(cli_platform: str | None) -> tuple[Platform, Path]:
+def resolve_target(
+    cli_platform: str | None, *, verb: str = "build"
+) -> tuple[Platform, Path]:
     """Resolve the target platform and return it with the project root.
 
     Looks for ``pyproject.toml`` in the CWD (like every verb), determines the
-    configured overlays, and runs the resolution chain.
+    configured overlays, and runs the resolution chain. ``verb`` names the
+    calling CLI command so an unresolved-platform error's example command is
+    accurate (e.g. ``kivyforge lock --platform ios``, not always ``build``).
     """
     pyproject = find_pyproject()
     try:
@@ -57,6 +61,7 @@ def resolve_target(cli_platform: str | None) -> tuple[Platform, Path]:
             cli_platform,
             configured=configured_platforms(pyproject),
             env=os.environ,
+            verb=verb,
         )
     except PlatformResolutionError as exc:
         raise ToolchainError(str(exc)) from exc

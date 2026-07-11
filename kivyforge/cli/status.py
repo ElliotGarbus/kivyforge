@@ -16,5 +16,5 @@ from ._platform import platform_option, resolve_target
 @platform_option
 def status(cli_platform: str | None) -> None:
     """Show app identity, Python version, lock sync, and build state."""
-    backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform, verb="status")
     backend.status(project_root)

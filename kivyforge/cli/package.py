@@ -72,7 +72,7 @@ def package(
     no_cache: bool,
 ) -> None:
     """Build the signed, distributable artifact for the resolved platform."""
-    backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform, verb="package")
     fmt = _resolve_format(backend, fmt)
 
     backend.package(

@@ -74,6 +74,18 @@ class TestResolveTarget:
             resolve_target(None, configured={"ios"}, env={}, host_system="Linux")
         assert "ios" in str(exc.value)
 
+    def test_error_example_command_defaults_to_build(self):
+        with pytest.raises(PlatformResolutionError, match="kivyforge build --platform"):
+            resolve_target(None, configured=set(), env={}, host_system="Linux")
+
+    def test_error_example_command_uses_calling_verb(self):
+        # Regression: the error used to always say "kivyforge build ..." even
+        # when e.g. `lock` was the command that actually failed to resolve.
+        with pytest.raises(PlatformResolutionError, match="kivyforge lock --platform"):
+            resolve_target(
+                None, configured={"ios"}, env={}, host_system="Linux", verb="lock"
+            )
+
 
 class TestIosPlatform:
     def test_metadata(self):

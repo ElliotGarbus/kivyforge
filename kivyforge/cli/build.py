@@ -85,7 +85,7 @@ def build(
 
     # Resolve the target platform before any work so an unresolved target fails
     # fast with an actionable message (common design doc 02).
-    backend, project_root = resolve_target(cli_platform)
+    backend, project_root = resolve_target(cli_platform, verb="build")
 
     backend.build(
         project_root,
