@@ -56,10 +56,10 @@ in one signature. No backend uses more than a subset: `ios`
 
 ### 1.3 iOS concession in shared code — `reject_ios_only_target`
 
-`base.py:128-141` exists only to let the desktop backends reject the iOS
+`base.py:131-144` exists only to let the desktop backends reject the iOS
 `--simulator/--device/--release` flags, and it contains a host-name branch:
 
-```128:141:kivyforge/platforms/base.py
+```131:144:kivyforge/platforms/base.py
     def reject_ios_only_target(self, target: str | None) -> None:
         """Desktop backends reject the iOS-only ``--simulator/--device/--release``."""
         if target is None:
@@ -114,34 +114,60 @@ target is resolved:
 `--list-devices` (`cli/run.py:32-36`) is a shared `run` option wired straight to
 iOS, not routed through `Platform`.
 
-### 1.6 Bypass — `status` and `upgrade` verbs are iOS-only, not dispatched
+### 1.6 `status` is now a `Platform` verb; `upgrade` dispatches on backend name
 
-`cli/status.py` calls `ios_status()` unconditionally with no `-p` and no backend
-resolution:
+`status` was promoted to a `Platform` method (`base.py:123-124`, default
+`NotImplementedError`) and is now implemented by all three backends
+(`platforms/ios/__init__.py:113-116`, `platforms/macos/__init__.py:105-108`,
+`platforms/linux/__init__.py:104-107`). The verb resolves the target and
+dispatches (`cli/status.py`):
 
-```7:13:kivyforge/cli/status.py
-from ..platforms.ios.cli import ios_status
-
-
+```15:20:kivyforge/cli/status.py
 @click.command()
-def status() -> None:
+@platform_option
+def status(cli_platform: str | None) -> None:
     """Show app identity, Python version, lock sync, and build state."""
-    ios_status()
+    backend, project_root = resolve_target(cli_platform)
+    backend.status(project_root)
 ```
 
-`cli/upgrade.py:12` imports the iOS lock loader (`from ..platforms.ios.lock import
-load`) and operates only on `pylock.ios.toml` / `Python.xcframework` /
-`xcframeworks` (`upgrade.py:36-74`), with backend-name-free artifact-name
-special-casing:
+`upgrade` is now platform-aware (`-p`) but branches on the backend name in the
+verb body rather than dispatching through `Platform` (`cli/upgrade.py:59-72`):
 
-```36:38:kivyforge/cli/upgrade.py
-    if name:
-        do_python = name == "Python.xcframework"
-        do_xc = True
+```59:72:kivyforge/cli/upgrade.py
+    if backend.name == "ios":
+        _upgrade_ios(project_root, python_only, xcframeworks_only, name)
+    elif backend.name in ("macos", "linux"):
+        if xcframeworks_only:
+            raise ToolchainError(
+                f"--xcframeworks is iOS-only; {backend.name} locks have no "
+                "xcframework artifacts. Use --python (or no flag) to refresh "
+                "the bundled runtime."
+            )
+        _upgrade_wheelruntime(backend.name, project_root, name)
+    else:
+        raise ToolchainError(
+            f"`kivyforge upgrade` does not support platform {backend.name!r} yet."
+        )
 ```
 
-Neither `status` nor `upgrade` takes `-p`; both are registered as top-level verbs
-(`cli/__init__.py:48,50`).
+`--xcframeworks` (`cli/upgrade.py:38-43`) is an iOS-only flag on the shared
+`upgrade` command, rejected for macOS/Linux at runtime. `upgrade` is not routed
+through a `Platform` method — the per-backend refresh logic (`_upgrade_ios` at
+`cli/upgrade.py:82`, `_upgrade_wheelruntime` at `cli/upgrade.py:156`) lives in the
+shared verb module and imports the iOS loader at module top
+(`cli/upgrade.py:23`) while lazily importing the macOS/Linux loaders inside
+`_load_wheelruntime_lock` (`cli/upgrade.py:200-203`).
+
+### 1.6a Duplication — the `status` helpers are triplicated across backends
+
+The `status` implementations each re-declare identical `_build_state` and
+`_humanize` helpers: `platforms/ios/cli.py:493-513`,
+`platforms/macos/cli.py:209-227`, `platforms/linux/cli.py:180-198`. The three
+`_lock_state` variants differ only in the platform name in their messages
+(`platforms/macos/cli.py:195-206`, `platforms/linux/cli.py`). macOS/Linux locate
+the built artifact by `config.display_name` (`platforms/macos/cli.py:191`); iOS
+uses `config.app_slug` and reports two build slices (`platforms/ios/cli.py:474-479`).
 
 ### 1.7 Silent iOS default in shared entry points
 
@@ -164,7 +190,7 @@ overlay.
 
 ### 1.8 Over-broad shared interface — the `Probe` protocol
 
-The backend `doctor` verb (`base.py:123-126`) dispatches to per-backend doctors,
+The backend `doctor` verb (`base.py:126-129`) dispatches to per-backend doctors,
 but all of them depend on one flat `Probe` protocol (`doctor/probe.py:34-54`) that
 mixes iOS methods (`xcode_version`, `simulator_runtimes`, `keychain_identities`),
 macOS methods (`has_codesign`, `has_notarytool`, `login_keychain_identities`), and
@@ -248,7 +274,7 @@ subdirectory (e.g. src/) so the bundle excludes .git/, .venv/, and the
         return self.project.name
 ```
 
-It is used by all three backends' output paths (`ios`: `platforms/ios/cli.py:165`;
+It is used by all three backends' output paths (`ios`: `platforms/ios/cli.py:164`;
 `macos`/`linux` via `clean.py:43` and `linux/cli.py:69`).
 
 ### 2.4 The OS-floor concept has three different config keys and types
@@ -481,9 +507,12 @@ LOCKFILE_NAME = "pylock.ios.toml"
 
 The platform-aware helper `lockfile_path_for(platform)` exists alongside
 (`_common.py:60-63`) and is used by macOS/Linux (`cli/lock.py:115`,
-`platforms/linux/cli.py:16,116,170`), but the iOS verbs and `upgrade` still use the
-hard-coded `LOCKFILE_NAME`/`lockfile_path` (`cli/upgrade.py:13,81,89`;
-`platforms/ios/cli.py:20-25,308`).
+`platforms/linux/cli.py:16,116,170`) and now by `upgrade`
+(`cli/upgrade.py:24` imports `lockfile_path_for`; `_load_ios_lock` uses
+`lockfile_path_for('ios')` at `cli/upgrade.py:144`). The iOS backend still
+imports and uses the hard-coded `LOCKFILE_NAME`/`lockfile_path`
+(`platforms/ios/cli.py:20-24,307`),
+so the constant persists only for the iOS build/run/status call sites.
 
 ---
 
@@ -507,10 +536,10 @@ IDE project instead of assembling a bundle directly, and the only mobile backend
   (`config/model.py:96-114`) — schema-reserved key sets that exist only for iOS.
 - **Simulator vs device.** `BuildSlice` and `TARGET_SUFFIX`
   (`artifacts/wheels.py:14-33`), slice resolution
-  (`platforms/ios/cli.py:238-272`), `simctl`/`devicectl` install+launch
-  (`platforms/ios/cli.py:381-394`), device listing (`ios_list_devices` —
-  `platforms/ios/cli.py:370-374`). Desktop `run` just execs the built artifact
-  (`platforms/linux/cli.py:145-150`; `macos_run`).
+  (`platforms/ios/cli.py:237-271`), `simctl`/`devicectl` install+launch
+  (`platforms/ios/cli.py:380-393`), device listing (`ios_list_devices` —
+  `platforms/ios/cli.py:369-373`). Desktop `run` just execs the built artifact
+  (`platforms/linux/cli.py:145-150`; `macos_run` — `platforms/macos/cli.py:87-91`).
 - **SPM.** `platforms/ios/swift_packages.py`, `platforms/ios/lock/spm.py`,
   `LockedSwiftPackage` (`platforms/ios/lock/model.py:52-76`), `SwiftPackageDep`
   (`config/model.py:162-184`), and `VALID_SWIFT_REQUIREMENT_KINDS`
@@ -528,7 +557,7 @@ IDE project instead of assembling a bundle directly, and the only mobile backend
   live under `examples/mobile/` with `[tool.kivy.ios]`; desktop under
   `examples/desktop/` with `[tool.kivy.macos]` + `[tool.kivy.linux]`.
 - **The `open` verb** exists only because iOS produces something to open
-  (`cli/open_cmd.py`, `platforms/ios/cli.py:437-454`).
+  (`cli/open_cmd.py`, `platforms/ios/cli.py:436-453`).
 
 ### Divergences handled inside the iOS backend
 
@@ -547,7 +576,9 @@ IDE project instead of assembling a bundle directly, and the only mobile backend
 - The shared `run` verb's `--simulator/--device/--release` flags and
   `--list-devices` (1.5), and the shared `build` verb's iOS signing flags
   (`cli/build.py:26-61`).
-- `status` and `upgrade` are iOS-only verbs at the top level (1.6).
+- `upgrade` branches on the backend name in the shared verb body and carries an
+  iOS-only `--xcframeworks` flag; `status`, since being promoted to a `Platform`
+  method, is now dispatched like the other verbs (1.6).
 - `require_ios=True` default, the iOS doctor fallback, and the "iOS bundler"
   program description (1.7).
 - The shared `artifacts/` package is iOS-shaped and imports the iOS lock model
@@ -579,8 +610,9 @@ not applicable.
 | `run` | `base.py:89-98` | impl (uses target/destination/no_build) | partial (uses arch/no_build; ignores target/destination) | partial (uses arch/no_build; ignores target/destination) |
 | `package` | `base.py:100-113` | partial (uses team_id/signing_identity/export_method; ignores fmt/arch/notarize/notary_profile) | partial (uses arch/signing_identity/notarize/notary_profile; ignores team_id/export_method/fmt) | partial (uses fmt/arch; ignores team_id/signing_identity/export_method/notarize/notary_profile) |
 | `open_project` | `base.py:116-121` | impl | stub (base raise) | stub (base raise) |
-| `doctor` | `base.py:123-126` | impl | impl | impl |
-| `reject_ios_only_target` | `base.py:128-141` | n/a (never called) | impl (called from `build`) | impl (called from `build`) |
+| `status` | `base.py:123-124` | impl | impl | impl |
+| `doctor` | `base.py:126-129` | impl | impl | impl |
+| `reject_ios_only_target` | `base.py:131-144` | n/a (never called) | impl (called from `build`) | impl (called from `build`) |
 
 \* macos `build` calls `reject_ios_only_target(target)` then discards `target`
 (`platforms/macos/__init__.py:56-64`); linux likewise
