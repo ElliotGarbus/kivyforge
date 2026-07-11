@@ -110,6 +110,11 @@ class IosPlatform(Platform):
 
         ios_open(project_root)
 
+    def status(self, project_root: Path) -> None:
+        from .cli import ios_status
+
+        ios_status(project_root)
+
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool
     ) -> list[CheckResult]:

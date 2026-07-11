@@ -120,6 +120,9 @@ class Platform(ABC):
             f"`open` is an iOS/Xcode command; {self.name} has no project to open."
         )
 
+    def status(self, project_root: Path) -> None:
+        raise NotImplementedError(f"status is not supported for {self.name!r}.")
+
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool
     ) -> list[CheckResult]:

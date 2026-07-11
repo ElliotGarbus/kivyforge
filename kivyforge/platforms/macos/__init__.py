@@ -102,6 +102,11 @@ class MacosPlatform(Platform):
             notary_profile=notary_profile,
         )
 
+    def status(self, project_root: Path) -> None:
+        from .cli import macos_status
+
+        macos_status(project_root)
+
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool
     ) -> list[CheckResult]:

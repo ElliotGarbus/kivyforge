@@ -20,7 +20,6 @@ from kivyforge.artifacts.wheels import BuildSlice
 from kivyforge.cli._common import (
     LOCKFILE_NAME,
     ToolchainError,
-    find_pyproject,
     lockfile_path,
 )
 from kivyforge.config import ConfigError, load_config
@@ -457,10 +456,9 @@ def ios_open(project_root: Path) -> None:
 # ---- status -------------------------------------------------------------- #
 
 
-def ios_status() -> None:
+def ios_status(project_root: Path) -> None:
     """Show app identity, Python version, lock sync, and build state."""
-    pyproject = find_pyproject()
-    project_root = pyproject.parent
+    pyproject = project_root / "pyproject.toml"
     try:
         config = load_config(pyproject)
     except ConfigError as exc:

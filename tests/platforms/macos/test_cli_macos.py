@@ -11,6 +11,7 @@ from click.testing import CliRunner
 from kivyforge.cli.build import build
 from kivyforge.cli.package import package
 from kivyforge.cli.run import run
+from kivyforge.cli.status import status
 from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
@@ -166,6 +167,52 @@ class TestPackage:
             result = runner.invoke(package, ["-p", "macos", "-f", "ipa"])
             assert result.exit_code != 0
             assert "unknown package format" in result.output
+
+
+class TestStatus:
+    def test_snapshot_not_built(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(status, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            assert "My App  (org.example.myapp)" in result.output
+            assert "Python:     3.14.5" in result.output
+            assert "Lock:       in sync" in result.output
+            assert "not built" in result.output
+
+    def test_snapshot_built_shows_age(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            root = _write_project(fs)
+            app = root / "build" / "macos" / "My App.app"
+            (app / "Contents" / "MacOS").mkdir(parents=True)
+            result = runner.invoke(status, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            assert "last built" in result.output
+
+    def test_lock_missing(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            root = Path(fs)
+            (root / "pyproject.toml").write_text(PYPROJECT)
+            (root / "src").mkdir()
+            result = runner.invoke(status, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            assert "missing" in result.output
+
+    def test_lock_out_of_date(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, in_sync=False)
+            result = runner.invoke(status, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            assert "out of date" in result.output
+
+    def test_config_error_exits_nonzero(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            (Path(fs) / "pyproject.toml").write_text(
+                "[project]\nname='x'\nversion='1'\n"
+            )
+            (Path(fs) / "src").mkdir()
+            result = runner.invoke(status, ["-p", "macos"])
+            assert result.exit_code != 0
 
 
 class TestPackageDeveloperId:

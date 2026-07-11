@@ -101,6 +101,11 @@ class LinuxPlatform(Platform):
             no_cache=no_cache,
         )
 
+    def status(self, project_root: Path) -> None:
+        from .cli import linux_status
+
+        linux_status(project_root)
+
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool
     ) -> list[CheckResult]:
