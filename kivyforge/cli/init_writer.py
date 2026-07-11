@@ -360,9 +360,7 @@ def render_macos_tables(
         archs_toml = ", ".join(f'"{a}"' for a in archs)
         archs_line = f"archs = [{archs_toml}]"
     else:
-        archs_line = (
-            'archs = ["arm64", "x86_64"]  # two entries = universal2; one = a thin build'
-        )
+        archs_line = 'archs = ["arm64", "x86_64"]  # two entries = universal2; one = a thin build'
     lines: list[str] = []
     if include_shared:
         lines += [

@@ -586,8 +586,13 @@ class TestPlatformAware:
         self, runner, tmp_path, monkeypatch
     ):
         """On a fresh project with no flag/env/existing overlay, init falls
-        back to the host OS's own platform (this test runs on macOS)."""
+        back to the host OS's own platform.
+
+        The host is mocked (rather than relying on the machine running the
+        test) so this passes identically on macOS and Linux CI runners.
+        """
         monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
+        monkeypatch.setattr(init_mod._platform_mod, "system", lambda: "Darwin")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             pp = init_mod.Path(fs) / "pyproject.toml"
             pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
@@ -595,3 +600,26 @@ class TestPlatformAware:
             assert result.exit_code == 0, result.output
             data = tomllib.loads(pp.read_text())
         assert "macos" in data["tool"]["kivy"]
+
+    def test_host_default_on_linux_seeds_linux(self, runner, tmp_path, monkeypatch):
+        monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
+        monkeypatch.setattr(init_mod._platform_mod, "system", lambda: "Linux")
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, [])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert "linux" in data["tool"]["kivy"]
+
+    def test_host_default_unresolvable_is_actionable(
+        self, runner, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
+        monkeypatch.setattr(init_mod._platform_mod, "system", lambda: "Windows")
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, [])
+        assert result.exit_code != 0
+        assert "cannot infer a target platform" in result.output

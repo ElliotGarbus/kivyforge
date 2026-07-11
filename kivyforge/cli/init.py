@@ -89,7 +89,12 @@ def init(cli_platform: str | None, force: bool) -> None:
         )
 
 
-def _resolve_init_platform(cli_platform: str | None, pyproject: Path) -> str:
+def _resolve_init_platform(
+    cli_platform: str | None,
+    pyproject: Path,
+    *,
+    host_system: str | None = None,
+) -> str:
     """Resolve init's target platform.
 
     Same top two steps as every other verb (``-p`` then ``KIVYFORGE_PLATFORM``),
@@ -107,6 +112,10 @@ def _resolve_init_platform(cli_platform: str | None, pyproject: Path) -> str:
     4. The host OS's own platform (unconditionally — this *is* how it gets
        configured the first time). iOS never matches here (no host maps to
        it); it always needs an explicit choice, same as everywhere else.
+
+    ``host_system`` is injectable (like the shared ``resolve_target``'s) so
+    tests aren't at the mercy of the machine they happen to run on; it
+    defaults to the real host (``platform.system()``).
     """
     if cli_platform:
         return cli_platform
@@ -131,7 +140,7 @@ def _resolve_init_platform(cli_platform: str | None, pyproject: Path) -> str:
             f"  kivyforge init --platform {example}"
         )
 
-    host = _platform_mod.system()
+    host = host_system if host_system is not None else _platform_mod.system()
     for name in available_platform_names():
         if get_platform(name).host_system == host:
             return name
@@ -180,7 +189,9 @@ def _run_update_path(pyproject: Path, *, force: bool, platform_name: str) -> Non
         )
         new_text = append_block(stripped, block)
         pyproject.write_text(new_text, encoding="utf-8")
-        click.echo(f"Regenerated [{table_key}] (signing/python/icon settings preserved).")
+        click.echo(
+            f"Regenerated [{table_key}] (signing/python/icon settings preserved)."
+        )
     else:
         block = _render_overlay(
             platform_name,
@@ -192,7 +203,9 @@ def _run_update_path(pyproject: Path, *, force: bool, platform_name: str) -> Non
         )
         new_text = append_block(text, block)
         pyproject.write_text(new_text, encoding="utf-8")
-        added = f"[{table_key}]" if not include_shared else f"[tool.kivy] + [{table_key}]"
+        added = (
+            f"[{table_key}]" if not include_shared else f"[tool.kivy] + [{table_key}]"
+        )
         click.echo(f"Added {added} to pyproject.toml.")
 
     _maybe_warn_drift(raw)
@@ -212,13 +225,17 @@ def _render_overlay(
 ) -> str:
     """Render the (optional) shared ``[tool.kivy]`` + the target platform's overlay."""
     if platform_name == "ios":
-        splash_source, splash_background = _read_splash(table) if preserve else (None, None)
+        splash_source, splash_background = (
+            _read_splash(table) if preserve else (None, None)
+        )
         return render_kivy_tables(
             app_slug,
             signing=_read_signing(table) if preserve else None,
             python_version=_read_python_version(table) if preserve else None,
             has_kivy=has_kivy,
-            simulator_archs=_read_str_list(table, "simulator_archs") if preserve else None,
+            simulator_archs=_read_str_list(table, "simulator_archs")
+            if preserve
+            else None,
             icon_source=_read_icon_source(table) if preserve else None,
             splash_source=splash_source,
             splash_background=splash_background,
@@ -244,7 +261,9 @@ def _render_overlay(
             categories=_read_categories(table) if preserve else None,
             include_shared=include_shared,
         )
-    raise ToolchainError(f"`kivyforge init` does not support platform {platform_name!r} yet.")
+    raise ToolchainError(
+        f"`kivyforge init` does not support platform {platform_name!r} yet."
+    )
 
 
 # --------------------------------------------------------------------------- #
