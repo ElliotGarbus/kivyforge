@@ -102,4 +102,6 @@ def _safe_extractall(tf: tarfile.TarFile, into: Path) -> None:
         target = (into / member.name).resolve()
         if not (target == base or base in target.parents):
             raise AppDirError(f"unsafe path in archive: {member.name!r}")
-    tf.extractall(into)  # noqa: S202 — members validated just above
+    # Paths are validated above; fully_trusted preserves the runtime's
+    # permissions and symlinks (the restrictive filters would rewrite them).
+    tf.extractall(into, filter="fully_trusted")  # noqa: S202 — members validated just above

@@ -41,7 +41,8 @@ class TestStageIcons:
         root = appdir / "org.example.myapp.png"
         assert root.exists()
         # A valid PNG at the AppImage root icon size.
-        assert Image.open(root).size == (icons.ROOT_ICON_SIZE, icons.ROOT_ICON_SIZE)
+        with Image.open(root) as img:
+            assert img.size == (icons.ROOT_ICON_SIZE, icons.ROOT_ICON_SIZE)
         assert (
             appdir / "usr/share/icons/hicolor/256x256/apps/org.example.myapp.png"
         ).exists()
@@ -58,7 +59,8 @@ class TestStageIcons:
         assert icons.stage_icons(cfg, tmp_path, appdir) is True
         root = appdir / "org.example.myapp.png"
         assert root.exists()
-        assert Image.open(root).size == (icons.ROOT_ICON_SIZE, icons.ROOT_ICON_SIZE)
+        with Image.open(root) as img:
+            assert img.size == (icons.ROOT_ICON_SIZE, icons.ROOT_ICON_SIZE)
         diricon = appdir / ".DirIcon"
         assert diricon.exists()
         assert diricon.read_bytes() == root.read_bytes()
@@ -74,7 +76,8 @@ class TestStageIcons:
                 / "org.example.myapp.png"
             )
             assert icon.exists()
-            assert Image.open(icon).size == (size, size)
+            with Image.open(icon) as img:
+                assert img.size == (size, size)
 
     def test_bad_size_rejected(self, tmp_path):
         _write_png(tmp_path / "assets" / "icon.png", size=(512, 512))
