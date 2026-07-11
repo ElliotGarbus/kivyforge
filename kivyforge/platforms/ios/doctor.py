@@ -13,12 +13,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from kivyforge.config import ConfigError, load_config
+from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.config.model import Config
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
 from kivyforge.doctor.probe import Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
-from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
 

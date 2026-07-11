@@ -52,7 +52,7 @@ class TestScalarHelpers:
         assert arr(["a", "b"]) == '["a", "b"]'
 
     def test_arr_escapes_members(self):
-        parsed = tomllib.loads(f'x = {arr(["a\\b", "c"])}\n')
+        parsed = tomllib.loads(f"x = {arr(['a\\b', 'c'])}\n")
         assert parsed["x"] == ["a\\b", "c"]
 
 
@@ -61,7 +61,7 @@ class TestEmitWheel:
         lines: list[str] = []
         emit_wheel(lines, wheel)
         # emit_wheel writes a [[packages.wheels]] header; wrap under a package.
-        text = "[[packages]]\nname = \"p\"\nversion = \"1\"\n\n" + "\n".join(lines)
+        text = '[[packages]]\nname = "p"\nversion = "1"\n\n' + "\n".join(lines)
         return tomllib.loads(text)["packages"][0]["wheels"][0]
 
     def test_url_wheel(self):
@@ -82,17 +82,23 @@ class TestEmitWheel:
         assert "path" not in w
 
     def test_path_wheel(self):
-        w = self._emit(LockedWheel(name="foo.whl", sha256="b" * 64, path="wheels/foo.whl"))
+        w = self._emit(
+            LockedWheel(name="foo.whl", sha256="b" * 64, path="wheels/foo.whl")
+        )
         assert w["path"] == "wheels/foo.whl"
         assert "url" not in w
 
     def test_optional_fields_omitted(self):
-        w = self._emit(LockedWheel(name="foo.whl", sha256="c" * 64, url="https://x/f.whl"))
+        w = self._emit(
+            LockedWheel(name="foo.whl", sha256="c" * 64, url="https://x/f.whl")
+        )
         assert "upload-time" not in w
         assert "size" not in w
 
     def test_size_zero_is_emitted(self):
-        w = self._emit(LockedWheel(name="f.whl", sha256="d" * 64, url="https://x/f", size=0))
+        w = self._emit(
+            LockedWheel(name="f.whl", sha256="d" * 64, url="https://x/f", size=0)
+        )
         assert w["size"] == 0
 
 
@@ -180,7 +186,9 @@ class TestParse:
         )
 
     def test_parse_wheel_path(self):
-        w = parse_wheel({"name": "f.whl", "path": "w/f.whl", "hashes": {"sha256": "b" * 64}})
+        w = parse_wheel(
+            {"name": "f.whl", "path": "w/f.whl", "hashes": {"sha256": "b" * 64}}
+        )
         assert w.path == "w/f.whl"
         assert w.url is None
 
@@ -201,9 +209,15 @@ class TestParse:
                     {"name": "baz", "marker": "python_version < '3.12'"},
                 ],
                 "wheels": [
-                    {"name": "f.whl", "url": "https://x/f", "hashes": {"sha256": "c" * 64}}
+                    {
+                        "name": "f.whl",
+                        "url": "https://x/f",
+                        "hashes": {"sha256": "c" * 64},
+                    }
                 ],
-                "tool": {"kivyforge": {"direct_requirement": True, "source_index": "idx"}},
+                "tool": {
+                    "kivyforge": {"direct_requirement": True, "source_index": "idx"}
+                },
             }
         )
         assert pkg.requires_python == ">=3.11"
@@ -261,7 +275,11 @@ class TestRoundTrip:
             name="local",
             version="0.1",
             wheels=(
-                LockedWheel(name="local-0.1-py3-none-any.whl", sha256="e" * 64, path="wheels/local.whl"),
+                LockedWheel(
+                    name="local-0.1-py3-none-any.whl",
+                    sha256="e" * 64,
+                    path="wheels/local.whl",
+                ),
             ),
         )
         assert self._round_trip(pkg) == pkg

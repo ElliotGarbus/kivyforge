@@ -258,9 +258,7 @@ class TestVerifyFile:
         f = tmp_path / "artifact.bin"
         f.write_bytes(b"tampered")
         with pytest.raises(HashMismatch) as exc:
-            verify_file(
-                f, "0" * 64, name="artifact", source="https://e/a"
-            )
+            verify_file(f, "0" * 64, name="artifact", source="https://e/a")
         assert exc.value.name == "artifact"
         assert exc.value.source == "https://e/a"
         assert exc.value.expected == "0" * 64
@@ -269,6 +267,4 @@ class TestVerifyFile:
     def test_accepts_str_path(self, tmp_path):
         f = tmp_path / "artifact.bin"
         f.write_bytes(b"payload")
-        verify_file(
-            str(f), sha256_bytes(b"payload"), name="a", source="s"
-        )
+        verify_file(str(f), sha256_bytes(b"payload"), name="a", source="s")
