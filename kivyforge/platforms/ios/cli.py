@@ -44,6 +44,7 @@ from .xcode import (
     open_command,
     preflight_signing,
     product_app_path,
+    resolve_device_destination,
     resolve_simulator_destination,
     run_command,
     simctl_install,
@@ -359,7 +360,7 @@ def ios_run(
         if target == "simulator":
             _run_simulator(destination, app, bundle_id)
         else:
-            _run_device(_resolve_device_destination(destination), app, bundle_id)
+            _run_device(destination, app, bundle_id)
     except SigningError as exc:
         raise ToolchainError(str(exc)) from exc
     except CommandError as exc:
@@ -373,10 +374,6 @@ def ios_list_devices() -> None:
             click.echo(proc.stdout)
 
 
-def _resolve_device_destination(destination: str | None) -> str:
-    return destination or "first"
-
-
 def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     device = resolve_simulator_destination(destination)
     label = f"{device.name} ({device.udid})"
@@ -386,11 +383,13 @@ def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     run_command(simctl_launch(device.udid, bundle_id))
 
 
-def _run_device(dest: str, app: Path, bundle_id: str) -> None:
-    click.echo(f"Installing on device {dest} ...")
-    run_command(devicectl_install(dest, app))
+def _run_device(destination: str | None, app: Path, bundle_id: str) -> None:
+    device = resolve_device_destination(destination)
+    label = f"{device.name} ({device.identifier})"
+    click.echo(f"Installing on device {label} ...")
+    run_command(devicectl_install(device.identifier, app))
     click.echo(f"Launching {bundle_id} ...")
-    run_command(devicectl_launch(dest, bundle_id))
+    run_command(devicectl_launch(device.identifier, bundle_id))
 
 
 # ---- package ------------------------------------------------------------- #

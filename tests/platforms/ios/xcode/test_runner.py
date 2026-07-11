@@ -8,9 +8,13 @@ from kivyforge.platforms.ios.xcode.runner import (
     CommandError,
     devicectl_install,
     devicectl_launch,
+    devicectl_list_json,
     open_command,
+    parse_devicectl_devices,
     parse_simctl_devices,
+    pick_device,
     pick_simulator,
+    resolve_device_destination,
     resolve_simulator_destination,
     run_command,
     simctl_boot,
@@ -36,6 +40,24 @@ class TestRunCommand:
             run_command(["false"], runner=lambda *a, **k: _Proc(2, err="boom"))
         assert exc.value.returncode == 2
         assert "boom" in str(exc.value)
+
+    def test_failure_keeps_stdout_when_stderr_also_present(self):
+        # Regression: xcodebuild sends its destination-matching warning to
+        # stderr and the real `error:` diagnostics to stdout. Both must
+        # survive into the raised CommandError, not just stderr.
+        with pytest.raises(CommandError) as exc:
+            run_command(
+                ["xcodebuild"],
+                runner=lambda *a, **k: _Proc(
+                    65,
+                    out="error: No profiles for 'org.x' were found",
+                    err="xcodebuild: WARNING: Using the first of multiple "
+                    "matching destinations",
+                ),
+            )
+        message = str(exc.value)
+        assert "No profiles for 'org.x' were found" in message
+        assert "WARNING: Using the first of multiple" in message
 
     def test_check_false_swallows(self):
         proc = run_command(["x"], runner=lambda *a, **k: _Proc(1, "out"), check=False)
@@ -171,3 +193,151 @@ class TestSimulatorSelection:
         assert device.udid == "NEW-UDID"
         assert ["xcrun", "simctl", "boot", "NEW-UDID"] in calls
         assert ["open", "-a", "Simulator"] in calls
+
+
+class TestDeviceSelection:
+    _PAYLOAD = {
+        "result": {
+            "devices": [
+                {
+                    "identifier": "WATCH-ID",
+                    "deviceProperties": {"name": "Elliot's Apple Watch"},
+                    "hardwareProperties": {"platform": "watchOS"},
+                    "connectionProperties": {
+                        "tunnelState": "disconnected",
+                        "pairingState": "paired",
+                    },
+                },
+                {
+                    "identifier": "IPHONE-ID",
+                    "deviceProperties": {"name": "Elliot's iPhone"},
+                    "hardwareProperties": {"platform": "iOS"},
+                    "connectionProperties": {
+                        "tunnelState": "connected",
+                        "pairingState": "paired",
+                    },
+                },
+            ]
+        }
+    }
+
+    def test_parse_devices(self):
+        devices = parse_devicectl_devices(self._PAYLOAD)
+        assert len(devices) == 2
+        assert devices[1].platform == "iOS"
+        assert devices[1].tunnel_state == "connected"
+        assert devices[1].pairing_state == "paired"
+
+    def test_pick_sole_paired_ios_device(self):
+        devices = parse_devicectl_devices(self._PAYLOAD)
+        picked = pick_device(devices)
+        assert picked.identifier == "IPHONE-ID"
+
+    def test_pick_ignores_paired_watch(self):
+        # A paired Apple Watch is not an iOS device and must never be
+        # silently auto-selected.
+        devices = parse_devicectl_devices(self._PAYLOAD)
+        assert all(d.identifier != "WATCH-ID" or d.platform != "iOS" for d in devices)
+
+    def test_pick_ios_device_with_no_active_tunnel(self):
+        # Regression: with Xcode closed, a plugged-in/paired iPhone reports
+        # tunnelState "disconnected" (no CoreDevice client has a tunnel open
+        # yet) — it must still be picked; devicectl opens the tunnel itself
+        # on install/launch.
+        payload = {
+            "result": {
+                "devices": [
+                    {
+                        "identifier": "IPHONE-ID",
+                        "deviceProperties": {"name": "Elliot's iPhone"},
+                        "hardwareProperties": {"platform": "iOS"},
+                        "connectionProperties": {
+                            "tunnelState": "disconnected",
+                            "pairingState": "paired",
+                        },
+                    }
+                ]
+            }
+        }
+        devices = parse_devicectl_devices(payload)
+        picked = pick_device(devices)
+        assert picked.identifier == "IPHONE-ID"
+
+    def test_pick_by_explicit_name(self):
+        devices = parse_devicectl_devices(self._PAYLOAD)
+        picked = pick_device(devices, "Elliot's iPhone")
+        assert picked.identifier == "IPHONE-ID"
+
+    def test_pick_no_devices_raises(self):
+        with pytest.raises(CommandError):
+            pick_device([])
+
+    def test_pick_no_paired_device_raises(self):
+        payload = {
+            "result": {
+                "devices": [
+                    {
+                        "identifier": "IPHONE-ID",
+                        "deviceProperties": {"name": "Elliot's iPhone"},
+                        "hardwareProperties": {"platform": "iOS"},
+                        "connectionProperties": {
+                            "tunnelState": "disconnected",
+                            "pairingState": "unpaired",
+                        },
+                    }
+                ]
+            }
+        }
+        devices = parse_devicectl_devices(payload)
+        with pytest.raises(CommandError, match="no paired iOS device"):
+            pick_device(devices)
+
+    def test_pick_multiple_paired_raises(self):
+        payload = {
+            "result": {
+                "devices": [
+                    {
+                        "identifier": "A",
+                        "deviceProperties": {"name": "iPhone A"},
+                        "hardwareProperties": {"platform": "iOS"},
+                        "connectionProperties": {
+                            "tunnelState": "connected",
+                            "pairingState": "paired",
+                        },
+                    },
+                    {
+                        "identifier": "B",
+                        "deviceProperties": {"name": "iPhone B"},
+                        "hardwareProperties": {"platform": "iOS"},
+                        "connectionProperties": {
+                            "tunnelState": "disconnected",
+                            "pairingState": "paired",
+                        },
+                    },
+                ]
+            }
+        }
+        devices = parse_devicectl_devices(payload)
+        with pytest.raises(CommandError, match="multiple paired"):
+            pick_device(devices)
+
+    def test_resolve_device_destination_writes_and_reads_json(self):
+        import json
+
+        calls: list[list[str]] = []
+
+        def fake(argv, capture_output=True, text=True):
+            calls.append(argv)
+            assert argv[:4] == ["xcrun", "devicectl", "list", "devices"]
+            output_path = argv[-1]
+            with open(output_path, "w") as fh:
+                json.dump(self._PAYLOAD, fh)
+            return _Proc(0)
+
+        device = resolve_device_destination(None, runner=fake)
+        assert device.identifier == "IPHONE-ID"
+        assert calls and "-j" in calls[0]
+
+    def test_devicectl_list_json_argv(self):
+        argv = devicectl_list_json("/tmp/out.json")
+        assert argv == ["xcrun", "devicectl", "list", "devices", "-j", "/tmp/out.json"]
