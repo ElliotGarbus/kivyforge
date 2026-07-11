@@ -227,9 +227,7 @@ def pick_device(devices: list[Device], destination: str | None = None) -> Device
         return _match_device(devices, destination)
     # No explicit destination: only consider paired iOS devices — unpaired
     # accessories or devices that are merely discoverable don't qualify.
-    paired = [
-        d for d in devices if d.platform == "iOS" and d.pairing_state == "paired"
-    ]
+    paired = [d for d in devices if d.platform == "iOS" and d.pairing_state == "paired"]
     if len(paired) == 1:
         return paired[0]
     if not paired:
