@@ -24,7 +24,7 @@ from kivyforge.cli._common import (
     lockfile_path,
 )
 from kivyforge.config import ConfigError, load_config
-from kivyforge.icon import IconSourceError
+from kivyforge.config.icons import IconSourceError
 from kivyforge.lock import LockError, is_in_sync
 
 from .lock import load

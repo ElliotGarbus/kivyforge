@@ -17,7 +17,7 @@ from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
 from kivyforge.doctor.probe import Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
-from kivyforge.icon import APP_ICON_SIZE, icon_source_problem
+from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
 

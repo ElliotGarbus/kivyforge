@@ -19,7 +19,7 @@ import zlib
 from pathlib import Path
 
 from kivyforge.config.model import Config
-from kivyforge.icon import validate_icon_source
+from kivyforge.config.icons import validate_icon_source
 
 from . import AppDirError
 

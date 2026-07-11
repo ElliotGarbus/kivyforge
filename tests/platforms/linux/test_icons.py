@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.icon import IconSourceError
+from kivyforge.config.icons import IconSourceError
 from kivyforge.platforms.linux import icons
 
 pytest.importorskip("PIL")

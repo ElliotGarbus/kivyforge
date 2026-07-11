@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from kivyforge.icon import IconSourceError, validate_icon_source
+from kivyforge.config.icons import IconSourceError, validate_icon_source
 
 from . import AppBundleError
 

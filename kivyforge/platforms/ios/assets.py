@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 
 from kivyforge.config.model import Config
-from kivyforge.icon import validate_icon_source
+from kivyforge.config.icons import validate_icon_source
 
 _DEFAULT_SPLASH_BACKGROUND = "#ffffff"
 _HEX_COLOR = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")

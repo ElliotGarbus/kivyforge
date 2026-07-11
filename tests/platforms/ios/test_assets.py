@@ -7,7 +7,7 @@ import json
 import pytest
 from PIL import Image
 
-from kivyforge.icon import IconSourceError
+from kivyforge.config.icons import IconSourceError
 from kivyforge.platforms.ios.assets import (
     _parse_hex_color,
     generate_asset_catalog,

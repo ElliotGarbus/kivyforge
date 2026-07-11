@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kivyforge.icon import (
+from kivyforge.config.icons import (
     APP_ICON_SIZE,
     IconSourceError,
     icon_source_problem,
