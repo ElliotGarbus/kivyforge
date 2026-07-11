@@ -1,4 +1,15 @@
-"""``kivyforge upgrade`` — re-download pinned artifacts per the lock (spec 05)."""
+"""``kivyforge upgrade`` — re-download pinned runtime/native artifacts per the
+resolved platform's lock (spec 05).
+
+Platform-aware: resolves the target the same way as ``lock``/``build``/``run``
+(``-p`` / ``KIVYFORGE_PLATFORM`` / host default, gated on the lock already
+being configured). iOS refreshes ``Python.xcframework`` + xcframework
+artifacts; macOS/Linux refresh the pinned python-build-standalone runtime
+archive(s) — their locks have no xcframework-equivalent entries. Dependency
+wheels are deliberately never touched here on any platform (that is
+``build``'s/``lock``'s job); ``upgrade`` only re-fetches bytes already pinned
+by the existing lock, it never changes what is pinned.
+"""
 
 from __future__ import annotations
 
@@ -9,26 +20,68 @@ import click
 from ..artifacts.download import DownloadError, fetch_artifact
 from ..artifacts.verify import HashMismatch
 from ..lock import LockError
-from ..platforms.ios.lock import load
-from ._common import LOCKFILE_NAME, ToolchainError, find_pyproject, lockfile_path
+from ..platforms.ios.lock import load as load_ios_lock
+from ._common import ToolchainError, lockfile_path_for
+from ._platform import platform_option, resolve_target
 
 
 @click.command()
+@platform_option
 @click.option(
-    "--python", "python_only", is_flag=True, help="Only refresh Python.xcframework."
+    "--python",
+    "python_only",
+    is_flag=True,
+    help="Only refresh the bundled Python runtime (iOS: Python.xcframework; "
+    "macOS/Linux: the runtime archive(s) — a no-op flag there, it's already "
+    "the only refreshable artifact).",
 )
 @click.option(
     "--xcframeworks",
     "xcframeworks_only",
     is_flag=True,
-    help="Only refresh xcframework artifacts.",
+    help="Only refresh native xcframework artifacts (iOS only).",
 )
-@click.option("--name", default=None, help="Only refresh a specific artifact by name.")
-def upgrade(python_only: bool, xcframeworks_only: bool, name: str | None) -> None:
-    """Re-fetch pinned Python.xcframework / xcframework artifacts."""
-    pyproject = find_pyproject()
-    project_root = pyproject.parent
-    lock = _load_lock(project_root)
+@click.option(
+    "--name",
+    default=None,
+    help="Only refresh a specific artifact by name (iOS: an xcframework name "
+    "or 'Python.xcframework'; macOS/Linux: a locked arch, e.g. 'arm64').",
+)
+def upgrade(
+    cli_platform: str | None,
+    python_only: bool,
+    xcframeworks_only: bool,
+    name: str | None,
+) -> None:
+    """Re-fetch pinned runtime/native artifacts for the resolved platform's lock."""
+    backend, project_root = resolve_target(cli_platform)
+
+    if backend.name == "ios":
+        _upgrade_ios(project_root, python_only, xcframeworks_only, name)
+    elif backend.name in ("macos", "linux"):
+        if xcframeworks_only:
+            raise ToolchainError(
+                f"--xcframeworks is iOS-only; {backend.name} locks have no "
+                "xcframework artifacts. Use --python (or no flag) to refresh "
+                "the bundled runtime."
+            )
+        _upgrade_wheelruntime(backend.name, project_root, name)
+    else:
+        raise ToolchainError(
+            f"`kivyforge upgrade` does not support platform {backend.name!r} yet."
+        )
+
+
+# --------------------------------------------------------------------------- #
+# iOS — Python.xcframework + [[xcframeworks]]
+# --------------------------------------------------------------------------- #
+def _upgrade_ios(
+    project_root: Path,
+    python_only: bool,
+    xcframeworks_only: bool,
+    name: str | None,
+) -> None:
+    lock = _load_ios_lock(project_root)
 
     # No selector flag => refresh everything.
     do_python = python_only or not (python_only or xcframeworks_only or name)
@@ -78,18 +131,77 @@ def upgrade(python_only: bool, xcframeworks_only: bool, name: str | None) -> Non
         raise ToolchainError(str(exc)) from exc
 
     if name and refreshed == 0 and skipped_vendored == 0:
-        raise ToolchainError(f"no artifact named {name!r} found in {LOCKFILE_NAME}.")
+        raise ToolchainError(
+            f"no artifact named {name!r} found in {lockfile_path_for('ios').name}."
+        )
     msg = f"Refreshed {refreshed} artifact(s)."
     if skipped_vendored:
         msg += f" Skipped {skipped_vendored} vendored (path-based) entry/entries."
     click.echo(msg)
 
 
-def _load_lock(project_root: Path):
-    path = lockfile_path(project_root)
+def _load_ios_lock(project_root: Path):
+    path = lockfile_path_for("ios", project_root)
     if not path.is_file():
-        raise ToolchainError(f"no {LOCKFILE_NAME} found. Run `kivyforge lock` first.")
+        raise ToolchainError(f"no {path.name} found. Run `kivyforge lock` first.")
     try:
-        return load(path)
+        return load_ios_lock(path)
+    except LockError as exc:
+        raise ToolchainError(str(exc)) from exc
+
+
+# --------------------------------------------------------------------------- #
+# macOS / Linux — bundled python-build-standalone runtime archive(s)
+# --------------------------------------------------------------------------- #
+def _upgrade_wheelruntime(
+    platform_name: str, project_root: Path, name: str | None
+) -> None:
+    lock = _load_wheelruntime_lock(platform_name, project_root)
+    runtime = lock.python_runtime
+    artifacts = runtime.artifacts
+    if name:
+        artifacts = [art for art in artifacts if art.arch == name]
+
+    refreshed = 0
+    try:
+        for art in artifacts:
+            click.echo(
+                f"Refreshing the {platform_name} Python runtime "
+                f"({art.arch}) {runtime.version} ..."
+            )
+            fetch_artifact(
+                name=f"python-runtime-{art.arch}",
+                sha256=art.sha256,
+                filename=art.url.rsplit("/", 1)[-1],
+                url=art.url,
+                project_root=project_root,
+                no_cache=True,
+            )
+            refreshed += 1
+    except HashMismatch as exc:
+        raise ToolchainError(str(exc)) from exc
+    except DownloadError as exc:
+        raise ToolchainError(str(exc)) from exc
+
+    if name and refreshed == 0:
+        locked = ", ".join(sorted(art.arch for art in runtime.artifacts))
+        path = lockfile_path_for(platform_name, project_root)
+        raise ToolchainError(
+            f"no runtime artifact for arch {name!r} in {path.name}. "
+            f"Locked arch(s): {locked}."
+        )
+    click.echo(f"Refreshed {refreshed} artifact(s).")
+
+
+def _load_wheelruntime_lock(platform_name: str, project_root: Path):
+    path = lockfile_path_for(platform_name, project_root)
+    if not path.is_file():
+        raise ToolchainError(f"no {path.name} found. Run `kivyforge lock` first.")
+    if platform_name == "macos":
+        from ..platforms.macos.lock import load as loader
+    else:
+        from ..platforms.linux.lock import load as loader
+    try:
+        return loader(path)
     except LockError as exc:
         raise ToolchainError(str(exc)) from exc

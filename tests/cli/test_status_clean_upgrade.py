@@ -15,13 +15,18 @@ from kivyforge.cli.clean import clean
 from kivyforge.cli.doctor import doctor
 from kivyforge.cli.status import status
 from kivyforge.cli.upgrade import upgrade
+from kivyforge.lock import compute_pyproject_sha256
+from kivyforge.lock.wheelruntime.model import (
+    PythonRuntime,
+    RuntimeArtifact,
+    WheelRuntimeLock,
+)
 from kivyforge.platforms.ios import doctor as doctor_mod
 from kivyforge.platforms.ios.cli import _humanize
 from kivyforge.platforms.ios.lock import (
     LockedXcframework,
     Lockfile,
     PythonXcframework,
-    compute_pyproject_sha256,
     dumps,
 )
 
@@ -414,6 +419,162 @@ class TestUpgrade:
             result = runner.invoke(upgrade, [])
             assert result.exit_code != 0
             assert "kivyforge lock" in result.output
+
+
+def _wheelruntime_lock(
+    text: str, platform: str, *, archs=("arm64", "x86_64")
+) -> WheelRuntimeLock:
+    return WheelRuntimeLock(
+        platform=platform,
+        requires_python=">=3.13",
+        packages=(),
+        python_runtime=PythonRuntime(
+            provider="python-build-standalone",
+            version="3.13.14",
+            artifacts=tuple(
+                RuntimeArtifact(
+                    arch=arch,
+                    url=f"https://example/cpython-{arch}.tar.gz",
+                    sha256="c" * 64,
+                )
+                for arch in archs
+            ),
+        ),
+        archs=archs,
+        kivyforge_version="3.0.0.dev0",
+        generated_at="t",
+        pyproject_sha256=compute_pyproject_sha256(text),
+        tool_kivyforge_schema_version=1,
+    )
+
+
+def _write_desktop(
+    fs: str, platform: str, *, lock: bool = True, archs=("arm64", "x86_64")
+) -> Path:
+    root = Path(fs)
+    root_pyproject = DESKTOP_ONLY_PYPROJECT if platform == "linux" else _MACOS_PYPROJECT
+    (root / "pyproject.toml").write_text(root_pyproject)
+    (root / "src").mkdir()
+    if lock:
+        from kivyforge.platforms.linux.lock import dumps as dumps_linux
+        from kivyforge.platforms.macos.lock import dumps as dumps_macos
+
+        dumper = dumps_macos if platform == "macos" else dumps_linux
+        (root / f"pylock.{platform}.toml").write_text(
+            dumper(_wheelruntime_lock(root_pyproject, platform, archs=archs))
+        )
+    return root
+
+
+_MACOS_PYPROJECT = (
+    textwrap.dedent(
+        """
+        [project]
+        name = "myapp"
+        version = "1.0.0"
+        requires-python = ">=3.13"
+        dependencies = ["kivy"]
+
+        [tool.kivy]
+        app_dir = "src"
+        display_name = "My App"
+
+        [tool.kivy.macos]
+        schema_version = 1
+        bundle_id = "org.example.myapp"
+
+        [tool.kivy.macos.python]
+        version = "3.13.14"
+        """
+    ).strip()
+    + "\n"
+)
+
+
+class TestUpgradeDesktop:
+    """macOS/Linux: the bundled python-build-standalone runtime is the only
+    lock-pinned artifact upgrade can refresh (no xcframework-equivalent)."""
+
+    def test_macos_refreshes_all_runtime_archs(self, runner, tmp_path, monkeypatch):
+        fetched = []
+        monkeypatch.setattr(
+            upgrade_mod,
+            "fetch_artifact",
+            lambda *, name, **kw: fetched.append(name) or Path("/x"),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_desktop(fs, "macos")
+            result = runner.invoke(upgrade, ["-p", "macos"])
+            assert result.exit_code == 0, result.output
+            assert set(fetched) == {"python-runtime-arm64", "python-runtime-x86_64"}
+            assert "Refreshed 2 artifact(s)" in result.output
+
+    def test_macos_name_selects_single_arch(self, runner, tmp_path, monkeypatch):
+        fetched = []
+        monkeypatch.setattr(
+            upgrade_mod,
+            "fetch_artifact",
+            lambda *, name, **kw: fetched.append(name) or Path("/x"),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_desktop(fs, "macos")
+            result = runner.invoke(upgrade, ["-p", "macos", "--name", "arm64"])
+            assert result.exit_code == 0, result.output
+            assert fetched == ["python-runtime-arm64"]
+
+    def test_macos_name_unknown_arch_errors(self, runner, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            upgrade_mod, "fetch_artifact", lambda *, name, **kw: Path("/x")
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_desktop(fs, "macos")
+            result = runner.invoke(upgrade, ["-p", "macos", "--name", "riscv64"])
+            assert result.exit_code != 0
+            assert "no runtime artifact for arch 'riscv64'" in result.output
+            assert "arm64" in result.output and "x86_64" in result.output
+
+    def test_macos_xcframeworks_flag_errors(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_desktop(fs, "macos")
+            result = runner.invoke(upgrade, ["-p", "macos", "--xcframeworks"])
+        assert result.exit_code != 0
+        assert "--xcframeworks is iOS-only" in result.output
+
+    def test_linux_refreshes_single_runtime_arch(self, runner, tmp_path, monkeypatch):
+        fetched = []
+        monkeypatch.setattr(
+            upgrade_mod,
+            "fetch_artifact",
+            lambda *, name, **kw: fetched.append(name) or Path("/x"),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_desktop(fs, "linux", archs=("x86_64",))
+            result = runner.invoke(upgrade, ["-p", "linux"])
+            assert result.exit_code == 0, result.output
+            assert fetched == ["python-runtime-x86_64"]
+            assert "Refreshed 1 artifact(s)" in result.output
+
+    def test_desktop_missing_lock_errors(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_desktop(fs, "macos", lock=False)
+            result = runner.invoke(upgrade, ["-p", "macos"])
+        assert result.exit_code != 0
+        assert "kivyforge lock" in result.output
+
+    def test_hash_mismatch_surfaces_as_toolchain_error(
+        self, runner, tmp_path, monkeypatch
+    ):
+        def boom(*, name, sha256, filename, url=None, **kw):
+            raise HashMismatch(
+                name=name, source=url or filename, expected=sha256, actual="0" * 64
+            )
+
+        monkeypatch.setattr(upgrade_mod, "fetch_artifact", boom)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_desktop(fs, "macos")
+            result = runner.invoke(upgrade, ["-p", "macos"])
+            assert result.exit_code != 0
+            assert "SHA-256 mismatch" in result.output
 
 
 class TestDoctor:
