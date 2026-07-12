@@ -87,5 +87,5 @@ A platform with a single artifact shape (e.g. macOS `app` today) defaults `-f` t
 
 The platform-specific behavior of each verb is documented alongside the platform:
 
-- **iOS** — [iOS CLI behavior](../platforms/ios/cli-ios.md) (build flags, `xcodebuild` integration, `run`/`open`, `doctor` checks, `kivy.mobile`, legacy-verb disposition).
+- **iOS** — [iOS CLI behavior](../platforms/ios/cli-ios.md) (build flags, `xcodebuild` integration, `run`/`open`, `doctor` checks, `kivy.mobile`).
 - **macOS** — [macOS spec](../platforms/macos/macos-spec.md).

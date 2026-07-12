@@ -1,9 +1,7 @@
 """``kivyforge`` — the kivyforge 3.0 command-line interface.
 
 A slim click-based dispatcher. Each verb lives in its own module under
-``kivyforge.cli`` and is registered onto the top-level group here. Legacy
-2.x verbs are registered as hidden commands that print a migration pointer
-(see ``_legacy``).
+``kivyforge.cli`` and is registered onto the top-level group here.
 """
 
 from __future__ import annotations
@@ -23,7 +21,6 @@ from . import (
     status,
     upgrade,
 )
-from ._legacy import LEGACY_VERBS, make_legacy_command
 
 
 @click.group(
@@ -49,10 +46,6 @@ main.add_command(upgrade.upgrade)
 main.add_command(clean.clean)
 main.add_command(status.status)
 main.add_command(doctor.doctor)
-
-# Legacy verbs: hidden, emit a migration pointer.
-for _verb in LEGACY_VERBS:
-    main.add_command(make_legacy_command(_verb))
 
 
 if __name__ == "__main__":

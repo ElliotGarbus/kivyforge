@@ -167,12 +167,15 @@ class TestBuildGuards:
             assert result.exit_code != 0
             assert "kivyforge lock" in result.output
 
-    def test_legacy_recipe_args_rejected(self, runner, tmp_path):
+    def test_extra_positional_args_rejected(self, runner, tmp_path):
+        # `build` takes no positional arguments; stray ones (e.g. the old
+        # kivy-ios 2.x `build python3 kivy` recipe-list form) hit click's
+        # standard "unexpected extra arguments" error.
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
             result = runner.invoke(build, ["python3", "kivy"])
             assert result.exit_code != 0
-            assert "2.x" in result.output
+            assert "unexpected extra argument" in result.output.lower()
 
     def test_no_pyproject_errors(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path):

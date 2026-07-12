@@ -14,7 +14,6 @@ PYPROJECT_NAME = "pyproject.toml"
 # iOS lockfile name, kept for the iOS verbs' backward-compatible call sites.
 # New/platform-aware code uses ``lockfile_name``/``lockfile_path_for``.
 LOCKFILE_NAME = "pylock.ios.toml"
-MIGRATION_URL = "https://kivy.org/docs/migration-2.x-to-3.0.html"
 
 
 def lockfile_name(platform: str) -> str:

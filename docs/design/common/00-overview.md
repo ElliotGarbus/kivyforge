@@ -67,7 +67,7 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 | [pyproject-ios](../platforms/ios/pyproject-ios.md) | The `[tool.kivy.ios]` overlay schema |
 | [pylock-ios-spec](../platforms/ios/pylock-ios-spec.md) | The iOS `pylock.ios.toml` (PEP 751 + `[tool.kivyforge]`) |
 | [artifact-distribution-ios](../platforms/ios/artifact-distribution-ios.md) | iOS wheels, `.xcframework` archives, SPM |
-| [cli-ios](../platforms/ios/cli-ios.md) | iOS-specific verb behavior, `doctor`, `kivy.mobile`, legacy verbs |
+| [cli-ios](../platforms/ios/cli-ios.md) | iOS-specific verb behavior, `doctor`, `kivy.mobile` |
 | [xcode-project-generation](../platforms/ios/xcode-project-generation.md) | Project layout, pbxproj wiring, Build Python phase |
 | [swift-packages](../platforms/ios/swift-packages.md) | Swift Package Manager as a native-dependency channel |
 | [recipe-triage](../platforms/ios/recipe-triage.md) | Disposition of the legacy kivy-ios 2.x recipes |

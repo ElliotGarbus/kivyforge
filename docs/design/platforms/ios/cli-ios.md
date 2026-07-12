@@ -1,9 +1,8 @@
 # iOS — CLI Behavior
 
 This document defines the **iOS-specific behavior** of the kivyforge CLI verbs —
-the flags, the `xcodebuild` integration, the iOS `doctor` checks, the
-`kivy.mobile` geometry surface, and the disposition of the legacy kivy-ios 2.x
-verbs. For the cross-platform verb model, the `--platform` / `-p` selector, the
+the flags, the `xcodebuild` integration, the iOS `doctor` checks, and the
+`kivy.mobile` geometry surface. For the cross-platform verb model, the `--platform` / `-p` selector, the
 `KIVYFORGE_PLATFORM` env var, and the platform-resolution chain, see
 [common CLI + platform resolution](../../common/02-cli-and-platform-resolution.md).
 
@@ -295,31 +294,3 @@ def _refresh_safe_area(self, *_):
 Kivy 3.0 also exposes `Window.safe_area` (a `DictProperty` refreshed on startup and `on_rotate`), so most apps can bind to that directly rather than calling `kivy.mobile` themselves.
 
 See [recipe triage §"Deleted recipes — `ios` recipe"](recipe-triage.md).
-
----
-
-## Disposition of legacy kivy-ios 2.x verbs
-
-The legacy `toolchain.py` monolith exposed: `build`, `recipes`, `status`, `create`, `update`, `pip`, `pip3`, `clean`, `distclean`, `launchimage`, `icon`. Their fate in kivyforge:
-
-| Legacy verb | Fate | Replacement |
-|-------------|------|-------------|
-| `build` | **Repurposed** — same name, completely different semantics. No backward compat: 2.x's `build python3 kivy` no longer makes sense. Calling `kivyforge build python3 kivy` exits with a clear error pointing at the migration guide. |
-| `recipes` | Removed. No recipes. Suggested replacement: `kivyforge doctor` shows what's pinned in the lock. |
-| `status` | **Repurposed** — same name, new read-only semantics. 2.x's `status` reported the recipe build state; the new `status` reports project identity, Python version, lock-sync state, and per-target build output (see the `kivyforge status` section above). No recipe state is reported because there are no recipes. |
-| `create` | Removed. Replaced by `init`. |
-| `update` | Removed. Replaced by `upgrade`. |
-| `pip` / `pip3` | Removed. Users edit `[project].dependencies` and run `lock`. The maintainer's `install_deps.sh` framing is explicitly **rejected**. |
-| `clean` | Kept (same name, slightly different semantics). |
-| `distclean` | Removed. `clean --cache` covers it. |
-| `launchimage` | Removed. `[tool.kivy.ios.splash]` handles it. |
-| `icon` | Removed. `[tool.kivy.ios.icons]` handles it. |
-
-A removed verb that the user calls explicitly emits a one-line deprecation pointer:
-
-```
-$ toolchain create MyApp ~/code/myapp
-Error: 'create' is not a verb in kivyforge.
-  Migration: cd ~/code/myapp && kivyforge init
-  See: https://kivy.org/docs/migration-2.x-to-3.0.html
-```

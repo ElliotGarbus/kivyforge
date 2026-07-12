@@ -1,4 +1,4 @@
-"""Phase 0 — CLI dispatch, help, and legacy-verb migration pointers."""
+"""Phase 0 — CLI dispatch and help."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import pytest
 from click.testing import CliRunner
 
 from kivyforge.cli import main
-from kivyforge.cli._legacy import LEGACY_VERBS
 
 REAL_VERBS = [
     "init",
@@ -34,18 +33,6 @@ class TestTopLevel:
         for verb in REAL_VERBS:
             assert verb in result.output, f"{verb} missing from --help"
 
-    def test_help_hides_legacy_verbs(self, runner):
-        result = runner.invoke(main, ["--help"])
-        # Legacy verbs are hidden; they must not appear in the command listing.
-        # (Guard against a substring of a real verb by checking line starts.)
-        listed = {
-            line.strip().split()[0]
-            for line in result.output.splitlines()
-            if line.startswith("  ")
-        }
-        for verb in LEGACY_VERBS:
-            assert verb not in listed, f"legacy verb {verb} should be hidden"
-
     def test_version(self, runner):
         from kivyforge import __version__
 
@@ -69,21 +56,7 @@ class TestRealVerbDispatch:
         assert cmd is not None
 
 
-class TestLegacyVerbs:
-    @pytest.mark.parametrize("verb", sorted(LEGACY_VERBS))
-    def test_legacy_verb_emits_pointer(self, runner, verb):
-        result = runner.invoke(main, [verb])
-        assert result.exit_code != 0
-        assert f"'{verb}' is not a verb in kivyforge 3.0" in result.output
-        assert "kivy.org/docs/migration" in result.output
-
-    def test_legacy_build_recipe_form(self, runner):
-        # `kivyforge build python3 kivy` (2.x form) gets a targeted message.
-        result = runner.invoke(main, ["build", "python3", "kivy"])
-        assert result.exit_code != 0
-        assert "kivy-ios 2.x form" in result.output
-        assert "kivyforge init && kivyforge lock && kivyforge build" in result.output
-
+class TestVerbErrors:
     def test_unknown_verb_errors(self, runner):
         result = runner.invoke(main, ["frobnicate"])
         assert result.exit_code != 0
