@@ -81,3 +81,36 @@ Two takeaways. First, uv **validates the model**: its maintainers state iOS/Andr
 See the per-platform lockfile documents for the full field reference:
 
 - [iOS — `pylock.ios.toml`](../platforms/ios/pylock-ios-spec.md)
+
+## Example-repo lock policy
+
+For a *user's* app, committing `pylock.<platform>.toml` is the right default — it
+is the reproducibility artifact `kivyforge build` depends on, and CI should build
+from the same lock a developer resolved locally.
+
+Within **this repo's own `examples/` tree**, the calculus is different: an example's
+lock is a generated artifact, not something anyone reads or hand-verifies, and
+`pyproject_sha256` hashes the *whole* `pyproject.toml` — so any overlay edit
+(signing config, bundle ID, icon path, deployment target) forces a regen and
+changes `generated_at`/`pyproject_sha256` even when zero pinned packages
+changed. That's diff noise with no corresponding content change, multiplied across
+every example whenever a maintainer touches an overlay field. Worse, a lock
+checked in purely for "reference" value can go silently stale (a pinned pre-release
+wheel or python.org xcframework build getting superseded at its URL) without
+anyone noticing until `kivyforge build` re-verifies a hash.
+
+So `examples/**/pylock.*.toml` is **gitignored** in this repo, with one deliberate
+exception: `examples/mobile/hello-kivy/pylock.ios.toml` stays committed as the
+single canonical, checked-in reference lock (it exercises the local `path`-wheel
+case, the shape most worth seeing "for real"). Every example's README documents
+`kivyforge lock` / `kivyforge lock --update` as the first step of running it, so
+regenerating a gitignored lock is an expected, already-documented part of the
+workflow — the same treatment already given to `examples/wheels/ios/*.whl` and the
+generated `<app>-ios/` Xcode trees.
+
+For schema *teaching* — as opposed to a real, buildable fixture — prefer the
+hand-annotated ["Worked example"](../platforms/ios/pylock-ios-spec.md#worked-example-full-lockfile-for-a-minimal-app)
+in the iOS spec over a raw generated file: it carries inline comments explaining
+*why* each entry looks the way it does (compiled vs. pure-Python wheel shape,
+omitted `xcframeworks` array, etc.) that `kivyforge lock` strips back out of any
+real lock on the next run.

@@ -1,1 +1,4 @@
 hello-kivy-ios/
+# pylock.ios.toml is intentionally tracked here (not gitignored like other
+# examples' locks) — it's the repo's one canonical, checked-in reference lock;
+# see "Example-repo lock policy" in docs/design/common/03-lockfile-concept.md.
