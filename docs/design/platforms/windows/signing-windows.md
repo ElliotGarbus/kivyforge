@@ -1,0 +1,193 @@
+# Windows — Signing Design
+
+Authenticode signing of the Windows artifact, per the
+[common packaging-scope principle](../../common/06-packaging-scope.md):
+signing operates on the bundled binaries, so it stays inside kivyforge; the
+installer step is external. This document specifies the policy (ship v1
+unsigned, hook first-class from day one), the architecture (a `Signer`
+protocol + thumbprint identity), the composition with an external Inno Setup
+step, and the self-signed dev/CI flow.
+
+> **Status: design settled, implementation not started** (tracked with the
+> [Windows spec](windows-spec.md)). The signing hook is the third item in the
+> implementation sequence and can be built and tested against a self-signed
+> certificate at any point, at zero cost.
+
+## Policy
+
+- **Skip signing kivyforge's own binaries for now** (the prebuilt bootloader
+  asset, kivyforge's releases). The developer audience tolerates the
+  SmartScreen wall; a certificate costs money and process; this matches the
+  defer-pending-demand pattern used across the backends.
+- **But build the signing hook as a first-class, optional pipeline step from
+  day one.** For a *packaging tool*, signing the **output** is a feature
+  users will need — their end users will not click through "Windows protected
+  your PC."
+- Ship v1 unsigned + **document the wall**: what SmartScreen shows for an
+  unsigned/unknown binary, plus a short "how to sign your kivyforge output"
+  guide (get a cert into the store → set the thumbprint → `package`).
+
+## Architecture
+
+### The `Signer` protocol
+
+A swappable-backend seam, the same shape as the existing `Downloader` and
+`RuntimeProvider` protocols. Note that no `Signer` abstraction exists in the
+codebase today — macOS signing is free functions in
+`platforms/macos/signing.py`, iOS signing rides Xcode build settings (the
+[abstraction-leak retro](../../common/abstraction-leak-retro.md) records this
+explicitly). **Windows introduces the protocol**; it lives in
+`platforms/windows/signing.py` and is *not* retrofitted onto macOS/iOS —
+Windows signing is genuinely pluggable (store cert, hardware token, cloud
+signer) in a way Apple's keychain-bound flow is not, so the seam earns its
+keep here without forcing a shared abstraction the other backends don't need.
+
+```python
+class Signer(Protocol):
+    def sign(self, paths: Sequence[Path]) -> None: ...
+```
+
+Backends:
+
+- **`SigntoolSigner`** — the default: shells out to `signtool sign` with the
+  configured thumbprint (`/sha1 <thumbprint> /fd SHA256 /tr <timestamp_url>
+  /td SHA256`). Covers store-imported pfx certs *and* hardware tokens *and*
+  Azure-backed certs transparently, because all of them surface as
+  cert-store entries (see "Identity" below).
+- **`NullSigner`** — the unconfigured default; `package` produces the
+  unsigned artifact.
+- A future **`ArtifactSigningSigner`** (Azure Artifact Signing's dlib-based
+  signtool invocation) slots in behind the same protocol — deferred, see
+  below.
+
+The protocol keeps credential mess out of the pipeline core: `bundle.py` and
+`cli.py` ask for "the configured signer" and call `sign`; which backend and
+which credentials is resolved at the edge.
+
+### Identity: thumbprint-from-cert-store, not pfx-path
+
+Adopted from Briefcase. `[tool.kivy.windows.signing].thumbprint` is the SHA-1
+thumbprint of a code-signing certificate **in the Windows certificate store**
+(`Cert:\CurrentUser\My` or `Cert:\LocalMachine\My`):
+
+- The *same* configuration works whether the credential behind the cert is an
+  imported `.pfx`, a hardware token (EV certs), or a cloud-held key — the
+  store abstracts the key location.
+- **No passwords ever touch the pipeline** — no `.pfx` path in
+  `pyproject.toml`, no password prompt/env var plumbing, nothing committed
+  that shouldn't be. (Contrast PyInstaller's canonical recipe, which still
+  documents the pfx-path + password flow.)
+- The pfx-path model is dying anyway: since 2023 the CA/Browser Forum
+  requires code-signing keys in hardware/HSM, so file-based `.pfx` certs are
+  no longer issued for publicly-trusted code signing.
+
+Briefcase cannot enumerate installed certificates for the user — a
+`kivyforge doctor`-adjacent listing (surface matching code-signing certs +
+thumbprints when the configured thumbprint doesn't match) is a possible
+differentiator, but a nice-to-have, not table stakes.
+
+### What gets signed, in what order
+
+For `package` with signing configured, on the assembled onedir tree:
+
+1. **Resource-patch the launcher first** (icon + version resource — a
+   resource edit invalidates any signature, so it must precede signing; see
+   the [bootloader doc](bootloader-windows.md#per-app-parameterization-resource-patching)).
+2. **Sign the launcher `.exe`** — the file SmartScreen and users actually
+   judge. Always timestamped (see below).
+3. **Payload DLLs/`.pyd`s** (`python.exe`, `python3xx.dll`, `SDL3.dll`, wheel
+   extensions, ...) — **deferred to v2**; this matters only under Smart App
+   Control / WDAC, not SmartScreen. onedir is what keeps it possible later:
+   every payload file is real on disk and individually signable, which
+   onefile would have foreclosed.
+
+Windows signing is *flat* — a PKCS#7 blob appended to each PE independently —
+unlike macOS's *structural* bundle seal (nested seals, inside-out ordering).
+There is no Windows analog of "sign the deepest Mach-O first"; the ordering
+constraints here are only patch-before-sign and sign-before-installer.
+
+## Orchestration: kivyforge + Inno are composed, not redundant
+
+Installers are **permanently external** — a scope decision, not a deferral
+(see the [spec's scope](windows-spec.md#scope)); kivyforge stops at the
+signed onedir artifact. But users who wrap that artifact in an installer
+still need the two signing domains to compose correctly, so this section
+specifies the seam as **user-facing guidance** — the Windows analog of the
+macOS spec's copy-paste `.dmg` notarization snippet, destined for the "how to
+sign your kivyforge output" guide. It is not groundwork for a future
+`package -f installer`. Inno Setup is used as the worked example; the same
+sign-the-artifact-first sequencing applies to NSIS/WiX pipelines. Each side
+can reach an artifact the other cannot:
+
+| Artifact | Signed by | Why |
+|---|---|---|
+| Launcher `.exe` in the onedir tree | **kivyforge** | Inno's `[Files]` sign flag only fires for files passing through an Inno compile — the portable-folder deliverable never does |
+| Payload DLLs (optional, v2) | **kivyforge** | Same reason; only matters for Smart App Control / WDAC |
+| `setup.exe` | **Inno** (`SignTool` directive) | Doesn't exist until Inno compile time |
+| Uninstaller (`unins000.exe`) | **Inno** (`SignedUninstaller`) | Generated on the *end user's* machine at install time — structurally unreachable from outside Inno |
+
+**One credential path.** Inno's `SignTool` directive is just a command
+template — point it at the same `signtool` invocation kivyforge's `Signer`
+backend produces. kivyforge owns the *policy* (which backend, which
+thumbprint); Inno is merely a second *execution site* for the identical
+command.
+
+**Order** (in the user's release pipeline): `kivyforge package` signs the
+tree → the user's Inno compile packages the *already-signed* launcher
+(**no `sign` flag on that `[Files]` entry** — don't double-sign) and signs
+`setup.exe` + the uninstaller. Each file is signed exactly once.
+
+## Development & CI
+
+**Develop and test against a self-signed certificate.** `signtool`'s command
+surface is byte-for-byte identical regardless of certificate origin, so a
+self-signed cert exercises the *entire* orchestration layer — config parsing,
+thumbprint lookup, signing, timestamping, verification plumbing — at full
+fidelity:
+
+```powershell
+$cert = New-SelfSignedCertificate -Type CodeSigningCert `
+  -Subject "CN=KivyForge Test Signer" -CertStoreLocation Cert:\CurrentUser\My `
+  -KeyUsage DigitalSignature -KeyExportPolicy Exportable -HashAlgorithm SHA256
+```
+
+```
+signtool sign /sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 MyApp.exe
+```
+
+- **Always timestamp, and test the timestamp path.** Public timestamp servers
+  are free and need no account; a timestamped signature survives the
+  certificate's expiry, an untimestamped one dies with it. The timestamp
+  round-trip is part of real signing, so it is part of the tested pipeline
+  (and of the `doctor` reachability check).
+- **`signtool verify /pa` fails on a self-signed cert** (untrusted chain)
+  unless the public `.cer` is imported into `Cert:\LocalMachine\Root` on the
+  test box. CI does that import; the verify step then validates the full
+  sign→verify loop.
+- **The self-signed flow is the CI default** — PRs exercise the whole signing
+  pipeline with **no secrets** in the repository or the workflow.
+- **What self-signed does *not* replicate:** SmartScreen behavior (which
+  needs a real, publicly-trusted cert plus accrued reputation) and cloud
+  credential mechanics. Briefcase's docs warn explicitly that self-signed is
+  not for distribution — agreed; it is a dev/CI fixture only, and the docs
+  say so.
+
+## Deferred
+
+- **Azure Artifact Signing** (formerly Trusted Signing): ~$10/mo, keys held
+  in FIPS 140-2 Level 3 HSMs, no hardware token to manage, GA as of April
+  2026 with individual-developer eligibility (US/CA/EU/UK). This is the path
+  *if/when kivyforge signs its own releases* — deferred, not adopted. Gotchas
+  recorded for that day: identity validation runs through a third-party
+  validator and can take hours-to-days; and signtool under Artifact Signing
+  requires **exactly .NET 8** — on .NET 10 it fails *silently and reports
+  success* — so prefer the vendor's GitHub Action over raw signtool in CI.
+- **Payload-DLL signing** — a Smart App Control concern (SAC enforces more
+  strictly than SmartScreen and can object to unsigned payload DLLs). v2;
+  kept possible by onedir.
+- **PBS binary signatures** — whether PBS's `python.exe`/`python3xx.dll`
+  arrive Authenticode-signed is an [open item](windows-spec.md#open-items);
+  if unsigned, they fold into the payload sweep above. Either answer only
+  affects SAC machines.
+- **MSIX / MSI signing** — with the formats themselves (external, defer
+  pending demand).

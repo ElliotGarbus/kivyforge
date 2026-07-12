@@ -29,6 +29,9 @@ In scope for the macOS backend:
 - `pylock.macos.toml` resolution (macOS Python runtime + macOS-tagged wheels).
 - A `.app` bundle generator (Info.plist, bundled Python + wheels + app source, a launcher).
 - `build` / `run` (launch the `.app`) and `package -f app`.
+- A declared **native-binaries channel** (`[tool.kivy.macos.native.binaries]`)
+  for non-wheel dylibs / helper executables — *designed, not yet implemented*
+  (see ["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels-toolkivymacosnativebinaries)).
 - **Ad-hoc** code signing (the mandatory Apple-Silicon floor).
 - **Full Developer ID signing + notarization + stapling** — see
   ["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple) below.
@@ -191,6 +194,8 @@ MyApp.app/
 │   └── Resources/
 │       ├── MyApp.icns             ← from [tool.kivy.macos.icons].source
 │       ├── app/                   ← user code (from [tool.kivy].app_dir)
+│       ├── bin/                   ← declared native binaries (native.binaries);
+│       │                            absent when the table is empty
 │       ├── lib/                   ← installed wheels (site-packages)
 │       └── python/                ← bundled CPython runtime + stdlib
 ```
@@ -225,6 +230,74 @@ so the `.app` stays relocatable), points `PYTHONHOME` at the bundled runtime and
 `execv`s `Resources/python/bin/python3 Resources/app/<entry_point>.py` — the
 desktop analog of the iOS `main.m` bootstrap. It is itself ad-hoc-signed along
 with the Mach-O binaries in the runtime + wheels.
+
+### Native binaries that are not wheels (`[tool.kivy.macos.native.binaries]`)
+
+> **Implementation status: designed, not yet implemented** — a scoped
+> addition to the shipped backend, specified alongside the Windows backend
+> (which defines the same channel; see the
+> [Windows spec](../windows/windows-spec.md#native-binaries-that-are-not-wheels)).
+
+Some apps need native binaries that no wheel delivers: vendor SDK `.dylib`s
+or helper executables (a bundled `ffmpeg`). The
+**`[tool.kivy.macos.native.binaries]`** table is the declared channel — the
+desktop sibling of iOS's `[tool.kivy.ios.native.xcframeworks]`, same
+name → `{ version, source }` shape, same explicit-source rules (a direct
+download URL or a repo-relative path; absolute/escaping paths rejected):
+
+```toml
+[tool.kivy.macos.native.binaries]
+sdk    = { version = "2.1.0", source = "https://vendor.example/sdk-2.1.0-macos.zip" }
+ffmpeg = { version = "7.1",   source = "binaries/macos/ffmpeg" }
+```
+
+Semantics, per pipeline stage:
+
+- **`lock`** — resolves each artifact's SHA-256 and pins
+  `name`/`version`/`source`/`sha256` in a
+  `[[tool.kivyforge.native_binaries]]` array in `pylock.macos.toml` — the
+  same integrity discipline as wheels and the runtime.
+- **`build`** — fetches through the shared download/cache/verify machinery
+  and stages into **`Contents/Resources/bin/`** (single files copied as-is
+  with exec bits preserved; `.zip` sources extracted preserving structure).
+- **launcher** — prepends `Resources/bin` to the child `PATH`, so helper
+  executables run by name (`subprocess.run(["ffmpeg", ...])`).
+- **`.dylib`s still load by absolute path.** macOS has no safe by-name
+  registration analog to Windows' `os.add_dll_directory`:
+  `DYLD_LIBRARY_PATH` is ignored by Hardened-Runtime processes (short of the
+  `allow-dyld-environment-variables` entitlement, which invites notarization
+  trouble). The stable cross-platform recipe is
+  `Path(sys.prefix).parent / "bin"` — `sys.prefix` is the bundled runtime
+  (`Resources/python`), so its parent is `Resources/`; the same derivation
+  yields the `bin` directory on Windows and Linux too.
+- **`doctor`** — each declared source exists/is reachable, and each staged
+  Mach-O covers the assembled archs (a thin `arm64` vendor dylib in a
+  universal2 app fails only at load time on Intel; FAIL names the file and
+  missing arch).
+- **signing** — no new work: the deep sign already walks *every* Mach-O
+  under the `.app` by file magic, so `Resources/bin` is swept — ad-hoc, or
+  Developer ID with Hardened Runtime + timestamp — automatically. This is a
+  requirement, not a convenience: notarization rejects any unsigned Mach-O
+  anywhere in the bundle.
+
+**The boundary:** kivyforge fetches, verifies, stages, and signs declared
+binaries. It does **not** resolve their dependencies or rewrite their
+`install_name`/`@rpath` load commands — a dylib that hard-codes absolute
+install paths is the vendor's problem to fix (the consume-prebuilt-artifacts
+principle).
+
+**The escape hatch remains:** files dropped under `app_dir` are copied
+wholesale into `Resources/app/` (exec bits preserved; the launcher `chdir`s
+there) and are still swept by the signer — but get no pinning, no `PATH`
+entry, and no arch check. Two edges of the sweep, recorded rather than
+solved: (1) nested binaries are signed *without* the app's entitlements
+(those apply only to the bundle seal / main executable) — a helper that
+itself needs a hardened exception (e.g. its own W+X allocation) would need
+per-file entitlements, a revisit-on-demand item. (2) The Mach-O detector
+matches the `0xCAFEBABE` magic, which is also the Java class-file magic —
+its walks-only-runtime-and-wheels assumption predates sweeping `app_dir`
+content, so a `.class` file under `app_dir` would be misidentified and fail
+`codesign`. A known limitation; fix if anyone ever hits it.
 
 ## `build` / `run` / `package`
 

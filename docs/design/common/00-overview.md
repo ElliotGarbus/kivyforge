@@ -40,8 +40,10 @@ flowchart LR
 kivyforge is in early development, added one platform at a time.
 
 - **iOS** — implemented. Resolves `pylock.ios.toml`, downloads the official python.org `Python.xcframework` plus iOS wheels, and generates an Xcode project. Full design under [platforms/ios](../platforms/ios/pyproject-ios.md).
-- **macOS** — next: produce a `.app` bundle. See [platforms/macos/macos-spec.md](../platforms/macos/macos-spec.md).
-- **Linux, Windows, Android** — planned, in that order.
+- **macOS** — implemented and verified. Produces a signed `.app` bundle, including the full Developer ID sign + notarize + staple path. See [platforms/macos/macos-spec.md](../platforms/macos/macos-spec.md).
+- **Linux** — implemented. Produces an AppDir / AppImage. See [platforms/linux/linux-spec.md](../platforms/linux/linux-spec.md).
+- **Windows** — design settled, implementation not started. Produces a onedir folder + launcher `.exe`. See [platforms/windows/windows-spec.md](../platforms/windows/windows-spec.md).
+- **Android** — planned.
 
 ## Reading index
 
@@ -77,6 +79,20 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 | Document | Purpose |
 |----------|---------|
 | [macos-spec](../platforms/macos/macos-spec.md) | `.app` layout, Python runtime acquisition, macOS wheels, `package -f app`, signing outline |
+
+### Linux
+
+| Document | Purpose |
+|----------|---------|
+| [linux-spec](../platforms/linux/linux-spec.md) | AppDir/AppImage layout, PBS gnu runtime, manylinux resolution, `package -f appimage\|folder` |
+
+### Windows
+
+| Document | Purpose |
+|----------|---------|
+| [windows-spec](../platforms/windows/windows-spec.md) | onedir layout, PBS runtime decision, the DLL-discovery invariant, verbs, `doctor`, sequencing |
+| [bootloader-windows](../platforms/windows/bootloader-windows.md) | The prebuilt launcher `.exe`: windowed subsystem, spawn-and-wait + Job object, wide-char/path handling |
+| [signing-windows](../platforms/windows/signing-windows.md) | Authenticode: the `Signer` protocol, thumbprint identity, Inno composition, self-signed dev/CI flow |
 
 ### Developer notes
 

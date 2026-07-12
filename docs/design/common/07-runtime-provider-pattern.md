@@ -19,9 +19,10 @@ ships such an artifact today differs per platform:
 |----------|---------------------------------------------------|
 | macOS | No. The only macOS build is the "universal2 installer" `.pkg`, which installs a `Python.framework` hard-coded to `/Library/Frameworks` (absolute link references) — not embeddable without rewriting `install_name`/`@rpath`, re-signing, and trimming. |
 | Linux | No official prebuilt relocatable CPython from python.org (distros rely on system packages or manylinux-style container images, neither of which is a drop-in bundleable artifact). |
-| Windows | **Yes** — the [Windows embeddable package](https://docs.python.org/3/using/windows.html#the-embeddable-package) is an official, purpose-built, relocatable ZIP distribution, produced from the same release binaries. See the Windows spec for whether kivyforge uses it directly or still prefers `python-build-standalone` for build/tooling consistency with the other desktop platforms. |
+| Windows | **Yes, but rejected** — the [Windows embeddable package](https://docs.python.org/3/using/windows.html#the-embeddable-package) is an official, purpose-built, relocatable ZIP distribution. The [Windows spec](../platforms/windows/windows-spec.md#python-runtime-acquisition) settled on `python-build-standalone` anyway: the embeddable package has no pip (the bundle prefix can't be populated with `pip install --prefix`), its `._pth` isolation changes `sys.prefix` semantics (which Kivy's Windows DLL discovery keys off), and its stdlib is zipped — permanent, structural gaps, not fixable configuration. PBS's normal prefix layout is load-bearing for the Windows bundle. |
 
-For macOS and Linux, **[`python-build-standalone`](https://github.com/astral-sh/python-build-standalone)
+For the desktop platforms — macOS, Linux, and Windows —
+**[`python-build-standalone`](https://github.com/astral-sh/python-build-standalone)
 (PBS)** is the bridge: purpose-built to be relocatable/embeddable, actively
 maintained (Astral-stewarded, tracks CPython releases closely), and its
 patches are being upstreamed into CPython — the pragmatic choice today and
@@ -63,7 +64,7 @@ implementations (see [macOS spec §"Python runtime acquisition"](../platforms/ma
 the PSF's effort to distribute official, prebuilt, **relocatable** CPython
 builds from python.org (signed by official keys), unblocked by upstreaming
 PBS patches; a PEP is imminent. This is the intended long-term end-state for
-the platforms that currently bridge via PBS (macOS, Linux). When it lands for
+the platforms that bridge via PBS (macOS, Linux, Windows). When it lands for
 a given platform, that platform's backend adds the corresponding
 `PythonOrgFrameworkProvider`-equivalent, makes it the default, and existing
 projects pick it up on their next `kivyforge lock` — no rewrite, per the

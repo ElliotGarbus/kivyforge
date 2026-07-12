@@ -114,7 +114,9 @@ Each `[tool.kivy.<platform>]` overlay is documented in its own file:
 
 - **iOS** — [`[tool.kivy.ios]` overlay schema](../platforms/ios/pyproject-ios.md)
 - **macOS** — [`[tool.kivy.macos]` overlay](../platforms/macos/macos-spec.md)
-- **Android / Windows / Linux** — reserved (see below); documented when each platform lands.
+- **Linux** — [`[tool.kivy.linux]` overlay](../platforms/linux/linux-spec.md#toolkivylinux-overlay)
+- **Windows** — [`[tool.kivy.windows]` overlay](../platforms/windows/windows-spec.md#toolkivywindows-overlay) (design settled; implementation not started)
+- **Android** — reserved (see below); documented when the platform lands.
 
 ## Reserved platform namespaces
 
@@ -125,7 +127,7 @@ The `[tool.kivy]` namespace accommodates every current and future Kivy platform.
 | `[tool.kivy.ios]`     | iOS |
 | `[tool.kivy.macos]`   | macOS |
 | `[tool.kivy.android]` | Android |
-| `[tool.kivy.windows]` | Windows (all architectures) |
+| `[tool.kivy.windows]` | Windows (all architectures). Field reference in the [Windows spec](../platforms/windows/windows-spec.md#toolkivywindows-overlay). |
 | `[tool.kivy.linux]`   | Linux, including Raspberry Pi (any architecture). Architecture-specific settings, if needed, belong as sub-keys within `[tool.kivy.linux]` (e.g. `[tool.kivy.linux.aarch64]`) rather than a separate namespace — mirroring how `sys_platform` and `platform_machine` are separate concepts in PEP 508 markers. |
 
 Reservation semantics:

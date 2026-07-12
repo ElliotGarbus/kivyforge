@@ -89,3 +89,5 @@ The platform-specific behavior of each verb is documented alongside the platform
 
 - **iOS** — [iOS CLI behavior](../platforms/ios/cli-ios.md) (build flags, `xcodebuild` integration, `run`/`open`, `doctor` checks, `kivy.mobile`).
 - **macOS** — [macOS spec](../platforms/macos/macos-spec.md).
+- **Linux** — [Linux spec](../platforms/linux/linux-spec.md).
+- **Windows** — [Windows spec](../platforms/windows/windows-spec.md) (design settled; implementation not started).

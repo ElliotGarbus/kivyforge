@@ -28,6 +28,9 @@ In scope for the Linux backend:
 - `pylock.linux.toml` resolution (Linux Python runtime + manylinux-tagged wheels).
 - An AppDir bundle generator (`AppRun` launcher, bundled Python + wheels + app
   source, generated `.desktop` entry + hicolor icons).
+- A declared **native-binaries channel** (`[tool.kivy.linux.native.binaries]`)
+  for non-wheel `.so`s / helper executables — *designed, not yet implemented*
+  (see ["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels-toolkivylinuxnativebinaries)).
 - `build` / `run` (launch `./AppRun`) and `package -f appimage` (default) /
   `-f folder`.
 - Linux `doctor` checks.
@@ -226,6 +229,8 @@ build/linux/MyApp.AppDir/
 ├── .DirIcon                        ← copy of the root icon (folder-artifact icon)
 └── usr/
     ├── app/                        ← user code (from [tool.kivy].app_dir)
+    ├── bin/                        ← declared native binaries (native.binaries);
+    │                                 absent when the table is empty
     ├── lib/                        ← installed wheels (site-packages)
     ├── python/                     ← PBS runtime (bin/, lib/python3.x/)
     └── share/icons/hicolor/<N>x<N>/apps/<app_id>.png
@@ -252,6 +257,69 @@ maps to the nested source path `usr/app/pkg/start.py`. There is **no
 `LD_LIBRARY_PATH`**: PBS rpaths are `$ORIGIN`-relative and
 manylinux wheels vendor their native libs (auditwheel), so the environment stays
 clean for the host's own libGL.
+
+### Native binaries that are not wheels (`[tool.kivy.linux.native.binaries]`)
+
+> **Implementation status: designed, not yet implemented** — a scoped
+> addition to the shipped backend, specified alongside the Windows backend
+> (which defines the same channel; see the
+> [Windows spec](../windows/windows-spec.md#native-binaries-that-are-not-wheels)).
+
+Some apps need native binaries that no wheel delivers: vendor SDK `.so`s or
+helper executables (a bundled `ffmpeg`). The
+**`[tool.kivy.linux.native.binaries]`** table is the declared channel — the
+desktop sibling of iOS's `[tool.kivy.ios.native.xcframeworks]`, same
+name → `{ version, source }` shape, same explicit-source rules (a direct
+download URL or a repo-relative path; absolute/escaping paths rejected):
+
+```toml
+[tool.kivy.linux.native.binaries]
+sdk    = { version = "2.1.0", source = "https://vendor.example/sdk-2.1.0-linux-x86_64.zip" }
+ffmpeg = { version = "7.1",   source = "binaries/linux/ffmpeg" }
+```
+
+Semantics, per pipeline stage:
+
+- **`lock`** — resolves each artifact's SHA-256 and pins
+  `name`/`version`/`source`/`sha256` in a
+  `[[tool.kivyforge.native_binaries]]` array in `pylock.linux.toml` — the
+  same integrity discipline as wheels and the runtime.
+- **`build`** — fetches through the shared download/cache/verify machinery
+  and stages into **`usr/bin/`** (single files copied as-is with exec bits
+  preserved; `.zip`/`.tar.gz` sources extracted preserving structure).
+- **`AppRun`** — prepends `$HERE/usr/bin` to `PATH`, so helper executables
+  run by name (`subprocess.run(["ffmpeg", ...])`) — and CWD-independently,
+  which matters here: `AppRun` does not `chdir` into `usr/app`, so the
+  working directory is wherever the user launched from.
+- **`.so`s still load by absolute path.** The no-`LD_LIBRARY_PATH` rule
+  above stands — polluting the loader path is how bundles shadow the host's
+  own libGL. The stable cross-platform recipe is
+  `Path(sys.prefix).parent / "bin"` (`sys.prefix` is `usr/python`, so its
+  parent is `usr/`; the same derivation yields the `bin` directory on
+  Windows and macOS too). A vendor `.so` whose *sibling* dependencies lack
+  `$ORIGIN` rpaths won't resolve them from a bare `dlopen`; preload the
+  dependencies in order via `ctypes` (or ask the vendor for
+  `$ORIGIN`-rpath'd builds).
+- **`doctor`** — each declared source exists/is reachable, and each staged
+  ELF is `x86_64`-class (an aarch64 or 32-bit binary fails only at load
+  time). Best-effort WARN comparing the binary's glibc version-needs against
+  the effective floor.
+- **No signing** exists on Linux, so there is no signing interaction.
+
+**The boundary:** kivyforge fetches, verifies, and stages declared binaries.
+It does **not** resolve their dependencies or patch their rpaths (the
+consume-prebuilt-artifacts principle). And **the glibc floor is the user's
+own call for these files**: a declared binary bypasses the manylinux tag
+machinery, so kivyforge cannot vouch for its portability beyond the
+best-effort `doctor` WARN — the same caveat as plain `linux_x86_64` wheels
+from `find_links`.
+
+**Two AppImage-specific notes:** the mounted AppImage is **read-only** — a
+helper that writes next to itself works from the `-f folder` artifact but
+fails inside the AppImage. And **the escape hatch remains**: files dropped
+under `app_dir` are copied wholesale into `usr/app/` (exec bits preserved)
+but get no pinning, no `PATH` entry, and no arch check — load them by
+absolute path derived from `__file__`.
 
 ### Desktop integration
 
