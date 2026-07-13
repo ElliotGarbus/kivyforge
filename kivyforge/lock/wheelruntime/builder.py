@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 
 from ... import __version__
 from ...artifacts.verify import sha256_file
-from ...config.model import Config
+from ...config.model import Config, NativeBinaryDep
 from ..find_links import (
     FindLinksError,
     find_links_resolution_hint,
@@ -27,6 +27,7 @@ from ..find_links import (
 from ..model import LockedPackage, LockedWheel, PackageDep, canonical_name
 from ..reader import compute_pyproject_sha256
 from .model import WheelRuntimeLock
+from .native_binaries import NativeBinaryResolverError, resolve_native_binaries
 from .profile import PlatformLockProfile
 from .resolver import WheelResolver, WheelResolverError
 from .runtime import RuntimeProvider, RuntimeProviderError
@@ -44,6 +45,7 @@ def build_wheel_runtime_lock(
     project_root: Path | None = None,
     resolver: WheelResolver | None = None,
     runtime_provider: RuntimeProvider | None = None,
+    native_binaries: tuple[NativeBinaryDep, ...] = (),
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
@@ -69,6 +71,13 @@ def build_wheel_runtime_lock(
     try:
         runtime = runtime_provider.resolve(python_version, archs, offline=offline)
     except RuntimeProviderError as exc:
+        raise WheelRuntimeBuildError(str(exc)) from exc
+
+    try:
+        locked_native_binaries = resolve_native_binaries(
+            native_binaries, project_root=root, offline=offline
+        )
+    except NativeBinaryResolverError as exc:
         raise WheelRuntimeBuildError(str(exc)) from exc
 
     declared_floor = profile.declared_floor(config)
@@ -135,6 +144,7 @@ def build_wheel_runtime_lock(
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         pyproject_sha256=compute_pyproject_sha256(pyproject_text),
         tool_kivyforge_schema_version=profile.schema_version(config),
+        native_binaries=locked_native_binaries,
     )
 
 
@@ -236,6 +246,20 @@ def diff_summary(old: WheelRuntimeLock, new: WheelRuntimeLock) -> list[str]:
             f"  ~ python runtime: {old.python_runtime.version} -> "
             f"{new.python_runtime.version}"
         )
+    old_nb = {b.name: b for b in old.native_binaries}
+    new_nb = {b.name: b for b in new.native_binaries}
+    for name in sorted(new_nb.keys() - old_nb.keys()):
+        out.append(
+            f"  + native binary {new_nb[name].name} {new_nb[name].version} (added)"
+        )
+    for name in sorted(old_nb.keys() - new_nb.keys()):
+        out.append(
+            f"  - native binary {old_nb[name].name} {old_nb[name].version} (removed)"
+        )
+    for name in sorted(old_nb.keys() & new_nb.keys()):
+        o, n = old_nb[name], new_nb[name]
+        if o.version != n.version or o.sha256 != n.sha256:
+            out.append(f"  ~ native binary {n.name}: {o.version} -> {n.version}")
     return out
 
 

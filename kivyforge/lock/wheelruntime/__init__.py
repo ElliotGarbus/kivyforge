@@ -15,7 +15,13 @@ from .builder import (
     diff_summary,
     semantic_equal,
 )
-from .model import PythonRuntime, RuntimeArtifact, WheelRuntimeLock
+from .model import (
+    LockedNativeBinary,
+    PythonRuntime,
+    RuntimeArtifact,
+    WheelRuntimeLock,
+)
+from .native_binaries import resolve_native_binaries
 from .profile import PlatformLockProfile
 from .resolver import (
     PipWheelResolver,
@@ -36,6 +42,7 @@ from .runtime import (
 from .serialize import dumps, load, loads
 
 __all__ = [
+    "LockedNativeBinary",
     "PbsProvider",
     "PipWheelResolver",
     "PlatformLockProfile",
@@ -58,5 +65,6 @@ __all__ = [
     "load",
     "loads",
     "pbs_asset_glob",
+    "resolve_native_binaries",
     "semantic_equal",
 ]

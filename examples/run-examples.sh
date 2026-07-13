@@ -75,6 +75,7 @@ if [[ "$PLATFORM" == "macos" || "$PLATFORM" == "linux" ]]; then
         dice-roller
         notes
         desktop-viewer
+        hello-native
     )
 else
     DEFAULT_EXAMPLES=(
@@ -141,7 +142,13 @@ for ex in "${EXAMPLES[@]}"; do
     pushd "$dir" >/dev/null || { FAILED+=("$ex"); continue; }
 
     ok=1
-    rm -f "$LOCK" && echo ">>> removed $LOCK" || ok=0
+    # Examples with non-wheel native binaries ship a build_native.sh that
+    # compiles them into repo-relative sources before locking (macos-spec's
+    # native.binaries channel). Run it first when present.
+    if [[ -x "./build_native.sh" ]]; then
+        run_step "native" ./build_native.sh || ok=0
+    fi
+    [[ $ok -eq 1 ]] && { rm -f "$LOCK" && echo ">>> removed $LOCK" || ok=0; }
     [[ $ok -eq 1 ]] && { run_step "clean" kivyforge clean || ok=0; }
     [[ $ok -eq 1 ]] && { run_step "lock"  kivyforge lock  || ok=0; }
     if [[ "$PLATFORM" == "macos" ]]; then

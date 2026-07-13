@@ -4,8 +4,8 @@
 # iOS *physical device* lifecycle, so you can visually confirm the app
 # actually builds, signs, installs, and launches on real hardware. This is
 # the --device/--release companion to run-examples.sh (which only ever
-# exercises the simulator) and verify-linux-examples.sh (Linux's equivalent
-# full-loop script).
+# exercises the simulator) and verify-desktop-examples.sh (the desktop
+# macOS/Linux equivalent full-loop script).
 #
 # Manual pre-flight checklist — every item below was an actual failure
 # uncovered by ad-hoc device testing, kept here so it's a runbook instead of

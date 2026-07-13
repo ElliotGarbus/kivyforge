@@ -28,7 +28,7 @@ def _config():
     return load_config_from_text(_PYPROJECT, require_ios=False, require_macos=True)
 
 
-def _lock(archs=("arm64", "x86_64")):
+def _lock(archs=("arm64", "x86_64"), native_binaries=()):
     return WheelRuntimeLock(
         platform="macos",
         requires_python=">=3.14",
@@ -45,6 +45,7 @@ def _lock(archs=("arm64", "x86_64")):
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256="0" * 64,
         tool_kivyforge_schema_version=1,
+        native_binaries=native_binaries,
     )
 
 
@@ -76,18 +77,32 @@ class TestResolveAssemblyArchs:
 @pytest.fixture
 def faked(monkeypatch):
     """Replace the heavy staging/signing steps with recorders."""
-    calls = {"runtime": [], "wheels": [], "sign": [], "icns": [], "launcher": None}
+    calls = {
+        "runtime": [],
+        "wheels": [],
+        "native": [],
+        "sign": [],
+        "icns": [],
+        "launcher": None,
+        "order": [],
+    }
 
     def fake_runtime(runtime, archs, home, **k):
         home.mkdir(parents=True, exist_ok=True)
         (home / "bin").mkdir()
         (home / "bin" / "python3").write_text("x")
         calls["runtime"].append(tuple(archs))
+        calls["order"].append("runtime")
         return home
 
     def fake_wheels(packages, archs, lib, **k):
         lib.mkdir(parents=True, exist_ok=True)
         calls["wheels"].append(tuple(archs))
+        calls["order"].append("wheels")
+
+    def fake_native(lock, resources, **k):
+        calls["native"].append(tuple(b.name for b in lock.native_binaries))
+        calls["order"].append("native")
 
     def fake_launcher(dest, *, entry_point, archs):
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -96,6 +111,7 @@ def faked(monkeypatch):
 
     monkeypatch.setattr(bundle, "stage_runtime", fake_runtime)
     monkeypatch.setattr(bundle, "stage_wheels", fake_wheels)
+    monkeypatch.setattr(bundle, "stage_native_binaries", fake_native)
     monkeypatch.setattr(bundle, "build_launcher", fake_launcher)
     monkeypatch.setattr(
         bundle, "sign_bundle_adhoc", lambda app: calls["sign"].append(app) or 1
@@ -139,6 +155,26 @@ class TestBuildAppBundle:
         )
         assert faked["runtime"] == [("arm64",)]
         assert faked["wheels"] == [("arm64",)]
+
+    def test_native_binaries_staged_after_wheels(self, tmp_path, faked):
+        from kivyforge.lock.wheelruntime.model import LockedNativeBinary
+
+        root = _project(tmp_path)
+        lock = _lock(
+            native_binaries=(LockedNativeBinary("roll", "1.0", "a" * 64, path="p"),)
+        )
+        bundle.build_app_bundle(
+            _config(), lock, root, staging_dir=tmp_path / "out", echo=lambda *a: None
+        )
+        assert faked["native"] == [("roll",)]
+        assert faked["order"].index("native") > faked["order"].index("wheels")
+
+    def test_native_binaries_skipped_when_empty(self, tmp_path, faked):
+        root = _project(tmp_path)
+        bundle.build_app_bundle(
+            _config(), _lock(), root, staging_dir=tmp_path / "out", echo=lambda *a: None
+        )
+        assert faked["native"] == []
 
     def test_no_sign(self, tmp_path, faked):
         root = _project(tmp_path)

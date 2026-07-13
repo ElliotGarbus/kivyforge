@@ -22,6 +22,7 @@ from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
 
 from .lock import MacosLockfile, load, wheel_arch
+from .machotools import is_macho, macho_arches
 
 
 def check_macos_host(probe: Probe) -> CheckResult:
@@ -272,6 +273,100 @@ def check_macos_notary_setup(probe: Probe, config: Config) -> CheckResult:
     )
 
 
+def check_macos_native_binaries(config: Config, project_root: Path) -> CheckResult:
+    """Vendored native-binary sources exist and (once built) cover the archs.
+
+    SKIPs when no ``[tool.kivy.macos.native.binaries]`` are declared. Vendored
+    (repo-relative) sources must be present on disk; URL sources are re-checked
+    for reachability by ``check_macos_hosts_reachable``. No two single-file
+    (non-zip) sources may share a staged basename (they would overwrite each
+    other in ``bin/``; zip-member collisions are caught at build time). When the
+    bundle has been built, each Mach-O staged under ``Resources/bin`` must carry
+    every configured arch (a thin helper on a universal2 app would fail to
+    load/run on the other arch).
+    """
+    declared = config.macos_required.binaries
+    if not declared:
+        return CheckResult("Native binaries", Status.SKIP, "not configured")
+
+    root = project_root.resolve()
+    missing = [
+        dep.source
+        for dep in declared
+        if not dep.source.startswith(("http://", "https://"))
+        and not (root / dep.source).is_file()
+    ]
+    if missing:
+        return CheckResult(
+            "Native binaries",
+            Status.FAIL,
+            f"vendored source(s) not found: {', '.join(missing)}",
+            hint="build/vendor the artifact under the project and re-run "
+            "`kivyforge lock -p macos`.",
+        )
+
+    # Statically-detectable staging collisions: two single-file (non-zip)
+    # sources whose basenames match land on the same bin/<name> and the second
+    # silently clobbers the first. Zip-member collisions need extraction and are
+    # caught (loudly) at build time.
+    staged: dict[str, str] = {}
+    for dep in declared:
+        if dep.source.lower().endswith(".zip"):
+            continue
+        base = dep.source.rsplit("/", 1)[-1] or dep.name
+        prev = staged.get(base)
+        if prev is not None:
+            return CheckResult(
+                "Native binaries",
+                Status.FAIL,
+                f"{prev!r} and {dep.name!r} both stage bin/{base}",
+                hint="two native binaries would overwrite each other in "
+                "Contents/Resources/bin; rename one artifact/source so each "
+                "stages to a unique name.",
+            )
+        staged[base] = dep.name
+
+    archs = config.macos_required.archs
+    bin_dir = (
+        root
+        / "build"
+        / "macos"
+        / f"{config.display_name}.app"
+        / "Contents"
+        / "Resources"
+        / "bin"
+    )
+    if bin_dir.is_dir():
+        problems: list[str] = []
+        machos = 0
+        for p in sorted(bin_dir.rglob("*")):
+            if not is_macho(p):
+                continue
+            machos += 1
+            present = set(macho_arches(p))
+            gaps = [a for a in archs if a not in present]
+            if gaps:
+                problems.append(f"{p.name} missing {', '.join(gaps)}")
+        if problems:
+            return CheckResult(
+                "Native binaries",
+                Status.FAIL,
+                "; ".join(problems),
+                hint="rebuild the native binaries for every configured arch "
+                f"(e.g. clang -arch {' -arch '.join(archs)}), then re-lock.",
+            )
+        return CheckResult(
+            "Native binaries",
+            Status.PASS,
+            f"{machos} Mach-O cover {', '.join(archs)}",
+        )
+    return CheckResult(
+        "Native binaries",
+        Status.PASS,
+        f"{len(declared)} declared; sources present (build to verify arch coverage)",
+    )
+
+
 def check_macos_hosts_reachable(
     probe: Probe, lock: MacosLockfile | None
 ) -> CheckResult:
@@ -287,6 +382,9 @@ def check_macos_hosts_reachable(
     for art in lock.python_runtime.artifacts:
         if art.url:
             _add_host(hosts, art.url)
+    for nb in lock.native_binaries:
+        if nb.url:
+            _add_host(hosts, nb.url)
     if not hosts:
         return CheckResult(
             "Required hosts reachable", Status.PASS, "all artifacts vendored"
@@ -336,6 +434,7 @@ def run_macos_checks(
             "Runtime floor",
             "App icon",
             "find_links directories",
+            "Native binaries",
             "Signing identity",
             "Signing identity type",
             "Notary setup",
@@ -350,6 +449,7 @@ def run_macos_checks(
         check_macos_runtime_floor(config, lock),
         check_macos_app_icon(config, project_root),
         check_macos_find_links(config, project_root),
+        check_macos_native_binaries(config, project_root),
         check_macos_signing_identity(probe, config),
         check_macos_signing_identity_type(config),
         check_macos_notary_setup(probe, config),

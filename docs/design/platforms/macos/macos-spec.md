@@ -30,7 +30,7 @@ In scope for the macOS backend:
 - A `.app` bundle generator (Info.plist, bundled Python + wheels + app source, a launcher).
 - `build` / `run` (launch the `.app`) and `package -f app`.
 - A declared **native-binaries channel** (`[tool.kivy.macos.native.binaries]`)
-  for non-wheel dylibs / helper executables — *designed, not yet implemented*
+  for non-wheel dylibs / helper executables
   (see ["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels-toolkivymacosnativebinaries)).
 - **Ad-hoc** code signing (the mandatory Apple-Silicon floor).
 - **Full Developer ID signing + notarization + stapling** — see
@@ -233,10 +233,21 @@ with the Mach-O binaries in the runtime + wheels.
 
 ### Native binaries that are not wheels (`[tool.kivy.macos.native.binaries]`)
 
-> **Implementation status: designed, not yet implemented** — a scoped
-> addition to the shipped backend, specified alongside the Windows backend
-> (which defines the same channel; see the
+> **Implementation status: implemented.** A scoped addition to the shipped
+> backend, specified alongside the Windows backend (which defines the same
+> channel; see the
 > [Windows spec](../windows/windows-spec.md#native-binaries-that-are-not-wheels)).
+> The lock field lives in the *shared* wheel+runtime engine
+> (`[[tool.kivyforge.native_binaries]]`), so Linux/Windows adopt it with no
+> lock-format rework. See [`examples/desktop/hello-native`](../../../../examples/desktop/hello-native)
+> for a runnable end-to-end example (a helper executable used by name + a dylib
+> loaded by path).
+>
+> **Delta from design:** single-file sources are staged under their *source*
+> basename (copied "as-is"), so a `.dylib` keeps its extension for by-path
+> `ctypes` loads — the config key names the lock entry, not the on-disk file.
+> Staged single files also get their exec bit set (harmless for a dylib, and it
+> makes a downloaded helper runnable even when the source lost its mode).
 
 Some apps need native binaries that no wheel delivers: vendor SDK `.dylib`s
 or helper executables (a bundled `ffmpeg`). The
@@ -258,8 +269,14 @@ Semantics, per pipeline stage:
   `[[tool.kivyforge.native_binaries]]` array in `pylock.macos.toml` — the
   same integrity discipline as wheels and the runtime.
 - **`build`** — fetches through the shared download/cache/verify machinery
-  and stages into **`Contents/Resources/bin/`** (single files copied as-is
-  with exec bits preserved; `.zip` sources extracted preserving structure).
+  and stages into **`Contents/Resources/bin/`** (single files copied under
+  their source basename with the exec bit set; `.zip` sources extracted
+  preserving structure, each file made executable). `bin/` is one flat
+  namespace, so staging rejects (a build error) any two entries that would
+  write the same path — two single files sharing a basename, two zips sharing
+  a member, or a single file colliding with a zip member — rather than letting
+  the later one silently overwrite the earlier. `doctor` catches the
+  statically-detectable subset (single-file basename clashes) before a build.
 - **launcher** — prepends `Resources/bin` to the child `PATH`, so helper
   executables run by name (`subprocess.run(["ffmpeg", ...])`).
 - **`.dylib`s still load by absolute path.** macOS has no safe by-name
@@ -270,10 +287,10 @@ Semantics, per pipeline stage:
   `Path(sys.prefix).parent / "bin"` — `sys.prefix` is the bundled runtime
   (`Resources/python`), so its parent is `Resources/`; the same derivation
   yields the `bin` directory on Windows and Linux too.
-- **`doctor`** — each declared source exists/is reachable, and each staged
-  Mach-O covers the assembled archs (a thin `arm64` vendor dylib in a
-  universal2 app fails only at load time on Intel; FAIL names the file and
-  missing arch).
+- **`doctor`** — each declared source exists/is reachable, no two single-file
+  sources share a staged basename, and each staged Mach-O covers the assembled
+  archs (a thin `arm64` vendor dylib in a universal2 app fails only at load
+  time on Intel; FAIL names the file and missing arch).
 - **signing** — no new work: the deep sign already walks *every* Mach-O
   under the `.app` by file magic, so `Resources/bin` is swept — ad-hoc, or
   Developer ID with Hardened Runtime + timestamp — automatically. This is a

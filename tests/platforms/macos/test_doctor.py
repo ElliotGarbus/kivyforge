@@ -151,6 +151,124 @@ class TestHostsReachable:
         assert M.check_macos_hosts_reachable(FakeProbe(), None).status is Status.SKIP
 
 
+_NB = (
+    "[tool.kivy.macos.native.binaries]\n"
+    'roll = { version = "1.0", source = "binaries/macos/roll" }\n'
+)
+
+
+class TestNativeBinaries:
+    def test_skip_when_unconfigured(self, tmp_path):
+        r = M.check_macos_native_binaries(_macos_config(), tmp_path)
+        assert r.status is Status.SKIP
+
+    def test_fail_when_vendored_source_missing(self, tmp_path):
+        cfg = _macos_config(_NB)
+        r = M.check_macos_native_binaries(cfg, tmp_path)
+        assert r.status is Status.FAIL
+        assert "binaries/macos/roll" in r.detail
+
+    def test_pass_sources_present_no_build(self, tmp_path):
+        src = tmp_path / "binaries" / "macos" / "roll"
+        src.parent.mkdir(parents=True)
+        src.write_bytes(b"helper")
+        r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
+        assert r.status is Status.PASS
+        assert "sources present" in r.detail
+
+    def test_url_source_skips_local_check(self, tmp_path):
+        cfg = _macos_config(
+            "[tool.kivy.macos.native.binaries]\n"
+            'sdk = { version = "1.0", source = "https://vendor.example/sdk.zip" }\n'
+        )
+        r = M.check_macos_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
+
+    def _built_bin(self, tmp_path):
+        bin_dir = (
+            tmp_path
+            / "build"
+            / "macos"
+            / "myapp.app"
+            / "Contents"
+            / "Resources"
+            / "bin"
+        )
+        bin_dir.mkdir(parents=True)
+        (tmp_path / "binaries" / "macos").mkdir(parents=True)
+        (tmp_path / "binaries" / "macos" / "roll").write_bytes(b"helper")
+        (bin_dir / "roll").write_bytes(b"macho")
+        return bin_dir
+
+    def test_pass_when_built_covers_archs(self, tmp_path, monkeypatch):
+        self._built_bin(tmp_path)
+        monkeypatch.setattr(M, "is_macho", lambda p: p.name == "roll")
+        monkeypatch.setattr(M, "macho_arches", lambda p: ("arm64", "x86_64"))
+        r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
+        assert r.status is Status.PASS
+        assert "cover" in r.detail
+
+    def test_fail_when_built_missing_arch(self, tmp_path, monkeypatch):
+        self._built_bin(tmp_path)
+        monkeypatch.setattr(M, "is_macho", lambda p: p.name == "roll")
+        monkeypatch.setattr(M, "macho_arches", lambda p: ("arm64",))
+        r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
+        assert r.status is Status.FAIL
+        assert "roll missing x86_64" in r.detail
+
+    def test_fail_on_single_file_basename_collision(self, tmp_path):
+        for rel in ("binaries/a/tool", "binaries/b/tool"):
+            p = tmp_path / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"x")
+        cfg = _macos_config(
+            "[tool.kivy.macos.native.binaries]\n"
+            'A = { version = "1.0", source = "binaries/a/tool" }\n'
+            'B = { version = "1.0", source = "binaries/b/tool" }\n'
+        )
+        r = M.check_macos_native_binaries(cfg, tmp_path)
+        assert r.status is Status.FAIL
+        assert "bin/tool" in r.detail
+
+    def test_zip_sources_do_not_false_positive(self, tmp_path):
+        for rel in ("binaries/a.zip", "binaries/b.zip"):
+            (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / rel).write_bytes(b"zip")
+        cfg = _macos_config(
+            "[tool.kivy.macos.native.binaries]\n"
+            'A = { version = "1.0", source = "binaries/a.zip" }\n'
+            'B = { version = "1.0", source = "binaries/b.zip" }\n'
+        )
+        r = M.check_macos_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
+
+
+class TestNativeBinaryHosts:
+    def test_native_binary_url_host_included(self):
+        from kivyforge.lock.wheelruntime.model import LockedNativeBinary
+
+        lock = _lock()
+        lock = WheelRuntimeLock(
+            platform=lock.platform,
+            requires_python=lock.requires_python,
+            packages=lock.packages,
+            python_runtime=lock.python_runtime,
+            archs=lock.archs,
+            kivyforge_version=lock.kivyforge_version,
+            generated_at=lock.generated_at,
+            pyproject_sha256=lock.pyproject_sha256,
+            tool_kivyforge_schema_version=lock.tool_kivyforge_schema_version,
+            native_binaries=(
+                LockedNativeBinary(
+                    "sdk", "1.0", "a" * 64, url="https://vendor.example/sdk.zip"
+                ),
+            ),
+        )
+        r = M.check_macos_hosts_reachable(FakeProbe(), lock)
+        assert r.status is Status.PASS
+        assert "vendor.example" in r.detail
+
+
 class TestRunner:
     def test_environment_mode_skips_project_checks(self):
         results = run_macos_checks(FakeProbe(), kivyforge_version="3.0.0", config=None)

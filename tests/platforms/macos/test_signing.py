@@ -23,6 +23,21 @@ def _bundle(tmp_path) -> Path:
     return app
 
 
+def test_native_binaries_in_bin_are_signed(tmp_path, monkeypatch):
+    # A user-supplied Mach-O staged under Resources/bin must be covered by the
+    # inside-out sweep so the notarized bundle has no unsigned nested binary.
+    app = _bundle(tmp_path)
+    _macho(app / "Contents" / "Resources" / "bin" / "libgreet.dylib")
+
+    order = []
+    monkeypatch.setattr(signing, "codesign_adhoc", lambda p: order.append(p))
+
+    count = signing.sign_bundle_adhoc(app)
+
+    assert count == 4  # python3 + _c.so + libgreet.dylib + the bundle
+    assert app / "Contents" / "Resources" / "bin" / "libgreet.dylib" in order
+
+
 def test_signs_deepest_first_then_bundle(tmp_path, monkeypatch):
     app = _bundle(tmp_path)
 

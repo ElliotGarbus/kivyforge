@@ -20,6 +20,7 @@ from ..pep751 import s as _s
 from ..reader import LockError
 from .model import (
     TOOL_SCHEMA_VERSION,
+    LockedNativeBinary,
     PythonRuntime,
     RuntimeArtifact,
     WheelRuntimeLock,
@@ -67,6 +68,17 @@ def dumps(lock: WheelRuntimeLock) -> str:
         lines.append(f"sha256 = {_s(art.sha256)}")
         lines.append(f"archive_format = {_s(art.archive_format)}")
 
+    for nb in sorted(lock.native_binaries, key=lambda b: b.name):
+        lines.append("")
+        lines.append("[[tool.kivyforge.native_binaries]]")
+        lines.append(f"name = {_s(nb.name)}")
+        lines.append(f"version = {_s(nb.version)}")
+        if nb.url is not None:
+            lines.append(f"url = {_s(nb.url)}")
+        else:
+            lines.append(f"path = {_s(nb.path)}")
+        lines.append(f"sha256 = {_s(nb.sha256)}")
+
     return "\n".join(lines) + "\n"
 
 
@@ -102,6 +114,7 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
 
     schema_version = _check_tool_schema_version(tool)
     runtime = _parse_runtime(tool, name)
+    native_binaries = _parse_native_binaries(tool, name)
 
     packages = tuple(_parse_package(p) for p in _as_list(raw, "packages", name))
 
@@ -121,6 +134,7 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
         extras=tuple(raw.get("extras", [])),
         dependency_groups=tuple(raw.get("dependency-groups", [])),
         default_groups=tuple(raw.get("default-groups", [])),
+        native_binaries=native_binaries,
     )
 
 
@@ -189,6 +203,39 @@ def _parse_runtime(tool: dict, name: str) -> PythonRuntime:
         artifacts=tuple(artifacts),
         floor=rt.get("floor"),
     )
+
+
+def _parse_native_binaries(tool: dict, name: str) -> tuple[LockedNativeBinary, ...]:
+    raw = tool.get("native_binaries", [])
+    if not isinstance(raw, list):
+        raise LockError(f"{name} [tool.kivyforge.native_binaries] must be an array.")
+    out: list[LockedNativeBinary] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise LockError(
+                f"{name} [[tool.kivyforge.native_binaries]] entries must be tables."
+            )
+        for field in ("name", "version", "sha256"):
+            if not isinstance(entry.get(field), str) or not entry.get(field):
+                raise LockError(
+                    f"a [[tool.kivyforge.native_binaries]] entry is missing {field!r}."
+                )
+        url = entry.get("url")
+        path = entry.get("path")
+        if bool(url) == bool(path):
+            raise LockError(
+                f"native binary {entry['name']!r} must have exactly one of url/path."
+            )
+        out.append(
+            LockedNativeBinary(
+                name=entry["name"],
+                version=entry["version"],
+                sha256=entry["sha256"],
+                url=url,
+                path=path,
+            )
+        )
+    return tuple(sorted(out, key=lambda b: b.name))
 
 
 def _as_list(table: dict, key: str, name: str) -> list:

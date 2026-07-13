@@ -46,6 +46,33 @@ class TestRoundTrip:
         assert "[[packages]]" in text
 
 
+class TestNativeBinaries:
+    _NB_TABLE = (
+        "\n[tool.kivy.macos.native.binaries]\n"
+        'roll = { version = "1.0", source = "binaries/macos/roll" }\n'
+    )
+
+    def test_vendored_binary_is_pinned(self, macos_pyproject, tmp_path):
+        binaries = tmp_path / "binaries" / "macos"
+        binaries.mkdir(parents=True)
+        (binaries / "roll").write_bytes(b"\xca\xfe\xba\xbe roll helper")
+        lock = _build(macos_pyproject + self._NB_TABLE, tmp_path)
+        (nb,) = lock.native_binaries
+        assert nb.name == "roll"
+        assert nb.version == "1.0"
+        assert nb.path == "binaries/macos/roll"
+        assert nb.url is None
+        assert len(nb.sha256) == 64
+
+    def test_pin_round_trips(self, macos_pyproject, tmp_path):
+        binaries = tmp_path / "binaries" / "macos"
+        binaries.mkdir(parents=True)
+        (binaries / "roll").write_bytes(b"payload")
+        lock = _build(macos_pyproject + self._NB_TABLE, tmp_path)
+        again = loads(dumps(lock))
+        assert again.native_binaries == lock.native_binaries
+
+
 class TestMalformed:
     def test_not_toml(self):
         with pytest.raises(LockError, match="not valid TOML"):

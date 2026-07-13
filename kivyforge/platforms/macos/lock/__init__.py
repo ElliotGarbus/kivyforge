@@ -89,6 +89,7 @@ def build_macos_lockfile(
         project_root=project_root,
         resolver=resolver,
         runtime_provider=runtime_provider,
+        native_binaries=config.macos.binaries if config.macos else (),
         offline=offline,
         now=now,
         on_warning=on_warning,

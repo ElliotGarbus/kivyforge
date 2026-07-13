@@ -7,7 +7,7 @@ import textwrap
 import pytest
 
 from kivyforge.config import ConfigError, load_config, load_config_from_text
-from kivyforge.config.model import SwiftPackageDep, XcframeworkDep
+from kivyforge.config.model import NativeBinaryDep, SwiftPackageDep, XcframeworkDep
 
 
 def load(toml: str, **kw):
@@ -763,6 +763,70 @@ class TestMacosArchs:
     def test_unknown_rejected(self):
         with pytest.raises(ConfigError, match="unknown macOS arch"):
             _macos("archs=['ppc64']\n")
+
+
+class TestMacosNativeBinaries:
+    def test_default_empty(self):
+        assert _macos().macos_required.binaries == ()
+
+    def test_parses_url_and_relative(self):
+        cfg = load(
+            _MACOS_BASE + "[tool.kivy.macos.native.binaries]\n"
+            'sdk = { version = "2.1.0", source = "https://vendor.example/sdk.zip" }\n'
+            'ffmpeg = { version = "7.1", source = "binaries/macos/ffmpeg" }\n',
+            require_ios=False,
+            require_macos=True,
+        )
+        binaries = cfg.macos_required.binaries
+        assert (
+            NativeBinaryDep("sdk", "2.1.0", "https://vendor.example/sdk.zip")
+            in binaries
+        )
+        assert NativeBinaryDep("ffmpeg", "7.1", "binaries/macos/ffmpeg") in binaries
+
+    def test_absolute_path_rejected(self):
+        with pytest.raises(ConfigError, match="absolute path"):
+            load(
+                _MACOS_BASE + "[tool.kivy.macos.native.binaries]\n"
+                'sdk = { version = "1.0", source = "/abs/sdk.dylib" }\n',
+                require_ios=False,
+                require_macos=True,
+            )
+
+    def test_escaping_path_rejected(self):
+        with pytest.raises(ConfigError, match="escape"):
+            load(
+                _MACOS_BASE + "[tool.kivy.macos.native.binaries]\n"
+                'sdk = { version = "1.0", source = "../../sdk.dylib" }\n',
+                require_ios=False,
+                require_macos=True,
+            )
+
+    def test_missing_version_rejected(self):
+        with pytest.raises(ConfigError, match="requires a string 'version'"):
+            load(
+                _MACOS_BASE + "[tool.kivy.macos.native.binaries]\n"
+                'sdk = { source = "sdk.dylib" }\n',
+                require_ios=False,
+                require_macos=True,
+            )
+
+    def test_missing_source_rejected(self):
+        with pytest.raises(ConfigError, match="requires an explicit 'source'"):
+            load(
+                _MACOS_BASE + "[tool.kivy.macos.native.binaries]\n"
+                'sdk = { version = "1.0" }\n',
+                require_ios=False,
+                require_macos=True,
+            )
+
+    def test_non_table_entry_rejected(self):
+        with pytest.raises(ConfigError, match="must be an inline table"):
+            load(
+                _MACOS_BASE + '[tool.kivy.macos.native.binaries]\nsdk = "sdk.dylib"\n',
+                require_ios=False,
+                require_macos=True,
+            )
 
 
 class TestMacosSigning:

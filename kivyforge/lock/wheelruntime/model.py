@@ -56,6 +56,23 @@ class PythonRuntime:
 
 
 @dataclass(frozen=True)
+class LockedNativeBinary:
+    """One pinned ``[tool.kivy.<platform>.native.binaries]`` entry.
+
+    A non-wheel native binary (vendor SDK dylib/so/DLL or a helper executable)
+    pinned by SHA-256. Exactly one of ``url`` (remote source) or ``path``
+    (repo-relative vendored source) is set — the ``LockedXcframework``
+    convention.
+    """
+
+    name: str
+    version: str
+    sha256: str
+    url: str | None = None
+    path: str | None = None
+
+
+@dataclass(frozen=True)
 class WheelRuntimeLock:
     """A ``pylock.<platform>.toml`` for the wheel + bundled-runtime family."""
 
@@ -74,3 +91,4 @@ class WheelRuntimeLock:
     extras: tuple[str, ...] = ()
     dependency_groups: tuple[str, ...] = ()
     default_groups: tuple[str, ...] = ()
+    native_binaries: tuple[LockedNativeBinary, ...] = ()

@@ -219,6 +219,19 @@ class TestWriterUnits:
         assert "exclude = [" in block
         assert '"kivy-garden"' in block
 
+    def test_render_macos_tables_seeds_commented_native_binaries(self):
+        from kivyforge.config import load_config_from_text
+
+        block = render_macos_tables("myapp")
+        assert "# [tool.kivy.macos.native.binaries]" in block
+        cfg = load_config_from_text(
+            '[project]\nname = "myapp"\nversion = "1.0.0"\n\n' + block,
+            require_ios=False,
+            require_macos=True,
+        )
+        # The stub must stay inert: no active native.binaries table parsed.
+        assert cfg.macos_required.binaries == ()
+
     def test_render_linux_tables_template(self):
         block = render_linux_tables("myapp")
         assert "[tool.kivy]" in block

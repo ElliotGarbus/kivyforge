@@ -23,6 +23,7 @@ from . import AppBundleError
 from .icns import generate_icns
 from .launcher import build_launcher
 from .lock import MacosLockfile
+from .native_stage import stage_native_binaries
 from .plist import build_info_plist
 from .runtime_stage import stage_runtime
 from .signing import sign_bundle_adhoc
@@ -106,6 +107,16 @@ def build_app_bundle(
         cache=cache,
         no_cache=no_cache,
     )
+
+    if lock.native_binaries:
+        echo(f"Staging {len(lock.native_binaries)} native binaries ...")
+        stage_native_binaries(
+            lock,
+            resources,
+            project_root=project_root,
+            cache=cache,
+            no_cache=no_cache,
+        )
 
     _copy_app_sources(config, project_root, resources / "app")
     icon_file = _stage_icon(config, project_root, resources, exe)

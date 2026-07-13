@@ -46,11 +46,12 @@ int main(int argc, char *argv[]) {{
     strncpy(b, macos, sizeof(b)); b[sizeof(b) - 1] = 0;
     char *contents = dirname(b);                  /* .../Contents */
 
-    char home[PATH_MAX], app[PATH_MAX], lib[PATH_MAX];
+    char home[PATH_MAX], app[PATH_MAX], lib[PATH_MAX], bin[PATH_MAX];
     char py[PATH_MAX], script[PATH_MAX], pypath[2 * PATH_MAX];
     snprintf(home, sizeof(home), "%s/Resources/python", contents);
     snprintf(app, sizeof(app), "%s/Resources/app", contents);
     snprintf(lib, sizeof(lib), "%s/Resources/lib", contents);
+    snprintf(bin, sizeof(bin), "%s/Resources/bin", contents);
     snprintf(py, sizeof(py), "%s/bin/python3", home);
     snprintf(script, sizeof(script), "%s/%s.py", app, ENTRY);
     snprintf(pypath, sizeof(pypath), "%s:%s", app, lib);
@@ -59,6 +60,16 @@ int main(int argc, char *argv[]) {{
     setenv("PYTHONPATH", pypath, 1);
     /* Isolate from ~/.local and user site config; the bundle is self-contained. */
     setenv("PYTHONNOUSERSITE", "1", 1);
+    /* Prepend Resources/bin so user-declared native helper executables resolve by
+       name (subprocess/PATH lookups). Harmless when the directory is absent. */
+    const char *old_path = getenv("PATH");
+    char newpath[3 * PATH_MAX];
+    if (old_path != NULL && old_path[0] != 0) {{
+        snprintf(newpath, sizeof(newpath), "%s:%s", bin, old_path);
+    }} else {{
+        snprintf(newpath, sizeof(newpath), "%s", bin);
+    }}
+    setenv("PATH", newpath, 1);
     chdir(app);
 
     char **child = (char **)malloc(sizeof(char *) * (argc + 2));

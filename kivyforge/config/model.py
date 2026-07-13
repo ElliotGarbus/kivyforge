@@ -152,6 +152,23 @@ class XcframeworkDep:
     embed: bool = True
 
 
+@dataclass(frozen=True)
+class NativeBinaryDep:
+    """One ``[tool.kivy.<platform>.native.binaries]`` entry (macos-spec).
+
+    A non-wheel native binary (a vendor SDK DLL/dylib/so, or a helper
+    executable) declared by name. ``source`` is always explicit: a direct
+    ``http(s)://`` URL, or a repo-relative path to a vendored artifact. The
+    entry is SHA-256-pinned into the lock and staged into the bundle's ``bin``
+    directory at build time (see ``NativeBinaryDep`` handling in each desktop
+    backend).
+    """
+
+    name: str
+    version: str
+    source: str
+
+
 # SPM version-rule kinds (spec 07), mapping 1:1 to Swift Package Manager's own
 # requirement rules. Each ``requirement`` inline table sets exactly one of these.
 VALID_SWIFT_REQUIREMENT_KINDS = frozenset(
@@ -257,6 +274,7 @@ class MacosConfig:
     icons: IconConfig = field(default_factory=IconConfig)
     entitlements: dict[str, object] = field(default_factory=dict)
     signing: MacosSigningConfig = field(default_factory=MacosSigningConfig)
+    binaries: tuple[NativeBinaryDep, ...] = ()
 
 
 @dataclass(frozen=True)

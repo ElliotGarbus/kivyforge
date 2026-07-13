@@ -42,6 +42,7 @@ from .model import (
     LinuxConfig,
     MacosConfig,
     MacosSigningConfig,
+    NativeBinaryDep,
     ProjectMeta,
     SigningConfig,
     SplashConfig,
@@ -507,6 +508,7 @@ def _parse_macos(
     entitlements = _parse_macos_entitlements(macos)
     signing = _parse_macos_signing(macos, finder)
     _check_macos_entitlements_notarizable(entitlements, signing, finder)
+    binaries = _parse_native_binaries(macos, "macos", finder)
 
     return MacosConfig(
         schema_version=schema_version,
@@ -521,6 +523,7 @@ def _parse_macos(
         icons=icons,
         entitlements=entitlements,
         signing=signing,
+        binaries=tuple(binaries),
     )
 
 
@@ -1191,7 +1194,7 @@ def _parse_xcframeworks(ios: dict, finder: _LineFinder) -> list[XcframeworkDep]:
                 f"repo-relative path)",
                 key_path=key_path,
             )
-        _validate_xcframework_source(name, source, key_path)
+        _validate_artifact_source("xcframework", name, source, key_path)
         out.append(
             XcframeworkDep(
                 name=name,
@@ -1214,24 +1217,68 @@ def _parse_xcframeworks(ios: dict, finder: _LineFinder) -> list[XcframeworkDep]:
     return out
 
 
-def _validate_xcframework_source(name: str, source: str, key_path: str) -> None:
+def _validate_artifact_source(kind: str, name: str, source: str, key_path: str) -> None:
     # A URL is fetched as-is; anything else is a repo-relative path that must
     # stay inside the project (mirrors find_links / swift path rules, spec 01).
+    # Shared by xcframeworks (iOS) and native binaries (desktop).
     if source.startswith(("http://", "https://")):
         return
     if isabs(source):
         raise ConfigError(
-            f"xcframework {name!r} source must not be an absolute path",
+            f"{kind} {name!r} source must not be an absolute path",
             key_path=key_path,
         )
     parts = PurePosixPath(normpath(source)).parts
     if parts and parts[0] == "..":
         raise ConfigError(
-            f"xcframework {name!r} source must not escape the project directory",
+            f"{kind} {name!r} source must not escape the project directory",
             key_path=key_path,
-            hint="vendor the archive under the project (or a sibling dir) and use "
+            hint="vendor the artifact under the project (or a sibling dir) and use "
             "a repo-relative path, or give a direct https:// URL.",
         )
+
+
+def _parse_native_binaries(
+    overlay: dict, platform: str, finder: _LineFinder
+) -> list[NativeBinaryDep]:
+    """Parse ``[tool.kivy.<platform>.native.binaries]`` into ``NativeBinaryDep``s.
+
+    Shared across the desktop backends; the ``platform`` string only shapes the
+    ``key_path`` used in diagnostics.
+    """
+    native = overlay.get("native")
+    if not isinstance(native, dict):
+        return []
+    table = native.get("binaries")
+    if table is None:
+        return []
+    base = f"tool.kivy.{platform}.native.binaries"
+    if not isinstance(table, dict):
+        raise ConfigError(f"[{base}] must be a table", key_path=base)
+    out: list[NativeBinaryDep] = []
+    for name, entry in table.items():
+        key_path = f"{base}.{name}"
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"native binary {name!r} must be an inline table with version + source",
+                key_path=key_path,
+            )
+        version = entry.get("version")
+        source = entry.get("source")
+        if not isinstance(version, str) or not version:
+            raise ConfigError(
+                f"native binary {name!r} requires a string 'version'",
+                key_path=key_path,
+            )
+        if not isinstance(source, str) or not source:
+            raise ConfigError(
+                f"native binary {name!r} requires an explicit 'source' (URL or "
+                f"repo-relative path)",
+                key_path=key_path,
+            )
+        _validate_artifact_source("native binary", name, source, key_path)
+        out.append(NativeBinaryDep(name=name, version=version, source=source))
+    return out
 
 
 def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDep]:

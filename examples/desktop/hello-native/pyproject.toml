@@ -1,0 +1,44 @@
+[project]
+name = "hello-native"
+version = "0.1.0"
+# Desktop-only example: macOS bundles CPython 3.13.14 (PBS) with Kivy 2.3.1
+# wheels from PyPI, plus two non-wheel native binaries built by build_native.sh.
+requires-python = ">=3.13"
+dependencies = [
+    "kivy>=2.3.1",
+]
+
+[tool.kivy]
+display_name = "Hello Native"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.macos]
+schema_version = 1
+bundle_id = "org.example.hello-native"
+build = 1
+archs = ["arm64", "x86_64"]
+# Kivy's macOS wheel declares deps unused by this app; prune them so the lock
+# stays lean.
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.macos.python]
+version = "3.13.14"
+
+# Two non-wheel native binaries, referenced by repo-relative source (built by
+# ./build_native.sh into binaries/macos/). `kivyforge lock -p macos` SHA-256-pins
+# each; the build stages them into Contents/Resources/bin and the signing sweep
+# signs them. Signing is left at the ad-hoc default (no Team ID committed).
+[tool.kivy.macos.native.binaries]
+roll = { version = "0.1.0", source = "binaries/macos/roll" }
+libgreet = { version = "0.1.0", source = "binaries/macos/libgreet.dylib" }

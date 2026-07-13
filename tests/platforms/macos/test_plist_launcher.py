@@ -69,6 +69,12 @@ class TestLauncherSource:
         assert "Resources/lib" in src
         assert "execv(py, child)" in src
 
+    def test_prepends_bin_to_path(self):
+        src = render_launcher_source("main")
+        assert "Resources/bin" in src
+        assert 'getenv("PATH")' in src
+        assert 'setenv("PATH", newpath, 1)' in src
+
     def test_rejects_non_identifier_entry(self):
         with pytest.raises(AppBundleError, match="not a valid module name"):
             render_launcher_source("main.py")
@@ -103,3 +109,27 @@ class TestLauncherCompile:
     def test_requires_at_least_one_arch(self, tmp_path):
         with pytest.raises(AppBundleError, match="at least one arch"):
             build_launcher(tmp_path / "x", entry_point="main", archs=())
+
+    def test_child_sees_bin_first_on_path(self, tmp_path):
+        import subprocess
+
+        host = "arm64" if platform.machine() == "arm64" else "x86_64"
+        contents = tmp_path / "My.app" / "Contents"
+        launcher = contents / "MacOS" / "myapp"
+        build_launcher(launcher, entry_point="main", archs=(host,))
+
+        # A fake "python3" that ignores its script arg and prints PATH, standing
+        # in for the interpreter the launcher execs.
+        py = contents / "Resources" / "python" / "bin" / "python3"
+        py.parent.mkdir(parents=True)
+        py.write_text('#!/bin/sh\nprintf "%s" "$PATH"\n')
+        py.chmod(0o755)
+        (contents / "Resources" / "app").mkdir(parents=True)
+        (contents / "Resources" / "app" / "main.py").write_text("")
+        (contents / "Resources" / "bin").mkdir(parents=True)
+
+        out = subprocess.run(
+            [str(launcher)], capture_output=True, text=True, check=True
+        ).stdout
+        first = out.split(":", 1)[0]
+        assert first.endswith("/Resources/bin")

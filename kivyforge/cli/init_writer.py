@@ -412,7 +412,23 @@ def render_macos_tables(
             '# notary_profile = "kivyforge-notary"  '
             "# TODO: `xcrun notarytool store-credentials` profile name",
         ]
+    lines += _MACOS_NATIVE_BINARIES_STUB
     return "\n".join(lines) + "\n"
+
+
+# Commented native-binary stub. Left inert so a vanilla app needs no extra
+# artifacts; uncomment to stage a non-wheel dylib/helper (SHA-256-pinned by
+# `kivyforge lock`, staged into Contents/Resources/bin, and covered by the
+# signing sweep).
+_MACOS_NATIVE_BINARIES_STUB = [
+    "",
+    "# Optional: non-wheel native binaries (macos-spec). Each is pinned by",
+    "# `kivyforge lock` and staged into the app's bin directory (on PATH at",
+    "# runtime; load dylibs by absolute path via Path(sys.prefix).parent / 'bin').",
+    "# [tool.kivy.macos.native.binaries]",
+    '# ffmpeg = { version = "7.1", source = "https://example.com/ffmpeg-macos-universal2.zip" }',
+    '# libgreet = { version = "0.1.0", source = "binaries/macos/libgreet.dylib" }',
+]
 
 
 def render_linux_tables(
