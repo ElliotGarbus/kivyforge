@@ -253,10 +253,14 @@ compiled Mach-O stub on macOS. It resolves its own directory via
 and `exec`s `"$HERE/usr/python/bin/python3" "$HERE/usr/app/<entry_point>.py"
 "$@"`. A dotted `entry_point` (e.g. `pkg.start`, per the shared
 [`app_dir`/`entry_point` contract](../../common/01-pyproject-kivy-spec.md#app_dir--entry_point-interaction))
-maps to the nested source path `usr/app/pkg/start.py`. There is **no
-`LD_LIBRARY_PATH`**: PBS rpaths are `$ORIGIN`-relative and
-manylinux wheels vendor their native libs (auditwheel), so the environment stays
-clean for the host's own libGL.
+maps to the nested source path `usr/app/pkg/start.py`. The base launcher sets
+**no `LD_LIBRARY_PATH`**: PBS rpaths are `$ORIGIN`-relative and manylinux wheels
+vendor their native libs (auditwheel), so the environment stays clean for the
+host's own libGL. The one exception is the declared native-binaries channel,
+which **appends** `usr/bin` to `LD_LIBRARY_PATH` when (and only when) the app
+declares native binaries — appending keeps host resolution first, so the "clean
+for libGL" property holds (see
+["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels-toolkivylinuxnativebinaries)).
 
 ### Native binaries that are not wheels (`[tool.kivy.linux.native.binaries]`)
 
@@ -287,24 +291,60 @@ Semantics, per pipeline stage:
 - **`build`** — fetches through the shared download/cache/verify machinery
   and stages into **`usr/bin/`** (single files copied as-is with exec bits
   preserved; `.zip`/`.tar.gz` sources extracted preserving structure).
-- **`AppRun`** — prepends `$HERE/usr/bin` to `PATH`, so helper executables
-  run by name (`subprocess.run(["ffmpeg", ...])`) — and CWD-independently,
-  which matters here: `AppRun` does not `chdir` into `usr/app`, so the
-  working directory is wherever the user launched from.
-- **`.so`s still load by absolute path.** The no-`LD_LIBRARY_PATH` rule
-  above stands — polluting the loader path is how bundles shadow the host's
-  own libGL. The stable cross-platform recipe is
-  `Path(sys.prefix).parent / "bin"` (`sys.prefix` is `usr/python`, so its
-  parent is `usr/`; the same derivation yields the `bin` directory on
-  Windows and macOS too). A vendor `.so` whose *sibling* dependencies lack
-  `$ORIGIN` rpaths won't resolve them from a bare `dlopen`; preload the
-  dependencies in order via `ctypes` (or ask the vendor for
-  `$ORIGIN`-rpath'd builds).
+- **`AppRun`** — when the app declares native binaries, prepends
+  `$HERE/usr/bin` to `PATH` (helpers run by name —
+  `subprocess.run(["ffmpeg", ...])`, CWD-independently: `AppRun` does not
+  `chdir` into `usr/app`) and **appends** `$HERE/usr/bin` to `LD_LIBRARY_PATH`
+  (declared `.so`s load by soname — `ctypes.CDLL("libgreet.so")` — and their
+  inter-library `NEEDED` deps resolve). Both exports are omitted entirely when
+  the table is empty (symmetry with the "absent `usr/bin`" rule). The loading
+  model — and why *append* rather than by-path-only or prepend — is analysed in
+  ["Library loading model"](#library-loading-model) below.
 - **`doctor`** — each declared source exists/is reachable, and each staged
   ELF is `x86_64`-class (an aarch64 or 32-bit binary fails only at load
   time). Best-effort WARN comparing the binary's glibc version-needs against
   the effective floor.
 - **No signing** exists on Linux, so there is no signing interaction.
+
+#### Library loading model
+
+Helper *executables* are unambiguous — they go on `PATH` and run by name. The
+real design question is how declared shared libraries (`.so`) become loadable.
+On Linux the dynamic loader resolves a `dlopen`-by-soname roughly in the order
+`LD_LIBRARY_PATH` → the binary's `RUNPATH` → `/etc/ld.so.cache` → default system
+dirs, so `LD_LIBRARY_PATH` is the only lever available without rewriting the
+user's binary (patchelf/rpath surgery would cross the consume-prebuilt-artifacts
+boundary — out of scope). Three models were considered:
+
+| Model | By-name load | Transitive `NEEDED` among declared libs | Host libGL/libEGL resolution | Subprocess env pollution | Can override same-soname system lib |
+|-------|:---:|:---:|:---:|:---:|:---:|
+| **A** — PATH only, `.so` by absolute path (macOS parity) | ✗ | ✗ (only the top lib the app names loads) | untouched (safest) | none | ✗ |
+| **B** — append `usr/bin` to `LD_LIBRARY_PATH` **(chosen)** | ✓ | ✓ | host searched first (preserved) | low (appended → low priority) | ✗ (by design) |
+| **C** — prepend `usr/bin` to `LD_LIBRARY_PATH` | ✓ | ✓ | **shadowed** (declared wins) | high (declared wins in children) | ✓ |
+
+**Chosen: B (append).** It is the only model that loads a *multi-`.so` SDK*: by-
+path loading (A) resolves only the single library the app explicitly `dlopen`s,
+so a declared `libA.so` needing a declared `libB.so` fails under A. B also lets
+third-party packages that `dlopen` their own vendored lib by soname work (they
+can't be told to use an absolute path). Appending puts `usr/bin` at *lowest*
+priority, so the host's own libraries and the wheels' auditwheel-vendored `.so`s
+still win — which preserves this spec's "keep the environment clean for host
+libGL/libEGL" property. **C (prepend) is rejected**: it shadows host libraries
+of the same soname (the exact perturbation this spec set out to avoid) and
+pollutes spawned subprocesses at high priority (a system `ffmpeg`/`git` could
+pick up the wrong `libssl`). The one thing append cannot do — override a
+same-soname system library with a vendored copy — is precisely the safety
+property we want, so it is a feature, not a limitation.
+
+macOS cannot offer any of B/C: `DYLD_*` is stripped under SIP / Hardened
+Runtime, so the macOS spec documents by-path loads only. The **portable recipe**
+that works on every desktop OS is still `Path(sys.prefix).parent / "bin"`
+(`sys.prefix` is `usr/python`, so its parent is `usr/`, giving the `bin`
+directory; the same derivation holds on macOS and Windows) — Linux simply adds
+the by-name convenience on top. A vendor `.so` whose *sibling* dependencies are
+not themselves declared (and lack `$ORIGIN` rpaths) still won't resolve them;
+declare the whole set, preload in order via `ctypes`, or ask the vendor for
+`$ORIGIN`-rpath'd builds.
 
 **The boundary:** kivyforge fetches, verifies, and stages declared binaries.
 It does **not** resolve their dependencies or patch their rpaths (the
