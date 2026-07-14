@@ -1,8 +1,9 @@
 [project]
 name = "hello-native"
 version = "0.1.0"
-# Desktop-only example: macOS bundles CPython 3.13.14 (PBS) with Kivy 2.3.1
-# wheels from PyPI, plus two non-wheel native binaries built by build_native.sh.
+# Desktop example (macOS + Linux): each backend bundles CPython 3.13.14 (PBS)
+# with Kivy 2.3.1 wheels from PyPI, plus two non-wheel native binaries built by
+# build_native.sh (a helper executable + a shared library).
 requires-python = ">=3.13"
 dependencies = [
     "kivy>=2.3.1",
@@ -42,3 +43,31 @@ version = "3.13.14"
 [tool.kivy.macos.native.binaries]
 roll = { version = "0.1.0", source = "binaries/macos/roll" }
 libgreet = { version = "0.1.0", source = "binaries/macos/libgreet.dylib" }
+
+[tool.kivy.linux]
+schema_version = 1
+app_id = "org.example.hello-native"
+archs = ["x86_64"]
+# Kivy's Linux wheel declares deps unused by this app; prune them so the lock
+# stays lean.
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.linux.python]
+version = "3.13.14"
+
+# The Linux siblings of the macOS binaries above (built by ./build_native.sh into
+# binaries/linux/). `kivyforge lock -p linux` SHA-256-pins each; the build stages
+# them into usr/bin, AppRun prepends usr/bin to PATH (roll runs by name) and
+# appends it to LD_LIBRARY_PATH (libgreet.so loads by soname).
+[tool.kivy.linux.native.binaries]
+roll = { version = "0.1.0", source = "binaries/linux/roll" }
+libgreet = { version = "0.1.0", source = "binaries/linux/libgreet.so" }

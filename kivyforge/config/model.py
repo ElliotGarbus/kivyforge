@@ -304,6 +304,7 @@ class LinuxConfig:
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
+    binaries: tuple[NativeBinaryDep, ...] = ()
 
 
 @dataclass(frozen=True)

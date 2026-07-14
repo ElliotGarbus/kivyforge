@@ -47,6 +47,40 @@ class TestRoundTrip:
         assert "[[packages]]" in text
 
 
+class TestNativeBinaries:
+    _NB_TABLE = (
+        "\n[tool.kivy.linux.native.binaries]\n"
+        'roll = { version = "1.0", source = "binaries/linux/roll" }\n'
+    )
+
+    def test_vendored_binary_is_pinned(self, linux_pyproject, tmp_path):
+        binaries = tmp_path / "binaries" / "linux"
+        binaries.mkdir(parents=True)
+        (binaries / "roll").write_bytes(b"\x7fELF roll helper")
+        lock = _build(linux_pyproject + self._NB_TABLE, tmp_path)
+        (nb,) = lock.native_binaries
+        assert nb.name == "roll"
+        assert nb.version == "1.0"
+        assert nb.path == "binaries/linux/roll"
+        assert nb.url is None
+        assert len(nb.sha256) == 64
+
+    def test_pin_round_trips(self, linux_pyproject, tmp_path):
+        binaries = tmp_path / "binaries" / "linux"
+        binaries.mkdir(parents=True)
+        (binaries / "roll").write_bytes(b"payload")
+        lock = _build(linux_pyproject + self._NB_TABLE, tmp_path)
+        again = loads(dumps(lock))
+        assert again.native_binaries == lock.native_binaries
+
+    def test_serialized_has_native_binaries_table(self, linux_pyproject, tmp_path):
+        binaries = tmp_path / "binaries" / "linux"
+        binaries.mkdir(parents=True)
+        (binaries / "roll").write_bytes(b"payload")
+        text = dumps(_build(linux_pyproject + self._NB_TABLE, tmp_path))
+        assert "[[tool.kivyforge.native_binaries]]" in text
+
+
 class TestMalformed:
     def test_not_toml(self):
         with pytest.raises(LockError, match="not valid TOML"):

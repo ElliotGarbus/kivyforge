@@ -27,6 +27,7 @@ from kivyforge.lock.reader import LockError
 from . import AppDirError
 from .appimage import appimagetool_asset, type2_runtime_asset
 from .desktop import render_desktop_entry
+from .elftools import ARCH_ELF, describe, elf_machine, is_elf
 from .lock import (
     LinuxLockfile,
     effective_glibc_floor,
@@ -228,6 +229,100 @@ def check_linux_find_links(config: Config, project_root: Path) -> CheckResult:
     return CheckResult("find_links directories", Status.PASS, "; ".join(ok))
 
 
+def check_linux_native_binaries(config: Config, project_root: Path) -> CheckResult:
+    """Vendored native-binary sources exist and (once built) match the arch.
+
+    SKIPs when no ``[tool.kivy.linux.native.binaries]`` are declared. Vendored
+    (repo-relative) sources must be present on disk; URL sources are re-checked
+    for reachability by ``check_linux_hosts_reachable``. No two single-file
+    (non-archive) sources may share a staged basename (they would overwrite each
+    other in ``usr/bin``; archive-member collisions are caught at build time).
+    When the AppDir has been built, every ELF staged under ``usr/bin`` must match
+    each configured arch's class + machine (a 32-bit / aarch64 ``.so`` in an
+    x86_64 AppImage would only fail at ``dlopen`` time).
+    """
+    declared = config.linux_required.binaries
+    if not declared:
+        return CheckResult("Native binaries", Status.SKIP, "not configured")
+
+    root = project_root.resolve()
+    missing = [
+        dep.source
+        for dep in declared
+        if not dep.source.startswith(("http://", "https://"))
+        and not (root / dep.source).is_file()
+    ]
+    if missing:
+        return CheckResult(
+            "Native binaries",
+            Status.FAIL,
+            f"vendored source(s) not found: {', '.join(missing)}",
+            hint="build/vendor the artifact under the project and re-run "
+            "`kivyforge lock -p linux`.",
+        )
+
+    # Statically-detectable staging collisions: two single-file (non-archive)
+    # sources whose basenames match land on the same usr/bin/<name> and the
+    # second silently clobbers the first. Archive-member collisions need
+    # extraction and are caught (loudly) at build time.
+    staged: dict[str, str] = {}
+    for dep in declared:
+        if dep.source.lower().endswith((".zip", ".tar.gz", ".tgz")):
+            continue
+        base = dep.source.rsplit("/", 1)[-1] or dep.name
+        prev = staged.get(base)
+        if prev is not None:
+            return CheckResult(
+                "Native binaries",
+                Status.FAIL,
+                f"{prev!r} and {dep.name!r} both stage usr/bin/{base}",
+                hint="two native binaries would overwrite each other in "
+                "usr/bin; rename one artifact/source so each stages to a "
+                "unique name.",
+            )
+        staged[base] = dep.name
+
+    archs = config.linux_required.archs
+    expected = {ARCH_ELF[a] for a in archs if a in ARCH_ELF}
+    bin_dir = (
+        root
+        / "build"
+        / "linux"
+        / f"{config.display_name}.AppDir"
+        / "usr"
+        / "bin"
+    )
+    if expected and bin_dir.is_dir():
+        problems: list[str] = []
+        elves = 0
+        for p in sorted(bin_dir.rglob("*")):
+            if not is_elf(p):
+                continue
+            elves += 1
+            found = elf_machine(p)
+            if found not in expected:
+                want = ", ".join(sorted(describe(c, m) for c, m in expected))
+                problems.append(f"{p.name} is {describe(*found)}, need {want}")
+        if problems:
+            return CheckResult(
+                "Native binaries",
+                Status.FAIL,
+                "; ".join(problems),
+                hint="rebuild the native binaries for the configured arch "
+                f"({', '.join(archs)}), then re-lock.",
+            )
+        return CheckResult(
+            "Native binaries",
+            Status.PASS,
+            f"{elves} ELF match {', '.join(archs)}",
+        )
+    return CheckResult(
+        "Native binaries",
+        Status.PASS,
+        f"{len(declared)} declared; sources present (build to verify arch match)",
+    )
+
+
 def check_linux_hosts_reachable(
     probe: Probe, config: Config, lock: LinuxLockfile | None
 ) -> CheckResult:
@@ -240,6 +335,9 @@ def check_linux_hosts_reachable(
         for art in lock.python_runtime.artifacts:
             if art.url:
                 _add_host(hosts, art.url)
+        for nb in lock.native_binaries:
+            if nb.url:
+                _add_host(hosts, nb.url)
     # Packaging fetches the pinned build tools too, so their hosts matter.
     for arch in config.linux_required.archs:
         try:
@@ -297,6 +395,7 @@ def run_linux_checks(
             "App icon",
             "Desktop entry valid",
             "find_links directories",
+            "Native binaries",
             "Required hosts reachable",
         ):
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
@@ -309,6 +408,7 @@ def run_linux_checks(
         check_linux_app_icon(config, project_root),
         check_linux_desktop_entry(probe, config),
         check_linux_find_links(config, project_root),
+        check_linux_native_binaries(config, project_root),
         check_linux_hosts_reachable(probe, config, lock),
     ]
     return results

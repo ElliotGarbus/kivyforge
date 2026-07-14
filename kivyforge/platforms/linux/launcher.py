@@ -8,9 +8,15 @@ app's ``lib``/``app`` directories, sets the SDL WM_CLASS so the window groups
 under the ``.desktop``'s ``StartupWMClass``, and ``exec``s the interpreter on
 the entry-point module.
 
-There is deliberately **no ``LD_LIBRARY_PATH``**: PBS rpaths are
+By default there is deliberately **no ``LD_LIBRARY_PATH``**: PBS rpaths are
 ``$ORIGIN``-relative and manylinux wheels vendor their own native libs
 (auditwheel), so the host's libGL/libEGL are found on the normal loader path.
+The one exception is when the app declares ``[tool.kivy.linux.native.binaries]``:
+then ``usr/bin`` is *prepended* to ``PATH`` (helpers win by name) and *appended*
+to ``LD_LIBRARY_PATH`` (declared libs load by soname but never shadow the host's
+or the wheels' own ``.so``s — decided Option B in linux-spec). The
+PATH-prepend / LD_LIBRARY_PATH-append asymmetry is deliberate: declared tools
+win; declared libs never shadow the host.
 """
 
 from __future__ import annotations
@@ -31,13 +37,24 @@ HERE="$(dirname "$(readlink -f "$0")")"
 export PYTHONHOME="$HERE/usr/python"
 export PYTHONPATH="$HERE/usr/app:$HERE/usr/lib"
 export PYTHONNOUSERSITE=1
-
+{native_block}
 # Match the window's WM_CLASS to the .desktop StartupWMClass so the app groups
 # under its own icon on both X11 and Wayland.
 export SDL_VIDEO_X11_WMCLASS="{app_id}"
 export SDL_VIDEO_WAYLAND_WMCLASS="{app_id}"
 
 exec "$HERE/usr/python/bin/python3" "$HERE/usr/app/{entry}.py" "$@"
+"""
+
+# Only emitted when the app declares native binaries (no dead env vars
+# otherwise — symmetry with the "no empty bin/" rule). PATH is prepended so a
+# bundled helper wins by name; LD_LIBRARY_PATH is appended so the host's and the
+# wheels' auditwheel-vendored .so's still win the search and a declared lib is
+# only a last resort (decided Option B, linux-spec).
+_NATIVE_BINARIES_BLOCK = """
+# Declared native binaries (see linux-spec): helpers by name, libs by soname.
+export PATH="$HERE/usr/bin:$PATH"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$HERE/usr/bin"
 """
 
 
@@ -51,22 +68,40 @@ def entry_point_rel_path(entry_point: str) -> str:
     return "/".join(entry_point.split("."))
 
 
-def render_apprun(*, entry_point: str, app_id: str) -> str:
+def render_apprun(
+    *, entry_point: str, app_id: str, has_native_binaries: bool = False
+) -> str:
     """The ``AppRun`` shell source for *entry_point* + *app_id* (pure/testable).
 
     *entry_point* may be a dotted module name (e.g. ``pkg.start``); each segment
-    must be a valid, non-keyword Python identifier.
+    must be a valid, non-keyword Python identifier. When *has_native_binaries*
+    is set, ``usr/bin`` is prepended to ``PATH`` and appended to
+    ``LD_LIBRARY_PATH``; otherwise the block is omitted entirely.
     """
     parts = entry_point.split(".")
     if not entry_point or not all(
         p.isidentifier() and not keyword.iskeyword(p) for p in parts
     ):
         raise AppDirError(f"entry_point {entry_point!r} is not a valid module name.")
-    return _APPRUN.format(entry=entry_point_rel_path(entry_point), app_id=app_id)
+    native_block = _NATIVE_BINARIES_BLOCK if has_native_binaries else ""
+    return _APPRUN.format(
+        entry=entry_point_rel_path(entry_point),
+        app_id=app_id,
+        native_block=native_block,
+    )
 
 
-def build_apprun(dest: Path, *, entry_point: str, app_id: str) -> None:
+def build_apprun(
+    dest: Path, *, entry_point: str, app_id: str, has_native_binaries: bool = False
+) -> None:
     """Write an executable ``AppRun`` at *dest*."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(render_apprun(entry_point=entry_point, app_id=app_id), "utf-8")
+    dest.write_text(
+        render_apprun(
+            entry_point=entry_point,
+            app_id=app_id,
+            has_native_binaries=has_native_binaries,
+        ),
+        "utf-8",
+    )
     dest.chmod(0o755)

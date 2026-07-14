@@ -714,6 +714,7 @@ def _parse_linux(
 
     icons = _parse_platform_icons(linux, key_path="tool.kivy.linux.icons")
     desktop = _parse_desktop(linux, finder)
+    binaries = _parse_native_binaries(linux, "linux", finder)
 
     return LinuxConfig(
         schema_version=schema_version,
@@ -726,6 +727,7 @@ def _parse_linux(
         python_version=python_version,
         icons=icons,
         desktop=desktop,
+        binaries=tuple(binaries),
     )
 
 

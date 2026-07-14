@@ -27,6 +27,7 @@ from .desktop import validate_desktop_file, write_desktop_entry
 from .icons import stage_icons
 from .launcher import build_apprun, entry_point_rel_path
 from .lock import LinuxLockfile
+from .native_stage import stage_native_binaries
 from .runtime_stage import stage_runtime
 from .wheels_stage import stage_wheels
 
@@ -100,6 +101,16 @@ def build_appdir(
             no_cache=no_cache,
         )
 
+        if lock.native_binaries:
+            echo(f"Staging {len(lock.native_binaries)} native binaries ...")
+            stage_native_binaries(
+                lock,
+                work / "usr",
+                project_root=project_root,
+                cache=cache,
+                no_cache=no_cache,
+            )
+
         _copy_app_sources(config, project_root, work / "usr" / "app")
         stage_icons(config, project_root, work)
 
@@ -107,6 +118,7 @@ def build_appdir(
             work / "AppRun",
             entry_point=config.kivy.entry_point,
             app_id=config.linux_required.app_id,
+            has_native_binaries=bool(lock.native_binaries),
         )
         desktop_path = work / f"{config.linux_required.app_id}.desktop"
         write_desktop_entry(config, desktop_path)

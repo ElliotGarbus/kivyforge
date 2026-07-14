@@ -490,4 +490,21 @@ def render_linux_tables(
         "[tool.kivy.linux.desktop]",
         cats_line,
     ]
+    lines += _LINUX_NATIVE_BINARIES_STUB
     return "\n".join(lines) + "\n"
+
+
+# Commented native-binary stub. Left inert so a vanilla app needs no extra
+# artifacts; uncomment to stage a non-wheel .so/helper (SHA-256-pinned by
+# `kivyforge lock`, staged into usr/bin). At runtime helpers resolve by name on
+# PATH; libraries load by soname (ctypes.CDLL("libgreet.so")) via the appended
+# LD_LIBRARY_PATH. Both .zip and .tar.gz/.tgz archive sources are extracted.
+_LINUX_NATIVE_BINARIES_STUB = [
+    "",
+    "# Optional: non-wheel native binaries (linux-spec). Each is pinned by",
+    "# `kivyforge lock` and staged into the AppDir's usr/bin (helpers on PATH by",
+    "# name; libraries load by soname, e.g. ctypes.CDLL('libgreet.so')).",
+    "# [tool.kivy.linux.native.binaries]",
+    '# ffmpeg = { version = "7.1", source = "https://example.com/ffmpeg-linux-x86_64.tar.gz" }',
+    '# libgreet = { version = "0.1.0", source = "binaries/linux/libgreet.so" }',
+]

@@ -1,0 +1,58 @@
+lock-version = "1.0"
+created-by = "kivyforge"
+requires-python = ">=3.15"
+extras = []
+dependency-groups = []
+default-groups = []
+
+[[packages]]
+name = "kivy"
+version = "3.0.0"
+requires-python = ">=3.10"
+dependencies = [{ name = "more-itertools" }]
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "kivy-3.0.0-cp315-cp315-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+url = "https://files.pythonhosted.org/packages/aa/kivy-3.0.0-cp315-cp315-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+hashes = { sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+
+[[packages]]
+name = "more-itertools"
+version = "10.5.0"
+requires-python = ">=3.8"
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "more_itertools-10.5.0-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/bb/more_itertools-10.5.0-py3-none-any.whl"
+hashes = { sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+
+[tool.kivyforge]
+schema_version = 1
+kivyforge_version = "3.0.0"
+generated_at = "2026-05-27T00:00:00Z"
+pyproject_sha256 = "e7ebf9fbf26f2311ef5c383fa22e4c05253d8498b63a363322d512dbf0b56c14"
+tool_kivyforge_schema_version = 1
+archs = ["x86_64"]
+
+[tool.kivyforge.python_runtime]
+provider = "python-build-standalone"
+version = "3.15.0"
+floor = "2.17"
+
+[[tool.kivyforge.python_runtime.artifacts]]
+arch = "x86_64"
+url = "https://example.com/cpython-3.15.0-x86_64-linux.tar.gz"
+sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+archive_format = "tar.gz"
+
+[[tool.kivyforge.native_binaries]]
+name = "roll"
+version = "0.1.0"
+path = "binaries/linux/roll"
+sha256 = "5c88466f1b7430df29bc8bb79be0fa4b984f01ca885fa352fa9c3b61353d562e"

@@ -1026,6 +1026,57 @@ class TestLinuxIcons:
         assert cfg.linux_required.icons.source == "assets/icon.png"
 
 
+class TestLinuxNativeBinaries:
+    def test_default_empty(self):
+        assert _linux().linux_required.binaries == ()
+
+    def test_parses_url_and_relative(self):
+        cfg = _linux(
+            "[tool.kivy.linux.native.binaries]\n"
+            'sdk = { version = "2.1.0", source = "https://vendor.example/sdk.tar.gz" }\n'
+            'roll = { version = "0.1.0", source = "binaries/linux/roll" }\n'
+        )
+        binaries = cfg.linux_required.binaries
+        assert (
+            NativeBinaryDep("sdk", "2.1.0", "https://vendor.example/sdk.tar.gz")
+            in binaries
+        )
+        assert NativeBinaryDep("roll", "0.1.0", "binaries/linux/roll") in binaries
+
+    def test_absolute_path_rejected(self):
+        with pytest.raises(ConfigError, match="absolute path"):
+            _linux(
+                "[tool.kivy.linux.native.binaries]\n"
+                'sdk = { version = "1.0", source = "/abs/libgreet.so" }\n'
+            )
+
+    def test_escaping_path_rejected(self):
+        with pytest.raises(ConfigError, match="escape"):
+            _linux(
+                "[tool.kivy.linux.native.binaries]\n"
+                'sdk = { version = "1.0", source = "../../libgreet.so" }\n'
+            )
+
+    def test_missing_version_rejected(self):
+        with pytest.raises(ConfigError, match="requires a string 'version'"):
+            _linux(
+                "[tool.kivy.linux.native.binaries]\n"
+                'sdk = { source = "libgreet.so" }\n'
+            )
+
+    def test_missing_source_rejected(self):
+        with pytest.raises(ConfigError, match="requires an explicit 'source'"):
+            _linux(
+                "[tool.kivy.linux.native.binaries]\nsdk = { version = \"1.0\" }\n"
+            )
+
+    def test_non_table_entry_rejected(self):
+        with pytest.raises(ConfigError, match="must be an inline table"):
+            _linux(
+                '[tool.kivy.linux.native.binaries]\nsdk = "libgreet.so"\n'
+            )
+
+
 class TestIosAndLinuxCoexist:
     def test_all_three_platforms(self):
         base = (

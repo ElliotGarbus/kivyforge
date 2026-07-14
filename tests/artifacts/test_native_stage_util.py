@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -26,6 +28,12 @@ def _vendor(project_root: Path, rel: str, data: bytes) -> str:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(data)
     return rel
+
+
+def _add_tar_bytes(tf: tarfile.TarFile, name: str, data: bytes) -> None:
+    info = tarfile.TarInfo(name)
+    info.size = len(data)
+    tf.addfile(info, io.BytesIO(data))
 
 
 class TestStageBinaries:
@@ -93,6 +101,101 @@ class TestStageBinaries:
                         "1.0",
                         _sha256(archive.read_bytes()),
                         path="binaries/evil.zip",
+                    ),
+                ),
+                parent,
+                project_root=tmp_path,
+                bin_label="usr/bin",
+            )
+
+    def test_tar_gz_extracted_preserves_structure(self, tmp_path):
+        archive = tmp_path / "binaries" / "pack.tar.gz"
+        archive.parent.mkdir(parents=True)
+        with tarfile.open(archive, "w:gz") as tf:
+            _add_tar_bytes(tf, "libfoo.so", b"foo bytes")
+            _add_tar_bytes(tf, "nested/helper", b"helper bytes")
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        stage_binaries(
+            (
+                LockedNativeBinary(
+                    "pack",
+                    "1.0",
+                    _sha256(archive.read_bytes()),
+                    path="binaries/pack.tar.gz",
+                ),
+            ),
+            parent,
+            project_root=tmp_path,
+            bin_label="usr/bin",
+        )
+        bin_dir = parent / "bin"
+        assert (bin_dir / "libfoo.so").read_bytes() == b"foo bytes"
+        assert (bin_dir / "nested" / "helper").read_bytes() == b"helper bytes"
+        assert os.access(bin_dir / "nested" / "helper", os.X_OK)
+
+    def test_tgz_extension_also_extracted(self, tmp_path):
+        archive = tmp_path / "binaries" / "pack.tgz"
+        archive.parent.mkdir(parents=True)
+        with tarfile.open(archive, "w:gz") as tf:
+            _add_tar_bytes(tf, "libbar.so", b"bar bytes")
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        stage_binaries(
+            (
+                LockedNativeBinary(
+                    "pack",
+                    "1.0",
+                    _sha256(archive.read_bytes()),
+                    path="binaries/pack.tgz",
+                ),
+            ),
+            parent,
+            project_root=tmp_path,
+            bin_label="usr/bin",
+        )
+        assert (parent / "bin" / "libbar.so").read_bytes() == b"bar bytes"
+
+    def test_tar_traversing_member_rejected(self, tmp_path):
+        archive = tmp_path / "binaries" / "evil.tar.gz"
+        archive.parent.mkdir(parents=True)
+        with tarfile.open(archive, "w:gz") as tf:
+            _add_tar_bytes(tf, "../escape", b"nope")
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        with pytest.raises(NativeStageError, match="unsafe path"):
+            stage_binaries(
+                (
+                    LockedNativeBinary(
+                        "evil",
+                        "1.0",
+                        _sha256(archive.read_bytes()),
+                        path="binaries/evil.tar.gz",
+                    ),
+                ),
+                parent,
+                project_root=tmp_path,
+                bin_label="usr/bin",
+            )
+
+    def test_tar_escaping_symlink_rejected(self, tmp_path):
+        archive = tmp_path / "binaries" / "link.tar.gz"
+        archive.parent.mkdir(parents=True)
+        with tarfile.open(archive, "w:gz") as tf:
+            info = tarfile.TarInfo("escape")
+            info.type = tarfile.SYMTYPE
+            info.linkname = "/etc/passwd"
+            tf.addfile(info)
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        with pytest.raises(NativeStageError, match="unsafe path"):
+            stage_binaries(
+                (
+                    LockedNativeBinary(
+                        "link",
+                        "1.0",
+                        _sha256(archive.read_bytes()),
+                        path="binaries/link.tar.gz",
                     ),
                 ),
                 parent,

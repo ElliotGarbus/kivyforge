@@ -9,8 +9,8 @@
 #
 # Platform is auto-detected from the host (macOS -> macos, Linux -> linux) and
 # can be overridden with -p. Examples that lack a [tool.kivy.<platform>] overlay
-# are skipped (e.g. desktop-viewer and hello-native are macOS-only), so the same
-# invocation is safe on either host.
+# are skipped (e.g. desktop-viewer is macOS-only), so the same invocation is
+# safe on either host.
 #
 # For each example it runs, in order:
 #   0. native   — ./build_native.sh, when present   (compile vendored binaries)
@@ -121,7 +121,7 @@ case "$PLATFORM" in
                  "(host: $HOST)." >&2
             exit 1
         fi
-        DEFAULT_EXAMPLES=(dice-roller notes)
+        DEFAULT_EXAMPLES=(dice-roller notes hello-native)
         ;;
     *)
         echo "error: unknown platform '$PLATFORM' (expected macos or linux)." >&2
@@ -261,7 +261,7 @@ for ex in "${EXAMPLES[@]}"; do
     fi
 
     # Skip examples that have no overlay for this platform (e.g. desktop-viewer
-    # and hello-native are macOS-only) so a mixed default set is safe on Linux.
+    # is macOS-only) so a mixed default set is safe on Linux.
     if ! grep -Eq "^\[tool\.kivy\.${PLATFORM}(\]|\.)" "$dir/pyproject.toml"; then
         echo ">>> $ex: no [tool.kivy.$PLATFORM] overlay — skipping"
         SKIPPED+=("$ex")

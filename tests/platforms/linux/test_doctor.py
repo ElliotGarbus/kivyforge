@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import struct
 import textwrap
 
 from kivyforge.config import load_config_from_text
 from kivyforge.doctor.result import Status
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.lock.wheelruntime.model import (
+    LockedNativeBinary,
     PythonRuntime,
     RuntimeArtifact,
     WheelRuntimeLock,
@@ -63,6 +65,13 @@ def _lock(*, packages=(), archs=("x86_64",), floor="2.17"):
         pyproject_sha256="0" * 64,
         tool_kivyforge_schema_version=1,
     )
+
+
+def _lock_with_native(*native_binaries, archs=("x86_64",)):
+    base = _lock(archs=archs)
+    import dataclasses
+
+    return dataclasses.replace(base, native_binaries=tuple(native_binaries))
 
 
 def _wheel(name):
@@ -231,6 +240,122 @@ class TestFindLinks:
         assert r.status is Status.PASS
 
 
+def _elf_bytes(*, elf_class=2, ei_data=1, e_machine=62) -> bytes:
+    header = bytearray(64)
+    header[0:4] = b"\x7fELF"
+    header[4] = elf_class
+    header[5] = ei_data
+    endian = "<" if ei_data == 1 else ">"
+    struct.pack_into(f"{endian}H", header, 18, e_machine)
+    return bytes(header)
+
+
+def _nb_config(entries: str, archs="['x86_64']"):
+    return _linux_config(
+        f"\n[tool.kivy.linux.native.binaries]\n{entries}", archs=archs
+    )
+
+
+def _built_bin_dir(tmp_path, display="myapp"):
+    bin_dir = tmp_path / "build" / "linux" / f"{display}.AppDir" / "usr" / "bin"
+    bin_dir.mkdir(parents=True)
+    return bin_dir
+
+
+class TestNativeBinaries:
+    def test_skip_when_none(self, tmp_path):
+        r = L.check_linux_native_binaries(_linux_config(), tmp_path)
+        assert r.status is Status.SKIP
+
+    def test_vendored_missing_fails(self, tmp_path):
+        cfg = _nb_config(
+            'roll = { version = "1.0", source = "binaries/linux/roll" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.FAIL
+        assert "not found" in r.detail
+
+    def test_sources_present_passes(self, tmp_path):
+        (tmp_path / "binaries" / "linux").mkdir(parents=True)
+        (tmp_path / "binaries" / "linux" / "roll").write_bytes(b"x")
+        cfg = _nb_config(
+            'roll = { version = "1.0", source = "binaries/linux/roll" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
+
+    def test_url_source_skips_local_check(self, tmp_path):
+        cfg = _nb_config(
+            'sdk = { version = "1.0", source = "https://vendor.example/sdk.tar.gz" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
+
+    def test_single_file_basename_collision_fails(self, tmp_path):
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        (tmp_path / "a" / "roll").write_bytes(b"a")
+        (tmp_path / "b" / "roll").write_bytes(b"b")
+        cfg = _nb_config(
+            'A = { version = "1.0", source = "a/roll" }\n'
+            'B = { version = "1.0", source = "b/roll" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.FAIL
+        assert "usr/bin/roll" in r.detail
+
+    def test_archive_sources_dont_false_positive_collision(self, tmp_path):
+        (tmp_path / "a").mkdir()
+        (tmp_path / "b").mkdir()
+        (tmp_path / "a" / "pack.tar.gz").write_bytes(b"a")
+        (tmp_path / "b" / "pack.tar.gz").write_bytes(b"b")
+        cfg = _nb_config(
+            'A = { version = "1.0", source = "a/pack.tar.gz" }\n'
+            'B = { version = "1.0", source = "b/pack.tar.gz" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
+
+    def test_built_elf_matching_arch_passes(self, tmp_path):
+        (tmp_path / "binaries" / "linux").mkdir(parents=True)
+        (tmp_path / "binaries" / "linux" / "libgreet.so").write_bytes(_elf_bytes())
+        bin_dir = _built_bin_dir(tmp_path)
+        (bin_dir / "libgreet.so").write_bytes(_elf_bytes())
+        cfg = _nb_config(
+            'libgreet = { version = "1.0", source = "binaries/linux/libgreet.so" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
+        assert "ELF match" in r.detail
+
+    def test_built_wrong_arch_fails(self, tmp_path):
+        (tmp_path / "binaries" / "linux").mkdir(parents=True)
+        (tmp_path / "binaries" / "linux" / "libgreet.so").write_bytes(b"x")
+        bin_dir = _built_bin_dir(tmp_path)
+        # An aarch64 ELF (e_machine=183) in an x86_64 AppDir.
+        (bin_dir / "libgreet.so").write_bytes(_elf_bytes(e_machine=183))
+        cfg = _nb_config(
+            'libgreet = { version = "1.0", source = "binaries/linux/libgreet.so" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.FAIL
+        assert "libgreet.so" in r.detail
+        assert "aarch64" in r.detail
+
+    def test_built_non_elf_script_skipped(self, tmp_path):
+        (tmp_path / "binaries" / "linux").mkdir(parents=True)
+        (tmp_path / "binaries" / "linux" / "helper").write_bytes(b"#!/bin/sh\n")
+        bin_dir = _built_bin_dir(tmp_path)
+        # A legitimate #!/bin/sh helper is not an ELF and must not be failed.
+        (bin_dir / "helper").write_bytes(b"#!/bin/sh\necho hi\n")
+        cfg = _nb_config(
+            'helper = { version = "1.0", source = "binaries/linux/helper" }'
+        )
+        r = L.check_linux_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
+        assert "0 ELF" in r.detail
+
+
 class TestHostsReachable:
     def test_includes_appimagetool_hosts(self):
         r = L.check_linux_hosts_reachable(FakeProbe(), _linux_config(), None)
@@ -241,6 +366,16 @@ class TestHostsReachable:
         probe = FakeProbe(reachable=False)
         r = L.check_linux_hosts_reachable(probe, _linux_config(), _lock())
         assert r.status is Status.FAIL
+
+    def test_native_binary_url_added_to_hosts(self):
+        lock = _lock_with_native(
+            LockedNativeBinary(
+                "sdk", "1.0", "a" * 64, url="https://vendor.example/sdk.tar.gz"
+            )
+        )
+        r = L.check_linux_hosts_reachable(FakeProbe(), _linux_config(), lock)
+        assert r.status is Status.PASS
+        assert "vendor.example" in r.detail
 
 
 class TestRunner:
@@ -275,5 +410,6 @@ class TestRunner:
             "glibc floor",
             "Architecture coverage",
             "Desktop entry valid",
+            "Native binaries",
             "Required hosts reachable",
         } <= names

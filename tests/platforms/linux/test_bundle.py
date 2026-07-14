@@ -82,7 +82,7 @@ def faked(monkeypatch):
         calls["icons"].append(appdir)
         return False
 
-    def fake_apprun(dest, *, entry_point, app_id):
+    def fake_apprun(dest, *, entry_point, app_id, has_native_binaries=False):
         dest.write_text("#!/bin/sh\n")
         dest.chmod(0o755)
         calls["apprun"] = (entry_point, app_id)

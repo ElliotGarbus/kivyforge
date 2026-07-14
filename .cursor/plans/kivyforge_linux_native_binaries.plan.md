@@ -1,4 +1,11 @@
 ---
+name: ""
+overview: ""
+todos: []
+isProject: false
+---
+
+---
 name: Kivyforge Linux native-binaries channel
 overview: Add the [tool.kivy.linux.native.binaries] channel — the Linux sibling of the shipped macOS native-binaries channel — so Linux apps can ship non-wheel .so libraries and helper executables. Fetched + SHA-256-pinned at lock (shared engine, already done for macOS), staged into the AppDir's usr/bin at build (single files, .zip, and .tar.gz/.tgz) with a collision guard, made available to the app via AppRun (PATH-prepend for helpers; LD_LIBRARY_PATH-append for by-name .so loads, Option B), checked by doctor (ELF class/machine matches the target arch), seeded (commented) by init, and demonstrated by extending examples/desktop/hello-native with a Linux overlay. The pure staging mechanics are already extracted into a shared kivyforge/artifacts/native_stage_util.py (Step 3 — DONE via the macos_native_stage_extraction plan; rule of three: macOS + Linux + the imminent Windows channel); Linux consumes stage_binaries() and adds .tar.gz extraction to it in Step 4.
 todos:

@@ -254,6 +254,19 @@ class TestWriterUnits:
         assert "[tool.kivy]" not in block
         assert "[tool.kivy.linux]" in block
 
+    def test_render_linux_tables_seeds_commented_native_binaries(self):
+        from kivyforge.config import load_config_from_text
+
+        block = render_linux_tables("myapp")
+        assert "# [tool.kivy.linux.native.binaries]" in block
+        cfg = load_config_from_text(
+            '[project]\nname = "myapp"\nversion = "1.0.0"\n\n' + block,
+            require_ios=False,
+            require_linux=True,
+        )
+        # The stub must stay inert: no active native.binaries table parsed.
+        assert cfg.linux_required.binaries == ()
+
     def test_has_shared_table(self):
         assert has_shared_table("[tool.kivy]\napp_dir = 'src'\n")
         assert not has_shared_table("[tool.kivy.ios]\nschema_version = 1\n")

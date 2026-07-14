@@ -1,14 +1,21 @@
-"""Hello Native — exercise the [tool.kivy.macos.native.binaries] channel.
+"""Hello Native — exercise the [tool.kivy.<platform>.native.binaries] channel.
 
 Two non-wheel native binaries (built by ../build_native.sh) are staged into the
-.app's Contents/Resources/bin and consumed here two ways:
+bundle's ``bin`` directory (macOS: Contents/Resources/bin; Linux: usr/bin) and
+consumed here two ways:
 
 1. ``roll`` (a helper executable) is invoked *by name* with subprocess — which
-   resolves only because the launcher prepends Resources/bin to PATH.
-2. ``libgreet.dylib`` (a native dylib) is loaded by *absolute path* with ctypes,
-   using the documented recipe ``Path(sys.prefix).parent / "bin"`` (in the
-   bundled app, sys.prefix is Contents/Resources/python, so its parent's bin/ is
-   Contents/Resources/bin).
+   resolves only because the launcher prepends the staged bin dir to PATH. This
+   is identical on both platforms.
+2. The shared library is loaded with ctypes, and this is where the platforms
+   differ deliberately:
+   - **Linux** loads ``libgreet.so`` *by name* (``ctypes.CDLL("libgreet.so")``),
+     resolved via the ``LD_LIBRARY_PATH`` append AppRun adds — the idiom that
+     also lets a multi-``.so`` SDK resolve its inter-lib NEEDED deps.
+   - **macOS** loads ``libgreet.dylib`` *by absolute path*, since DYLD_* is
+     stripped under SIP/Hardened Runtime, using the portable recipe
+     ``Path(sys.prefix).parent / "bin"`` (there sys.prefix is
+     Contents/Resources/python, so its parent's bin/ is Contents/Resources/bin).
 """
 
 import ctypes
@@ -23,19 +30,28 @@ from kivy.uix.label import Label
 
 
 def native_bin_dir() -> Path:
-    """Where the staged native binaries live inside the bundled .app."""
+    """Where the staged native binaries live inside the bundle (both platforms).
+
+    macOS: Contents/Resources/bin (sys.prefix is Contents/Resources/python).
+    Linux: usr/bin (sys.prefix is usr/python). One cross-platform recipe.
+    """
     return Path(sys.prefix).parent / "bin"
 
 
 def roll_die() -> int:
-    # Called by name (no path): proves the launcher put Resources/bin on PATH.
+    # Called by name (no path): proves the launcher put the staged bin on PATH.
     out = subprocess.run(["roll"], capture_output=True, text=True, check=True)
     return int(out.stdout.strip())
 
 
 def greet() -> str:
-    # Loaded by absolute path: the documented dylib recipe.
-    lib = ctypes.CDLL(str(native_bin_dir() / "libgreet.dylib"))
+    if sys.platform == "darwin":
+        # macOS: load by absolute path (DYLD_* is stripped, so by-name is out).
+        lib = ctypes.CDLL(str(native_bin_dir() / "libgreet.dylib"))
+    else:
+        # Linux: load by soname via the LD_LIBRARY_PATH append (Option B). The
+        # portable by-path form also works: ctypes.CDLL(native_bin_dir()/"libgreet.so").
+        lib = ctypes.CDLL("libgreet.so")
     lib.greet.restype = ctypes.c_char_p
     return lib.greet().decode()
 

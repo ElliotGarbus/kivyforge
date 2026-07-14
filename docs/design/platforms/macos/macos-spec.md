@@ -239,9 +239,15 @@ with the Mach-O binaries in the runtime + wheels.
 > [Windows spec](../windows/windows-spec.md#native-binaries-that-are-not-wheels)).
 > The lock field lives in the *shared* wheel+runtime engine
 > (`[[tool.kivyforge.native_binaries]]`), so Linux/Windows adopt it with no
-> lock-format rework. See [`examples/desktop/hello-native`](../../../../examples/desktop/hello-native)
-> for a runnable end-to-end example (a helper executable used by name + a dylib
-> loaded by path).
+> lock-format rework. The pure staging mechanics were likewise extracted
+> (rule of three) into the shared `kivyforge/artifacts/native_stage_util.py`
+> (`stage_binaries()` + the security-sensitive `_safe_extract` /
+> `filter="data"` extractors); this module's `native_stage.py` is now a thin
+> wrapper (`bin_label="Contents/Resources/bin"`, translating `NativeStageError`
+> → `AppBundleError`). See
+> [`examples/desktop/hello-native`](../../../../examples/desktop/hello-native)
+> for a runnable end-to-end example — now cross-platform (macOS loads the dylib
+> by path; Linux, its sibling channel, loads the `.so` by soname).
 >
 > **Delta from design:** single-file sources are staged under their *source*
 > basename (copied "as-is"), so a `.dylib` keeps its extension for by-path

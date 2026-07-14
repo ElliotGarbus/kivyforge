@@ -3,12 +3,13 @@
 Each desktop backend declares a ``[tool.kivy.<platform>.native.binaries]``
 channel whose entries are fetched + SHA-256-verified from the platform lock and
 staged into the bundle's ``bin`` directory — a single native file copied in with
-its exec bit set, or a ``.zip`` of several extracted with a path-traversal
-guard. ``bin/`` is a single flat namespace, so two entries staging to the same
-path is a hard error (a silent clobber otherwise).
+its exec bit set, or a ``.zip`` / ``.tar.gz`` / ``.tgz`` of several extracted
+with a path-traversal guard. ``bin/`` is a single flat namespace, so two entries
+staging to the same path is a hard error (a silent clobber otherwise).
 
 This module owns the mechanics so the security-sensitive ``_safe_extract``
-(zip path-traversal) lives in exactly one audited place. It raises the neutral
+(zip path-traversal) and the ``tarfile`` ``filter="data"`` extractor live in
+exactly one audited place. It raises the neutral
 :class:`NativeStageError`; each backend's thin wrapper translates that into its
 own bundle-error type (the ``NativeBinaryResolverError`` →
 ``WheelRuntimeBuildError`` pattern used in the lock builder).
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import shutil
 import stat
+import tarfile
 import tempfile
 import zipfile
 from pathlib import Path
@@ -87,8 +89,11 @@ def _stage_one(
     # library keeps its extension for by-path/by-name loads.
     filename = source.rsplit("/", 1)[-1] or entry.name
     fetched = _fetch(entry, filename, project_root, cache, no_cache)
-    if source.lower().endswith(".zip"):
+    lowered = source.lower()
+    if lowered.endswith(".zip"):
         _extract_zip(fetched, bin_dir, claimed, entry.name, bin_label)
+    elif lowered.endswith((".tar.gz", ".tgz")):
+        _extract_tar(fetched, bin_dir, claimed, entry.name, bin_label)
     else:
         rel = Path(filename)
         _claim(claimed, rel, entry.name, bin_label)
@@ -132,6 +137,48 @@ def _extract_zip(
             _safe_extract(zf, staged)
         for src in sorted(staged.rglob("*")):
             if not src.is_file():
+                continue
+            rel = src.relative_to(staged)
+            _claim(claimed, rel, entry_name, bin_label)
+            dest = bin_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            _make_executable(dest)
+
+
+def _extract_tar(
+    archive: Path,
+    bin_dir: Path,
+    claimed: dict[str, str],
+    entry_name: str,
+    bin_label: str,
+) -> None:
+    """Extract a ``.tar.gz`` / ``.tgz`` into ``bin_dir`` with the same guards as zip.
+
+    ``.tar.gz`` is the dominant distribution format for Linux SDKs; without this
+    a tarball ``source`` would land in ``bin/`` as one opaque, exec-bit'd file.
+    Uses ``tarfile``'s hardened ``filter="data"`` extractor — the tar analog of
+    :func:`_safe_extract` — which strips symlinks/hardlinks/device nodes and
+    rejects absolute/escaping members (more important for tar than zip, since
+    tar *restores* symlinks and special files).
+    """
+    with tempfile.TemporaryDirectory(prefix="kivy-nb-stage-") as tmp:
+        staged = Path(tmp)
+        try:
+            with tarfile.open(archive, "r:*") as tf:
+                tf.extractall(staged, filter="data")  # noqa: S202 — hardened filter
+        except tarfile.FilterError as exc:
+            raise NativeStageError(
+                f"unsafe path in native-binary archive: {exc}"
+            ) from exc
+        except tarfile.TarError as exc:
+            raise NativeStageError(
+                f"could not read native-binary archive {archive.name}: {exc}"
+            ) from exc
+        for src in sorted(staged.rglob("*")):
+            # The "data" filter drops symlinks/special files; copy only regular
+            # files (a lingering symlink is skipped rather than dereferenced).
+            if src.is_symlink() or not src.is_file():
                 continue
             rel = src.relative_to(staged)
             _claim(claimed, rel, entry_name, bin_label)

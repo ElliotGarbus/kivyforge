@@ -29,7 +29,7 @@ In scope for the Linux backend:
 - An AppDir bundle generator (`AppRun` launcher, bundled Python + wheels + app
   source, generated `.desktop` entry + hicolor icons).
 - A declared **native-binaries channel** (`[tool.kivy.linux.native.binaries]`)
-  for non-wheel `.so`s / helper executables — *designed, not yet implemented*
+  for non-wheel `.so`s / helper executables — *implemented*
   (see ["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels-toolkivylinuxnativebinaries)).
 - `build` / `run` (launch `./AppRun`) and `package -f appimage` (default) /
   `-f folder`.
@@ -264,10 +264,19 @@ for libGL" property holds (see
 
 ### Native binaries that are not wheels (`[tool.kivy.linux.native.binaries]`)
 
-> **Implementation status: designed, not yet implemented** — a scoped
-> addition to the shipped backend, specified alongside the Windows backend
-> (which defines the same channel; see the
+> **Implementation status: implemented.** A scoped addition to the shipped
+> backend, mirroring the shipped macOS channel and specified alongside the
+> Windows backend (which defines the same channel; see the
 > [Windows spec](../windows/windows-spec.md#native-binaries-that-are-not-wheels)).
+> The pure staging mechanics live in the shared
+> `kivyforge/artifacts/native_stage_util.py` (extracted rule-of-three across
+> macOS + Linux + the imminent Windows channel); the Linux backend consumes its
+> `stage_binaries()` via a thin `native_stage.py` wrapper (`bin_label="usr/bin"`,
+> translating `NativeStageError` → `AppDirError`) and added the `.tar.gz`/`.tgz`
+> extraction to it. Demonstrated by
+> [`examples/desktop/hello-native`](../../../../examples/desktop/hello-native),
+> which ships a helper (`roll`, by name) and a library (`libgreet.so`, by soname)
+> on both Linux and macOS from one source tree.
 
 Some apps need native binaries that no wheel delivers: vendor SDK `.so`s or
 helper executables (a bundled `ffmpeg`). The

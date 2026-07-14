@@ -103,6 +103,7 @@ def build_linux_lockfile(
         project_root=project_root,
         resolver=resolver,
         runtime_provider=runtime_provider,
+        native_binaries=config.linux.binaries if config.linux else (),
         offline=offline,
         now=now,
         on_warning=on_warning,
