@@ -8,7 +8,7 @@ flowchart TD
     reg --> iface["Platform interface\n(lock / acquire_runtime / resolve_wheels / build / run / package / doctor_checks / clean)"]
     iface --> ios["platforms/ios\n(Xcode, xcframework, SPM)"]
     iface --> mac["platforms/macos\n(.app generator)"]
-    iface --> lin["platforms/linux (later)"]
+    iface --> lin["platforms/linux\n(AppImage/AppDir)"]
     iface --> win["platforms/windows (later)"]
     iface --> andr["platforms/android (later)"]
     subgraph core [kivyforge/core]

@@ -12,9 +12,12 @@ Windows DLL discovery.
 
 > **Status: design settled, implementation not started.** This spec is written
 > *before* the code — the reverse of the macOS/Linux specs, which shipped as
-> implemented. Decisions here were settled against Kivy 3.0 source, the
-> `kivy_deps.sdl3` wheel, python-build-standalone's Windows builds, and the
-> prior art in distlib / Briefcase / PyInstaller (see the
+> implemented. The **v1 baseline is public Kivy 2.3.1 / SDL2** (`kivy_deps.sdl2`
+> et al.), because Kivy 3.0 has no public desktop wheels yet; the design keeps
+> wheel staging and the bootstrap **generic over `share/*/bin`** so the SDL3 /
+> Kivy 3 path is purely additive when a wheel ships. Decisions here were settled
+> against Kivy source (2.3.1 and 3.0), python-build-standalone's Windows builds,
+> and the prior art in distlib / Briefcase / PyInstaller (see the
 > [bootloader](bootloader-windows.md) and [signing](signing-windows.md)
 > companion docs). Implementation follows the sequencing below; findings from
 > the clean-VM spike will be recorded as `docs/design/dev/windows-dll-findings.md`
@@ -136,6 +139,7 @@ source = "assets/icon.png"       # 1024×1024 PNG → multi-size .ico for the la
 
 [tool.kivy.windows.signing]      # optional; omitted = unsigned artifact
 thumbprint = "A1B2C3..."         # SHA-1 thumbprint of a cert in the Windows cert store
+# store_scope = "current_user"   # default; "machine" selects LocalMachine\My (signtool /sm)
 # timestamp_url = "http://timestamp.digicert.com"  # default shown
 
 [tool.kivy.windows.native.binaries]
@@ -153,7 +157,7 @@ Proposed field set (finalized in implementation):
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `schema_version` | integer | yes | — | Windows overlay schema version; independent of other platforms'. |
-| `app_id` | string | yes | — | The explicit [AppUserModelID](https://learn.microsoft.com/en-us/windows/win32/shell/appids) (dot-separated segments, alphanumeric/period/underscore, ≤128 chars, no spaces). The generated bootstrap sets it via `SetCurrentProcessExplicitAppUserModelID` before window creation so the taskbar button groups (and pins) under the app rather than `python.exe`. An invalid `app_id` is a hard `ConfigError` (mirrors the macOS `bundle_id` / Linux `app_id` fail-fast). |
+| `app_id` | string | yes | — | The explicit [AppUserModelID](https://learn.microsoft.com/en-us/windows/win32/shell/appids). The generated bootstrap sets it via `SetCurrentProcessExplicitAppUserModelID` before window creation so the taskbar button groups (and pins) under the app rather than `python.exe`. **Validation enforces only Microsoft's hard constraints — no spaces, ≤128 characters — as a config-time `ConfigError`.** The conventional pascal-cased, period-delimited form (`Company.Product`) is a *recommendation*, surfaced as a `doctor` **WARNING**, not an invented hard failure; hyphens are permitted. (This is a distinct identifier from the Linux reverse-DNS `app_id` and the macOS `bundle_id`, so it does not adopt their format rules.) |
 | `archs` | list of string | no | `["amd64"]` | Target architecture set. Only `amd64` is allowed this phase (`win_amd64` wheel tag; PBS triple `x86_64-pc-windows-msvc`). List-shaped so `arm64` is purely additive later. As on Linux there is no fat binary — each arch would be a separate bundle. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (`win_amd64` tags), same semantics as iOS/macOS/Linux. |
 | `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
@@ -173,7 +177,12 @@ Signing: `[tool.kivy.windows.signing]` is optional; without it `package`
 ships the artifact unsigned (the documented v1 default). `thumbprint`
 references a certificate **in the Windows certificate store** — never a
 `.pfx` path or password — so the same configuration works whether the
-credential is an imported pfx, a hardware token, or a cloud signer. See
+credential is an imported pfx, a hardware token, or a cloud signer.
+`store_scope` selects which store both `signtool` **and** the `doctor`
+certificate lookup inspect: `current_user` (the default → `Cert:\CurrentUser\My`)
+or `machine` (→ `Cert:\LocalMachine\My`, which also adds `signtool /sm`). Keeping
+one setting for both sides prevents the classic mismatch where the certificate
+is found in one store but signed against the other. See
 [signing-windows.md](signing-windows.md).
 
 Native binaries: `[tool.kivy.windows.native.binaries]` declares non-wheel
@@ -200,15 +209,16 @@ The common runtime-provider doc flagged it as the one official relocatable
 artifact among the desktop platforms and deferred the decision here. Its gaps
 are permanent and structural, not fixable configuration:
 
-- **No pip / no ensurepip** — the bundle prefix can't be populated with
-  `pip install --prefix`, which the DLL-discovery invariant below requires.
+- **Not a normal prefix** — no `share/` data-scheme target, a zipped stdlib,
+  no headers, no import library. The DLL-discovery invariant below requires a
+  normal prefix so wheel-installed data (`share/<dep>/bin`) lands where
+  `kivy_deps.*`'s `sys.prefix`-keyed self-registration looks for it; the
+  embeddable package's minimized shape has nowhere for it to go.
 - **`._pth` isolation** — `import site` is disabled by default and `sys.path`
   is frozen by the `._pth` file, changing `sys.prefix` semantics. Kivy's
   Windows dependency discovery keys off a normal `sys.prefix` (see below), so
   the embeddable package's core design works *against* the one mechanism the
   bundle depends on.
-- **Zipped stdlib, no headers, no import library** — a minimized runtime
-  shape, not a normal prefix.
 
 Its one advantage — PSF Authenticode-signed binaries — is a one-time gap that
 the optional signing sweep closes by signing the tree itself.
@@ -237,7 +247,7 @@ no macOS-version or manylinux-ladder dimension, so resolution is the simplest
 of the desktop family: each compiled dependency must resolve a `win_amd64`
 wheel (or `py3-none-any`); a miss is the usual fail-fast at lock time naming
 the package. **`kivy_deps.*` packages resolve as ordinary wheels** — Kivy's
-own `win_amd64` wheel declares them (e.g. `kivy_deps.sdl3`) as conditional
+own `win_amd64` wheel declares them (e.g. `kivy_deps.sdl2` / `kivy_deps.sdl3`) as conditional
 dependencies, so they appear in `[[packages]]` with URL + SHA-256 pins like
 everything else; the backend needs no special knowledge of them at lock time.
 Where they land at *build* time is the critical part (next section).
@@ -262,8 +272,8 @@ build/windows/MyApp/
     ├── python.exe
     ├── python3xx.dll, vcruntime140.dll, ...
     ├── DLLs/  Lib/                 ← stdlib
-    ├── Lib/site-packages/          ← installed wheels (pip --prefix, see below)
-    └── share/sdl3/bin/             ← SDL3.dll + codec DLLs (kivy_deps.sdl3)
+    ├── Lib/site-packages/          ← installed wheels (wheel-scheme installer, see below)
+    └── share/sdl2/bin/             ← SDL2.dll + codec DLLs (kivy_deps.sdl2; share/sdl3/bin on Kivy 3)
 ```
 
 The layout convention (`<bundle>\python\`, `<bundle>\app\`, `<bundle>\bin\`,
@@ -271,18 +281,21 @@ the fixed bootstrap name) is **frozen by design**: it is what lets one
 prebuilt bootloader binary serve every app with no per-app compilation (see
 the [bootloader doc](bootloader-windows.md#prebuilt-and-vendored-not-compiled-on-demand)).
 
-### What Kivy actually does (verified against Kivy 3.0 source + the wheel)
+### What Kivy actually does (Kivy source; SDL2 on v1, SDL3 on Kivy 3)
 
-The Windows SDL3 binaries ship in the **`kivy_deps.sdl3`** wheel. They do
-**not** land in site-packages — pip's data scheme installs them to:
+Kivy's Windows binary deps ship in **`kivy_deps.*`** wheels
+(`kivy_deps.sdl2` + `kivy_deps.glew` on the v1 Kivy 2.3.1 baseline;
+`kivy_deps.sdl3` on Kivy 3). They do **not** land in site-packages — the
+wheel's **data scheme** places them under the prefix:
 
 ```
-<prefix>\share\sdl3\bin\
-    SDL3.dll, SDL3_image.dll, SDL3_mixer.dll, SDL3_ttf.dll,
-    + transitive codecs (ogg, vorbis, opus, mpg123, FLAC, ...)
+<prefix>\share\<dep>\bin\          (e.g. share\sdl2\bin\ or share\sdl3\bin\)
+    SDL2.dll / SDL3.dll, image/mixer/ttf, + transitive codecs (ogg, vorbis,
+    opus, mpg123, FLAC, ...)
 ```
 
-`kivy_deps/sdl3/__init__.py` self-registers that directory at import time:
+Each `kivy_deps.<dep>/__init__.py` self-registers its directory at import time
+(illustrated with SDL3; SDL2 is identical modulo the name):
 
 ```python
 for d in [sys.prefix, site.USER_BASE]:
@@ -306,21 +319,39 @@ two conditions:
    works only because PBS keeps a normal prefix layout — another reason the
    embeddable package (whose `._pth` isolation changes `sys.prefix` behavior)
    was the wrong call.
-2. **Preserve the `share\sdl3\bin` tree under the prefix.** The DLLs live in
+2. **Preserve the `share\<dep>\bin` tree under the prefix.** The DLLs live in
    `share\`, **not** in site-packages. A staging step that copies only
-   site-packages *silently drops every SDL3 DLL* — `isdir(p)` is then False,
+   site-packages *silently drops every SDL DLL* — `isdir(p)` is then False,
    nothing registers, and Kivy dies importing the window provider with an
-   error that looks exactly like a bootloader bug. Therefore the Windows
-   `wheels_stage` **installs into the bundle prefix**
-   (`pip install --prefix <bundle>\python`) **and the bundle carries the
-   whole prefix** — no cherry-picking. This is a deliberate divergence from
-   macOS/Linux, whose wheels stage into a separate `lib/` directory on
-   `PYTHONPATH`: on Windows the pip data scheme (`share\`) is keyed off
-   `sys.prefix`, so prefix-install is the correct mechanism, not a shortcut.
+   error that looks exactly like a bootloader bug.
+
+**The real invariant, stated precisely (this replaces the earlier "pip
+`--prefix` is load-bearing" framing):** the wheel **data scheme**
+(`<wheel>.data/data/...`) must be installed to the **prefix root**, so
+`share\<dep>\bin` ends up at `<prefix>\share\<dep>\bin`. That is a property of
+*where wheel schemes install*, not of *which tool installs them* — so the
+Windows `wheels_stage` uses a **deterministic, no-`pip` wheel-scheme
+installer** and the bundle carries the whole prefix. The installer routes each
+locked wheel's schemes explicitly:
+
+| Wheel content | Installed to |
+|---|---|
+| package root + `.data/purelib` + `.data/platlib` | `python\Lib\site-packages` |
+| `.data/data` | the prefix root `python\` (so `share\<dep>\bin` survives) |
+| `.data/scripts` | `python\Scripts` |
+| `.data/headers` | `python\Include` |
+
+It never resolves dependencies, never shells to `pip`, and never applies the
+host interpreter's compatibility rules — it installs exactly the locked wheels.
+This is a controlled divergence from macOS/Linux (whose wheels stage into a
+separate `lib/` on `PYTHONPATH` with no prefix `share/` to satisfy), contained
+to this one module; the shared macOS/Linux unpack is untouched.
 
 Any other binary dep package follows the identical `share\<name>\bin` +
 self-registering `__init__` convention, so this one layout rule covers them
-uniformly.
+uniformly — and the bootstrap's directory discovery is **generic over
+`share\*\bin`**, so SDL2, SDL3, and any future dep are handled without a
+hard-coded name.
 
 ### The generated bootstrap module
 
@@ -331,26 +362,32 @@ the binary). The bootstrap:
 - sets the explicit AppUserModelID (`[tool.kivy.windows].app_id`) via
   `SetCurrentProcessExplicitAppUserModelID` (ctypes) *before* any window
   exists, so the taskbar groups under the app;
-- registers `share\sdl3\bin` with `os.add_dll_directory` **before**
+- discovers every `python\share\*\bin` directory **generically** (not a
+  hard-coded `sdl3`) and registers each with `os.add_dll_directory` **before**
   `import kivy` — defense-in-depth that decouples the bundle from Kivy's
-  internals. Layout is the real fix (if condition 2 above is unmet, this
-  registers an empty directory too); this is decoration, kept because it is
-  three lines and survives a hypothetical upstream change to
-  `kivy_deps.sdl3`'s self-registration;
+  internals. Layout is the real fix (if condition 2 above is unmet, there is
+  nothing to discover); this is decoration, kept because it is a few lines and
+  survives a hypothetical upstream change to a `kivy_deps` package's
+  self-registration;
 - when `<bundle>\bin` exists (declared
   [native binaries](#native-binaries-that-are-not-wheels)): registers it with
   `os.add_dll_directory` and prepends it to the process `PATH` — so user code
   loads declared DLLs by name (`ctypes.WinDLL("sdk.dll")`) and runs declared
   helpers by name (`subprocess.run(["ffmpeg", ...])`);
+- **retains every `os.add_dll_directory()` handle for the process lifetime.**
+  The call returns a handle that *removes* the directory from the search path
+  when it is closed or garbage-collected; the bootstrap keeps references (e.g.
+  in a module-level list) so a registered directory is never silently dropped
+  mid-run;
 - puts `<bundle>\app` on `sys.path`, sets the working directory to it, and
   imports `[tool.kivy].entry_point` (the same import-not-run-as-`__main__`
   semantics as every other platform).
 
-### What the SDL3 dep does *not* cover
+### What the binary deps do *not* cover
 
-- **The VC++ runtime.** `SDL3.dll`, the codecs, and CPython's own extension
+- **The VC++ runtime.** The SDL DLLs, the codecs, and CPython's own extension
   modules link `vcruntime140.dll` / `vcruntime140_1.dll` / `msvcp140.dll` —
-  and these are **not** in `share\sdl3\bin`. The spike must verify PBS bundles
+  and these are **not** in `share\<dep>\bin`. The spike must verify PBS bundles
   them next to `python.exe` (open item); if not, the bundler places them
   **app-local** next to `python.exe`. Never rely on a system VCRedist being
   present — that is the classic clean-machine failure. (A bonus of the
@@ -358,13 +395,14 @@ the binary). The bootstrap:
   `python.exe`'s directory is on the default DLL search path for transitive
   resolution. An in-process embedding host would have lost this — see the
   [bootloader doc](bootloader-windows.md#spawn-and-wait-not-exec).)
-- **The GL backend.** ANGLE vs. desktop GL is a separate pin-down. Kivy 3.0's
-  `setup.py` defaults `use_angle_gl_backend` to darwin/ios only, so the
-  Windows/SDL3 GL story may differ from the SDL2-era `kivy_deps.angle` +
-  `KIVY_GL_BACKEND=angle_sdl2` path. **The spike verifies what 3.0 actually
-  uses on Windows — do not assume.** For distribution, ANGLE (GLES→D3D11) is
-  the robust default: it survives old drivers, RDP sessions, and VMs where raw
-  GL context creation fails with a black screen. (Open item.)
+- **The GL backend.** ANGLE vs. desktop GL is a separate pin-down. On the v1
+  Kivy 2.3.1 / SDL2 baseline this is the `kivy_deps.angle` +
+  `KIVY_GL_BACKEND=angle_sdl2` story; on Kivy 3 / SDL3 it may differ (3.0's
+  `setup.py` defaults `use_angle_gl_backend` to darwin/ios only). **The spike
+  verifies what the shipped baseline actually uses on Windows — do not assume.**
+  For distribution, ANGLE (GLES→D3D11) is the robust default: it survives old
+  drivers, RDP sessions, and VMs where raw GL context creation fails with a
+  black screen. (Open item.)
 
 ### Native binaries that are not wheels
 
@@ -431,17 +469,17 @@ order:
 
 ```
 python\python.exe -c "import sys; print(sys.prefix)"
-python\python.exe -c "import kivy_deps.sdl3 as d; print(d.dep_bins)"
+python\python.exe -c "import kivy_deps.sdl2 as d; print(d.dep_bins)"    # sdl3 on Kivy 3
 python\python.exe -c "import kivy; from kivy.core.window import Window; print(Window)"
 ```
 
 1. Confirms the prefix resolves into the bundle.
 2. Confirms `dep_bins` is **non-empty** and points inside the bundle.
-3. The real test — forces the SDL3 window provider `.pyd` to load and resolve
+3. The real test — forces the SDL window provider `.pyd` to load and resolve
    its full DLL chain.
 
 On failure, use **`Dependencies.exe`** (the maintained Dependency Walker
-replacement) or `dumpbin /dependents` against the failing `.pyd` / `SDL3.dll`
+replacement) or `dumpbin /dependents` against the failing `.pyd` / `SDL2.dll`
 to identify the missing DLL rather than guessing.
 
 **Command 3 passing on a clean VM is the green light to start bootloader
@@ -473,19 +511,35 @@ Linux launchers.
   swift-packages-stub pattern — inert until uncommented), and the documented
   Kivy `exclude` block when kivy is a direct dependency.
 - **`build`** — resolve (if needed), acquire the runtime and wheels, and
-  assemble the onedir tree (runtime stage → prefix-install wheels stage →
-  app copy → declared-native-binaries stage → bootstrap generation →
-  launcher placement + resource patch).
-- **`run`** — build (unless `--no-build`), then execute `MyApp.exe` in the
-  foreground so the developer sees stdout/stderr + tracebacks. (The launcher
-  is windowed-subsystem, so it has no console of its own; `run` inherits the
-  developer's console handles for the child — the dev loop keeps its
-  tracebacks.)
-- **`package -f folder`** — the finished onedir folder under
-  `dist/windows/<Name>-<version>-amd64/`, **optionally signed** when
-  `[tool.kivy.windows.signing]` is configured (see
-  [signing-windows.md](signing-windows.md)). `-f folder` is the only format —
-  installers are permanently external (see ["Scope"](#scope)).
+  assemble the onedir tree under `build/windows/<display_name>` (runtime stage →
+  wheel-scheme install → app copy → declared-native-binaries stage → bootstrap
+  generation → launcher placement + resource patch). The `build` tree is the
+  **unsigned** iterative `run` target and is never mutated by signing.
+- **`run`** — build (unless `--no-build`), then execute the launcher so the
+  developer sees stdout/stderr + tracebacks. The launcher is windowed-subsystem
+  (no console of its own); the console handoff is explicit rather than assumed:
+  the launcher calls `AttachConsole(ATTACH_PARENT_PROCESS)` and, when a parent
+  console exists (the `kivyforge run` path), **explicitly inherits
+  stdin/stdout/stderr** for the child so tracebacks land in the terminal — see
+  the [bootloader doc](bootloader-windows.md#windowed-subsystem-only). (On a
+  double-click launch there is no parent console; the child is created with
+  `CREATE_NO_WINDOW` so no console flashes.)
+- **`package -f folder`** — **copies** the `build/windows` tree into the
+  finished distributable at `dist/windows/<safe-name>-<version>-amd64/`
+  (`<safe-name>` is `display_name` run through the Windows filename sanitizer),
+  **optionally signing that copy only** when `[tool.kivy.windows.signing]` is
+  configured (see [signing-windows.md](signing-windows.md)). The `build` tree is
+  preserved unsigned. `-f folder` is the only format — installers are
+  permanently external (see ["Scope"](#scope)). **Why a separate `dist/` copy
+  rather than signing in place** (as macOS does its `.app`): the Windows onedir
+  tree plays two roles at once — it is both the churny iterative `run`-in-place
+  dev target *and* a first-class shipped deliverable (the raw folder is a
+  mainstream end-user format, portable/zip, and the feedstock for an external
+  Inno step). macOS's atomic `.app` is the terminal unit signed in place;
+  Linux's AppDir is a build substrate whose real distributable (the AppImage)
+  kivyforge emits to `dist/`. On Windows the folder itself is the distributable
+  *and* the dev artifact, so `dist/windows` holds a clean, signed, versioned
+  copy while `build/windows` stays the unsigned dev tree.
 - **`status`** — the standard read-only snapshot (identity, runtime version,
   lock sync, build state), implemented as the `Platform.status` method like
   the other three backends, locating the built artifact by `display_name`
@@ -516,23 +570,25 @@ CI-tested against a self-signed certificate.
 | Host is Windows | environment | The Windows backend requires a Windows host (host-capability check). |
 | Long-path support | environment | WARN if the `LongPathsEnabled` registry value is off — deep install trees can exceed the 260-char `MAX_PATH` limit; hint the registry fix. |
 | kivyforge version | environment | Self-version; warn if newer on PyPI (best-effort). |
-| signtool available | environment | `signtool.exe` findable (Windows SDK). SKIP when `[tool.kivy.windows.signing]` is unconfigured; FAIL when signing is configured but the tool is missing. |
 | App source directory | project | `[tool.kivy].app_dir` resolves to an existing directory. |
-| `app_id` valid | project | A well-formed AppUserModelID (also a config-time hard error; surfaced here with remediation). |
+| `app_id` valid | project | FAIL only on Microsoft's hard constraints (no spaces, ≤128 chars) — also a config-time hard error, surfaced here with remediation. **WARN** (not FAIL) when the value is valid but does not follow the conventional pascal-cased, period-delimited `Company.Product` style. |
 | Architecture coverage | project | Every compiled dep resolves a `win_amd64` wheel; FAIL names the package. |
 | App icon | project | If `[tool.kivy.windows.icons].source` is set, FAIL unless a valid 1024×1024 PNG. SKIP if unset. |
 | Native binaries: sources | project | Each `[tool.kivy.windows.native.binaries]` `source` exists (repo-relative path) or its host is reachable (URL). SKIP when the table is empty. |
+| Native binaries: collision | project | No two declared entries (or archive members) stage to the same `bin\` path under a **case-insensitive** comparison, and no member uses a Windows reserved device name or alternate-data-stream (`:`) path. SKIP when the table is empty. |
 | Native binaries: arch | project | Each staged PE in `<bundle>\bin` has a machine type matching the target arch (an x86 DLL in an amd64 app fails only at load time, cryptically). SKIP when the table is empty or the bundle isn't built. |
-| Signing thumbprint | project | When configured, the thumbprint matches exactly one code-signing certificate in the user/machine store (`Get-ChildItem Cert:\...` / CryptoAPI). SKIP when unconfigured. |
+| signtool available | environment | `signtool.exe` findable (Windows SDK). SKIP when `[tool.kivy.windows.signing]` is unconfigured; FAIL when signing is configured but the tool is missing. |
+| Signing certificate | project | When configured, the thumbprint matches exactly one code-signing certificate in the **configured `store_scope` store** — the same store `signtool` will sign against (`Cert:\CurrentUser\My` by default, `Cert:\LocalMachine\My` when `store_scope = "machine"`). SKIP when unconfigured. |
 | find_links directories | project | If set, each entry is an existing directory containing `.whl` files. |
 | Required hosts reachable | project | The lockfile hosts (PBS + wheel indexes + native-binary URLs), plus the timestamp server when signing is configured. |
 
 `doctor` reports each check as PASS / WARN / FAIL with a remediation hint;
 exit code is non-zero only on FAIL.
 
-Config-time (`kivyforge lock`/`build`/`package`, not `doctor`): an invalid
-`app_id` is a hard `ConfigError`, mirroring the macOS `bundle_id` / Linux
-`app_id` fail-fast.
+Config-time (`kivyforge lock`/`build`/`package`, not `doctor`): an `app_id`
+that violates Microsoft's hard constraints (contains a space, or exceeds 128
+characters) is a hard `ConfigError`. Style-only deviations are never a config
+error — they surface as the `doctor` WARN above.
 
 ## Host requirements
 
@@ -558,10 +614,11 @@ Linux):
   the module below). Registered in `platforms/__init__.py`; `cli/lock.py`
   gains the `windows` `_LockOps` branch.
 - `kivyforge/platforms/windows/` (bundler modules) — the onedir bundler
-  (`bundle.py`, `runtime_stage.py`, `wheels_stage.py` — the prefix-install
-  divergence lives here — `native_stage.py` for declared native binaries,
+  (`bundle.py`, `runtime_stage.py`, `wheels_stage.py` — the no-`pip`
+  wheel-scheme installer lives here — `native_stage.py` (a thin wrapper over
+  the shared `artifacts/native_stage_util.stage_binaries()` helper),
   `launcher.py` for bootstrap generation + launcher placement/patching,
-  `icons.py`).
+  `petools.py` for the PE machine-type check, `icons.py`).
 - `kivyforge/platforms/windows/lock/` — the lock profile + runtime provider
   (`profile.py`, `runtime.py` with the `x86_64-pc-windows-msvc` triple map),
   built on the shared `kivyforge/lock/wheelruntime/` engine.
@@ -578,21 +635,28 @@ distributed — see the open item below.
 
 ## Open items
 
+Spike-only questions remain; the previously-open *design* choices are now
+settled (recorded under "Settled decisions" in the
+[implementation plan](../../../../.cursor/plans/kivyforge_windows_backend.plan.md)):
+
 - [ ] **Verify PBS Windows binaries: signed or not?**
       (`Get-AuthenticodeSignature .\python.exe, .\python3xx.dll`) — only
       affects Smart App Control machines; folds into the optional
-      tree-signing sweep if unsigned.
+      tree-signing sweep if unsigned. (Spike.)
 - [ ] **Verify PBS bundles `vcruntime140.dll` / `vcruntime140_1.dll` /
-      `msvcp140.dll`** next to `python.exe`; if not, the bundler places them
+      `msvcp140.dll`** next to `python.exe`; if not, Phase 4 places them
       app-local. (Spike.)
-- [ ] **Pin down the Kivy 3.0 Windows GL backend** (ANGLE vs desktop GL) and
-      which dep packages it needs. (Spike.)
-- [ ] **Bootloader binary distribution** — pinned-SHA-256 release asset
-      fetched via the existing `Downloader`/cache/verify machinery vs. a
-      binary vendored in the package. Decided during implementation; source +
-      CI live in-repo either way.
-- [ ] **Icon/version resource patching tool** — `rcedit` (another vendored
-      prebuilt exe) vs. a Python-native PE resource editor. See the
-      [bootloader doc](bootloader-windows.md#per-app-parameterization-resource-patching).
-- [ ] **Confirm distlib / `simple_launcher` license terms** before vendoring
-      any of its binaries or code (do not take "MIT" on faith).
+- [ ] **Pin down the baseline Windows GL backend** (ANGLE vs desktop GL for
+      Kivy 2.3.1 / SDL2) and which dep packages it needs. (Spike.)
+
+Settled (no longer open):
+
+- **Bootloader binary distribution — VENDORED.** The audited amd64 launcher is
+  vendored in the package with a license/notice, a pinned SHA-256, and
+  package-data entries; the C source and a **deterministic CI rebuild** (which
+  byte-compares against the vendored binary) live in-repo.
+- **Icon/version resource patching — `rcedit`.** Vendored alongside the
+  launcher (license/notice + pinned SHA-256). Patching runs on `windows-latest`.
+- **distlib / `simple_launcher` license** — moot: kivyforge ships its **own**
+  launcher C source (distlib is a *design* reference only), so nothing of its
+  code or binaries is vendored.

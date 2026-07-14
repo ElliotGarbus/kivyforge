@@ -51,9 +51,11 @@ Backends:
 
 - **`SigntoolSigner`** — the default: shells out to `signtool sign` with the
   configured thumbprint (`/sha1 <thumbprint> /fd SHA256 /tr <timestamp_url>
-  /td SHA256`). Covers store-imported pfx certs *and* hardware tokens *and*
-  Azure-backed certs transparently, because all of them surface as
-  cert-store entries (see "Identity" below).
+  /td SHA256`), adding **`/sm`** when `store_scope = "machine"` so signtool
+  reads the `LocalMachine\My` store (default reads `CurrentUser\My`). Covers
+  store-imported pfx certs *and* hardware tokens *and* Azure-backed certs
+  transparently, because all of them surface as cert-store entries (see
+  "Identity" below).
 - **`NullSigner`** — the unconfigured default; `package` produces the
   unsigned artifact.
 - A future **`ArtifactSigningSigner`** (Azure Artifact Signing's dlib-based
@@ -67,8 +69,13 @@ which credentials is resolved at the edge.
 ### Identity: thumbprint-from-cert-store, not pfx-path
 
 Adopted from Briefcase. `[tool.kivy.windows.signing].thumbprint` is the SHA-1
-thumbprint of a code-signing certificate **in the Windows certificate store**
-(`Cert:\CurrentUser\My` or `Cert:\LocalMachine\My`):
+thumbprint of a code-signing certificate **in the Windows certificate store**.
+Which store is the `store_scope` setting: `current_user` (default →
+`Cert:\CurrentUser\My`) or `machine` (→ `Cert:\LocalMachine\My`). **One setting
+drives both sides:** signtool signs against that store (`/sm` for machine) and
+the `doctor` certificate check enumerates the *same* store — so a cert found by
+`doctor` is the cert signtool will use, closing the classic "found in one store,
+signed against the other" mismatch.
 
 - The *same* configuration works whether the credential behind the cert is an
   imported `.pfx`, a hardware token (EV certs), or a cloud-held key — the
@@ -88,7 +95,10 @@ differentiator, but a nice-to-have, not table stakes.
 
 ### What gets signed, in what order
 
-For `package` with signing configured, on the assembled onedir tree:
+For `package -f folder` with signing configured, signing operates **only on the
+`dist/windows/<safe-name>-<version>-amd64/` copy** the packaging step produces —
+never on the `build/windows` dev tree, which stays unsigned and re-runnable (see
+the [spec's build/package split](windows-spec.md#init--build--run--package--status)):
 
 1. **Resource-patch the launcher first** (icon + version resource — a
    resource edit invalidates any signature, so it must precede signing; see
@@ -105,6 +115,26 @@ Windows signing is *flat* — a PKCS#7 blob appended to each PE independently �
 unlike macOS's *structural* bundle seal (nested seals, inside-out ordering).
 There is no Windows analog of "sign the deepest Mach-O first"; the ordering
 constraints here are only patch-before-sign and sign-before-installer.
+
+### Version-resource metadata (PEP 440 → four-part numeric)
+
+The resource patch (step 1) writes the launcher's version resource from
+declared metadata. Two representations are needed because a Windows version
+resource carries both a human string and fixed numeric fields:
+
+- **String fields** (`ProductName`, `FileDescription`, `ProductVersion`,
+  `LegalCopyright`) take the values verbatim — `ProductName` from
+  `[tool.kivy].display_name`, `ProductVersion` the full **PEP 440** string of
+  `[project].version` (e.g. `1.4.0rc2`), copyright from `[project]` metadata.
+- **Numeric fields** `FILEVERSION` / `PRODUCTVERSION` are **four 16-bit
+  integers**, so the PEP 440 version is mapped to a **deterministic four-part
+  numeric**: `(major, minor, micro, N)` where `N` encodes any pre/post/dev
+  segment by a fixed rule (release → a high sentinel so it sorts above its own
+  pre-releases; `rcK`/`bK`/`aK` → an ordered lower band; `.postK`/`.devK`
+  folded in by the documented offset). The mapping is total and monotonic
+  (a newer PEP 440 version never produces a lower tuple) and each field is
+  clamped to `0..65535`. This is metadata only — it never affects wheel/runtime
+  resolution, which uses the PEP 440 string throughout.
 
 ## Orchestration: kivyforge + Inno are composed, not redundant
 

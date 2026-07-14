@@ -33,12 +33,14 @@ user's machine would be a heavy, fragile dependency for ~a hundred lines of C.
 
 So the Windows bootloader is:
 
-- **Compiled once in CI** (per arch — amd64 only this phase) and shipped as a
-  binary asset. Whether that asset is fetched as a pinned-SHA-256 release
-  artifact (the PBS pattern, via the existing `Downloader`/cache/verify
-  machinery) or vendored inside the kivyforge package is an
-  [open item](windows-spec.md#open-items); the C source and the CI build
-  workflow live in the repo either way.
+- **Compiled once in CI** (per arch — amd64 only this phase) and **vendored
+  inside the kivyforge package** (settled — with a license/notice, a pinned
+  SHA-256, and explicit package-data entries). The C source and a
+  **deterministic CI rebuild** live in the repo; the rebuild byte-compares its
+  output against the vendored binary, so the shipped asset is always
+  reproducible from source. (kivyforge's launcher appends nothing to the
+  binary, so the non-reproducibility that dogs distlib's appended-zip scheme
+  does not arise — see [Prior art](#prior-art).)
 - **Parameterized per app without recompilation.** The macOS stub bakes an
   `{entry}` compile-time constant into each app's binary; that is dropped.
   In its place: the **fixed bundle layout convention** plus the **generated
@@ -52,18 +54,26 @@ So the Windows bootloader is:
 The only per-app changes to the binary itself are **resources**, not code:
 the icon (from `[tool.kivy.windows.icons]`) and the version resource (product
 name / file version / copyright from `[project]` + `[tool.kivy]`). A resource
-patch does not require a toolchain — but the patching tool is an **open
-item**:
+patch does not require a toolchain.
 
-- **`rcedit`** (the Electron project's tool) is the draft choice — proven,
-  single-purpose — but it is *another* prebuilt `.exe` to vendor and
-  version.
-- A **Python-native PE resource editor** (the `pefile` family) would avoid a
-  second vendored binary at the cost of owning more PE format surface.
+**Settled: `rcedit`** (the Electron project's tool) — proven and
+single-purpose. It is a second prebuilt `.exe`, so it is vendored alongside the
+launcher with its license/notice and a pinned SHA-256, and the resource-patch
+step is exercised on `windows-latest` (`rcedit` runs only on Windows). A
+Python-native PE resource editor (the `pefile` family) was weighed — it would
+avoid the second vendored binary and be host-agnostic — but robust icon-group +
+`RT_VERSION` *writing* is significant PE-format surface to own, so the proven
+tool wins for v1.
 
-Either way, patching happens **before** signing (a resource edit invalidates
-any existing signature), which the signing pipeline's ordering already
-guarantees — see [signing-windows.md](signing-windows.md).
+The version resource's numeric `FILEVERSION`/`PRODUCTVERSION` are four 16-bit
+integers, but `[project].version` is a PEP 440 string; the packaging step maps
+the PEP 440 version to a **deterministic four-part numeric** for those fields
+(the human-readable string goes in `ProductVersion` / `FileDescription`). The
+exact mapping is defined in [signing-windows.md](signing-windows.md).
+
+Patching happens **before** signing (a resource edit invalidates any existing
+signature), which the signing pipeline's ordering already guarantees — see
+[signing-windows.md](signing-windows.md).
 
 ## Windowed subsystem only
 
@@ -78,10 +88,23 @@ guarantees — see [signing-windows.md](signing-windows.md).
 - Getting this right at link time is what prevents the console window
   flashing on every launch — the classic tell of a mispackaged Python GUI
   app.
-- The dev loop keeps its output: a windowed-subsystem process launched *from*
-  a console (`kivyforge run`) has no console of its own, but the spawned
-  `python.exe` child inherits the developer's standard handles, so
-  stdout/stderr and tracebacks still land in the terminal.
+- **The dev loop keeps its output — but the console handoff is explicit, not
+  assumed.** A windowed-subsystem process does not reliably inherit a parent
+  console's standard handles just because it was launched from one, so the
+  launcher makes the handoff deliberate:
+  - It calls **`AttachConsole(ATTACH_PARENT_PROCESS)`**. When a parent console
+    exists (the `kivyforge run` path from a terminal), the launcher then
+    **explicitly passes the attached stdin/stdout/stderr handles to the
+    child** (via `STARTUPINFO`/handle inheritance) so the child (a
+    console-subsystem `python.exe`) writes straight to the terminal — tracebacks
+    and prints land where the developer is looking.
+  - When there is **no** parent console (an Explorer double-click), attaching
+    fails; the launcher then creates the console-subsystem child with
+    **`CREATE_NO_WINDOW`** so no console window flashes.
+  - `python.exe` (console subsystem) is used rather than `pythonw.exe` on both
+    paths precisely so the attach-for-diagnostics story works under `run`;
+    `CREATE_NO_WINDOW` handles the double-click no-flash requirement without
+    giving that up.
 
 ## spawn-and-wait, not `exec`
 
@@ -96,13 +119,18 @@ attach to `python.exe` rather than the launcher the user clicked.
 Instead, the bootloader does what distlib's launchers do:
 
 1. **`CreateProcessW`** the child interpreter
-   (`<bundle>\python\python.exe <bundle>\_kivyforge_bootstrap.py <argv...>`).
-2. Assign the child to a **Job object** configured with
-   kill-on-job-close — so Ctrl-C, task kill, and process-tree teardown behave
-   correctly and a `python.exe` is never orphaned when the launcher dies.
+   (`<bundle>\python\python.exe <bundle>\_kivyforge_bootstrap.py <argv...>`)
+   with **`CREATE_SUSPENDED`**, so it exists but has not run any code yet.
+2. Assign the suspended child to a **Job object** configured with
+   kill-on-job-close, **then resume the child's main thread** (`ResumeThread`).
+   Creating-suspended-then-assigning closes the race where a child spawns
+   grandchildren *before* it is in the job — with the resume ordering, every
+   descendant is captured, so Ctrl-C, task kill, and process-tree teardown
+   behave correctly and a `python.exe` is never orphaned when the launcher
+   dies.
 3. **`WaitForSingleObject`** on the child, then **`GetExitCodeProcess`**, and
    **exit with the child's exit code** — scripts and CI wrapping the app see
-   the real result.
+   the real result. Close every handle (process, thread, job) on exit.
 
 The bootloader stays alive as the visible process for its lifetime.
 
@@ -115,7 +143,7 @@ the exec-based POSIX launchers. Spawn-and-wait keeps the same mental model —
 benefit: because the child process *is* `python.exe`, **`python.exe`'s own
 directory is on the default DLL search path** during transitive DLL
 resolution (relevant to the VC++ runtime question — see the
-[Windows spec](windows-spec.md#what-the-sdl3-dep-does-not-cover)). An
+[Windows spec](windows-spec.md#what-the-binary-deps-do-not-cover)). An
 in-process host would have lost that.
 
 ## Implementation details
@@ -127,12 +155,17 @@ they are requirements, not suggestions.
   `CommandLineToArgvW`); build the child command line and environment as
   UTF-16. Narrow `main(argc, argv)` yields mbcs-decoded arguments and mangles
   non-ASCII paths.
-- **Path quoting.** `CreateProcessW`'s single-string command line is
-  unforgiving with paths like `C:\Program Files\...`. Explicitly double-quote
-  every path assembled into the command line (or use the array-based
-  `_wspawnv` family, which quotes per-argument — but note `_wspawnv` gives up
-  the Job-object attach point, so quoted `CreateProcessW` is the primary
-  path).
+- **Argv quoting — use the correct algorithm, not naive double-quoting.**
+  `CreateProcessW`'s single-string command line is unforgiving: a path like
+  `C:\Program Files\...` must be quoted, and any argument containing a `"` or
+  trailing backslashes must be escaped by the exact **inverse of
+  `CommandLineToArgvW`** (double internal quotes, and double the run of
+  backslashes that immediately precedes a quote or the closing quote).
+  Wrapping arguments in quotes without that backslash/quote handling corrupts
+  paths ending in `\` and any argument with an embedded quote. (The array-based
+  `_wspawnv` family quotes per-argument, but it gives up the Job-object attach
+  point, so quoted `CreateProcessW` with the correct algorithm is the primary
+  path.)
 - **Self-location.** `GetModuleFileNameW` with a generously-sized buffer,
   looping on `ERROR_INSUFFICIENT_BUFFER`. A fixed `MAX_PATH` buffer truncates
   on deep install paths. Everything — the python dir, the bootstrap path, the
@@ -158,6 +191,11 @@ The launcher test suite must cover, on a real Windows host:
   the `LongPathsEnabled` registry opt-in — also a `doctor` WARN, see the
   [spec's doctor table](windows-spec.md#doctor-checks-windows));
 - launch from a **shortcut with an arbitrary/blank working directory**;
+- **forwarded quoted arguments** round-trip intact (an argument with spaces,
+  embedded quotes, and trailing backslashes reaches `sys.argv` unchanged);
+- **visible output under `kivyforge run`** (stdout/stderr and tracebacks land
+  in the terminal) and **no console flash** on an Explorer double-click;
+- **Ctrl-C** delivered from the console terminates the child;
 - **exit-code propagation** (child exits nonzero → launcher exits nonzero);
 - **process-tree teardown** (killing the launcher kills the child via the Job
   object; no orphaned `python.exe`).
@@ -167,14 +205,14 @@ The launcher test suite must cover, on a real Windows host:
 - **distlib launchers** (`simple_launcher`, Vinay Sajip) — the source of the
   spawn-and-wait + Job object model, the link-time subsystem split, wide-char
   argv, and the precompiled-not-recompiled distribution model. Every pip
-  console script on Windows rides these stubs. Two caveats before borrowing
-  more than the design: **confirm the exact license terms** before vendoring
-  binaries or code (an [open item](windows-spec.md#open-items) — do not take
-  "MIT" on faith), and note that its appended-zip scheme embeds a build
-  timestamp and does not honor `SOURCE_DATE_EPOCH`, so a naive copy of that
-  scheme is not byte-reproducible — relevant given kivyforge's PEP 751
-  lockfile discipline. (kivyforge's bootloader appends nothing to the binary,
-  so the issue is avoided rather than solved.)
+  console script on Windows rides these stubs. kivyforge takes the **design**
+  only and ships its **own** launcher C source, so distlib's license terms do
+  not gate anything (nothing of its code or binaries is vendored). Worth noting
+  the reason to write our own rather than copy: distlib's appended-zip scheme
+  embeds a build timestamp and does not honor `SOURCE_DATE_EPOCH`, so it is not
+  byte-reproducible — at odds with kivyforge's PEP 751 lockfile discipline.
+  kivyforge's launcher **appends nothing** to the binary, and the deterministic
+  CI rebuild keeps it reproducible.
 - **BeeWare Briefcase** — not a bootloader reference (it delegates to a
   packaged support build), but the source of the signing identity model — see
   [signing-windows.md](signing-windows.md#identity-thumbprint-from-cert-store-not-pfx-path).
