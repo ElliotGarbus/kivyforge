@@ -290,7 +290,9 @@ Semantics, per pipeline stage:
   same integrity discipline as wheels and the runtime.
 - **`build`** — fetches through the shared download/cache/verify machinery
   and stages into **`usr/bin/`** (single files copied as-is with exec bits
-  preserved; `.zip`/`.tar.gz` sources extracted preserving structure).
+  preserved; `.zip`, `.tar.gz`, and `.tgz` sources extracted preserving
+  structure — tar is unpacked with the hardened `filter="data"` extractor.
+  macOS, by contrast, handles `.zip` only).
 - **`AppRun`** — when the app declares native binaries, prepends
   `$HERE/usr/bin` to `PATH` (helpers run by name —
   `subprocess.run(["ffmpeg", ...])`, CWD-independently: `AppRun` does not
@@ -301,9 +303,15 @@ Semantics, per pipeline stage:
   model — and why *append* rather than by-path-only or prepend — is analysed in
   ["Library loading model"](#library-loading-model) below.
 - **`doctor`** — each declared source exists/is reachable, and each staged
-  ELF is `x86_64`-class (an aarch64 or 32-bit binary fails only at load
-  time). Best-effort WARN comparing the binary's glibc version-needs against
-  the effective floor.
+  ELF's class + machine matches the target arch (an aarch64 or 32-bit binary
+  fails only at load time with a cryptic message). A best-effort WARN comparing
+  the binary's glibc version-needs (its `GLIBC_2.xx` symbol requirements) against
+  the effective floor is a **deferred fast-follow** — it needs verneed
+  (`.gnu.version_r`) parsing beyond the header-only class/machine read, and
+  parallels the deferred `python3` version-needs safeguard noted under
+  ["Effective glibc floor"](#effective-glibc-floor). Until then, a declared
+  binary's host floor is the user's own call (the same caveat as a vendored
+  plain `linux_x86_64` wheel).
 - **No signing** exists on Linux, so there is no signing interaction.
 
 #### Library loading model
