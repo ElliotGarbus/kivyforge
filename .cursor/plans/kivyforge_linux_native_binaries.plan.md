@@ -1,6 +1,6 @@
 ---
 name: Kivyforge Linux native-binaries channel
-overview: Add the [tool.kivy.linux.native.binaries] channel — the Linux sibling of the shipped macOS native-binaries channel — so Linux apps can ship non-wheel .so libraries and helper executables. Fetched + SHA-256-pinned at lock (shared engine, already done for macOS), staged into the AppDir's usr/bin at build (single files, .zip, and .tar.gz/.tgz) with a collision guard, made available to the app via AppRun (PATH-prepend for helpers; LD_LIBRARY_PATH-append for by-name .so loads, Option B), checked by doctor (ELF class/machine matches the target arch), seeded (commented) by init, and demonstrated by extending examples/desktop/hello-native with a Linux overlay. This pass also extracts the pure staging mechanics into a shared kivyforge/artifacts/native_stage_util.py (rule of three: macOS + Linux + the imminent Windows channel).
+overview: Add the [tool.kivy.linux.native.binaries] channel — the Linux sibling of the shipped macOS native-binaries channel — so Linux apps can ship non-wheel .so libraries and helper executables. Fetched + SHA-256-pinned at lock (shared engine, already done for macOS), staged into the AppDir's usr/bin at build (single files, .zip, and .tar.gz/.tgz) with a collision guard, made available to the app via AppRun (PATH-prepend for helpers; LD_LIBRARY_PATH-append for by-name .so loads, Option B), checked by doctor (ELF class/machine matches the target arch), seeded (commented) by init, and demonstrated by extending examples/desktop/hello-native with a Linux overlay. The pure staging mechanics are already extracted into a shared kivyforge/artifacts/native_stage_util.py (Step 3 — DONE via the macos_native_stage_extraction plan; rule of three: macOS + Linux + the imminent Windows channel); Linux consumes stage_binaries() and adds .tar.gz extraction to it in Step 4.
 todos:
   - id: step1-config
     content: "Step 1: [tool.kivy.linux.native.binaries] parsing — add `binaries` to LinuxConfig, call the shared `_parse_native_binaries(linux, \"linux\", finder)` in `_parse_linux`; loader tests mirroring the macOS ones (happy path + source validation: URL/relative accepted, absolute/escaping rejected)."
@@ -9,10 +9,10 @@ todos:
     content: "Step 2: pin native binaries in pylock.linux.toml — thread `config.linux.binaries` through `build_linux_lockfile` into the shared `build_wheel_runtime_lock(native_binaries=...)` (LockedNativeBinary / resolve_native_binaries / serialize / diff_summary already exist from the macOS work); golden-lock + resolver tests for Linux."
     status: pending
   - id: step3-shared-util
-    content: "Step 3: extract shared native-stage helpers — lift the pure mechanics (`_safe_extract`, `_claim`, `_make_executable`, `_fetch`, single-file-vs-archive dispatch) out of macOS `native_stage.py` into a new `kivyforge/artifacts/native_stage_util.py`, parameterized on the raised error type (or raising a neutral error each backend wraps); refactor macOS onto them in the SAME change so the existing macOS tests prove the extraction. Rule-of-three: Linux is the 2nd consumer, Windows the 3rd, and `_safe_extract` is security-sensitive so it must live in exactly one audited place."
-    status: pending
+    content: "Step 3 (DONE — merged): shared native-stage helpers extracted to `kivyforge/artifacts/native_stage_util.py` exposing `stage_binaries(binaries, parent_dir, *, project_root, cache, no_cache, bin_label)` + neutral `NativeStageError`; macOS `native_stage.py` reduced to a wrapper that translates `NativeStageError` -> `AppBundleError`. Delivered by the separate `macos_native_stage_extraction` plan; existing macOS tests stayed green. Currently `.zip`-only (tar handling is added in Step 4)."
+    status: completed
   - id: step4-stage
-    content: "Step 4: stage into the AppDir — `kivyforge/platforms/linux/native_stage.py` consuming the Step-3 shared helpers (single file under source basename + exec bit; `.zip` AND `.tar.gz`/`.tgz` extracted with path-traversal + collision guards; no empty bin/), staged into `usr/bin`; call it from `build_appdir` after `stage_wheels`; unit tests incl. tar.gz extraction + collision cases."
+    content: "Step 4: stage into the AppDir — (a) EXTEND the shared `native_stage_util._stage_one` with `.tar.gz`/`.tgz` extraction via `tarfile.extractall(filter=\"data\")` (a `_extract_tar` sibling to `_extract_zip`, same `_claim`/`_safe`-guards; benefits Windows too) + shared tar tests in `tests/artifacts/test_native_stage_util.py`; (b) add a thin `kivyforge/platforms/linux/native_stage.py` wrapper calling `stage_binaries(lock.native_binaries, work/\"usr\", ..., bin_label=\"usr/bin\")` and translating `NativeStageError` -> `AppDirError`; call it from `build_appdir` after `stage_wheels`; Linux wrapper + build_appdir-ordering tests (native staged after wheels; `usr/bin` absent when empty)."
     status: pending
   - id: step5-launcher
     content: "Step 5: AppRun exposure — prepend `usr/bin` to child PATH (helpers by name); append `usr/bin` to LD_LIBRARY_PATH (by-name .so + transitive NEEDED), Option B; both conditional on the app declaring native binaries; launcher tests asserting PATH-first + LD_LIBRARY_PATH-last."
@@ -57,10 +57,19 @@ engine, so Linux inherits it for free:
   `[[tool.kivyforge.native_binaries]]`, and `diff_summary` coverage
   (`lock/wheelruntime/`) — all platform-neutral; `build_wheel_runtime_lock`
   already accepts a `native_binaries=` argument.
+- **`kivyforge/artifacts/native_stage_util.py`** (Step 3, **already merged**) —
+  the shared staging mechanics: `stage_binaries(binaries, parent_dir, *,
+  project_root, cache, no_cache, bin_label)`, the neutral `NativeStageError`,
+  and the `_safe_extract` / `_claim` / `_make_executable` / `_fetch` /
+  `_extract_zip` internals. macOS already consumes it via a thin wrapper
+  (`bin_label="Contents/Resources/bin"`, translating to `AppBundleError`). Linux
+  reuses it verbatim; the only Step-4 change to this module is adding `.tar.gz`
+  extraction (which macOS does not currently use).
 
-So Steps 1–2 are almost entirely *wiring*, not new logic. The genuinely new
-Linux code is the shared-helper extraction (Step 3), the AppDir staging
-(Step 4), the AppRun exposure (Step 5), and the ELF-aware doctor check (Step 6).
+So Steps 1–3 are done or *wiring*, not new logic. The genuinely new
+Linux code is the AppDir staging (Step 4), the AppRun exposure (Step 5), and
+the ELF-aware doctor check (Step 6). The only genuinely new *shared* code is the
+`.tar.gz` branch added to the util in Step 4.
 
 ## Decisions (settle in the linux-spec update, Step 9)
 
@@ -119,31 +128,34 @@ Linux code is the shared-helper extraction (Step 3), the AppDir staging
   not a silent overwrite. Reuse the shared `_claim` logic (two single files with
   the same basename, two archives sharing a member, single file vs. archive
   member).
-- **Archive formats: `.zip` AND `.tar.gz`/`.tgz` — DECIDED.** macOS's
-  `native_stage.py` only special-cases `.zip`; everything else falls to the
-  "single file, copy as-is" branch. On Linux that is a silent-corruption trap:
-  `.tar.gz`/`.tgz` is the *dominant* distribution format for Linux SDKs and
-  helper bundles, and a tarball pointed at by `source` would be copied verbatim
-  into `usr/bin`, given an exec bit, and SHA-pinned — the app then can't find
-  the libraries, and nothing catches it (the tarball isn't an ELF, so the arch
-  check skips it). So Linux staging **extracts `.tar.gz`/`.tgz` too**, using
-  `tarfile.extractall(..., filter="data")` — the hardened extractor (strips
-  symlinks/hardlinks/device nodes/absolute members), which is the tar analog of
-  `_safe_extract` and more important for tar than zip (tarfile *restores*
-  symlinks, zipfile largely does not). This satisfies the format promise already
-  written into linux-spec (the macOS spec, which offers `.zip` only, is
-  unchanged). `.tar.gz` is a Linux extension of the shared helper, not a change
-  to macOS.
-- **Shared native-stage helpers — extract now (rule of three).** The macOS
-  `_safe_extract` / `_claim` / `_make_executable` / `_fetch` bodies are the
-  same code Linux (and, imminently, Windows) needs; the only per-platform
-  difference is the raised error type. Rather than a second (then third) copy,
-  Step 3 lifts the pure mechanics into `kivyforge/artifacts/native_stage_util.py`
-  and refactors macOS onto them in the same change. `_safe_extract` (path
-  traversal) and the tar `filter="data"` hardening above are security-sensitive
-  and must live in exactly one audited place — three copies guarantee drift. The
-  per-platform `*_stage.py` modules keep only their *orchestration* (bundle
-  layout: `Resources/bin` vs `usr/bin`, which error to raise).
+- **Archive formats: `.zip` AND `.tar.gz`/`.tgz` — DECIDED.** The merged shared
+  util (`native_stage_util._stage_one`) currently special-cases `.zip` only;
+  everything else falls to the "single file, copy as-is" branch. On Linux that
+  is a silent-corruption trap: `.tar.gz`/`.tgz` is the *dominant* distribution
+  format for Linux SDKs and helper bundles, and a tarball pointed at by `source`
+  would be copied verbatim into `usr/bin`, given an exec bit, and SHA-pinned —
+  the app then can't find the libraries, and nothing catches it (the tarball
+  isn't an ELF, so the arch check skips it). So Step 4 **adds `.tar.gz`/`.tgz`
+  extraction to the shared util** (a `_extract_tar` sibling to `_extract_zip`),
+  using `tarfile.extractall(..., filter="data")` — the hardened extractor
+  (strips symlinks/hardlinks/device nodes/absolute members), which is the tar
+  analog of `_safe_extract` and more important for tar than zip (tarfile
+  *restores* symlinks, zipfile largely does not). Adding it to the shared util
+  (not a Linux-local copy) means Windows inherits it too; macOS gains the
+  capability de facto but its spec/tests stay `.zip`-only (macOS projects simply
+  don't declare tar sources). This satisfies the format promise already written
+  into linux-spec.
+- **Shared native-stage helpers — extracted (rule of three), DONE.** The macOS
+  `_safe_extract` / `_claim` / `_make_executable` / `_fetch` bodies are the same
+  code Linux (and, imminently, Windows) needs; the only per-platform difference
+  is the raised error type. This was extracted in Step 3 (merged) into
+  `kivyforge/artifacts/native_stage_util.py`, which raises a neutral
+  `NativeStageError` and takes a `bin_label` for the collision message; macOS now
+  consumes it via a thin wrapper that translates `NativeStageError` ->
+  `AppBundleError`. `_safe_extract` (path traversal) and the tar `filter="data"`
+  hardening (Step 4) are security-sensitive and now live in exactly one audited
+  place. The per-platform `*_stage.py` modules keep only their *orchestration*
+  (`bin_label`: `Contents/Resources/bin` vs `usr/bin`; which error to raise).
 - **ELF arch check replaces Mach-O arch coverage.** macOS checks universal2
   slice coverage via `machotools`. Linux ships **one arch per AppImage**, so
   the check is simpler: every staged ELF's class (ELFCLASS32/64) + machine
@@ -200,70 +212,72 @@ Linux code is the shared-helper extraction (Step 3), the AppDir staging
 **Gate:** `kivyforge lock -p linux` on a project with declared binaries pins
 them (name/version/source/sha256), reproducibly.
 
-## Step 3 — extract shared native-stage helpers
+## Step 3 — extract shared native-stage helpers — DONE (merged)
 
-Before writing the Linux stager, lift the pure mechanics out of macOS's
-`native_stage.py` into a new **`kivyforge/artifacts/native_stage_util.py`**, and
-refactor macOS onto them in the **same change** so the existing macOS
-`test_native_stage.py` proves the extraction (no behavior change on macOS).
+Delivered by the separate `macos_native_stage_extraction` plan and merged. The
+merged shape:
 
-- Move the platform-neutral helpers: `_safe_extract` (zip path-traversal
-  guard), `_claim` (collision guard), `_make_executable` (exec-bit), and
-  `_fetch` (wraps `fetch_artifact`, catching **both** `DownloadError` and
-  `HashMismatch`). Also lift the single-file-vs-archive dispatch shape.
-- **Parameterize on the error type.** Each backend raises its own bundle error
-  (`AppBundleError` on macOS, `AppDirError` on Linux, the Windows analog next).
-  Either (a) pass the error class in, or (b) have the util raise a neutral
-  `NativeStageError` that each backend catches and re-raises as its own — pick
-  whichever reads cleaner; both keep the per-platform error surface intact.
-- **Why now, not per-platform copies.** `_safe_extract` (and the tar
-  `filter="data"` hardening added in Step 4) is security-sensitive; three
-  near-identical copies (macOS/Linux/Windows) guarantee a future fix drifts.
-  One audited implementation is the point. The per-platform `*_stage.py` modules
-  keep only their *orchestration* (bundle layout + which error to raise).
-- Tests: the existing macOS `tests/platforms/macos/test_native_stage.py` must
-  stay green unchanged; add focused unit tests for the extracted util
-  (`tests/artifacts/test_native_stage_util.py`) covering `_safe_extract`
-  traversal rejection and `_claim` collisions independent of any platform.
+- **`kivyforge/artifacts/native_stage_util.py`** owns the mechanics:
+  `stage_binaries(binaries, parent_dir, *, project_root, cache=None,
+  no_cache=False, bin_label)` creates `parent_dir/bin` only when non-empty, then
+  `_stage_one`s each entry with a shared `claimed` guard. The internals
+  (`_safe_extract`, `_claim`, `_make_executable`, `_fetch`, `_extract_zip`) moved
+  here verbatim.
+- **Neutral error (option b chosen).** The util raises `NativeStageError`; each
+  backend's thin wrapper translates it — matching the
+  `NativeBinaryResolverError` → `WheelRuntimeBuildError` precedent. `bin_label`
+  parameterizes the collision message (no error class threaded through).
+- **`kivyforge/platforms/macos/native_stage.py`** is now a wrapper: it calls
+  `stage_binaries(lock.native_binaries, resources, ..., bin_label=
+  "Contents/Resources/bin")` and catches `NativeStageError` → raises
+  `AppBundleError(str(exc))`. `LockedNativeBinary` is imported under
+  `TYPE_CHECKING` in the util to avoid an import cycle.
+- Tests: `tests/platforms/macos/test_native_stage.py` stayed green unchanged;
+  `tests/artifacts/test_native_stage_util.py` covers the util in isolation.
 
-**Gate:** macOS native-binary staging is byte-for-byte unchanged; the shared
-helpers exist and are unit-tested in isolation.
+**Status:** complete. The util is currently `.zip`-only; the `.tar.gz` branch is
+added by Step 4.
 
 ## Step 4 — stage into the AppDir (`usr/bin`)
 
-New `kivyforge/platforms/linux/native_stage.py`, consuming the Step-3 shared
-helpers (its own module holds only the Linux orchestration):
+Two parts: (a) a small addition to the **shared** util, and (b) a thin Linux
+wrapper.
 
-- `stage_native_binaries(lock, usr_dir, *, project_root, cache, no_cache)`:
-  return early if `not lock.native_binaries`; else create `usr_dir / "bin"`,
-  and for each entry `_stage_one` into it with a shared `claimed: dict` guard.
-- `_stage_one`: single file → copy under its **source basename** (so
-  `libgreet.so` keeps its extension for by-name/by-path loads — the same fix
-  the macOS work needed) + set exec bit. Archive → extract, `_claim` each
-  member, set the exec bit. Dispatch on the source extension:
-  - `.zip` → `_safe_extract` (the shared zip guard).
-  - **`.tar.gz` / `.tgz` → `tarfile.extractall(..., filter="data")`** — the
-    hardened extractor (strips symlinks/hardlinks/device nodes/absolute and
-    escaping members), the tar analog of `_safe_extract`. This is the Linux
-    addition over macOS (see the "Archive formats" decision); without it a
-    tarball `source` silently lands as a single opaque file in `usr/bin`.
-- Errors surface as `AppDirError` (via the parameterized shared `_fetch` /
-  extract helpers).
+**(a) Add `.tar.gz`/`.tgz` extraction to `native_stage_util`** (shared, so
+Windows inherits it). In `_stage_one`, dispatch on the source extension:
+- `.zip` → existing `_extract_zip` (`_safe_extract` guard).
+- **`.tar.gz` / `.tgz` → a new `_extract_tar`** using
+  `tarfile.extractall(..., filter="data")` — the hardened extractor (strips
+  symlinks/hardlinks/device nodes/absolute and escaping members), the tar analog
+  of `_safe_extract`. Without it a tarball `source` silently lands as a single
+  opaque file in `bin/` (see the "Archive formats" decision). Each extracted
+  member is `_claim`ed + exec-bit set, same as zip.
+- Extend `tests/artifacts/test_native_stage_util.py`: `.tar.gz` extraction
+  preserves structure; a traversing/symlink member is rejected with
+  `NativeStageError`.
+
+**(b) New `kivyforge/platforms/linux/native_stage.py`** — a wrapper mirroring the
+macOS one:
+
+- `stage_native_binaries(lock, usr_dir, *, project_root, cache=None,
+  no_cache=False)`: calls `stage_binaries(lock.native_binaries, usr_dir,
+  project_root=..., cache=..., no_cache=..., bin_label="usr/bin")` and catches
+  `NativeStageError` → raises `AppDirError(str(exc))`.
 - Wire into `build_appdir` (`platforms/linux/bundle.py`): after `stage_wheels`,
   call `stage_native_binaries(lock, work / "usr", ...)` inside the try/temp-tree
   block so a fetch failure discards the half-built AppDir (the existing
   atomic-swap discipline covers it for free).
-- Tests (`tests/platforms/linux/test_native_stage.py`): single-file staging
-  keeps source basename + is executable; `.zip` extraction preserves structure;
-  **`.tar.gz` extraction preserves structure and rejects a traversing/symlink
-  member**; hash mismatch → `AppDirError`; missing vendored file → `AppDirError`;
-  collision cases (two single files same basename, two archives sharing a
-  member, single vs archive member). Plus a `build_appdir` ordering test (native
-  staged after wheels; `usr/bin` absent when the table is empty).
+- Tests (`tests/platforms/linux/test_native_stage.py`): the Linux wrapper
+  translates to `AppDirError` (a hash mismatch / missing vendored file / a
+  collision each surface as `AppDirError`); plus a `build_appdir` ordering test
+  (native staged after wheels; `usr/bin` absent when the table is empty). The
+  detailed single-file / `.zip` / `.tar.gz` / collision mechanics are already
+  covered once in the shared util tests — the Linux tests just prove the
+  wiring + error translation.
 
 **Gate:** `kivyforge build -p linux` stages declared binaries into
 `<Name>.AppDir/usr/bin` (single files, `.zip`, and `.tar.gz`); collisions fail
-loudly.
+loudly as `AppDirError`.
 
 ## Step 5 — AppRun exposure
 
