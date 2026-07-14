@@ -4,16 +4,16 @@ overview: Extract the pure native-binary staging mechanics out of the macOS nati
 todos:
   - id: create-util
     content: "Create kivyforge/artifacts/native_stage_util.py: define NativeStageError; move _stage_one/_fetch/_extract_zip/_claim/_make_executable/_safe_extract from the macOS module, raising NativeStageError and using a bin_label param in the collision message; add public stage_binaries(binaries, parent_dir, *, project_root, cache, no_cache, bin_label); import LockedNativeBinary only under TYPE_CHECKING."
-    status: pending
+    status: completed
   - id: refactor-macos
     content: "Reduce kivyforge/platforms/macos/native_stage.py to a thin wrapper: keep the public stage_native_binaries(lock, resources, ...) signature, delegate to stage_binaries with bin_label='Contents/Resources/bin', and catch NativeStageError -> re-raise AppBundleError(str(exc)) from exc. Remove the now-moved private helpers."
-    status: pending
+    status: completed
   - id: util-tests
     content: "Add tests/artifacts/test_native_stage_util.py: platform-agnostic tests for _safe_extract traversal rejection and _claim collision (assert NativeStageError), plus happy-path single-file and zip staging using an arbitrary parent_dir and bin_label."
-    status: pending
+    status: completed
   - id: verify-green
     content: Run the macOS native-stage + bundle tests (unchanged, green), the new util tests, and ruff on the touched files; then full pytest with coverage >= 80% to confirm no regressions.
-    status: pending
+    status: completed
 isProject: false
 ---
 
