@@ -391,7 +391,7 @@ This project exists thanks to
 [all the people who contribute](https://github.com/ElliotGarbus/kivyforge/graphs/contributors).
 [[Become a contributor](CONTRIBUTING.md)].
 
-<img src="https://contrib.nn.ci/api?repo=kivy/python-for-android&pages=5&no_bot=true&radius=22&cols=18">
+<img src="https://contrib.nn.ci/api?repo=ElliotGarbus/kivyforge&pages=5&no_bot=true&radius=22&cols=18">
 
 ## Backers
 
