@@ -91,7 +91,10 @@ class TestStageNativeBinaries:
         usr.mkdir()
         lock = _lock(
             LockedNativeBinary(
-                "sdk", "1.0", _sha256(archive.read_bytes()), path="binaries/linux/sdk.tar.gz"
+                "sdk",
+                "1.0",
+                _sha256(archive.read_bytes()),
+                path="binaries/linux/sdk.tar.gz",
             )
         )
         stage_native_binaries(lock, usr, project_root=tmp_path)

@@ -251,9 +251,7 @@ def _elf_bytes(*, elf_class=2, ei_data=1, e_machine=62) -> bytes:
 
 
 def _nb_config(entries: str, archs="['x86_64']"):
-    return _linux_config(
-        f"\n[tool.kivy.linux.native.binaries]\n{entries}", archs=archs
-    )
+    return _linux_config(f"\n[tool.kivy.linux.native.binaries]\n{entries}", archs=archs)
 
 
 def _built_bin_dir(tmp_path, display="myapp"):
@@ -268,9 +266,7 @@ class TestNativeBinaries:
         assert r.status is Status.SKIP
 
     def test_vendored_missing_fails(self, tmp_path):
-        cfg = _nb_config(
-            'roll = { version = "1.0", source = "binaries/linux/roll" }'
-        )
+        cfg = _nb_config('roll = { version = "1.0", source = "binaries/linux/roll" }')
         r = L.check_linux_native_binaries(cfg, tmp_path)
         assert r.status is Status.FAIL
         assert "not found" in r.detail
@@ -278,9 +274,7 @@ class TestNativeBinaries:
     def test_sources_present_passes(self, tmp_path):
         (tmp_path / "binaries" / "linux").mkdir(parents=True)
         (tmp_path / "binaries" / "linux" / "roll").write_bytes(b"x")
-        cfg = _nb_config(
-            'roll = { version = "1.0", source = "binaries/linux/roll" }'
-        )
+        cfg = _nb_config('roll = { version = "1.0", source = "binaries/linux/roll" }')
         r = L.check_linux_native_binaries(cfg, tmp_path)
         assert r.status is Status.PASS
 

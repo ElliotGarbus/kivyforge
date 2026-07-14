@@ -99,7 +99,7 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 > **Detailed documentation.** For the full design and reference docs — the
 > cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
 > artifact distribution, the CLI shape, and the per-platform backends (iOS,
-> macOS) — start with the
+> macOS, Linux) — start with the
 > [kivyforge design overview](docs/design/common/00-overview.md).
 
 ## Quick start (iOS)
@@ -203,6 +203,9 @@ Kivy 3.0** (vendored, pre-release):
 - [`desktop-viewer`](examples/desktop/desktop-viewer/) — a desktop-focused Kivy app
   (resizable window, ⌘ keyboard shortcuts, the native macOS open panel; the panel
   is a no-op on Linux).
+- [`hello-native`](examples/desktop/hello-native/) — ships **non-wheel** native
+  binaries (a helper executable + a shared library) via
+  `[tool.kivy.<platform>.native.binaries]`; builds and runs on macOS and Linux.
 
 **Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS/Android, Kivy 3.0 from
 [`examples/wheels/ios/`](examples/wheels/ios/):

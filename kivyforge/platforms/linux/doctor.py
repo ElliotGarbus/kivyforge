@@ -284,14 +284,7 @@ def check_linux_native_binaries(config: Config, project_root: Path) -> CheckResu
 
     archs = config.linux_required.archs
     expected = {ARCH_ELF[a] for a in archs if a in ARCH_ELF}
-    bin_dir = (
-        root
-        / "build"
-        / "linux"
-        / f"{config.display_name}.AppDir"
-        / "usr"
-        / "bin"
-    )
+    bin_dir = root / "build" / "linux" / f"{config.display_name}.AppDir" / "usr" / "bin"
     if expected and bin_dir.is_dir():
         problems: list[str] = []
         elves = 0

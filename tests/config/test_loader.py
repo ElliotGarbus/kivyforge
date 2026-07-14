@@ -1060,21 +1060,16 @@ class TestLinuxNativeBinaries:
     def test_missing_version_rejected(self):
         with pytest.raises(ConfigError, match="requires a string 'version'"):
             _linux(
-                "[tool.kivy.linux.native.binaries]\n"
-                'sdk = { source = "libgreet.so" }\n'
+                '[tool.kivy.linux.native.binaries]\nsdk = { source = "libgreet.so" }\n'
             )
 
     def test_missing_source_rejected(self):
         with pytest.raises(ConfigError, match="requires an explicit 'source'"):
-            _linux(
-                "[tool.kivy.linux.native.binaries]\nsdk = { version = \"1.0\" }\n"
-            )
+            _linux('[tool.kivy.linux.native.binaries]\nsdk = { version = "1.0" }\n')
 
     def test_non_table_entry_rejected(self):
         with pytest.raises(ConfigError, match="must be an inline table"):
-            _linux(
-                '[tool.kivy.linux.native.binaries]\nsdk = "libgreet.so"\n'
-            )
+            _linux('[tool.kivy.linux.native.binaries]\nsdk = "libgreet.so"\n')
 
 
 class TestIosAndLinuxCoexist:

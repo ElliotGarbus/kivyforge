@@ -12,9 +12,7 @@ from kivyforge.platforms.linux.lock import build_linux_lockfile, dumps
 from .conftest import FakeLinuxResolver, FakeRuntimeProvider
 
 GOLDEN = Path(__file__).parents[1] / "data" / "golden_pylock.linux.toml"
-GOLDEN_NATIVE = (
-    Path(__file__).parents[1] / "data" / "golden_pylock.linux.native.toml"
-)
+GOLDEN_NATIVE = Path(__file__).parents[1] / "data" / "golden_pylock.linux.native.toml"
 
 
 def test_golden_lockfile(linux_pyproject, tmp_path, monkeypatch):
