@@ -90,8 +90,9 @@ exclude = [
 [tool.kivy.windows.python]
 version = "3.13.14"
 
-# The Windows siblings of the binaries above (built by ./build_native.sh into
-# binaries/windows/ — see the Windows branch in that script). `kivyforge lock -p
+# The Windows siblings of the binaries above. Build them with build_native.ps1
+# (MSVC via vswhere — the typical Windows dev box) or build_native.sh under
+# git-bash with gcc/clang; both write binaries/windows/. `kivyforge lock -p
 # windows` SHA-256-pins each; the build stages them into bin\, and the generated
 # bootstrap registers bin\ with os.add_dll_directory + prepends it to PATH, so
 # roll.exe runs by name and greet.dll loads by name (ctypes.WinDLL("greet.dll")).

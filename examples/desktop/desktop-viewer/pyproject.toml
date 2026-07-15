@@ -37,28 +37,3 @@ source = "assets/icon.png"
 
 [tool.kivy.macos.python]
 version = "3.13.14"
-
-# The desktop-native UX (resizable window, keyboard shortcuts, file-open dialog)
-# also maps to Windows: an onedir bundle from the PyPI Kivy 2.3.1 win_amd64
-# wheels. app_id is the AppUserModelID.
-[tool.kivy.windows]
-schema_version = 1
-app_id = "Example.DesktopViewer"
-archs = ["amd64"]
-exclude = [
-    "kivy-garden",
-    "requests",
-    "certifi",
-    "charset-normalizer",
-    "idna",
-    "urllib3",
-    "docutils",
-    "pygments",
-]
-
-[tool.kivy.windows.icons]
-# 1024x1024 PNG rendered into a multi-resolution .ico for the launcher (Pillow).
-source = "assets/icon.png"
-
-[tool.kivy.windows.python]
-version = "3.13.14"

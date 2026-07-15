@@ -238,9 +238,9 @@ Kivy 3.0** (vendored, pre-release):
   runs on macOS, Linux, and Windows today** from PyPI (Kivy 2.3.1).
 - [`notes`](examples/desktop/notes/) — Kivy app with a pure-Python dependency
   (`platformdirs`); builds on macOS, Linux, and Windows from PyPI.
-- [`desktop-viewer`](examples/desktop/desktop-viewer/) — a desktop-focused Kivy app
-  (resizable window, ⌘ keyboard shortcuts, the native macOS open panel; the panel
-  is a no-op on Linux/Windows).
+- [`desktop-viewer`](examples/desktop/desktop-viewer/) — a **macOS-only** Kivy app
+  (resizable window, ⌘ keyboard shortcuts, and Finder's native open panel via
+  `osascript`); no Linux/Windows overlay.
 - [`hello-native`](examples/desktop/hello-native/) — ships **non-wheel** native
   binaries (a helper executable + a shared library) via
   `[tool.kivy.<platform>.native.binaries]`; builds and runs on macOS, Linux, and

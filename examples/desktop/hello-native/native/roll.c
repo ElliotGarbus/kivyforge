@@ -8,7 +8,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <process.h> /* _getpid (MSVC has no POSIX unistd.h) */
+#define getpid _getpid
+#else
 #include <unistd.h>
+#endif
 
 int main(void) {
     srand((unsigned)time(NULL) ^ (unsigned)getpid());

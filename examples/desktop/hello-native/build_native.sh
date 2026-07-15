@@ -9,8 +9,10 @@
 #   Windows: binaries/windows/{roll.exe,greet.dll}  (amd64; run under git-bash)
 #
 # The host platform is auto-detected, so the same script serves all three desktop
-# backends (Windows via git-bash / MSYS2, where uname reports MINGW*/MSYS*). These
-# artifacts are gitignored (they are build output, and a C compiler is already a
+# backends (Windows via git-bash / MSYS2, where uname reports MINGW*/MSYS*). On a
+# Windows box with Visual Studio but no mingw/git-bash, use build_native.ps1
+# (MSVC) instead — it produces the same binaries/windows/{roll.exe,greet.dll}.
+# These artifacts are gitignored (they are build output, and a C compiler is a
 # desktop-backend requirement). Run this once before `kivyforge lock -p <platform>`.
 #
 # Windows toolchain: this script uses a mingw/clang C compiler (gcc or clang on

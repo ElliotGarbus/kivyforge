@@ -29,8 +29,8 @@
     keep the freshly generated one. Pass -KeepLock to leave regenerated locks.
 
 .PARAMETER Examples
-    One or more example names to run (default: dice-roller, notes, desktop-viewer,
-    hello-native).
+    One or more example names to run (default: dice-roller, notes, hello-native).
+    desktop-viewer is macOS-only, so it is not in the Windows default set.
 
 .PARAMETER NoPause
     Do not wait for Enter between examples.
@@ -72,7 +72,8 @@ if (-not (Get-Command kivyforge -ErrorAction SilentlyContinue)) {
 
 $env:KIVYFORGE_PLATFORM = "windows"
 $Lock = "pylock.windows.toml"
-$DefaultExamples = @("dice-roller", "notes", "desktop-viewer", "hello-native")
+# desktop-viewer is macOS-only (osascript panel, ⌘ shortcuts) — no Windows overlay.
+$DefaultExamples = @("dice-roller", "notes", "hello-native")
 if (-not $Examples -or $Examples.Count -eq 0) { $Examples = $DefaultExamples }
 
 $Passed = @(); $Failed = @(); $Skipped = @(); $Drifted = @()
@@ -150,7 +151,10 @@ function Launch-Artifact {
     }
     Write-Host ""
     Write-Host ">>> artifact: launching $($exe.FullName)"
-    & $exe.FullName
+    # The launcher is a /SUBSYSTEM:WINDOWS (GUI) exe; PowerShell's call operator
+    # does NOT wait for GUI apps, so -Wait is required or the script races ahead
+    # and prompts for the next example before this window is even closed.
+    Start-Process -FilePath $exe.FullName -Wait
     return $true
 }
 
@@ -175,16 +179,19 @@ foreach ($ex in $Examples) {
     $ok = $true
     $script:DriftThis = $false
     try {
-        # 0. native pre-step - hello-native ships build_native.sh with a Windows
-        #    branch. It is a bash script, so run it through git-bash if available;
-        #    otherwise warn (the vendored binaries must already be present).
-        if (Test-Path ".\build_native.sh") {
+        # 0. native pre-step - hello-native builds two native binaries. Prefer
+        #    the MSVC-based build_native.ps1 (typical Windows dev box has Visual
+        #    Studio, not mingw); fall back to build_native.sh via bash when a
+        #    real bash + gcc/clang is available; else warn.
+        if (Test-Path ".\build_native.ps1") {
+            if (-not (Run-Step "native" { & .\build_native.ps1 })) { $ok = $false }
+        } elseif (Test-Path ".\build_native.sh") {
             $bash = Get-Command bash -ErrorAction SilentlyContinue
             if ($bash) {
                 if (-not (Run-Step "native" { bash ./build_native.sh })) { $ok = $false }
             } else {
-                Write-Host ">>> native: bash not found; assuming binaries\windows\ " `
-                    "is already populated (see build_native.sh Windows branch)."
+                Write-Host ">>> native: no build_native.ps1 and bash not found; " `
+                    "assuming binaries\windows\ is already populated."
             }
         }
         if ($ok) {
