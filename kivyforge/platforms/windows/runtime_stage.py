@@ -19,7 +19,9 @@ classic clean-machine failure.
 
 from __future__ import annotations
 
+import os
 import shutil
+import struct
 import tarfile
 import tempfile
 from pathlib import Path
@@ -33,6 +35,7 @@ from kivyforge.lock.wheelruntime.runtime import (
 )
 
 from . import WindowsBundleError
+from .petools import machine_for_arch, read_pe_machine
 
 # CPython itself links these; without them python.exe will not start. PBS ships
 # them, so the check is normally a no-op.
@@ -81,49 +84,82 @@ def stage_runtime(
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    ensure_vc_runtime(home, system_dir=system_dir)
+    ensure_vc_runtime(home, arch=arch, system_dir=system_dir)
     return home
 
 
-def ensure_vc_runtime(home: Path, *, system_dir: Path | None = None) -> tuple[str, ...]:
+def ensure_vc_runtime(
+    home: Path, *, arch: str = "amd64", system_dir: Path | None = None
+) -> tuple[str, ...]:
     """Guarantee the VC++ runtime DLLs the prefix needs sit next to python.exe.
 
     Returns the DLLs this step placed app-local (empty when the runtime already
     provides everything, the common PBS case). Raises if a *core* CPython DLL is
     missing and cannot be sourced — python.exe could not start otherwise.
+
+    Any DLL taken from the host fallback is checked against *arch*: under a
+    32-bit Python process ``C:\\Windows\\System32`` is WOW64-redirected to the
+    x86 ``SysWOW64``, so a naive copy could put an x86 runtime into an amd64
+    bundle. Mismatched host DLLs are refused (core) or skipped (msvcp140).
     """
-    source = system_dir if system_dir is not None else DEFAULT_SYSTEM_DIR
+    source = system_dir if system_dir is not None else _default_system_dir()
     placed: list[str] = []
 
     for dll in CORE_VC_RUNTIME:
         if (home / dll).is_file():
             continue
-        if _copy_from(source, dll, home):
+        if _copy_from(source, dll, home, arch):
             placed.append(dll)
         else:
             raise WindowsBundleError(
-                f"the staged runtime is missing {dll} and it was not found in "
-                f"{source}. python.exe cannot start without the VC++ runtime; "
-                "the runtime archive or a VC++ redistributable source is required."
+                f"the staged runtime is missing {dll} and no {arch} copy was "
+                f"found in {source}. python.exe cannot start without the VC++ "
+                "runtime; the runtime archive or a matching-architecture VC++ "
+                "redistributable is required."
             )
 
     # Best-effort: only place the C++ runtime app-local when the runtime omits
     # it. A dep wheel may still ship it into site-packages; that is fine.
     if not (home / CXX_VC_RUNTIME).is_file() and _copy_from(
-        source, CXX_VC_RUNTIME, home
+        source, CXX_VC_RUNTIME, home, arch
     ):
         placed.append(CXX_VC_RUNTIME)
 
     return tuple(placed)
 
 
-def _copy_from(source: Path, name: str, home: Path) -> bool:
-    """Copy *source*/*name* to *home*; return whether it was copied."""
+def _copy_from(source: Path, name: str, home: Path, arch: str) -> bool:
+    """Copy *source*/*name* to *home* iff it matches *arch*; return if copied.
+
+    A host DLL whose PE machine type does not match the target architecture is
+    treated as absent — never copied — so a WOW64-redirected (x86) fallback or
+    any other wrong-arch source cannot poison the bundle.
+    """
     candidate = source / name
     if not candidate.is_file():
         return False
+    expected = machine_for_arch(arch)
+    machine = read_pe_machine(candidate)
+    if expected is not None and machine is not None and machine != expected:
+        return False
     shutil.copy2(candidate, home / name)
     return True
+
+
+def _default_system_dir() -> Path:
+    """The host source for VC-runtime fallbacks, WOW64-redirection aware.
+
+    A 32-bit Python process has ``System32`` file-system-redirected to the x86
+    ``SysWOW64``; the ``Sysnative`` pseudo-directory reaches the real 64-bit
+    ``System32`` from such a process. On a 64-bit interpreter ``System32`` is
+    already correct.
+    """
+    if struct.calcsize("P") == 4:  # 32-bit interpreter
+        root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        sysnative = root / "Sysnative"
+        if sysnative.is_dir():
+            return sysnative
+    return DEFAULT_SYSTEM_DIR
 
 
 def _fetch(artifact, arch, project_root, cache, no_cache) -> Path:

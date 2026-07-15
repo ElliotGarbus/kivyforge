@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+import struct
 import tarfile
 
 import pytest
 
 from kivyforge.lock.wheelruntime.model import PythonRuntime, RuntimeArtifact
 from kivyforge.platforms.windows import WindowsBundleError, runtime_stage
+from kivyforge.platforms.windows.petools import (
+    IMAGE_FILE_MACHINE_AMD64,
+    IMAGE_FILE_MACHINE_I386,
+)
+
+
+def _pe_bytes(machine: int) -> bytes:
+    """Minimal but valid PE header carrying *machine* (petools reads this)."""
+    buf = bytearray(0x48)
+    buf[0:2] = b"MZ"
+    struct.pack_into("<I", buf, 0x3C, 0x40)  # PE header offset
+    buf[0x40:0x44] = b"PE\x00\x00"
+    struct.pack_into("<H", buf, 0x44, machine)
+    return bytes(buf)
 
 
 def _make_pbs_archive(path, *, with_core_vc: bool = True) -> None:
@@ -114,6 +129,47 @@ class TestEnsureVcRuntime:
             (home / dll).write_bytes(b"MZ")
         placed = runtime_stage.ensure_vc_runtime(home, system_dir=tmp_path / "empty")
         assert placed == ()
+
+    def test_wrong_arch_core_dll_is_refused(self, tmp_path):
+        # A 32-bit (x86) System32 fallback (WOW64 redirection) must never satisfy
+        # an amd64 bundle's missing core runtime.
+        home = tmp_path / "python"
+        home.mkdir()
+        (home / "vcruntime140.dll").write_bytes(b"MZ")  # one present, one missing
+        sysdir = tmp_path / "system32"
+        sysdir.mkdir()
+        (sysdir / "vcruntime140_1.dll").write_bytes(_pe_bytes(IMAGE_FILE_MACHINE_I386))
+        with pytest.raises(WindowsBundleError, match="no amd64 copy was found"):
+            runtime_stage.ensure_vc_runtime(home, arch="amd64", system_dir=sysdir)
+        assert not (home / "vcruntime140_1.dll").is_file()
+
+    def test_wrong_arch_msvcp_is_skipped(self, tmp_path):
+        home = tmp_path / "python"
+        home.mkdir()
+        for dll in runtime_stage.CORE_VC_RUNTIME:
+            (home / dll).write_bytes(b"MZ")
+        sysdir = tmp_path / "system32"
+        sysdir.mkdir()
+        (sysdir / runtime_stage.CXX_VC_RUNTIME).write_bytes(
+            _pe_bytes(IMAGE_FILE_MACHINE_I386)
+        )
+        placed = runtime_stage.ensure_vc_runtime(home, arch="amd64", system_dir=sysdir)
+        assert placed == ()
+        assert not (home / runtime_stage.CXX_VC_RUNTIME).is_file()
+
+    def test_matching_arch_dll_is_copied(self, tmp_path):
+        home = tmp_path / "python"
+        home.mkdir()
+        for dll in runtime_stage.CORE_VC_RUNTIME:
+            (home / dll).write_bytes(b"MZ")
+        sysdir = tmp_path / "system32"
+        sysdir.mkdir()
+        (sysdir / runtime_stage.CXX_VC_RUNTIME).write_bytes(
+            _pe_bytes(IMAGE_FILE_MACHINE_AMD64)
+        )
+        placed = runtime_stage.ensure_vc_runtime(home, arch="amd64", system_dir=sysdir)
+        assert placed == (runtime_stage.CXX_VC_RUNTIME,)
+        assert (home / runtime_stage.CXX_VC_RUNTIME).is_file()
 
 
 class TestExtract:
