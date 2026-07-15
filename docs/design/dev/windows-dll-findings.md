@@ -124,9 +124,9 @@ also protects the Windows backend:
   (`greet.dll`, `roll.exe`). The only `Valid` signatures are incidental and not
   ours: PSF-signed Tcl/Tk (`tcl86t.dll`, `tk86t.dll`), Microsoft-signed VC
   runtime (`msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), and
-  Microsoft `d3dcompiler_47.dll`. So the payload is effectively unsigned and is
-  a v2 tree-signing-sweep input; it only affects Smart App Control / WDAC
-  machines, not ordinary SmartScreen.
+  Microsoft `d3dcompiler_47.dll`. So the payload is effectively unsigned;
+  signing it would only affect Smart App Control / WDAC machines (never ordinary
+  SmartScreen) and is not planned.
 
 _Status: Part 1 complete; the VC-runtime open question is RESOLVED (Phase 4,
 above). The Windows backend is implemented and covered by the full test suite

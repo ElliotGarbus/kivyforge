@@ -81,8 +81,9 @@ Out of scope (deferred / external):
   self-extracting single `.exe` unpacks to `%TEMP%` on every launch (slow cold
   start, AV suspicion), and its embedded payload binaries cannot be signed
   post-build — PyInstaller has to re-sign at build time for exactly this
-  reason. onedir keeps every file real and signable, which is what keeps
-  payload-DLL signing *possible* later (a Smart App Control concern).
+  reason. onedir keeps every file real and signable, which keeps payload-DLL
+  signing *possible* if ever needed (a Smart App Control concern only, not
+  planned).
 - **Installers — permanently external, a scope decision (not deferred
   pending demand).** kivyforge's boundary is the signed runnable artifact:
   the onedir folder + launcher `.exe`, per
@@ -445,12 +446,13 @@ What kivyforge does with a declared entry, per pipeline stage:
   each staged PE's **machine type matches the target arch** (an x86 DLL in
   an amd64 app is a classic silent failure that surfaces only as a cryptic
   load error at runtime).
-- **signing** — the (v2) payload sweep signs *every PE in the tree*, so
-  `bin\` is covered automatically. This matters doubly for helper `.exe`s: a
-  spawned unsigned executable is judged by SmartScreen heuristics and Smart
-  App Control on its own, separate from the launcher's reputation. (Another
-  thing onedir preserves: every declared file stays real and individually
-  signable.)
+- **signing** — v1 signs only the launcher; a full payload sweep that would
+  also cover `bin\` is **not planned** (it only matters under Smart App Control
+  / WDAC). onedir keeps that possible regardless: every declared file — helper
+  `.exe`s included — stays real and individually signable. This matters for
+  helper `.exe`s specifically, because a spawned unsigned executable is judged
+  by SmartScreen heuristics and Smart App Control on its own, separate from the
+  launcher's reputation.
 
 **The boundary, stated so the channel can't creep:** kivyforge fetches,
 verifies, stages, registers, and signs declared binaries. It does **not**
@@ -745,9 +747,9 @@ settled (recorded under "Settled decisions" in the
       `.pyd`/DLLs) as `NotSigned`; the only `Valid` signatures in the tree are
       incidental — the PSF-signed Tcl/Tk DLLs (`tcl86t.dll`, `tk86t.dll`) and
       Microsoft-signed VC runtime (`msvcp140.dll`, `vcruntime140*.dll`) +
-      `d3dcompiler_47.dll`. So the payload is effectively unsigned and folds
-      into the optional v2 tree-signing sweep; only affects Smart App Control /
-      WDAC machines. See [windows-dll-findings.md](../../dev/windows-dll-findings.md).
+      `d3dcompiler_47.dll`. So the payload is effectively unsigned; signing it
+      would only affect Smart App Control / WDAC machines and is not planned.
+      See [windows-dll-findings.md](../../dev/windows-dll-findings.md).
 - [x] **Verify PBS bundles `vcruntime140.dll` / `vcruntime140_1.dll` /
       `msvcp140.dll`** next to `python.exe`. RESOLVED (Phase 4): PBS ships
       `vcruntime140.dll` + `vcruntime140_1.dll` but **not** `msvcp140.dll`;

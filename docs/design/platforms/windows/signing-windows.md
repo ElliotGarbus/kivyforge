@@ -108,10 +108,11 @@ the [spec's build/package split](windows-spec.md#init--build--run--package--stat
 2. **Sign the launcher `.exe`** — the file SmartScreen and users actually
    judge. Always timestamped (see below).
 3. **Payload DLLs/`.pyd`s** (`python.exe`, `python3xx.dll`, `SDL3.dll`, wheel
-   extensions, ...) — **deferred to v2**; this matters only under Smart App
-   Control / WDAC, not SmartScreen. onedir is what keeps it possible later:
-   every payload file is real on disk and individually signable, which
-   onefile would have foreclosed.
+   extensions, ...) — **not signed; not planned.** This matters only under
+   Smart App Control / WDAC (which judge each PE individually), never under
+   SmartScreen, and no upstream demand exists for it. onedir keeps it possible
+   if that ever changes: every payload file is real on disk and individually
+   signable, which onefile would have foreclosed.
 
 Windows signing is *flat* — a PKCS#7 blob appended to each PE independently —
 unlike macOS's *structural* bundle seal (nested seals, inside-out ordering).
@@ -154,7 +155,7 @@ can reach an artifact the other cannot:
 | Artifact | Signed by | Why |
 |---|---|---|
 | Launcher `.exe` in the onedir tree | **kivyforge** | Inno's `[Files]` sign flag only fires for files passing through an Inno compile — the portable-folder deliverable never does |
-| Payload DLLs (optional, v2) | **kivyforge** | Same reason; only matters for Smart App Control / WDAC |
+| Payload DLLs (not signed — out of scope) | *(kivyforge, if ever needed)* | Inno can't reach them either; only Smart App Control / WDAC would care |
 | `setup.exe` | **Inno** (`SignTool` directive) | Doesn't exist until Inno compile time |
 | Uninstaller (`unins000.exe`) | **Inno** (`SignedUninstaller`) | Generated on the *end user's* machine at install time — structurally unreachable from outside Inno |
 
@@ -206,9 +207,12 @@ signtool sign /sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /t
 
 ## Deferred
 
-- **Payload-DLL signing** — a Smart App Control concern (SAC enforces more
-  strictly than SmartScreen and can object to unsigned payload DLLs). v2;
-  kept possible by onedir.
+- **Payload-DLL signing** — **not planned (effectively out of scope).** Signing
+  every payload PE (`python.exe`, `SDL3.dll`, the `.pyd`s, ...) only matters
+  under Smart App Control / WDAC, which evaluate each PE individually; it does
+  **nothing** for SmartScreen, and there is no upstream demand for it (the Kivy
+  issue tracker shows only AV false positives, never a code-signing request).
+  onedir keeps it technically possible if that ever changes.
 - **PBS binary signatures** — RESOLVED: PBS's `python.exe`/`python3xx.dll` are
   **unsigned** (verified with `Get-AuthenticodeSignature` over a built bundle;
   see the [spec's open items](windows-spec.md#open-items) and

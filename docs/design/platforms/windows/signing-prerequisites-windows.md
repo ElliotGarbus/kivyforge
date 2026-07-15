@@ -78,8 +78,9 @@ signing is configured). See the
 - **Only the `dist\windows\...` copy** — the `build\windows` dev tree stays
   unsigned and re-runnable.
 - **Payload DLLs/`.pyd`s** (CPython, Kivy, SDL, declared native binaries) are
-  **not** signed in v1; that is a v2 concern and only matters under Smart App
-  Control / WDAC, not SmartScreen. onedir keeps them individually signable later.
+  **not** signed, and signing them is not planned; it would only matter under
+  Smart App Control / WDAC, not SmartScreen. onedir keeps them individually
+  signable if that ever changes.
 
 ## Development & test with a self-signed cert
 

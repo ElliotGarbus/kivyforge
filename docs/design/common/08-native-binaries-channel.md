@@ -70,7 +70,7 @@ divergence is entirely about shared libraries.
 |----------|-----------|-----------------------|------------|---------------------|
 | **macOS** (shipped) | `Contents/Resources/bin` | **By path only** — `DYLD_*` is stripped under SIP / Hardened Runtime, so no by-name option exists. `PATH` prepend for helpers. | Mach-O universal2 slice coverage (`machotools`) | Deep-sign sweep already walks every Mach-O; notarization *requires* it |
 | **Linux** (shipped) | `usr/bin` | **By name via `LD_LIBRARY_PATH` append** (helpers on `PATH`) — append keeps host libGL/libEGL resolution first while enabling soname + transitive `NEEDED` loads. See [linux-spec §"Library loading model"](../platforms/linux/linux-spec.md#library-loading-model). | ELF class + `e_machine` (a small hermetic reader) | None — Linux has no signing analog |
-| **Windows** (shipped) | `<bundle>\bin` | **By name via `os.add_dll_directory` + `PATH` prepend** in the generated bootstrap. | PE COFF machine type (`IMAGE_FILE_MACHINE_*`, a small hermetic reader) | v1 signs the launcher only; the onedir keeps every payload PE signable (v2 sweep) |
+| **Windows** (shipped) | `<bundle>\bin` | **By name via `os.add_dll_directory` + `PATH` prepend** in the generated bootstrap. | PE COFF machine type (`IMAGE_FILE_MACHINE_*`, a small hermetic reader) | v1 signs the launcher only; the onedir keeps every payload PE signable if ever needed (a full sweep is not planned) |
 
 Everything *else* — the config shape, the source rules, the lock field, the
 fetch/verify/stage/collision-guard pipeline — is common, which is exactly why the
