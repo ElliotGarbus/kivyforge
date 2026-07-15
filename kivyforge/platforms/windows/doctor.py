@@ -360,7 +360,9 @@ def check_windows_hosts_reachable(
 ) -> CheckResult:
     if offline:
         return CheckResult("Required hosts reachable", Status.SKIP, "offline")
-    hosts: set[str] = set()
+    # (host, port) pairs: the port comes from each URL's scheme so the HTTP
+    # RFC-3161 timestamp server is probed on 80, not the wheels' HTTPS 443.
+    hosts: set[tuple[str, int]] = set()
     if lock is not None:
         for pkg in lock.packages:
             for wheel in pkg.wheels:
@@ -382,7 +384,9 @@ def check_windows_hosts_reachable(
         return CheckResult(
             "Required hosts reachable", Status.PASS, "all artifacts vendored"
         )
-    unreachable = [h for h in sorted(hosts) if not probe.tcp_reachable(h, 443)]
+    unreachable = sorted(
+        host for host, port in hosts if not probe.tcp_reachable(host, port)
+    )
     if unreachable:
         return CheckResult(
             "Required hosts reachable",
@@ -392,14 +396,18 @@ def check_windows_hosts_reachable(
             "runtime, native binaries, and the signing timestamp server.",
         )
     return CheckResult(
-        "Required hosts reachable", Status.PASS, ", ".join(sorted(hosts))
+        "Required hosts reachable",
+        Status.PASS,
+        ", ".join(sorted({host for host, _ in hosts})),
     )
 
 
-def _add_host(hosts: set[str], url: str) -> None:
-    netloc = urlparse(url).hostname
-    if netloc:
-        hosts.add(netloc)
+def _add_host(hosts: set[tuple[str, int]], url: str) -> None:
+    parsed = urlparse(url)
+    host = parsed.hostname
+    if host:
+        port = parsed.port or (80 if parsed.scheme == "http" else 443)
+        hosts.add((host, port))
 
 
 _PROJECT_CHECK_NAMES = (

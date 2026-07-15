@@ -371,6 +371,21 @@ class TestHostsReachable:
         W.check_windows_hosts_reachable(_P(), _config(signing=_SIGNING), None)
         assert "timestamp.digicert.com" in seen
 
+    def test_probes_scheme_port(self):
+        # HTTPS artifact hosts on 443, the HTTP RFC-3161 timestamp host on 80
+        # (regression: the timestamp server was probed on 443 and false-failed).
+        seen: dict[str, int] = {}
+
+        class _P(FakeProbe):
+            def tcp_reachable(self, host, port):
+                seen[host] = port
+                return True
+
+        # _lock()'s runtime artifacts use https://files/... (host "files", 443).
+        W.check_windows_hosts_reachable(_P(), _config(signing=_SIGNING), _lock())
+        assert seen["files"] == 443
+        assert seen["timestamp.digicert.com"] == 80
+
 
 _VALID_PYPROJECT = textwrap.dedent(
     """
