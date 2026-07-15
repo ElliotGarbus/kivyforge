@@ -108,3 +108,6 @@ Then set the thumbprint in `[tool.kivy.windows.signing]` and `package` as above.
   protocol, PEP 440 → version resource, Inno composition).
 - [windows-spec.md](windows-spec.md) — the Windows backend spec (verbs, `doctor`
   table, scope).
+- [signing-prerequisites-macos.md](../macos/signing-prerequisites-macos.md) and
+  [signing-prerequisites-ios.md](../ios/signing-prerequisites-ios.md) — the
+  sibling checklists for the Apple targets.
