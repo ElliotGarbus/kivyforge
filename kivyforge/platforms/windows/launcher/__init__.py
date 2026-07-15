@@ -24,8 +24,9 @@ bundled ``python.exe``. The bootstrap:
    for DLL discovery and prepends it to ``PATH``;
 4. **retains every ``add_dll_directory`` cookie for the process lifetime** (closing
    / GC-ing a cookie removes its directory from the search path);
-5. puts ``<bundle>\app`` on ``sys.path``, sets the CWD there, and **imports** the
-   entry-point module (not run as ``__main__``).
+5. puts ``<bundle>\app`` on ``sys.path``, sets the CWD there, and **runs** the
+   entry-point module as ``__main__`` (via :func:`runpy.run_module`) so a
+   standard ``if __name__ == "__main__": App().run()`` guard fires.
 
 Then the vendored launcher is copied to ``<safe-name>.exe`` and its icon/version
 resources are patched with ``rcedit``. Numeric version fields come from the
@@ -97,13 +98,16 @@ def _bootstrap():
         _register_dll_dir(native_bin)
         os.environ["PATH"] = str(native_bin) + os.pathsep + os.environ.get("PATH", "")
 
-    # (5) App code on sys.path; CWD = app dir; import (not run-as-__main__).
+    # (5) App code on sys.path; CWD = app dir; run the entry module as __main__
+    # so a standard ``if __name__ == "__main__": App().run()`` guard fires. This
+    # mirrors the macOS/Linux launchers, which exec the interpreter on the entry
+    # script (importing it as an ordinary module would not run that block).
     app_dir = _BUNDLE / "app"
     sys.path.insert(0, str(app_dir))
     os.chdir(app_dir)
-    import importlib
+    import runpy
 
-    importlib.import_module(_ENTRY)
+    runpy.run_module(_ENTRY, run_name="__main__", alter_sys=True)
 
 
 _bootstrap()

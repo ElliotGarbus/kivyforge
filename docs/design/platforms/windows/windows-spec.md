@@ -379,9 +379,10 @@ the binary). The bootstrap:
   when it is closed or garbage-collected; the bootstrap keeps references (e.g.
   in a module-level list) so a registered directory is never silently dropped
   mid-run;
-- puts `<bundle>\app` on `sys.path`, sets the working directory to it, and
-  imports `[tool.kivy].entry_point` (the same import-not-run-as-`__main__`
-  semantics as every other platform).
+- puts `<bundle>\app` on `sys.path`, sets the working directory to it, and runs
+  `[tool.kivy].entry_point` as `__main__` (via `runpy.run_module`), so a standard
+  `if __name__ == "__main__": App().run()` guard fires — matching the macOS/Linux
+  launchers, which exec the interpreter directly on the entry script.
 
 ### What the binary deps do *not* cover
 

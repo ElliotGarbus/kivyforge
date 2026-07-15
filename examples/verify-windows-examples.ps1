@@ -82,7 +82,10 @@ function Run-Step {
     Write-Host ""
     Write-Host ">>> $Label"
     try {
-        & $Action
+        # Stream the command's output straight to the console (Out-Host) so it is
+        # visible; only the boolean below flows out as this function's return, so
+        # callers can do `$ok = Run-Step ...` without capturing command output.
+        & $Action | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "$Label exited with $LASTEXITCODE" }
         return $true
     } catch {

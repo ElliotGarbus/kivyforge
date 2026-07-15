@@ -38,9 +38,11 @@ class TestRenderBootstrap:
         assert "_DLL_DIR_COOKIES" in src
         assert "_DLL_DIR_COOKIES.append(os.add_dll_directory" in src
 
-    def test_imports_not_run_as_main(self):
+    def test_runs_entry_as_main(self):
         src = render_bootstrap(entry_point="main", app_id="A.B")
-        assert "importlib.import_module(_ENTRY)" in src
+        # Run the entry as __main__ so `if __name__ == "__main__": App().run()`
+        # fires (importing it as a module would not start the app).
+        assert 'runpy.run_module(_ENTRY, run_name="__main__"' in src
 
     def test_registers_native_bin(self):
         src = render_bootstrap(entry_point="main", app_id="A.B")
