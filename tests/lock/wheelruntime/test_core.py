@@ -8,6 +8,12 @@ thin profile — not copying the engine.
 
 from __future__ import annotations
 
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.lock.wheelruntime import (
     PythonRuntime,
@@ -20,6 +26,7 @@ from kivyforge.lock.wheelruntime import (
     loads,
 )
 from kivyforge.lock.wheelruntime.profile import PlatformLockProfile
+from kivyforge.lock.wheelruntime.resolver import PipWheelResolver, WheelResolverError
 from kivyforge.platforms.macos.lock import MacosProfile
 
 
@@ -141,3 +148,49 @@ class TestCoreIsPlatformAgnostic:
     def test_macos_profile_is_a_profile_instance(self):
         assert isinstance(MacosProfile(), PlatformLockProfile)
         assert MacosProfile().platform == "macos"
+
+
+class TestRunReportReadsUtf8:
+    """pip writes ``--report`` as UTF-8; reading it must not use the OS default.
+
+    On Windows the default codec is cp1252, which cannot decode common bytes
+    (e.g. 0x8f) that appear once package metadata contains non-ASCII text.
+    Regression: the resolver used to crash with UnicodeDecodeError there.
+    """
+
+    def _resolver_reading(self, monkeypatch, report_text):
+        pr = PipWheelResolver(python_executable="python")
+
+        def fake_run(cmd, *args, **kwargs):
+            report_path = Path(next(a for a in cmd if a.endswith("report.json")))
+            report_path.write_text(report_text, encoding="utf-8")
+
+            class _Proc:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return _Proc()
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        return pr._run_report(
+            ["pkg"],
+            python_version="3.13.0",
+            platform_tags=("win_amd64",),
+            abis=("cp313",),
+            extra_index_urls=[],
+            find_links=[],
+            offline=False,
+        )
+
+    def test_non_cp1252_bytes_in_report(self, monkeypatch):
+        # "Ï" (U+00CF) encodes to bytes C3 8F in UTF-8; 0x8f is undefined in
+        # cp1252, so a default-codec read would raise here.
+        report = json.dumps({"install": [{"name": "Ï-pkg"}]})
+        assert "\u00cf".encode() == b"\xc3\x8f"
+        result = self._resolver_reading(monkeypatch, report)
+        assert result["install"][0]["name"] == "Ï-pkg"
+
+    def test_invalid_report_raises_resolver_error(self, monkeypatch):
+        with pytest.raises(WheelResolverError, match="could not read pip report"):
+            self._resolver_reading(monkeypatch, "not valid json {{")

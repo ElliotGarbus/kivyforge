@@ -30,6 +30,9 @@ def _settings_for(project, target_name, configuration):
 
 
 class TestStaging:
+    # Asserts the POSIX symlink target "../src"; on Windows the staging code
+    # emits "..\\src" (os.sep). iOS only builds on macOS, so skip on Windows.
+    @pytest.mark.requires_posix
     def test_creates_layout_and_symlink(self, config, project_root):
         layout = create_staging(config, project_root)
         assert layout.root.name == "touchtracer-ios"
@@ -97,6 +100,9 @@ class TestPbxprojGeneration:
         assert "COLLECT_HINT" in text
         assert "exit 1" in text
 
+    # Needs a POSIX bash; on Windows the piped script is CRLF-translated and
+    # misparsed. The embedded script only ever runs on the macOS build host.
+    @pytest.mark.requires_posix
     def test_build_python_run_script_is_valid_shell(self):
         # Guards against quoting regressions in the embedded run script.
         import subprocess

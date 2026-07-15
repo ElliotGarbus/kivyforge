@@ -217,7 +217,13 @@ class PipWheelResolver:
                 cmd += ["--no-index"]
             cmd += list(requirements)
 
-            proc = subprocess.run(cmd, capture_output=True, text=True)
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             if proc.returncode != 0:
                 tags = ", ".join(platform_tags)
                 raise WheelResolverError(
@@ -227,8 +233,8 @@ class PipWheelResolver:
                     f"  pip said:\n{_indent(proc.stderr or proc.stdout)}"
                 )
             try:
-                return json.loads(report_path.read_text())
-            except (OSError, json.JSONDecodeError) as exc:
+                return json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
                 raise WheelResolverError(f"could not read pip report: {exc}") from exc
 
 
