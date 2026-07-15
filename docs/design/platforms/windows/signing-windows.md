@@ -215,9 +215,12 @@ signtool sign /sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /t
 - **Payload-DLL signing** — a Smart App Control concern (SAC enforces more
   strictly than SmartScreen and can object to unsigned payload DLLs). v2;
   kept possible by onedir.
-- **PBS binary signatures** — whether PBS's `python.exe`/`python3xx.dll`
-  arrive Authenticode-signed is an [open item](windows-spec.md#open-items);
-  if unsigned, they fold into the payload sweep above. Either answer only
-  affects SAC machines.
+- **PBS binary signatures** — RESOLVED: PBS's `python.exe`/`python3xx.dll` are
+  **unsigned** (verified with `Get-AuthenticodeSignature` over a built bundle;
+  see the [spec's open items](windows-spec.md#open-items) and
+  [windows-dll-findings.md](../../dev/windows-dll-findings.md)). They therefore
+  fold into the payload sweep above, alongside the unsigned Kivy/SDL payload;
+  only PBS's incidental PSF Tcl/Tk and the Microsoft VC-runtime DLLs arrive
+  pre-signed. Only affects SAC/WDAC machines.
 - **MSIX / MSI signing** — with the formats themselves (external, defer
   pending demand).

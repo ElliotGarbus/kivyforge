@@ -736,10 +736,15 @@ Spike-only questions remain; the previously-open *design* choices are now
 settled (recorded under "Settled decisions" in the
 [implementation plan](../../../../.cursor/plans/kivyforge_windows_backend.plan.md)):
 
-- [ ] **Verify PBS Windows binaries: signed or not?**
-      (`Get-AuthenticodeSignature .\python.exe, .\python3xx.dll`) — only
-      affects Smart App Control machines; folds into the optional
-      tree-signing sweep if unsigned. (Spike.)
+- [x] **Verify PBS Windows binaries: signed or not?** RESOLVED — **unsigned.**
+      `Get-AuthenticodeSignature` over a built bundle reports PBS's core
+      `python.exe` / `python3.dll` / `python3xx.dll` (and all Kivy/SDL payload
+      `.pyd`/DLLs) as `NotSigned`; the only `Valid` signatures in the tree are
+      incidental — the PSF-signed Tcl/Tk DLLs (`tcl86t.dll`, `tk86t.dll`) and
+      Microsoft-signed VC runtime (`msvcp140.dll`, `vcruntime140*.dll`) +
+      `d3dcompiler_47.dll`. So the payload is effectively unsigned and folds
+      into the optional v2 tree-signing sweep; only affects Smart App Control /
+      WDAC machines. See [windows-dll-findings.md](../../dev/windows-dll-findings.md).
 - [x] **Verify PBS bundles `vcruntime140.dll` / `vcruntime140_1.dll` /
       `msvcp140.dll`** next to `python.exe`. RESOLVED (Phase 4): PBS ships
       `vcruntime140.dll` + `vcruntime140_1.dll` but **not** `msvcp140.dll`;

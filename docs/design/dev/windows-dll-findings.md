@@ -115,8 +115,18 @@ also protects the Windows backend:
   GL) and its dep packages — verify, do not assume; feeds the doctor coverage
   check and the FAQ.
 - **PBS `.data` layout** and runtime symlink/extraction behavior.
-- **Authenticode state of PBS binaries** (`python.exe` / `python3xx.dll`) — a
-  v2 payload-signing sweep input only.
+- **Authenticode state of PBS binaries — RESOLVED: unsigned.**
+  `Get-AuthenticodeSignature` over every `*.exe`/`*.dll`/`*.pyd` in a built
+  bundle (hello-native, `build\windows\Hello Native`) reported 167 `NotSigned`
+  vs 6 `Valid`. PBS's core `python.exe` / `python3.dll` / `python313.dll` are
+  **NotSigned**, as are all Kivy/SDL payload files (`SDL2.dll`, the
+  `_window_sdl2` provider `.pyd`, etc.) and the example's own native binaries
+  (`greet.dll`, `roll.exe`). The only `Valid` signatures are incidental and not
+  ours: PSF-signed Tcl/Tk (`tcl86t.dll`, `tk86t.dll`), Microsoft-signed VC
+  runtime (`msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`), and
+  Microsoft `d3dcompiler_47.dll`. So the payload is effectively unsigned and is
+  a v2 tree-signing-sweep input; it only affects Smart App Control / WDAC
+  machines, not ordinary SmartScreen.
 
 _Status: Part 1 complete; the VC-runtime open question is RESOLVED (Phase 4,
 above). The Windows backend is implemented and covered by the full test suite
