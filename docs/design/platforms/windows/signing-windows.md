@@ -59,8 +59,8 @@ Backends:
 - **`NullSigner`** — the unconfigured default; `package` produces the
   unsigned artifact.
 - A future **`ArtifactSigningSigner`** (Azure Artifact Signing's dlib-based
-  signtool invocation) slots in behind the same protocol — deferred, see
-  below.
+  signtool invocation) slots in behind the same protocol to sign **user**
+  output with an Azure-held cert — deferred pending demand.
 
 The protocol keeps credential mess out of the pipeline core: `bundle.py` and
 `cli.py` ask for "the configured signer" and call `sign`; which backend and
@@ -204,14 +204,6 @@ signtool sign /sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /t
 
 ## Deferred
 
-- **Azure Artifact Signing** (formerly Trusted Signing): ~$10/mo, keys held
-  in FIPS 140-2 Level 3 HSMs, no hardware token to manage, GA as of April
-  2026 with individual-developer eligibility (US/CA/EU/UK). This is the path
-  *if/when kivyforge signs its own releases* — deferred, not adopted. Gotchas
-  recorded for that day: identity validation runs through a third-party
-  validator and can take hours-to-days; and signtool under Artifact Signing
-  requires **exactly .NET 8** — on .NET 10 it fails *silently and reports
-  success* — so prefer the vendor's GitHub Action over raw signtool in CI.
 - **Payload-DLL signing** — a Smart App Control concern (SAC enforces more
   strictly than SmartScreen and can object to unsigned payload DLLs). v2;
   kept possible by onedir.
@@ -222,5 +214,7 @@ signtool sign /sha1 <thumbprint> /fd SHA256 /tr http://timestamp.digicert.com /t
   fold into the payload sweep above, alongside the unsigned Kivy/SDL payload;
   only PBS's incidental PSF Tcl/Tk and the Microsoft VC-runtime DLLs arrive
   pre-signed. Only affects SAC/WDAC machines.
-- **MSIX / MSI signing** — with the formats themselves (external, defer
-  pending demand).
+- **MSIX / MSI signing** — **out of scope (not deferred).** MSIX/MSI are
+  installer/package formats kivyforge does not produce; they are
+  [permanently external](windows-spec.md#scope), so signing them belongs to
+  that external build, never to kivyforge. Listed here only to disclaim it.
