@@ -208,10 +208,15 @@ def _which(tool: str, env: dict[str, str]) -> str:
     """
     found = shutil.which(tool, path=env.get("PATH", ""))
     if found is None:
-        raise LauncherBuildError(
-            f"{tool} not found on the MSVC toolset PATH; the Visual Studio C++ "
-            "build tools may be incomplete."
+        pin = pinned_toolset()
+        hint = (
+            f" The pinned toolset {pin!r} (vendor/TOOLSET.txt) may not be "
+            "installed on this machine/runner — re-vendor against a current "
+            "toolset via the `revendor_launcher` CI workflow."
+            if pin
+            else " The Visual Studio C++ build tools may be incomplete."
         )
+        raise LauncherBuildError(f"{tool} not found on the MSVC toolset PATH.{hint}")
     return found
 
 
