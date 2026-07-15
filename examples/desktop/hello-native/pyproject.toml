@@ -33,6 +33,10 @@ exclude = [
     "pygments",
 ]
 
+[tool.kivy.macos.icons]
+# 1024x1024 PNG with transparent corners (rendered to .icns).
+source = "assets/icon.png"
+
 [tool.kivy.macos.python]
 version = "3.13.14"
 
@@ -61,6 +65,10 @@ exclude = [
     "pygments",
 ]
 
+[tool.kivy.linux.icons]
+# 1024x1024 PNG resized into the freedesktop hicolor set + root icon (Pillow).
+source = "assets/icon.png"
+
 [tool.kivy.linux.python]
 version = "3.13.14"
 
@@ -86,6 +94,11 @@ exclude = [
     "docutils",
     "pygments",
 ]
+
+[tool.kivy.windows.icons]
+# A play on the Windows logo: four die faces in the 2x2 tilted-pane layout.
+# 1024x1024 PNG rendered into a multi-resolution .ico for the launcher (Pillow).
+source = "assets/icon.png"
 
 [tool.kivy.windows.python]
 version = "3.13.14"

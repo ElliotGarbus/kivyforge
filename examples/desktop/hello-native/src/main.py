@@ -19,6 +19,7 @@ consumed here two ways:
 """
 
 import ctypes
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +28,11 @@ from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+
+# Runtime window/taskbar icon (desktop). Bundled under the app dir, so a path
+# relative to this file resolves in the packaged app and during dev runs. The
+# installed app icon is set separately via [tool.kivy.<platform>.icons].
+_ICON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
 
 
 def native_bin_dir() -> Path:
@@ -81,7 +87,10 @@ class HelloNative(BoxLayout):
 
 
 class HelloNativeApp(App):
+    icon = _ICON
+
     def build(self):
+        self.title = "Hello Native"
         return HelloNative()
 
 
