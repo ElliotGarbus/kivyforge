@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from kivyforge.platforms.windows import fsswap
+from kivyforge.platforms.windows import WindowsBundleError, fsswap
 
 
 class TestRenameWithRetry:
@@ -47,6 +47,20 @@ class TestReserveRestore:
 
     def test_reserve_none_when_absent(self, tmp_path):
         assert fsswap.reserve_previous(tmp_path / "nope") is None
+
+    def test_reserve_persistent_lock_raises_actionable(self, tmp_path, monkeypatch):
+        target = tmp_path / "App"
+        target.mkdir()
+
+        def always_locked(a, b):
+            raise PermissionError(5, "Access is denied")
+
+        monkeypatch.setattr(fsswap.os, "replace", always_locked)
+        with pytest.raises(WindowsBundleError) as excinfo:
+            fsswap.reserve_previous(target, timeout=0.05)
+        msg = str(excinfo.value)
+        assert str(target) in msg
+        assert "another process" in msg
 
     def test_reserve_and_restore_roundtrip(self, tmp_path):
         target = tmp_path / "App"

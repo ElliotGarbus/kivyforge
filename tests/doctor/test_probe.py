@@ -415,3 +415,31 @@ class TestRealProbe:
     def test_latest_kivyforge_version_network_error(self):
         with patch("urllib.request.urlopen", side_effect=OSError("network")):
             assert self._probe().latest_kivyforge_version() is None
+
+    # --- build_output_locked ---
+
+    def test_build_output_locked_none_when_absent(self, tmp_path):
+        assert self._probe().build_output_locked(tmp_path / "nope") is None
+
+    def test_build_output_locked_false_when_free(self, tmp_path):
+        d = tmp_path / "App"
+        d.mkdir()
+        assert self._probe().build_output_locked(d) is False
+        assert d.exists()  # rename round-trip restored it
+
+    def test_build_output_locked_true_when_rename_blocked(self, tmp_path, monkeypatch):
+        d = tmp_path / "App"
+        d.mkdir()
+
+        def blocked(*a, **k):
+            raise PermissionError(5, "Access is denied")
+
+        monkeypatch.setattr("kivyforge.doctor.probe.os.replace", blocked)
+        assert self._probe().build_output_locked(d) is True
+
+    # --- filesystem_type ---
+
+    def test_filesystem_type_str_on_windows_else_none(self, tmp_path):
+        result = self._probe().filesystem_type(tmp_path)
+        # POSIX has no ctypes.windll -> None; Windows returns e.g. "NTFS"/"ReFS".
+        assert result is None or isinstance(result, str)

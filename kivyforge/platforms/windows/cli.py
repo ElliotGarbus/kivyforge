@@ -191,7 +191,10 @@ def _copy_folder_atomic(bundle: Path, dest: Path) -> None:
     never destroys a working one.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    trash = reserve_previous(dest)
+    try:
+        trash = reserve_previous(dest)
+    except WindowsBundleError as exc:
+        raise ToolchainError(str(exc)) from exc
     try:
         # copytree needs a non-existent target; the reserve moved any prior away.
         shutil.copytree(bundle, dest, ignore=_PACKAGE_IGNORE)

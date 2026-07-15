@@ -31,6 +31,13 @@ matrix job (`3.13`, `3.14`) is wired into `.github/workflows/kivyforge.yml`.
   reads back `0o666` — NTFS has no POSIX exec bit, and the shared
   `_make_executable` neither fails nor has any effect. Windows native staging
   (Phase 6) documents this as an explicit no-op rather than forking it out.
+- **File locking on `build`/`package` (rename access-denied).** A `PermissionError`
+  / `WinError 5` when replacing the onedir is the write-in-place vs. antivirus /
+  running-exe / Explorer-lock interaction, not a bug. Root cause, the
+  transient-vs-persistent failure taxonomy, and the **Dev Drive + Defender
+  performance mode** mitigation are documented in
+  [windows-spec.md → Windows file locking](../platforms/windows/windows-spec.md#windows-file-locking-write-in-place--dev-drive)
+  (implementation: `platforms/windows/fsswap.py`).
 
 ### Latent POSIX assumptions flushed (fixed this phase)
 

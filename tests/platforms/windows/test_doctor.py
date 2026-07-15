@@ -262,6 +262,46 @@ class TestNativeArch:
         assert r.status is Status.FAIL
 
 
+class TestOutputLock:
+    def test_skip_when_not_built(self, tmp_path):
+        r = W.check_windows_output_lock(_config(), tmp_path, FakeProbe())
+        assert r.status is Status.SKIP
+
+    def test_pass_when_replaceable(self, tmp_path):
+        r = W.check_windows_output_lock(
+            _config(), tmp_path, FakeProbe(output_locked=False)
+        )
+        assert r.status is Status.PASS
+
+    def test_warn_when_locked(self, tmp_path):
+        r = W.check_windows_output_lock(
+            _config(), tmp_path, FakeProbe(output_locked=True)
+        )
+        assert r.status is Status.WARN
+
+
+class TestBuildVolume:
+    def test_pass_ntfs_with_devdrive_advisory(self, tmp_path):
+        r = W.check_windows_build_volume(
+            _config(), tmp_path, FakeProbe(filesystem="NTFS")
+        )
+        assert r.status is Status.PASS
+        assert "Dev Drive" in r.detail
+
+    def test_pass_refs_devdrive(self, tmp_path):
+        r = W.check_windows_build_volume(
+            _config(), tmp_path, FakeProbe(filesystem="ReFS")
+        )
+        assert r.status is Status.PASS
+        assert "ReFS" in r.detail
+
+    def test_skip_unknown(self, tmp_path):
+        r = W.check_windows_build_volume(
+            _config(), tmp_path, FakeProbe(filesystem=None)
+        )
+        assert r.status is Status.SKIP
+
+
 _SIGNING = textwrap.dedent(
     """
     [tool.kivy.windows.signing]

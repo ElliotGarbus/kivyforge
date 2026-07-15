@@ -104,7 +104,7 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 > **Detailed documentation.** For the full design and reference docs — the
 > cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
 > artifact distribution, the CLI shape, and the per-platform backends (iOS,
-> macOS, Linux) — start with the
+> macOS, Linux, Windows) — start with the
 > [kivyforge design overview](docs/design/common/00-overview.md).
 
 ## Quick start (iOS)
@@ -226,7 +226,8 @@ signs (and RFC-3161 timestamps) the launcher in the `dist\windows` copy.
 
 `kivyforge doctor -p windows` reports environment + project health (Windows host,
 long-path support, `app_id` style, arch coverage, icon, native-binary
-sources/collisions/arch, reachable hosts, signtool + signing certificate).
+sources/collisions/arch, build-output lock, build volume (Dev Drive advisory),
+reachable hosts, signtool + signing certificate).
 
 See the runnable examples for complete, copy-pasteable walk-throughs. They are
 split by runtime requirement — **desktop uses Kivy 2.3.1 from PyPI, mobile uses

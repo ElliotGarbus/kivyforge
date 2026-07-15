@@ -265,6 +265,7 @@ Declared `[tool.kivy.windows.native.binaries]` entries are pinned in a
 build/windows/MyApp/
 ├── MyApp.exe                       ← prebuilt launcher (resource-patched per app)
 ├── _kivyforge_bootstrap.py         ← generated bootstrap module (fixed name)
+├── app.ico                         ← generated multi-size icon (only when icons.source set)
 ├── app/                            ← user code (from [tool.kivy].app_dir)
 ├── bin/                            ← declared native binaries (native.binaries);
 │                                     absent when the table is empty
@@ -513,7 +514,7 @@ Linux launchers.
   Kivy `exclude` block when kivy is a direct dependency.
 - **`build`** — resolve (if needed), acquire the runtime and wheels, and
   assemble the onedir tree under `build/windows/<display_name>` (runtime stage →
-  wheel-scheme install → app copy → declared-native-binaries stage → bootstrap
+  wheel-scheme install → declared-native-binaries stage → app copy → bootstrap
   generation → launcher placement + resource patch). The `build` tree is the
   **unsigned** iterative `run` target and is never mutated by signing.
 - **`run`** — build (unless `--no-build`), then execute the launcher so the
@@ -553,6 +554,84 @@ Windows-only options (e.g. a future `--no-sign` override) stay inside
 Windows. The desktop backends' `reject_ios_only_target` guard applies
 unchanged.
 
+## Windows file locking (write-in-place) + Dev Drive
+
+Windows cannot reliably *rename* a freshly written tree, so `build` and
+`package` never do. Both write the onedir directly into its final location and
+only ever rename the **previous** (long-since-scanned) tree aside, restoring it
+if the write fails (`platforms/windows/fsswap.py`: `reserve_previous` /
+`restore_previous` / `discard_reserved`, with `rename_with_retry` for the
+reserve step).
+
+**Why.** A Windows rename internally opens the target with `DELETE` access, and
+that open fails unless **every** other open handle on the file was opened with
+`FILE_SHARE_DELETE` — a flag the C runtime and most apps omit (Raymond Chen,
+[*Renaming a file is a multi-step process*](https://devblogs.microsoft.com/oldnewthing/20211022-00/?p=105822)).
+Two forces make a just-written tree hostile to rename:
+
+- **Antivirus.** Defender's minifilter scans each newly created `.exe`/`.dll`/
+  `.pyd` and holds it open during the scan; a cold *first-sight* cloud lookup
+  can exceed any sane retry window, and the extracted CPython + wheels tree is
+  thousands of new files.
+- **Async close.** `CloseHandle` triggers `IRP_MJ_CLEANUP` immediately but the
+  final `IRP_MJ_CLOSE` (which frees the file object) can lag, so a rename right
+  after "closing" can still hit a sharing violation. Microsoft's own guidance
+  for this is to retry briefly.
+
+**Failure taxonomy.** Transient locks (`ERROR_SHARING_VIOLATION` / WinError 32,
+scanner or close-lag) are ridden out by `rename_with_retry`'s bounded backoff.
+A lock that persists past the retry window (`ERROR_ACCESS_DENIED` / WinError 5)
+is almost always a human holding the tree — Explorer or a terminal sitting in
+the folder, or a **running copy of the app** (a running `.exe`'s image is locked
+by the OS and can never be renamed). That case is unfixable in code, so
+`reserve_previous` raises `WindowsBundleError` with an actionable message
+(close the window / quit the app / delete the folder and retry) rather than a
+bare `WinError 5` traceback.
+
+**Recommended dev/CI mitigation: Dev Drive.** For repositories that hit lock
+churn, put working directories (and the `build/`/`dist/` output) on a Windows 11
+**Dev Drive** (ReFS) with Defender **performance mode**. A trusted Dev Drive
+switches `WdFilter.sys` from synchronous blocking scans to asynchronous
+*deferred* scanning, so file creates complete immediately and the scan runs in
+the background — directly removing the "scanner holds the new file open"
+contention while keeping real-time protection on. Microsoft recommends this over
+folder/process exclusions, which disable scanning entirely. See
+[Set up a Dev Drive](https://learn.microsoft.com/en-us/windows/dev-drive/) and
+[Protect Dev Drive using performance mode](https://learn.microsoft.com/en-us/defender-endpoint/microsoft-defender-endpoint-antivirus-performance-mode).
+kivyforge does **not** add Defender exclusions on the user's behalf.
+
+*Setup (Windows 11; needs ~50 GB free, ReFS).* A Dev Drive can only be created
+**at format time** — an existing NTFS volume can't be converted in place. Create
+one via **Settings → System → Storage → Advanced storage settings → Disks &
+volumes → Create dev drive** (new VHD, resized free space, or unallocated
+space), or from an elevated PowerShell over free space:
+
+```powershell
+Format-Volume -DriveLetter D -DevDrive
+```
+
+New Dev Drives are **trusted by default**, and Defender performance mode is then
+on automatically. Verify/enable (elevated):
+
+```powershell
+fsutil devdrv query D:                       # confirm "Trusted" (needed for perf mode)
+fsutil devdrv trust D:                        # only if untrusted (e.g. a VHD moved hosts)
+Set-MpPreference -PerformanceModeStatus Enabled   # requires real-time protection ON
+```
+
+Trust/filter policy is stored **per machine**, so a VHD moved to another box
+reverts to an ordinary volume until re-trusted. Then keep the repo *and* the
+`build/`/`dist/` output on the Dev Drive; `kivyforge doctor -p windows` will
+report the volume as `ReFS (Dev Drive)` instead of the NTFS advisory.
+
+**`doctor` pre-flight.** Two Windows checks surface this before a build is wasted
+(see the [`doctor` table](#doctor-checks-windows)): **Build output not locked**
+attempts the exact tree-rename `build`/`package` will do and WARNs if a running
+instance or an open Explorer/terminal window holds it; **Build volume** reports
+the output filesystem and recommends a Dev Drive on NTFS. Neither can *clear* an
+active lock — `doctor` is read-only pre-flight — but they name the cause and the
+mitigation ahead of the failure.
+
 ## Signing
 
 Designed in full in [signing-windows.md](signing-windows.md). The policy
@@ -578,6 +657,8 @@ CI-tested against a self-signed certificate.
 | Native binaries: sources | project | Each `[tool.kivy.windows.native.binaries]` `source` exists (repo-relative path) or its host is reachable (URL). SKIP when the table is empty. |
 | Native binaries: collision | project | No two declared entries (or archive members) stage to the same `bin\` path under a **case-insensitive** comparison, and no member uses a Windows reserved device name or alternate-data-stream (`:`) path. SKIP when the table is empty. |
 | Native binaries: arch | project | Each staged PE in `<bundle>\bin` has a machine type matching the target arch (an x86 DLL in an amd64 app fails only at load time, cryptically). SKIP when the table is empty or the bundle isn't built. |
+| Build output not locked | project | Pre-flights the exact rename `build`/`package` performs on `build\windows\<app>`: WARN if the tree is held open (a running instance, or Explorer/a shell in the folder) so the assemble step can't replace it (`WinError 5`). SKIP when nothing is built. Transient/user-fixable, so WARN not FAIL. See ["Windows file locking"](#windows-file-locking-write-in-place--dev-drive). |
+| Build volume | project | Advisory (always PASS/SKIP, never noise): reports the build volume's filesystem and, on NTFS, recommends a Windows 11 **Dev Drive** (ReFS) with Defender performance mode for repeated rename-lock churn. |
 | signtool available | environment | `signtool.exe` findable (Windows SDK). SKIP when `[tool.kivy.windows.signing]` is unconfigured; FAIL when signing is configured but the tool is missing. |
 | Signing certificate | project | When configured, the thumbprint matches exactly one code-signing certificate in the **configured `store_scope` store** — the same store `signtool` will sign against (`Cert:\CurrentUser\My` by default, `Cert:\LocalMachine\My` when `store_scope = "machine"`). SKIP when unconfigured. |
 | find_links directories | project | If set, each entry is an existing directory containing `.whl` files. |
@@ -615,11 +696,27 @@ Linux):
   the module below). Registered in `platforms/__init__.py`; `cli/lock.py`
   gains the `windows` `_LockOps` branch.
 - `kivyforge/platforms/windows/` (bundler modules) — the onedir bundler
-  (`bundle.py`, `runtime_stage.py`, `wheels_stage.py` — the no-`pip`
-  wheel-scheme installer lives here — `native_stage.py` (a thin wrapper over
-  the shared `artifacts/native_stage_util.stage_binaries()` helper),
-  `launcher.py` for bootstrap generation + launcher placement/patching,
-  `petools.py` for the PE machine-type check, `icons.py`).
+  (`bundle.py` orchestrates the stages), `runtime_stage.py`, `wheels_stage.py`
+  (the no-`pip` wheel-scheme installer), and `native_stage.py` (a thin wrapper
+  over the shared `artifacts/native_stage_util.stage_binaries()` helper), plus
+  the supporting helpers: `petools.py` (PE machine-type check), `icons.py`
+  (PNG → multi-size `.ico`), `naming.py` (`windows_safe_name` — reserved-name /
+  illegal-character-safe artifact names), `assets.py` (locate + SHA-256-verify
+  the vendored binaries against `vendor/SHA256SUMS`), `rcedit.py` (the
+  `ResourcePatch` model + `rcedit` resource patching), and `fsswap.py` for
+  Windows-safe write-in-place publishing (see ["Windows file
+  locking"](#windows-file-locking-write-in-place--dev-drive)).
+- `kivyforge/platforms/windows/launcher/` — the launcher subpackage:
+  `launcher.c` (the in-repo C source), `build_launcher.py` (the deterministic
+  build/verify that recompiles and byte-compares against the vendored binary),
+  and `__init__.py` (per-app assembly-time work — generating
+  `_kivyforge_bootstrap.py`, then copying + resource-patching the vendored
+  launcher into `<bundle>\<name>.exe`).
+- `kivyforge/platforms/windows/vendor/` — the prebuilt, pinned assets consumed
+  at assembly time: `launcher-amd64.exe` and `rcedit-x64.exe`, their
+  `SHA256SUMS` manifest, `TOOLSET.txt` (the MSVC toolset the launcher was
+  vendored against — see the CI `revendor_launcher` job), the `rcedit`
+  `LICENSE`/`NOTICE`, and `fetch_rcedit.py` (re-fetch/verify helper).
 - `kivyforge/platforms/windows/lock/` — the lock profile + runtime provider
   (`profile.py`, `runtime.py` with the `x86_64-pc-windows-msvc` triple map),
   built on the shared `kivyforge/lock/wheelruntime/` engine.
@@ -630,9 +727,8 @@ Linux):
 - `kivyforge/platforms/windows/doctor.py` — Windows `doctor` checks, reusing
   `kivyforge/doctor/checks_common.py`.
 
-The launcher's C source and its CI build workflow also live in the repo
-(under the backend package) regardless of how the compiled binary is
-distributed — see the open item below.
+The launcher's C source and its CI build/re-vendor workflow live in the repo
+(under the backend package) alongside the vendored binary it reproduces.
 
 ## Open items
 

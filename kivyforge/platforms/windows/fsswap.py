@@ -50,7 +50,21 @@ def reserve_previous(target: Path, *, timeout: float = 30.0) -> Path | None:
     if not target.exists():
         return None
     trash = target.with_name(f".{target.name}.old-{os.getpid()}")
-    rename_with_retry(target, trash, timeout=timeout)
+    try:
+        rename_with_retry(target, trash, timeout=timeout)
+    except PermissionError as exc:
+        # A persistent lock (past the retry window) is almost always a human
+        # holding the tree open rather than a transient scanner touch, so point
+        # at the usual culprits instead of surfacing a bare WinError 5.
+        from . import WindowsBundleError
+
+        raise WindowsBundleError(
+            f"could not replace the existing output at {target}: a file inside "
+            "it is still open in another process.\n"
+            "  Close any Explorer or terminal window sitting in that folder and "
+            "quit any running copy of the app, then re-run the command.\n"
+            "  If it persists, delete the folder manually and retry."
+        ) from exc
     return trash
 
 

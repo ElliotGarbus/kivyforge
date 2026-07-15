@@ -55,6 +55,8 @@ class Probe(Protocol):
     def long_paths_enabled(self) -> bool | None: ...
     def has_signtool(self) -> bool: ...
     def code_signing_thumbprints(self, store_scope: str) -> list[str]: ...
+    def build_output_locked(self, path: Path) -> bool | None: ...
+    def filesystem_type(self, path: Path) -> str | None: ...
 
 
 class RealProbe:
@@ -238,6 +240,51 @@ class RealProbe:
             for line in out.splitlines()
             if line.strip()
         ]
+
+    def build_output_locked(self, path: Path) -> bool | None:
+        """Whether a built onedir *path* is currently held open by a process.
+
+        ``None`` when *path* does not exist (nothing built). Otherwise performs
+        the exact metadata rename ``build``/``package`` will do — move the tree
+        aside — and immediately restores it, returning ``True`` when a sharing/
+        access lock blocks it (a running instance of the app, or an Explorer/
+        terminal window sitting in the folder), ``False`` when it is free. The
+        rename is O(1) on the same volume; if the aside succeeds the restore
+        does too (the tree was long since scanned), so this leaves no residue.
+        """
+        if not path.exists():
+            return None
+        aside = path.with_name(f".{path.name}.doctorlock-{os.getpid()}")
+        try:
+            os.replace(path, aside)
+        except OSError:
+            return True
+        try:
+            os.replace(aside, path)
+        except OSError:
+            pass
+        return False
+
+    def filesystem_type(self, path: Path) -> str | None:
+        """The filesystem of the volume holding *path* (e.g. ``"NTFS"`` /
+        ``"ReFS"``), or ``None`` when it can't be read. A trusted ReFS Dev Drive
+        is where Defender runs asynchronous 'performance mode' scans.
+        """
+        import ctypes
+
+        if not hasattr(ctypes, "windll"):
+            return None
+        drive = os.path.splitdrive(os.path.abspath(str(path)))[0]
+        if not drive:
+            return None
+        buf = ctypes.create_unicode_buffer(261)
+        try:
+            ok = ctypes.windll.kernel32.GetVolumeInformationW(  # type: ignore[attr-defined]
+                drive + "\\", None, 0, None, None, None, buf, len(buf)
+            )
+        except OSError:
+            return None
+        return buf.value if ok else None
 
 
 def _capture(argv: list[str]) -> str:

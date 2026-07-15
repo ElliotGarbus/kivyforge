@@ -31,6 +31,8 @@ class FakeProbe:
         self._long_paths = overrides.get("long_paths", True)
         self._signtool = overrides.get("signtool", True)
         self._thumbprints = overrides.get("thumbprints", [])
+        self._output_locked = overrides.get("output_locked", None)
+        self._filesystem = overrides.get("filesystem", "NTFS")
 
     def host_system(self):
         return self._host
@@ -104,3 +106,9 @@ class FakeProbe:
         if isinstance(self._thumbprints, dict):
             return list(self._thumbprints.get(store_scope, []))
         return list(self._thumbprints)
+
+    def build_output_locked(self, path):
+        return self._output_locked
+
+    def filesystem_type(self, path):
+        return self._filesystem

@@ -30,7 +30,7 @@ from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
 
-from .bundle import bundle_dir_name
+from .bundle import bundle_dir_name, onedir_path
 from .lock import WindowsLockfile, load
 from .naming import _RESERVED
 from .petools import PeArchError, verify_pe_arch
@@ -253,6 +253,58 @@ def check_windows_native_arch(config: Config, project_root: Path) -> CheckResult
     )
 
 
+def check_windows_output_lock(
+    config: Config, project_root: Path, probe: Probe
+) -> CheckResult:
+    """Pre-flight the exact rename ``build``/``package`` performs on the onedir.
+
+    A running instance of the app, or an Explorer/terminal window sitting in the
+    output folder, holds the tree open so the assemble step can't replace it
+    (``WinError 5``). Catch that before a full build is wasted. SKIP when nothing
+    is built yet; WARN (not FAIL) since it is transient, user-fixable state.
+    """
+    onedir = onedir_path(config, project_root)
+    locked = probe.build_output_locked(onedir)
+    if locked is None:
+        return CheckResult("Build output not locked", Status.SKIP, "not built")
+    if locked:
+        return CheckResult(
+            "Build output not locked",
+            Status.WARN,
+            f"{onedir.name!r} is held open by another process",
+            hint="a running instance of the app, or an Explorer/terminal window "
+            "in build\\windows, blocks build/package from replacing the folder "
+            "(WinError 5); quit the app / close the window before building.",
+        )
+    return CheckResult("Build output not locked", Status.PASS, "replaceable")
+
+
+def check_windows_build_volume(
+    config: Config, project_root: Path, probe: Probe
+) -> CheckResult:
+    """Advise on the build volume's filesystem (Dev Drive vs NTFS).
+
+    Never FAILs/WARNs — a normal NTFS setup is healthy. It surfaces the sanctioned
+    mitigation for repeated rename-lock churn (a trusted ReFS Dev Drive, where
+    Defender scans asynchronously) in the always-shown detail rather than as noise.
+    """
+    onedir = onedir_path(config, project_root)
+    target = onedir if onedir.exists() else project_root
+    fs = probe.filesystem_type(target)
+    if fs is None:
+        return CheckResult("Build volume", Status.SKIP, "filesystem unknown")
+    if fs.upper() == "REFS":
+        return CheckResult(
+            "Build volume", Status.PASS, f"{fs} (Dev Drive — async Defender scanning)"
+        )
+    return CheckResult(
+        "Build volume",
+        Status.PASS,
+        f"{fs}; for repeated build-lock churn a Windows 11 Dev Drive (ReFS) "
+        "enables Defender performance mode (async scanning)",
+    )
+
+
 def check_windows_resource_assets(config: Config, project_root: Path) -> CheckResult:
     """The inputs the launcher resource-patch needs are present.
 
@@ -418,6 +470,8 @@ _PROJECT_CHECK_NAMES = (
     "Native binaries: sources",
     "Native binaries: collision",
     "Native binaries: arch",
+    "Build output not locked",
+    "Build volume",
     "Resource assets",
     "find_links directories",
     "signtool available",
@@ -455,6 +509,8 @@ def run_windows_checks(
         check_windows_native_sources(config, project_root),
         check_windows_native_collision(config),
         check_windows_native_arch(config, project_root),
+        check_windows_output_lock(config, project_root, probe),
+        check_windows_build_volume(config, project_root, probe),
         check_windows_resource_assets(config, project_root),
         check_windows_find_links(config, project_root),
         check_windows_signtool(probe, config),
