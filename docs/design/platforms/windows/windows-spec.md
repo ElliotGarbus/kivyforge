@@ -559,6 +559,62 @@ Windows-only options (e.g. a future `--no-sign` override) stay inside
 Windows. The desktop backends' `reject_ios_only_target` guard applies
 unchanged.
 
+## The finished distributable — where it lands and what's next (user-facing)
+
+**Where it lands.** `kivyforge package -p windows` copies the assembled onedir
+into:
+
+```
+dist\windows\<safe-name>-<version>-amd64\
+├── <Name>.exe          ← the launcher — double-click this to run the app
+├── _kivyforge_bootstrap.py
+├── app.ico             (only when icons.source is set)
+├── app\                ← your code
+├── bin\                (only when native.binaries is declared)
+└── python\             ← the bundled CPython runtime + wheels + SDL/codec DLLs
+```
+
+`<safe-name>` is `[tool.kivy].display_name` run through the Windows filename
+sanitizer; `<version>` is `[project].version`. **The folder itself is the
+deliverable** — there is no single-file distributable on Windows (a scope
+decision, not a gap; see ["Scope"](#scope)). The parallel
+`build\windows\<display_name>\` tree is the unsigned, churny `run`-in-place dev
+target; `dist\windows\...` is a clean, versioned, optionally-signed copy you
+actually ship (see the [`package` split](#init--build--run--package--status)).
+
+**How it runs.** Double-clicking `<Name>.exe` launches the app. The bundle is
+**fully relocatable** — self-location via `GetModuleFileNameW` and a
+runtime-computed `sys.prefix` mean no absolute paths are baked in (see ["DLL
+discovery"](#dll-discovery--prove-this-first)) — so the whole folder can be
+moved, copied, or renamed anywhere on the target machine and still run.
+
+**What the recipient's machine needs: nothing preinstalled.** No Python, no
+Kivy/SDL, and **no VC++ Redistributable** — the bundle carries the relocated
+PBS prefix, the resolved wheels, the SDL/codec DLLs, and the VC runtime
+app-local by construction. The one residual friction is trust, not
+dependencies: an unsigned or low-reputation launcher trips SmartScreen's
+"Windows protected your PC" wall (the v1 default) — see ["Signing"](#signing).
+
+**Next steps — three exits, all past kivyforge's artifact boundary:**
+
+1. **Ship the folder as-is (portable).** Zip it (`Compress-Archive`) or drop it
+   on a share/USB stick; the recipient unzips and double-clicks `<Name>.exe`.
+   No installer, no admin rights, no registry writes. The raw/zipped folder is
+   a mainstream end-user format.
+2. **Wrap it in an installer** for Start-menu shortcuts, an uninstaller,
+   per-user/machine placement, or auto-update. Feed the folder to Inno Setup /
+   NSIS / WiX (MSI) / MSIX — **permanently external** (see ["Scope"](#scope)).
+   The signing doc's
+   [orchestration section](signing-windows.md#orchestration-kivyforge--inno-are-composed-not-redundant)
+   specifies the sign-the-folder-first sequencing and one-credential path so
+   kivyforge's signing and the installer's signing compose without
+   double-signing.
+3. **Sign it first** (recommended before either of the above for public
+   distribution). Configure [`[tool.kivy.windows.signing]`](#toolkivywindows-overlay)
+   and `package` signs (and RFC-3161 timestamps) the launcher in the `dist\`
+   copy only — see ["Signing"](#signing) and
+   [signing-prerequisites-windows.md](signing-prerequisites-windows.md).
+
 ## Windows file locking (write-in-place) + Dev Drive
 
 Windows cannot reliably *rename* a freshly written tree, so `build` and
@@ -685,9 +741,10 @@ error — they surface as the `doctor` WARN above.
 - For signing only: `signtool.exe` (ships with the Windows SDK / Visual
   Studio build tools — required only when `[tool.kivy.windows.signing]` is
   configured).
-- End-user machines need nothing preinstalled: no Python, no VCRedist (the
-  bundle is verified self-contained on a clean VM — that is what the spike
-  proves).
+- End-user machines need nothing preinstalled: no Python, no VCRedist. The
+  bundle is self-contained by construction (relocated PBS prefix + staged VC
+  runtime); apps build and run end to end on Windows, and the optional
+  clean-VM spike can confirm host-independence on a pristine box.
 
 ## Module layout
 
