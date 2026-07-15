@@ -36,15 +36,17 @@ Linux, macOS, and Windows**.
 
 ### Currently supported targets
 
-- [iOS](https://www.apple.com/ios/) device (arm64) — iPhone / iPad
-- iOS Simulator (arm64, x86_64)
-- [macOS](https://www.apple.com/macos/) `.app` — Apple Silicon (arm64), Intel
-  (x86_64), or universal2 (both), ad-hoc signed
-- [Linux](https://appimage.org/) `.AppImage` / AppDir — x86_64 (glibc ≥ 2.17),
-  self-contained runtime + wheels; libGL/EGL and X11/Wayland come from the host
-- [Windows](https://learn.microsoft.com/windows/) `onedir` folder — amd64,
-  windowed launcher `.exe` beside a self-contained runtime + wheels; optional
-  Authenticode signing (unsigned by default). Requires a Windows host.
+| Target | Architectures | Output | Signing | Build host |
+|---|---|---|---|---|
+| [iOS](https://www.apple.com/ios/) device | arm64 (iPhone / iPad) | generated Xcode project → `.app` | Apple Developer signing via Xcode | macOS + [Xcode](https://developer.apple.com/xcode/) |
+| iOS Simulator | arm64, x86_64 | generated Xcode project → `.app` | none required | macOS + Xcode |
+| [macOS](https://www.apple.com/macos/) | arm64, x86_64, or universal2 (both) | `.app` | ad-hoc (default) **or** Developer ID sign + notarize + staple | macOS |
+| [Linux](https://appimage.org/) | x86_64 (glibc ≥ 2.17) | `.AppImage` / AppDir | none | Linux |
+| [Windows](https://learn.microsoft.com/windows/) | amd64 | `onedir` folder + windowed launcher `.exe` | optional Authenticode (unsigned by default) | Windows |
+
+Desktop targets (macOS / Linux / Windows) bundle a self-contained runtime +
+wheels; on Linux, libGL/EGL and X11/Wayland come from the host. Building for iOS
+requires a Mac with Xcode.
 
 kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 
