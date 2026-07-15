@@ -401,14 +401,16 @@ the binary). The bootstrap:
   `python.exe`'s directory is on the default DLL search path for transitive
   resolution. An in-process embedding host would have lost this — see the
   [bootloader doc](bootloader-windows.md#spawn-and-wait-not-exec).)
-- **The GL backend.** ANGLE vs. desktop GL is a separate pin-down. On the v1
-  Kivy 2.3.1 / SDL2 baseline this is the `kivy_deps.angle` +
-  `KIVY_GL_BACKEND=angle_sdl2` story; on Kivy 3 / SDL3 it may differ (3.0's
-  `setup.py` defaults `use_angle_gl_backend` to darwin/ios only). **The spike
-  verifies what the shipped baseline actually uses on Windows — do not assume.**
-  For distribution, ANGLE (GLES→D3D11) is the robust default: it survives old
-  drivers, RDP sessions, and VMs where raw GL context creation fails with a
-  black screen. (Open item.)
+- **The GL backend.** ANGLE vs. desktop GL. **RESOLVED on the v1 Kivy 2.3.1 /
+  SDL2 baseline: the shipped default is desktop GL via GLEW** — a built bundle
+  logs `Backend used <glew>` (OpenGL 4.6). Both `kivy_deps.glew` and
+  `kivy_deps.angle` are pulled in and staged, so ANGLE
+  (`KIVY_GL_BACKEND=angle_sdl2`) is present as a fallback but is not selected by
+  default. On Kivy 3 / SDL3 this may differ (3.0's `setup.py` defaults
+  `use_angle_gl_backend` to darwin/ios only). ANGLE (GLES→D3D11) remains the
+  more robust choice for hostile environments — old drivers, RDP sessions, and
+  VMs where raw GL context creation fails with a black screen — so it is worth
+  documenting as an opt-in in the FAQ.
 
 ### Native binaries that are not wheels
 
@@ -819,8 +821,12 @@ settled (recorded under "Settled decisions" in the
       `runtime_stage.ensure_vc_runtime` verifies the two core DLLs and places
       `msvcp140.dll` app-local best-effort. See
       [windows-dll-findings.md](../../dev/windows-dll-findings.md).
-- [ ] **Pin down the baseline Windows GL backend** (ANGLE vs desktop GL for
-      Kivy 2.3.1 / SDL2) and which dep packages it needs. (Spike.)
+- [x] **Pin down the baseline Windows GL backend** (ANGLE vs desktop GL for
+      Kivy 2.3.1 / SDL2). RESOLVED: the shipped baseline uses **desktop GL via
+      GLEW** — a built bundle logs `Backend used <glew>` (OpenGL 4.6). Both
+      `kivy_deps.glew` and `kivy_deps.angle` are pulled in and staged, so ANGLE
+      (`KIVY_GL_BACKEND=angle_sdl2`) is available as a fallback but not the
+      default. See [windows-dll-findings.md](../../dev/windows-dll-findings.md).
 
 Settled (no longer open):
 

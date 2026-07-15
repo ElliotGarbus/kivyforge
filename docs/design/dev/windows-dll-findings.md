@@ -118,9 +118,13 @@ also protects the Windows backend:
   best-effort when the runtime omits it (a dep wheel may also ship it into
   site-packages). The clean-VM gate below still confirms whether the shipped
   SDL/codecs actually need `msvcp140.dll` at runtime.
-- **GL backend.** Which GL backend Kivy 2.3.1 uses on Windows (ANGLE vs desktop
-  GL) and its dep packages — verify, do not assume; feeds the doctor coverage
-  check and the FAQ.
+- **GL backend — RESOLVED: desktop GL via GLEW.** A built bundle's Kivy startup
+  log reports `Using the "OpenGL" graphics system` / `Backend used <glew>` /
+  `OpenGL version 4.6`, and imports both `kivy_deps.angle` and `kivy_deps.glew`.
+  So the shipped Kivy 2.3.1 / SDL2 baseline defaults to **desktop GL (GLEW)**;
+  ANGLE ships alongside as a fallback (`KIVY_GL_BACKEND=angle_sdl2`) but is not
+  selected by default. Feeds the FAQ (ANGLE as an opt-in for old drivers / RDP /
+  VMs).
 - **PBS `.data` layout** and runtime symlink/extraction behavior.
 - **Authenticode state of PBS binaries — RESOLVED: unsigned.**
   `Get-AuthenticodeSignature` over every `*.exe`/`*.dll`/`*.pyd` in a built
