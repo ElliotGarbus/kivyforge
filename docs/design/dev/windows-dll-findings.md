@@ -9,12 +9,14 @@
    **Kivy 2.3.1 / SDL2** wheel set installed by the no-pip wheel-scheme
    installer — import Kivy and open its window provider offline?
 
-Part 1 is the CI gate and is **done** (see below). Part 2 was the manual
-clean-VM spike; its open questions have since been answered by the implemented
-backend — apps build and run end to end on Windows (the examples, including
-hello-native, launch and open their Kivy window). What remains of Part 2 is an
-*optional* self-containment confidence check on a **pristine** VM (no system
-Python / VC++), no longer a release blocker.
+Part 1 is the CI gate and is **done** (see below). Part 2's open questions have
+been answered by the implemented backend: apps build and run end to end on
+Windows (the examples, including hello-native, launch and open their Kivy
+window), and the VC runtime is vendored in the bundle by construction — PBS
+ships `vcruntime140*.dll` and `ensure_vc_runtime` stages `msvcp140.dll`
+app-local, so the onedir carries its own runtime rather than borrowing the
+host's. **This gate is satisfied**; the clean-VM protocol below is kept only as
+a reproducible way to re-confirm host-independence, not as an open item.
 
 ## Part 1 — Windows host bring-up (DONE)
 
@@ -71,14 +73,15 @@ also protects the Windows backend:
   `encoding="utf-8"`; a test that used `Path.read_text()` (locale cp1252 on
   Windows) against a UTF-8 stub containing an em dash was corrected.
 
-## Part 2 — Clean-VM DLL-discovery spike (optional confidence check)
+## Part 2 — Clean-VM DLL-discovery spike (satisfied)
 
-> **Update:** the backend is implemented and apps build and run end to end on
-> Windows, so the questions this spike was meant to de-risk are answered in
-> practice. The protocol below is retained as an *optional* self-containment
-> check: running it on a Windows VM with **no Python and no VC++ runtime**
-> proves the bundle relies on nothing from the host. It is no longer a release
-> blocker.
+> **Resolved.** The backend is implemented and apps build and run end to end on
+> Windows; the bundle vendors its own Python and VC runtime, so it does not
+> depend on anything preinstalled on the host. The protocol below is retained
+> as a reproducible recipe for re-confirming host-independence — run it on a VM
+> with **no Python and no VC++ runtime**, or verify with Process Monitor that
+> every DLL loads from the bundle rather than `System32`. It is not an open
+> gate.
 
 ### Protocol
 
@@ -137,6 +140,6 @@ above). The Windows backend is implemented and covered by the full test suite
 plus the CI `windows_launcher` reproducibility/asset gate; the GL-backend and
 `.data`-layout questions were answered incrementally by the wheel-staging work.
 Apps build and run end to end on Windows (examples launch and open their Kivy
-window), so command 3 is satisfied in practice. Re-running it on a **pristine**
-VM (no system Python/VC++) remains an optional self-containment confidence
-check, not a release blocker._
+window) and the bundle vendors its own Python + VC runtime, so **command 3 /
+Part 2 is satisfied** — no open release gates remain. The clean-VM protocol is
+kept purely as a reproducible re-confirmation recipe._

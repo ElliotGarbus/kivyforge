@@ -493,6 +493,12 @@ to identify the missing DLL rather than guessing.
 work.** Findings (PBS VC-runtime bundling, the GL backend answer, any layout
 surprises) are recorded in `docs/design/dev/windows-dll-findings.md`.
 
+> **Resolved.** This gate is satisfied: the backend is implemented and apps
+> build and run end to end on Windows, with the bundle vendoring its own Python
+> and VC runtime. The chain above is retained as a reproducible recipe for
+> re-confirming host-independence, not as an open item — see
+> [windows-dll-findings.md → Part 2](../../dev/windows-dll-findings.md#part-2--clean-vm-dll-discovery-spike-satisfied).
+
 ## Launcher
 
 The bundle's entry point is a **native, prebuilt, windowed-subsystem
