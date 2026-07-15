@@ -140,6 +140,34 @@ def launcher_exe_name(display_name: str) -> str:
     return f"{windows_safe_name(display_name)}.exe"
 
 
+def copy_launcher(
+    bundle: Path,
+    *,
+    display_name: str,
+    launcher_src: Path | None = None,
+) -> Path:
+    """Copy the vendored launcher to ``<bundle>\\<safe-name>.exe`` (no patch).
+
+    *launcher_src* defaults to the vendored, SHA-256-verified binary; tests
+    inject a fake. Returns the copied ``.exe`` path. Resource patching is a
+    separate step (:func:`patch_launcher`) so callers can defer it until after
+    the bundle is in its final location — an rcedit-patched executable is a
+    strong antivirus trigger that holds the file open and can block a directory
+    rename of the still-being-assembled tree on Windows.
+    """
+    src = launcher_src if launcher_src is not None else vendored_launcher()
+    dest = bundle / launcher_exe_name(display_name)
+    shutil.copy2(src, dest)
+    return dest
+
+
+def patch_launcher(
+    exe: Path, patch: ResourcePatch, *, rcedit: Path | None = None
+) -> None:
+    """Patch a placed launcher's icon/version resources in place with rcedit."""
+    patch_resources(exe, patch, rcedit=rcedit)
+
+
 def place_launcher(
     bundle: Path,
     *,
@@ -150,11 +178,9 @@ def place_launcher(
 ) -> Path:
     """Copy the vendored launcher to ``<bundle>\\<safe-name>.exe`` + patch it.
 
-    *launcher_src*/*rcedit* default to the vendored, SHA-256-verified binaries;
-    tests inject fakes. Returns the placed ``.exe`` path.
+    Convenience wrapper over :func:`copy_launcher` + :func:`patch_launcher` for
+    callers that place and patch in one location. Returns the placed ``.exe``.
     """
-    src = launcher_src if launcher_src is not None else vendored_launcher()
-    dest = bundle / launcher_exe_name(display_name)
-    shutil.copy2(src, dest)
+    dest = copy_launcher(bundle, display_name=display_name, launcher_src=launcher_src)
     patch_resources(dest, patch, rcedit=rcedit)
     return dest

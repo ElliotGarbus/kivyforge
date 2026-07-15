@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
@@ -24,6 +23,7 @@ from kivyforge.lock.reader import LockError, is_in_sync
 from .. import HostCapabilityError, get_platform
 from . import WindowsBundleError
 from .bundle import build_onedir, launcher_name, onedir_path, resolve_assembly_arch
+from .fsswap import discard_reserved, reserve_previous, restore_previous
 from .lock import WindowsLockfile
 from .lock import load as load_windows_lock
 from .signing import select_signer
@@ -182,20 +182,24 @@ def _sign_launcher(config, dest: Path) -> bool:
 
 
 def _copy_folder_atomic(bundle: Path, dest: Path) -> None:
-    """Copy *bundle* to *dest*, swapping in atomically (never a partial tree)."""
+    """Copy *bundle* into *dest*, preserving any prior copy until it succeeds.
+
+    Copies **directly into the final location**: like the build step, a freshly
+    written tree cannot be reliably renamed on Windows (the antivirus scanner
+    holds new files open), so temp-dir + rename is not viable. Any previous dist
+    copy is reserved first and restored if the copy fails, so a broken package
+    never destroys a working one.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(dir=dest.parent, prefix=f".{dest.name}.tmp-"))
+    trash = reserve_previous(dest)
     try:
-        # copytree needs a non-existent target; stage inside the temp dir.
-        staged = work / dest.name
-        shutil.copytree(bundle, staged, ignore=_PACKAGE_IGNORE)
+        # copytree needs a non-existent target; the reserve moved any prior away.
+        shutil.copytree(bundle, dest, ignore=_PACKAGE_IGNORE)
     except BaseException:
-        shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(dest, ignore_errors=True)
+        restore_previous(trash, dest)
         raise
-    if dest.exists():
-        shutil.rmtree(dest)
-    staged.replace(dest)
-    shutil.rmtree(work, ignore_errors=True)
+    discard_reserved(trash)
 
 
 def _load_and_verify(

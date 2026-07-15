@@ -12,16 +12,17 @@ module, then place + resource-patch the launcher. Produces:
     ├── bin/                      ← declared native binaries (absent when empty)
     └── python/                   ← WHOLE PBS prefix
 
-The tree is assembled into a temp directory and swapped in only on success, so a
-failure mid-assembly leaves the previous, working bundle untouched instead of a
-half-written one. The onedir folder is itself a shipped distributable (portable
-use) *and* the input to the Phase 7 packaging step.
+The tree is assembled **in place** (see :mod:`.fsswap`): a freshly written tree
+cannot be reliably renamed on Windows because the antivirus scanner holds new
+files open, so any previous bundle is reserved first and restored if assembly
+fails — a broken build never destroys a working one. The onedir folder is itself
+a shipped distributable (portable use) *and* the input to the Phase 7 packaging
+step.
 """
 
 from __future__ import annotations
 
 import shutil
-import tempfile
 from pathlib import Path
 
 import click
@@ -30,6 +31,7 @@ from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.config.model import Config
 
 from . import WindowsBundleError
+from .fsswap import discard_reserved, reserve_previous, restore_previous
 from .icons import stage_icon
 from .launcher import launcher_exe_name, place_launcher, write_bootstrap
 from .lock import WindowsLockfile
@@ -76,14 +78,25 @@ def build_onedir(
     cache: ArtifactCache | None = None,
     echo=click.echo,
 ) -> Path:
-    """Build the onedir bundle tree and return its path."""
+    """Build the onedir bundle tree and return its path.
+
+    The tree is assembled **directly into its final location**. Temp-dir + rename
+    (the POSIX pattern) is not viable on Windows: a just-written tree cannot be
+    reliably renamed because the antivirus real-time scanner holds the new
+    executables/DLLs open — on a cold first-sight scan (cloud lookup) that lasts
+    well beyond any reasonable retry window. Instead we preserve any previous
+    bundle in a trash dir first and restore it if assembly fails, so a broken
+    build never destroys a working one. The trash is an already-scanned tree,
+    which renames instantly; only freshly written files (which we never rename)
+    hit the scan window.
+    """
     target_arch = resolve_assembly_arch(lock.archs, arch)
     cache = cache or ArtifactCache()
     staging_dir = staging_dir or (project_root / "build" / "windows")
     bundle = staging_dir / bundle_dir_name(config)
 
     staging_dir.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(dir=staging_dir, prefix=f".{bundle.name}.tmp-"))
+    trash = reserve_previous(bundle)
     try:
         echo(
             f"Staging CPython {lock.python_runtime.version} runtime ({target_arch}) ..."
@@ -91,7 +104,7 @@ def build_onedir(
         stage_runtime(
             lock.python_runtime,
             target_arch,
-            work / "python",
+            bundle / "python",
             project_root=project_root,
             cache=cache,
             no_cache=no_cache,
@@ -101,7 +114,7 @@ def build_onedir(
         stage_wheels(
             lock.packages,
             target_arch,
-            work / "python",
+            bundle / "python",
             project_root=project_root,
             cache=cache,
             no_cache=no_cache,
@@ -111,34 +124,33 @@ def build_onedir(
             echo(f"Staging {len(lock.native_binaries)} native binaries ...")
             stage_native_binaries(
                 lock,
-                work,
+                bundle,
                 target_arch,
                 project_root=project_root,
                 cache=cache,
                 no_cache=no_cache,
             )
 
-        _copy_app_sources(config, project_root, work / "app")
+        _copy_app_sources(config, project_root, bundle / "app")
 
         write_bootstrap(
-            work,
+            bundle,
             entry_point=config.kivy.entry_point,
             app_id=config.windows_required.app_id,
         )
 
-        icon = stage_icon(config, project_root, work / "app.ico")
+        icon = stage_icon(config, project_root, bundle / "app.ico")
         place_launcher(
-            work,
+            bundle,
             display_name=config.display_name,
             patch=_resource_patch(config, icon),
         )
     except BaseException:
-        shutil.rmtree(work, ignore_errors=True)
+        shutil.rmtree(bundle, ignore_errors=True)
+        restore_previous(trash, bundle)
         raise
 
-    if bundle.exists():
-        shutil.rmtree(bundle)
-    work.replace(bundle)
+    discard_reserved(trash)
     return bundle
 
 

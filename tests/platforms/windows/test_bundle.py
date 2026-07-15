@@ -157,9 +157,22 @@ class TestBuildOnedir:
         monkeypatch.setattr(bundle, "stage_wheels", _boom)
         with pytest.raises(WindowsBundleError, match="boom"):
             bundle.build_onedir(config, _lock(), root, echo=lambda *a, **k: None)
-        assert marker.exists()  # untouched
-        # No leftover temp dirs.
-        assert not list((root / "build" / "windows").glob(".My App.tmp-*"))
+        assert marker.exists()  # prior bundle restored, untouched
+        # The reserved-previous trash was restored, not left behind.
+        assert not list((root / "build" / "windows").glob(".My App.old-*"))
+
+    def test_rebuild_replaces_existing_bundle(self, project, fake_stages):
+        root, config = project
+        first = bundle.build_onedir(config, _lock(), root, echo=lambda *a, **k: None)
+        # A file present only in the old bundle must not survive the rebuild.
+        (first / "STALE.txt").write_text("old")
+
+        second = bundle.build_onedir(config, _lock(), root, echo=lambda *a, **k: None)
+        assert second == first
+        assert (second / "python" / "python.exe").exists()
+        assert not (second / "STALE.txt").exists()
+        # No leftover trash from the reserve/replace.
+        assert not list((root / "build" / "windows").glob(".My App.old-*"))
 
     def test_missing_entry_point_fails(self, project, fake_stages):
         root, config = project
