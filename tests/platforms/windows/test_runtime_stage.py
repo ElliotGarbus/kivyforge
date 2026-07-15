@@ -190,3 +190,15 @@ class TestExtract:
                 tf.addfile(ti, fh)
         with pytest.raises(WindowsBundleError, match="unsafe path"):
             runtime_stage._extract(evil, tmp_path / "out", "python-build-standalone")
+
+    def test_rejects_symlink_target_escape(self, tmp_path):
+        # A safely *named* member whose symlink target escapes the tree passes
+        # the name check but must be caught by the hardened extraction filter.
+        evil = tmp_path / "evil.tar.gz"
+        with tarfile.open(evil, "w:gz") as tf:
+            link = tarfile.TarInfo("python/link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../escape"
+            tf.addfile(link)
+        with pytest.raises(WindowsBundleError, match="unsafe member"):
+            runtime_stage._extract(evil, tmp_path / "out", "python-build-standalone")

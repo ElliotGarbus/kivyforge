@@ -192,10 +192,21 @@ def _extract(archive: Path, into: Path, provider: str) -> Path:
 
 
 def _safe_extractall(tf: tarfile.TarFile, into: Path) -> None:
-    """Extract, rejecting members that would escape *into* (path traversal)."""
+    """Extract, rejecting members that would escape *into*.
+
+    The explicit name check gives a clear message for the common ``../`` case;
+    ``filter="data"`` then provides the protection the name check cannot — it
+    validates symlink/hardlink *targets* (a safely named link pointing outside,
+    written through by a later member, would otherwise escape) and strips device
+    nodes and other special files. ``filter="fully_trusted"`` restored links
+    verbatim and did none of this.
+    """
     base = into.resolve()
     for member in tf.getmembers():
         target = (into / member.name).resolve()
         if not (target == base or base in target.parents):
             raise WindowsBundleError(f"unsafe path in archive: {member.name!r}")
-    tf.extractall(into, filter="fully_trusted")  # noqa: S202 — members validated just above
+    try:
+        tf.extractall(into, filter="data")  # noqa: S202 — hardened filter (validates links)
+    except tarfile.FilterError as exc:
+        raise WindowsBundleError(f"unsafe member in archive: {exc}") from exc
