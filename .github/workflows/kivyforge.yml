@@ -93,6 +93,10 @@ jobs:
 
   windows_launcher:
     name: Launcher reproducibility + vendored assets (Windows)
+    # Skipped on manual re-vendor runs: revendor_launcher already rebuilds +
+    # verifies against the runner's current toolset, and this job would only
+    # fail on stale vendored files it checked out before that sibling committed.
+    if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
     steps:
     - name: Checkout kivyforge
