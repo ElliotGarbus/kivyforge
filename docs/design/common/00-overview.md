@@ -42,7 +42,7 @@ kivyforge is in early development, added one platform at a time.
 - **iOS** — implemented. Resolves `pylock.ios.toml`, downloads the official python.org `Python.xcframework` plus iOS wheels, and generates an Xcode project. Full design under [platforms/ios](../platforms/ios/pyproject-ios.md).
 - **macOS** — implemented and verified. Produces a signed `.app` bundle, including the full Developer ID sign + notarize + staple path. See [platforms/macos/macos-spec.md](../platforms/macos/macos-spec.md).
 - **Linux** — implemented. Produces an AppDir / AppImage. See [platforms/linux/linux-spec.md](../platforms/linux/linux-spec.md).
-- **Windows** — design settled, implementation not started. Produces a onedir folder + launcher `.exe`. See [platforms/windows/windows-spec.md](../platforms/windows/windows-spec.md).
+- **Windows** — implemented. Produces a run-from-folder onedir bundle with a prebuilt windowed launcher `.exe`, optionally Authenticode-signed. See [platforms/windows/windows-spec.md](../platforms/windows/windows-spec.md).
 - **Android** — planned.
 
 ## Reading index
@@ -94,6 +94,7 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 | [windows-spec](../platforms/windows/windows-spec.md) | onedir layout, PBS runtime decision, the DLL-discovery invariant, verbs, `doctor`, sequencing |
 | [bootloader-windows](../platforms/windows/bootloader-windows.md) | The prebuilt launcher `.exe`: windowed subsystem, spawn-and-wait + Job object, wide-char/path handling |
 | [signing-windows](../platforms/windows/signing-windows.md) | Authenticode: the `Signer` protocol, thumbprint identity, Inno composition, self-signed dev/CI flow |
+| [signing-prerequisites-windows](../platforms/windows/signing-prerequisites-windows.md) | User-facing checklist for signing your app: cert into the store, thumbprint, `signtool`, config, timestamp |
 
 ### Developer notes
 

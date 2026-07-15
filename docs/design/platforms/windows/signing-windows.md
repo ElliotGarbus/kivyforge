@@ -25,7 +25,9 @@ step, and the self-signed dev/CI flow.
   your PC."
 - Ship v1 unsigned + **document the wall**: what SmartScreen shows for an
   unsigned/unknown binary, plus a short "how to sign your kivyforge output"
-  guide (get a cert into the store → set the thumbprint → `package`).
+  guide (get a cert into the store → set the thumbprint → `package`) — the
+  user-facing prerequisites checklist lives in
+  [signing-prerequisites-windows.md](signing-prerequisites-windows.md).
 
 ## Architecture
 

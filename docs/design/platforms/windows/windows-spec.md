@@ -31,6 +31,9 @@ Companion documents:
 - [signing-windows.md](signing-windows.md) — Authenticode signing: the
   `Signer` protocol, thumbprint identity, Inno Setup composition, self-signed
   dev/CI flow.
+- [signing-prerequisites-windows.md](signing-prerequisites-windows.md) — the
+  user-facing checklist for signing your app: cert into the store, thumbprint,
+  `signtool`, config, timestamp reachability.
 
 ## Sequencing
 
