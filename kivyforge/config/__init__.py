@@ -18,6 +18,8 @@ from .model import (
     SigningConfig,
     SplashConfig,
     SwiftPackageDep,
+    WindowsConfig,
+    WindowsSigningConfig,
     XcframeworkDep,
 )
 
@@ -38,5 +40,7 @@ __all__ = [
     "SigningConfig",
     "SplashConfig",
     "SwiftPackageDep",
+    "WindowsConfig",
+    "WindowsSigningConfig",
     "XcframeworkDep",
 ]

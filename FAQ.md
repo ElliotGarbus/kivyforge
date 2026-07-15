@@ -7,9 +7,12 @@ kivyforge is a declarative, PEP 621-aligned build toolchain for
 python-for-android, and buildozer. You describe your app once in `pyproject.toml`
 and kivyforge packages it for the platform you target. The goal is to support
 every platform Kivy runs on (Android, iOS, Linux, macOS, Windows); today the
-implemented target is **iOS**, where the toolchain resolves dependencies into a
-lockfile, downloads the official `Python.xcframework` plus prebuilt iOS wheels,
-and generates an [Xcode](https://developer.apple.com/xcode/) `.xcodeproj`.
+implemented targets are **iOS, macOS, Linux, and Windows**. On iOS the toolchain
+resolves dependencies into a lockfile, downloads the official `Python.xcframework`
+plus prebuilt iOS wheels, and generates an
+[Xcode](https://developer.apple.com/xcode/) `.xcodeproj`; the desktop backends
+bundle a relocatable CPython plus wheels into a `.app` (macOS), an AppImage/AppDir
+(Linux), or a run-from-folder `onedir` (Windows).
 
 For the full workflow see the [README](README.md); for design and reference
 details see the [design docs](docs/design/common/00-overview.md). When something looks
@@ -189,3 +192,49 @@ floor is `max(runtime floor, highest manylinux level among your locked wheels)`;
 at the cost of requiring a newer host. Setting it *below* 2.17 is a config
 error. **musl** hosts (Alpine) are out of scope: the gnu runtime won't run
 there, and Kivy publishes no musllinux wheels.
+
+### My Windows app shows a "Windows protected your PC" (SmartScreen) warning
+
+That is Microsoft **SmartScreen**, and it is expected for a new, unsigned (or
+newly-signed, low-reputation) executable — it is not a kivyforge bug. kivyforge
+ships the default artifact **unsigned**, so recipients see the blue prompt and
+must click *More info → Run anyway*. Two ways to reduce it: (1) configure
+Authenticode signing (`[tool.kivy.windows.signing]` with a certificate-store
+`thumbprint`) so `kivyforge package` signs + timestamps the launcher — a standard
+OV certificate still needs to *build reputation* before the prompt stops; an
+**EV** certificate clears it immediately. (2) Distribute through a channel users
+already trust. SmartScreen reputation is per-signature and accrues over
+downloads; there is no way to bypass it from inside the bundle.
+
+### `kivyforge build -p windows` fails with a long-path (`MAX_PATH`) error
+
+A full python-build-standalone prefix nested under `build\windows\<App>\python\`
+can exceed the legacy 260-character `MAX_PATH` limit. Enable long paths on the
+build host: set `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled`
+to `1` (an elevated PowerShell one-liner: `New-ItemProperty -Path
+"HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -Value
+1 -PropertyType DWORD -Force`), then reboot. `kivyforge doctor -p windows` WARNs
+when it is off. Building closer to the drive root (a short project path) also
+helps.
+
+### Do I need to install the Visual C++ runtime to run a kivyforge Windows app?
+
+No. The bundled python-build-standalone runtime ships the core VC++ runtime DLLs
+(`vcruntime140.dll`, `vcruntime140_1.dll`) inside the `onedir`, and kivyforge
+stages them beside `python.exe` so the app never depends on a system-wide "VC++
+Redistributable" install. (`msvcp140.dll`, the C++ standard library, is not in
+PBS; kivyforge stages it best-effort from the build host when a wheel needs it —
+most pure-Kivy apps don't.) The whole point of the `onedir` is that every DLL the
+app needs is a real, shipped file.
+
+### The Windows app opens a black console window / no window at all
+
+The launcher is a **windowed-subsystem** `.exe`: double-clicking it in Explorer
+opens your Kivy window with **no console flash**. If you see a console, you are
+probably launching `python.exe` directly instead of the generated launcher — run
+the `<App>.exe` beside it. Conversely, `kivyforge run -p windows` deliberately
+*attaches* the app to your terminal so you can see stdout/stderr and tracebacks
+during development; that is the diagnostic path, not the double-click path. If the
+window never appears, run `<App>.exe` from a terminal (or use `kivyforge run`) to
+see the traceback — a missing GL/ANGLE backend or an import error in your app
+surfaces there.

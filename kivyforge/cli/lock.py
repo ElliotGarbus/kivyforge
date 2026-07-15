@@ -43,6 +43,7 @@ class _LockOps:
     require_ios: bool
     require_macos: bool
     require_linux: bool = False
+    require_windows: bool = False
     # Wheel+runtime backends (macOS/Linux) surface non-fatal lock warnings
     # (e.g. accepting a vendored plain linux_* wheel) via an on_warning callback.
     emits_warnings: bool = False
@@ -91,6 +92,21 @@ def _lock_ops(platform: str) -> _LockOps:
             require_linux=True,
             emits_warnings=True,
         )
+    if platform == "windows":
+        from ..platforms.windows import lock as windows_lock
+
+        return _LockOps(
+            build=windows_lock.build_windows_lockfile,
+            dumps=windows_lock.dumps,
+            load=windows_lock.load,
+            semantic_equal=windows_lock.semantic_equal,
+            diff_summary=windows_lock.diff_summary,
+            build_error=windows_lock.WindowsBuildError,
+            require_ios=False,
+            require_macos=False,
+            require_windows=True,
+            emits_warnings=True,
+        )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."
     )
@@ -120,6 +136,7 @@ def lock(cli_platform: str | None, update: bool, offline: bool, check: bool) -> 
             require_ios=ops.require_ios,
             require_macos=ops.require_macos,
             require_linux=ops.require_linux,
+            require_windows=ops.require_windows,
         )
     except ConfigError as exc:
         raise ToolchainError(exc.format()) from exc

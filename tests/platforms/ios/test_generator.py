@@ -9,6 +9,10 @@ from kivyforge.platforms.ios.generator import XcodeProjectGenerator
 from kivyforge.platforms.ios.materialize import materialize_project
 from kivyforge.platforms.ios.staging import StagingError, create_staging
 
+# iOS staging creates the <app>-ios/app symlink; skip on hosts without the
+# symlink privilege (stock Windows). iOS only builds on macOS regardless.
+pytestmark = pytest.mark.requires_symlinks
+
 
 def _objects(project):
     """pbxproj's dynamic object store is untyped; reach it via an Any-typed param."""

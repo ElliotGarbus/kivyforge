@@ -54,6 +54,11 @@ dev = [
 linux = [
     "Pillow>=10",
 ]
+# Windows backend icon rendering (1024×1024 PNG → multi-size .ico). Same opt-in
+# Pillow dependency as the Linux icons extra; kept optional to stay lean.
+windows = [
+    "Pillow>=10",
+]
 
 # ---------------------------------------------------------------------------
 # Setuptools package discovery
@@ -64,23 +69,39 @@ include = ["kivyforge*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.md", "*.txt", "*.toml", "*.h", "*.m", "*.h.in"]
+# Windows backend: the vendored prebuilt launcher + rcedit (with their SHA-256
+# manifest and licenses/notice) and the launcher's in-repo C source.
+"kivyforge.platforms.windows.vendor" = [
+    "*.exe",
+    "SHA256SUMS",
+    "LICENSE.rcedit",
+    "NOTICE",
+]
+"kivyforge.platforms.windows.launcher" = ["*.c"]
 
 # ---------------------------------------------------------------------------
 # pytest
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--tb=short -q --cov=kivyforge --cov-report=term-missing --cov-fail-under=80"
+addopts = "--tb=short -q --cov=kivyforge --cov-config=pyproject.toml --cov-report=term-missing --cov-fail-under=80"
 
 # ---------------------------------------------------------------------------
 # coverage
 # ---------------------------------------------------------------------------
 [tool.coverage.run]
 source = ["kivyforge"]
+branch = true
 # Templates are app-runtime files placed in the built bundle, not library
 # code exercised by the test suite.
 omit = [
     "kivyforge/platforms/ios/templates/*",
+    # Windows launcher/rcedit build+fetch tooling: needs the MSVC toolset /
+    # network, so it is exercised by the dedicated windows_launcher CI job
+    # rather than the hermetic unit suite. Leading-* matches both the Linux
+    # (forward-slash) and Windows (backslash) recorded paths.
+    "*build_launcher.py",
+    "*fetch_rcedit.py",
 ]
 
 [tool.coverage.report]

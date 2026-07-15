@@ -94,6 +94,7 @@ class TestFormatResolution:
             _resolve_format(IosPlatform(), "app")
 
 
+@pytest.mark.requires_symlinks
 class TestPackageIos:
     def test_release_writes_export_options(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

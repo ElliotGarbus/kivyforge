@@ -21,6 +21,10 @@ from kivyforge.platforms.ios.lock import (
 )
 from kivyforge.platforms.ios.xcode import runner as runner_mod
 
+# These orchestrate iOS build/run/open, which stage the symlinked <app>-ios/app
+# tree; skip on hosts without the symlink privilege (stock Windows).
+pytestmark = pytest.mark.requires_symlinks
+
 PYPROJECT = (
     textwrap.dedent(
         """

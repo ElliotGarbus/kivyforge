@@ -10,9 +10,9 @@ unlike them, the launcher is a **prebuilt** native binary (never compiled on
 the user's machine) and the artifact layout is load-bearing for Kivy's
 Windows DLL discovery.
 
-> **Status: design settled, implementation not started.** This spec is written
-> *before* the code — the reverse of the macOS/Linux specs, which shipped as
-> implemented. The **v1 baseline is public Kivy 2.3.1 / SDL2** (`kivy_deps.sdl2`
+> **Status: implemented.** The Windows backend ships
+> (`kivyforge {lock,build,run,package,doctor} -p windows`); this spec now tracks
+> the shipped design. The **v1 baseline is public Kivy 2.3.1 / SDL2** (`kivy_deps.sdl2`
 > et al.), because Kivy 3.0 has no public desktop wheels yet; the design keeps
 > wheel staging and the bootstrap **generic over `share/*/bin`** so the SDL3 /
 > Kivy 3 path is purely additive when a wheel ships. Decisions here were settled
@@ -643,9 +643,12 @@ settled (recorded under "Settled decisions" in the
       (`Get-AuthenticodeSignature .\python.exe, .\python3xx.dll`) — only
       affects Smart App Control machines; folds into the optional
       tree-signing sweep if unsigned. (Spike.)
-- [ ] **Verify PBS bundles `vcruntime140.dll` / `vcruntime140_1.dll` /
-      `msvcp140.dll`** next to `python.exe`; if not, Phase 4 places them
-      app-local. (Spike.)
+- [x] **Verify PBS bundles `vcruntime140.dll` / `vcruntime140_1.dll` /
+      `msvcp140.dll`** next to `python.exe`. RESOLVED (Phase 4): PBS ships
+      `vcruntime140.dll` + `vcruntime140_1.dll` but **not** `msvcp140.dll`;
+      `runtime_stage.ensure_vc_runtime` verifies the two core DLLs and places
+      `msvcp140.dll` app-local best-effort. See
+      [windows-dll-findings.md](../../dev/windows-dll-findings.md).
 - [ ] **Pin down the baseline Windows GL backend** (ANGLE vs desktop GL for
       Kivy 2.3.1 / SDL2) and which dep packages it needs. (Spike.)
 

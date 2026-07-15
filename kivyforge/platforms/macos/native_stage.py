@@ -3,9 +3,10 @@
 The ``[tool.kivy.macos.native.binaries]`` channel: each entry is fetched +
 SHA-256-verified from ``pylock.macos.toml`` (URL or vendored path), then staged
 into ``Contents/Resources/bin`` — a single native file copied in with its exec
-bit set, or a ``.zip`` of several extracted with a path-traversal guard. The
-directory is created only when the lock actually pins binaries (no empty
-``bin/``). The bundle's signing sweep later covers everything under it.
+bit set, or a ``.zip`` / ``.tar.gz`` / ``.tgz`` of several extracted with a
+path-traversal guard. The directory is created only when the lock actually pins
+binaries (no empty ``bin/``). The bundle's signing sweep later covers everything
+under it.
 
 The staging mechanics live in the shared
 :mod:`kivyforge.artifacts.native_stage_util`; this module is the macOS-facing

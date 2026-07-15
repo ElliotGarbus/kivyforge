@@ -70,3 +70,29 @@ categories = ["Game"]
 
 [tool.kivy.linux.python]
 version = "3.13.14"
+
+# The same [project]/[tool.kivy] also targets Windows: an onedir bundle (a
+# windowed launcher .exe beside a full python-build-standalone prefix) from the
+# same PyPI Kivy 2.3.1 win_amd64 wheels. app_id is the AppUserModelID (PascalCase
+# CompanyName.ProductName style — different from the reverse-DNS ids above).
+[tool.kivy.windows]
+schema_version = 1
+app_id = "Example.DiceRoller"
+archs = ["amd64"]
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.windows.icons]
+# 1024x1024 PNG rendered into a multi-resolution .ico for the launcher (Pillow).
+source = "assets/icon.png"
+
+[tool.kivy.windows.python]
+version = "3.13.14"

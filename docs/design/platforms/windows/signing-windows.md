@@ -8,10 +8,10 @@ unsigned, hook first-class from day one), the architecture (a `Signer`
 protocol + thumbprint identity), the composition with an external Inno Setup
 step, and the self-signed dev/CI flow.
 
-> **Status: design settled, implementation not started** (tracked with the
-> [Windows spec](windows-spec.md)). The signing hook is the third item in the
-> implementation sequence and can be built and tested against a self-signed
-> certificate at any point, at zero cost.
+> **Status: implemented** (tracked with the [Windows spec](windows-spec.md)). The
+> signing hook ships (`kivyforge/platforms/windows/signing.py`): a `Signer`
+> protocol with `SigntoolSigner` + `NullSigner`, off by default, verified against
+> a self-signed certificate in CI. v1 ships the default artifact unsigned.
 
 ## Policy
 

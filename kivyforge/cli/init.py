@@ -26,7 +26,13 @@ from pathlib import Path
 
 import click
 
-from ..config.model import MacosSigningConfig, SigningConfig
+from ..config.model import (
+    DEFAULT_WINDOWS_STORE_SCOPE,
+    DEFAULT_WINDOWS_TIMESTAMP_URL,
+    MacosSigningConfig,
+    SigningConfig,
+    WindowsSigningConfig,
+)
 from ..platforms import PLATFORM_ENV_VAR, available_platform_names, get_platform
 from ._common import PYPROJECT_NAME, ToolchainError
 from ._platform import configured_platforms, platform_option
@@ -39,6 +45,7 @@ from .init_writer import (
     render_kivy_tables,
     render_linux_tables,
     render_macos_tables,
+    render_windows_tables,
     strip_platform_tables,
 )
 
@@ -261,6 +268,16 @@ def _render_overlay(
             categories=_read_categories(table) if preserve else None,
             include_shared=include_shared,
         )
+    if platform_name == "windows":
+        return render_windows_tables(
+            app_slug,
+            signing=_read_windows_signing(table) if preserve else None,
+            python_version=_read_python_version(table) if preserve else None,
+            has_kivy=has_kivy,
+            archs=_read_str_list(table, "archs") if preserve else None,
+            icon_source=_read_icon_source(table) if preserve else None,
+            include_shared=include_shared,
+        )
     raise ToolchainError(
         f"`kivyforge init` does not support platform {platform_name!r} yet."
     )
@@ -374,6 +391,20 @@ def _read_macos_signing(table: dict) -> MacosSigningConfig | None:
         identity=identity,
         team_id=signing.get("team_id", ""),
         notary_profile=signing.get("notary_profile", ""),
+    )
+
+
+def _read_windows_signing(table: dict) -> WindowsSigningConfig | None:
+    signing = table.get("signing")
+    if not isinstance(signing, dict):
+        return None
+    thumbprint = signing.get("thumbprint", "")
+    if not thumbprint:
+        return None
+    return WindowsSigningConfig(
+        thumbprint=thumbprint,
+        timestamp_url=signing.get("timestamp_url", DEFAULT_WINDOWS_TIMESTAMP_URL),
+        store_scope=signing.get("store_scope", DEFAULT_WINDOWS_STORE_SCOPE),
     )
 
 

@@ -32,6 +32,7 @@ class TestIsMacho:
 
         assert not machotools.is_macho(tmp_path)
 
+    @pytest.mark.requires_symlinks
     def test_rejects_symlink(self, tmp_path):
         real = tmp_path / "real"
         _write_magic(real, 0xFEEDFACF)

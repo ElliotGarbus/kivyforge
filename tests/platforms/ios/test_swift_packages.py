@@ -16,6 +16,10 @@ from kivyforge.platforms.ios.swift_packages import (
     xcode_requirement,
 )
 
+# These build the iOS staging tree (symlinked app dir); skip where symlinks
+# are unavailable (stock Windows). iOS builds only on macOS regardless.
+pytestmark = pytest.mark.requires_symlinks
+
 REMOTE = LockedSwiftPackage(
     name="Sentry",
     products=("Sentry",),

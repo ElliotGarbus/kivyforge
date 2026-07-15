@@ -8,22 +8,13 @@ dongles, camera/scanner/payment-terminal SDKs, and helper executables (a bundled
 `xcframeworks` channels, with a uniform `name → { version, source }` shape and a
 single shared lock representation.
 
-> **Status: PLACEHOLDER — revisit after Windows is implemented.** This document
-> is intentionally a stub. The channel is **shipped on macOS and Linux**,
-> **designed on Windows**, and the three platform specs currently each carry
-> their own full description. The shared staging mechanics have **already been
-> extracted** into `kivyforge/artifacts/native_stage_util.py` (`stage_binaries()`
-> — fetch/verify, `_safe_extract`, tar `filter="data"`, the `_claim` collision
-> guard), which both the macOS and Linux backends now call through thin
-> wrappers. Once the Windows backend lands (the third and final desktop
-> implementation, its `native_stage.py` a third thin wrapper), promote this from
-> a pointer into the authoritative cross-platform reference: consolidate the
-> shared design here, keep only the genuinely platform-specific divergences in
-> the platform specs, and act on the
-> ["Revisit after Windows"](#revisit-after-windows) checklist below. Do **not**
-> expand it into that reference before then — the Windows implementation will
-> surface deltas (as macOS's did), and consolidating against three *implemented*
-> backends is cheaper and more accurate than against two-shipped-one-designed.
+> **Status: shipped on all three desktop backends (macOS, Linux, Windows).** The
+> shared staging mechanics live in `kivyforge/artifacts/native_stage_util.py`
+> (`stage_binaries()` — fetch/verify, `_safe_extract`, tar `filter="data"`, the
+> `_claim` collision guard, plus the Windows-facing casefold /
+> reserved-name / ADS guards and the exec-bit no-op), which all three backends
+> call through thin per-backend wrappers. The per-platform divergences are
+> captured in the table below; the platform specs keep only their divergent row.
 
 ## Why it exists
 
@@ -79,11 +70,12 @@ divergence is entirely about shared libraries.
 |----------|-----------|-----------------------|------------|---------------------|
 | **macOS** (shipped) | `Contents/Resources/bin` | **By path only** — `DYLD_*` is stripped under SIP / Hardened Runtime, so no by-name option exists. `PATH` prepend for helpers. | Mach-O universal2 slice coverage (`machotools`) | Deep-sign sweep already walks every Mach-O; notarization *requires* it |
 | **Linux** (shipped) | `usr/bin` | **By name via `LD_LIBRARY_PATH` append** (helpers on `PATH`) — append keeps host libGL/libEGL resolution first while enabling soname + transitive `NEEDED` loads. See [linux-spec §"Library loading model"](../platforms/linux/linux-spec.md#library-loading-model). | ELF class + `e_machine` (a small hermetic reader) | None — Linux has no signing analog |
-| **Windows** (designed) | `<bundle>\bin` | **By name via `os.add_dll_directory` + `PATH` prepend** in the generated bootstrap. | PE COFF machine type (`IMAGE_FILE_MACHINE_*`) | v2 payload sweep signs every PE, so `bin\` is covered |
+| **Windows** (shipped) | `<bundle>\bin` | **By name via `os.add_dll_directory` + `PATH` prepend** in the generated bootstrap. | PE COFF machine type (`IMAGE_FILE_MACHINE_*`, a small hermetic reader) | v1 signs the launcher only; the onedir keeps every payload PE signable (v2 sweep) |
 
 Everything *else* — the config shape, the source rules, the lock field, the
-fetch/verify/stage/collision-guard pipeline — is common, which is exactly why
-consolidating it here (post-Windows) will remove real duplication.
+fetch/verify/stage/collision-guard pipeline — is common, which is exactly why the
+three thin wrappers over `native_stage_util.stage_binaries()` carry no duplicated
+staging logic.
 
 ## Current authoritative sources
 
@@ -95,41 +87,30 @@ Until this document is promoted, the platform specs remain authoritative:
 - **Linux (shipped):**
   [linux-spec §"Native binaries that are not wheels"](../platforms/linux/linux-spec.md#native-binaries-that-are-not-wheels-toolkivylinuxnativebinaries)
   + [plan](../../../.cursor/plans/kivyforge_linux_native_binaries.plan.md).
-- **Windows (designed):**
+- **Windows (shipped):**
   [windows-spec §"Native binaries that are not wheels"](../platforms/windows/windows-spec.md#native-binaries-that-are-not-wheels)
-  + [plan](../../../.cursor/plans/kivyforge_windows_backend.plan.md).
+  + [plan](../../../.cursor/plans/kivyforge_windows_backend.plan.md), with the
+  runnable [`examples/desktop/hello-native`](../../../examples/desktop/hello-native)
+  Windows overlay (`greet.dll` loaded by name, `roll.exe` run by name).
 
-## Revisit after Windows
+## Follow-ups
 
-When the Windows backend is implemented, work through this checklist:
-
-- [ ] **Consolidate.** Move the shared design (config surface, source rules,
-      lock field, staging pipeline, collision guard, boundary, escape hatch)
-      into this document as the single source of truth; reduce each platform
-      spec's section to just its divergent row (stage dir, loading model, arch
-      check, signing).
-- [x] **Extract shared staging helpers.** *Done* — the `_claim` /
-      `_safe_extract` / tar `filter="data"` / `_make_executable` / `_fetch`
-      bodies live in `kivyforge/artifacts/native_stage_util.py`
-      (`stage_binaries()`), raising the neutral `NativeStageError`; macOS and
-      Linux call it through thin per-backend wrappers. **Remaining for
-      Windows:** wrap it (a third thin wrapper) and extend the *shared* helper
-      with the Windows-specific guards — **case-insensitive collision keys**
-      (so `SDK.dll`/`sdk.dll` collide), **reserved-name / alternate-data-stream
-      rejection**, path-separator normalization, and an explicit **exec-bit
-      no-op** on Windows.
-- [ ] **Unify the arch-check seam.** `machotools` (Mach-O), the Linux ELF
-      reader, and the Windows PE reader are three small header parsers with one
-      job — "does this binary match the target arch?" Consider a common
-      `arch-of-binary` interface behind them so `doctor` shares one code path.
-- [ ] **Record realized-vs-designed deltas.** Fold any Windows implementation
-      surprises (and any Linux ones) back in as inline notes, the macos-spec
-      precedent. Flip the Linux/Windows spec sections' status banners to
-      "implemented".
+- [x] **Extract shared staging helpers.** Done — the `_claim` / `_safe_extract` /
+      tar `filter="data"` / `_make_executable` / `_fetch` bodies live in
+      `kivyforge/artifacts/native_stage_util.py` (`stage_binaries()`), raising the
+      neutral `NativeStageError`; macOS, Linux, and Windows all call it through
+      thin per-backend wrappers. The Windows guards (case-insensitive collision
+      keys so `SDK.dll`/`sdk.dll` collide, reserved-name / alternate-data-stream
+      rejection, exec-bit no-op) extend the *shared* helper behind opt-in flags,
+      so macOS/Linux behavior is unchanged.
+- [ ] **Unify the arch-check seam.** `machotools` (Mach-O), the Linux ELF reader,
+      and the Windows PE reader (`petools`) are three small header parsers with
+      one job — "does this binary match the target arch?" A common
+      `arch-of-binary` interface behind them would let `doctor` share one code
+      path. Deferred (each is tiny and already tested independently).
 - [ ] **Decide the doc's final shape.** Either keep this as the cross-platform
-      reference under `common/`, or (if it stays thin) collapse it back into a
-      short principle in [04 — artifact distribution](04-artifact-distribution.md)
-      and let the platform specs own the details. Make the call with three
-      shipped backends in hand.
+      reference under `common/`, or collapse it into a short principle in
+      [04 — artifact distribution](04-artifact-distribution.md) and let the
+      platform specs own the details.
 - [ ] **Link it up.** Cross-link from the platform specs and from
       [00 — overview](00-overview.md) once promoted.

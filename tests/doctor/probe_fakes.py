@@ -28,6 +28,9 @@ class FakeProbe:
         self._sessions = overrides.get("sessions", {"x11"})
         self._desktop_validate = overrides.get("desktop_validate", True)
         self._desktop_errors = overrides.get("desktop_errors", None)
+        self._long_paths = overrides.get("long_paths", True)
+        self._signtool = overrides.get("signtool", True)
+        self._thumbprints = overrides.get("thumbprints", [])
 
     def host_system(self):
         return self._host
@@ -90,3 +93,14 @@ class FakeProbe:
 
     def desktop_file_errors(self, path):
         return self._desktop_errors
+
+    def long_paths_enabled(self):
+        return self._long_paths
+
+    def has_signtool(self):
+        return self._signtool
+
+    def code_signing_thumbprints(self, store_scope):
+        if isinstance(self._thumbprints, dict):
+            return list(self._thumbprints.get(store_scope, []))
+        return list(self._thumbprints)

@@ -61,6 +61,93 @@ jobs:
       run: |
         pytest --cov=kivyforge --cov-report=term-missing --cov-report=xml
 
+  windows_tests:
+    name: Unit tests (Windows)
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ['3.13', '3.14']
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Enable symlink creation (Developer Mode not required in CI)
+      # Windows runners create symlinks only with the privilege; enabling
+      # core.symlinks lets git/tests exercise the symlink-dependent paths
+      # instead of skipping them (see tests/conftest.py requires_symlinks).
+      run: git config --global core.symlinks true
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install kivyforge and test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Run pytest with coverage
+      run: pytest --cov=kivyforge --cov-report=term-missing --cov-report=xml
+
+  windows_launcher:
+    name: Launcher reproducibility + vendored assets (Windows)
+    runs-on: windows-latest
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Verify vendored rcedit matches its pinned SHA-256
+      run: python -m kivyforge.platforms.windows.vendor.fetch_rcedit --check
+    - name: Rebuild the launcher from source and byte-compare (reproducibility)
+      # Uses the MSVC toolset pinned in vendor/TOOLSET.txt via vcvarsall
+      # -vcvars_ver. If the runner image drops that toolset, re-vendor the
+      # launcher with the new toolset and update TOOLSET.txt in the same commit.
+      run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
+    - name: Exercise the launcher end-to-end (spawn/argv/exit-code/env)
+      run: pytest tests/platforms/windows/test_launcher_exe.py -v --no-cov
+
+  windows_signing:
+    name: Authenticode sign + verify (self-signed, Windows)
+    runs-on: windows-latest
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Self-signed sign -> verify loop through SigntoolSigner
+      shell: pwsh
+      run: |
+        # Put the Windows SDK's signtool on PATH so shutil.which() finds it
+        # (this is exactly what SigntoolSigner.sign resolves at runtime).
+        $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+          Sort-Object FullName -Descending | Select-Object -First 1
+        if (-not $signtool) { throw "signtool.exe not found in the Windows SDK" }
+        $env:PATH = "$($signtool.Directory);$env:PATH"
+
+        # A code-signing cert in CurrentUser\My (the store SigntoolSigner uses
+        # without /sm); trust its public cert so `signtool verify /pa` passes.
+        $cert = New-SelfSignedCertificate -Type CodeSigningCert `
+          -Subject "CN=kivyforge CI" -CertStoreLocation Cert:\CurrentUser\My
+        $tp = $cert.Thumbprint
+        Export-Certificate -Cert $cert -FilePath ci.cer | Out-Null
+        Import-Certificate -FilePath ci.cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+
+        # Sign a copy of the vendored launcher via our own SigntoolSigner, then
+        # verify the resulting Authenticode signature + timestamp.
+        Copy-Item kivyforge\platforms\windows\vendor\launcher-amd64.exe signed.exe
+        python -c "from pathlib import Path; from kivyforge.platforms.windows.signing import SigntoolSigner; SigntoolSigner('$tp', 'http://timestamp.digicert.com', 'current_user').sign([Path('signed.exe')])"
+        signtool verify /pa signed.exe
+
   # macOS integration: the full suite runs here too (pbxproj generation and
   # xcodebuild/simctl command construction get real-macOS coverage). The live
   # `kivyforge build --simulator` / `kivyforge run` smoke test against a

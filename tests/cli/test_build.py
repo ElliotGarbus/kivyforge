@@ -17,6 +17,11 @@ from kivyforge.platforms.ios.lock import (
     dumps,
 )
 
+# These orchestrate an iOS build, which stages the symlinked <app>-ios/app tree;
+# skip on hosts without the symlink privilege (stock Windows), where iOS never
+# builds anyway.
+pytestmark = pytest.mark.requires_symlinks
+
 PYPROJECT = (
     textwrap.dedent(
         """

@@ -15,7 +15,7 @@ import re
 
 from packaging.requirements import InvalidRequirement, Requirement
 
-from ..config.model import MacosSigningConfig, SigningConfig
+from ..config.model import MacosSigningConfig, SigningConfig, WindowsSigningConfig
 
 # Default Python.xcframework version init seeds (spec 01).
 DEFAULT_PYTHON_VERSION = "3.15.0b2"
@@ -507,4 +507,96 @@ _LINUX_NATIVE_BINARIES_STUB = [
     "# [tool.kivy.linux.native.binaries]",
     '# ffmpeg = { version = "7.1", source = "https://example.com/ffmpeg-linux-x86_64.tar.gz" }',
     '# libgreet = { version = "0.1.0", source = "binaries/linux/libgreet.so" }',
+]
+
+
+def _windows_app_id(app_slug: str) -> str:
+    """A Pascal-cased, period-delimited AppUserModelID stub (the good-style form)."""
+    pascal = app_slug.replace("_", " ").title().replace(" ", "") or "MyApp"
+    return f"Example.{pascal}"
+
+
+def render_windows_tables(
+    app_slug: str,
+    signing: WindowsSigningConfig | None = None,
+    *,
+    python_version: str | None = None,
+    has_kivy: bool = False,
+    archs: list[str] | tuple[str, ...] | None = None,
+    icon_source: str | None = None,
+    include_shared: bool = True,
+) -> str:
+    """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.windows]`` block."""
+    display = app_slug.replace("_", " ").title()
+    if archs is not None:
+        archs_toml = ", ".join(f'"{a}"' for a in archs)
+        archs_line = f"archs = [{archs_toml}]"
+    else:
+        archs_line = 'archs = ["amd64"]'
+    lines: list[str] = []
+    if include_shared:
+        lines += [
+            "[tool.kivy]",
+            f'display_name = "{display}"',
+            'app_dir = "src"',
+            'entry_point = "main"',
+            'orientation = ["portrait"]',
+            "",
+        ]
+    lines += [
+        "[tool.kivy.windows]",
+        "schema_version = 1",
+        f'app_id = "{_windows_app_id(app_slug)}"  '
+        "# TODO: your AppUserModelID (no spaces, <=128 chars)",
+        archs_line,
+    ]
+    if has_kivy:
+        lines += [""] + _KIVY_EXCLUDE_LINES
+    if icon_source is not None:
+        icon_lines = [f'source = "{icon_source}"']
+    else:
+        icon_lines = [
+            '# source = "assets/icon.png"  '
+            "# TODO: 1024x1024 PNG app icon (rendered to a multi-size .ico)"
+        ]
+    lines += [
+        "",
+        "[tool.kivy.windows.python]",
+        f'version = "{python_version or DEFAULT_DESKTOP_PYTHON_VERSION}"',
+        "",
+        "[tool.kivy.windows.icons]",
+        *icon_lines,
+        "",
+        "[tool.kivy.windows.signing]",
+    ]
+    if signing is not None and signing.thumbprint:
+        lines.append(f'thumbprint = "{signing.thumbprint}"')
+        if signing.timestamp_url:
+            lines.append(f'timestamp_url = "{signing.timestamp_url}"')
+        if signing.store_scope:
+            lines.append(f'store_scope = "{signing.store_scope}"')
+    else:
+        lines += [
+            '# thumbprint = "AB12CD34...EF"  '
+            "# TODO: code-signing cert thumbprint (artifact is unsigned without it)",
+            '# timestamp_url = "http://timestamp.digicert.com"',
+            '# store_scope = "current_user"  # or "machine" (adds signtool /sm)',
+        ]
+    lines += _WINDOWS_NATIVE_BINARIES_STUB
+    return "\n".join(lines) + "\n"
+
+
+# Commented native-binary stub. Left inert so a vanilla app needs no extra
+# artifacts; uncomment to stage a non-wheel .dll/helper .exe (SHA-256-pinned by
+# `kivyforge lock`, staged into the bundle's bin\ directory). At runtime helpers
+# resolve by name on PATH; DLLs load by name (ctypes.WinDLL("sdk.dll")) via the
+# add_dll_directory-registered bin\. Both .zip and .tar.gz/.tgz sources extract.
+_WINDOWS_NATIVE_BINARIES_STUB = [
+    "",
+    "# Optional: non-wheel native binaries (windows-spec). Each is pinned by",
+    "# `kivyforge lock` and staged into the bundle's bin\\ (helpers on PATH by",
+    "# name; DLLs load by name, e.g. ctypes.WinDLL('sdk.dll')).",
+    "# [tool.kivy.windows.native.binaries]",
+    '# ffmpeg = { version = "7.1", source = "https://example.com/ffmpeg-windows-amd64.zip" }',
+    '# sdk = { version = "0.1.0", source = "binaries/windows/sdk.dll" }',
 ]

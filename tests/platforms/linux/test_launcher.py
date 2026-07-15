@@ -64,6 +64,7 @@ class TestBuildApprun:
         assert 'export PATH="$HERE/usr/bin:$PATH"' in dest.read_text()
 
 
+@pytest.mark.requires_posix
 class TestAppRunExecution:
     """Run a real AppRun tree with a fake python3 that echoes PATH/LD_LIBRARY_PATH."""
 

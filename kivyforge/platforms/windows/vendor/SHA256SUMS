@@ -1,0 +1,4 @@
+# SHA-256 of vendored Windows binaries (kivyforge).
+# Regenerate the launcher with: python -m kivyforge.platforms.windows.launcher.build_launcher build
+94f670388f04a991d670ca5df8ef4ff01995166403a95ea9cb9f89dcd38b9fe3  launcher-amd64.exe
+3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a  rcedit-x64.exe

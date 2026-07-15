@@ -14,11 +14,12 @@ from kivyforge.platforms.base import HostCapabilityError
 from kivyforge.platforms.ios import IosPlatform
 from kivyforge.platforms.linux import LinuxPlatform
 from kivyforge.platforms.macos import MacosPlatform
+from kivyforge.platforms.windows import WindowsPlatform
 
 
 class TestRegistry:
     def test_available_names(self):
-        assert available_platform_names() == ["ios", "macos", "linux"]
+        assert available_platform_names() == ["ios", "macos", "linux", "windows"]
 
     def test_get_platform(self):
         assert isinstance(get_platform("ios"), IosPlatform)
@@ -138,3 +139,33 @@ class TestLinuxPlatform:
     def test_linux_is_host_default_on_linux(self):
         p = resolve_target(None, configured={"linux"}, env={}, host_system="Linux")
         assert p.name == "linux"
+
+
+class TestWindowsPlatform:
+    def test_metadata(self):
+        p = WindowsPlatform()
+        assert p.name == "windows"
+        assert p.host_system == "Windows"
+        assert p.default_package_format == "folder"
+        assert p.package_formats == ("folder",)
+        assert p.selectors == ("windows", "win")
+
+    def test_capability_ok_on_windows(self):
+        WindowsPlatform().check_host_capability(host_system="Windows")
+
+    def test_capability_fails_off_windows(self):
+        with pytest.raises(HostCapabilityError, match="requires a Windows host"):
+            WindowsPlatform().check_host_capability(host_system="Linux")
+
+    def test_windows_is_host_default_on_windows(self):
+        p = resolve_target(None, configured={"windows"}, env={}, host_system="Windows")
+        assert p.name == "windows"
+
+    def test_win_alias_selects_windows(self):
+        assert get_platform("win").name == "windows"
+
+    def test_reject_ios_only_target_mentions_onedir(self):
+        from kivyforge.cli._common import ToolchainError
+
+        with pytest.raises(ToolchainError, match="onedir folder"):
+            WindowsPlatform().reject_ios_only_target("simulator")

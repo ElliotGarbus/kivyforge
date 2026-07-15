@@ -134,7 +134,9 @@ class Platform(ABC):
             return
         from kivyforge.cli._common import ToolchainError
 
-        artifact = ".app" if self.name == "macos" else "AppDir"
+        artifact = {"macos": ".app", "linux": "AppDir", "windows": "onedir folder"}.get(
+            self.name, "bundle"
+        )
         raise ToolchainError(
             f"--{target} is an iOS target; {self.name} has no simulator/device/"
             "release targets.\n"

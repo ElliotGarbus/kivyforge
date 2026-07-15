@@ -1,0 +1,17 @@
+Vendored Windows binaries — provenance
+=======================================
+
+launcher-amd64.exe
+  kivyforge's OWN onedir launcher. Built from kivyforge/platforms/windows/
+  launcher/launcher.c by that directory's build_launcher.py (MSVC, /Brepro
+  deterministic). Covered by kivyforge's own license. Nothing is vendored from
+  distlib/simple_launcher — that is a design reference only. The binary appends
+  nothing (no zip/timestamp tail), so it is byte-reproducible from source; CI
+  rebuilds it and byte-compares against this vendored copy.
+
+rcedit-x64.exe
+  Third-party: electron/rcedit v2.0.0 (MIT), redistributed unmodified to patch
+  the per-app icon and version resources into the launcher. See LICENSE.rcedit.
+  Source: https://github.com/electron/rcedit/releases/tag/v2.0.0
+
+Both binaries are SHA-256-pinned in SHA256SUMS and verified at use time.

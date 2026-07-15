@@ -38,12 +38,15 @@ def clean(flush_cache: bool, project_only: bool) -> None:
         except ConfigError as exc:
             raise ToolchainError(exc.format()) from exc
         # Every platform's generated staging/output trees: iOS <app>-ios/,
-        # macOS build/macos/, and Linux build/linux/ + dist/linux/.
+        # macOS build/macos/, Linux build/linux/ + dist/linux/, and Windows
+        # build/windows/ + dist/windows/.
         targets = [
             cwd / f"{config.app_slug}-ios",
             cwd / "build" / "macos",
             cwd / "build" / "linux",
             cwd / "dist" / "linux",
+            cwd / "build" / "windows",
+            cwd / "dist" / "windows",
         ]
         removed = [t for t in targets if _remove(t)]
         # Drop build/ and dist/ if emptied so no stray husks are left behind.
@@ -51,7 +54,7 @@ def clean(flush_cache: bool, project_only: bool) -> None:
             _remove_if_empty(parent)
         if removed:
             for t in removed:
-                click.echo(f"Removed {t.relative_to(cwd)}/")
+                click.echo(f"Removed {t.relative_to(cwd).as_posix()}/")
         else:
             click.echo("Nothing to clean (no generated artifacts found).")
     elif not flush_cache:

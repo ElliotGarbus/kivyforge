@@ -71,3 +71,30 @@ version = "3.13.14"
 [tool.kivy.linux.native.binaries]
 roll = { version = "0.1.0", source = "binaries/linux/roll" }
 libgreet = { version = "0.1.0", source = "binaries/linux/libgreet.so" }
+
+[tool.kivy.windows]
+schema_version = 1
+app_id = "Example.HelloNative"
+archs = ["amd64"]
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.windows.python]
+version = "3.13.14"
+
+# The Windows siblings of the binaries above (built by ./build_native.sh into
+# binaries/windows/ — see the Windows branch in that script). `kivyforge lock -p
+# windows` SHA-256-pins each; the build stages them into bin\, and the generated
+# bootstrap registers bin\ with os.add_dll_directory + prepends it to PATH, so
+# roll.exe runs by name and greet.dll loads by name (ctypes.WinDLL("greet.dll")).
+[tool.kivy.windows.native.binaries]
+roll = { version = "0.1.0", source = "binaries/windows/roll.exe" }
+greet = { version = "0.1.0", source = "binaries/windows/greet.dll" }

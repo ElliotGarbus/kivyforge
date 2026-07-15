@@ -33,6 +33,7 @@ class TestIsElf:
     def test_false_for_missing(self, tmp_path):
         assert not elftools.is_elf(tmp_path / "absent")
 
+    @pytest.mark.requires_symlinks
     def test_false_for_symlink(self, tmp_path):
         target = tmp_path / "lib.so"
         target.write_bytes(_elf_bytes())

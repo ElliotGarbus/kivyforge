@@ -142,7 +142,9 @@ class TestRun:
             _write_project(fs)
             result = runner.invoke(run, ["-p", "macos"])
             assert result.exit_code == 0, result.output
-            assert launched and launched[0][0].endswith("/MacOS/myapp")
+            assert launched and launched[0][0].replace("\\", "/").endswith(
+                "/MacOS/myapp"
+            )
 
     def test_run_no_build_requires_existing(self, runner, tmp_path, fake_bundler):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

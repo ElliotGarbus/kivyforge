@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import plistlib
 
+import pytest
 from pbxproj import XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import TreeType
 
 from kivyforge.platforms.ios.generator import XcodeProjectGenerator
 from kivyforge.platforms.ios.lock.model import LockedXcframework
 from kivyforge.platforms.ios.materialize import materialize_project
+
+# Materialization builds the iOS staging tree (symlinked app dir); skip where
+# symlinks are unavailable (stock Windows). iOS builds only on macOS regardless.
+pytestmark = pytest.mark.requires_symlinks
 
 EMBED_DST = "10"  # PBXCopyFilesBuildPhase dstSubfolderSpec for Embed Frameworks
 

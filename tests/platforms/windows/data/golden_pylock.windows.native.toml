@@ -1,0 +1,67 @@
+lock-version = "1.0"
+created-by = "kivyforge"
+requires-python = ">=3.13"
+extras = []
+dependency-groups = []
+default-groups = []
+
+[[packages]]
+name = "docutils"
+version = "0.21.2"
+requires-python = ">=3.9"
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "docutils-0.21.2-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/cc/docutils-0.21.2-py3-none-any.whl"
+hashes = { sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+
+[[packages]]
+name = "kivy"
+version = "2.3.1"
+requires-python = ">=3.8"
+dependencies = [{ name = "kivy-deps-sdl2" }, { name = "docutils" }]
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "kivy-2.3.1-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/aa/kivy-2.3.1-cp313-cp313-win_amd64.whl"
+hashes = { sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+
+[[packages]]
+name = "kivy-deps-sdl2"
+version = "0.7.0"
+requires-python = ">=3.8"
+
+[[packages.wheels]]
+name = "kivy_deps_sdl2-0.7.0-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/bb/kivy_deps_sdl2-0.7.0-win_amd64.whl"
+hashes = { sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+
+[tool.kivyforge]
+schema_version = 1
+kivyforge_version = "3.0.0"
+generated_at = "2026-05-27T00:00:00Z"
+pyproject_sha256 = "a97a9767cd19f7c2690506d5d77d94043cdeb211f75ac53b42f6d2631cf1d96a"
+tool_kivyforge_schema_version = 1
+archs = ["amd64"]
+
+[tool.kivyforge.python_runtime]
+provider = "python-build-standalone"
+version = "3.13.14"
+
+[[tool.kivyforge.python_runtime.artifacts]]
+arch = "amd64"
+url = "https://example.com/cpython-3.13.14-amd64-windows.tar.gz"
+sha256 = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+archive_format = "tar.gz"
+
+[[tool.kivyforge.native_binaries]]
+name = "sdk"
+version = "0.1.0"
+path = "binaries/windows/sdk.dll"
+sha256 = "becd690fdf5979dbad6ab6c8da35be6961d6be4840d37e5965925fcd3624404b"

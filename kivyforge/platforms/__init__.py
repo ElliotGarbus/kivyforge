@@ -16,6 +16,7 @@ from .base import HostCapabilityError, Platform
 from .ios import IosPlatform
 from .linux import LinuxPlatform
 from .macos import MacosPlatform
+from .windows import WindowsPlatform
 
 __all__ = [
     "HostCapabilityError",
@@ -30,7 +31,12 @@ __all__ = [
 PLATFORM_ENV_VAR = "KIVYFORGE_PLATFORM"
 
 # Registered backends, in display order. Add new platforms here.
-_REGISTRY: tuple[Platform, ...] = (IosPlatform(), MacosPlatform(), LinuxPlatform())
+_REGISTRY: tuple[Platform, ...] = (
+    IosPlatform(),
+    MacosPlatform(),
+    LinuxPlatform(),
+    WindowsPlatform(),
+)
 
 # name/alias -> backend
 _BY_SELECTOR: dict[str, Platform] = {

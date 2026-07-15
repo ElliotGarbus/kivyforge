@@ -2,6 +2,61 @@
 
 ## [Unreleased]
 
+### Windows backend (onedir folder)
+
+- **New `windows` target.** `kivyforge lock/build/run/package -p windows`
+  resolves into `pylock.windows.toml`, bundles a relocatable
+  [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+  MSVC CPython plus `win_amd64` wheels, and produces a run-from-folder **`onedir`**:
+  a windowed-subsystem launcher `.exe` beside the full runtime prefix, the app
+  source, a generated bootstrap, and the native-binaries channel. amd64 only this
+  phase; the config stays list-shaped for additive `win-arm64` later. Requires a
+  Windows host (MSVC runtime + Windows-only rcedit/signtool).
+- **`[tool.kivy.windows]` overlay** — `app_id` (the AppUserModelID; hard
+  constraints enforced at config time, PascalCase/period style a doctor WARN),
+  `archs`, `python.version`, `icons.source`, optional `[signing]`
+  (`thumbprint`/`timestamp_url`/`store_scope`), and the shared
+  `extra_index_urls`/`find_links`/`exclude`.
+- **Prebuilt, reproducible launcher** — a single vendored windowed launcher
+  `.exe` (built once from `launcher.c` with MSVC `/Brepro` + `/RELEASE`, SHA-256
+  pinned, byte-reproducibility gated in CI) is parameterized per app only by its
+  *resources* (icon + version) via the vendored `rcedit` — no per-build compiler.
+  The launcher self-locates, sets the AppUserModelID, hands the console off on
+  `run` while suppressing the flash on double-click, and spawns the bundled
+  `python.exe` under a Job object.
+- **No-pip wheel staging** — locked wheels are unpacked into the runtime prefix
+  by a deterministic wheel-scheme installer (routing `purelib`/`platlib`/`data`/
+  `scripts`/`headers`), and `kivy_deps.*` DLLs land where the loader finds them.
+  The `vcruntime140*.dll` are staged from the PBS prefix (empirically `msvcp140`
+  is handled best-effort).
+- **Native-binaries channel + PE checks** — the shared staging helper gained
+  Windows-facing guards (case-insensitive collision keys, reserved DOS
+  device-name / alternate-data-stream rejection, exec-bit no-op) and a
+  pure-Python PE machine-type reader so a wrong-architecture DLL fails the build
+  clearly. The generated bootstrap registers `bin\` with `os.add_dll_directory`
+  and prepends it to `PATH` (helpers run by name, DLLs load by name).
+- **Unsigned folder packaging** — `package -f folder` atomically copies the
+  onedir into `dist\windows\<app>-<ver>-amd64\`, excluding build cache / VCS /
+  editor droppings; the build tree stays the unsigned dev-run target.
+- **Optional Authenticode signing** — first-class but off by default. A new
+  `Signer` protocol with `SigntoolSigner` (`signtool sign /sha1 <thumbprint>
+  /fd SHA256 /tr <url> /td SHA256`, `/sm` for `store_scope=machine`, always
+  timestamped) and `NullSigner`; identity is always a cert-store thumbprint,
+  never a `.pfx`. A deterministic PEP 440 → four-part numeric `FILEVERSION`
+  mapping feeds the version resource. Signing targets the `dist` copy only,
+  after the resource patch.
+- **`kivyforge doctor -p windows`** — Windows host, long-path support,
+  `app_id` style, arch coverage, app icon, native-binary sources/collisions/arch,
+  resource assets, reachable hosts (incl. the signing timestamp server),
+  `signtool` availability, and the signing certificate (in the configured
+  `store_scope` store).
+- **Examples** — `desktop-viewer`, `dice-roller`, `notes`, and `hello-native`
+  gained `[tool.kivy.windows]` overlays (hello-native adds a `greet.dll` +
+  `roll.exe` native channel); `examples/verify-windows-examples.ps1` mirrors the
+  desktop verifier's clean→lock→doctor→build→run→package→launch loop.
+- **CI** — `windows-latest` unit tests, a launcher reproducibility + vendored-asset
+  gate, and a self-signed `signtool` sign→verify loop.
+
 ### Linux backend (AppImage / AppDir)
 
 - **New `linux` target.** `kivyforge lock/build/run/package -p linux` resolves

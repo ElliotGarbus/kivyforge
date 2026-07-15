@@ -52,6 +52,9 @@ class Probe(Protocol):
     def display_session(self) -> set[str]: ...
     def has_desktop_file_validate(self) -> bool: ...
     def desktop_file_errors(self, path: Path) -> str | None: ...
+    def long_paths_enabled(self) -> bool | None: ...
+    def has_signtool(self) -> bool: ...
+    def code_signing_thumbprints(self, store_scope: str) -> list[str]: ...
 
 
 class RealProbe:
@@ -192,6 +195,49 @@ class RealProbe:
         if proc.returncode == 0:
             return None
         return (proc.stdout + proc.stderr).strip() or "validation failed"
+
+    def long_paths_enabled(self) -> bool | None:
+        """Whether ``LongPathsEnabled`` is on (``None`` when it can't be read).
+
+        Reads ``HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem`` — the
+        per-machine switch that lifts the legacy 260-char ``MAX_PATH`` limit that
+        deep bundle trees (a full PBS prefix under ``build/windows``) can hit.
+        """
+        try:
+            import winreg
+        except ImportError:
+            return None
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\FileSystem",
+            ) as key:
+                value, _ = winreg.QueryValueEx(key, "LongPathsEnabled")
+                return bool(value)
+        except OSError:
+            return None
+
+    def has_signtool(self) -> bool:
+        return shutil.which("signtool") is not None
+
+    def code_signing_thumbprints(self, store_scope: str) -> list[str]:
+        """Thumbprints of code-signing certs in the store *signtool* will use.
+
+        ``machine`` -> ``Cert:\\LocalMachine\\My`` (signtool's ``/sm``);
+        anything else -> ``Cert:\\CurrentUser\\My``. Thumbprints are normalized
+        to upper-case with no spaces to match the configured value.
+        """
+        store = "LocalMachine" if store_scope == "machine" else "CurrentUser"
+        script = (
+            f"Get-ChildItem Cert:\\{store}\\My -CodeSigningCert "
+            "| ForEach-Object { $_.Thumbprint }"
+        )
+        out = _capture(["powershell", "-NoProfile", "-Command", script])
+        return [
+            line.strip().replace(" ", "").upper()
+            for line in out.splitlines()
+            if line.strip()
+        ]
 
 
 def _capture(argv: list[str]) -> str:

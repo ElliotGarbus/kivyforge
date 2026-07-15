@@ -96,7 +96,8 @@ def local_relative_path(path: str, staging_root: Path | None) -> str:
     if staging_root is None:
         return path
     target = (staging_root.parent / path).resolve()
-    return os.path.relpath(target, staging_root.resolve())
+    # Xcode stores relativePath with forward slashes; keep it host independent.
+    return Path(os.path.relpath(target, staging_root.resolve())).as_posix()
 
 
 def _ensure_reference(

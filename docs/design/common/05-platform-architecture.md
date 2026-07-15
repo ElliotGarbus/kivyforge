@@ -9,7 +9,7 @@ flowchart TD
     iface --> ios["platforms/ios\n(Xcode, xcframework, SPM)"]
     iface --> mac["platforms/macos\n(.app generator)"]
     iface --> lin["platforms/linux\n(AppImage/AppDir)"]
-    iface --> win["platforms/windows (later)"]
+    iface --> win["platforms/windows\n(onedir folder)"]
     iface --> andr["platforms/android (later)"]
     subgraph core [kivyforge/core]
       cfg["config: [project]/[tool.kivy] + overlay registry"]

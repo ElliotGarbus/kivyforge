@@ -8,10 +8,11 @@ at package time, it is **windowed-subsystem only**, and it
 bootloader; the bundle layout it depends on is defined in the
 [Windows spec](windows-spec.md#onedir-bundle-layout--and-the-dll-discovery-invariant).
 
-> **Status: design settled, implementation not started** (tracked with the
-> [Windows spec](windows-spec.md)). Bootloader work starts only after the
-> clean-VM DLL-discovery spike passes — a perfect bootloader that starts an
-> interpreter which can't import Kivy looks exactly like a bootloader bug.
+> **Status: implemented** (tracked with the [Windows spec](windows-spec.md)). The
+> launcher ships as `launcher.c` (built reproducibly and vendored) plus the
+> generated `_kivyforge_bootstrap.py`; the clean-VM DLL-discovery spike that
+> gated this work passed (see
+> [windows-dll-findings.md](../../dev/windows-dll-findings.md)).
 
 ## Why a native binary at all
 

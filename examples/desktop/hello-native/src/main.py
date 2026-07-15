@@ -48,6 +48,11 @@ def greet() -> str:
     if sys.platform == "darwin":
         # macOS: load by absolute path (DYLD_* is stripped, so by-name is out).
         lib = ctypes.CDLL(str(native_bin_dir() / "libgreet.dylib"))
+    elif sys.platform == "win32":
+        # Windows: load by name. The generated bootstrap registered the staged
+        # bin\ with os.add_dll_directory + prepended it to PATH, so greet.dll
+        # resolves without a path (ctypes.WinDLL is the Windows loader idiom).
+        lib = ctypes.WinDLL("greet.dll")
     else:
         # Linux: load by soname via the LD_LIBRARY_PATH append (Option B). The
         # portable by-path form also works: ctypes.CDLL(native_bin_dir()/"libgreet.so").

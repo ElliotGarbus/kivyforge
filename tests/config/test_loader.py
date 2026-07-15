@@ -1088,3 +1088,224 @@ class TestIosAndLinuxCoexist:
         assert cfg.ios is not None
         assert cfg.macos is not None
         assert cfg.linux is not None
+
+
+# Head opens [tool.kivy.windows]; extras append here; the python subtable comes
+# last so extra keys stay under [tool.kivy.windows] (TOML table scoping).
+_WINDOWS_HEAD = (
+    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+    "dependencies=['kivy']\n"
+    "[tool.kivy]\napp_dir='src'\ndisplay_name='Hello'\n"
+    "[tool.kivy.windows]\nschema_version=1\napp_id='Example.Hello'\n"
+)
+_WINDOWS_PY = "[tool.kivy.windows.python]\nversion='3.15.0'\n"
+
+
+def _windows(extra: str = ""):
+    return load(
+        _WINDOWS_HEAD + extra + _WINDOWS_PY, require_ios=False, require_windows=True
+    )
+
+
+class TestWindowsOverlay:
+    def test_missing_overlay_when_required(self):
+        base = "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+        with pytest.raises(ConfigError, match=r"\[tool.kivy.windows\]"):
+            load(base, require_ios=False, require_windows=True)
+
+    def test_happy_path(self):
+        cfg = _windows()
+        assert cfg.windows is not None
+        w = cfg.windows_required
+        assert w.app_id == "Example.Hello"
+        assert w.schema_version == 1
+        assert w.archs == ("amd64",)
+        assert w.python_version == "3.15.0"
+        assert w.signing.configured is False
+        assert w.signing.store_scope == "current_user"
+        assert w.binaries == ()
+
+    def test_missing_python_version(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.windows]\nschema_version=1\napp_id='Example.A'\n"
+        )
+        with pytest.raises(ConfigError, match="python"):
+            load(base, require_ios=False, require_windows=True)
+
+
+class TestWindowsAppId:
+    def test_missing_app_id(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.windows]\nschema_version=1\n"
+            "[tool.kivy.windows.python]\nversion='3.15.0'\n"
+        )
+        with pytest.raises(ConfigError, match="app_id"):
+            load(base, require_ios=False, require_windows=True)
+
+    def test_spaces_hard_fail(self):
+        bad = _WINDOWS_HEAD.replace("Example.Hello", "Example My App")
+        with pytest.raises(ConfigError, match="must not contain spaces"):
+            load(bad + _WINDOWS_PY, require_ios=False, require_windows=True)
+
+    def test_over_length_hard_fail(self):
+        long_id = "A" * 129
+        bad = _WINDOWS_HEAD.replace("Example.Hello", long_id)
+        with pytest.raises(ConfigError, match="maximum is 128"):
+            load(bad + _WINDOWS_PY, require_ios=False, require_windows=True)
+
+    def test_exactly_128_accepted(self):
+        ok = "A" * 128
+        cfg = _windows_with_app_id(ok)
+        assert cfg.windows_required.app_id == ok
+
+    def test_hyphens_allowed(self):
+        cfg = _windows_with_app_id("Example.My-App")
+        assert cfg.windows_required.app_id == "Example.My-App"
+
+    def test_lowercase_style_accepted_at_config_time(self):
+        # Pascal-case/period style is a doctor WARNING, not a config-time error.
+        cfg = _windows_with_app_id("example.myapp")
+        assert cfg.windows_required.app_id == "example.myapp"
+
+
+def _windows_with_app_id(app_id: str):
+    head = _WINDOWS_HEAD.replace("Example.Hello", app_id)
+    return load(head + _WINDOWS_PY, require_ios=False, require_windows=True)
+
+
+class TestWindowsArchs:
+    def test_default(self):
+        assert _windows().windows_required.archs == ("amd64",)
+
+    def test_explicit_amd64(self):
+        assert _windows("archs=['amd64']\n").windows_required.archs == ("amd64",)
+
+    def test_empty_rejected(self):
+        with pytest.raises(ConfigError, match="must not be empty"):
+            _windows("archs=[]\n")
+
+    def test_arm64_rejected_this_phase(self):
+        with pytest.raises(ConfigError, match="unsupported Windows arch"):
+            _windows("archs=['arm64']\n")
+
+
+class TestWindowsIcons:
+    def test_default_none(self):
+        assert _windows().windows_required.icons.source is None
+
+    def test_source(self):
+        cfg = _windows("[tool.kivy.windows.icons]\nsource='assets/icon.png'\n")
+        assert cfg.windows_required.icons.source == "assets/icon.png"
+
+
+class TestWindowsSigning:
+    def test_default_unconfigured(self):
+        s = _windows().windows_required.signing
+        assert s.configured is False
+        assert s.thumbprint == ""
+        assert s.timestamp_url == "http://timestamp.digicert.com"
+        assert s.store_scope == "current_user"
+
+    def test_thumbprint_configures(self):
+        cfg = _windows(
+            "[tool.kivy.windows.signing]\nthumbprint='AB12CD'\nstore_scope='machine'\n"
+        )
+        s = cfg.windows_required.signing
+        assert s.configured is True
+        assert s.thumbprint == "AB12CD"
+        assert s.store_scope == "machine"
+
+    def test_custom_timestamp_url(self):
+        cfg = _windows(
+            "[tool.kivy.windows.signing]\nthumbprint='AB'\n"
+            "timestamp_url='http://ts.example/tsa'\n"
+        )
+        assert cfg.windows_required.signing.timestamp_url == "http://ts.example/tsa"
+
+    def test_invalid_store_scope_rejected(self):
+        with pytest.raises(ConfigError, match="store_scope"):
+            _windows("[tool.kivy.windows.signing]\nstore_scope='domain'\n")
+
+    def test_non_string_thumbprint_rejected(self):
+        with pytest.raises(ConfigError, match="must be a string"):
+            _windows("[tool.kivy.windows.signing]\nthumbprint=123\n")
+
+
+class TestWindowsNativeBinaries:
+    def test_default_empty(self):
+        assert _windows().windows_required.binaries == ()
+
+    def test_parses_url_and_relative(self):
+        cfg = _windows(
+            "[tool.kivy.windows.native.binaries]\n"
+            'sdk = { version = "2.1.0", source = "https://vendor.example/sdk.zip" }\n'
+            'greet = { version = "0.1.0", source = "binaries/windows/greet.dll" }\n'
+        )
+        binaries = cfg.windows_required.binaries
+        assert (
+            NativeBinaryDep("sdk", "2.1.0", "https://vendor.example/sdk.zip")
+            in binaries
+        )
+        assert (
+            NativeBinaryDep("greet", "0.1.0", "binaries/windows/greet.dll") in binaries
+        )
+
+    def test_absolute_path_rejected(self):
+        with pytest.raises(ConfigError, match="absolute path"):
+            _windows(
+                "[tool.kivy.windows.native.binaries]\n"
+                'sdk = { version = "1.0", source = "/abs/sdk.dll" }\n'
+            )
+
+    def test_windows_absolute_path_rejected(self):
+        # A drive-letter path is absolute under Windows rules; reject on any host.
+        with pytest.raises(ConfigError, match="absolute path"):
+            _windows(
+                "[tool.kivy.windows.native.binaries]\n"
+                'sdk = { version = "1.0", source = "C:/vendor/sdk.dll" }\n'
+            )
+
+    def test_escaping_path_rejected(self):
+        with pytest.raises(ConfigError, match="escape"):
+            _windows(
+                "[tool.kivy.windows.native.binaries]\n"
+                'sdk = { version = "1.0", source = "../../sdk.dll" }\n'
+            )
+
+
+class TestWindowsRequiresPython:
+    def test_python_excluded_by_requires_python(self):
+        base = (
+            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.16'\n"
+            "[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.windows]\nschema_version=1\napp_id='Example.A'\n"
+            "[tool.kivy.windows.python]\nversion='3.15.0'\n"
+        )
+        with pytest.raises(ConfigError, match="excludes the selected"):
+            load(base, require_ios=False, require_windows=True)
+
+
+class TestWindowsCoexistsWithDesktop:
+    def test_all_desktop_platforms(self):
+        base = (
+            "[project]\nname='hello'\nversion='1'\ndependencies=['kivy']\n"
+            "[tool.kivy]\napp_dir='src'\n"
+            "[tool.kivy.macos]\nschema_version=1\nbundle_id='o.x.a'\n"
+            "[tool.kivy.macos.python]\nversion='3.15.0'\n"
+            "[tool.kivy.linux]\nschema_version=1\napp_id='o.x.a'\n"
+            "[tool.kivy.linux.python]\nversion='3.15.0'\n"
+            "[tool.kivy.windows]\nschema_version=1\napp_id='Example.Hello'\n"
+            "[tool.kivy.windows.python]\nversion='3.15.0'\n"
+        )
+        cfg = load(
+            base,
+            require_ios=False,
+            require_macos=True,
+            require_linux=True,
+            require_windows=True,
+        )
+        assert cfg.macos is not None
+        assert cfg.linux is not None
+        assert cfg.windows is not None

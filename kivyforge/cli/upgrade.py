@@ -58,7 +58,7 @@ def upgrade(
 
     if backend.name == "ios":
         _upgrade_ios(project_root, python_only, xcframeworks_only, name)
-    elif backend.name in ("macos", "linux"):
+    elif backend.name in ("macos", "linux", "windows"):
         if xcframeworks_only:
             raise ToolchainError(
                 f"--xcframeworks is iOS-only; {backend.name} locks have no "
@@ -199,6 +199,8 @@ def _load_wheelruntime_lock(platform_name: str, project_root: Path):
         raise ToolchainError(f"no {path.name} found. Run `kivyforge lock` first.")
     if platform_name == "macos":
         from ..platforms.macos.lock import load as loader
+    elif platform_name == "windows":
+        from ..platforms.windows.lock import load as loader
     else:
         from ..platforms.linux.lock import load as loader
     try:

@@ -17,7 +17,7 @@ The seam is clean: kivyforge emits the finished, signed artifact; an external to
 |----------|----------------------------------------------------------|-------------------------------|
 | iOS | Xcode-built app / `.ipa` | App Store submission |
 | macOS | `.app` bundle (`package -f app`) | `.dmg`/installer; store submission |
-| Windows | application folder + launcher `.exe` (onedir bundle) | MSI / Inno Setup / NSIS installer |
+| Windows | run-from-folder `onedir` (launcher `.exe` + runtime + wheels) via `package -f folder`, optionally Authenticode-signed | MSI / MSIX / Inno Setup / NSIS installer |
 | Linux | `.AppImage` (`package -f appimage`, the default) with a run-from-folder **AppDir** substrate/fallback (`package -f folder`) | `.deb` / `.rpm` / Flatpak |
 | Android | `.apk` / `.aab` (artifact *and* installable unit) | Play Store submission |
 
@@ -38,7 +38,7 @@ Signing is per-platform and stays with kivyforge because it operates on the bund
 
 - **iOS** — Xcode-driven signing (team ID / identity / provisioning), including `.ipa` export methods. See [iOS CLI](../platforms/ios/cli-ios.md).
 - **macOS** — starts with **ad-hoc** signing (the mandatory Apple-Silicon floor: arm64 executables must be at least ad-hoc signed or the kernel refuses to run them). Full Developer ID **sign + notarize + staple** of the `.app` is a later workstream (see the [macOS spec](../platforms/macos/macos-spec.md)). Notarizing an external `.dmg` is a post-packaging step on a container kivyforge does not build; the docs provide a copy-paste snippet for users who distribute a `.dmg`.
-- **Windows** — Authenticode signing of the artifact (`signtool`) is in scope with the artifact step; the installer is signed separately by the external installer tool.
+- **Windows** — Authenticode signing of the launcher (`signtool`, identity = a certificate-store thumbprint) is in scope with the artifact step, but **off by default** (v1 ships the default artifact unsigned); configure `[tool.kivy.windows.signing]` to enable it. Payload-DLL signing is deferred to v2. The installer is signed separately by the external installer tool.
 - **Android** — app signing is in scope (the `.apk`/`.aab` is the shippable unit).
 
 ## Why draw the line here

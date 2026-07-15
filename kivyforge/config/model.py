@@ -30,6 +30,29 @@ DEFAULT_MACOS_ARCHS = ("arm64", "x86_64")
 VALID_LINUX_ARCHS = frozenset({"x86_64"})
 DEFAULT_LINUX_ARCHS = ("x86_64",)
 
+# The Windows overlay schema major version this build understands (windows-spec).
+SUPPORTED_WINDOWS_SCHEMA_VERSION = 1
+
+# Windows build architectures. Only amd64 (x86-64) this phase; the field stays
+# list-shaped so win-arm64 is purely additive later (windows-spec). Like Linux
+# and unlike macOS there is no fat binary — each arch is a separate onedir.
+VALID_WINDOWS_ARCHS = frozenset({"amd64"})
+DEFAULT_WINDOWS_ARCHS = ("amd64",)
+
+# Microsoft's real AppUserModelID hard constraints (windows-spec): no spaces and
+# at most this many characters. Pascal-case / period-delimited *style* is only a
+# doctor warning, so the loader enforces just these two.
+WINDOWS_APP_ID_MAX_LENGTH = 128
+
+# Default Authenticode RFC-3161 timestamp server (signing-windows).
+DEFAULT_WINDOWS_TIMESTAMP_URL = "http://timestamp.digicert.com"
+
+# Certificate-store scopes for signtool / the doctor certificate check
+# (signing-windows). ``current_user`` -> ``Cert:\CurrentUser\My``; ``machine``
+# -> ``Cert:\LocalMachine\My`` and adds signtool's ``/sm``.
+VALID_WINDOWS_STORE_SCOPES = frozenset({"current_user", "machine"})
+DEFAULT_WINDOWS_STORE_SCOPE = "current_user"
+
 # Default freedesktop main category for the generated .desktop entry.
 DEFAULT_DESKTOP_CATEGORIES = ("Utility",)
 
@@ -278,6 +301,49 @@ class MacosConfig:
 
 
 @dataclass(frozen=True)
+class WindowsSigningConfig:
+    """``[tool.kivy.windows.signing]`` (signing-windows, optional).
+
+    Authenticode identity is a certificate-store **thumbprint**, never a
+    ``.pfx`` path/password. ``store_scope`` selects which store both ``signtool``
+    (via ``/sm`` for ``machine``) and the doctor certificate check inspect, so
+    they always agree. ``thumbprint`` empty means signing is not configured and
+    ``package`` leaves the artifact unsigned.
+    """
+
+    thumbprint: str = ""
+    timestamp_url: str = DEFAULT_WINDOWS_TIMESTAMP_URL
+    store_scope: str = DEFAULT_WINDOWS_STORE_SCOPE
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.thumbprint)
+
+
+@dataclass(frozen=True)
+class WindowsConfig:
+    """``[tool.kivy.windows]`` overlay (windows-spec).
+
+    ``archs`` drives which ``win_amd64`` wheel tag and per-arch runtime the lock
+    must cover. ``app_id`` is the Windows **AppUserModelID** — a different
+    identifier from the Linux reverse-DNS ``app_id`` and the macOS ``bundle_id``;
+    the loader enforces only Microsoft's hard constraints (no spaces, ≤128
+    chars), leaving pascal-case/period style to a doctor warning.
+    """
+
+    schema_version: int
+    app_id: str
+    archs: tuple[str, ...] = DEFAULT_WINDOWS_ARCHS
+    extra_index_urls: tuple[str, ...] = ()
+    find_links: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+    python_version: str | None = None
+    icons: IconConfig = field(default_factory=IconConfig)
+    signing: WindowsSigningConfig = field(default_factory=WindowsSigningConfig)
+    binaries: tuple[NativeBinaryDep, ...] = ()
+
+
+@dataclass(frozen=True)
 class DesktopConfig:
     """``[tool.kivy.linux.desktop]`` — freedesktop ``.desktop`` entry options."""
 
@@ -326,6 +392,7 @@ class Config:
     ios: IosConfig | None = None
     macos: MacosConfig | None = None
     linux: LinuxConfig | None = None
+    windows: WindowsConfig | None = None
 
     @property
     def display_name(self) -> str:
@@ -371,3 +438,13 @@ class Config:
                 "before accessing linux_required."
             )
         return self.linux
+
+    @property
+    def windows_required(self) -> WindowsConfig:
+        """``[tool.kivy.windows]`` after ``load_config(..., require_windows=True)``."""
+        if self.windows is None:
+            raise RuntimeError(
+                "Config.windows is None; call load_config with require_windows=True "
+                "before accessing windows_required."
+            )
+        return self.windows

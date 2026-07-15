@@ -6,7 +6,8 @@ import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from kivyforge import __version__
 from kivyforge.artifacts.verify import sha256_file
@@ -264,7 +265,9 @@ def _normalize_wheel_source(
     if url.startswith(("http://", "https://")):
         return url, None
     if url.startswith("file:"):
-        local = Path(unquote(urlparse(url).path))
+        # url2pathname turns a file URL path into a native path on every host
+        # (e.g. "/C:/x" -> "C:\\x" on Windows), which plain unquote+Path does not.
+        local = Path(url2pathname(urlparse(url).path))
     else:
         local = Path(url)
     resolved = local.resolve()

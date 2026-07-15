@@ -20,17 +20,19 @@ their per-platform workflows behind a single declarative configuration.
 The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
 Linux, macOS, and Windows**.
 
-> **Status: early development — iOS + macOS + Linux.** kivyforge targets **iOS**
-> (resolve into `pylock.ios.toml`, download the official
+> **Status: early development — iOS + macOS + Linux + Windows.** kivyforge
+> targets **iOS** (resolve into `pylock.ios.toml`, download the official
 > [`Python.xcframework`](https://www.python.org/downloads/) + prebuilt iOS
 > wheels, generate an [Xcode](https://developer.apple.com/xcode/) project),
 > **macOS** (resolve into `pylock.macos.toml`, bundle a relocatable
 > [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-> CPython + wheels into a signed, double-clickable `.app`), and **Linux** (resolve
+> CPython + wheels into a signed, double-clickable `.app`), **Linux** (resolve
 > into `pylock.linux.toml`, bundle a PBS gnu/glibc CPython + manylinux wheels into
-> an [AppImage](https://appimage.org/) — with a run-from-folder AppDir substrate).
-> Android and Windows are planned. If you need a shipping toolchain today, use
-> kivy-ios 2.x, python-for-android, or buildozer.
+> an [AppImage](https://appimage.org/) — with a run-from-folder AppDir substrate),
+> and **Windows** (resolve into `pylock.windows.toml`, bundle a PBS MSVC CPython +
+> `win_amd64` wheels into a run-from-folder `onedir` with a windowed launcher
+> `.exe`, optionally Authenticode-signed). Android is planned. If you need a
+> shipping toolchain today, use kivy-ios 2.x, python-for-android, or buildozer.
 
 ### Currently supported targets
 
@@ -40,6 +42,9 @@ Linux, macOS, and Windows**.
   (x86_64), or universal2 (both), ad-hoc signed
 - [Linux](https://appimage.org/) `.AppImage` / AppDir — x86_64 (glibc ≥ 2.17),
   self-contained runtime + wheels; libGL/EGL and X11/Wayland come from the host
+- [Windows](https://learn.microsoft.com/windows/) `onedir` folder — amd64,
+  windowed launcher `.exe` beside a self-contained runtime + wheels; optional
+  Authenticode signing (unsigned by default). Requires a Windows host.
 
 kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 
@@ -190,6 +195,39 @@ display server, so the host must provide glibc ≥ the artifact's effective floo
 host, GL libraries, display session, glibc floor, arch coverage, generated
 `.desktop` validity, reachable hosts).
 
+## Quick start (Windows)
+
+The Windows backend bundles a relocatable CPython + your `win_amd64` wheels into
+a run-from-folder **`onedir`**: a windowed launcher `.exe` beside a full
+python-build-standalone prefix, your app source, and any declared native
+binaries. It needs a Windows host (the runtime is an MSVC amd64 build and the
+resource/signing tools are Windows-only); no compiler is required at build time.
+
+      # 1. Add a [tool.kivy.windows] table to pyproject.toml (app_id, icons, ...)
+
+      # 2. Resolve dependencies + pin the runtime into pylock.windows.toml
+      kivyforge lock -p windows
+
+      # 3. Build the onedir bundle (build\windows\<App>\)
+      kivyforge build -p windows
+
+      # 4a. Launch it (runs the launcher .exe in the foreground — the dev loop)
+      kivyforge run -p windows
+
+      # 4b. ...or produce the distributable (copied to dist\windows\)
+      kivyforge package -p windows            # -> dist\windows\<app>-<ver>-amd64\
+
+Double-clicking the launcher opens the app with **no console flash**; `kivyforge
+run` attaches it to the terminal so stdout/stderr and tracebacks are visible. The
+`onedir` folder keeps every file real and signable — installers stay external.
+**Authenticode signing** is optional and off by default: configure
+`[tool.kivy.windows.signing]` with a certificate-store `thumbprint` and `package`
+signs (and RFC-3161 timestamps) the launcher in the `dist\windows` copy.
+
+`kivyforge doctor -p windows` reports environment + project health (Windows host,
+long-path support, `app_id` style, arch coverage, icon, native-binary
+sources/collisions/arch, reachable hosts, signtool + signing certificate).
+
 See the runnable examples for complete, copy-pasteable walk-throughs. They are
 split by runtime requirement — **desktop uses Kivy 2.3.1 from PyPI, mobile uses
 Kivy 3.0** (vendored, pre-release):
@@ -197,15 +235,16 @@ Kivy 3.0** (vendored, pre-release):
 **Desktop** ([`examples/desktop/`](examples/desktop/)) — macOS/Linux/Windows:
 
 - [`dice-roller`](examples/desktop/dice-roller/) — minimal Kivy UI that **builds &
-  runs on macOS and Linux today** from PyPI (Kivy 2.3.1).
+  runs on macOS, Linux, and Windows today** from PyPI (Kivy 2.3.1).
 - [`notes`](examples/desktop/notes/) — Kivy app with a pure-Python dependency
-  (`platformdirs`); builds on macOS and Linux from PyPI.
+  (`platformdirs`); builds on macOS, Linux, and Windows from PyPI.
 - [`desktop-viewer`](examples/desktop/desktop-viewer/) — a desktop-focused Kivy app
   (resizable window, ⌘ keyboard shortcuts, the native macOS open panel; the panel
-  is a no-op on Linux).
+  is a no-op on Linux/Windows).
 - [`hello-native`](examples/desktop/hello-native/) — ships **non-wheel** native
   binaries (a helper executable + a shared library) via
-  `[tool.kivy.<platform>.native.binaries]`; builds and runs on macOS and Linux.
+  `[tool.kivy.<platform>.native.binaries]`; builds and runs on macOS, Linux, and
+  Windows (`greet.dll` loaded by name, `roll.exe` run by name).
 
 **Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS/Android, Kivy 3.0 from
 [`examples/wheels/ios/`](examples/wheels/ios/):

@@ -19,6 +19,7 @@ from kivyforge.cli.init_writer import (
     render_kivy_tables,
     render_linux_tables,
     render_macos_tables,
+    render_windows_tables,
     strip_kivy_tables,
     strip_platform_tables,
 )
@@ -267,6 +268,54 @@ class TestWriterUnits:
         # The stub must stay inert: no active native.binaries table parsed.
         assert cfg.linux_required.binaries == ()
 
+    def test_render_windows_tables_template(self):
+        block = render_windows_tables("myapp")
+        assert "[tool.kivy]" in block
+        assert "[tool.kivy.windows]" in block
+        assert 'app_id = "Example.Myapp"' in block
+        assert "[tool.kivy.windows.python]" in block
+        assert "[tool.kivy.windows.signing]" in block
+        from kivyforge.config import load_config_from_text
+
+        cfg = load_config_from_text(
+            '[project]\nname = "myapp"\nversion = "1.0.0"\n\n' + block,
+            require_ios=False,
+            require_windows=True,
+        )
+        assert cfg.windows_required.app_id == "Example.Myapp"
+        assert cfg.windows_required.signing.configured is False
+
+    def test_render_windows_tables_omits_shared_when_requested(self):
+        block = render_windows_tables("myapp", include_shared=False)
+        assert "[tool.kivy]" not in block
+        assert "[tool.kivy.windows]" in block
+
+    def test_render_windows_tables_seeds_commented_native_binaries(self):
+        from kivyforge.config import load_config_from_text
+
+        block = render_windows_tables("myapp")
+        assert "# [tool.kivy.windows.native.binaries]" in block
+        cfg = load_config_from_text(
+            '[project]\nname = "myapp"\nversion = "1.0.0"\n\n' + block,
+            require_ios=False,
+            require_windows=True,
+        )
+        # The stub must stay inert: no active native.binaries table parsed.
+        assert cfg.windows_required.binaries == ()
+
+    def test_render_windows_tables_preserves_signing(self):
+        from kivyforge.config.model import WindowsSigningConfig
+
+        signing = WindowsSigningConfig(
+            thumbprint="AB12CD34",
+            store_scope="machine",
+            timestamp_url="http://ts.example/tsa",
+        )
+        block = render_windows_tables("myapp", signing=signing)
+        assert 'thumbprint = "AB12CD34"' in block
+        assert 'store_scope = "machine"' in block
+        assert 'timestamp_url = "http://ts.example/tsa"' in block
+
     def test_has_shared_table(self):
         assert has_shared_table("[tool.kivy]\napp_dir = 'src'\n")
         assert not has_shared_table("[tool.kivy.ios]\nschema_version = 1\n")
@@ -405,10 +454,12 @@ class TestUpdatePath:
     def test_force_preserves_icon_splash_and_simulator_archs(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             pp = init_mod.Path(fs) / "pyproject.toml"
-            pp.write_text(self.PYPROJECT + "\n")
+            pp.write_text(self.PYPROJECT + "\n", encoding="utf-8")
             runner.invoke(init, [])
-            # User fills in the commented stubs with real values.
-            text = pp.read_text()
+            # User fills in the commented stubs with real values. init writes the
+            # stubs as UTF-8 (the icon TODO contains an em dash), so read/write
+            # UTF-8 explicitly — Path defaults to the locale encoding on Windows.
+            text = pp.read_text(encoding="utf-8")
             text = text.replace(
                 '# simulator_archs = ["arm64"]  '
                 '# drop "x86_64" once you no longer run the simulator on Intel Macs '
@@ -429,10 +480,10 @@ class TestUpdatePath:
                 "# TODO: optional launch-screen background color",
                 'background = "#112233"',
             )
-            pp.write_text(text)
+            pp.write_text(text, encoding="utf-8")
             result = runner.invoke(init, ["--force"])
             assert result.exit_code == 0, result.output
-            data = tomllib.loads(pp.read_text())
+            data = tomllib.loads(pp.read_text(encoding="utf-8"))
         ios = data["tool"]["kivy"]["ios"]
         assert ios["simulator_archs"] == ["arm64"]
         assert ios["icons"]["source"] == "assets/icon.png"
@@ -600,7 +651,7 @@ class TestPlatformAware:
         assert "ios" not in data["tool"]["kivy"]
 
     def test_unknown_env_platform_is_actionable(self, runner, tmp_path, monkeypatch):
-        monkeypatch.setenv("KIVYFORGE_PLATFORM", "windows")
+        monkeypatch.setenv("KIVYFORGE_PLATFORM", "android")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             pp = init_mod.Path(fs) / "pyproject.toml"
             pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
@@ -638,11 +689,23 @@ class TestPlatformAware:
             data = tomllib.loads(pp.read_text())
         assert "linux" in data["tool"]["kivy"]
 
+    def test_host_default_on_windows_seeds_windows(self, runner, tmp_path, monkeypatch):
+        monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
+        monkeypatch.setattr(init_mod._platform_mod, "system", lambda: "Windows")
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, [])
+            assert result.exit_code == 0, result.output
+            data = tomllib.loads(pp.read_text())
+        assert "windows" in data["tool"]["kivy"]
+
     def test_host_default_unresolvable_is_actionable(
         self, runner, tmp_path, monkeypatch
     ):
         monkeypatch.delenv("KIVYFORGE_PLATFORM", raising=False)
-        monkeypatch.setattr(init_mod._platform_mod, "system", lambda: "Windows")
+        # A host with no registered desktop backend (e.g. a BSD) cannot infer.
+        monkeypatch.setattr(init_mod._platform_mod, "system", lambda: "FreeBSD")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             pp = init_mod.Path(fs) / "pyproject.toml"
             pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')

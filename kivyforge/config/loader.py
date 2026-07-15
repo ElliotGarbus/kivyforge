@@ -8,10 +8,10 @@ best-effort source line located by scanning the raw text.
 from __future__ import annotations
 
 import keyword
+import posixpath
 import re
 import tomllib
-from os.path import isabs, normpath
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
@@ -22,17 +22,24 @@ from .model import (
     DEFAULT_LINUX_ARCHS,
     DEFAULT_MACOS_ARCHS,
     DEFAULT_SIMULATOR_ARCHS,
+    DEFAULT_WINDOWS_ARCHS,
+    DEFAULT_WINDOWS_STORE_SCOPE,
+    DEFAULT_WINDOWS_TIMESTAMP_URL,
     FREEDESKTOP_MAIN_CATEGORIES,
     MANAGED_INFO_PLIST_KEYS,
     RESERVED_BUILD_SETTINGS,
     SUPPORTED_IOS_SCHEMA_VERSION,
     SUPPORTED_LINUX_SCHEMA_VERSION,
     SUPPORTED_MACOS_SCHEMA_VERSION,
+    SUPPORTED_WINDOWS_SCHEMA_VERSION,
     VALID_LINUX_ARCHS,
     VALID_MACOS_ARCHS,
     VALID_ORIENTATIONS,
     VALID_SIMULATOR_ARCHS,
     VALID_SWIFT_REQUIREMENT_KINDS,
+    VALID_WINDOWS_ARCHS,
+    VALID_WINDOWS_STORE_SCOPES,
+    WINDOWS_APP_ID_MAX_LENGTH,
     Author,
     Config,
     DesktopConfig,
@@ -47,8 +54,33 @@ from .model import (
     SigningConfig,
     SplashConfig,
     SwiftPackageDep,
+    WindowsConfig,
+    WindowsSigningConfig,
     XcframeworkDep,
 )
+
+
+def _is_absolute_source(value: str) -> bool:
+    """True if ``value`` is absolute under POSIX *or* Windows rules.
+
+    Repo-relative sources/paths in ``pyproject.toml`` must stay portable, so a
+    path that is absolute on any host is rejected everywhere. This is host
+    independent on purpose: ``os.path.isabs`` changed on Windows in Python 3.13
+    (a leading ``/`` is no longer "absolute"), which would otherwise let
+    ``"/abs/x"`` slip through the loader on Windows only.
+    """
+    return PurePosixPath(value).is_absolute() or PureWindowsPath(value).is_absolute()
+
+
+def _posix_normpath(value: str) -> str:
+    """Normalize ``value`` under POSIX semantics, treating ``\\`` as a separator.
+
+    ``os.path.normpath`` produces backslash-separated results on Windows that
+    ``PurePosixPath`` will not split, so an escaping ``..\\..\\x`` would evade the
+    parts check on Windows. Normalizing to forward slashes keeps the escape and
+    ``.`` checks host independent.
+    """
+    return posixpath.normpath(value.replace("\\", "/"))
 
 
 def load_config(
@@ -57,13 +89,14 @@ def load_config(
     require_ios: bool = True,
     require_macos: bool = False,
     require_linux: bool = False,
+    require_windows: bool = False,
 ) -> Config:
     """Parse and validate ``pyproject.toml`` at ``path``.
 
-    ``require_ios`` / ``require_macos`` / ``require_linux`` enforce the presence
-    of the respective ``[tool.kivy.<platform>]`` overlay. A platform verb
-    requires its own overlay; contexts that only inspect the cross-platform
-    tables set them all False.
+    ``require_ios`` / ``require_macos`` / ``require_linux`` / ``require_windows``
+    enforce the presence of the respective ``[tool.kivy.<platform>]`` overlay. A
+    platform verb requires its own overlay; contexts that only inspect the
+    cross-platform tables set them all False.
     """
     path = Path(path)
     text = path.read_text(encoding="utf-8")
@@ -72,6 +105,7 @@ def load_config(
         require_ios=require_ios,
         require_macos=require_macos,
         require_linux=require_linux,
+        require_windows=require_windows,
         project_root=path.parent,
     )
 
@@ -82,6 +116,7 @@ def load_config_from_text(
     require_ios: bool = True,
     require_macos: bool = False,
     require_linux: bool = False,
+    require_windows: bool = False,
     project_root: Path | None = None,
 ) -> Config:
     try:
@@ -96,6 +131,7 @@ def load_config_from_text(
     ios = _parse_ios(raw, finder, project, project_root=project_root)
     macos = _parse_macos(raw, finder, project, project_root=project_root)
     linux = _parse_linux(raw, finder, project, project_root=project_root)
+    windows = _parse_windows(raw, finder, project, project_root=project_root)
 
     if ios is None and require_ios:
         raise ConfigError(
@@ -118,8 +154,22 @@ def load_config_from_text(
             hint="add a [tool.kivy.linux] overlay; [tool.kivy] alone is not a "
             "buildable Linux target.",
         )
+    if windows is None and require_windows:
+        raise ConfigError(
+            "missing [tool.kivy.windows] table",
+            key_path="tool.kivy.windows",
+            hint="add a [tool.kivy.windows] overlay; [tool.kivy] alone is not a "
+            "buildable Windows target.",
+        )
 
-    return Config(project=project, kivy=kivy, ios=ios, macos=macos, linux=linux)
+    return Config(
+        project=project,
+        kivy=kivy,
+        ios=ios,
+        macos=macos,
+        linux=linux,
+        windows=windows,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -215,7 +265,7 @@ def _validate_app_dir(app_dir: object, finder: _LineFinder) -> str:
             key_path="tool.kivy.app_dir",
             line=finder.line("app_dir"),
         )
-    if app_dir == "." or normpath(app_dir) == ".":
+    if app_dir == "." or _posix_normpath(app_dir) == ".":
         raise ConfigError(
             'app_dir = "." (project root) is not allowed',
             key_path="tool.kivy.app_dir",
@@ -223,13 +273,13 @@ def _validate_app_dir(app_dir: object, finder: _LineFinder) -> str:
             hint="keep app code in a subdirectory (e.g. src/) so the bundle "
             "excludes .git/, .venv/, and the <app>-ios/ build output.",
         )
-    if isabs(app_dir):
+    if _is_absolute_source(app_dir):
         raise ConfigError(
             "app_dir must be relative, not an absolute path",
             key_path="tool.kivy.app_dir",
             line=finder.line("app_dir"),
         )
-    parts = PurePosixPath(normpath(app_dir)).parts
+    parts = PurePosixPath(_posix_normpath(app_dir)).parts
     if parts and parts[0] == "..":
         raise ConfigError(
             "app_dir must not escape the project directory",
@@ -801,6 +851,183 @@ def _parse_desktop(linux: dict, finder: _LineFinder) -> DesktopConfig:
     return DesktopConfig(categories=tuple(raw) or DEFAULT_DESKTOP_CATEGORIES)
 
 
+# --------------------------------------------------------------------------- #
+# [tool.kivy.windows]
+# --------------------------------------------------------------------------- #
+def _parse_windows(
+    raw: dict,
+    finder: _LineFinder,
+    project: ProjectMeta,
+    *,
+    project_root: Path | None = None,
+) -> WindowsConfig | None:
+    tool = raw.get("tool", {})
+    kivy = tool.get("kivy", {}) if isinstance(tool, dict) else {}
+    windows = kivy.get("windows") if isinstance(kivy, dict) else None
+    if windows is None:
+        return None
+    if not isinstance(windows, dict):
+        raise ConfigError(
+            "[tool.kivy.windows] must be a table", key_path="tool.kivy.windows"
+        )
+
+    schema_version = _parse_platform_schema_version(
+        windows,
+        finder,
+        key_path="tool.kivy.windows.schema_version",
+        supported=SUPPORTED_WINDOWS_SCHEMA_VERSION,
+    )
+
+    app_id = _validate_windows_app_id(windows.get("app_id"), finder)
+    archs = _parse_windows_archs(windows, finder)
+
+    extra_index_urls = windows.get("extra_index_urls", [])
+    if not isinstance(extra_index_urls, list) or not all(
+        isinstance(u, str) for u in extra_index_urls
+    ):
+        raise ConfigError(
+            "[tool.kivy.windows].extra_index_urls must be a list of strings",
+            key_path="tool.kivy.windows.extra_index_urls",
+            line=finder.line("extra_index_urls"),
+        )
+
+    find_links = _parse_platform_find_links(
+        windows,
+        finder,
+        key_path="tool.kivy.windows.find_links",
+        project_root=project_root,
+    )
+    exclude = _parse_platform_exclude(
+        windows, finder, key_path="tool.kivy.windows.exclude"
+    )
+
+    python_version = _parse_platform_python_version(
+        windows, key_path="tool.kivy.windows.python"
+    )
+    _check_requires_python_generic(
+        project,
+        python_version,
+        finder,
+        key_path="tool.kivy.windows.python.version",
+    )
+
+    icons = _parse_platform_icons(windows, key_path="tool.kivy.windows.icons")
+    signing = _parse_windows_signing(windows, finder)
+    binaries = _parse_native_binaries(windows, "windows", finder)
+
+    return WindowsConfig(
+        schema_version=schema_version,
+        app_id=app_id,
+        archs=archs,
+        extra_index_urls=tuple(extra_index_urls),
+        find_links=tuple(find_links),
+        exclude=tuple(exclude),
+        python_version=python_version,
+        icons=icons,
+        signing=signing,
+        binaries=tuple(binaries),
+    )
+
+
+def _validate_windows_app_id(app_id: object, finder: _LineFinder) -> str:
+    # app_id is the Windows AppUserModelID. Enforce only Microsoft's *hard*
+    # constraints — no spaces, ≤128 characters (windows-spec). Pascal-case /
+    # period-delimited style is a doctor WARNING, not a config-time error, and
+    # hyphens are allowed. This is a different identifier from the Linux
+    # reverse-DNS app_id and the macOS bundle_id, so it does not mirror theirs.
+    if not app_id or not isinstance(app_id, str):
+        raise ConfigError(
+            "missing required [tool.kivy.windows].app_id",
+            key_path="tool.kivy.windows.app_id",
+            hint='e.g. app_id = "Example.MyApp" (AppUserModelID).',
+        )
+    if " " in app_id:
+        raise ConfigError(
+            f"[tool.kivy.windows].app_id {app_id!r} must not contain spaces",
+            key_path="tool.kivy.windows.app_id",
+            line=finder.line("app_id"),
+            hint="an AppUserModelID may not contain spaces; use a compact "
+            'identifier such as "Example.MyApp".',
+        )
+    if len(app_id) > WINDOWS_APP_ID_MAX_LENGTH:
+        raise ConfigError(
+            f"[tool.kivy.windows].app_id is {len(app_id)} characters; the "
+            f"AppUserModelID maximum is {WINDOWS_APP_ID_MAX_LENGTH}",
+            key_path="tool.kivy.windows.app_id",
+            line=finder.line("app_id"),
+        )
+    return app_id
+
+
+def _parse_windows_archs(windows: dict, finder: _LineFinder) -> tuple[str, ...]:
+    raw = windows.get("archs")
+    if raw is None:
+        return DEFAULT_WINDOWS_ARCHS
+    line = finder.line("archs")
+    if not isinstance(raw, list) or not all(isinstance(a, str) for a in raw):
+        raise ConfigError(
+            "[tool.kivy.windows].archs must be a list of strings",
+            key_path="tool.kivy.windows.archs",
+            line=line,
+        )
+    if not raw:
+        raise ConfigError(
+            "[tool.kivy.windows].archs must not be empty",
+            key_path="tool.kivy.windows.archs",
+            line=line,
+            hint='only "amd64" is supported this phase.',
+        )
+    unknown = [a for a in raw if a not in VALID_WINDOWS_ARCHS]
+    if unknown:
+        valid = ", ".join(sorted(VALID_WINDOWS_ARCHS))
+        raise ConfigError(
+            f"unsupported Windows arch(es) {unknown} in [tool.kivy.windows].archs",
+            key_path="tool.kivy.windows.archs",
+            line=line,
+            hint=f"only {valid} is supported this phase (win-arm64 is planned).",
+        )
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for arch in raw:
+        if arch not in seen:
+            seen.add(arch)
+            ordered.append(arch)
+    return tuple(ordered)
+
+
+def _parse_windows_signing(windows: dict, finder: _LineFinder) -> WindowsSigningConfig:
+    signing = windows.get("signing")
+    if signing is None:
+        return WindowsSigningConfig()
+    if not isinstance(signing, dict):
+        raise ConfigError(
+            "[tool.kivy.windows.signing] must be a table",
+            key_path="tool.kivy.windows.signing",
+        )
+    for key in ("thumbprint", "timestamp_url", "store_scope"):
+        value = signing.get(key, "")
+        if not isinstance(value, str):
+            raise ConfigError(
+                f"[tool.kivy.windows.signing].{key} must be a string",
+                key_path=f"tool.kivy.windows.signing.{key}",
+                line=finder.line(key),
+            )
+    store_scope = signing.get("store_scope", DEFAULT_WINDOWS_STORE_SCOPE)
+    if store_scope not in VALID_WINDOWS_STORE_SCOPES:
+        valid = ", ".join(sorted(VALID_WINDOWS_STORE_SCOPES))
+        raise ConfigError(
+            f"[tool.kivy.windows.signing].store_scope {store_scope!r} is invalid",
+            key_path="tool.kivy.windows.signing.store_scope",
+            line=finder.line("store_scope"),
+            hint=f"valid values are: {valid}.",
+        )
+    return WindowsSigningConfig(
+        thumbprint=signing.get("thumbprint", ""),
+        timestamp_url=signing.get("timestamp_url", DEFAULT_WINDOWS_TIMESTAMP_URL),
+        store_scope=store_scope,
+    )
+
+
 def _parse_platform_schema_version(
     table: dict, finder: _LineFinder, *, key_path: str, supported: int
 ) -> int:
@@ -880,13 +1107,13 @@ def _parse_platform_find_links(
         )
     out: list[str] = []
     for path in raw:
-        if isabs(path) or normpath(path) == "..":
+        if _is_absolute_source(path) or _posix_normpath(path) == "..":
             raise ConfigError(
                 "find_links entries must be repo-relative paths",
                 key_path=key_path,
                 line=finder.line("find_links"),
             )
-        normalized = normpath(path).replace("\\", "/")
+        normalized = _posix_normpath(path)
         if project_root is not None:
             _validate_find_link_scope(
                 project_root, normalized, finder, key_path=key_path
@@ -1071,13 +1298,13 @@ def _parse_find_links(
         )
     out: list[str] = []
     for path in raw:
-        if isabs(path) or normpath(path) == "..":
+        if _is_absolute_source(path) or _posix_normpath(path) == "..":
             raise ConfigError(
                 "find_links entries must be repo-relative paths",
                 key_path="tool.kivy.ios.find_links",
                 line=finder.line("find_links"),
             )
-        normalized = normpath(path).replace("\\", "/")
+        normalized = _posix_normpath(path)
         if project_root is not None:
             _validate_find_link_scope(project_root, normalized, finder)
         out.append(normalized)
@@ -1225,12 +1452,12 @@ def _validate_artifact_source(kind: str, name: str, source: str, key_path: str) 
     # Shared by xcframeworks (iOS) and native binaries (desktop).
     if source.startswith(("http://", "https://")):
         return
-    if isabs(source):
+    if _is_absolute_source(source):
         raise ConfigError(
             f"{kind} {name!r} source must not be an absolute path",
             key_path=key_path,
         )
-    parts = PurePosixPath(normpath(source)).parts
+    parts = PurePosixPath(_posix_normpath(source)).parts
     if parts and parts[0] == "..":
         raise ConfigError(
             f"{kind} {name!r} source must not escape the project directory",
@@ -1403,12 +1630,12 @@ def _validate_swift_path(name: str, path: object, key_path: str) -> str:
             f"swift package {name!r} 'path' must be a non-empty string",
             key_path=key_path,
         )
-    if isabs(path):
+    if _is_absolute_source(path):
         raise ConfigError(
             f"swift package {name!r} 'path' must be relative, not an absolute path",
             key_path=key_path,
         )
-    parts = PurePosixPath(normpath(path)).parts
+    parts = PurePosixPath(_posix_normpath(path)).parts
     if parts and parts[0] == "..":
         raise ConfigError(
             f"swift package {name!r} 'path' must not escape the project directory",

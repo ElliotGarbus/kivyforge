@@ -4,37 +4,37 @@ overview: Implement the Windows backend from the settled design (docs/design/pla
 todos:
   - id: phase0-host-runtime-proof
     content: "Phase 0 — Windows host + runtime proof (PROVE FIRST): permanent windows-latest CI, full pytest+ruff green on native Windows; verify (do not reimplement) the %LOCALAPPDATA% cache and NTFS chmod/path behavior; clean-VM spike staging PBS + exact Kivy 2.3.1/SDL2 wheels proving sys.prefix, dep-bin discovery, and window-provider import (SDL3 repeat when a wheel exists); record docs/design/dev/windows-dll-findings.md."
-    status: pending
+    status: completed
   - id: phase1-config-init-shell
     content: "Phase 1 — Config, init, platform shell: WindowsConfig (schema_version, app_id with Microsoft-only hard AppUserModelID constraints, archs=[amd64], python.version, icons, signing.{thumbprint,timestamp_url,store_scope}, native.binaries), Windows-safe exe/artifact naming, [windows] Pillow extra, render_windows_tables, WindowsPlatform (+status, reject_ios_only_target), registry + cli/lock.py dispatch, clean/upgrade integration, loader tests."
-    status: pending
+    status: completed
   - id: phase2-lock-profile-runtime
     content: "Phase 2 — Lock profile + runtime provider: WindowsProfile (single win_amd64 tag; kivy_deps.* are ordinary wheels), WindowsPbsProvider (x86_64-pc-windows-msvc), native-binary lock wiring, Windows _LockOps, golden pylock.windows.toml, drift/reproducibility checks, one live PBS resolution at the boundary. Gate: `kivyforge lock -p windows` reproducible."
-    status: pending
+    status: completed
   - id: phase3-launcher-resource
     content: "Phase 3 — Vendored launcher + resource pipeline: C launcher (wmain/wide-char argv, correct CreateProcessW quoting, GetModuleFileNameW self-location, PYTHONHOME/PYTHONPATH/PYTHONNOUSERSITE, Job object kill-on-close, CREATE_SUSPENDED->assign->resume, exit-code propagation, /SUBSYSTEM:WINDOWS) + deterministic CI rebuild; vendor launcher + rcedit binaries with licenses/SHA-256/package-data; console handoff via AttachConsole(ATTACH_PARENT_PROCESS) else CREATE_NO_WINDOW; real-Windows test matrix."
-    status: pending
+    status: completed
   - id: phase4-runtime-wheel-staging
     content: "Phase 4 — Runtime + exact-wheel staging: stage the whole PBS prefix; conditional app-local VC runtime per the Phase 0 finding; a Windows-only no-pip wheel-scheme installer routing root + .data/{purelib,platlib}->Lib/site-packages, .data/data->prefix root (so share/<dep>/bin survives), .data/scripts->Scripts, .data/headers->Include; fixtures proving kivy_deps payloads survive and nothing undeclared is installed."
-    status: pending
+    status: completed
   - id: phase5-onedir-build-run
     content: "Phase 5 — Onedir build + run: atomic assembly (runtime, wheels, app, generated bootstrap, resource-patched launcher) under build/windows/<display_name>; bootstrap sets AppUserModelID, discovers python/share/*/bin generically, registers them + optional bin, retains every add_dll_directory handle, configures PATH, imports entry_point; build + run from arbitrary CWD, no console flash on Explorer launch, diagnostics under `kivyforge run`."
-    status: pending
+    status: completed
   - id: phase6-native-binaries-pe
     content: "Phase 6 — Native-binary channel + PE checks: thin native_stage.py wrapping shared stage_binaries(); extend the shared helper with target-aware casefold collision keys, Windows reserved-name/ADS rejection, path-separator normalization, and an explicit no-op exec-bit policy on Windows; hermetic PE machine parsing (petools) + post-build amd64 check; validate hello-native DLL + helper exe."
-    status: pending
+    status: completed
   - id: phase7-unsigned-packaging
     content: "Phase 7 — Unsigned folder packaging: `package -f folder` copies/assembles the distributable under dist/windows/<safe-name>-<version>-amd64/ (build tree preserved, unsigned), with defined replacement/atomicity; the dist copy contains no build cache, VCS, or accidental host files and runs on the clean VM."
-    status: pending
+    status: completed
   - id: phase8-doctor
     content: "Phase 8 — Doctor: host, long-path, app source, app_id, wheel/runtime coverage, icon, native source/collision/PE-arch, lock hosts, resource assets, signtool, and signing-certificate checks with explicit PASS/WARN/FAIL/SKIP; certificate lookup and signing use the same configured user/machine store; complete fake-probe matrix + a passing native-Windows project check."
-    status: pending
+    status: completed
   - id: phase9-signing
     content: "Phase 9 — Authenticode signing: Signer protocol (new, windows-only) + SigntoolSigner (/sha1 thumbprint /fd SHA256 /tr <ts> /td SHA256, /sm for machine store) + NullSigner; sign the already resource-patched launcher in the dist copy only; PEP 440 string metadata + deterministic four-part numeric file-version mapping; self-signed sign/verify on Windows CI; payload PE signing deferred + documented."
-    status: pending
+    status: completed
   - id: phase10-examples-docs
     content: "Phase 10 — Examples, verification, docs: Windows overlays on the desktop examples (no committed lockfiles) + a PowerShell verifier (clean/lock/doctor/build/run/package/launch); Kivy 2.3.1 baseline with a conditional SDL3 smoke; promote 08-native-binaries-channel.md to the authoritative shared reference (strike completed items); update README/FAQ/CHANGELOG/packaging-scope/platform-architecture/Windows specs + realized-vs-designed notes. Final gate: tests+lint green on Windows/Linux/macOS; verifier passes on a clean VM. Stop for review."
-    status: pending
+    status: completed
 isProject: false
 ---
 
