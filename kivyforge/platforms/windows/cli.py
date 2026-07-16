@@ -89,12 +89,20 @@ def windows_package(
         / "windows"
         / f"{config.app_slug}-{config.project.version}-{target_arch}"
     )
-    _copy_folder_atomic(bundle, dest)
-
-    # Signing (when configured) targets the dist copy only, after the resource
-    # patch (done at build) and before any external installer. The build tree
-    # stays unsigned as the dev-run target.
-    signed = _sign_launcher(config, dest)
+    # Reserve any prior package and keep it until *signing* also succeeds, so a
+    # signer failure (missing cert, timestamp outage) rolls back to the previous
+    # known-good artifact rather than leaving a half-baked unsigned tree in place.
+    trash = _stage_dist_copy(bundle, dest)
+    try:
+        # Signing (when configured) targets the dist copy only, after the resource
+        # patch (done at build) and before any external installer. The build tree
+        # stays unsigned as the dev-run target.
+        signed = _sign_launcher(config, dest)
+    except BaseException:
+        shutil.rmtree(dest, ignore_errors=True)
+        restore_previous(trash, dest)
+        raise
+    discard_reserved(trash)
 
     note = (
         "signed + timestamped"
@@ -181,14 +189,19 @@ def _sign_launcher(config, dest: Path) -> bool:
     return True
 
 
-def _copy_folder_atomic(bundle: Path, dest: Path) -> None:
-    """Copy *bundle* into *dest*, preserving any prior copy until it succeeds.
+def _stage_dist_copy(bundle: Path, dest: Path) -> Path | None:
+    """Copy *bundle* into *dest*, returning the reserved previous tree (or None).
 
     Copies **directly into the final location**: like the build step, a freshly
     written tree cannot be reliably renamed on Windows (the antivirus scanner
     holds new files open), so temp-dir + rename is not viable. Any previous dist
     copy is reserved first and restored if the copy fails, so a broken package
     never destroys a working one.
+
+    The reserved previous tree is **not** discarded here: the caller must call
+    :func:`discard_reserved` only after every later step (e.g. signing) succeeds,
+    or :func:`restore_previous` to roll back. This keeps the previous known-good
+    artifact recoverable across a post-copy failure.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -202,7 +215,7 @@ def _copy_folder_atomic(bundle: Path, dest: Path) -> None:
         shutil.rmtree(dest, ignore_errors=True)
         restore_previous(trash, dest)
         raise
-    discard_reserved(trash)
+    return trash
 
 
 def _load_and_verify(

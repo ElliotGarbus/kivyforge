@@ -203,6 +203,31 @@ class TestPackage:
         # Only the launcher in the dist copy is signed (build tree untouched).
         assert signed["paths"] == [dest / "My App.exe"]
 
+    def test_signer_failure_rolls_back_to_previous(self, project, monkeypatch):
+        from kivyforge.platforms.windows import WindowsBundleError
+
+        # A previous, known-good package already sits at the dist destination.
+        dest = project / "dist" / "windows" / "demo-app-1.2.3-amd64"
+        dest.mkdir(parents=True)
+        (dest / "GOOD-previous.txt").write_text("keep me")
+
+        built = self._canonical_bundle(project)
+
+        class _FailingSigner:
+            configured = True
+
+            def sign(self, paths):
+                raise WindowsBundleError("no signing certificate found")
+
+        monkeypatch.setattr(cli, "select_signer", lambda signing: _FailingSigner())
+        with pytest.raises(ToolchainError, match="no signing certificate"):
+            self._package(project, built, monkeypatch)
+
+        # The signer failure rolls back: the previous package is restored and the
+        # half-written new (unsigned) tree is gone.
+        assert (dest / "GOOD-previous.txt").read_text() == "keep me"
+        assert not (dest / "My App.exe").exists()
+
 
 def _config(project):
     from kivyforge.config import load_config
