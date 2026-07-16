@@ -131,7 +131,8 @@ class TestPackage:
     def test_folder_copies_to_dist(self, project, monkeypatch):
         built = self._canonical_bundle(project)
         dest = self._package(project, built, monkeypatch)
-        assert dest == project / "dist" / "windows" / "demo-app-1.2.3-amd64"
+        # Folder name is the sanitized display_name ("My App"), not project.name.
+        assert dest == project / "dist" / "windows" / "My App-1.2.3-amd64"
         assert (dest / "My App.exe").exists()
         assert (dest / "python" / "python.exe").exists()
         assert (dest / "app" / "main.py").exists()
@@ -173,7 +174,7 @@ class TestPackage:
 
     def test_replaces_existing_dist_dir(self, project, monkeypatch):
         built = self._canonical_bundle(project)
-        dest = project / "dist" / "windows" / "demo-app-1.2.3-amd64"
+        dest = project / "dist" / "windows" / "My App-1.2.3-amd64"
         dest.mkdir(parents=True)
         stale = dest / "STALE-from-old-build.txt"
         stale.write_text("old")
@@ -199,7 +200,7 @@ class TestPackage:
 
         monkeypatch.setattr(cli, "select_signer", lambda signing: _Signer())
         self._package(project, built, monkeypatch)
-        dest = project / "dist" / "windows" / "demo-app-1.2.3-amd64"
+        dest = project / "dist" / "windows" / "My App-1.2.3-amd64"
         # Only the launcher in the dist copy is signed (build tree untouched).
         assert signed["paths"] == [dest / "My App.exe"]
 
@@ -207,7 +208,7 @@ class TestPackage:
         from kivyforge.platforms.windows import WindowsBundleError
 
         # A previous, known-good package already sits at the dist destination.
-        dest = project / "dist" / "windows" / "demo-app-1.2.3-amd64"
+        dest = project / "dist" / "windows" / "My App-1.2.3-amd64"
         dest.mkdir(parents=True)
         (dest / "GOOD-previous.txt").write_text("keep me")
 

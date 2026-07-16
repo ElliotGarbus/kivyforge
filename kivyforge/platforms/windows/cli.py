@@ -22,7 +22,13 @@ from kivyforge.lock.reader import LockError, is_in_sync
 
 from .. import HostCapabilityError, get_platform
 from . import WindowsBundleError
-from .bundle import build_onedir, launcher_name, onedir_path, resolve_assembly_arch
+from .bundle import (
+    build_onedir,
+    bundle_dir_name,
+    launcher_name,
+    onedir_path,
+    resolve_assembly_arch,
+)
 from .fsswap import discard_reserved, reserve_previous, restore_previous
 from .lock import WindowsLockfile
 from .lock import load as load_windows_lock
@@ -83,11 +89,13 @@ def windows_package(
     target_arch = _resolve_arch(lock, arch)
     bundle = _assemble(config, lock, project_root, arch=target_arch, no_cache=no_cache)
 
+    # The dist folder name matches the build tree: the display_name run through
+    # the Windows filename sanitizer (windows-spec), not the raw project.name.
     dest = (
         project_root
         / "dist"
         / "windows"
-        / f"{config.app_slug}-{config.project.version}-{target_arch}"
+        / f"{bundle_dir_name(config)}-{config.project.version}-{target_arch}"
     )
     # Reserve any prior package and keep it until *signing* also succeeds, so a
     # signer failure (missing cert, timestamp outage) rolls back to the previous
