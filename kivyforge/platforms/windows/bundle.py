@@ -154,19 +154,34 @@ def build_onedir(
     return bundle
 
 
+def _first_author(config: Config) -> str | None:
+    """First ``[project].authors`` name, or ``None`` — the publisher/copyright.
+
+    Mirrors the iOS ``NSHumanReadableCopyright`` convention (pyproject-ios): the
+    first author's name populates both ``LegalCopyright`` and ``CompanyName`` in
+    the Windows version resource. Verbatim (no synthesized year) so the patch
+    stays deterministic.
+    """
+    return next((a.name for a in config.project.authors if a.name), None)
+
+
 def _resource_patch(config: Config, icon: Path | None) -> ResourcePatch:
     """The launcher resource patch from project metadata.
 
     The string ProductVersion carries the full PEP 440 version; the numeric
     FILEVERSION/PRODUCTVERSION use the deterministic four-part mapping (signing).
+    LegalCopyright/CompanyName come from the first ``[project].authors`` entry.
     """
     version = config.project.version
     numeric = pep440_to_file_version(version)
+    author = _first_author(config)
     return ResourcePatch(
         icon=icon,
         product_name=config.display_name,
         file_description=config.display_name,
         product_version_string=version,
+        legal_copyright=author,
+        company_name=author,
         file_version=numeric,
         product_version=numeric,
     )

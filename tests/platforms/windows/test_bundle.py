@@ -17,6 +17,7 @@ _PYPROJECT = """\
 [project]
 name = "demo-app"
 version = "1.2.3"
+authors = [{ name = "Acme Corp" }]
 
 [tool.kivy]
 app_dir = "src"
@@ -112,6 +113,22 @@ class TestBuildOnedir:
         _exe, patch = fake_stages[0]
         assert patch.product_name == "My App"
         assert patch.product_version_string == "1.2.3"
+        # LegalCopyright + CompanyName derive from the first [project].authors name.
+        assert patch.legal_copyright == "Acme Corp"
+        assert patch.company_name == "Acme Corp"
+
+    def test_resource_patch_without_authors(self, tmp_path, fake_stages):
+        pyproject = _PYPROJECT.replace('authors = [{ name = "Acme Corp" }]\n', "")
+        (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "main.py").write_text("# entry\n", encoding="utf-8")
+        config = load_config(
+            tmp_path / "pyproject.toml", require_ios=False, require_windows=True
+        )
+        bundle.build_onedir(config, _lock(), tmp_path, echo=lambda *a, **k: None)
+        _exe, patch = fake_stages[0]
+        assert patch.legal_copyright is None
+        assert patch.company_name is None
 
     def test_no_bin_dir_when_no_native(self, project, fake_stages):
         root, config = project
