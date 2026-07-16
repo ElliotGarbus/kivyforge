@@ -127,8 +127,14 @@ Instead, the bootloader does what distlib's launchers do:
    Creating-suspended-then-assigning closes the race where a child spawns
    grandchildren *before* it is in the job — with the resume ordering, every
    descendant is captured, so Ctrl-C, task kill, and process-tree teardown
-   behave correctly and a `python.exe` is never orphaned when the launcher
-   dies.
+   behave correctly and a `python.exe` is not orphaned when the launcher dies.
+   This is **best-effort**: the launcher checks every job call and, on the rare
+   host where the job cannot be armed or the child cannot be assigned to it
+   (uncommon on Windows 8+, where nested jobs are the default), it drops the job
+   and still launches rather than refuse to start the app — trading the
+   kill-on-close guarantee for availability. (`ResumeThread` failure is *not*
+   degraded: the child is torn down and the launcher exits with an OS error, so
+   it never waits forever on a stuck-suspended child.)
 3. **`WaitForSingleObject`** on the child, then **`GetExitCodeProcess`**, and
    **exit with the child's exit code** — scripts and CI wrapping the app see
    the real result. Close every handle (process, thread, job) on exit.

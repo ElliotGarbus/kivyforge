@@ -20,7 +20,9 @@
  *      output/tracebacks reach the terminal. Otherwise (Explorer double-click),
  *      spawn with CREATE_NO_WINDOW so no console flashes.
  *   5. CreateProcessW with CREATE_SUSPENDED, assign to a kill-on-close Job
- *      object, THEN ResumeThread (so no grandchild escapes the job).
+ *      object, THEN ResumeThread (so no grandchild escapes the job). The job is
+ *      best-effort: on the rare host where it cannot be armed/assigned the app
+ *      still launches, just without the kill-on-close guarantee.
  *   6. WaitForSingleObject -> GetExitCodeProcess -> exit with the child's code.
  *      Close every handle on every path.
  *
@@ -309,15 +311,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         creation_flags |= CREATE_NO_WINDOW;
     }
 
-    /* A Job object with kill-on-close guarantees the whole child process tree
-     * dies with the launcher (Ctrl-C, task kill, crash) — no orphaned python. */
+    /* A Job object with kill-on-close makes the whole child process tree die
+     * with the launcher (Ctrl-C, task kill, crash) — no orphaned python. This
+     * is best-effort: if the job cannot be established (rare on Win8+ where
+     * nested jobs are the default), we drop it and still launch rather than
+     * refuse to start the app. Failing calls are checked, never ignored. */
     HANDLE job = CreateJobObjectW(NULL, NULL);
     if (job != NULL) {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
         ZeroMemory(&jeli, sizeof(jeli));
         jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli,
-                                sizeof(jeli));
+        if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli,
+                                     sizeof(jeli))) {
+            /* A job we cannot arm for kill-on-close is worse than none: close it
+             * so we do not rely on a half-configured job below. */
+            CloseHandle(job);
+            job = NULL;
+        }
     }
 
     PROCESS_INFORMATION pi;
@@ -338,11 +348,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
 
     /* Assign to the job while still suspended (closes the grandchild-escape
-     * race), THEN resume the main thread. */
-    if (job != NULL) {
-        AssignProcessToJobObject(job, pi.hProcess);
+     * race), THEN resume the main thread. If assignment fails we cannot promise
+     * kill-on-close, so drop the job rather than pretend the guarantee holds. */
+    if (job != NULL && !AssignProcessToJobObject(job, pi.hProcess)) {
+        CloseHandle(job);
+        job = NULL;
     }
-    ResumeThread(pi.hThread);
+    if (ResumeThread(pi.hThread) == (DWORD)-1) {
+        /* The child is stuck suspended; never WaitForSingleObject forever on it.
+         * Tear it down deterministically and report an OS error. */
+        TerminateProcess(pi.hProcess, LAUNCHER_EX_OSERR);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        if (job != NULL) {
+            CloseHandle(job);
+        }
+        return LAUNCHER_EX_OSERR;
+    }
 
     WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD code = LAUNCHER_EX_OSERR;
