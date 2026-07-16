@@ -8,6 +8,8 @@ import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # Stub heavy optional deps so this module can be collected without the full
 # Xcode / pbxproj tool-chain installed (CI has them; local dev may not).
 if "pbxproj" not in sys.modules:
@@ -436,6 +438,29 @@ class TestRealProbe:
 
         monkeypatch.setattr("kivyforge.doctor.probe.os.replace", blocked)
         assert self._probe().build_output_locked(d) is True
+
+    def test_build_output_locked_raises_if_restore_fails(self, tmp_path, monkeypatch):
+        # A diagnostic must never silently leave the build displaced: if the tree
+        # moves aside but cannot be restored, it raises (naming where it landed)
+        # rather than swallowing the failure.
+        import kivyforge.doctor.probe as P
+
+        d = tmp_path / "App"
+        d.mkdir()
+        real = P.os.replace
+        calls = {"n": 0}
+
+        def flaky(src, dst):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return real(src, dst)  # move-aside succeeds
+            raise PermissionError(5, "Access is denied")  # restore keeps failing
+
+        monkeypatch.setattr(P, "_RESTORE_TIMEOUT_S", 0.2)
+        monkeypatch.setattr(P.time, "sleep", lambda *_a, **_k: None)
+        monkeypatch.setattr(P.os, "replace", flaky)
+        with pytest.raises(OSError, match="could not restore it"):
+            self._probe().build_output_locked(d)
 
     # --- filesystem_type ---
 

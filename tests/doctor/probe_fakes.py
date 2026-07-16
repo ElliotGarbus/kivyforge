@@ -108,6 +108,8 @@ class FakeProbe:
         return list(self._thumbprints)
 
     def build_output_locked(self, path):
+        if isinstance(self._output_locked, BaseException):
+            raise self._output_locked
         return self._output_locked
 
     def filesystem_type(self, path):

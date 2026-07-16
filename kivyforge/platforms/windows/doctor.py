@@ -264,7 +264,15 @@ def check_windows_output_lock(
     is built yet; WARN (not FAIL) since it is transient, user-fixable state.
     """
     onedir = onedir_path(config, project_root)
-    locked = probe.build_output_locked(onedir)
+    try:
+        locked = probe.build_output_locked(onedir)
+    except OSError as exc:
+        return CheckResult(
+            "Build output not locked",
+            Status.FAIL,
+            "could not restore the build output after probing its lock",
+            hint=str(exc),
+        )
     if locked is None:
         return CheckResult("Build output not locked", Status.SKIP, "not built")
     if locked:

@@ -14,8 +14,15 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Protocol
+
+# How long to keep retrying to restore the build output after the lock probe
+# moved it aside. It was just renamed there on the same volume with no open
+# handles, so this normally succeeds on the first try; the retry only rides out
+# a transient antivirus touch.
+_RESTORE_TIMEOUT_S = 10.0
 
 # Mach-O platform constants (LC_BUILD_VERSION `platform`).
 PLATFORM_NAMES = {
@@ -248,9 +255,12 @@ class RealProbe:
         the exact metadata rename ``build``/``package`` will do — move the tree
         aside — and immediately restores it, returning ``True`` when a sharing/
         access lock blocks it (a running instance of the app, or an Explorer/
-        terminal window sitting in the folder), ``False`` when it is free. The
-        rename is O(1) on the same volume; if the aside succeeds the restore
-        does too (the tree was long since scanned), so this leaves no residue.
+        terminal window sitting in the folder), ``False`` when it is free.
+
+        A diagnostic must never lose the user's build: if the aside succeeds the
+        restore is retried and, in the vanishingly unlikely event it still fails,
+        raises ``OSError`` naming where the tree now sits — rather than silently
+        leaving the live build displaced under a hidden name.
         """
         if not path.exists():
             return None
@@ -259,11 +269,21 @@ class RealProbe:
             os.replace(path, aside)
         except OSError:
             return True
-        try:
-            os.replace(aside, path)
-        except OSError:
-            pass
-        return False
+        deadline = time.monotonic() + _RESTORE_TIMEOUT_S
+        delay = 0.1
+        while True:
+            try:
+                os.replace(aside, path)
+                return False
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise OSError(
+                        f"doctor moved {path.name!r} aside to test its build "
+                        f"lock but could not restore it; the build output is now "
+                        f"at {aside}. Move it back to {path} manually."
+                    ) from exc
+                time.sleep(delay)
+                delay = min(delay * 1.5, 1.0)
 
     def filesystem_type(self, path: Path) -> str | None:
         """The filesystem of the volume holding *path* (e.g. ``"NTFS"`` /

@@ -279,6 +279,14 @@ class TestOutputLock:
         )
         assert r.status is Status.WARN
 
+    def test_fail_when_restore_errors(self, tmp_path):
+        # The probe couldn't put the build back after moving it aside; the check
+        # surfaces that loudly (FAIL) instead of crashing the doctor run.
+        probe = FakeProbe(output_locked=OSError("build output is now at C:\\aside"))
+        r = W.check_windows_output_lock(_config(), tmp_path, probe)
+        assert r.status is Status.FAIL
+        assert "aside" in r.hint
+
 
 class TestBuildVolume:
     def test_pass_ntfs_with_devdrive_advisory(self, tmp_path):
