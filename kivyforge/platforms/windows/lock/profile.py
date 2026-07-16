@@ -12,6 +12,7 @@ comes from python-build-standalone (``x86_64-pc-windows-msvc``). Everything else
 
 from __future__ import annotations
 
+from kivyforge.config.errors import ConfigError
 from kivyforge.config.model import Config
 from kivyforge.lock.wheelruntime.profile import PlatformLockProfile
 from kivyforge.lock.wheelruntime.resolver import Variant
@@ -53,7 +54,17 @@ class WindowsProfile(PlatformLockProfile):
         return "pyproject.toml has no [tool.kivy.windows] table; nothing to lock."
 
     def python_version(self, config: Config) -> str:
-        return config.windows_required.python_version or "3.15.0"
+        # [tool.kivy.windows.python].version is required (the loader raises a
+        # ConfigError when it is missing), so it is always set here. Never
+        # silently substitute a hidden default — that would pin an unexpected
+        # (and possibly unreleased) Python instead of surfacing the misconfig.
+        version = config.windows_required.python_version
+        if not version:
+            raise ConfigError(
+                "missing required [tool.kivy.windows.python].version",
+                key_path="tool.kivy.windows.python.version",
+            )
+        return version
 
     def variants(self, config: Config) -> tuple[Variant, ...]:
         return tuple(

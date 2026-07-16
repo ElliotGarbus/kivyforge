@@ -65,6 +65,27 @@ class TestVariants:
         assert variants[0].extra_platform_tags == ()
 
 
+class TestPythonVersion:
+    def test_returns_configured_version(self):
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(
+            windows_required=SimpleNamespace(python_version="3.13.14")
+        )
+        assert WindowsProfile().python_version(cfg) == "3.13.14"
+
+    def test_missing_version_raises_not_silent_default(self):
+        # No hidden 3.15.0 fallback: an unset version surfaces as a clear error
+        # rather than silently pinning an unexpected (possibly unreleased) Python.
+        from types import SimpleNamespace
+
+        from kivyforge.config.errors import ConfigError
+
+        cfg = SimpleNamespace(windows_required=SimpleNamespace(python_version=None))
+        with pytest.raises(ConfigError, match="python.*version"):
+            WindowsProfile().python_version(cfg)
+
+
 class TestFactory:
     def test_get_default(self):
         assert get_windows_resolver() is not None
