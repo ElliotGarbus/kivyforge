@@ -111,3 +111,45 @@ class TestBuildAppimage:
         assert output.read_text() == "PREVIOUS-GOOD"
         # No leftover .<name>.tmp-* file beside the preserved distributable.
         assert [p.name for p in output.parent.iterdir()] == [output.name]
+
+    def test_oserror_launching_tool_is_actionable(
+        self, tmp_path, monkeypatch, fake_tools
+    ):
+        # appimagetool itself failing to exec (e.g. no /dev/fuse, bad binary)
+        # surfaces as an AppDirError rather than a raw OSError.
+        def cannot_exec(cmd, **k):
+            raise OSError("Exec format error")
+
+        monkeypatch.setattr(appimage.subprocess, "run", cannot_exec)
+        appdir = tmp_path / "app.AppDir"
+        appdir.mkdir()
+        cache = ArtifactCache(root=tmp_path / "cache" / "artifacts")
+        with pytest.raises(AppDirError, match="failed to run appimagetool"):
+            appimage.build_appimage(
+                appdir,
+                tmp_path / "out.AppImage",
+                "x86_64",
+                project_root=tmp_path,
+                cache=cache,
+            )
+
+    def test_tool_download_failure_is_translated(self, tmp_path, monkeypatch):
+        # A DownloadError acquiring the pinned appimagetool/runtime is reported
+        # as an AppDirError (no fake_tools here: we want the fetch to fail).
+        from kivyforge.artifacts.download import DownloadError
+
+        def boom(**k):
+            raise DownloadError("could not fetch appimagetool: network down")
+
+        monkeypatch.setattr(appimage, "fetch_artifact", boom)
+        appdir = tmp_path / "app.AppDir"
+        appdir.mkdir()
+        cache = ArtifactCache(root=tmp_path / "cache" / "artifacts")
+        with pytest.raises(AppDirError, match="network down"):
+            appimage.build_appimage(
+                appdir,
+                tmp_path / "out.AppImage",
+                "x86_64",
+                project_root=tmp_path,
+                cache=cache,
+            )

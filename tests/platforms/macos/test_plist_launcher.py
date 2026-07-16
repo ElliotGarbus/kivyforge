@@ -6,12 +6,15 @@ import os
 import platform
 import shutil
 import stat
+import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.platforms.macos import AppBundleError
+from kivyforge.platforms.macos import launcher as launcher_mod
 from kivyforge.platforms.macos.launcher import build_launcher, render_launcher_source
 from kivyforge.platforms.macos.machotools import is_macho, macho_arches
 from kivyforge.platforms.macos.plist import (
@@ -78,6 +81,58 @@ class TestLauncherSource:
     def test_rejects_non_identifier_entry(self):
         with pytest.raises(AppBundleError, match="not a valid module name"):
             render_launcher_source("main.py")
+
+
+class TestLauncherCompileHermetic:
+    """build_launcher's compile wiring + error handling, without a real clang.
+
+    The real Mach-O compile is macOS+clang-only (covered by the skipif'd class
+    below on the macOS CI job); these mock ``subprocess.run`` so the argv
+    assembly, chmod, and both failure branches get coverage on every host.
+    """
+
+    def test_requires_at_least_one_arch(self, tmp_path):
+        with pytest.raises(AppBundleError, match="at least one arch"):
+            build_launcher(tmp_path / "x", entry_point="main", archs=())
+
+    def test_missing_clang_is_actionable(self, tmp_path, monkeypatch):
+        def no_clang(*a, **k):
+            raise FileNotFoundError(2, "No such file or directory")
+
+        monkeypatch.setattr(launcher_mod.subprocess, "run", no_clang)
+        with pytest.raises(AppBundleError, match="clang not found"):
+            build_launcher(
+                tmp_path / "MacOS" / "myapp", entry_point="main", archs=("arm64",)
+            )
+
+    def test_compile_failure_reports_stderr(self, tmp_path, monkeypatch):
+        def fail(cmd, **k):
+            return subprocess.CompletedProcess(cmd, 1, "", "ld: symbol not found")
+
+        monkeypatch.setattr(launcher_mod.subprocess, "run", fail)
+        with pytest.raises(AppBundleError, match="failed to compile"):
+            build_launcher(
+                tmp_path / "MacOS" / "myapp", entry_point="main", archs=("arm64",)
+            )
+
+    def test_success_passes_all_archs_and_marks_executable(self, tmp_path, monkeypatch):
+        recorded = {}
+
+        def ok(cmd, **k):
+            recorded["cmd"] = cmd
+            dest = Path(cmd[cmd.index("-o") + 1])
+            dest.write_bytes(b"\xcf\xfa\xed\xfe")  # Mach-O magic placeholder
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(launcher_mod.subprocess, "run", ok)
+        dest = tmp_path / "MacOS" / "myapp"
+        build_launcher(dest, entry_point="main", archs=("arm64", "x86_64"))
+        # build_launcher chmods 0o755 (a no-op on Windows CI hosts, hence no
+        # executable-bit assertion here) and writes the compiled output.
+        assert dest.exists()
+        # Every requested arch is forwarded to clang as a `-arch <a>` pair.
+        assert recorded["cmd"].count("-arch") == 2
+        assert "arm64" in recorded["cmd"] and "x86_64" in recorded["cmd"]
 
 
 # The launcher is a Mach-O stub built with `clang -arch ...`; that is a macOS-only
