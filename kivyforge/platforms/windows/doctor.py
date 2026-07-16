@@ -123,6 +123,10 @@ def check_windows_arch_coverage(
             f"runtime missing arch(es): {', '.join(missing_runtime)}",
             hint="re-run `kivyforge lock -p windows` after setting archs.",
         )
+    # arm64: this hardcodes win_amd64; generalize to each configured arch's tag
+    # (windows_platform_tag(arch)) so arm64 coverage is checked too. The native
+    # arch check (check_windows_native_arch) already loops per arch and needs no
+    # change. See arm64-windows.md §8.
     for pkg in lock.packages:
         if any(w.is_pure_python for w in pkg.wheels):
             continue

@@ -159,6 +159,9 @@ def copy_launcher(
     strong antivirus trigger that holds the file open and can block a directory
     rename of the still-being-assembled tree on Windows.
     """
+    # arm64: pick the launcher matching the target arch, i.e. thread arch into
+    # vendored_launcher(arch) so an arm64 bundle gets launcher-arm64.exe. The
+    # bundler (bundle.py) already resolves target_arch. See arm64-windows.md §5.
     src = launcher_src if launcher_src is not None else vendored_launcher()
     dest = bundle / launcher_exe_name(display_name)
     shutil.copy2(src, dest)

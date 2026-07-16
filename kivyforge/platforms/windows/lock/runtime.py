@@ -31,6 +31,9 @@ __all__ = [
 ]
 
 # kivyforge arch name -> PBS/LLVM Windows target triple.
+# arm64: add "arm64": "aarch64-pc-windows-msvc" (confirm PBS ships that
+# install_only archive for the pinned CPython). The generic PbsProvider handles
+# the rest — no other change here. See arm64-windows.md §3.
 WINDOWS_TRIPLES = {
     "amd64": "x86_64-pc-windows-msvc",
 }

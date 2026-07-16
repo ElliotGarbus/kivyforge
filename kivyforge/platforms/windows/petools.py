@@ -23,6 +23,8 @@ IMAGE_FILE_MACHINE_ARM64 = 0xAA64
 IMAGE_FILE_MACHINE_ARMNT = 0x01C4
 
 # kivyforge arch name -> expected PE machine.
+# arm64: already mapped — verify_pe_arch() validates arm64 native binaries today,
+# so this module needs no change when win_arm64 lands. See arm64-windows.md §4.
 _ARCH_MACHINE = {
     "amd64": IMAGE_FILE_MACHINE_AMD64,
     "arm64": IMAGE_FILE_MACHINE_ARM64,

@@ -99,6 +99,11 @@ jobs:
 
   windows_launcher:
     name: Launcher reproducibility + vendored assets (Windows)
+    # arm64: this job (and revendor_launcher below) build/verify only
+    # launcher-amd64.exe. Adding win_arm64 means also building/verifying
+    # launcher-arm64.exe — cross-compile on this same x64 runner via
+    # `vcvarsall x64_arm64` (add the VC.Tools.ARM64 component), or add an arm64
+    # runner; a build-arch matrix is the natural shape. See arm64-windows.md §10.
     # Skipped on manual re-vendor runs: revendor_launcher already rebuilds +
     # verifies against the runner's current toolset, and this job would only
     # fail on stale vendored files it checked out before that sibling committed.

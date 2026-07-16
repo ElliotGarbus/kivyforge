@@ -36,6 +36,8 @@ SUPPORTED_WINDOWS_SCHEMA_VERSION = 1
 # Windows build architectures. Only amd64 (x86-64) this phase; the field stays
 # list-shaped so win-arm64 is purely additive later (windows-spec). Like Linux
 # and unlike macOS there is no fat binary — each arch is a separate onedir.
+# arm64: add "arm64" to VALID_WINDOWS_ARCHS to accept it; DEFAULT stays amd64
+# (arm64 is opt-in via [tool.kivy.windows].archs). See arm64-windows.md §1.
 VALID_WINDOWS_ARCHS = frozenset({"amd64"})
 DEFAULT_WINDOWS_ARCHS = ("amd64",)
 

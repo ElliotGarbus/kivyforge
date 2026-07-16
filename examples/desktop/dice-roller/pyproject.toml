@@ -78,6 +78,8 @@ version = "3.13.14"
 [tool.kivy.windows]
 schema_version = 1
 app_id = "Example.DiceRoller"
+# arm64: once native Windows-on-Arm support lands (docs/design/platforms/windows/
+# arm64-windows.md), an app opts in with archs = ["arm64"] or ["amd64", "arm64"].
 archs = ["amd64"]
 exclude = [
     "kivy-garden",

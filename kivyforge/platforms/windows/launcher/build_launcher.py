@@ -37,6 +37,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "launcher.c"
 VENDOR_DIR = HERE.parent / "vendor"
+# arm64: launcher.c is portable, so arm64 reuses the same source but needs a
+# SECOND vendored binary (launcher-arm64.exe) + SHA256SUMS entry. Make these
+# per-arch and thread arch through compile_launcher/_vcvars_env/do_build/do_verify.
+# Cross-compile from an x64 runner via `vcvarsall x64_arm64`. See arm64-windows.md §5.
 LAUNCHER_NAME = "launcher-amd64.exe"
 VENDORED_LAUNCHER = VENDOR_DIR / LAUNCHER_NAME
 MANIFEST = VENDOR_DIR / "SHA256SUMS"
@@ -83,6 +87,9 @@ def _vcvars_env(arch: str = "x64", *, vcvars_ver: str | None = None) -> dict[str
             f"vswhere not found at {vswhere}; install Visual Studio (with the "
             "C++ build tools) to build the launcher."
         )
+    # arm64: cross-compiling the arm64 launcher needs the ARM64 toolset — also
+    # require "Microsoft.VisualStudio.Component.VC.Tools.ARM64" and load vcvars
+    # with arch="x64_arm64". See arm64-windows.md §5.
     proc = subprocess.run(
         [
             str(vswhere),

@@ -66,6 +66,8 @@ def _verified_asset(name: str, *, human: str) -> Path:
 
 def vendored_launcher() -> Path:
     """The verified prebuilt launcher (``launcher-amd64.exe``)."""
+    # arm64: take a target-arch argument and select launcher-<arch>.exe (rcedit
+    # stays x64 — it is emulated and only edits resources). See arm64-windows.md §5.
     return _verified_asset(LAUNCHER_NAME, human="launcher")
 
 

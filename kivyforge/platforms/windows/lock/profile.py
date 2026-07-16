@@ -20,6 +20,9 @@ from kivyforge.lock.wheelruntime.runtime import RuntimeProvider
 
 from .runtime import PythonBuildStandaloneProvider
 
+# arm64: add "arm64" here and "arm64": "win_arm64" to _ARCH_TO_TAG; _TAG_TO_ARCH
+# derives automatically, and coverage_error's "win_amd64" text should generalize
+# to the per-arch tag. Gated on upstream win_arm64 wheels — see arm64-windows.md §2.
 VALID_WHEEL_ARCHS = frozenset({"amd64"})
 
 # kivyforge arch name -> the wheel platform tag pip requests / a wheel carries.

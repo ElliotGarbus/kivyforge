@@ -828,6 +828,15 @@ settled (recorded under "Settled decisions" in the
       (`KIVY_GL_BACKEND=angle_sdl2`) is available as a fallback but not the
       default. See [windows-dll-findings.md](../../dev/windows-dll-findings.md).
 
+Future platform (not started):
+
+- **Windows on Arm64 (`win_arm64`).** Native arm64 bundles are not supported
+  today (`amd64` only), but the backend is deliberately arch-shaped so adding
+  arm64 is additive. See [arm64-windows.md](arm64-windows.md) for the full
+  change inventory, the upstream `win_arm64`-wheel gating prerequisite, and the
+  phased rollout. In-code touchpoints are tagged `# arm64:` (run
+  `rg "# arm64:"`).
+
 Settled (no longer open):
 
 - **Bootloader binary distribution — VENDORED.** The audited amd64 launcher is

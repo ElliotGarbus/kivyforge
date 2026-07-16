@@ -18,6 +18,9 @@ class TestPlatformTag:
         assert windows_platform_tag("amd64") == "win_amd64"
 
     def test_valid_archs(self):
+        # arm64: these assertions pin the amd64-only phase. When win_arm64 lands
+        # (arm64-windows.md §2, §11), extend VALID_WHEEL_ARCHS and add an
+        # arm64 -> win_arm64 mapping case, plus arm64 coverage cases below.
         assert VALID_WHEEL_ARCHS == frozenset({"amd64"})
 
 

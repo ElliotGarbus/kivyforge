@@ -154,6 +154,15 @@ def _default_system_dir() -> Path:
     ``System32`` from such a process. On a 64-bit interpreter ``System32`` is
     already correct.
     """
+    # arm64: this WOW64 logic is x86/x64-specific and does not generalize to
+    # Arm64 Windows (the WOW layer there is Arm32 SysArm32, plus x64 emulation).
+    # The host-System32 fallback only ever works same-arch: cross-building an
+    # arm64 bundle on an x64 host cannot source an arm64 msvcp140.dll here (the
+    # _copy_from PE-machine guard correctly refuses the x64 one). The intended
+    # fix is NOT to teach this function about arm64 System32 — it is to pin
+    # msvcp140.dll as a per-arch, SHA-256-verified artifact and retire this
+    # host fallback, which is what makes cross-arch builds host-independent.
+    # See arm64-windows.md §6, §7.
     if struct.calcsize("P") == 4:  # 32-bit interpreter
         root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
         sysnative = root / "Sysnative"

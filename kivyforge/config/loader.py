@@ -977,6 +977,8 @@ def _parse_windows_archs(windows: dict, finder: _LineFinder) -> tuple[str, ...]:
             line=line,
             hint='only "amd64" is supported this phase.',
         )
+    # arm64: the "win-arm64 is planned" hint + the amd64-only validation relax
+    # automatically once VALID_WINDOWS_ARCHS gains "arm64". See arm64-windows.md §1.
     unknown = [a for a in raw if a not in VALID_WINDOWS_ARCHS]
     if unknown:
         valid = ", ".join(sorted(VALID_WINDOWS_ARCHS))

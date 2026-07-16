@@ -36,6 +36,14 @@ class WindowsPlatform(Platform):
     package_formats = ("folder",)
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
+        # arm64: keep gating on the OS only, never the host CPU. Building an
+        # arm64 onedir needs no build-time compilation (runtime + wheels are
+        # fetched per target arch, the launcher is prebuilt/vendored, rcedit is
+        # emulated), so cross-arch builds are the intended model: an x64 Windows
+        # host should cross-build arm64 bundles (and vice versa) with no arm64
+        # hardware. The only host-CPU coupling is the msvcp140.dll System32
+        # fallback, which arm64 removes by pinning msvcp140.dll as an artifact
+        # (see runtime_stage.py). Do NOT add a host==target check. arm64-windows.md §7.
         host = host_system if host_system is not None else _platform.system()
         if host != "Windows":
             raise HostCapabilityError(

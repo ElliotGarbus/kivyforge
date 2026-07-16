@@ -8,6 +8,11 @@ the lock already decided everything. Windows ships one arch (``amd64``) per
 onedir, so per package a single wheel satisfies coverage: a pure-Python
 (``py3-none-any``) wheel or a ``win_amd64`` wheel.
 
+arm64: this staging logic is already arch-generic (it routes by
+``wheel_arch(tag)``), so only this docstring's "one arch (amd64)" /
+"``win_amd64``" wording changes when ``win_arm64`` lands — no code change here.
+See arm64-windows.md §9.
+
 Scheme routing into the ``<bundle>\python`` prefix (the load-bearing part):
 
 * package root + ``.data/{purelib,platlib}`` -> ``Lib\site-packages``

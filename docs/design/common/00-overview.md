@@ -95,6 +95,7 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 | [bootloader-windows](../platforms/windows/bootloader-windows.md) | The prebuilt launcher `.exe`: windowed subsystem, spawn-and-wait + Job object, wide-char/path handling |
 | [signing-windows](../platforms/windows/signing-windows.md) | Authenticode: the `Signer` protocol, thumbprint identity, Inno composition, self-signed dev/CI flow |
 | [signing-prerequisites-windows](../platforms/windows/signing-prerequisites-windows.md) | User-facing checklist for signing your app: cert into the store, thumbprint, `signtool`, config, timestamp |
+| [arm64-windows](../platforms/windows/arm64-windows.md) | Forward-looking map (not started) of what it takes to add native Windows on Arm64 (`win_arm64`) support |
 
 ### Developer notes
 
