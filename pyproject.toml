@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kivyforge"
 version = "3.0.0.dev0"
-description = "Declarative, PEP 621-aligned build toolchain for Kivy apps — successor to kivy-ios, python-for-android, and buildozer (iOS today; Android, Linux, macOS, Windows planned)"
+description = "Declarative, PEP 621-aligned build toolchain for Kivy apps — successor to kivy-ios, python-for-android, and buildozer (iOS, macOS, Linux, and Windows today; Android planned)"
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -21,6 +21,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
 ]
 dependencies = [
     # CLI verbs
