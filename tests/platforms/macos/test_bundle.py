@@ -141,7 +141,8 @@ class TestBuildAppBundle:
         assert (contents / "Resources" / "python" / "bin" / "python3").exists()
         plist = plistlib.loads((contents / "Info.plist").read_bytes())
         assert plist["CFBundleIdentifier"] == "org.example.myapp"
-        assert faked["sign"] == [app]
+        # The bundle is ad-hoc signed once (on the temp tree, before the swap).
+        assert len(faked["sign"]) == 1
 
     def test_arch_subset_passed_to_stagers(self, tmp_path, faked):
         root = _project(tmp_path)
@@ -208,6 +209,51 @@ class TestBuildAppBundle:
                 staging_dir=tmp_path / "o",
                 echo=lambda *a: None,
             )
+
+    def test_failed_build_preserves_previous_app(self, tmp_path, faked, monkeypatch):
+        # A build that fails mid-assembly must leave the previous, working .app
+        # untouched (write-in-place) and never leave a half-written temp behind.
+        root = _project(tmp_path)
+        out = tmp_path / "out"
+        app = bundle.build_app_bundle(
+            _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+        )
+        (app / "SENTINEL").write_text("prev")
+
+        def boom(*a, **k):
+            raise AppBundleError("simulated wheel-staging failure")
+
+        monkeypatch.setattr(bundle, "stage_wheels", boom)
+        with pytest.raises(AppBundleError, match="simulated wheel-staging failure"):
+            bundle.build_app_bundle(
+                _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+            )
+
+        assert (app / "SENTINEL").read_text() == "prev"
+        # No leaked .<name>.app.tmp-* work tree beside the preserved bundle.
+        assert [p.name for p in out.iterdir()] == ["My App.app"]
+
+    def test_signing_failure_preserves_previous_app(self, tmp_path, faked, monkeypatch):
+        # Signing runs on the temp tree before the swap, so a codesign failure
+        # rolls back to the previous good .app rather than displacing it.
+        root = _project(tmp_path)
+        out = tmp_path / "out"
+        app = bundle.build_app_bundle(
+            _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+        )
+        (app / "SENTINEL").write_text("prev")
+
+        def boom(_app):
+            raise AppBundleError("simulated codesign failure")
+
+        monkeypatch.setattr(bundle, "sign_bundle_adhoc", boom)
+        with pytest.raises(AppBundleError, match="simulated codesign failure"):
+            bundle.build_app_bundle(
+                _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+            )
+
+        assert (app / "SENTINEL").read_text() == "prev"
+        assert [p.name for p in out.iterdir()] == ["My App.app"]
 
     def test_icon_generated_when_configured(self, tmp_path, faked):
         root = _project(tmp_path)

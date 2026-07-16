@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import plistlib
 import shutil
+import tempfile
 from pathlib import Path
 
 import click
@@ -79,63 +80,80 @@ def build_app_bundle(
     staging_dir = staging_dir or (project_root / "build" / "macos")
     exe = config.app_slug
     app = staging_dir / f"{config.display_name}.app"
-    contents = app / "Contents"
 
-    if app.exists():
-        shutil.rmtree(app)
-    (contents / "MacOS").mkdir(parents=True)
-    resources = contents / "Resources"
-    resources.mkdir()
+    # Assemble into a temp .app and swap it in only on success, so a failure
+    # mid-assembly (e.g. a transient runtime/wheel fetch error, or a signing
+    # failure) leaves the previous, working .app untouched instead of a
+    # half-written one. Mirrors the Linux AppDir builder's write-then-swap.
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(dir=staging_dir, prefix=f".{app.name}.tmp-"))
+    try:
+        contents = work / "Contents"
+        (contents / "MacOS").mkdir(parents=True)
+        resources = contents / "Resources"
+        resources.mkdir()
 
-    label = "universal2" if len(archs) > 1 else archs[0]
-    echo(f"Staging CPython {lock.python_runtime.version} runtime ({label}) ...")
-    stage_runtime(
-        lock.python_runtime,
-        archs,
-        resources / "python",
-        project_root=project_root,
-        cache=cache,
-        no_cache=no_cache,
-    )
-
-    echo(f"Installing {len(lock.packages)} locked packages ...")
-    stage_wheels(
-        lock.packages,
-        archs,
-        resources / "lib",
-        project_root=project_root,
-        cache=cache,
-        no_cache=no_cache,
-    )
-
-    if lock.native_binaries:
-        echo(f"Staging {len(lock.native_binaries)} native binaries ...")
-        stage_native_binaries(
-            lock,
-            resources,
+        label = "universal2" if len(archs) > 1 else archs[0]
+        echo(f"Staging CPython {lock.python_runtime.version} runtime ({label}) ...")
+        stage_runtime(
+            lock.python_runtime,
+            archs,
+            resources / "python",
             project_root=project_root,
             cache=cache,
             no_cache=no_cache,
         )
 
-    _copy_app_sources(config, project_root, resources / "app")
-    icon_file = _stage_icon(config, project_root, resources, exe)
+        echo(f"Installing {len(lock.packages)} locked packages ...")
+        stage_wheels(
+            lock.packages,
+            archs,
+            resources / "lib",
+            project_root=project_root,
+            cache=cache,
+            no_cache=no_cache,
+        )
 
-    build_launcher(
-        contents / "MacOS" / exe,
-        entry_point=config.kivy.entry_point,
-        archs=archs,
-    )
+        if lock.native_binaries:
+            echo(f"Staging {len(lock.native_binaries)} native binaries ...")
+            stage_native_binaries(
+                lock,
+                resources,
+                project_root=project_root,
+                cache=cache,
+                no_cache=no_cache,
+            )
 
-    plist = build_info_plist(config, executable=exe, icon_file=icon_file)
-    with (contents / "Info.plist").open("wb") as fh:
-        plistlib.dump(plist, fh)
+        _copy_app_sources(config, project_root, resources / "app")
+        icon_file = _stage_icon(config, project_root, resources, exe)
 
-    if sign:
-        echo("Ad-hoc signing the bundle ...")
-        count = sign_bundle_adhoc(app)
-        echo(f"  signed {count} Mach-O binaries + the bundle")
+        build_launcher(
+            contents / "MacOS" / exe,
+            entry_point=config.kivy.entry_point,
+            archs=archs,
+        )
 
+        plist = build_info_plist(config, executable=exe, icon_file=icon_file)
+        with (contents / "Info.plist").open("wb") as fh:
+            plistlib.dump(plist, fh)
+
+        # Sign the temp bundle before the swap: codesign embeds signatures in the
+        # Mach-O files + Contents/_CodeSignature, so an atomic rename preserves
+        # them, and a signing failure never displaces the previous good .app.
+        if sign:
+            echo("Ad-hoc signing the bundle ...")
+            count = sign_bundle_adhoc(work)
+            echo(f"  signed {count} Mach-O binaries + the bundle")
+    except BaseException:
+        shutil.rmtree(work, ignore_errors=True)
+        raise
+
+    # Swap the freshly built tree in for the previous one. The rename is atomic
+    # within staging_dir; the brief rmtree→rename window only exists after a
+    # fully successful build.
+    if app.exists():
+        shutil.rmtree(app)
+    work.replace(app)
     return app
 
 
