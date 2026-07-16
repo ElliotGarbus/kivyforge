@@ -38,6 +38,16 @@ SYMLINKS_SUPPORTED = _detect_symlink_support()
 
 
 def pytest_configure(config):
+    # CI sets KIVYFORGE_REQUIRE_SYMLINKS to assert the requires_symlinks tests
+    # actually run (they self-skip on a host without the privilege, which would
+    # otherwise silently hide a regression). Fail loudly instead of skipping.
+    if os.environ.get("KIVYFORGE_REQUIRE_SYMLINKS") and not SYMLINKS_SUPPORTED:
+        raise pytest.UsageError(
+            "KIVYFORGE_REQUIRE_SYMLINKS is set but this host cannot create "
+            "symlinks, so `requires_symlinks` tests would skip. Enable the "
+            "OS symlink-creation privilege (Windows Developer Mode / admin) "
+            "before running with this flag."
+        )
     config.addinivalue_line(
         "markers",
         "requires_symlinks: needs OS symlink-creation privilege (skipped on a "
