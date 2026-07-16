@@ -135,9 +135,13 @@ resource carries both a human string and fixed numeric fields:
   segment by a fixed rule (release → a high sentinel so it sorts above its own
   pre-releases; `rcK`/`bK`/`aK` → an ordered lower band; `.postK`/`.devK`
   folded in by the documented offset). The mapping is total and monotonic
-  (a newer PEP 440 version never produces a lower tuple) and each field is
-  clamped to `0..65535`. This is metadata only — it never affects wheel/runtime
-  resolution, which uses the PEP 440 string throughout.
+  **within a single epoch** (for a given epoch, a newer PEP 440 version never
+  produces a lower tuple) and each field is clamped to `0..65535`. **Epoch is
+  not representable** in four 16-bit fields — `major` already carries
+  `release[0]` — so it rides only the string `ProductVersion`; a *cross-epoch*
+  numeric comparison (vanishingly rare — epochs exist only to recover from a
+  versioning-scheme change) may not order. This is metadata only — it never
+  affects wheel/runtime resolution, which uses the PEP 440 string throughout.
 
 ## Orchestration: kivyforge + Inno are composed, not redundant
 

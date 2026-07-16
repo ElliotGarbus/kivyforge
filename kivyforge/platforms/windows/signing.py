@@ -15,8 +15,8 @@ Two backends behind a single :class:`Signer` protocol:
 
 Signing runs on the ``dist/windows`` copy only, **after** the resource patch
 (a resource edit invalidates any signature) and **before** any external
-installer. Only the launcher ``.exe`` is signed in v1; payload DLLs/``.pyd``s are
-deferred to v2 (kept possible by onedir — every file is real and signable).
+installer. Only the launcher ``.exe`` is signed; payload DLLs/``.pyd``s are
+**not** signed (not planned — onedir keeps it possible if ever needed).
 """
 
 from __future__ import annotations
@@ -54,8 +54,11 @@ def pep440_to_file_version(version: str) -> str:
     pre/post/dev segment so that, for the same ``a.b.c``:
     ``devN`` (``0+N``) < ``aN`` (``10000+N``) < ``bN`` (``20000+N``) <
     ``rcN`` (``30000+N``) < final (``40000``) < ``postN`` (``50000+N``).
-    Epoch is not representable in the four-field resource and is carried only by
-    the string ProductVersion; an unparseable version degrades to ``0.0.0.0``.
+    The result is therefore monotonic **within a single epoch** only. Epoch is
+    not representable in the four-field resource (``major`` already holds
+    ``release[0]``) and is carried only by the string ProductVersion, so a
+    cross-epoch numeric comparison may not order; an unparseable version degrades
+    to ``0.0.0.0``.
     """
     try:
         v = Version(version)

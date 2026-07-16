@@ -41,6 +41,17 @@ class TestPep440ToFileVersion:
             < d("1.0.0.post1")
         )
 
+    def test_epoch_is_not_represented_in_numeric(self):
+        # Four 16-bit fields cannot encode an epoch (major already holds
+        # release[0]), so the numeric tuple orders only *within* an epoch; the
+        # true version rides the string ProductVersion. This asserts the known,
+        # documented limitation so it stays explicit (see signing-windows.md).
+        assert S.pep440_to_file_version("2!1.0.0") == "1.0.0.40000"
+        assert S.pep440_to_file_version("1!1.0.0") == "1.0.0.40000"
+        # Different epochs collapse to the same tuple — cross-epoch ordering is
+        # deliberately not promised by the numeric mapping.
+        assert S.pep440_to_file_version("2!1.0.0") == S.pep440_to_file_version("1.0.0")
+
     def test_invalid_degrades(self):
         assert S.pep440_to_file_version("not-a-version") == "0.0.0.0"
 
