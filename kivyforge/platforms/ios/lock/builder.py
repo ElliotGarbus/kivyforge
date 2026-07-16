@@ -71,7 +71,13 @@ def build_lockfile(
     python_provider = python_provider or PythonOrgProvider()
     root = (project_root or Path.cwd()).resolve()
 
-    python_version = config.ios.python_version or "3.15.0"
+    # [tool.kivy.ios.python].version is required (the loader raises a ConfigError
+    # when it is missing), so it is always set here. Never silently substitute a
+    # hidden default — that would pin an unexpected (and possibly unreleased)
+    # Python instead of surfacing the misconfig.
+    python_version = config.ios.python_version
+    if not python_version:
+        raise BuildError("missing required [tool.kivy.ios.python].version")
     find_links_entries = config.ios.find_links
     try:
         validate_find_links(root, find_links_entries)

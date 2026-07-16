@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 
+from kivyforge.config.errors import ConfigError
 from kivyforge.config.model import Config
 from kivyforge.lock.wheelruntime.profile import PlatformLockProfile
 from kivyforge.lock.wheelruntime.resolver import Variant
@@ -55,7 +56,17 @@ class MacosProfile(PlatformLockProfile):
         return "pyproject.toml has no [tool.kivy.macos] table; nothing to lock."
 
     def python_version(self, config: Config) -> str:
-        return config.macos_required.python_version or "3.15.0"
+        # [tool.kivy.macos.python].version is required (the loader raises a
+        # ConfigError when it is missing), so it is always set here. Never
+        # silently substitute a hidden default — that would pin an unexpected
+        # (and possibly unreleased) Python instead of surfacing the misconfig.
+        version = config.macos_required.python_version
+        if not version:
+            raise ConfigError(
+                "missing required [tool.kivy.macos.python].version",
+                key_path="tool.kivy.macos.python.version",
+            )
+        return version
 
     def _floor(self, config: Config) -> str:
         return config.macos_required.minimum_system_version or DEFAULT_MACOS_FLOOR

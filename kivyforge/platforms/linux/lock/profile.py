@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 
+from kivyforge.config.errors import ConfigError
 from kivyforge.config.model import Config
 from kivyforge.lock.wheelruntime.model import WheelRuntimeLock
 from kivyforge.lock.wheelruntime.profile import PlatformLockProfile
@@ -178,7 +179,17 @@ class LinuxProfile(PlatformLockProfile):
         return "pyproject.toml has no [tool.kivy.linux] table; nothing to lock."
 
     def python_version(self, config: Config) -> str:
-        return config.linux_required.python_version or "3.15.0"
+        # [tool.kivy.linux.python].version is required (the loader raises a
+        # ConfigError when it is missing), so it is always set here. Never
+        # silently substitute a hidden default — that would pin an unexpected
+        # (and possibly unreleased) Python instead of surfacing the misconfig.
+        version = config.linux_required.python_version
+        if not version:
+            raise ConfigError(
+                "missing required [tool.kivy.linux.python].version",
+                key_path="tool.kivy.linux.python.version",
+            )
+        return version
 
     def _floor(self, config: Config) -> str:
         return config.linux_required.glibc_floor or DEFAULT_GLIBC_FLOOR
