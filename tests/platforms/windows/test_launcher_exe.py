@@ -1,13 +1,16 @@
 """End-to-end launcher .exe behavior on a real Windows host (needs MSVC).
 
-Builds a tiny console stub that stands in for ``python.exe`` (it records the
-argv + Python env it was handed, then exits with a requested code), lays out a
-minimal bundle around the vendored launcher, and runs it. This proves the
-spawn-and-wait model, the CommandLineToArgvW-inverse argv quoting, exit-code
-propagation, and the PYTHONHOME/PYTHONPATH/PYTHONNOUSERSITE environment — the
-parts of the bootloader test matrix that are automatable. (The remaining matrix
-items — deep >260-char paths, shortcut launches, Ctrl-C, no-console-flash — stay
-a manual/interactive gate per bootloader-windows.md.)
+Builds a tiny console stub that stands in for ``python.exe`` (it records its PID,
+the argv + Python env it was handed, optionally sleeps, then exits with a
+requested code), lays out a minimal bundle around the vendored launcher, and runs
+it. This proves the spawn-and-wait model, the CommandLineToArgvW-inverse argv
+quoting, exit-code propagation, the PYTHONHOME/PYTHONPATH/PYTHONNOUSERSITE
+environment, launching from **space- and non-ASCII-containing install paths**,
+and **process-tree teardown** (killing the launcher reaps the child via the Job
+object). The remaining matrix items stay a manual/interactive gate per
+bootloader-windows.md: **deep >260-char paths** (the launcher declares no
+``longPathAware`` manifest, so this needs more than a registry opt-in),
+**shortcut launches**, **Ctrl-C**, and **no-console-flash**.
 """
 
 from __future__ import annotations
@@ -19,9 +22,11 @@ import pytest
 
 pytestmark = pytest.mark.requires_windows
 
-# A console-subsystem stand-in for python.exe. It writes the Python isolation
-# env vars and every forwarded argv entry (UTF-8, one per line) to the file in
-# %KIVY_STUB_OUT%, then exits with %KIVY_STUB_EXIT% (default 0).
+# A console-subsystem stand-in for python.exe. It writes its own PID, the Python
+# isolation env vars, and every forwarded argv entry (UTF-8, one per line) to the
+# file in %KIVY_STUB_OUT%. If %KIVY_STUB_SLEEP% (ms) is set it stays alive that
+# long (so process-tree teardown can be observed), then exits with
+# %KIVY_STUB_EXIT% (default 0).
 _STUB_C = r"""
 #include <windows.h>
 #include <stdlib.h>
@@ -44,6 +49,11 @@ int wmain(int argc, wchar_t **argv) {
     HANDLE h = CreateFileW(buf, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) return 91;
+    static wchar_t pidbuf[32];
+    _ultow(GetCurrentProcessId(), pidbuf, 10);
+    write_utf8(h, L"PID=");
+    write_utf8(h, pidbuf);
+    write_utf8(h, L"\n");
     const wchar_t *keys[] = {L"PYTHONHOME", L"PYTHONPATH", L"PYTHONNOUSERSITE"};
     for (int k = 0; k < 3; k++) {
         static wchar_t val[32768];
@@ -58,7 +68,10 @@ int wmain(int argc, wchar_t **argv) {
         write_utf8(h, argv[i]);
         write_utf8(h, L"\n");
     }
-    CloseHandle(h);
+    CloseHandle(h);  /* flush before any sleep so the test can read PID/args */
+    static wchar_t sleepbuf[16];
+    DWORD sn = GetEnvironmentVariableW(L"KIVY_STUB_SLEEP", sleepbuf, 16);
+    if (sn) Sleep((DWORD)_wtoi(sleepbuf));
     static wchar_t code[16];
     DWORD cn = GetEnvironmentVariableW(L"KIVY_STUB_EXIT", code, 16);
     return cn ? _wtoi(code) : 0;
@@ -112,6 +125,33 @@ def _read_lines(out: Path) -> list[str]:
     return out.read_text(encoding="utf-8").splitlines()
 
 
+def _clone_bundle(src: Path, dest: Path) -> Path:
+    """Copy an assembled launcher bundle to *dest* (e.g. a space/Unicode path)."""
+    import shutil
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dest)
+    return dest
+
+
+def _pid_alive(pid: int) -> bool:
+    import ctypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    k32 = ctypes.windll.kernel32
+    handle = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return False
+        return code.value == STILL_ACTIVE
+    finally:
+        k32.CloseHandle(handle)
+
+
 class TestLauncherExe:
     def test_exit_code_zero(self, launcher_bundle, tmp_path):
         out = tmp_path / "out.txt"
@@ -156,3 +196,63 @@ class TestLauncherExe:
         args = [ln[4:] for ln in _read_lines(out) if ln.startswith("ARG=")]
         # args[0] is the bootstrap path; the rest are the forwarded argv verbatim.
         assert args[1:] == forwarded
+
+    @pytest.mark.parametrize(
+        "subdir",
+        [
+            "Program Files X/My App",  # spaces in the install path
+            "Ünïcödé Café/Приложение",  # non-ASCII (and spaces) in the install path
+        ],
+    )
+    def test_runs_from_awkward_install_path(self, launcher_bundle, tmp_path, subdir):
+        bundle = _clone_bundle(launcher_bundle, tmp_path / Path(subdir))
+        out = tmp_path / "out.txt"
+        proc = _run_launcher(bundle, ["an arg"], out)
+        assert proc.returncode == 0
+        text = out.read_text(encoding="utf-8")
+        # The launcher self-locates from its own (awkward) path and points
+        # PYTHONHOME back into that same bundle.
+        assert f"PYTHONHOME={bundle / 'python'}" in text
+        args = [ln[4:] for ln in _read_lines(out) if ln.startswith("ARG=")]
+        assert args[0].replace("\\", "/").endswith("_kivyforge_bootstrap.py")
+        assert args[1:] == ["an arg"]
+
+    def test_process_tree_teardown(self, launcher_bundle, tmp_path):
+        # Killing the launcher must reap the child python via the kill-on-close
+        # Job object — no orphaned python.exe.
+        import os
+        import time
+
+        out = tmp_path / "out.txt"
+        env = dict(os.environ)
+        env["KIVY_STUB_OUT"] = str(out)
+        env["KIVY_STUB_SLEEP"] = "30000"  # keep the child alive so we can kill it
+        proc = subprocess.Popen([str(launcher_bundle / "MyApp.exe")], env=env)
+        child_pid = None
+        try:
+            deadline = time.time() + 15
+            while time.time() < deadline and child_pid is None:
+                if out.is_file():
+                    for ln in _read_lines(out):
+                        if ln.startswith("PID="):
+                            child_pid = int(ln[4:])
+                            break
+                if child_pid is None:
+                    time.sleep(0.1)
+            assert child_pid is not None, "stub child never reported its PID"
+            assert _pid_alive(child_pid)
+
+            proc.kill()  # terminate the launcher; its job handle closes -> child dies
+            proc.wait(timeout=15)
+
+            deadline = time.time() + 15
+            while time.time() < deadline and _pid_alive(child_pid):
+                time.sleep(0.1)
+            assert not _pid_alive(child_pid), (
+                "child python survived the launcher being killed (orphaned)"
+            )
+        finally:
+            if child_pid is not None and _pid_alive(child_pid):
+                subprocess.run(["taskkill", "/F", "/PID", str(child_pid)], check=False)
+            if proc.poll() is None:
+                proc.kill()

@@ -184,22 +184,28 @@ they are requirements, not suggestions.
 
 ### Test matrix
 
-The launcher test suite must cover, on a real Windows host:
+The launcher test suite must cover, on a real Windows host. **Automated** items
+run in `tests/platforms/windows/test_launcher_exe.py` (a compiled console stub
+stands in for `python.exe`); **manual** items remain an interactive gate.
 
-- install paths containing **spaces** (`C:\Program Files\My App\...`);
-- **non-ASCII** paths (`C:\Users\Ünïcödé\...`);
-- **deep trees** near/over the 260-char `MAX_PATH` limit (with and without
-  the `LongPathsEnabled` registry opt-in — also a `doctor` WARN, see the
-  [spec's doctor table](windows-spec.md#doctor-checks-windows));
-- launch from a **shortcut with an arbitrary/blank working directory**;
-- **forwarded quoted arguments** round-trip intact (an argument with spaces,
-  embedded quotes, and trailing backslashes reaches `sys.argv` unchanged);
-- **visible output under `kivyforge run`** (stdout/stderr and tracebacks land
-  in the terminal) and **no console flash** on an Explorer double-click;
-- **Ctrl-C** delivered from the console terminates the child;
-- **exit-code propagation** (child exits nonzero → launcher exits nonzero);
-- **process-tree teardown** (killing the launcher kills the child via the Job
-  object; no orphaned `python.exe`).
+- **[automated]** install paths containing **spaces** (`C:\Program Files\My App\...`);
+- **[automated]** **non-ASCII** paths (`C:\Users\Ünïcödé\...`);
+- **[manual]** **deep trees** near/over the 260-char `MAX_PATH` limit (with and
+  without the `LongPathsEnabled` registry opt-in — also a `doctor` WARN, see the
+  [spec's doctor table](windows-spec.md#doctor-checks-windows)). Not yet
+  automatable: the launcher declares no `longPathAware` application manifest, so
+  a registry opt-in alone does not make Win32 path APIs accept >260-char paths;
+- **[manual]** launch from a **shortcut with an arbitrary/blank working directory**;
+- **[automated]** **forwarded quoted arguments** round-trip intact (an argument
+  with spaces, embedded quotes, and trailing backslashes reaches `sys.argv`
+  unchanged);
+- **[manual]** **visible output under `kivyforge run`** (stdout/stderr and
+  tracebacks land in the terminal) and **no console flash** on an Explorer
+  double-click;
+- **[manual]** **Ctrl-C** delivered from the console terminates the child;
+- **[automated]** **exit-code propagation** (child exits nonzero → launcher exits nonzero);
+- **[automated]** **process-tree teardown** (killing the launcher kills the child
+  via the Job object; no orphaned `python.exe`).
 
 ## Prior art
 
