@@ -102,8 +102,11 @@ def build_appimage(
     tool = _executable_copy(tool, cache)
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    if output.exists():
-        output.unlink()
+    # Emit to a temp file and swap it in only on success, so a tool failure (or
+    # crash) leaves any previous .AppImage intact rather than deleting it up
+    # front — the write-in-place guarantee the other platforms also uphold.
+    tmp_out = output.parent / f".{output.name}.tmp-{os.getpid()}"
+    tmp_out.unlink(missing_ok=True)
 
     echo(f"Packaging {output.name} with appimagetool {APPIMAGETOOL_VERSION} ...")
     env = {
@@ -117,18 +120,21 @@ def build_appimage(
         "--runtime-file",
         str(runtime),
         str(appdir),
-        str(output),
+        str(tmp_out),
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     except OSError as exc:
+        tmp_out.unlink(missing_ok=True)
         raise AppDirError(f"failed to run appimagetool: {exc}") from exc
     if proc.returncode != 0:
+        tmp_out.unlink(missing_ok=True)
         raise AppDirError(
             "appimagetool failed to build the AppImage.\n"
             f"  {(proc.stderr or proc.stdout).strip()}"
         )
-    output.chmod(0o755)
+    tmp_out.chmod(0o755)
+    os.replace(tmp_out, output)
     return output
 
 

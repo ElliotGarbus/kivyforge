@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -51,9 +52,7 @@ class TestBuildAppimage:
         def fake_run(cmd, *, capture_output, text, env):
             recorded["cmd"] = cmd
             recorded["env"] = env
-            # appimagetool writes the output file.
-            from pathlib import Path
-
+            # appimagetool writes the output file (a temp path swapped in later).
             Path(cmd[-1]).write_text("APPIMAGE")
             return subprocess.CompletedProcess(cmd, 0, "", "")
 
@@ -88,3 +87,27 @@ class TestBuildAppimage:
                 project_root=tmp_path,
                 cache=cache,
             )
+
+    def test_failure_preserves_previous_output(self, tmp_path, monkeypatch, fake_tools):
+        # A tool failure must not destroy the previous good .AppImage: we emit to
+        # a temp file and only swap it in on success, and clean the temp up.
+        def fake_run(cmd, **k):
+            Path(cmd[-1]).write_text("PARTIAL")  # tool wrote a partial, then failed
+            return subprocess.CompletedProcess(cmd, 1, "", "boom")
+
+        monkeypatch.setattr(appimage.subprocess, "run", fake_run)
+        appdir = tmp_path / "app.AppDir"
+        appdir.mkdir()
+        output = tmp_path / "dist" / "linux" / "myapp-1.0-x86_64.AppImage"
+        output.parent.mkdir(parents=True)
+        output.write_text("PREVIOUS-GOOD")
+        cache = ArtifactCache(root=tmp_path / "cache" / "artifacts")
+
+        with pytest.raises(AppDirError, match="appimagetool failed"):
+            appimage.build_appimage(
+                appdir, output, "x86_64", project_root=tmp_path, cache=cache
+            )
+
+        assert output.read_text() == "PREVIOUS-GOOD"
+        # No leftover .<name>.tmp-* file beside the preserved distributable.
+        assert [p.name for p in output.parent.iterdir()] == [output.name]
