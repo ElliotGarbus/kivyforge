@@ -103,3 +103,4 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 |----------|---------|
 | [dev/resolver-findings](../dev/resolver-findings.md) | Phase 0 spike: pip as the iOS cross-resolution backend |
 | [dev/swift-spm-findings](../dev/swift-spm-findings.md) | Phase 0 spike: linking/embedding a Swift SPM product in a pure-ObjC target |
+| [dev/windows-backend-retrospective](../dev/windows-backend-retrospective.md) | Post-implementation retrospective: biggest surprises, what to do better, and a carry-forward checklist for the Android backend |
