@@ -31,7 +31,8 @@ re-verify before acting on anything more than a few months old. Captured
 ## 1. CPython Android tier (settled)
 
 - **Android is a Tier 3 CPython platform** via **[PEP 738](https://peps.python.org/pep-0738/)**,
-  shipped in **Python 3.13 (Oct 2024)**; 3.14 and 3.15 continue support. It is in
+  shipped in **Python 3.13 (Oct 2024)**; **3.14 (stable)** and the **upcoming
+  3.15** (pre-release now; final Oct 2026) continue the tier. It is in
   CPython's own build/release process, not a third-party patch set.
 - **64-bit + 32-bit ABIs**, per the PyPA
   [platform-compatibility-tags spec](https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/#android):
