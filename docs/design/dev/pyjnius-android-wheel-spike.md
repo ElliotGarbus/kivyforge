@@ -4,19 +4,25 @@
 repository**. This brief is self-contained — you do not need any context about
 the project that requested it. Everything you need to know is here.
 
-**One-line objective:** determine whether — and how — `pyjnius` can be built and
-published as a **prebuilt PEP 738 Android wheel** (`android_*` tags) that a
-downstream tool can `pip install` (never compiling pyjnius from source per app)
-and load at runtime inside an Android app that provides a **documented bootstrap
-contract** — specifically an **SDL3 host** that has loaded `libSDL3.so` (which
-supplies the JVM `JNIEnv`) before the first `import jnius`.
+**One-line objective:** produce a **first-party, reproducible, PEP 738 Android
+wheel** for `pyjnius` (`android_*` tags) — an **SDL3 build for current CPython
+(3.14 + the 3.15 pre-release)**, hash-pinnable — that a downstream tool can
+`pip install` (never compiling pyjnius from source per app) and load at runtime
+inside an Android app providing a **documented bootstrap contract** (a host with
+an in-process JVM — a Kivy/SDL app — reachable at `import jnius`). Community
+wheels already prove this is possible (see the Findings update); the goal is a
+first-party, SDL3/3.15 version **published to PyPI** that kivyforge (and any
+packager) consumes and pins by URL + SHA-256 — see
+[Distribution model](#distribution-model-publish-upstream-to-pypi-recommended).
 
 > **This brief was updated 2026-07 after verified downstream research** — see
 > [Findings update](#findings-update-2026-07) immediately below. In short: the
 > earlier "`-lmain`" description was **wrong**; the real coupling is **SDL**; the
 > one symbol problem (SDL2→SDL3) already has a **known, verified two-line fix**;
-> **no prior-art wheel exists anywhere**; and the recommended scope is narrowed
-> from a fully *app-agnostic* wheel to one that relies on a **kivyforge-defined
+> **working prebuilt pyjnius Android wheels already exist** (the `kivyschool`
+> Anaconda channel, built by the `pyjnius-builder` PEP 517 backend and consumed
+> by the `ksproject` toolchain); and the recommended scope is narrowed from a
+> fully *app-agnostic* wheel to one that relies on a **kivyforge-defined
 > bootstrap contract**. Read the update first — it supersedes the original §2
 > where they conflict.
 
@@ -29,8 +35,9 @@ the wheels; if it proves hard, document exactly what blocks it.
 ## Findings update (2026-07)
 
 Verified against `kivy/pyjnius` master, `kivy/python-for-android`, SDL docs, PyPI,
-the Chaquopy index, and the kivy-school (`ksp`) ecosystem. This section
-**supersedes the original §2** where they differ.
+the Chaquopy index, the **`kivyschool` Anaconda channel**, `pyjnius-builder`, and
+the kivy-school (`ksp`) ecosystem. This section **supersedes the original §2**
+where they differ.
 
 ### The real Android coupling is SDL, not `libmain` (corrects §2)
 
@@ -89,19 +96,46 @@ working, verified patch — `pythonforandroid/recipes/pyjnius/sdl3_jnienv_getter
 both SDL2 and SDL3 (`depends = [('genericndkbuild', 'sdl2', 'sdl3'), 'six']`),
 applying `sdl3_jnienv_getter.patch` conditionally via `will_build('sdl3')`.
 
-### No pyjnius Android wheel exists anywhere (confirmed exhaustively)
+### Prior art exists: prebuilt pyjnius Android wheels are already published
 
-Not merely "not on PyPI":
+> **Correction.** An earlier version of this brief stated "no pyjnius Android
+> wheel exists anywhere." **That was wrong** — it checked PyPI/Chaquopy/conda-forge
+> but not Anaconda.org *channels*. Working wheels exist and there is a reusable
+> build backend. This changes the spike from "prove it's possible" to "reproduce
+> it as an SDL3 / 3.15 build that kivyforge controls and pins."
 
-- **PyPI:** no `android_*` tag in any release, including current 1.7.0.
-- **Chaquopy index** (`chaquo.com/pypi-13.1/`): pyjnius absent — Chaquopy has its
-  own Java bridge (`from java import …`) and never needed it.
-- **conda-forge:** has pyjnius, but desktop-only.
-- **p4a:** still compiles pyjnius from source per app (`PyProjectRecipe`,
-  `hostpython_prerequisites = ["Cython<3.2"]`).
+- **Prebuilt wheels — the `kivyschool` Anaconda channel**
+  (`https://pypi.anaconda.org/kivyschool/simple/pyjnius/`) publishes, today:
 
-There is **no existing artifact to adapt** — whatever this spike builds
-establishes the first one.
+  ```
+  pyjnius-1.7.0-cp313-cp313-android_21_arm64_v8a.whl
+  pyjnius-1.7.0-cp313-cp313-android_21_x86_64.whl
+  pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl
+  pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl
+  ```
+
+- **Build backend — `pyjnius-builder`**
+  (`github.com/kivy-school/pyjnius-builder`): a **PEP 517 build backend** that
+  compiles the per-ABI extension and **injects the Java glue into the wheel's
+  `.java/`** from `[tool.pyjnius].java-paths`. This *is* the reference recipe —
+  reuse or port it rather than starting from scratch. (Sibling: `ksp-builder`,
+  which injects `.gradle/<pkg>.json`.)
+- **Consumer — `ksproject`** resolves the wheel with a plain
+  `uv pip install --python-platform <arch> --extra-index-url <pyswift + kivyschool
+  channels>`, then extracts the wheel's dot-directories (`.java/`, `.libs/<abi>/`,
+  `.gradle/*.json`) into a generated AGP project (Gradle tasks
+  `copySitePackagesJava` / `copySitePackagesNativeLibs_<abi>` / …). **No
+  pyjnius-specific handling** — it relies entirely on the wheel + the bootstrap
+  load-order guarantee.
+
+Still absent (so publishing an *official/first-party* wheel remains valuable):
+
+- **PyPI / Chaquopy index / conda-forge:** no Android pyjnius wheel.
+- The `kivyschool` wheels are **community-run**, cover only **cp313/`android_21`**
+  and **cp314/`android_24`**, and are almost certainly **SDL2**-linked (ksproject
+  ships SDL2 2.30.11). There is **no SDL3 build, no 3.15, and nothing published
+  first-party to PyPI** — which is exactly what this spike should produce (see
+  [Distribution model](#distribution-model-publish-upstream-to-pypi-recommended)).
 
 ### Three paths (the wheel is not the only option)
 
@@ -127,6 +161,9 @@ three**, so it is independent of the packaging decision:
 
 ### Reusable prior art in the kivy-school ecosystem
 
+Beyond the ready-made wheel + `pyjnius-builder` recipe above, the broader `ksp`
+stack has directly reusable pieces:
+
 - **`ksp-bootstraps`** (`github.com/kivy-school/ksp-bootstraps`): MIT, `Protocol`
   -based reusable Gradle/Xcode project generator. Early (`0.0.1.postN`), and its
   `main.c` currently targets **SDL2** — reusing it still needs the same SDL3 port.
@@ -142,29 +179,108 @@ three**, so it is independent of the packaging decision:
 
 ### Net effect on this spike
 
+- **A working wheel + build recipe already exist** (kivyschool channel +
+  `pyjnius-builder`), so the spike is no longer "prove a wheel is possible" — it
+  is **"reproduce it as a first-party, SDL3, 3.15-capable build that kivyforge
+  pins by URL + hash."**
 - The single "hard" runtime problem (JNIEnv) is **already solved** by SDL + the
   known SDL3 patch.
-- The Java-glue-delivery problem is **solved by convention** (dot-directory).
-- The remaining work is mechanical: apply the patch, link SDL3 as external, ship
-  the Java glue by convention, and confirm load under an SDL3 host on-device.
+- The Java-glue-delivery problem is **solved by convention** (dot-directory, via
+  `pyjnius-builder`).
+- The remaining work is mechanical: (re)build from the `pyjnius-builder` recipe
+  for the target CPython/ABIs, **publish to PyPI** (see the next section), and
+  confirm load under a conforming host on-device.
 - **Scope is narrowed to path 2** (bootstrap-contract wheel); the app-agnostic
   ideal (path 1) is explicitly *not* required.
 
 ---
 
-## 1. Why this is not already solved
+## Distribution model: publish upstream to PyPI (recommended)
 
-Today pyjnius has **no Android wheel on PyPI**; downstream build tools
-(python-for-android / Buildozer) compile it **from source per project**. Confirm
-the current state yourself:
+**Recommendation:** publish official `android_*` pyjnius wheels **from
+`kivy/pyjnius` to PyPI**, not to a private/community index. Build *toward* a PyPI
+release — it is the target distribution model for this spike.
+
+Why PyPI-from-source rather than a private index:
+
+- It is exactly what **PEP 738** called for ("until prominent libraries routinely
+  release their own Android wheels… adoption will be limited"). pyjnius is a
+  keystone library; a first-party release is a lighthouse for the ecosystem.
+- **First-party beats a community channel** for any consumer that pins by
+  URL + SHA-256: no extra index, no single-maintainer supply-chain risk,
+  canonical provenance. (The `kivyschool` channel is the proof of concept; PyPI
+  is the production home.)
+- It helps every packager (p4a, Briefcase, kivyforge), not just one.
+
+### Design decision: resolve the `JNIEnv` at runtime (decouple from a specific SDL)
+
+A *public* wheel is installed by people who do **not** share one bootstrap, so do
+not hard-link a specific SDL. Instead of the compile-time `SDL_GetAndroidJNIEnv`
+undefined symbol (which pins the wheel to SDL3 and fails cryptically on any
+non-SDL host), acquire the `JNIEnv` at **runtime**:
+
+- `dlsym` for **`SDL_GetAndroidJNIEnv`** (SDL3) **or** **`SDL_AndroidGetJNIEnv`**
+  (SDL2) — one wheel then works with either SDL host; **and**
+- fall back to **`JNI_GetCreatedJavaVMs`** (via `libnativehelper` / the JNI
+  invocation API) — SDL-independent, so the wheel works in *any* host with an
+  in-process JVM.
+
+This turns the runtime contract from "you must be an SDL3 app" into the weaker,
+honest **"an in-process JVM exists (+ the Java glue is on the classpath)"** — the
+right promise for something on PyPI. If the runtime lookup proves too fiddly, an
+**SDL3-only** wheel (the two-line patch from the Findings update) is the
+acceptable fallback — but the runtime lookup is preferred for public
+distribution.
+
+### Contract to standardize (co-design with p4a)
+
+The wheel's residual runtime contract (§2) must be **documented in pyjnius** and
+ideally **agreed with the p4a maintainers**, so there is *one* contract rather
+than per-bootstrap variants:
+
+- an in-process JVM discoverable at import (per the runtime lookup above);
+- the wheel's `.java/` glue compiled/dexed into the app, with the
+  **`org.kivy.android.*` namespace preserved** (so Plyer-style
+  `autoclass('org.kivy.android.PythonActivity')` keeps working — this *is* "Kivy
+  Android compatibility");
+- **fail loudly** — a missing JVM/glue raises a clear `ImportError` ("pyjnius'
+  Android wheel needs a host that provides an in-process JVM; see <link>"), not a
+  cryptic dlopen/symbol failure, so e.g. a Termux user gets guidance.
+
+### Ownership & consumption
+
+- This is a **maintainer commitment** on `kivy/pyjnius` (CI, release cadence, the
+  CPython × ABI × API matrix, NDK-drift re-pins). Do it **as an upstream PR**, not
+  a fork — p4a already maintains the SDL3 patch and dual-SDL support, so upstream
+  is receptive.
+- **kivyforge then consumes the PyPI wheel pinned by URL + SHA-256** (no extra
+  index), ships the **bootstrap that satisfies the contract**, and keeps the
+  **Gradle-source compile as a fallback** for CPython/ABI combos not yet
+  published.
+
+---
+
+## 1. Starting point — what exists and what's missing
+
+pyjnius has **no Android wheel on PyPI** (so a default `pip install` still
+fails), but **community prebuilt wheels exist on the `kivyschool` Anaconda
+channel** (see the Findings update). Confirm both yourself:
 
 ```bash
+# PyPI: still nothing
 pip install --only-binary=:all: --platform android_24_arm64_v8a \
     --python-version 3.14 --target /tmp/x pyjnius
-# Expected today: "No matching distribution found for pyjnius"
+# -> "No matching distribution found for pyjnius"
+
+# kivyschool channel: wheels are present
+pip install --only-binary=:all: --platform android_24_arm64_v8a \
+    --python-version 3.14 --target /tmp/y pyjnius \
+    --extra-index-url https://pypi.anaconda.org/kivyschool/simple
+# -> resolves pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl
 ```
 
-The context that makes wheels now possible:
+The job is to turn that community proof into a **first-party, SDL3,
+3.15-capable, hash-pinned** wheel. The context that makes this straightforward:
 
 - Android is a **CPython Tier 3 platform** since 3.13 (PEP 738); wheel tags are
   `android_<apilevel>_<abi>` (ABIs: `arm64_v8a`, `armeabi_v7a`, `x86_64`, `x86`).
@@ -250,7 +366,10 @@ to path 2 rather than an app-agnostic wheel):
 
 ## 4. Concrete tasks
 
-1. **Reproduce the gap** (the `pip` command in §1) and record it.
+1. **Establish the starting point:** confirm PyPI has no wheel *and* the
+   `kivyschool` channel does (both `pip` commands in §1); study the
+   `pyjnius-builder` recipe and a downloaded kivyschool wheel's layout (per-ABI
+   `.so`, injected `.java/`) as your baseline to reproduce and extend.
 2. **Stand up a cibuildwheel Android build** for pyjnius on a Linux `x86_64` (or
    macOS) host:
    - `pipx run cibuildwheel --platform android` (or pinned in
@@ -317,16 +436,22 @@ made with evidence.
    - **residual runtime contract**: precisely what the *host app* must still
      provide for the wheel to work (e.g. an in-process JVM, a specific symbol,
      the dexed Java glue) — this is what downstream packagers must guarantee;
-   - a short recommendation: is a maintained pyjnius Android-wheel release
-     realistic, and what would it take (CI, cadence, ABI/API matrix)?
+   - a recommendation on the **PyPI publication path** (per the Distribution
+     model section): is a maintained, upstream-published pyjnius Android-wheel
+     release realistic, and what would it take (CI, cadence, ABI/API matrix, the
+     runtime-JNIEnv-lookup decision, and the documented runtime contract)?
 3. **A minimal reproducible build config** (cibuildwheel settings in
    `pyproject.toml` / a CI workflow) so the result is re-runnable.
 
 ## 7. Constraints & gotchas
 
-- **Host:** build on **Linux `x86_64`** or **macOS** with an Android SDK; let
-  cibuildwheel manage the NDK via `sdkmanager`. Windows cannot build Android
-  wheels.
+- **Host OS:** build on a **Linux `x86_64`** or **macOS** host (WSL2 counts as
+  Linux) with an Android SDK; let cibuildwheel manage the NDK via `sdkmanager`.
+  **Native Windows is unsupported *as the build host*** — this is a host-OS
+  limitation of cibuildwheel / the Android build tooling (which is POSIX-shell
+  oriented), **not** a lack of cross-compilation: the build always
+  cross-compiles to the `arm64_v8a`/`x86_64` Android (bionic) target regardless
+  of the host CPU, so an `x86_64` Linux host builds `arm64_v8a` wheels fine.
 - **Frontend:** `build` / `build[uv]` / `uv` only — **not `pip`**.
 - **API level:** default `ANDROID_API_LEVEL=24` (first with RUNPATH, needed by
   auditwheel; ~99% device coverage). Don't lower it without reason.
@@ -351,7 +476,11 @@ made with evidence.
 - SDL3 `JNIEnv` rename — `SDL_GetAndroidJNIEnv` in `SDL3/SDL_system.h`; p4a fix
   `pythonforandroid/recipes/pyjnius/sdl3_jnienv_getter.patch` + the pyjnius recipe
   in <https://github.com/kivy/python-for-android>
+- **Prior-art wheels + build recipe + consumer** —
+  <https://pypi.anaconda.org/kivyschool/simple/pyjnius/> (published wheels),
+  <https://github.com/kivy-school/pyjnius-builder> (PEP 517 backend),
+  <https://github.com/kivy-school/ksproject> (resolve + dot-dir extraction)
 - Reusable bootstrap / Java-glue prior art (dot-directory `.java`/`.libs`/`.gradle`
   convention) — <https://github.com/kivy-school/ksp-bootstraps>
-- Evidence of the missing wheel —
+- pyjnius still compiled-from-source in p4a (context) —
   <https://github.com/kivy/python-for-android/issues/3342>
