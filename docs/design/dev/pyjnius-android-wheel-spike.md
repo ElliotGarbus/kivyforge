@@ -5,14 +5,16 @@ repository**. This brief is self-contained — you do not need any context about
 the project that requested it. Everything you need to know is here.
 
 **One-line objective:** produce a **first-party, reproducible, PEP 738 Android
-wheel** for `pyjnius` (`android_*` tags) — an **SDL3 build for current CPython
-(3.14 + the 3.15 pre-release)**, hash-pinnable — that a downstream tool can
+wheel** for `pyjnius` (`android_*` tags) — ideally **one universal build that
+works against SDL2 *and* SDL3** (SDL3-only is the acceptable fallback) for
+**current CPython (3.14 + the 3.15 pre-release)**, hash-pinnable — that a
+downstream tool can
 `pip install` (never compiling pyjnius from source per app) and load at runtime
 inside an Android app providing a **documented bootstrap contract** (a host with
 an in-process JVM — a Kivy/SDL app — reachable at `import jnius`). Community
 wheels already prove this is possible (see the Findings update); the goal is a
-first-party, SDL3/3.15 version **published to PyPI** that kivyforge (and any
-packager) consumes and pins by URL + SHA-256 — see
+first-party, universal-SDL (SDL2+SDL3) / 3.15-capable version **published to
+PyPI** that kivyforge (and any packager) consumes and pins by URL + SHA-256 — see
 [Distribution model](#distribution-model-publish-upstream-to-pypi-recommended).
 
 > **This brief was updated 2026-07 after verified downstream research** — see
@@ -137,6 +139,30 @@ Still absent (so publishing an *official/first-party* wheel remains valuable):
   first-party to PyPI** — which is exactly what this spike should produce (see
   [Distribution model](#distribution-model-publish-upstream-to-pypi-recommended)).
 
+### Kivy itself is already wheel-available: pyjnius is the sole keystone
+
+The `kivyschool` channel also publishes **Kivy 2.3.1 Android wheels** for exactly
+the interpreters that matter:
+
+```
+Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl
+Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl   (also cp313)
+```
+
+CPython 3.14 is stable and Tier 3 on Android, so the interpreter and the
+framework gates are effectively cleared. That leaves **pyjnius as the single
+remaining first-party keystone** for a wheel-only Android stack. Note that Kivy
+2.3.1 is an **SDL2** framework, so a pyjnius wheel that works against SDL2 (or,
+per the [universal-wheel decision](#design-decision-one-universal-wheel-for-sdl2-and-sdl3-resolve-the-jnienv-at-runtime),
+SDL2 *and* SDL3) lets kivyforge target **Kivy 2.3.1 on SDL2 now** and carry the
+*same* pyjnius artifact forward to **Kivy 3.0 on SDL3** later.
+
+One packaging caveat independent of pyjnius: Kivy 2.3.1 on Android still needs
+the **SDL2 runtime `.so`s** (`libSDL2.so`, `SDL2_image/mixer/ttf`) present in the
+APK and loaded before import — that is the bootstrap's job (p4a bootstrap, or
+`kivy_deps` libs + an ordered loader). pyjnius only *finds* the `JNIEnv` from a
+loaded SDL; something else must *package and load* SDL.
+
 ### Three paths (the wheel is not the only option)
 
 The SDL3/JNIEnv fix above is a **two-line patch that applies identically to all
@@ -212,25 +238,45 @@ Why PyPI-from-source rather than a private index:
   is the production home.)
 - It helps every packager (p4a, Briefcase, kivyforge), not just one.
 
-### Design decision: resolve the `JNIEnv` at runtime (decouple from a specific SDL)
+### Design decision: one universal wheel for SDL2 *and* SDL3 (resolve the `JNIEnv` at runtime)
 
-A *public* wheel is installed by people who do **not** share one bootstrap, so do
-not hard-link a specific SDL. Instead of the compile-time `SDL_GetAndroidJNIEnv`
-undefined symbol (which pins the wheel to SDL3 and fails cryptically on any
-non-SDL host), acquire the `JNIEnv` at **runtime**:
+**Goal: a single `android_*` wheel that works with an SDL2 host *or* an SDL3 host
+(and, ideally, any in-process-JVM host).** This is strategically important, not
+just tidy: it decouples pyjnius from the SDL/Kivy *generation*, so **the same
+wheel serves Kivy 2.3.1 (SDL2) today and Kivy 3.0 (SDL3) later** — no
+per-generation rebuild, no forked wheels (see the [Kivy-wheel
+note](#kivy-itself-is-already-wheel-available-pyjnius-is-the-sole-keystone)).
 
-- `dlsym` for **`SDL_GetAndroidJNIEnv`** (SDL3) **or** **`SDL_AndroidGetJNIEnv`**
-  (SDL2) — one wheel then works with either SDL host; **and**
-- fall back to **`JNI_GetCreatedJavaVMs`** (via `libnativehelper` / the JNI
-  invocation API) — SDL-independent, so the wheel works in *any* host with an
-  in-process JVM.
+The only thing that pins a build to a single SDL generation is the *link-time*
+symbol name (`SDL_AndroidGetJNIEnv` for SDL2 vs `SDL_GetAndroidJNIEnv` for SDL3)
+plus a hard SDL `DT_NEEDED`. Remove both and one wheel spans both:
+
+1. **Drop the hard SDL link.** Change `get_libraries()` from `['SDL2', 'log']`
+   (or `['SDL3', 'log']`) to **`['log']`** so the `.so` carries **no
+   `DT_NEEDED` on any `libSDL*.so`** — a specific SDL soname is exactly what
+   would otherwise lock the wheel to one generation and make it fail to `dlopen`
+   against the other.
+2. **Resolve the `JNIEnv` at runtime**, taking whichever is present:
+   - `dlsym(RTLD_DEFAULT, "SDL_GetAndroidJNIEnv")` (SDL3) → else
+   - `dlsym(RTLD_DEFAULT, "SDL_AndroidGetJNIEnv")` (SDL2) → else
+   - `JNI_GetCreatedJavaVMs` + `AttachCurrentThread` (SDL-independent; also
+     covers non-SDL hosts).
+
+   Because the host loads its SDL into the app's global linker namespace before
+   Python imports pyjnius, `RTLD_DEFAULT` finds whichever getter exists. The
+   dlsym-of-SDL path is the *sure* one — a Kivy host always has SDL loaded and
+   exports the getter (this is proven; it is how p4a resolves it today). The
+   `JNI_GetCreatedJavaVMs` fallback is a bonus whose dlsym-resolvability varies by
+   API level/runtime, so treat it as best-effort, not the primary.
 
 This turns the runtime contract from "you must be an SDL3 app" into the weaker,
 honest **"an in-process JVM exists (+ the Java glue is on the classpath)"** — the
-right promise for something on PyPI. If the runtime lookup proves too fiddly, an
+right promise for something on PyPI. It is a small, low-risk upstream change to
+`jnius/env.py` (drop SDL from linked libs) plus a few lines of runtime resolution
+in `jnius_jvm_android.pxi`. If the runtime lookup proves too fiddly, an
 **SDL3-only** wheel (the two-line patch from the Findings update) is the
-acceptable fallback — but the runtime lookup is preferred for public
-distribution.
+acceptable fallback — but the universal (SDL2-or-SDL3) build is preferred for
+public distribution.
 
 ### Contract to standardize (co-design with p4a)
 
