@@ -69,7 +69,7 @@ Three sources feed `jniLibs/<abi>/` at build time:
 
 1. **The python.org runtime** — `libpython3.x.so` and the stdlib C extensions (`lib-dynload`) from the extracted per-ABI embeddable package.
 2. **Wheel extension modules** — every `.so` inside each installed Android wheel for that ABI.
-3. **Wheel-embedded native libraries** — each `.so` under a wheel's flat top-level `.libs/` directory (the Kivy wheel's SDL family and Kivy's own compiled libs), placed into the ABI folder named by the **wheel's platform tag**. This is the Android analog of the iOS wheel-embedded-`.frameworks/` scan, and mirrors the `auditwheel`/`delvewheel` `<pkg>.libs/` convention. A legacy nested `.libs/<abi>/` is also accepted but its subdirectory must match the wheel tag (drift check, see [artifact-distribution-android](03-artifact-distribution-android.md#the-kivy-wheel-carries-its-native-so-payload-libs)).
+3. **Wheel-embedded native libraries** — each `.so` under a wheel's flat top-level `.libs/` directory (the Kivy wheel's SDL family and Kivy's own compiled libs), placed into the ABI folder named by the **wheel's platform tag**. This is the Android analog of the iOS wheel-embedded-`.frameworks/` scan, and mirrors the `auditwheel`/`delvewheel` `<pkg>.libs/` convention. `.libs/` must be **flat**; any subdirectory (e.g. a nested `.libs/<abi>/`) is a malformed wheel and fails the build, since the wheel tag is the sole source of truth for the ABI (see [artifact-distribution-android](03-artifact-distribution-android.md#the-kivy-wheel-carries-its-native-so-payload-libs)).
 
 All three flow into the same `jniLibs/<abi>/` folder and are packaged by AGP.
 

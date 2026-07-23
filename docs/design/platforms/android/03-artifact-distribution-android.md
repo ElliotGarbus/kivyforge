@@ -114,12 +114,15 @@ arrive. The wheel author (you, when cross-building Kivy) controls this payload �
 which is why building your own Kivy wheel, rather than trusting a community one,
 matters.
 
-> **Liberal consumer.** `kivyforge build` accepts either a flat `.libs/` (the
-> canonical layout) or a legacy nested `.libs/<abi>/`. When a nested subdirectory
-> is present it is **validated against the wheel tag**: an `.so` under
-> `.libs/x86_64/` inside a wheel tagged `…_arm64_v8a` is a drift error and fails
-> the build, rather than silently packaging a mismatched binary. This keeps the
-> ABI's single source of truth the wheel tag while still ingesting older wheels.
+> **Flat only.** `.libs/` must be **flat**: `kivyforge build` copies the `.so`s it
+> finds directly under `.libs/` and treats **any subdirectory** (including an
+> `.libs/<abi>/`) as a **malformed wheel** — a hard build failure with a clear
+> message. This is not a compatibility loss: the flat layout *is* the established
+> convention (`auditwheel`/`delvewheel` emit `<pkg>.libs/` with no ABI folder, and
+> an Android wheel is single-ABI by tag), so no standard tool produces a nested
+> layout. Rejecting it keeps the **wheel tag the one source of truth for the ABI**
+> — an in-wheel `<abi>/` path would be a redundant second signal that could
+> disagree with the tag.
 
 > **`.so`, not `.java`.** The `.libs/` convention delivers **native
 > libraries only**. Java glue is *not* shipped in wheels (the pyjnius spike
