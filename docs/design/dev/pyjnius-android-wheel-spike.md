@@ -1,5 +1,16 @@
 # Spike brief: publish pyjnius as a prebuilt Android wheel
 
+> **Spike complete — findings committed (2026-07).** This is the *pre-spike*
+> brief, kept for history. The executed spike's status and on-device evidence
+> live in
+> [pyjnius-android-wheel-spike-findings](pyjnius-android-wheel-spike-findings.md),
+> and the upstream-facing proposal (updated with the post-spike direction) in
+> [pyjnius-android-wheel-proposal](pyjnius-android-wheel-proposal.md). Where this
+> brief and the findings disagree — notably `dlsym(RTLD_DEFAULT, …)` resolution
+> (falsified on-device; each tier `dlopen`s the library by soname) and the
+> `.java/` dot-directory glue delivery (dropped; the glue is a kivyforge
+> bootstrap template) — **the findings supersede this brief.**
+
 **Audience:** an engineer or coding agent working **inside the `kivy/pyjnius`
 repository**. This brief is self-contained — you do not need any context about
 the project that requested it. Everything you need to know is here.

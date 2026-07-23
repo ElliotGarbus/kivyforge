@@ -70,9 +70,9 @@ deployment_target = "13.0"
 | `bundle_id`         | string  | yes      | —        | iOS bundle identifier. Init suggests `org.example.<slug>` with a comment to change it.                                                                                                                                                               |
 | `build`             | integer | no       | `1`      | Build number (`CFBundleVersion`). Increment per submission.                                                                                                                                 |
 | `deployment_target` | string  | no       | `"13.0"` | Minimum iOS version. Must be >= the floor of the selected `Python.xcframework`.                                                                                                                                                                      |
-| `simulator_archs`   | list of string | no | `["arm64", "x86_64"]` | Which **simulator** CPU architectures `kivyforge lock` pins (and `kivyforge build` can target). The device slice is always `arm64` and is not configurable. Valid values: `"arm64"` (Apple-Silicon simulator hosts), `"x86_64"` (Intel simulator hosts). Must be non-empty; unknown values are rejected; duplicates are de-duped preserving order. Drop `"x86_64"` once you no longer build the simulator on Intel Macs — that slice stops being required *and* stops being pinned. See "Simulator architectures (`simulator_archs`)" below and [pylock spec §"Resolution semantics"](pylock-ios-spec.md#resolution-semantics). |
-| `extra_index_urls`  | list of string | no | `[]`     | Supplemental pip index URLs consulted *in addition to* PyPI when resolving iOS wheels. `kivyforge lock` passes each as `--extra-index-url` to pip. Plural-by-design, channel-agnostic, and **empty by default**; PyPI is always the primary source. Each resolved wheel's source URL is pinned in `pylock.ios.toml`'s `[[packages.wheels]]` (and its index recorded under `[packages.tool.kivyforge].source_index`) regardless of which index supplied it, keeping builds reproducible. As packages publish iOS wheels to PyPI proper, configured entries go quiet on their own. See [iOS artifact distribution §"Source registry: PyPI direct"](artifact-distribution-ios.md#source-registry-pypi-direct-plus-configurable-supplemental-indexes) and the [common overview](../../common/00-overview.md). |
-| `find_links`        | list of string | no | `[]`     | Repo-relative directories of pre-built wheels consulted during `kivyforge lock` only. Each entry is passed to pip as `--find-links` (pip's name for flat wheel directories or direct wheel URLs). Use when a dependency's iOS wheels are vendored in the repo but not published to PyPI or a supplemental index yet — e.g. locally cross-built `kivy` cp315 wheels under `wheels/`. Entries must be repo-relative (not absolute, must not escape the project directory). **Not** used at `kivyforge build` time; the lockfile's per-wheel `path` or `url` pins are authoritative after lock. See "Local wheel directories (`find_links`)" below and [pylock spec §"Locally built wheels"](pylock-ios-spec.md#locally-built-wheels-path). |
+| `simulator_archs`   | list of string | no | `["arm64", "x86_64"]` | Which **simulator** CPU architectures `kivyforge lock` pins (and `kivyforge build` can target). The device slice is always `arm64` and is not configurable. Valid values: `"arm64"` (Apple-Silicon simulator hosts), `"x86_64"` (Intel simulator hosts). Must be non-empty; unknown values are rejected; duplicates are de-duped preserving order. Drop `"x86_64"` once you no longer build the simulator on Intel Macs — that slice stops being required *and* stops being pinned. See "Simulator architectures (`simulator_archs`)" below and [pylock spec §"Resolution semantics"](02-pylock-ios-spec.md#resolution-semantics). |
+| `extra_index_urls`  | list of string | no | `[]`     | Supplemental pip index URLs consulted *in addition to* PyPI when resolving iOS wheels. `kivyforge lock` passes each as `--extra-index-url` to pip. Plural-by-design, channel-agnostic, and **empty by default**; PyPI is always the primary source. Each resolved wheel's source URL is pinned in `pylock.ios.toml`'s `[[packages.wheels]]` (and its index recorded under `[packages.tool.kivyforge].source_index`) regardless of which index supplied it, keeping builds reproducible. As packages publish iOS wheels to PyPI proper, configured entries go quiet on their own. See [iOS artifact distribution §"Source registry: PyPI direct"](03-artifact-distribution-ios.md#source-registry-pypi-direct-plus-configurable-supplemental-indexes) and the [common overview](../../common/00-overview.md). |
+| `find_links`        | list of string | no | `[]`     | Repo-relative directories of pre-built wheels consulted during `kivyforge lock` only. Each entry is passed to pip as `--find-links` (pip's name for flat wheel directories or direct wheel URLs). Use when a dependency's iOS wheels are vendored in the repo but not published to PyPI or a supplemental index yet — e.g. locally cross-built `kivy` cp315 wheels under `wheels/`. Entries must be repo-relative (not absolute, must not escape the project directory). **Not** used at `kivyforge build` time; the lockfile's per-wheel `path` or `url` pins are authoritative after lock. See "Local wheel directories (`find_links`)" below and [pylock spec §"Locally built wheels"](02-pylock-ios-spec.md#locally-built-wheels-path). |
 | `exclude`           | list of string | no | `[]`     | Canonical package names to drop from the **resolved** dependency graph when writing `pylock.ios.toml`. Use it to prune transitive dependencies a package declares but that your app never exercises at runtime on iOS — most commonly the non-runtime tail of Kivy's own wheel (`kivy-garden`, `requests` + its transitive deps, `docutils`, `pygments`). A name listed here that is *also* a direct `[project].dependencies` entry is silently ignored (you cannot exclude what you explicitly depend on). Matching is by canonical name (PEP 503). See "Excluding unused transitive dependencies (`exclude`)" below. |
 
 ### Excluding unused transitive dependencies (`exclude`)
@@ -185,7 +185,7 @@ path = "wheels/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
 hashes = { sha256 = "..." }
 ```
 
-`deployment_target` in `[tool.kivy.ios]` must match the platform tags on the vendored wheels (e.g. `ios_13_0_*` vs `ios_16_0_*`); see the [pylock spec](pylock-ios-spec.md).
+`deployment_target` in `[tool.kivy.ios]` must match the platform tags on the vendored wheels (e.g. `ios_13_0_*` vs `ios_16_0_*`); see the [pylock spec](02-pylock-ios-spec.md).
 
 ### `schema_version` evolution policy (iOS)
 
@@ -206,7 +206,7 @@ version = "3.15.0"
 | --------- | ------ | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `version` | string | yes      | —       | Python.xcframework version. Init pins to the latest known release. The full download URL is derived (the canonical python.org distribution path is recorded in `pylock.ios.toml`'s `[tool.kivyforge]` block for reproducibility). |
 
-Future fields (xcframework URL override, explicit SHA) are described in the [pylock spec](pylock-ios-spec.md) since they belong in the lock when present.
+Future fields (xcframework URL override, explicit SHA) are described in the [pylock spec](02-pylock-ios-spec.md) since they belong in the lock when present.
 
 ### `[tool.kivy.ios.native.xcframeworks]`
 
@@ -230,13 +230,13 @@ Per-entry fields:
 | Field     | Type   | Required                                                 | Description                                                                                                                                                                                                                                 |
 | --------- | ------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `version` | string | yes                 | Exact version or semver spec. |
-| `source`  | string | yes                 | Where to fetch the xcframework artifact (zip, tar.gz, or an unpacked `.xcframework` directory). Always **explicit**: either a **direct download URL** or a **repo-relative path** to a locally built/vendored artifact. There are no indirection keywords — the value states exactly where the artifact comes from. `kivyforge lock` reads the artifact to resolve its SHA-256 and slice list and pins them in `pylock.ios.toml`. See [iOS artifact distribution §"Distribution channel 2"](artifact-distribution-ios.md#distribution-channel-2-xcframework-archives). |
+| `source`  | string | yes                 | Where to fetch the xcframework artifact (zip, tar.gz, or an unpacked `.xcframework` directory). Always **explicit**: either a **direct download URL** or a **repo-relative path** to a locally built/vendored artifact. There are no indirection keywords — the value states exactly where the artifact comes from. `kivyforge lock` reads the artifact to resolve its SHA-256 and slice list and pins them in `pylock.ios.toml`. See [iOS artifact distribution §"Distribution channel 2"](03-artifact-distribution-ios.md#distribution-channel-2-xcframework-archives). |
 | `link`    | bool   | no (default `true`) | Add to Link Binary With Libraries phase. |
 | `embed`   | bool   | no (default `true`) | Add to Embed Frameworks phase (copies into `.app/Frameworks/`, code-signs). |
 
 Init never auto-populates this table: the canonical Kivy dependency set needs no entries because the kivy iOS wheel bundles its own native xcframeworks. An app that needs an *additional* third-party xcframework adds an entry here by hand, providing the name, version, and an explicit `source`.
 
-**`source` as a URL vs. a path.** A URL is right for published SDKs and frameworks shared across projects. A repo-relative path is right for a framework the author built and versions alongside the app — because both the artifact and the path live in the repo, it resolves identically on every clone and in CI. `kivyforge build` rejects an absolute path (or one escaping the project directory) with a diagnostic. This mirrors the local-wheel mechanism in the [pylock spec](pylock-ios-spec.md) and follows PEP 751's path conventions, so users learn one rule for both wheels and xcframeworks.
+**`source` as a URL vs. a path.** A URL is right for published SDKs and frameworks shared across projects. A repo-relative path is right for a framework the author built and versions alongside the app — because both the artifact and the path live in the repo, it resolves identically on every clone and in CI. `kivyforge build` rejects an absolute path (or one escaping the project directory) with a diagnostic. This mirrors the local-wheel mechanism in the [pylock spec](02-pylock-ios-spec.md) and follows PEP 751's path conventions, so users learn one rule for both wheels and xcframeworks.
 
 ### `[tool.kivy.ios.native.swift_packages]`
 
@@ -245,7 +245,7 @@ are distributed **only** as Swift Package Manager packages. kivyforge supports
 both **binary-target** and **source** SPM packages (Xcode compiles source
 packages via its own first-class package manager). Empty by default. The full
 schema (per-entry fields, version-requirement rules, lockfile shape, pbxproj
-wiring, and validation) is specified in [Swift packages](swift-packages.md).
+wiring, and validation) is specified in [Swift packages](06-swift-packages.md).
 
 ```toml
 [tool.kivy.ios.native.swift_packages]
@@ -257,7 +257,7 @@ wiring, and validation) is specified in [Swift packages](swift-packages.md).
 There is **no `system_frameworks` key**, and the app does not enumerate Apple SDK frameworks (`Metal`, `AVFoundation`, `CoreBluetooth`, …) anywhere. This is a direct consequence of the all-dynamic distribution model:
 
 - Every native dependency arrives as a **dynamic** framework — the kivy wheel's bundled xcframeworks (ANGLE, SDL3 family), the per-module `.framework`s `install_python` builds from each `.so`, and `Python.framework` itself. A dynamic framework records the Apple SDK frameworks it needs as `LC_LOAD_DYLIB` load commands **inside its own Mach-O**, set when *that* framework was built. At app launch `dyld` walks the dependency graph transitively (app → `kivy…framework` → `Metal`/`AVFoundation`/…), so the app target never has to re-declare them.
-- The app target compiles only the `main.m` bootstrap, which references just Foundation/UIKit/the Python C API. Those Foundation/UIKit references are the **bootstrap baseline** the toolchain links automatically (see [Xcode project generation](xcode-project-generation.md)); nothing in the dependency graph needs app-level declaration.
+- The app target compiles only the `main.m` bootstrap, which references just Foundation/UIKit/the Python C API. Those Foundation/UIKit references are the **bootstrap baseline** the toolchain links automatically (see [Xcode project generation](05-xcode-project-generation.md)); nothing in the dependency graph needs app-level declaration.
 - Calling a system API from Python via `pyobjus` is **dynamic loading** at runtime (`pyobjus.dylib_manager.load_framework(...)` / the Objective-C runtime), which involves no link-time symbol references and therefore no Xcode link entry either.
 
 The only case that historically required an explicit per-app framework list was **static** linking (the kivy-ios 2.x recipe model linked static `.a` libraries into the app binary, so the app target had to resolve every transitive system symbol). kivyforge is all-dynamic, so that requirement is gone. If a future need arises (e.g. weak-linking an SDK framework for availability that the *app's own compiled code* references), it can be added as an additive, `schema_version`-bumping change.
@@ -288,10 +288,10 @@ upload_symbols = true
 | Field                  | Type   | Required | Default               | Description                                                  |
 | ---------------------- | ------ | -------- | --------------------- | ------------------------------------------------------------ |
 | `team_id`              | string | no       | `""`                  | Apple Developer team identifier. Required for device builds and release exports. |
-| `identity`             | string | no       | `"Apple Development"` | Code signing identity, applied to `--device` debug builds. **Not applied to `--release`** — a distribution archive/export needs Xcode's automatic signing to pick the Distribution certificate matching `--export-method`; pin one explicitly via `--signing-identity`/`KIVYFORGE_SIGNING_IDENTITY` if needed (see [iOS CLI §`kivyforge build`](cli-ios.md#kivyforge-build)). |
+| `identity`             | string | no       | `"Apple Development"` | Code signing identity, applied to `--device` debug builds. **Not applied to `--release`** — a distribution archive/export needs Xcode's automatic signing to pick the Distribution certificate matching `--export-method`; pin one explicitly via `--signing-identity`/`KIVYFORGE_SIGNING_IDENTITY` if needed (see [iOS CLI §`kivyforge build`](04-cli-ios.md#kivyforge-build)). |
 | `provisioning_profile` | string | no       | `""`                  | Provisioning profile name or UUID (empty for auto). |
 | `auto_signing`         | bool   | no       | `true`                | Use Xcode's automatic signing (`CODE_SIGN_STYLE = Automatic`). |
-| `upload_symbols`       | bool   | no       | `true`                | Sets the `uploadSymbols` key in the generated `ExportOptions.plist` used by `--release` exports (controls dSYM inclusion in the `.ipa`; `--release` only — see [iOS CLI §`kivyforge build`](cli-ios.md#kivyforge-build)). Set to `false` if you don't use a crash-reporting service and want a smaller export artifact; the `.xcarchive` still retains dSYMs for manual upload. |
+| `upload_symbols`       | bool   | no       | `true`                | Sets the `uploadSymbols` key in the generated `ExportOptions.plist` used by `--release` exports (controls dSYM inclusion in the `.ipa`; `--release` only — see [iOS CLI §`kivyforge build`](04-cli-ios.md#kivyforge-build)). Set to `false` if you don't use a crash-reporting service and want a smaller export artifact; the `.xcarchive` still retains dSYMs for manual upload. |
 
 iOS-only.
 
@@ -308,7 +308,7 @@ source = "privacy/PrivacyInfo.xcprivacy"
 
 **App Store requirement.** Apple has required an app-level `PrivacyInfo.xcprivacy` for all new and updated submissions since May 2024. The generated stub is valid for apps that perform no tracking, collect no data, and use none of Apple's [required-reason APIs](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files/describing-use-of-required-reason-api). Any app that *does* use required-reason APIs (file timestamps, system boot time, disk space, active keyboard, user defaults) must supply a `source` declaring them — the stub will be rejected by App Store Connect validation.
 
-**Native xcframework privacy manifests.** Each `.xcframework` in `Frameworks/` (whether wheel-embedded or user-declared via `[tool.kivy.ios.native.xcframeworks]`) must include its own `PrivacyInfo.xcprivacy` **inside the xcframework bundle** if it uses required-reason APIs. This is the responsibility of the framework or wheel author, not kivyforge. `kivyforge doctor` warns if any xcframework in `Frameworks/` is missing a `PrivacyInfo.xcprivacy` entirely (see [iOS CLI](cli-ios.md)).
+**Native xcframework privacy manifests.** Each `.xcframework` in `Frameworks/` (whether wheel-embedded or user-declared via `[tool.kivy.ios.native.xcframeworks]`) must include its own `PrivacyInfo.xcprivacy` **inside the xcframework bundle** if it uses required-reason APIs. This is the responsibility of the framework or wheel author, not kivyforge. `kivyforge doctor` warns if any xcframework in `Frameworks/` is missing a `PrivacyInfo.xcprivacy` entirely (see [iOS CLI](04-cli-ios.md)).
 
 ### `[tool.kivy.ios.info_plist]`
 
@@ -373,7 +373,7 @@ GCC_OPTIMIZATION_LEVEL = "s"
 | `LD_RUNPATH_SEARCH_PATHS` | toolchain (`@executable_path/Frameworks` for embedded frameworks) |
 | `GCC_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER` | toolchain |
 
-See also [Xcode project generation §"Toolchain-managed build settings"](xcode-project-generation.md#toolchain-managed-build-settings) for the rationale behind each toolchain-managed entry.
+See also [Xcode project generation §"Toolchain-managed build settings"](05-xcode-project-generation.md#toolchain-managed-build-settings) for the rationale behind each toolchain-managed entry.
 
 ## Concrete example
 

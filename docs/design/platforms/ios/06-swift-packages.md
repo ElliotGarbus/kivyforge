@@ -6,7 +6,7 @@ resolved by Xcode. It fills a gap in the other two native channels — a growing
 share of third-party iOS libraries are distributed **SPM-only**, with no
 standalone `.xcframework` release artifact, so the
 `[tool.kivy.ios.native.xcframeworks]` channel (see
-[iOS artifact distribution](artifact-distribution-ios.md)) cannot reach them.
+[iOS artifact distribution](03-artifact-distribution-ios.md)) cannot reach them.
 
 kivyforge supports both SPM flavors — binary-target packages (a pre-built
 `.xcframework`) and source packages (compiled by Xcode) — uniformly. The user
@@ -212,7 +212,7 @@ rest of the lockfile.
 
 Xcode then resolves, fetches, compiles (source/hybrid), and embeds the packages
 during its own build. The per-module `.so`→`.framework` conversion done by
-`install_python` (see [Xcode project generation](xcode-project-generation.md)) is
+`install_python` (see [Xcode project generation](05-xcode-project-generation.md)) is
 unrelated to and unaffected by SPM products, which are already in framework shape.
 
 > **Verified capability.** `pbxproj` 4.3.3 (the pinned dependency, `pbxproj>=3.5`)
@@ -225,7 +225,7 @@ unrelated to and unaffected by SPM products, which are already in framework shap
 
 ### Interaction with the duplicate-framework policy
 
-The duplicate-framework policy (see [Xcode project generation §"Duplicate framework policy"](xcode-project-generation.md#duplicate-framework-policy)) governs
+The duplicate-framework policy (see [Xcode project generation §"Duplicate framework policy"](05-xcode-project-generation.md#duplicate-framework-policy)) governs
 artifacts kivyforge stages into `<app>-ios/Frameworks/` itself (wheel-embedded and
 `native.xcframeworks`). SPM products are resolved and embedded by **Xcode**, not
 staged by kivyforge, so they are outside that staging check. If an SPM product and
@@ -349,7 +349,7 @@ AppBridge = { path = "swift-shims", products = ["AppBridge"] }
 
 A package or shim may instead export plain C entry points with `@_cdecl` and be
 called from Python via the standard-library `ctypes` — the same mechanism the
-ObjC runtime is reached through for `objc_msgSend` (see [iOS CLI](cli-ios.md)). This
+ObjC runtime is reached through for `objc_msgSend` (see [iOS CLI](04-cli-ios.md)). This
 bypasses pyobjus and the Objective-C runtime entirely, sidesteps the
 `@objc`-representability constraints (the author marshals C types directly), and
 adds no pyobjus dependency. It suits a narrow, performance-insensitive call
@@ -378,7 +378,7 @@ classification or rejection step exists. A package that fails to *resolve* or
 *build* surfaces its error through Xcode/SPM, with kivyforge passing the diagnostic
 through.
 
-## `kivyforge doctor` (extends [iOS CLI §`kivyforge doctor`](cli-ios.md#kivyforge-doctor))
+## `kivyforge doctor` (extends [iOS CLI §`kivyforge doctor`](04-cli-ios.md#kivyforge-doctor))
 
 - **SPM toolchain available** (project mode, only when `swift_packages` is
   non-empty): SPM resolution at lock time and compilation at build time require

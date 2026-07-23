@@ -8,7 +8,7 @@
 
 The file is hand-edited (after being seeded by `kivyforge init`) and committed to version control. `kivyforge lock` generates a `pylock.<platform>.toml` from it for the resolved target; `kivyforge build` consumes the lock.
 
-This document defines the **shared** tables and the overlay pattern. The full field reference for each platform lives in its own overlay doc — e.g. [iOS `[tool.kivy.ios]`](../platforms/ios/pyproject-ios.md).
+This document defines the **shared** tables and the overlay pattern. The full field reference for each platform lives in its own overlay doc — e.g. [iOS `[tool.kivy.ios]`](../platforms/ios/01-pyproject-ios.md).
 
 ## Design principles
 
@@ -49,7 +49,7 @@ orientation = ["portrait"]
 # carries an independent schema_version. Add one overlay per target you build.
 [tool.kivy.ios]
 schema_version = 1
-# ... iOS-specific fields (see platforms/ios/pyproject-ios.md)
+# ... iOS-specific fields (see platforms/ios/01-pyproject-ios.md)
 
 [tool.kivy.macos]
 schema_version = 1
@@ -60,7 +60,7 @@ The two tables `[project]` and `[tool.kivy]` are **the cross-platform contract**
 
 ## `[project]` (PEP 621)
 
-Every platform backend consumes at least `name`, `version`, and `dependencies`; the rest are passed through where a platform exposes a slot for them. `dependencies` is a single PEP 508 list for all platforms — `kivyforge lock` evaluates environment markers against the *resolved target* and resolves the matching subset to wheels in that target's lockfile. Each platform overlay doc lists exactly how it consumes each PEP 621 key (see, e.g., [iOS `[project]` consumption](../platforms/ios/pyproject-ios.md#project-pep-621--ios-consumption)).
+Every platform backend consumes at least `name`, `version`, and `dependencies`; the rest are passed through where a platform exposes a slot for them. `dependencies` is a single PEP 508 list for all platforms — `kivyforge lock` evaluates environment markers against the *resolved target* and resolves the matching subset to wheels in that target's lockfile. Each platform overlay doc lists exactly how it consumes each PEP 621 key (see, e.g., [iOS `[project]` consumption](../platforms/ios/01-pyproject-ios.md#project-pep-621--ios-consumption)).
 
 Anything PEP 621 specifies is honored by every PEP 621-compliant tool — so ruff, mypy, uv, pdm, and pip all stay happy with the same file.
 
@@ -112,7 +112,7 @@ Icons and splash screens are inherently platform-specific: iOS requires a 1024×
 
 Each `[tool.kivy.<platform>]` overlay is documented in its own file:
 
-- **iOS** — [`[tool.kivy.ios]` overlay schema](../platforms/ios/pyproject-ios.md)
+- **iOS** — [`[tool.kivy.ios]` overlay schema](../platforms/ios/01-pyproject-ios.md)
 - **macOS** — [`[tool.kivy.macos]` overlay](../platforms/macos/macos-spec.md)
 - **Linux** — [`[tool.kivy.linux]` overlay](../platforms/linux/linux-spec.md#toolkivylinux-overlay)
 - **Windows** — [`[tool.kivy.windows]` overlay](../platforms/windows/windows-spec.md#toolkivywindows-overlay) (design settled; implementation not started)
@@ -138,4 +138,4 @@ Reservation semantics:
 
 ## Validation
 
-Each platform's backend validates `[project]`, `[tool.kivy]`, and its own `[tool.kivy.<platform>]` overlay when a command targets that platform. The shared rules (present `[project].name`/`version`; `app_dir` names a real subdirectory; `entry_point` is a valid dotted identifier; `orientation` values are in the allowed set) apply everywhere; platform-specific rules live in each overlay doc (e.g. [iOS validation rules](../platforms/ios/pyproject-ios.md#validation-rules-ios)). Validation errors are printed with the offending line number (TOML parsers expose this) and a remediation hint.
+Each platform's backend validates `[project]`, `[tool.kivy]`, and its own `[tool.kivy.<platform>]` overlay when a command targets that platform. The shared rules (present `[project].name`/`version`; `app_dir` names a real subdirectory; `entry_point` is a valid dotted identifier; `orientation` values are in the allowed set) apply everywhere; platform-specific rules live in each overlay doc (e.g. [iOS validation rules](../platforms/ios/01-pyproject-ios.md#validation-rules-ios)). Validation errors are printed with the offending line number (TOML parsers expose this) and a remediation hint.

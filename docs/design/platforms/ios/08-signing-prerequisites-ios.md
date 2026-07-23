@@ -7,8 +7,8 @@ settings from `[tool.kivy.ios.signing]`, and invokes `xcodebuild`, but it runs n
 `codesign` pipeline of its own. Signing is required for **on-device** and
 **release** builds and is **skipped** for the simulator. The *design* behind this
 — the build-setting mapping, the `--release` archive/export pipeline, and
-automatic signing — lives in the [iOS CLI spec](cli-ios.md#kivyforge-build) and
-the [`[tool.kivy.ios.signing]` reference](pyproject-ios.md#toolkivyiossigning);
+automatic signing — lives in the [iOS CLI spec](04-cli-ios.md#kivyforge-build) and
+the [`[tool.kivy.ios.signing]` reference](01-pyproject-ios.md#toolkivyiossigning);
 this document only enumerates what a user must set up **before** running a signed
 `build`.
 
@@ -91,7 +91,7 @@ are **Signing identity** (when `auto_signing = false`, the named identity is
 present in the keychain) and **Provisioning profile** (when
 `provisioning_profile` is set, it exists). `--simulator` and the bare, no-flag
 `build` (which stops after generating the project) skip signing entirely and need
-none of this. See the [iOS CLI doctor table](cli-ios.md#kivyforge-doctor).
+none of this. See the [iOS CLI doctor table](04-cli-ios.md#kivyforge-doctor).
 
 ## What gets signed (scope)
 
@@ -117,10 +117,10 @@ none of this. See the [iOS CLI doctor table](cli-ios.md#kivyforge-doctor).
 
 ## Related
 
-- [cli-ios.md](cli-ios.md) — the iOS CLI spec: `build` signing flags/pre-flight,
+- [04-cli-ios.md](04-cli-ios.md) — the iOS CLI spec: `build` signing flags/pre-flight,
   the `--release` archive/export pipeline, and the
-  [doctor checks](cli-ios.md#kivyforge-doctor).
-- [pyproject-ios.md](pyproject-ios.md#toolkivyiossigning) — the
+  [doctor checks](04-cli-ios.md#kivyforge-doctor).
+- [01-pyproject-ios.md](01-pyproject-ios.md#toolkivyiossigning) — the
   `[tool.kivy.ios.signing]` field reference and the generated build-setting map.
 - [signing-prerequisites-macos.md](../macos/signing-prerequisites-macos.md) and
   [signing-prerequisites-windows.md](../windows/signing-prerequisites-windows.md)

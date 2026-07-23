@@ -11,6 +11,13 @@
 4. What must the **pyjnius Android-wheel spike** actually prove before we commit
    the Android backend spec to the wheel-assembly model?
 
+> **Update (2026-07): the spike ran and succeeded.** The pyjnius wheel question
+> below is settled — see
+> [pyjnius-android-wheel-spike-findings](pyjnius-android-wheel-spike-findings.md)
+> (evidence) and [pyjnius-android-wheel-proposal](pyjnius-android-wheel-proposal.md)
+> (revised direction). The Android backend is specified as wheel-assembly, per
+> `docs/design/platforms/android/`.
+
 > **Bottom line.** The wheel-assembly model is **viable in principle today** —
 > Android is a CPython tier-3 platform, PyPI serves `android_*` wheels, pip
 > installs them, and cibuildwheel builds them. The **one blocking unknown** is

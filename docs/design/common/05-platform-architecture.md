@@ -80,4 +80,4 @@ The shared `[project]` / `[tool.kivy]` contract and the PEP 751 + `[tool.kivyfor
 
 ## Example: the iOS backend
 
-`platforms/ios` provides the Xcode project generator, the iOS config overlay, iOS lock specifics (PEP 730 tags, the `Python.xcframework` runtime pin, SPM and `.xcframework` native channels), iOS artifact specifics (per-slice wheels, wheel-embedded xcframeworks), and iOS doctor checks. See the [iOS design docs](../platforms/ios/pyproject-ios.md) for the full backend.
+`platforms/ios` provides the Xcode project generator, the iOS config overlay, iOS lock specifics (PEP 730 tags, the `Python.xcframework` runtime pin, SPM and `.xcframework` native channels), iOS artifact specifics (per-slice wheels, wheel-embedded xcframeworks), and iOS doctor checks. See the [iOS design docs](../platforms/ios/01-pyproject-ios.md) for the full backend.

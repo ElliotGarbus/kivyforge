@@ -2,7 +2,7 @@
 
 iOS has a clean runtime story: python.org publishes an official, ready-to-embed
 `Python.xcframework`, so the iOS backend just pins and downloads it (see
-[iOS artifact distribution](../platforms/ios/artifact-distribution-ios.md)).
+[iOS artifact distribution](../platforms/ios/03-artifact-distribution-ios.md)).
 The desktop platforms — macOS, Linux, and Windows — don't all have that luxury
 today, and even where an official artifact exists its fitness varies. Rather
 than let each platform spec invent (and duplicate) its own bridging story,

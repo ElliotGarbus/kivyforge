@@ -1,6 +1,6 @@
 # 04 — Artifact Distribution
 
-kivyforge is an **assembler of prebuilt artifacts**, not a from-source build system. This document defines the cross-platform rules for where artifacts come from, how they are verified, and the one invariant that shapes the whole architecture. Per-platform channel details live in each platform's doc (e.g. [iOS artifact distribution](../platforms/ios/artifact-distribution-ios.md)).
+kivyforge is an **assembler of prebuilt artifacts**, not a from-source build system. This document defines the cross-platform rules for where artifacts come from, how they are verified, and the one invariant that shapes the whole architecture. Per-platform channel details live in each platform's doc (e.g. [iOS artifact distribution](../platforms/ios/03-artifact-distribution-ios.md)).
 
 ## The core invariant: no from-source build pipeline
 
@@ -23,11 +23,11 @@ Consequences that hold on every platform:
 ## Integrity and verification
 
 - **Content-hash pinning.** Every artifact the lock references — wheel or native archive — carries a SHA-256 that `kivyforge build` verifies before extraction. A mismatch aborts the build with the artifact name, URL, expected/actual hash, and a tamper hint.
-- **Documented exception: platform-owned source channels.** Where a platform's own toolchain fetches and builds a source dependency (notably Xcode's SPM source packages), there is no stable *output* hash to pin. Those channels pin the **input** instead — the resolved Git revision (plus the platform's own checksum for binary targets) — a deliberate, scoped deviation documented with the channel (see [iOS Swift packages](../platforms/ios/swift-packages.md)). Wheels and directly-referenced native archives remain kivyforge-verified by SHA-256.
+- **Documented exception: platform-owned source channels.** Where a platform's own toolchain fetches and builds a source dependency (notably Xcode's SPM source packages), there is no stable *output* hash to pin. Those channels pin the **input** instead — the resolved Git revision (plus the platform's own checksum for binary targets) — a deliberate, scoped deviation documented with the channel (see [iOS Swift packages](../platforms/ios/06-swift-packages.md)). Wheels and directly-referenced native archives remain kivyforge-verified by SHA-256.
 
 ## Per-platform channels
 
 Each platform instantiates these rules with its own native-dependency channels and staging layout:
 
-- **iOS** — iOS wheels, `.xcframework` archives, and Swift Package Manager packages. See [iOS artifact distribution](../platforms/ios/artifact-distribution-ios.md).
+- **iOS** — iOS wheels, `.xcframework` archives, and Swift Package Manager packages. See [iOS artifact distribution](../platforms/ios/03-artifact-distribution-ios.md).
 - **macOS / Linux / Windows / Android** — documented as each platform lands.

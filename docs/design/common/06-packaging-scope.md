@@ -36,7 +36,7 @@ These are recommendations for the step *after* kivyforge, applied to the artifac
 
 Signing is per-platform and stays with kivyforge because it operates on the bundled binaries:
 
-- **iOS** — Xcode-driven signing (team ID / identity / provisioning), including `.ipa` export methods. See [iOS CLI](../platforms/ios/cli-ios.md).
+- **iOS** — Xcode-driven signing (team ID / identity / provisioning), including `.ipa` export methods. See [iOS CLI](../platforms/ios/04-cli-ios.md).
 - **macOS** — starts with **ad-hoc** signing (the mandatory Apple-Silicon floor: arm64 executables must be at least ad-hoc signed or the kernel refuses to run them). Full Developer ID **sign + notarize + staple** of the `.app` is a later workstream (see the [macOS spec](../platforms/macos/macos-spec.md)). Notarizing an external `.dmg` is a post-packaging step on a container kivyforge does not build; the docs provide a copy-paste snippet for users who distribute a `.dmg`.
 - **Windows** — Authenticode signing of the launcher (`signtool`, identity = a certificate-store thumbprint) is in scope with the artifact step, but **off by default** (v1 ships the default artifact unsigned); configure `[tool.kivy.windows.signing]` to enable it. Payload-DLL signing is out of scope (not planned; only relevant to Smart App Control / WDAC). The installer is signed separately by the external installer tool.
 - **Android** — app signing is in scope (the `.apk`/`.aab` is the shippable unit).

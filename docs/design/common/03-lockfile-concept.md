@@ -2,7 +2,7 @@
 
 Every target platform produces a **reproducibility artifact**: a per-platform lockfile that pins the exact Python wheels, the exact runtime, and any exact native artifacts a build will use — by URL and SHA-256. `kivyforge lock` generates it from `pyproject.toml`; `kivyforge build` consumes it.
 
-This document defines the cross-platform lockfile *pattern*. The concrete schema for each platform lives in its own doc (e.g. [iOS `pylock.ios.toml`](../platforms/ios/pylock-ios-spec.md)).
+This document defines the cross-platform lockfile *pattern*. The concrete schema for each platform lives in its own doc (e.g. [iOS `pylock.ios.toml`](../platforms/ios/02-pylock-ios-spec.md)).
 
 ## Filename carries the platform
 
@@ -80,7 +80,7 @@ Two takeaways. First, uv **validates the model**: its maintainers state iOS/Andr
 
 See the per-platform lockfile documents for the full field reference:
 
-- [iOS — `pylock.ios.toml`](../platforms/ios/pylock-ios-spec.md)
+- [iOS — `pylock.ios.toml`](../platforms/ios/02-pylock-ios-spec.md)
 
 ## Example-repo lock policy
 
@@ -109,7 +109,7 @@ workflow — the same treatment already given to `examples/wheels/ios/*.whl` and
 generated `<app>-ios/` Xcode trees.
 
 For schema *teaching* — as opposed to a real, buildable fixture — prefer the
-hand-annotated ["Worked example"](../platforms/ios/pylock-ios-spec.md#worked-example-full-lockfile-for-a-minimal-app)
+hand-annotated ["Worked example"](../platforms/ios/02-pylock-ios-spec.md#worked-example-full-lockfile-for-a-minimal-app)
 in the iOS spec over a raw generated file: it carries inline comments explaining
 *why* each entry looks the way it does (compiled vs. pure-Python wheel shape,
 omitted `xcframeworks` array, etc.) that `kivyforge lock` strips back out of any

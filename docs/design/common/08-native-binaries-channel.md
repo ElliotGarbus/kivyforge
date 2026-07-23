@@ -4,7 +4,7 @@ The desktop backends share a declared channel for **native binaries that no
 wheel delivers** — vendor SDK libraries (`.dylib` / `.so` / `.dll`), hardware
 dongles, camera/scanner/payment-terminal SDKs, and helper executables (a bundled
 `ffmpeg`). It is the desktop sibling of iOS's
-[`[tool.kivy.ios.native.swift_packages]`](../platforms/ios/swift-packages.md) /
+[`[tool.kivy.ios.native.swift_packages]`](../platforms/ios/06-swift-packages.md) /
 `xcframeworks` channels, with a uniform `name → { version, source }` shape and a
 single shared lock representation.
 

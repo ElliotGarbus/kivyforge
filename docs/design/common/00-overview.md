@@ -39,11 +39,11 @@ flowchart LR
 
 kivyforge is in early development, added one platform at a time.
 
-- **iOS** — implemented. Resolves `pylock.ios.toml`, downloads the official python.org `Python.xcframework` plus iOS wheels, and generates an Xcode project. Full design under [platforms/ios](../platforms/ios/pyproject-ios.md).
+- **iOS** — implemented. Resolves `pylock.ios.toml`, downloads the official python.org `Python.xcframework` plus iOS wheels, and generates an Xcode project. Full design under [platforms/ios](../platforms/ios/01-pyproject-ios.md).
 - **macOS** — implemented and verified. Produces a signed `.app` bundle, including the full Developer ID sign + notarize + staple path. See [platforms/macos/macos-spec.md](../platforms/macos/macos-spec.md).
 - **Linux** — implemented. Produces an AppDir / AppImage. See [platforms/linux/linux-spec.md](../platforms/linux/linux-spec.md).
 - **Windows** — implemented. Produces a run-from-folder onedir bundle with a prebuilt windowed launcher `.exe`, optionally Authenticode-signed. See [platforms/windows/windows-spec.md](../platforms/windows/windows-spec.md).
-- **Android** — planned.
+- **Android** — design. Resolves `pylock.android.toml`, downloads the official python.org Android embeddable package (per ABI) plus Android wheels, generates a Gradle/AGP project, and produces a signed `.apk` / `.aab`. Uses a kivyforge-owned SDL bootstrap and the prebuilt, SDL-agnostic pyjnius wheel worked out in the [pyjnius spike](../dev/pyjnius-android-wheel-spike.md) (brief + findings; the first-party PyPI wheel is still pending). Full design under [platforms/android](../platforms/android/01-pyproject-android.md).
 
 ## Reading index
 
@@ -67,13 +67,26 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 
 | Document | Purpose |
 |----------|---------|
-| [pyproject-ios](../platforms/ios/pyproject-ios.md) | The `[tool.kivy.ios]` overlay schema |
-| [pylock-ios-spec](../platforms/ios/pylock-ios-spec.md) | The iOS `pylock.ios.toml` (PEP 751 + `[tool.kivyforge]`) |
-| [artifact-distribution-ios](../platforms/ios/artifact-distribution-ios.md) | iOS wheels, `.xcframework` archives, SPM |
-| [cli-ios](../platforms/ios/cli-ios.md) | iOS-specific verb behavior, `doctor`, `kivy.mobile` |
-| [xcode-project-generation](../platforms/ios/xcode-project-generation.md) | Project layout, pbxproj wiring, Build Python phase |
-| [swift-packages](../platforms/ios/swift-packages.md) | Swift Package Manager as a native-dependency channel |
-| [recipe-triage](../platforms/ios/recipe-triage.md) | Disposition of the legacy kivy-ios 2.x recipes |
+| [pyproject-ios](../platforms/ios/01-pyproject-ios.md) | The `[tool.kivy.ios]` overlay schema |
+| [pylock-ios-spec](../platforms/ios/02-pylock-ios-spec.md) | The iOS `pylock.ios.toml` (PEP 751 + `[tool.kivyforge]`) |
+| [artifact-distribution-ios](../platforms/ios/03-artifact-distribution-ios.md) | iOS wheels, `.xcframework` archives, SPM |
+| [cli-ios](../platforms/ios/04-cli-ios.md) | iOS-specific verb behavior, `doctor`, `kivy.mobile` |
+| [xcode-project-generation](../platforms/ios/05-xcode-project-generation.md) | Project layout, pbxproj wiring, Build Python phase |
+| [swift-packages](../platforms/ios/06-swift-packages.md) | Swift Package Manager as a native-dependency channel |
+| [recipe-triage](../platforms/ios/07-recipe-triage.md) | Disposition of the legacy kivy-ios 2.x recipes |
+
+### Android
+
+| Document | Purpose |
+|----------|---------|
+| [pyproject-android](../platforms/android/01-pyproject-android.md) | The `[tool.kivy.android]` overlay schema (package, SDK levels, ABIs, SDL generation, permissions, `.aar`/`.jar`, Gradle/Maven deps, custom src, services, signing) |
+| [pylock-android-spec](../platforms/android/02-pylock-android-spec.md) | The Android `pylock.android.toml` (PEP 751 + `[tool.kivyforge]`): per-ABI wheels, the python.org runtime per ABI, native-lib and Gradle pins |
+| [artifact-distribution-android](../platforms/android/03-artifact-distribution-android.md) | Android wheels, the python.org Android runtime, `.aar`/`.jar`, and Gradle/Maven dependencies |
+| [gradle-project-generation](../platforms/android/04-gradle-project-generation.md) | Generated Gradle/AGP project layout, `jniLibs/` + asset-bundle staging, manifest generation, 16 KB alignment |
+| [bootstrap-android](../platforms/android/05-bootstrap-android.md) | The Activity → Python bootstrap and the pyjnius/SDL runtime contract |
+| [cli-android](../platforms/android/06-cli-android.md) | Android-specific verb behavior, Gradle/`adb`/emulator integration, `doctor` |
+| [signing-prerequisites-android](../platforms/android/07-signing-prerequisites-android.md) | User-facing checklist: keystore, `apksigner`, v1–v4 schemes, Play App Signing |
+| [compatibility-matrix](../platforms/android/08-compatibility-matrix.md) | CPython × Kivy/SDL × pyjnius × ABI × minSdk support matrix, validation status + revalidation triggers, Play `target_sdk` deadlines |
 
 ### macOS
 
