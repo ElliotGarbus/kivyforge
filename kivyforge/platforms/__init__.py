@@ -12,6 +12,7 @@ from __future__ import annotations
 import platform as _platform
 from collections.abc import Collection, Mapping
 
+from .android import AndroidPlatform
 from .base import HostCapabilityError, Platform
 from .ios import IosPlatform
 from .linux import LinuxPlatform
@@ -36,6 +37,7 @@ _REGISTRY: tuple[Platform, ...] = (
     MacosPlatform(),
     LinuxPlatform(),
     WindowsPlatform(),
+    AndroidPlatform(),
 )
 
 # name/alias -> backend

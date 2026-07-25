@@ -46,6 +46,91 @@ DEFAULT_WINDOWS_ARCHS = ("amd64",)
 # doctor warning, so the loader enforces just these two.
 WINDOWS_APP_ID_MAX_LENGTH = 128
 
+# The Android overlay schema major version this build understands (spec
+# platforms/android/01).
+SUPPORTED_ANDROID_SCHEMA_VERSION = 1
+
+# Android ABIs. 64-bit only, permanently for this schema: the python.org
+# Android runtime ships no 32-bit build (android/01 §ABIs). Underscored
+# wheel-tag spelling; the generator maps to Android's dashed names.
+VALID_ANDROID_ABIS = frozenset({"arm64_v8a", "x86_64"})
+DEFAULT_ANDROID_ABIS = ("arm64_v8a", "x86_64")
+
+# minSdk floor: first API level with RUNPATH (auditwheel's requirement), the
+# python.org runtime floor, and the android_* wheel-tag ecosystem floor.
+ANDROID_MIN_SDK_FLOOR = 24
+DEFAULT_ANDROID_MIN_SDK = 24
+# targetSdk default: the latest stable API level this kivyforge release knows.
+DEFAULT_ANDROID_TARGET_SDK = 35
+
+# SDL generations the bootstrap supports: 2 (Kivy 2.3.1) or 3 (Kivy 3.0).
+VALID_ANDROID_SDL_GENERATIONS = frozenset({2, 3})
+DEFAULT_ANDROID_SDL = 2
+
+# Google Play's versionCode ceiling; the auto-derivation formula must stay
+# under it (android/01 §auto-derived version_code).
+ANDROID_VERSION_CODE_CEILING = 2_100_000_000
+
+# android:foregroundServiceType values (android/01). Tracks the platform list
+# per kivyforge release; mediaProcessing requires Android 15 / API 35.
+VALID_FOREGROUND_SERVICE_TYPES = frozenset(
+    {
+        "camera",
+        "connectedDevice",
+        "dataSync",
+        "health",
+        "location",
+        "mediaPlayback",
+        "mediaProcessing",
+        "mediaProjection",
+        "microphone",
+        "phoneCall",
+        "remoteMessaging",
+        "shortService",
+        "specialUse",
+        "systemExempted",
+    }
+)
+
+# byte_compile / strip_source / strip_native_libs accept a bool or this string.
+ANDROID_RELEASE_ONLY = "release"
+VALID_ANDROID_DEBUG_SYMBOLS = frozenset({"symbol_table", "full", "none"})
+
+# Default env-var names for the release keystore passwords (android/01).
+DEFAULT_ANDROID_STORE_PASSWORD_ENV = "KIVYFORGE_KEYSTORE_PASSWORD"
+DEFAULT_ANDROID_KEY_PASSWORD_ENV = "KIVYFORGE_KEY_PASSWORD"
+
+# Default app theme parent (android/01 base_theme).
+DEFAULT_ANDROID_BASE_THEME = "Theme.Material3.DayNight.NoActionBar"
+
+# Manifest attributes kivyforge manages (android/01 §managed keys): rejected in
+# the [tool.kivy.android.manifest] application/activity passthrough tables.
+MANAGED_ANDROID_APPLICATION_ATTRS = frozenset(
+    {
+        "android:label",
+        "android:icon",
+        "android:roundIcon",
+        "android:theme",
+        "android:extractNativeLibs",
+    }
+)
+MANAGED_ANDROID_ACTIVITY_ATTRS = frozenset(
+    {
+        "android:name",
+        "android:label",
+        "android:screenOrientation",
+        "android:theme",
+    }
+)
+
+# gradle.properties keys kivyforge manages (android/01 gradle_properties).
+RESERVED_ANDROID_GRADLE_PROPERTIES = frozenset({"android.useAndroidX"})
+
+# Intent-filter <data> attribute names accepted by the structured table.
+VALID_INTENT_DATA_KEYS = frozenset(
+    {"scheme", "host", "port", "path", "pathPrefix", "pathPattern", "mimeType"}
+)
+
 # Default Authenticode RFC-3161 timestamp server (signing-windows).
 DEFAULT_WINDOWS_TIMESTAMP_URL = "http://timestamp.digicert.com"
 
@@ -346,6 +431,226 @@ class WindowsConfig:
 
 
 @dataclass(frozen=True)
+class AndroidPythonConfig:
+    """``[tool.kivy.android.python]`` — the python.org Android runtime pin."""
+
+    version: str
+
+
+@dataclass(frozen=True)
+class AndroidFeature:
+    """One ``[tool.kivy.android.permissions].features`` entry."""
+
+    name: str
+    required: bool = True
+
+
+@dataclass(frozen=True)
+class AndroidPermissions:
+    """``[tool.kivy.android.permissions]`` (android/01)."""
+
+    uses: tuple[str, ...] = ()
+    features: tuple[AndroidFeature, ...] = ()
+    auto_features: bool = True
+
+
+@dataclass(frozen=True)
+class AndroidIconConfig:
+    """``[tool.kivy.android.icons]`` — adaptive-icon inputs."""
+
+    source: str | None = None
+    background: str | None = None
+    monochrome: str | None = None
+
+
+@dataclass(frozen=True)
+class AndroidSplashConfig:
+    """``[tool.kivy.android.splash]`` — AndroidX SplashScreen inputs."""
+
+    source: str | None = None
+    background: str | None = None
+    icon_background: str | None = None
+    animation_duration: int | None = None
+    branding: str | None = None
+
+
+@dataclass(frozen=True)
+class AndroidArchiveDep:
+    """One ``[tool.kivy.android.native.aars]`` / ``.jars`` entry (channel 3)."""
+
+    name: str
+    version: str
+    source: str
+    kind: str  # "aar" | "jar"
+
+
+@dataclass(frozen=True)
+class AndroidGradleConfig:
+    """``[tool.kivy.android.gradle]`` — Maven coordinates (channel 4)."""
+
+    dependencies: tuple[str, ...] = ()
+    repositories: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AndroidIncludeFile:
+    """One ``[[tool.kivy.android.include_files]]`` entry."""
+
+    dest: str
+    sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AndroidSrcConfig:
+    """``[tool.kivy.android.src]`` — extra Java/Kotlin source roots."""
+
+    java: tuple[str, ...] = ()
+    kotlin: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AndroidNotification:
+    """The mandatory foreground-service notification (android/01 services)."""
+
+    channel_id: str
+    channel_name: str
+    title: str
+    text: str
+    icon: str | None = None
+
+
+@dataclass(frozen=True)
+class AndroidService:
+    """One ``[[tool.kivy.android.services]]`` entry."""
+
+    name: str
+    entry_point: str
+    exported: bool = False
+    foreground: bool = False
+    foreground_service_type: str | None = None
+    notification: AndroidNotification | None = None
+
+
+@dataclass(frozen=True)
+class AndroidActivity:
+    """One ``[[tool.kivy.android.activities]]`` entry."""
+
+    name: str
+    exported: bool = False
+
+
+@dataclass(frozen=True)
+class AndroidIntentFilter:
+    """One ``[[tool.kivy.android.intent_filters]]`` entry (main activity)."""
+
+    action: str
+    categories: tuple[str, ...] = ()
+    data: tuple[dict[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class AndroidManifestConfig:
+    """``[tool.kivy.android.manifest]`` — structured + raw-XML passthrough."""
+
+    application: dict[str, object] = field(default_factory=dict)
+    activity: dict[str, object] = field(default_factory=dict)
+    placeholders: dict[str, str] = field(default_factory=dict)
+    extra_manifest_xml: str = ""
+    extra_application_xml: str = ""
+    extra_activity_xml: str = ""
+
+
+@dataclass(frozen=True)
+class AndroidSigningConfig:
+    """``[tool.kivy.android.signing]`` (android/01, android/07).
+
+    Passwords are **never** stored in ``pyproject.toml`` — only the names of the
+    environment variables that hold them. ``keystore`` empty means release
+    signing is not configured; ``kivyforge package`` then fails its preflight.
+    ``v1_signing`` defaults off: the ``min_sdk`` floor is 24, where the platform
+    verifies v2+.
+    """
+
+    keystore: str = ""
+    key_alias: str = ""
+    store_password_env: str = DEFAULT_ANDROID_STORE_PASSWORD_ENV
+    key_password_env: str = DEFAULT_ANDROID_KEY_PASSWORD_ENV
+    v1_signing: bool = False
+    v2_signing: bool = True
+    v3_signing: bool = True
+    v4_signing: bool = False
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.keystore and self.key_alias)
+
+
+@dataclass(frozen=True)
+class AndroidBuildSettings:
+    """``[tool.kivy.android.build_settings]`` (android/01).
+
+    ``byte_compile`` / ``strip_source`` / ``strip_native_libs`` are a bool or
+    the string ``"release"`` (apply to release packaging only — the default).
+    """
+
+    minify: bool = False
+    shrink_resources: bool = False
+    multidex: bool = True
+    byte_compile: bool | str = ANDROID_RELEASE_ONLY
+    strip_source: bool | str = ANDROID_RELEASE_ONLY
+    strip_native_libs: bool | str = ANDROID_RELEASE_ONLY
+    debug_symbols: str = "symbol_table"
+
+
+@dataclass(frozen=True)
+class AndroidConfig:
+    """``[tool.kivy.android]`` overlay (android/01).
+
+    ``version_code`` is the **resolved** integer: an explicit value verbatim, or
+    the auto-derived code (``MAJOR*1_000_000 + MINOR*10_000 + PATCH*100 +
+    build``) when the overlay says ``"auto"`` (``version_code_auto`` records
+    which). ``compile_sdk`` defaults to ``target_sdk`` at parse time.
+    """
+
+    schema_version: int
+    package: str
+    version_code: int = 1
+    version_code_auto: bool = False
+    build: int = 0
+    min_sdk: int = DEFAULT_ANDROID_MIN_SDK
+    target_sdk: int = DEFAULT_ANDROID_TARGET_SDK
+    compile_sdk: int = DEFAULT_ANDROID_TARGET_SDK
+    sdl: int = DEFAULT_ANDROID_SDL
+    abis: tuple[str, ...] = DEFAULT_ANDROID_ABIS
+    extra_index_urls: tuple[str, ...] = ()
+    find_links: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+    base_theme: str = DEFAULT_ANDROID_BASE_THEME
+    python: AndroidPythonConfig | None = None
+    permissions: AndroidPermissions = field(default_factory=AndroidPermissions)
+    icons: AndroidIconConfig = field(default_factory=AndroidIconConfig)
+    splash: AndroidSplashConfig = field(default_factory=AndroidSplashConfig)
+    aars: tuple[AndroidArchiveDep, ...] = ()
+    jars: tuple[AndroidArchiveDep, ...] = ()
+    gradle: AndroidGradleConfig = field(default_factory=AndroidGradleConfig)
+    include_files: tuple[AndroidIncludeFile, ...] = ()
+    src: AndroidSrcConfig = field(default_factory=AndroidSrcConfig)
+    services: tuple[AndroidService, ...] = ()
+    activities: tuple[AndroidActivity, ...] = ()
+    intent_filters: tuple[AndroidIntentFilter, ...] = ()
+    manifest: AndroidManifestConfig = field(default_factory=AndroidManifestConfig)
+    signing: AndroidSigningConfig = field(default_factory=AndroidSigningConfig)
+    gradle_properties: dict[str, object] = field(default_factory=dict)
+    build_settings: AndroidBuildSettings = field(default_factory=AndroidBuildSettings)
+
+    @property
+    def python_required(self) -> AndroidPythonConfig:
+        if self.python is None:  # pragma: no cover - loader enforces presence
+            raise RuntimeError("AndroidConfig.python is None despite loader rule 11")
+        return self.python
+
+
+@dataclass(frozen=True)
 class DesktopConfig:
     """``[tool.kivy.linux.desktop]`` — freedesktop ``.desktop`` entry options."""
 
@@ -395,6 +700,7 @@ class Config:
     macos: MacosConfig | None = None
     linux: LinuxConfig | None = None
     windows: WindowsConfig | None = None
+    android: AndroidConfig | None = None
 
     @property
     def display_name(self) -> str:
@@ -450,3 +756,13 @@ class Config:
                 "before accessing windows_required."
             )
         return self.windows
+
+    @property
+    def android_required(self) -> AndroidConfig:
+        """``[tool.kivy.android]`` after ``load_config(..., require_android=True)``."""
+        if self.android is None:
+            raise RuntimeError(
+                "Config.android is None; call load_config with require_android=True "
+                "before accessing android_required."
+            )
+        return self.android

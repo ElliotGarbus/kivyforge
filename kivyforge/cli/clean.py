@@ -42,6 +42,7 @@ def clean(flush_cache: bool, project_only: bool) -> None:
         # build/windows/ + dist/windows/.
         targets = [
             cwd / f"{config.app_slug}-ios",
+            cwd / f"{config.app_slug}-android",
             cwd / "build" / "macos",
             cwd / "build" / "linux",
             cwd / "dist" / "linux",

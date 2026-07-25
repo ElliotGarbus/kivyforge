@@ -82,3 +82,22 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(autouse=True)
 def _default_target_platform(monkeypatch):
     monkeypatch.setenv("KIVYFORGE_PLATFORM", "ios")
+
+
+@pytest.fixture(autouse=True)
+def _allow_ios_verbs_off_macos(monkeypatch):
+    """Neutralize the iOS macOS-host gate for the suite.
+
+    The whole iOS workflow — ``lock`` included, because resolving Swift
+    packages shells out to ``swift package resolve`` — is macOS-only, but the
+    tests must still run on Linux and Windows CI. Same approach the macOS and
+    Linux suites use: no-op the module-level ``_require_*`` helper.
+
+    The gate's own behaviour is covered directly in
+    ``tests/platforms/test_host_gating.py``, which calls the real helpers.
+    """
+    from kivyforge.cli import lock as lock_cli
+    from kivyforge.platforms.ios import cli as ios_cli
+
+    monkeypatch.setattr(ios_cli, "_require_macos_host", lambda: None)
+    monkeypatch.setattr(lock_cli, "_require_host_toolchain", lambda backend: None)

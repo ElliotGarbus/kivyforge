@@ -239,6 +239,18 @@ This array is empty in a vanilla Kivy app.
 
 ### `[tool.kivyforge.gradle]` — Maven/Gradle pins
 
+> **Realized vs designed (v1).** The resolved transitive graph with a per-artifact
+> SHA-256 **is** recorded in the lock under `[[tool.kivyforge.gradle.resolved]]`
+> (the committed audit trail; `kivyforge lock` runs Gradle once via the vendored
+> wrapper to produce it). What v1 does **not** do is materialize a Gradle-enforced
+> `verification-metadata.xml` into the generated project: Gradle's verification is
+> **global** — it would require pinning the entire AGP build classpath (aapt,
+> transforms, androidx, …), not just the app's declared Maven deps, so a partial
+> file makes every build fail on unlisted artifacts. The app's coordinates are
+> version-pinned in `app/build.gradle`; Gradle-*enforced* SHA verification of them
+> is deferred to a future full-classpath resolve. The lock's SHA-256 record stands
+> as the reproducibility/audit source of truth today.
+
 For `[tool.kivy.android.gradle].dependencies` (Maven coordinates). Gradle owns
 resolution; kivyforge pins the coordinate set and references a generated Gradle
 **dependency-lock** so transitive resolution is reproducible:

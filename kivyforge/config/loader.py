@@ -18,6 +18,16 @@ from packaging.version import InvalidVersion, Version
 
 from .errors import ConfigError
 from .model import (
+    ANDROID_MIN_SDK_FLOOR,
+    ANDROID_RELEASE_ONLY,
+    ANDROID_VERSION_CODE_CEILING,
+    DEFAULT_ANDROID_ABIS,
+    DEFAULT_ANDROID_BASE_THEME,
+    DEFAULT_ANDROID_KEY_PASSWORD_ENV,
+    DEFAULT_ANDROID_MIN_SDK,
+    DEFAULT_ANDROID_SDL,
+    DEFAULT_ANDROID_STORE_PASSWORD_ENV,
+    DEFAULT_ANDROID_TARGET_SDK,
     DEFAULT_DESKTOP_CATEGORIES,
     DEFAULT_LINUX_ARCHS,
     DEFAULT_MACOS_ARCHS,
@@ -26,12 +36,21 @@ from .model import (
     DEFAULT_WINDOWS_STORE_SCOPE,
     DEFAULT_WINDOWS_TIMESTAMP_URL,
     FREEDESKTOP_MAIN_CATEGORIES,
+    MANAGED_ANDROID_ACTIVITY_ATTRS,
+    MANAGED_ANDROID_APPLICATION_ATTRS,
     MANAGED_INFO_PLIST_KEYS,
+    RESERVED_ANDROID_GRADLE_PROPERTIES,
     RESERVED_BUILD_SETTINGS,
+    SUPPORTED_ANDROID_SCHEMA_VERSION,
     SUPPORTED_IOS_SCHEMA_VERSION,
     SUPPORTED_LINUX_SCHEMA_VERSION,
     SUPPORTED_MACOS_SCHEMA_VERSION,
     SUPPORTED_WINDOWS_SCHEMA_VERSION,
+    VALID_ANDROID_ABIS,
+    VALID_ANDROID_DEBUG_SYMBOLS,
+    VALID_ANDROID_SDL_GENERATIONS,
+    VALID_FOREGROUND_SERVICE_TYPES,
+    VALID_INTENT_DATA_KEYS,
     VALID_LINUX_ARCHS,
     VALID_MACOS_ARCHS,
     VALID_ORIENTATIONS,
@@ -40,6 +59,23 @@ from .model import (
     VALID_WINDOWS_ARCHS,
     VALID_WINDOWS_STORE_SCOPES,
     WINDOWS_APP_ID_MAX_LENGTH,
+    AndroidActivity,
+    AndroidArchiveDep,
+    AndroidBuildSettings,
+    AndroidConfig,
+    AndroidFeature,
+    AndroidGradleConfig,
+    AndroidIconConfig,
+    AndroidIncludeFile,
+    AndroidIntentFilter,
+    AndroidManifestConfig,
+    AndroidNotification,
+    AndroidPermissions,
+    AndroidPythonConfig,
+    AndroidService,
+    AndroidSigningConfig,
+    AndroidSplashConfig,
+    AndroidSrcConfig,
     Author,
     Config,
     DesktopConfig,
@@ -90,13 +126,14 @@ def load_config(
     require_macos: bool = False,
     require_linux: bool = False,
     require_windows: bool = False,
+    require_android: bool = False,
 ) -> Config:
     """Parse and validate ``pyproject.toml`` at ``path``.
 
     ``require_ios`` / ``require_macos`` / ``require_linux`` / ``require_windows``
-    enforce the presence of the respective ``[tool.kivy.<platform>]`` overlay. A
-    platform verb requires its own overlay; contexts that only inspect the
-    cross-platform tables set them all False.
+    / ``require_android`` enforce the presence of the respective
+    ``[tool.kivy.<platform>]`` overlay. A platform verb requires its own overlay;
+    contexts that only inspect the cross-platform tables set them all False.
     """
     path = Path(path)
     text = path.read_text(encoding="utf-8")
@@ -106,6 +143,7 @@ def load_config(
         require_macos=require_macos,
         require_linux=require_linux,
         require_windows=require_windows,
+        require_android=require_android,
         project_root=path.parent,
     )
 
@@ -117,6 +155,7 @@ def load_config_from_text(
     require_macos: bool = False,
     require_linux: bool = False,
     require_windows: bool = False,
+    require_android: bool = False,
     project_root: Path | None = None,
 ) -> Config:
     try:
@@ -132,6 +171,7 @@ def load_config_from_text(
     macos = _parse_macos(raw, finder, project, project_root=project_root)
     linux = _parse_linux(raw, finder, project, project_root=project_root)
     windows = _parse_windows(raw, finder, project, project_root=project_root)
+    android = _parse_android(raw, finder, project, project_root=project_root)
 
     if ios is None and require_ios:
         raise ConfigError(
@@ -161,6 +201,13 @@ def load_config_from_text(
             hint="add a [tool.kivy.windows] overlay; [tool.kivy] alone is not a "
             "buildable Windows target.",
         )
+    if android is None and require_android:
+        raise ConfigError(
+            "missing [tool.kivy.android] table",
+            key_path="tool.kivy.android",
+            hint="add a [tool.kivy.android] overlay; [tool.kivy] alone is not a "
+            "buildable Android target. Run `kivyforge init`.",
+        )
 
     return Config(
         project=project,
@@ -169,6 +216,7 @@ def load_config_from_text(
         macos=macos,
         linux=linux,
         windows=windows,
+        android=android,
     )
 
 
@@ -1027,6 +1075,1144 @@ def _parse_windows_signing(windows: dict, finder: _LineFinder) -> WindowsSigning
         thumbprint=signing.get("thumbprint", ""),
         timestamp_url=signing.get("timestamp_url", DEFAULT_WINDOWS_TIMESTAMP_URL),
         store_scope=store_scope,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# [tool.kivy.android]  (android/01, validation rules 1-21)
+# --------------------------------------------------------------------------- #
+
+_JAVA_IDENT_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _parse_android(
+    raw: dict,
+    finder: _LineFinder,
+    project: ProjectMeta,
+    *,
+    project_root: Path | None = None,
+) -> AndroidConfig | None:
+    tool = raw.get("tool", {})
+    kivy = tool.get("kivy", {}) if isinstance(tool, dict) else {}
+    android = kivy.get("android") if isinstance(kivy, dict) else None
+    if android is None:
+        return None
+    if not isinstance(android, dict):
+        raise ConfigError(
+            "[tool.kivy.android] must be a table", key_path="tool.kivy.android"
+        )
+
+    schema_version = _parse_platform_schema_version(
+        android,
+        finder,
+        key_path="tool.kivy.android.schema_version",
+        supported=SUPPORTED_ANDROID_SCHEMA_VERSION,
+    )
+    package = _validate_android_package(android.get("package"), finder)
+    build = _parse_android_build_counter(android, finder)
+    version_code, version_code_auto = _parse_android_version_code(
+        android, finder, project, build=build
+    )
+    min_sdk, target_sdk, compile_sdk = _parse_android_sdk_levels(android, finder)
+    sdl = _parse_android_sdl(android, finder)
+    abis = _parse_android_abis(android, finder)
+
+    extra_index_urls = android.get("extra_index_urls", [])
+    if not isinstance(extra_index_urls, list) or not all(
+        isinstance(u, str) for u in extra_index_urls
+    ):
+        raise ConfigError(
+            "[tool.kivy.android].extra_index_urls must be a list of strings",
+            key_path="tool.kivy.android.extra_index_urls",
+            line=finder.line("extra_index_urls"),
+        )
+
+    find_links = _parse_platform_find_links(
+        android,
+        finder,
+        key_path="tool.kivy.android.find_links",
+        project_root=project_root,
+    )
+    exclude = _parse_platform_exclude(
+        android, finder, key_path="tool.kivy.android.exclude"
+    )
+
+    base_theme = android.get("base_theme", DEFAULT_ANDROID_BASE_THEME)
+    if not isinstance(base_theme, str) or not base_theme.strip():
+        raise ConfigError(
+            "[tool.kivy.android].base_theme must be a non-empty string",
+            key_path="tool.kivy.android.base_theme",
+            line=finder.line("base_theme"),
+        )
+
+    python = _parse_android_python(android, finder)
+    _check_requires_python_generic(
+        project,
+        python.version,
+        finder,
+        key_path="tool.kivy.android.python.version",
+    )
+
+    permissions = _parse_android_permissions(android, finder)
+    icons = _parse_android_icons(android, finder)
+    splash = _parse_android_splash(android, finder)
+    aars = _parse_android_archives(android, "aars", finder)
+    jars = _parse_android_archives(android, "jars", finder)
+    gradle = _parse_android_gradle(android, finder)
+    include_files = _parse_android_include_files(
+        android, finder, project_root=project_root
+    )
+    src = _parse_android_src(android, finder)
+    services = _parse_android_services(android, finder)
+    activities = _parse_android_activities(android, finder)
+    intent_filters = _parse_android_intent_filters(android, finder)
+    manifest = _parse_android_manifest(android, finder)
+    signing = _parse_android_signing(android, finder)
+    gradle_properties = _parse_android_gradle_properties(android, finder)
+    build_settings = _parse_android_build_settings(android, finder)
+
+    return AndroidConfig(
+        schema_version=schema_version,
+        package=package,
+        version_code=version_code,
+        version_code_auto=version_code_auto,
+        build=build,
+        min_sdk=min_sdk,
+        target_sdk=target_sdk,
+        compile_sdk=compile_sdk,
+        sdl=sdl,
+        abis=abis,
+        extra_index_urls=tuple(extra_index_urls),
+        find_links=tuple(find_links),
+        exclude=tuple(exclude),
+        base_theme=base_theme,
+        python=python,
+        permissions=permissions,
+        icons=icons,
+        splash=splash,
+        aars=tuple(aars),
+        jars=tuple(jars),
+        gradle=gradle,
+        include_files=tuple(include_files),
+        src=src,
+        services=tuple(services),
+        activities=tuple(activities),
+        intent_filters=tuple(intent_filters),
+        manifest=manifest,
+        signing=signing,
+        gradle_properties=gradle_properties,
+        build_settings=build_settings,
+    )
+
+
+def _validate_android_package(package: object, finder: _LineFinder) -> str:
+    # Rule 4: the applicationId — >= 2 dot-separated Java-identifier segments.
+    if not package or not isinstance(package, str):
+        raise ConfigError(
+            "missing required [tool.kivy.android].package",
+            key_path="tool.kivy.android.package",
+            hint='e.g. package = "org.example.myapp" (the Android applicationId).',
+        )
+    segments = package.split(".")
+    if len(segments) < 2 or not all(_JAVA_IDENT_RE.match(s) for s in segments):
+        raise ConfigError(
+            f"[tool.kivy.android].package {package!r} is not a valid Android "
+            "package name",
+            key_path="tool.kivy.android.package",
+            line=finder.line("package"),
+            hint="use >= 2 dot-separated Java-identifier segments, e.g. "
+            '"org.example.myapp".',
+        )
+    return package
+
+
+def _parse_android_build_counter(android: dict, finder: _LineFinder) -> int:
+    build = android.get("build", 0)
+    if isinstance(build, bool) or not isinstance(build, int) or not 0 <= build <= 99:
+        raise ConfigError(
+            "[tool.kivy.android].build must be an integer in 0-99",
+            key_path="tool.kivy.android.build",
+            line=finder.line("build"),
+            hint="build is the re-upload counter used only when "
+            'version_code = "auto".',
+        )
+    return build
+
+
+def _parse_android_version_code(
+    android: dict, finder: _LineFinder, project: ProjectMeta, *, build: int
+) -> tuple[int, bool]:
+    # Rule 20: a positive integer used verbatim, or "auto" derived from
+    # [project].version as MAJOR*1_000_000 + MINOR*10_000 + PATCH*100 + build.
+    raw = android.get("version_code", 1)
+    line = finder.line("version_code")
+    if isinstance(raw, bool):
+        raw = None  # bool is an int subclass; force the type error below
+    if isinstance(raw, int):
+        if raw < 1:
+            raise ConfigError(
+                "[tool.kivy.android].version_code must be a positive integer",
+                key_path="tool.kivy.android.version_code",
+                line=line,
+            )
+        if raw > ANDROID_VERSION_CODE_CEILING:
+            raise ConfigError(
+                f"[tool.kivy.android].version_code {raw} exceeds Google Play's "
+                f"ceiling of {ANDROID_VERSION_CODE_CEILING:,}",
+                key_path="tool.kivy.android.version_code",
+                line=line,
+            )
+        return raw, False
+    if raw == "auto":
+        try:
+            version = Version(project.version)
+        except InvalidVersion as exc:
+            raise ConfigError(
+                f"[project].version {project.version!r} is not a valid version; "
+                'version_code = "auto" cannot derive from it',
+                key_path="tool.kivy.android.version_code",
+                line=line,
+            ) from exc
+        if (
+            version.is_prerelease
+            or version.is_devrelease
+            or version.is_postrelease
+            or version.epoch != 0
+            or version.local is not None
+        ):
+            raise ConfigError(
+                f'version_code = "auto" requires a final MAJOR.MINOR.PATCH '
+                f"[project].version; {project.version!r} is not one",
+                key_path="tool.kivy.android.version_code",
+                line=line,
+                hint="pre-release/dev/post/local/epoch versions have no "
+                "monotonic integer mapping; set an explicit integer "
+                "version_code for those.",
+            )
+        release = version.release
+        if len(release) > 3:
+            raise ConfigError(
+                f"[project].version {project.version!r} has a 4th numeric "
+                'segment; version_code = "auto" supports MAJOR.MINOR.PATCH only',
+                key_path="tool.kivy.android.version_code",
+                line=line,
+                hint="express the extra increment via the `build` counter.",
+            )
+        major = release[0]
+        minor = release[1] if len(release) > 1 else 0
+        patch = release[2] if len(release) > 2 else 0
+        if minor > 99 or patch > 99:
+            raise ConfigError(
+                f"MINOR and PATCH must each be <= 99 for "
+                f'version_code = "auto"; got {project.version!r}',
+                key_path="tool.kivy.android.version_code",
+                line=line,
+            )
+        code = major * 1_000_000 + minor * 10_000 + patch * 100 + build
+        if code > ANDROID_VERSION_CODE_CEILING:
+            raise ConfigError(
+                f"auto-derived version_code {code:,} exceeds Google Play's "
+                f"ceiling of {ANDROID_VERSION_CODE_CEILING:,}",
+                key_path="tool.kivy.android.version_code",
+                line=line,
+            )
+        return code, True
+    raise ConfigError(
+        "[tool.kivy.android].version_code must be a positive integer or the "
+        'string "auto"',
+        key_path="tool.kivy.android.version_code",
+        line=line,
+    )
+
+
+def _parse_android_sdk_levels(
+    android: dict, finder: _LineFinder
+) -> tuple[int, int, int]:
+    # Rule 8: min_sdk >= 24; target_sdk >= min_sdk; compile_sdk >= target_sdk.
+    def _level(key: str, default: int) -> int:
+        value = android.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError(
+                f"[tool.kivy.android].{key} must be an integer",
+                key_path=f"tool.kivy.android.{key}",
+                line=finder.line(key),
+            )
+        return value
+
+    min_sdk = _level("min_sdk", DEFAULT_ANDROID_MIN_SDK)
+    target_sdk = _level("target_sdk", DEFAULT_ANDROID_TARGET_SDK)
+    compile_sdk = _level("compile_sdk", target_sdk)
+    if min_sdk < ANDROID_MIN_SDK_FLOOR:
+        raise ConfigError(
+            f"[tool.kivy.android].min_sdk {min_sdk} is below the floor of "
+            f"{ANDROID_MIN_SDK_FLOOR}",
+            key_path="tool.kivy.android.min_sdk",
+            line=finder.line("min_sdk"),
+            hint="API 24 is the first level with RUNPATH and the python.org "
+            "runtime / android wheel-tag floor (android/01 §min_sdk).",
+        )
+    if target_sdk < min_sdk:
+        raise ConfigError(
+            f"[tool.kivy.android].target_sdk {target_sdk} is below min_sdk "
+            f"{min_sdk}",
+            key_path="tool.kivy.android.target_sdk",
+            line=finder.line("target_sdk"),
+        )
+    if compile_sdk < target_sdk:
+        raise ConfigError(
+            f"[tool.kivy.android].compile_sdk {compile_sdk} is below target_sdk "
+            f"{target_sdk}",
+            key_path="tool.kivy.android.compile_sdk",
+            line=finder.line("compile_sdk"),
+        )
+    return min_sdk, target_sdk, compile_sdk
+
+
+def _parse_android_sdl(android: dict, finder: _LineFinder) -> int:
+    # Rule 9.
+    sdl = android.get("sdl", DEFAULT_ANDROID_SDL)
+    if isinstance(sdl, bool) or sdl not in VALID_ANDROID_SDL_GENERATIONS:
+        raise ConfigError(
+            f"[tool.kivy.android].sdl must be 2 or 3, got {sdl!r}",
+            key_path="tool.kivy.android.sdl",
+            line=finder.line("sdl"),
+            hint="sdl = 2 targets Kivy 2.3.1 (SDL2); sdl = 3 targets Kivy 3.0 "
+            "(SDL3).",
+        )
+    return sdl
+
+
+def _parse_android_abis(android: dict, finder: _LineFinder) -> tuple[str, ...]:
+    # Rule 10: non-empty subset of the 64-bit ABI set.
+    raw = android.get("abis")
+    if raw is None:
+        return DEFAULT_ANDROID_ABIS
+    line = finder.line("abis")
+    if not isinstance(raw, list) or not all(isinstance(a, str) for a in raw):
+        raise ConfigError(
+            "[tool.kivy.android].abis must be a list of strings",
+            key_path="tool.kivy.android.abis",
+            line=line,
+        )
+    if not raw:
+        raise ConfigError(
+            "[tool.kivy.android].abis must not be empty",
+            key_path="tool.kivy.android.abis",
+            line=line,
+        )
+    unknown = [a for a in raw if a not in VALID_ANDROID_ABIS]
+    if unknown:
+        thirty_two = [a for a in unknown if a in ("armeabi_v7a", "armeabi-v7a", "x86")]
+        hint = (
+            "the python.org Android runtime is 64-bit only, so 32-bit ABIs are "
+            "rejected permanently (android/01 §ABIs)."
+            if thirty_two
+            else 'valid ABIs are "arm64_v8a" and "x86_64" (wheel-tag spelling).'
+        )
+        raise ConfigError(
+            f"unsupported Android ABI(s) {unknown} in [tool.kivy.android].abis",
+            key_path="tool.kivy.android.abis",
+            line=line,
+            hint=hint,
+        )
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for abi in raw:
+        if abi not in seen:
+            seen.add(abi)
+            ordered.append(abi)
+    return tuple(ordered)
+
+
+def _parse_android_python(android: dict, finder: _LineFinder) -> AndroidPythonConfig:
+    # Rule 11: [tool.kivy.android.python].version is required.
+    version = _parse_platform_python_version(
+        android, key_path="tool.kivy.android.python"
+    )
+    if version is None:
+        raise ConfigError(
+            "missing required [tool.kivy.android.python].version",
+            key_path="tool.kivy.android.python.version",
+            hint="pin the python.org Android embeddable-package version, "
+            'e.g. version = "3.14.6".',
+        )
+    return AndroidPythonConfig(version=version)
+
+
+def _validate_android_relpath(
+    value: object, *, key_path: str, finder: _LineFinder, key: str
+) -> str:
+    """A repo-relative, non-escaping path field (icons, splash, src, ...)."""
+    if not isinstance(value, str) or not value:
+        raise ConfigError(
+            f"{key_path} must be a non-empty string path",
+            key_path=key_path,
+            line=finder.line(key),
+        )
+    if _is_absolute_source(value):
+        raise ConfigError(
+            f"{key_path} must be repo-relative, not absolute: {value!r}",
+            key_path=key_path,
+            line=finder.line(key),
+        )
+    normalized = _posix_normpath(value)
+    if normalized == ".." or normalized.startswith("../"):
+        raise ConfigError(
+            f"{key_path} escapes the project directory: {value!r}",
+            key_path=key_path,
+            line=finder.line(key),
+        )
+    return value
+
+
+def _parse_android_permissions(
+    android: dict, finder: _LineFinder
+) -> AndroidPermissions:
+    table = android.get("permissions")
+    if table is None:
+        return AndroidPermissions()
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.permissions] must be a table",
+            key_path="tool.kivy.android.permissions",
+        )
+    uses = table.get("uses", [])
+    if not isinstance(uses, list) or not all(
+        isinstance(p, str) and p.strip() for p in uses
+    ):
+        raise ConfigError(
+            "[tool.kivy.android.permissions].uses must be a list of non-empty "
+            "strings",
+            key_path="tool.kivy.android.permissions.uses",
+            line=finder.line("uses"),
+        )
+    features_raw = table.get("features", [])
+    if not isinstance(features_raw, list):
+        raise ConfigError(
+            "[tool.kivy.android.permissions].features must be a list of tables",
+            key_path="tool.kivy.android.permissions.features",
+            line=finder.line("features"),
+        )
+    features: list[AndroidFeature] = []
+    for i, entry in enumerate(features_raw):
+        key_path = f"tool.kivy.android.permissions.features[{i}]"
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str):
+            raise ConfigError(
+                f"{key_path} must be a table with a string `name`",
+                key_path=key_path,
+            )
+        required = entry.get("required", True)
+        if not isinstance(required, bool):
+            raise ConfigError(
+                f"{key_path}.required must be a bool", key_path=f"{key_path}.required"
+            )
+        features.append(AndroidFeature(name=entry["name"], required=required))
+    auto_features = table.get("auto_features", True)
+    if not isinstance(auto_features, bool):
+        raise ConfigError(
+            "[tool.kivy.android.permissions].auto_features must be a bool",
+            key_path="tool.kivy.android.permissions.auto_features",
+            line=finder.line("auto_features"),
+        )
+    return AndroidPermissions(
+        uses=tuple(uses), features=tuple(features), auto_features=auto_features
+    )
+
+
+def _parse_android_icons(android: dict, finder: _LineFinder) -> AndroidIconConfig:
+    table = android.get("icons")
+    if table is None:
+        return AndroidIconConfig()
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.icons] must be a table",
+            key_path="tool.kivy.android.icons",
+        )
+    source = table.get("source")
+    if source is not None:
+        source = _validate_android_relpath(
+            source,
+            key_path="tool.kivy.android.icons.source",
+            finder=finder,
+            key="source",
+        )
+    background = table.get("background")
+    if background is not None:
+        if not isinstance(background, str) or not background:
+            raise ConfigError(
+                "[tool.kivy.android.icons].background must be a #rrggbb color "
+                "or an image path",
+                key_path="tool.kivy.android.icons.background",
+                line=finder.line("background"),
+            )
+        if background.startswith("#") and not _HEX_COLOR_RE.match(background):
+            raise ConfigError(
+                f"[tool.kivy.android.icons].background {background!r} is not a "
+                "#rrggbb color",
+                key_path="tool.kivy.android.icons.background",
+                line=finder.line("background"),
+            )
+        if not background.startswith("#"):
+            background = _validate_android_relpath(
+                background,
+                key_path="tool.kivy.android.icons.background",
+                finder=finder,
+                key="background",
+            )
+    monochrome = table.get("monochrome")
+    if monochrome is not None:
+        monochrome = _validate_android_relpath(
+            monochrome,
+            key_path="tool.kivy.android.icons.monochrome",
+            finder=finder,
+            key="monochrome",
+        )
+    return AndroidIconConfig(source=source, background=background, monochrome=monochrome)
+
+
+def _parse_android_splash(android: dict, finder: _LineFinder) -> AndroidSplashConfig:
+    # Rule 21 (splash half): types, #rrggbb colors, positive duration, relpaths.
+    table = android.get("splash")
+    if table is None:
+        return AndroidSplashConfig()
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.splash] must be a table",
+            key_path="tool.kivy.android.splash",
+        )
+    source = table.get("source")
+    if source is not None:
+        source = _validate_android_relpath(
+            source,
+            key_path="tool.kivy.android.splash.source",
+            finder=finder,
+            key="source",
+        )
+    branding = table.get("branding")
+    if branding is not None:
+        branding = _validate_android_relpath(
+            branding,
+            key_path="tool.kivy.android.splash.branding",
+            finder=finder,
+            key="branding",
+        )
+
+    def _color(key: str) -> str | None:
+        value = table.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, str) or not _HEX_COLOR_RE.match(value):
+            raise ConfigError(
+                f"[tool.kivy.android.splash].{key} must be a #rrggbb color",
+                key_path=f"tool.kivy.android.splash.{key}",
+                line=finder.line(key),
+            )
+        return value
+
+    background = _color("background")
+    icon_background = _color("icon_background")
+    duration = table.get("animation_duration")
+    if duration is not None and (
+        isinstance(duration, bool) or not isinstance(duration, int) or duration <= 0
+    ):
+        raise ConfigError(
+            "[tool.kivy.android.splash].animation_duration must be a positive "
+            "integer (milliseconds)",
+            key_path="tool.kivy.android.splash.animation_duration",
+            line=finder.line("animation_duration"),
+        )
+    return AndroidSplashConfig(
+        source=source,
+        background=background,
+        icon_background=icon_background,
+        animation_duration=duration,
+        branding=branding,
+    )
+
+
+def _parse_android_archives(
+    android: dict, kind_key: str, finder: _LineFinder
+) -> list[AndroidArchiveDep]:
+    # Rule 14: [tool.kivy.android.native.aars] / .jars, explicit URL-or-relative
+    # sources only (mirrors the iOS xcframework rule via the shared validator).
+    native = android.get("native")
+    if native is None:
+        return []
+    if not isinstance(native, dict):
+        raise ConfigError(
+            "[tool.kivy.android.native] must be a table",
+            key_path="tool.kivy.android.native",
+        )
+    table = native.get(kind_key)
+    if table is None:
+        return []
+    kind = kind_key.rstrip("s")  # aars -> aar, jars -> jar
+    key_root = f"tool.kivy.android.native.{kind_key}"
+    if not isinstance(table, dict):
+        raise ConfigError(f"[{key_root}] must be a table", key_path=key_root)
+    deps: list[AndroidArchiveDep] = []
+    for name, entry in table.items():
+        key_path = f"{key_root}.{name}"
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"[{key_path}] must be an inline table", key_path=key_path
+            )
+        version = entry.get("version")
+        source = entry.get("source")
+        if not isinstance(version, str) or not version:
+            raise ConfigError(
+                f"{key_path}.version must be a non-empty string",
+                key_path=f"{key_path}.version",
+            )
+        if not isinstance(source, str) or not source:
+            raise ConfigError(
+                f"{key_path}.source must be a non-empty string",
+                key_path=f"{key_path}.source",
+            )
+        _validate_artifact_source(kind, name, source, f"{key_path}.source")
+        deps.append(
+            AndroidArchiveDep(name=name, version=version, source=source, kind=kind)
+        )
+    return deps
+
+
+def _parse_android_gradle(android: dict, finder: _LineFinder) -> AndroidGradleConfig:
+    # Rule 13: fully-versioned group:artifact:version coordinates only.
+    table = android.get("gradle")
+    if table is None:
+        return AndroidGradleConfig()
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.gradle] must be a table",
+            key_path="tool.kivy.android.gradle",
+        )
+    deps = table.get("dependencies", [])
+    if not isinstance(deps, list) or not all(isinstance(d, str) for d in deps):
+        raise ConfigError(
+            "[tool.kivy.android.gradle].dependencies must be a list of strings",
+            key_path="tool.kivy.android.gradle.dependencies",
+            line=finder.line("dependencies"),
+        )
+    for dep in deps:
+        parts = dep.split(":")
+        version = parts[2] if len(parts) == 3 else ""
+        dynamic = (
+            "+" in version
+            or "*" in version
+            or version.startswith(("[", "("))
+            or version.lower().startswith("latest.")
+        )
+        if len(parts) != 3 or not all(parts) or dynamic:
+            raise ConfigError(
+                f"[tool.kivy.android.gradle].dependencies entry {dep!r} is not a "
+                "fully-versioned group:artifact:version coordinate",
+                key_path="tool.kivy.android.gradle.dependencies",
+                line=finder.line("dependencies"),
+                hint="dynamic versions (+, ranges, latest.*) are rejected for "
+                "reproducibility.",
+            )
+    repos = table.get("repositories", [])
+    if not isinstance(repos, list) or not all(isinstance(r, str) for r in repos):
+        raise ConfigError(
+            "[tool.kivy.android.gradle].repositories must be a list of strings",
+            key_path="tool.kivy.android.gradle.repositories",
+            line=finder.line("repositories"),
+        )
+    return AndroidGradleConfig(dependencies=tuple(deps), repositories=tuple(repos))
+
+
+def _parse_android_include_files(
+    android: dict, finder: _LineFinder, *, project_root: Path | None
+) -> list[AndroidIncludeFile]:
+    # Rule 18: dest inside the generated project, sources repo-relative and
+    # present; generated-file clobber protection is enforced at build time
+    # against the generator's own manifest of emitted files.
+    entries = android.get("include_files")
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise ConfigError(
+            "[[tool.kivy.android.include_files]] must be an array of tables",
+            key_path="tool.kivy.android.include_files",
+        )
+    out: list[AndroidIncludeFile] = []
+    for i, entry in enumerate(entries):
+        key_path = f"tool.kivy.android.include_files[{i}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{key_path} must be a table", key_path=key_path)
+        dest = entry.get("dest")
+        if not isinstance(dest, str) or not dest:
+            raise ConfigError(
+                f"{key_path}.dest must be a non-empty string",
+                key_path=f"{key_path}.dest",
+            )
+        if _is_absolute_source(dest) or _posix_normpath(dest).startswith(".."):
+            raise ConfigError(
+                f"{key_path}.dest must stay inside the generated project: {dest!r}",
+                key_path=f"{key_path}.dest",
+            )
+        sources = entry.get("sources")
+        if (
+            not isinstance(sources, list)
+            or not sources
+            or not all(isinstance(s, str) and s for s in sources)
+        ):
+            raise ConfigError(
+                f"{key_path}.sources must be a non-empty list of strings",
+                key_path=f"{key_path}.sources",
+            )
+        for src in sources:
+            if _is_absolute_source(src) or _posix_normpath(src).startswith(".."):
+                raise ConfigError(
+                    f"{key_path}.sources entry escapes the project: {src!r}",
+                    key_path=f"{key_path}.sources",
+                )
+            if project_root is not None and not (project_root / src).exists():
+                raise ConfigError(
+                    f"{key_path}.sources entry does not exist: {src!r}",
+                    key_path=f"{key_path}.sources",
+                )
+        out.append(AndroidIncludeFile(dest=dest, sources=tuple(sources)))
+    return out
+
+
+def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
+    table = android.get("src")
+    if table is None:
+        return AndroidSrcConfig()
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.src] must be a table",
+            key_path="tool.kivy.android.src",
+        )
+
+    def _roots(key: str) -> tuple[str, ...]:
+        raw = table.get(key, [])
+        if not isinstance(raw, list) or not all(isinstance(p, str) for p in raw):
+            raise ConfigError(
+                f"[tool.kivy.android.src].{key} must be a list of strings",
+                key_path=f"tool.kivy.android.src.{key}",
+                line=finder.line(key),
+            )
+        for path in raw:
+            _validate_android_relpath(
+                path,
+                key_path=f"tool.kivy.android.src.{key}",
+                finder=finder,
+                key=key,
+            )
+        return tuple(raw)
+
+    return AndroidSrcConfig(java=_roots("java"), kotlin=_roots("kotlin"))
+
+
+def _parse_android_services(
+    android: dict, finder: _LineFinder
+) -> list[AndroidService]:
+    entries = android.get("services")
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise ConfigError(
+            "[[tool.kivy.android.services]] must be an array of tables",
+            key_path="tool.kivy.android.services",
+        )
+    out: list[AndroidService] = []
+    for i, entry in enumerate(entries):
+        key_path = f"tool.kivy.android.services[{i}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{key_path} must be a table", key_path=key_path)
+        name = entry.get("name")
+        if not isinstance(name, str) or not _JAVA_IDENT_RE.match(name or ""):
+            raise ConfigError(
+                f"{key_path}.name must be a Java identifier (the generated "
+                "PythonService subclass name)",
+                key_path=f"{key_path}.name",
+            )
+        entry_point = entry.get("entry_point")
+        if (
+            not isinstance(entry_point, str)
+            or not entry_point
+            or not all(
+                part.isidentifier() and not keyword.iskeyword(part)
+                for part in entry_point.split(".")
+            )
+        ):
+            raise ConfigError(
+                f"{key_path}.entry_point must be a (dotted) Python identifier",
+                key_path=f"{key_path}.entry_point",
+            )
+        exported = entry.get("exported", False)
+        foreground = entry.get("foreground", False)
+        if not isinstance(exported, bool) or not isinstance(foreground, bool):
+            raise ConfigError(
+                f"{key_path}.exported / .foreground must be bools",
+                key_path=key_path,
+            )
+        fstype = entry.get("foreground_service_type")
+        notification_raw = entry.get("notification")
+        notification: AndroidNotification | None = None
+        if foreground:
+            # Android 14+: a foreground service needs BOTH a type and a posted
+            # notification (android/01 services).
+            if fstype not in VALID_FOREGROUND_SERVICE_TYPES:
+                valid = ", ".join(sorted(VALID_FOREGROUND_SERVICE_TYPES))
+                raise ConfigError(
+                    f"{key_path}: foreground = true requires "
+                    f"foreground_service_type (one of: {valid})",
+                    key_path=f"{key_path}.foreground_service_type",
+                )
+            if not isinstance(notification_raw, dict):
+                raise ConfigError(
+                    f"{key_path}: foreground = true requires a notification "
+                    "table (channel_id, channel_name, title, text)",
+                    key_path=f"{key_path}.notification",
+                )
+            for field_name in ("channel_id", "channel_name", "title", "text"):
+                value = notification_raw.get(field_name)
+                if not isinstance(value, str) or not value:
+                    raise ConfigError(
+                        f"{key_path}.notification.{field_name} must be a "
+                        "non-empty string",
+                        key_path=f"{key_path}.notification.{field_name}",
+                    )
+            icon = notification_raw.get("icon")
+            if icon is not None and not isinstance(icon, str):
+                raise ConfigError(
+                    f"{key_path}.notification.icon must be a resource-name string",
+                    key_path=f"{key_path}.notification.icon",
+                )
+            notification = AndroidNotification(
+                channel_id=notification_raw["channel_id"],
+                channel_name=notification_raw["channel_name"],
+                title=notification_raw["title"],
+                text=notification_raw["text"],
+                icon=icon,
+            )
+        elif fstype is not None or notification_raw is not None:
+            raise ConfigError(
+                f"{key_path}: foreground_service_type / notification are only "
+                "meaningful with foreground = true",
+                key_path=key_path,
+            )
+        out.append(
+            AndroidService(
+                name=name,
+                entry_point=entry_point,
+                exported=exported,
+                foreground=foreground,
+                foreground_service_type=fstype if foreground else None,
+                notification=notification,
+            )
+        )
+    return out
+
+
+def _parse_android_activities(
+    android: dict, finder: _LineFinder
+) -> list[AndroidActivity]:
+    entries = android.get("activities")
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise ConfigError(
+            "[[tool.kivy.android.activities]] must be an array of tables",
+            key_path="tool.kivy.android.activities",
+        )
+    out: list[AndroidActivity] = []
+    for i, entry in enumerate(entries):
+        key_path = f"tool.kivy.android.activities[{i}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{key_path} must be a table", key_path=key_path)
+        name = entry.get("name")
+        if not isinstance(name, str) or not all(
+            _JAVA_IDENT_RE.match(s) for s in name.split(".")
+        ):
+            raise ConfigError(
+                f"{key_path}.name must be a (qualified) Java class name",
+                key_path=f"{key_path}.name",
+            )
+        exported = entry.get("exported", False)
+        if not isinstance(exported, bool):
+            raise ConfigError(
+                f"{key_path}.exported must be a bool",
+                key_path=f"{key_path}.exported",
+            )
+        out.append(AndroidActivity(name=name, exported=exported))
+    return out
+
+
+def _parse_android_intent_filters(
+    android: dict, finder: _LineFinder
+) -> list[AndroidIntentFilter]:
+    entries = android.get("intent_filters")
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        raise ConfigError(
+            "[[tool.kivy.android.intent_filters]] must be an array of tables",
+            key_path="tool.kivy.android.intent_filters",
+        )
+    out: list[AndroidIntentFilter] = []
+    for i, entry in enumerate(entries):
+        key_path = f"tool.kivy.android.intent_filters[{i}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{key_path} must be a table", key_path=key_path)
+        action = entry.get("action")
+        if not isinstance(action, str) or not action:
+            raise ConfigError(
+                f"{key_path}.action must be a non-empty string",
+                key_path=f"{key_path}.action",
+            )
+        categories = entry.get("categories", [])
+        if not isinstance(categories, list) or not all(
+            isinstance(c, str) and c for c in categories
+        ):
+            raise ConfigError(
+                f"{key_path}.categories must be a list of non-empty strings",
+                key_path=f"{key_path}.categories",
+            )
+        data_raw = entry.get("data", [])
+        if not isinstance(data_raw, list):
+            raise ConfigError(
+                f"{key_path}.data must be a list of tables",
+                key_path=f"{key_path}.data",
+            )
+        data: list[dict[str, str]] = []
+        for j, item in enumerate(data_raw):
+            if not isinstance(item, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in item.items()
+            ):
+                raise ConfigError(
+                    f"{key_path}.data[{j}] must be a table of string attributes",
+                    key_path=f"{key_path}.data",
+                )
+            unknown = set(item) - VALID_INTENT_DATA_KEYS
+            if unknown:
+                valid = ", ".join(sorted(VALID_INTENT_DATA_KEYS))
+                raise ConfigError(
+                    f"{key_path}.data[{j}] has unknown attribute(s) "
+                    f"{sorted(unknown)}; valid: {valid}",
+                    key_path=f"{key_path}.data",
+                )
+            data.append(dict(item))
+        out.append(
+            AndroidIntentFilter(
+                action=action, categories=tuple(categories), data=tuple(data)
+            )
+        )
+    return out
+
+
+def _parse_android_manifest(
+    android: dict, finder: _LineFinder
+) -> AndroidManifestConfig:
+    # Rules 15 (managed-attr collisions) and 17 (raw-XML well-formedness).
+    table = android.get("manifest")
+    if table is None:
+        return AndroidManifestConfig()
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.manifest] must be a table",
+            key_path="tool.kivy.android.manifest",
+        )
+
+    def _attrs(key: str, managed: frozenset[str]) -> dict[str, object]:
+        raw = table.get(key, {})
+        if not isinstance(raw, dict):
+            raise ConfigError(
+                f"[tool.kivy.android.manifest].{key} must be a table",
+                key_path=f"tool.kivy.android.manifest.{key}",
+            )
+        collisions = sorted(set(raw) & managed)
+        if collisions:
+            raise ConfigError(
+                f"[tool.kivy.android.manifest].{key} sets kivyforge-managed "
+                f"attribute(s): {collisions}",
+                key_path=f"tool.kivy.android.manifest.{key}",
+                hint="these are written from the schema (android/01 §managed "
+                "manifest keys); set the controlling field instead.",
+            )
+        return dict(raw)
+
+    application = _attrs("application", MANAGED_ANDROID_APPLICATION_ATTRS)
+    activity = _attrs("activity", MANAGED_ANDROID_ACTIVITY_ATTRS)
+
+    placeholders_raw = table.get("placeholders", {})
+    if not isinstance(placeholders_raw, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in placeholders_raw.items()
+    ):
+        raise ConfigError(
+            "[tool.kivy.android.manifest].placeholders must be a table of "
+            "string -> string",
+            key_path="tool.kivy.android.manifest.placeholders",
+        )
+
+    def _xml_fragment(key: str) -> str:
+        fragment = table.get(key, "")
+        if not isinstance(fragment, str):
+            raise ConfigError(
+                f"[tool.kivy.android.manifest].{key} must be a string",
+                key_path=f"tool.kivy.android.manifest.{key}",
+            )
+        if fragment.strip():
+            import xml.etree.ElementTree as ET
+
+            wrapped = (
+                '<kivyforge xmlns:android='
+                '"http://schemas.android.com/apk/res/android">'
+                f"{fragment}</kivyforge>"
+            )
+            try:
+                ET.fromstring(wrapped)
+            except ET.ParseError as exc:
+                raise ConfigError(
+                    f"[tool.kivy.android.manifest].{key} is not well-formed "
+                    f"XML: {exc}",
+                    key_path=f"tool.kivy.android.manifest.{key}",
+                    line=finder.line(key),
+                ) from exc
+        return fragment
+
+    return AndroidManifestConfig(
+        application=application,
+        activity=activity,
+        placeholders=dict(placeholders_raw),
+        extra_manifest_xml=_xml_fragment("extra_manifest_xml"),
+        extra_application_xml=_xml_fragment("extra_application_xml"),
+        extra_activity_xml=_xml_fragment("extra_activity_xml"),
+    )
+
+
+def _parse_android_signing(
+    android: dict, finder: _LineFinder
+) -> AndroidSigningConfig:
+    signing = android.get("signing")
+    if signing is None:
+        return AndroidSigningConfig()
+    if not isinstance(signing, dict):
+        raise ConfigError(
+            "[tool.kivy.android.signing] must be a table",
+            key_path="tool.kivy.android.signing",
+        )
+    for key in ("keystore", "key_alias", "store_password_env", "key_password_env"):
+        value = signing.get(key, "")
+        if not isinstance(value, str):
+            raise ConfigError(
+                f"[tool.kivy.android.signing].{key} must be a string",
+                key_path=f"tool.kivy.android.signing.{key}",
+                line=finder.line(key),
+            )
+    toggles: dict[str, bool] = {}
+    for key, default in (
+        ("v1_signing", False),
+        ("v2_signing", True),
+        ("v3_signing", True),
+        ("v4_signing", False),
+    ):
+        value = signing.get(key, default)
+        if not isinstance(value, bool):
+            raise ConfigError(
+                f"[tool.kivy.android.signing].{key} must be a bool",
+                key_path=f"tool.kivy.android.signing.{key}",
+                line=finder.line(key),
+            )
+        toggles[key] = value
+    return AndroidSigningConfig(
+        keystore=signing.get("keystore", ""),
+        key_alias=signing.get("key_alias", ""),
+        store_password_env=signing.get(
+            "store_password_env", DEFAULT_ANDROID_STORE_PASSWORD_ENV
+        ),
+        key_password_env=signing.get(
+            "key_password_env", DEFAULT_ANDROID_KEY_PASSWORD_ENV
+        ),
+        **toggles,
+    )
+
+
+def _parse_android_gradle_properties(
+    android: dict, finder: _LineFinder
+) -> dict[str, object]:
+    table = android.get("gradle_properties", {})
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.gradle_properties] must be a table",
+            key_path="tool.kivy.android.gradle_properties",
+        )
+    reserved = sorted(set(table) & RESERVED_ANDROID_GRADLE_PROPERTIES)
+    if reserved:
+        raise ConfigError(
+            f"[tool.kivy.android.gradle_properties] sets kivyforge-reserved "
+            f"key(s): {reserved}",
+            key_path="tool.kivy.android.gradle_properties",
+            hint="kivyforge manages these (android/01 §gradle_properties).",
+        )
+    return dict(table)
+
+
+def _parse_android_build_settings(
+    android: dict, finder: _LineFinder
+) -> AndroidBuildSettings:
+    # Rule 19: bool-or-"release" tri-states plus the debug_symbols enum.
+    table = android.get("build_settings")
+    if table is None:
+        return AndroidBuildSettings()
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.build_settings] must be a table",
+            key_path="tool.kivy.android.build_settings",
+        )
+
+    def _bool(key: str, default: bool) -> bool:
+        value = table.get(key, default)
+        if not isinstance(value, bool):
+            raise ConfigError(
+                f"[tool.kivy.android.build_settings].{key} must be a bool",
+                key_path=f"tool.kivy.android.build_settings.{key}",
+                line=finder.line(key),
+            )
+        return value
+
+    def _tri(key: str) -> bool | str:
+        value = table.get(key, ANDROID_RELEASE_ONLY)
+        if isinstance(value, bool) or value == ANDROID_RELEASE_ONLY:
+            return value
+        raise ConfigError(
+            f"[tool.kivy.android.build_settings].{key} must be a bool or the "
+            'string "release"',
+            key_path=f"tool.kivy.android.build_settings.{key}",
+            line=finder.line(key),
+        )
+
+    minify = _bool("minify", False)
+    shrink_resources = _bool("shrink_resources", False)
+    if shrink_resources and not minify:
+        raise ConfigError(
+            "[tool.kivy.android.build_settings].shrink_resources requires "
+            "minify = true",
+            key_path="tool.kivy.android.build_settings.shrink_resources",
+            line=finder.line("shrink_resources"),
+        )
+    debug_symbols = table.get("debug_symbols", "symbol_table")
+    if debug_symbols not in VALID_ANDROID_DEBUG_SYMBOLS:
+        valid = ", ".join(sorted(VALID_ANDROID_DEBUG_SYMBOLS))
+        raise ConfigError(
+            f"[tool.kivy.android.build_settings].debug_symbols "
+            f"{debug_symbols!r} is invalid",
+            key_path="tool.kivy.android.build_settings.debug_symbols",
+            line=finder.line("debug_symbols"),
+            hint=f"valid values are: {valid}.",
+        )
+    return AndroidBuildSettings(
+        minify=minify,
+        shrink_resources=shrink_resources,
+        multidex=_bool("multidex", True),
+        byte_compile=_tri("byte_compile"),
+        strip_source=_tri("strip_source"),
+        strip_native_libs=_tri("strip_native_libs"),
+        debug_symbols=debug_symbols,
     )
 
 

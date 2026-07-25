@@ -18,6 +18,7 @@ import click
 
 from ..config import ConfigError, load_config
 from ..lock.reader import LockError, is_in_sync
+from ..platforms.base import HostCapabilityError
 from ..platforms.ios.lock import (
     BuildError,
     build_lockfile,
@@ -44,9 +45,15 @@ class _LockOps:
     require_macos: bool
     require_linux: bool = False
     require_windows: bool = False
+    require_android: bool = False
     # Wheel+runtime backends (macOS/Linux) surface non-fatal lock warnings
     # (e.g. accepting a vendored plain linux_* wheel) via an on_warning callback.
     emits_warnings: bool = False
+    # Most backends resolve with pip alone, so `lock` runs anywhere and the
+    # result is committed. iOS is the exception: resolving declared Swift
+    # packages shells out to `swift package resolve`, which needs the Xcode
+    # toolchain, so the whole iOS workflow — lock included — is macOS-only.
+    requires_host_toolchain: bool = False
 
 
 def _lock_ops(platform: str) -> _LockOps:
@@ -62,6 +69,7 @@ def _lock_ops(platform: str) -> _LockOps:
             build_error=BuildError,
             require_ios=True,
             require_macos=False,
+            requires_host_toolchain=True,
         )
     if platform == "macos":
         from ..platforms.macos import lock as macos_lock
@@ -107,9 +115,33 @@ def _lock_ops(platform: str) -> _LockOps:
             require_windows=True,
             emits_warnings=True,
         )
+    if platform == "android":
+        from ..platforms.android.lock import builder as android_builder
+        from ..platforms.android.lock import reader as android_reader
+        from ..platforms.android.lock import writer as android_writer
+
+        return _LockOps(
+            build=android_builder.build_lockfile,
+            dumps=android_writer.dumps,
+            load=android_reader.load,
+            semantic_equal=android_builder.semantic_equal,
+            diff_summary=android_builder.diff_summary,
+            build_error=android_builder.BuildError,
+            require_ios=False,
+            require_macos=False,
+            require_android=True,
+        )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."
     )
+
+
+def _require_host_toolchain(backend) -> None:
+    """Gate `lock` for backends whose resolution needs a host toolchain."""
+    try:
+        backend.check_host_capability()
+    except HostCapabilityError as exc:
+        raise ToolchainError(str(exc)) from exc
 
 
 @click.command()
@@ -125,6 +157,8 @@ def lock(cli_platform: str | None, update: bool, offline: bool, check: bool) -> 
     """Generate pylock.<platform>.toml from pyproject.toml."""
     backend, project_root = resolve_target(cli_platform, verb="lock")
     ops = _lock_ops(backend.name)
+    if ops.requires_host_toolchain:
+        _require_host_toolchain(backend)
 
     pyproject = project_root / "pyproject.toml"
     pyproject_text = pyproject.read_text(encoding="utf-8")
@@ -137,6 +171,7 @@ def lock(cli_platform: str | None, update: bool, offline: bool, check: bool) -> 
             require_macos=ops.require_macos,
             require_linux=ops.require_linux,
             require_windows=ops.require_windows,
+            require_android=ops.require_android,
         )
     except ConfigError as exc:
         raise ToolchainError(exc.format()) from exc
@@ -206,11 +241,17 @@ def _build(
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    """Write to a tempfile, fsync, then rename (spec 02 step 5)."""
+    """Write to a tempfile, fsync, then rename (spec 02 step 5).
+
+    Always LF: a lock file is committed and compared across machines, so
+    letting the host's default line ending through would make a re-lock on
+    another OS rewrite every line. The lock must depend on the target, never
+    on who ran it.
+    """
     directory = path.parent
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".pylock.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())

@@ -58,6 +58,12 @@ def upgrade(
 
     if backend.name == "ios":
         _upgrade_ios(project_root, python_only, xcframeworks_only, name)
+    elif backend.name == "android":
+        if xcframeworks_only:
+            raise ToolchainError(
+                "--xcframeworks is iOS-only; Android uses --libs for .aar/.jar."
+            )
+        _upgrade_android(project_root, python_only, name)
     elif backend.name in ("macos", "linux", "windows"):
         if xcframeworks_only:
             raise ToolchainError(
@@ -70,6 +76,70 @@ def upgrade(
         raise ToolchainError(
             f"`kivyforge upgrade` does not support platform {backend.name!r} yet."
         )
+
+
+def _upgrade_android(
+    project_root: Path, python_only: bool, name: str | None
+) -> None:
+    """Re-fetch the pinned python.org runtime + .aar/.jar per the existing lock.
+
+    Does not reinstall wheels, regenerate the project, or invoke Gradle
+    (android/06 §upgrade): to take newer versions, edit pyproject.toml and
+    re-lock.
+    """
+    from ..platforms.android.lock import reader as android_reader
+
+    lock_path = project_root / "pylock.android.toml"
+    if not lock_path.is_file():
+        raise ToolchainError(
+            "pylock.android.toml not found. Run `kivyforge lock -p android` first."
+        )
+    try:
+        lock = android_reader.load(lock_path)
+    except LockError as exc:
+        raise ToolchainError(str(exc)) from exc
+
+    do_libs = not python_only
+    refreshed = skipped = 0
+    for runtime in lock.python_android:
+        if name and name not in (runtime.abi, "python"):
+            continue
+        if runtime.path:
+            skipped += 1
+            continue
+        click.echo(
+            f"Refreshing python.org runtime {runtime.version} ({runtime.abi}) ..."
+        )
+        fetch_artifact(
+            name=f"python-android-{runtime.abi}",
+            sha256=runtime.sha256,
+            filename=(runtime.url or "").rsplit("/", 1)[-1],
+            url=runtime.url,
+            project_root=project_root,
+            no_cache=True,
+        )
+        refreshed += 1
+    if do_libs:
+        for lib in lock.android_libs:
+            if name and name != lib.name:
+                continue
+            if lib.path:
+                skipped += 1
+                continue
+            click.echo(f"Refreshing {lib.kind} {lib.name} {lib.version} ...")
+            fetch_artifact(
+                name=lib.name,
+                sha256=lib.sha256,
+                filename=(lib.url or "").rsplit("/", 1)[-1],
+                url=lib.url,
+                project_root=project_root,
+                no_cache=True,
+            )
+            refreshed += 1
+    click.echo(
+        f"Refreshed {refreshed} artifact(s)"
+        + (f"; {skipped} vendored (path) entry(ies) skipped." if skipped else ".")
+    )
 
 
 # --------------------------------------------------------------------------- #

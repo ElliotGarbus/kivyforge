@@ -278,7 +278,8 @@ def resolve_device_destination(
         output_path = Path(fh.name)
     try:
         run_command(devicectl_list_json(output_path), runner=runner)
-        payload = json.loads(output_path.read_text())
+        # devicectl writes JSON as UTF-8 (device names may be non-ASCII).
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
     finally:
         output_path.unlink(missing_ok=True)
     devices = parse_devicectl_devices(payload)

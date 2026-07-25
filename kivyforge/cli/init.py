@@ -27,8 +27,11 @@ from pathlib import Path
 import click
 
 from ..config.model import (
+    DEFAULT_ANDROID_KEY_PASSWORD_ENV,
+    DEFAULT_ANDROID_STORE_PASSWORD_ENV,
     DEFAULT_WINDOWS_STORE_SCOPE,
     DEFAULT_WINDOWS_TIMESTAMP_URL,
+    AndroidSigningConfig,
     MacosSigningConfig,
     SigningConfig,
     WindowsSigningConfig,
@@ -42,6 +45,7 @@ from .init_writer import (
     has_platform_overlay,
     has_shared_table,
     normalize_package_name,
+    render_android_tables,
     render_kivy_tables,
     render_linux_tables,
     render_macos_tables,
@@ -278,6 +282,25 @@ def _render_overlay(
             icon_source=_read_icon_source(table) if preserve else None,
             include_shared=include_shared,
         )
+    if platform_name == "android":
+        splash_source, splash_background = (
+            _read_splash(table) if preserve else (None, None)
+        )
+        package = table.get("package") if preserve else None
+        sdl = table.get("sdl") if preserve else None
+        return render_android_tables(
+            app_slug,
+            signing=_read_android_signing(table) if preserve else None,
+            python_version=_read_python_version(table) if preserve else None,
+            has_kivy=has_kivy,
+            package=package if isinstance(package, str) and package else None,
+            abis=_read_str_list(table, "abis") if preserve else None,
+            sdl=sdl if isinstance(sdl, int) and not isinstance(sdl, bool) else None,
+            icon_source=_read_icon_source(table) if preserve else None,
+            splash_source=splash_source,
+            splash_background=splash_background,
+            include_shared=include_shared,
+        )
     raise ToolchainError(
         f"`kivyforge init` does not support platform {platform_name!r} yet."
     )
@@ -405,6 +428,25 @@ def _read_windows_signing(table: dict) -> WindowsSigningConfig | None:
         thumbprint=thumbprint,
         timestamp_url=signing.get("timestamp_url", DEFAULT_WINDOWS_TIMESTAMP_URL),
         store_scope=signing.get("store_scope", DEFAULT_WINDOWS_STORE_SCOPE),
+    )
+
+
+def _read_android_signing(table: dict) -> AndroidSigningConfig | None:
+    signing = table.get("signing")
+    if not isinstance(signing, dict):
+        return None
+    keystore = signing.get("keystore", "")
+    if not keystore:
+        return None
+    return AndroidSigningConfig(
+        keystore=keystore,
+        key_alias=signing.get("key_alias", ""),
+        store_password_env=signing.get(
+            "store_password_env", DEFAULT_ANDROID_STORE_PASSWORD_ENV
+        ),
+        key_password_env=signing.get(
+            "key_password_env", DEFAULT_ANDROID_KEY_PASSWORD_ENV
+        ),
     )
 
 

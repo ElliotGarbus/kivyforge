@@ -34,20 +34,27 @@ separately at the end.
 | **Pending** | Not yet exercised; expected to work by construction but unproven. |
 | **By construction** | No separate run needed — the path is identical to a Validated/Prototype one except for a mechanically-substituted component (documented in the row). |
 
-> **Honest-status note.** Per the
-> [spike findings](../../dev/pyjnius-android-wheel-spike-findings.md), no
-> combination is marked **Validated** yet: the spike's on-device runs used a p4a
-> test harness (not the kivyforge stack), and the first-party PyPI pyjnius wheel
-> and the SDL3-host run are still open. Rows reflect
-> **Prototype / Pending** accordingly. The [contract smoke test](06-cli-android.md#--smoke-the-contract-smoke-test)
-> (`kivyforge run --smoke`) is the mechanism that promotes a row to **Validated**
-> once it runs green in first-party CI.
+> **Honest-status note (updated 2026-07-24).** The
+> [contract smoke test](06-cli-android.md#--smoke-the-contract-smoke-test)
+> (`kivyforge run --smoke`) now runs **green under the first-party kivyforge
+> stack** — a kivyforge-generated project, built and run by `kivyforge
+> build`/`run`, not p4a — on an **x86_64 API-35 emulator**
+> ([load-model findings, Phase 5](../../dev/android-loadmodel-findings.md)). That
+> promoted the **CPython 3.14 / Kivy 2.3.1 / SDL2 / x86_64** cell to
+> **Validated (emulator)**.
+>
+> **Both earlier caveats are now closed.** The Kivy 2.3.1 wheel is
+> **first-party** (cibuildwheel, 16 KB-aligned, official SDL 2.32.10 grafted
+> with sonames intact), and **arm64 is validated on a physical device** — the
+> contract smoke test passes on a Pixel 8a (Android 16 / API 36) and the app
+> renders there. Both locked ABIs now pass every leg of the gate
+> (`EXT_OK`, `PROXY_OK`, `KIVY_CONTRACT_OK`).
 
 ## Runtime × framework matrix
 
 | CPython | Kivy | SDL | pyjnius (`invoke0` contract) | Bootstrap template | Status | Evidence | Revalidate on |
 |---------|------|-----|------------------------------|--------------------|--------|----------|---------------|
-| 3.14 | 2.3.1 (kivyforge-built local wheel) | SDL2 | `invoke0` contract **v1** | v1 | **Prototype** | [spike prototype](../../dev/pyjnius-android-wheel-spike-findings.md): x86_64 emulator + arm64 device (Pixel 8a); plus community `android_24` wheels | new pyjnius release (esp. one moving the `invoke0` marker); new Kivy 2.x; CPython 3.14 point releases that change the ABI tag; new AGP/NDK major |
+| 3.14 | 2.3.1 (first-party wheel) | SDL2 (2.32.10, official) | `invoke0` contract **v1** | v1 | **Validated (x86_64 emulator + arm64 device)** | `kivyforge run --smoke` green on an x86_64 API-31 emulator **and** a Pixel 8a (Android 16 / API 36); app renders on-device; both wheels first-party cibuildwheel, 16 KB-aligned ([findings](../../dev/android-loadmodel-findings.md), [recipe](../../dev/android-wheel-build-recipe.md)) | new pyjnius release (esp. one moving the `invoke0` marker); new Kivy 2.x; CPython 3.14 point releases that change the ABI tag; new AGP/NDK major; **any SDL release change — the Java glue and `libSDL2.so` must move together** |
 | 3.14 | 3.0 | SDL3 | `invoke0` contract **v1** | v1 | **Pending** | tier-1 `SDL_GetAndroidJNIEnv` path is identical **by construction** to the SDL2 path, but not yet exercised | Kivy 3.0 GA; first SDL3 on-device run; any change to the SDL3 Java glue |
 | 3.15 | 2.3.1 / 3.0 | per Kivy | `invoke0` contract **v1** (pending wheel) | v1 | **Pending** | CPython 3.15 is pre-release; `android_*` wheels for `cp315` not yet published | CPython 3.15 GA; availability of `cp315` Kivy/pyjnius wheels |
 
@@ -69,8 +76,8 @@ and kivyforge does not support `armeabi-v7a` / `x86`.
 
 | ABI | Role | minSdk floor | Wheel-tag rule | Status |
 |-----|------|--------------|----------------|--------|
-| `arm64_v8a` | **shipping target** (physical devices) | 24 | `wheel_tag_api ≤ min_sdk` | **Prototype** (spike arm64 device) |
-| `x86_64` | emulator / CI | 24 | `wheel_tag_api ≤ min_sdk` | **Prototype** (spike x86_64 emulator) |
+| `arm64_v8a` | **shipping target** (physical devices) | 24 | `wheel_tag_api ≤ min_sdk` | **Validated** (Pixel 8a, Android 16 / API 36) |
+| `x86_64` | emulator / CI | 24 | `wheel_tag_api ≤ min_sdk` | **Validated** (x86_64 emulator, API 31) |
 | `armeabi-v7a`, `x86` (32-bit) | — | — | — | **Unsupported** (no 64-bit-only python.org runtime) |
 
 - **minSdk floor is 24** — the first API level with RUNPATH (auditwheel's grafted-`.so` requirement), ~99% device coverage, and the floor the python.org runtime and the Android wheel-tag ecosystem target. Rejected below 24.

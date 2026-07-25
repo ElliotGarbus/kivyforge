@@ -15,7 +15,12 @@ import re
 
 from packaging.requirements import InvalidRequirement, Requirement
 
-from ..config.model import MacosSigningConfig, SigningConfig, WindowsSigningConfig
+from ..config.model import (
+    AndroidSigningConfig,
+    MacosSigningConfig,
+    SigningConfig,
+    WindowsSigningConfig,
+)
 
 # Default Python.xcframework version init seeds (spec 01).
 DEFAULT_PYTHON_VERSION = "3.15.0b2"
@@ -23,6 +28,9 @@ DEFAULT_DEPLOYMENT_TARGET = "13.0"
 # Default python-build-standalone version seeded for macOS/Linux (desktop
 # targets pin a released runtime, not a beta xcframework).
 DEFAULT_DESKTOP_PYTHON_VERSION = "3.13.14"
+# Default python.org Android embeddable-package version init seeds (android/01;
+# the load-model prototype validated 3.14.6 — android-loadmodel-findings.md).
+DEFAULT_ANDROID_PYTHON_VERSION = "3.14.6"
 
 # Exclude block emitted when kivy is a direct dependency.  Each entry is
 # documented with the Kivy feature that requires it so users know which lines
@@ -583,6 +591,114 @@ def render_windows_tables(
             '# store_scope = "current_user"  # or "machine" (adds signtool /sm)',
         ]
     lines += _WINDOWS_NATIVE_BINARIES_STUB
+    return "\n".join(lines) + "\n"
+
+
+def render_android_tables(
+    app_slug: str,
+    signing: AndroidSigningConfig | None = None,
+    *,
+    python_version: str | None = None,
+    has_kivy: bool = False,
+    package: str | None = None,
+    abis: list[str] | tuple[str, ...] | None = None,
+    sdl: int | None = None,
+    icon_source: str | None = None,
+    splash_source: str | None = None,
+    splash_background: str | None = None,
+    include_shared: bool = True,
+) -> str:
+    """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.android]`` block.
+
+    Seeds per android/06 §init: ``package = "org.example.<slug>"`` with a
+    change-me comment, ``min_sdk = 24``, the latest known target/compile SDK,
+    both 64-bit ABIs, ``INTERNET`` as an ordinary editable permission, and
+    commented TODO stubs for icons/splash/signing/find_links. On ``--force``
+    the caller passes the preserved values (package, abis, sdl, python,
+    icon/splash sources, signing).
+    """
+    display = app_slug.replace("_", " ").title()
+    if abis is not None:
+        abis_toml = ", ".join(f'"{a}"' for a in abis)
+        abis_line = f"abis = [{abis_toml}]"
+    else:
+        abis_line = 'abis = ["arm64_v8a", "x86_64"]'
+    package_line = (
+        f'package = "{package}"'
+        if package
+        else f'package = "org.example.{app_slug}"  '
+        "# TODO: your applicationId (reverse-DNS)"
+    )
+    lines: list[str] = []
+    if include_shared:
+        lines += [
+            "[tool.kivy]",
+            f'display_name = "{display}"',
+            'app_dir = "src"',
+            'entry_point = "main"',
+            'orientation = ["portrait"]',
+            "",
+        ]
+    lines += [
+        "[tool.kivy.android]",
+        "schema_version = 1",
+        package_line,
+        "version_code = 1  "
+        '# or "auto" to derive from [project].version (android/01)',
+        "min_sdk = 24",
+        "target_sdk = 35",
+        f"sdl = {sdl if sdl is not None else 2}  "
+        "# 2 = Kivy 2.3.1 (SDL2); 3 = Kivy 3.0 (SDL3)",
+        abis_line,
+        '# find_links = ["wheels"]  '
+        "# TODO: vendored android wheels (kivy/pyjnius) until they are on PyPI",
+    ]
+    if has_kivy:
+        lines += [""] + _KIVY_EXCLUDE_LINES
+    lines += [
+        "",
+        "[tool.kivy.android.python]",
+        f'version = "{python_version or DEFAULT_ANDROID_PYTHON_VERSION}"',
+        "",
+        "[tool.kivy.android.permissions]",
+        'uses = ["INTERNET"]  # ordinary editable entry; delete it if unwanted',
+        "",
+        "[tool.kivy.android.icons]",
+    ]
+    if icon_source is not None:
+        lines.append(f'source = "{icon_source}"')
+    else:
+        lines.append(
+            '# source = "assets/icon.png"  '
+            "# TODO: 1024x1024 PNG (adaptive-icon foreground)"
+        )
+    lines += ["", "[tool.kivy.android.splash]"]
+    if splash_source is not None:
+        lines.append(f'source = "{splash_source}"')
+        if splash_background is not None:
+            lines.append(f'background = "{splash_background}"')
+    else:
+        lines += [
+            '# source = "assets/splash.png"  '
+            "# TODO: centered splash icon (PNG or AnimatedVectorDrawable XML)",
+            '# background = "#000000"',
+        ]
+    lines += ["", "[tool.kivy.android.signing]"]
+    if signing is not None and signing.keystore:
+        lines.append(f'keystore = "{signing.keystore}"')
+        lines.append(f'key_alias = "{signing.key_alias}"')
+        if signing.store_password_env != "KIVYFORGE_KEYSTORE_PASSWORD":
+            lines.append(f'store_password_env = "{signing.store_password_env}"')
+        if signing.key_password_env != "KIVYFORGE_KEY_PASSWORD":
+            lines.append(f'key_password_env = "{signing.key_password_env}"')
+    else:
+        lines += [
+            '# keystore = "release.keystore"  '
+            "# TODO: release keystore (debug builds need none)",
+            '# key_alias = "upload"',
+            "# passwords come from KIVYFORGE_KEYSTORE_PASSWORD / "
+            "KIVYFORGE_KEY_PASSWORD",
+        ]
     return "\n".join(lines) + "\n"
 
 

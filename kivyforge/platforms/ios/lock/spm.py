@@ -96,7 +96,10 @@ class XcodeSpmResolver:
                 )
             resolved_path = tmpdir / "Package.resolved"
             try:
-                pins = parse_package_resolved(resolved_path.read_text())
+                # Package.resolved is UTF-8 JSON; don't trust the locale codec.
+                pins = parse_package_resolved(
+                    resolved_path.read_text(encoding="utf-8")
+                )
             except OSError as exc:
                 raise SpmResolverError(
                     f"swift package resolve produced no Package.resolved: {exc}"

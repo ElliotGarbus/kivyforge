@@ -20,8 +20,8 @@ their per-platform workflows behind a single declarative configuration.
 The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
 Linux, macOS, and Windows**.
 
-> **Status: early development — iOS + macOS + Linux + Windows.** kivyforge
-> targets **iOS** (resolve into `pylock.ios.toml`, download the official
+> **Status: early development — iOS + macOS + Linux + Windows + Android.**
+> kivyforge targets **iOS** (resolve into `pylock.ios.toml`, download the official
 > [`Python.xcframework`](https://www.python.org/downloads/) + prebuilt iOS
 > wheels, generate an [Xcode](https://developer.apple.com/xcode/) project),
 > **macOS** (resolve into `pylock.macos.toml`, bundle a relocatable
@@ -29,10 +29,15 @@ Linux, macOS, and Windows**.
 > CPython + wheels into a signed, double-clickable `.app`), **Linux** (resolve
 > into `pylock.linux.toml`, bundle a PBS gnu/glibc CPython + manylinux wheels into
 > an [AppImage](https://appimage.org/) — with a run-from-folder AppDir substrate),
-> and **Windows** (resolve into `pylock.windows.toml`, bundle a PBS MSVC CPython +
+> **Windows** (resolve into `pylock.windows.toml`, bundle a PBS MSVC CPython +
 > `win_amd64` wheels into a run-from-folder `onedir` with a windowed launcher
-> `.exe`, optionally Authenticode-signed). Android is planned. If you need a
-> shipping toolchain today, use kivy-ios 2.x, python-for-android, or buildozer.
+> `.exe`, optionally Authenticode-signed), and **Android** (resolve into
+> `pylock.android.toml`, assemble the official
+> [python.org Android runtime](https://www.python.org/downloads/android/) +
+> per-ABI `android_*` wheels into a generated Gradle project, and produce a
+> signed `.apk`/`.aab` — with pyjnius as a prebuilt wheel, no per-app
+> compilation). If you need a shipping toolchain today, use kivy-ios 2.x,
+> python-for-android, or buildozer.
 
 ### Currently supported targets
 

@@ -1,0 +1,90 @@
+lock-version = "1.0"
+created-by = "kivyforge"
+requires-python = ">=3.14"
+extras = []
+dependency-groups = []
+default-groups = []
+
+[[packages]]
+name = "filetype"
+version = "1.2.0"
+
+[[packages.wheels]]
+name = "filetype-1.2.0-py2.py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/18/79/1b8fa1bb3568781e84c9200f951c735f3f157429f44be0495da55894d620/filetype-1.2.0-py2.py3-none-any.whl"
+hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25" }
+
+[[packages]]
+name = "Kivy"
+version = "2.3.1"
+dependencies = [{ name = "filetype" }]
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl"
+path = "../../wheels/android/Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl"
+hashes = { sha256 = "aefd0b07de1de949ede1c9f52a8ef2f2adeedc3991cb325b659d35b53218dc75" }
+
+[[packages.wheels]]
+name = "Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl"
+path = "../../wheels/android/Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl"
+hashes = { sha256 = "f3ef14410f1395374a274a2c8d0ee341fce5dbd72eda29c0fa69021f4ab63dd3" }
+
+[[packages]]
+name = "pyjnius"
+version = "1.7.0"
+dependencies = [{ name = "pytest" }, { name = "pytest-cov" }, { name = "pycodestyle" }, { name = "coveralls" }, { name = "pytest-rerunfailures" }]
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl"
+path = "../../wheels/android/pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl"
+hashes = { sha256 = "232b830e12e334909bec4c797e3e6d12f98d1c119dd622bcb570a942143e99c8" }
+
+[[packages.wheels]]
+name = "pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
+path = "../../wheels/android/pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
+hashes = { sha256 = "96b35a63ba4427527fa34ad66a6d1d0881ee7b029fcfb38f9314cf4f0b28fcff" }
+
+[tool.kivyforge]
+schema_version = 1
+kivyforge_version = "3.0.0.dev0"
+generated_at = "2026-07-24T13:22:53Z"
+pyproject_sha256 = "cf529a0dec4e1b354c4bb88744e641c5d51e0125eff234dce9e1445bf3fef512"
+tool_kivy_android_schema_version = 1
+sdl = 2
+
+[[tool.kivyforge.python_android]]
+version = "3.14.6"
+abi = "arm64_v8a"
+url = "https://www.python.org/ftp/python/3.14.6/python-3.14.6-aarch64-linux-android.tar.gz"
+sha256 = "38bbe77d3167b5cd554e03b1021324926f09f3825202b065951dd7638e9c37e5"
+min_api = 24
+
+[[tool.kivyforge.python_android]]
+version = "3.14.6"
+abi = "x86_64"
+url = "https://www.python.org/ftp/python/3.14.6/python-3.14.6-x86_64-linux-android.tar.gz"
+sha256 = "e04eb26607627e68d148f89de793372f54a345c91b13628567f24abcdd3bfa3e"
+min_api = 24
+
+[tool.kivyforge.gradle]
+dependencies = ["com.google.zxing:core:3.5.3"]
+repositories = []
+
+[[tool.kivyforge.gradle.resolved]]
+coordinate = "com.google.zxing:core:3.5.3"
+artifacts = [
+    { name = "core-3.5.3.jar", sha256 = "8d8064c1636fdaef7189dd9055c7d59950a8940a12f2293956446ec3c109fd82" },
+    { name = "core-3.5.3.pom", sha256 = "d8a12e8bf69054e2add23d7953414eaefddacec930140a8d144d1fac9e62b7df" },
+]
+
+[[tool.kivyforge.gradle.resolved]]
+coordinate = "com.google.zxing:zxing-parent:3.5.3"
+artifacts = [
+    { name = "zxing-parent-3.5.3.pom", sha256 = "5bb8a5a43981c4dc1097a414cbfb4c1d4bcfe42f722d23a003c45d8b1b8d4def" },
+]

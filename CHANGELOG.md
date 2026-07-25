@@ -2,6 +2,55 @@
 
 ## [Unreleased]
 
+### Android backend (`.apk` / `.aab`)
+
+- **New `android` target.** `kivyforge lock/build/run/package -p android`
+  resolves into `pylock.android.toml`, assembles the official
+  [python.org Android runtime](https://www.python.org/downloads/android/) (per
+  ABI) plus per-ABI `android_*` wheels into a generated **Gradle/AGP** project,
+  and produces a signed **`.apk`** (sideload/CI) or **`.aab`** (Play upload). A
+  **wheel-assembly + Gradle-drive** backend — no python-for-android recipe
+  system, no per-app C-extension compilation. Builds on Windows, macOS, or Linux
+  (consumes prebuilt wheels + runtime; drives the SDK/NDK/Gradle). 64-bit only
+  (`arm64_v8a`, `x86_64` — the python.org runtime ships no 32-bit build).
+- **`[tool.kivy.android]` overlay** — `package` (applicationId), `version_code`
+  (explicit or `"auto"` derived from `[project].version`), `min_sdk`/`target_sdk`/
+  `compile_sdk`, `sdl` (2 = Kivy 2.3.1, 3 = Kivy 3.0), `abis`, adaptive
+  `icons`/`splash` (AndroidX SplashScreen), `permissions` (+ implied
+  `<uses-feature>` synthesis), `services`/`activities`/`intent_filters`, the
+  manifest passthrough (+ raw-XML), `native.aars`/`.jars` and Maven `gradle`
+  dependencies, `include_files`, `src` (Java/Kotlin), `signing` (v1–v4 schemes),
+  and `build_settings` (byte-compile/strip/R8/debug-symbols). Loader-validated
+  (rules 1–21).
+- **kivyforge-owned bootstrap** — a generated `org.kivy.android.PythonActivity`
+  (extends stock SDL2 `SDLActivity`), the pyjnius `NativeInvocationHandler`
+  matched pair (with a hard `invoke0` contract gate), the Kivy-compat shims
+  (`org.renpy.android.Hardware` + `mActivity`), an `SDL_main` native launcher
+  (NDK-compiled per ABI), and a `sys.meta_path` finder over flattened extension
+  `.so`s in `jniLibs/`. **pyjnius ships as a prebuilt Java-free wheel** (SDL-
+  agnostic, `JNIEnv` resolved at runtime).
+- **Four artifact channels** — `android_*` wheels (PyPI / supplemental indexes /
+  vendored `find_links`), the python.org runtime, `.aar`/`.jar` archives, and
+  Maven coordinates (Gradle resolves; the graph is SHA-256-recorded in the lock).
+- **Mandatory signing** — debug builds use the auto-managed debug keystore;
+  `package` requires a release keystore (env-var passwords, never in
+  `pyproject.toml`), with a signing pre-flight and a release manifest-policy
+  pre-flight (exported components, `debuggable`, placeholder package, …) that
+  fail before Gradle.
+- **`kivyforge run --smoke`** — a generated instrumented contract test validates
+  the extension-module finder + the pyjnius `invoke0` glue on a real
+  device/emulator; the promotion mechanism for the compatibility matrix.
+- **`kivyforge doctor -p android`** — JDK/SDK/build-tools/NDK/emulator/adb, plus
+  project checks (SDL↔Kivy, the pyjnius contract, a hermetic **16 KB
+  ELF-alignment scanner**, ABI coverage, signing, lock-host reachability).
+- **Examples** — `hello-android`, `pyjnius-deviceinfo` (device info via pyjnius),
+  and `qr-maven` (Google ZXing via the Maven channel + a Python-implements-Java
+  `invoke0` round-trip), plus `examples/verify-android.ps1`.
+- **Interim wheels.** Kivy 2.3.1 + pyjnius are vendored under
+  `examples/wheels/android/` until first-party wheels reach PyPI. The pyjnius
+  wheel is first-party (cibuildwheel, 16 KB-aligned); the Kivy wheel is interim
+  (p4a-derived, 4 KB-aligned — `doctor` flags it) pending a cibuildwheel build.
+
 ### Windows backend (onedir folder)
 
 - **New `windows` target.** `kivyforge lock/build/run/package -p windows`

@@ -25,6 +25,7 @@ from kivyforge.cli._common import (
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import IconSourceError
 from kivyforge.lock import LockError, is_in_sync
+from kivyforge.platforms.base import HostCapabilityError
 
 from .lock import load
 from .materialize import materialize_project
@@ -68,6 +69,7 @@ def ios_build(
     export_method: str,
 ) -> None:
     """Download artifacts, generate the Xcode project, and optionally build it."""
+    _require_macos_host()
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
     config = _load_config(project_root / "pyproject.toml")
@@ -297,6 +299,21 @@ def _encode_last_upgrade_check(version: str) -> str | None:
     return str(major * 100 + minor * 10 + patch)
 
 
+def _require_macos_host() -> None:
+    """Gate the Xcode-bound verbs (mirrors the macOS/Linux/Windows backends).
+
+    ``IosPlatform.check_host_capability`` has always described this rule; until
+    now nothing called it, so an off-macOS invocation failed later with
+    whatever error xcodebuild or SPM happened to raise first.
+    """
+    from kivyforge.platforms import get_platform
+
+    try:
+        get_platform("ios").check_host_capability()
+    except HostCapabilityError as exc:
+        raise ToolchainError(str(exc)) from exc
+
+
 def _load_config(pyproject: Path):
     try:
         return load_config(pyproject)
@@ -325,6 +342,7 @@ def ios_run(
     no_build: bool,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
+    _require_macos_host()
     try:
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:
@@ -405,6 +423,7 @@ def ios_package(
     no_cache: bool,
 ) -> None:
     """Build the release archive and export a signed ``.ipa``."""
+    _require_macos_host()
     config = _load_config(project_root / "pyproject.toml")
     try:
         prepare_build(
@@ -434,6 +453,7 @@ def ios_package(
 
 def ios_open(project_root: Path) -> None:
     """Open ``<app>-ios/<app>.xcodeproj`` in Xcode."""
+    _require_macos_host()
     try:
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:

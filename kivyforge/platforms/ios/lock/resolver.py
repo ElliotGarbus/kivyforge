@@ -8,6 +8,14 @@ simulator architectures default to ``arm64`` + ``x86_64`` and are configurable
 via ``[tool.kivy.ios].simulator_archs`` (a project that no longer needs the
 Intel-host simulator can drop ``x86_64``).
 
+Host-independence covers *marker evaluation*, not just wheel tags. pip's
+``--platform`` selects acceptable tags but leaves ``sys_platform`` and friends
+describing the macOS host running pip, which would wrongly admit
+``sys_platform == "darwin"`` dependencies and — silently — drop
+``sys_platform == "ios"`` ones. Resolution therefore runs through
+``lock/_pip_shim.py``, which retargets ``packaging``'s marker environment at
+the iOS slice (see ``markers.py``) before handing off to pip.
+
 ``pip`` is the backend (validated by the Phase 0 spike: see
 docs/dev/resolver-findings.md). The backend is abstracted behind the
 ``Resolver`` protocol so unit tests can inject a fake resolver and stay hermetic.
@@ -17,6 +25,7 @@ The platform-neutral pip helpers are shared from ``kivyforge.lock.resolver``.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -24,15 +33,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from kivyforge.lock import _pip_shim
+from kivyforge.lock._pip_shim import MARKER_ENV_VAR
 from kivyforge.lock.model import canonical_name
 from kivyforge.lock.resolver import (
     MIN_PIP_VERSION,
-    _dep_names,
     abi_tags,
+    dep_names_for_environment,
     pip_python_version,
     pip_version,
     version_str,
 )
+
+from .markers import ios_marker_environment
+
+# Run by path, not ``-m``: the shim imports nothing from kivyforge, so it also
+# works when resolving with an interpreter that only has pip installed.
+_SHIM = Path(_pip_shim.__file__)
 
 # iOS build slices (spec 02). The device slice is always arm64 — there is no
 # 32-bit iOS — while the simulator slices are driven by the project's configured
@@ -131,13 +148,20 @@ class PipResolver:
         if not requirements:
             return []
         self._require_modern_pip()
+        suffixes = slice_suffixes(simulator_archs)
         tags = slice_tags(deployment_target, simulator_archs)
         abis = abi_tags(python_version)
         # name -> ResolvedPackage (merged across slices)
         merged: dict[str, ResolvedPackage] = {}
         seen_filenames: dict[str, set[str]] = {}
 
-        for tag in tags:
+        for suffix, tag in zip(suffixes, tags):
+            # Markers are evaluated for the *target* slice, not the macOS host
+            # running pip (see markers.py); platform_machine differs between
+            # the arm64 and x86_64 simulator slices.
+            environment = ios_marker_environment(
+                python_version=python_version, slice_suffix=suffix
+            )
             report = self._run_report(
                 requirements,
                 python_version=python_version,
@@ -146,9 +170,10 @@ class PipResolver:
                 extra_index_urls=extra_index_urls,
                 find_links=find_links or [],
                 offline=offline,
+                marker_environment=environment,
             )
             for item in report.get("install", []):
-                self._absorb(item, merged, seen_filenames)
+                self._absorb(item, merged, seen_filenames, environment)
 
         return list(merged.values())
 
@@ -163,7 +188,7 @@ class PipResolver:
                 f"  Upgrade it: {self._python} -m pip install --upgrade pip"
             )
 
-    def _absorb(self, item, merged, seen_filenames) -> None:
+    def _absorb(self, item, merged, seen_filenames, environment) -> None:
         meta = item.get("metadata", {})
         name = meta.get("name")
         version = meta.get("version")
@@ -186,7 +211,9 @@ class PipResolver:
                 name=name,
                 version=version,
                 requires_python=meta.get("requires_python"),
-                dependencies=_dep_names(meta.get("requires_dist", [])),
+                dependencies=dep_names_for_environment(
+                    meta.get("requires_dist", []), environment
+                ),
             )
             merged[key] = pkg
             seen_filenames[key] = set()
@@ -216,13 +243,15 @@ class PipResolver:
         extra_index_urls: list[str],
         find_links: list[str],
         offline: bool,
+        marker_environment: dict[str, str],
     ) -> dict:
         with tempfile.TemporaryDirectory(prefix="kivy-lock-") as tmp:
             report_path = Path(tmp) / "report.json"
+            # Not "-m pip": the shim retargets marker evaluation at the iOS
+            # slice first, then runs pip unchanged (see lock/_pip_shim.py).
             cmd = [
                 self._python,
-                "-m",
-                "pip",
+                str(_SHIM),
                 "install",
                 "--dry-run",
                 "--ignore-installed",
@@ -248,7 +277,9 @@ class PipResolver:
                 cmd += ["--no-index"]
             cmd += list(requirements)
 
-            proc = subprocess.run(cmd, capture_output=True, text=True)
+            env = dict(os.environ)
+            env[MARKER_ENV_VAR] = json.dumps(marker_environment)
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
             if proc.returncode != 0:
                 raise ResolverError(
                     f"pip could not resolve the iOS slice {platform_tag!r}.\n"
@@ -256,7 +287,9 @@ class PipResolver:
                     f"slice upstream.\n  pip said:\n{_indent(proc.stderr or proc.stdout)}"
                 )
             try:
-                return json.loads(report_path.read_text())
+                # pip writes the report as UTF-8; never trust the locale codec
+                # (cp1252 on Windows chokes on non-ASCII package metadata).
+                return json.loads(report_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise ResolverError(f"could not read pip report: {exc}") from exc
 

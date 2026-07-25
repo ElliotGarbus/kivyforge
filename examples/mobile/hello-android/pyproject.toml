@@ -1,0 +1,32 @@
+[project]
+name = "hello-android"
+version = "1.0.0"
+description = "The smallest kivyforge Android app"
+requires-python = ">=3.14"
+dependencies = [
+    "kivy==2.3.1",
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "Hello Android"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.helloandroid"
+min_sdk = 24
+target_sdk = 35
+sdl = 2
+abis = ["arm64_v8a", "x86_64"]
+find_links = ["../../wheels/android"]
+
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"
+
+[tool.kivy.android.permissions]
+uses = ["INTERNET"]

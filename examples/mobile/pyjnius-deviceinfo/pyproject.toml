@@ -1,0 +1,39 @@
+[project]
+name = "pyjnius-deviceinfo"
+version = "1.0.0"
+description = "Read Android device info from Python via pyjnius"
+requires-python = ">=3.14"
+dependencies = [
+    "kivy==2.3.1",
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "Device Info"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.deviceinfo"
+version_code = "auto"
+min_sdk = 24
+target_sdk = 35
+sdl = 2
+abis = ["arm64_v8a", "x86_64"]
+# Kivy 2.3.1 + pyjnius are cross-built and vendored until they land on PyPI.
+find_links = ["../../wheels/android"]
+
+# Kivy's wheel declares deps a bundled app can't use on Android.
+exclude = [
+    "kivy-garden",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.android.python]
+version = "3.14.6"
+
+[tool.kivy.android.permissions]
+uses = ["INTERNET"]

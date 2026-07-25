@@ -651,7 +651,8 @@ class TestPlatformAware:
         assert "ios" not in data["tool"]["kivy"]
 
     def test_unknown_env_platform_is_actionable(self, runner, tmp_path, monkeypatch):
-        monkeypatch.setenv("KIVYFORGE_PLATFORM", "android")
+        # "beos" stays unknown forever; "android" graduated to a real backend.
+        monkeypatch.setenv("KIVYFORGE_PLATFORM", "beos")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             pp = init_mod.Path(fs) / "pyproject.toml"
             pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')

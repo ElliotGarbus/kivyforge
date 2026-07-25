@@ -1,0 +1,41 @@
+[project]
+name = "qr-maven"
+version = "1.0.0"
+description = "Render a QR code with a Maven-resolved Java library (ZXing) via pyjnius"
+requires-python = ">=3.14"
+dependencies = [
+    "kivy==2.3.1",
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "QR Maven"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.qrmaven"
+version_code = "auto"
+min_sdk = 24
+target_sdk = 35
+sdl = 2
+abis = ["arm64_v8a", "x86_64"]
+find_links = ["../../wheels/android"]
+
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"
+
+[tool.kivy.android.permissions]
+uses = ["INTERNET"]
+
+# The downloaded Java library: ZXing "core", resolved from Maven Central by
+# coordinate (channel 4). `kivyforge lock` runs Gradle once to pin the full
+# resolved graph by SHA-256; a JDK is required for that lock step (see README).
+[tool.kivy.android.gradle]
+dependencies = [
+    "com.google.zxing:core:3.5.3",
+]

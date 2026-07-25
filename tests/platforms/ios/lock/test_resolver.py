@@ -14,11 +14,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from kivyforge.lock.resolver import _dep_names
+from kivyforge.platforms.ios.lock.markers import ios_marker_environment
 from kivyforge.platforms.ios.lock.resolver import (
     MIN_PIP_VERSION,
     PipResolver,
     ResolverError,
-    _dep_names,
     _indent,
     abi_tags,
     get_resolver,
@@ -354,6 +355,13 @@ def _wheel_item(
     }
 
 
+# The device slice's target marker environment; resolution is always
+# evaluated for the target, never for the macOS host running pip.
+_TARGET_ENV = ios_marker_environment(
+    python_version="3.15.0", slice_suffix="arm64_iphoneos"
+)
+
+
 class TestPipResolverAbsorb:
     def _absorb(self, item, merged=None, seen=None):
         pr = PipResolver()
@@ -361,7 +369,7 @@ class TestPipResolverAbsorb:
             merged = {}
         if seen is None:
             seen = {}
-        pr._absorb(item, merged, seen)
+        pr._absorb(item, merged, seen, _TARGET_ENV)
         return merged, seen
 
     def test_non_wheel_url_raises(self):
@@ -384,8 +392,8 @@ class TestPipResolverAbsorb:
         merged: dict = {}
         seen: dict = {}
         pr = PipResolver()
-        pr._absorb(item, merged, seen)
-        pr._absorb(item, merged, seen)  # same item again
+        pr._absorb(item, merged, seen, _TARGET_ENV)
+        pr._absorb(item, merged, seen, _TARGET_ENV)  # same item again
         assert len(merged["kivy"].wheels) == 1
 
     def test_second_slice_wheel_appended(self):
@@ -398,8 +406,8 @@ class TestPipResolverAbsorb:
         item2 = _wheel_item(
             filename="kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
         )
-        pr._absorb(item1, merged, seen)
-        pr._absorb(item2, merged, seen)
+        pr._absorb(item1, merged, seen, _TARGET_ENV)
+        pr._absorb(item2, merged, seen, _TARGET_ENV)
         assert len(merged["kivy"].wheels) == 2
 
     def test_version_mismatch_across_slices_raises(self):
@@ -414,9 +422,9 @@ class TestPipResolverAbsorb:
             version="3.0.1",
             filename="kivy-3.0.1-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl",
         )
-        pr._absorb(device, merged, seen)
+        pr._absorb(device, merged, seen, _TARGET_ENV)
         with pytest.raises(ResolverError, match="inconsistent versions"):
-            pr._absorb(sim, merged, seen)
+            pr._absorb(sim, merged, seen, _TARGET_ENV)
 
     def test_matching_version_across_slices_ok(self):
         pr = PipResolver()
@@ -430,8 +438,8 @@ class TestPipResolverAbsorb:
             version="3.0.0",
             filename="kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl",
         )
-        pr._absorb(device, merged, seen)
-        pr._absorb(sim, merged, seen)
+        pr._absorb(device, merged, seen, _TARGET_ENV)
+        pr._absorb(sim, merged, seen, _TARGET_ENV)
         assert merged["kivy"].version == "3.0.0"
         assert len(merged["kivy"].wheels) == 2
 
@@ -481,6 +489,7 @@ class TestPipResolverRunReport:
             extra_index_urls=[],
             find_links=[],
             offline=False,
+            marker_environment=_TARGET_ENV,
         )
         assert result == report_data
 
@@ -503,6 +512,7 @@ class TestPipResolverRunReport:
                 extra_index_urls=[],
                 find_links=[],
                 offline=False,
+                marker_environment=_TARGET_ENV,
             )
 
     def test_json_parse_error_raises(self, monkeypatch):
@@ -525,6 +535,7 @@ class TestPipResolverRunReport:
                 extra_index_urls=[],
                 find_links=[],
                 offline=False,
+                marker_environment=_TARGET_ENV,
             )
 
     def test_offline_adds_no_index_flag(self, monkeypatch):
@@ -548,6 +559,7 @@ class TestPipResolverRunReport:
             extra_index_urls=[],
             find_links=[],
             offline=True,
+            marker_environment=_TARGET_ENV,
         )
         assert "--no-index" in captured[0]
 
@@ -572,6 +584,7 @@ class TestPipResolverRunReport:
             extra_index_urls=[],
             find_links=["/wheels"],
             offline=False,
+            marker_environment=_TARGET_ENV,
         )
         assert "--find-links" in captured[0]
         idx = captured[0].index("--find-links")
@@ -598,6 +611,7 @@ class TestPipResolverRunReport:
             extra_index_urls=["https://custom.index/simple"],
             find_links=[],
             offline=False,
+            marker_environment=_TARGET_ENV,
         )
         assert "--extra-index-url" in captured[0]
 
@@ -668,6 +682,7 @@ class TestPipResolverResolve:
             extra_index_urls,
             find_links,
             offline,
+            marker_environment,
         ):
             return {"install": next(call_iter)}
 
@@ -704,6 +719,7 @@ class TestPipResolverResolve:
             extra_index_urls,
             find_links,
             offline,
+            marker_environment,
         ):
             return {"install": next(call_iter)}
 
@@ -749,6 +765,7 @@ class TestPipResolverResolve:
             extra_index_urls,
             find_links,
             offline,
+            marker_environment,
         ):
             return {"install": next(call_iter, [])}
 

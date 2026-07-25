@@ -80,6 +80,24 @@ include = ["kivyforge*"]
     "NOTICE",
 ]
 "kivyforge.platforms.windows.launcher" = ["*.c"]
+# Android backend: the bootstrap templates (proven-prototype Java/C sources,
+# the finder .py, and the vendored stock SDL Java glue + its license).
+"kivyforge.platforms.android.bootstrap" = [
+    "templates/**/*.java",
+    "templates/**/*.c",
+    "templates/**/*.txt",
+    "templates/**/*.py",
+    "templates/**/CMakeLists.txt",
+    "templates/androidtest/**/*.java",
+]
+# Android backend: the vendored stock Gradle wrapper (Apache-2.0; see NOTICE).
+"kivyforge.platforms.android" = [
+    "gradle_wrapper/gradle-wrapper.jar",
+    "gradle_wrapper/gradlew",
+    "gradle_wrapper/gradlew.bat",
+    "gradle_wrapper/SHA256SUMS",
+    "gradle_wrapper/NOTICE",
+]
 
 # ---------------------------------------------------------------------------
 # pytest
@@ -121,6 +139,9 @@ exclude_lines = [
 [tool.ruff]
 target-version = "py313"
 line-length = 88
+# Generated Gradle projects stage the runtime's stdlib + app bundle; never lint
+# them (they are regenerated artifacts, git-ignored).
+extend-exclude = ["*-android", "*-ios"]
 [tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors

@@ -1,11 +1,32 @@
 # Android — `[tool.kivy.android]` Overlay Schema
 
-> **Status: design.** Android is the next backend after Windows. This document
-> is the normative overlay spec; the empirical basis for the wheel-assembly bet
-> is the completed pyjnius Android-wheel spike (findings:
+> **Status: implemented (v1).** The Android backend is built and validated
+> end-to-end — `init` → `lock` → `build` → `run` → `run --smoke` → `package`
+> all pass on the Windows-host x86_64 emulator with a live Kivy 2.3.1 app +
+> pyjnius bridge (see the [load-model findings](../../dev/android-loadmodel-findings.md)
+> for the on-device gates). This document is the normative overlay spec; the
+> empirical basis for the wheel-assembly bet is the pyjnius Android-wheel spike
+> (findings:
 > [dev/pyjnius-android-wheel-spike-findings](../../dev/pyjnius-android-wheel-spike-findings.md);
 > pre-spike brief: [dev/pyjnius-android-wheel-spike](../../dev/pyjnius-android-wheel-spike.md);
 > Phase-0 context: [dev/android-wheels-findings](../../dev/android-wheels-findings.md)).
+>
+> **Realized vs designed (v1).** The whole schema is implemented and loader-
+> validated (rules 1–21). Deviations recorded during the build:
+> - **Kivy-compatibility bootstrap surface** — the generated bootstrap must also
+>   ship `org.renpy.android.Hardware` + `PythonActivity.mActivity` (Kivy's own
+>   `metrics.py` autoclasses them); the namespace-preservation section (05) is
+>   extended accordingly.
+> - **Entry point is *imported*** — an app must call `App().run()` at module top
+>   level, not under `if __name__ == "__main__"` (a buildozer→kivyforge trap).
+> - **Gradle/Maven verification is scoped in v1** — the resolved graph + per-
+>   artifact SHA-256 is committed in `pylock.android.toml` (the audit record),
+>   but Gradle-*enforced* `verification-metadata.xml` is deferred (it requires
+>   pinning the entire AGP build classpath, not just the app's Maven deps). See
+>   [02 §Gradle pins](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins).
+> - **The Kivy 2.3.1 wheel is interim** (p4a-derived, 4 KB-aligned; `doctor`
+>   FAILs its 16 KB check). The first-party cibuildwheel Kivy wheel is the one
+>   open deliverable; pyjnius is already first-party.
 
 This document defines the **Android-specific overlay** in `pyproject.toml`: the
 `[tool.kivy.android]` table and its subtables. It layers on top of the shared

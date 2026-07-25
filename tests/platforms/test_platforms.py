@@ -19,7 +19,13 @@ from kivyforge.platforms.windows import WindowsPlatform
 
 class TestRegistry:
     def test_available_names(self):
-        assert available_platform_names() == ["ios", "macos", "linux", "windows"]
+        assert available_platform_names() == [
+            "ios",
+            "macos",
+            "linux",
+            "windows",
+            "android",
+        ]
 
     def test_get_platform(self):
         assert isinstance(get_platform("ios"), IosPlatform)

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import subprocess
 
+from packaging.requirements import InvalidRequirement, Requirement
+
 # Minimum host pip that understands PEP 730 iOS platform tags (pip 24.3, 2024-10-27).
 # Earlier pip cannot match an ``ios_<dt>_*`` --platform request against a wheel
 # tagged at a lower floor (e.g. ios_13_0_*), so compatible wheels are reported as
@@ -78,6 +80,35 @@ def abi_tags(python_version: str) -> tuple[str, ...]:
     """
     major_minor = "".join(python_version.split(".")[:2])
     return (f"cp{major_minor}", "abi3", "none")
+
+
+def dep_names_for_environment(
+    requires_dist: list[str], environment: dict[str, str]
+) -> list[str]:
+    """The dependency edges that actually apply on the target platform.
+
+    ``Requires-Dist`` lists every edge a distribution *might* have, gated by
+    markers: Kivy's raw list names ``pytest``, ``sphinx`` and
+    ``kivy-deps.angle`` alongside its real runtime dependencies. Recording it
+    unfiltered would describe a dependency graph the lock does not install, so
+    each marker is evaluated against the target environment. ``extra`` is empty
+    there, which drops extra-gated edges too.
+    """
+    names: list[str] = []
+    for raw in requires_dist or []:
+        try:
+            requirement = Requirement(raw)
+        except InvalidRequirement:
+            # Unparseable metadata is upstream's problem, not a reason to fail
+            # the lock; fall back to the permissive name-only reading.
+            names.extend(_dep_names([raw]))
+            continue
+        if requirement.marker is not None and not requirement.marker.evaluate(
+            environment
+        ):
+            continue
+        names.append(requirement.name)
+    return names
 
 
 def _dep_names(requires_dist: list[str]) -> list[str]:
