@@ -216,9 +216,20 @@ Two related host-dependencies were fixed alongside it:
 - **Line endings.** The lock writer inherited the host's default, so a re-lock
   on the other OS rewrote all 124 lines. It now always writes LF.
 
-**Verified:** the same `kivyforge lock -p android` run on Windows and on Linux
-now produces byte-identical output apart from the `generated_at` timestamp.
-`[tool.kivy.android].exclude` remains a post-resolution prune, unchanged.
+**Verified (Android):** the same `kivyforge lock -p android` run on Windows and
+on Linux now produces byte-identical output apart from the `generated_at`
+timestamp. `[tool.kivy.android].exclude` remains a post-resolution prune,
+unchanged.
+
+**Verified (iOS, 2026-07-25):** the same shim mechanism targets iOS via
+`platforms/ios/lock/markers.py`. A real macOS resolve (pip 26.1.2) wrote an
+installation report with `sys_platform = "ios"` / `platform_system = "iOS"`;
+re-locking `examples/mobile/hello-kivy` shrunk Kivy's recorded
+`dependencies` from 36 host-leaked raw `Requires-Dist` names to the 5 edges
+that actually hold on iOS, with no change to the `[[packages]]` install set.
+Full evidence: [`ios-validation-findings.md`](ios-validation-findings.md).
+(macOS as a third Android host was not re-checked — vendored Android wheels
+are absent from this tree.)
 
 ## Step 3 — post-build verification (mandatory)
 

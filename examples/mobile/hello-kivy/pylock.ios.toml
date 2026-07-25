@@ -18,7 +18,7 @@ hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1
 name = "Kivy"
 version = "3.0.0.dev0"
 requires-python = ">=3.11"
-dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }, { name = "kivy_deps.angle" }, { name = "kivy_deps.sdl3" }, { name = "kivy_deps.glew" }, { name = "pypiwin32" }, { name = "oscpy" }, { name = "pytest" }, { name = "pytest-cov" }, { name = "pytest_asyncio" }, { name = "pytest-timeout" }, { name = "pytest-benchmark" }, { name = "pytest-httpserver" }, { name = "trustme" }, { name = "pyinstaller" }, { name = "sphinx" }, { name = "sphinxcontrib-jquery" }, { name = "kivy_deps.gstreamer_dev" }, { name = "kivy_deps.sdl3_dev" }, { name = "kivy_deps.glew_dev" }, { name = "pre-commit" }, { name = "responses" }, { name = "ruff" }, { name = "tomli" }, { name = "pillow" }, { name = "kivy_deps.gstreamer" }, { name = "ffpyplayer" }, { name = "pillow" }, { name = "kivy_deps.gstreamer" }, { name = "ffpyplayer" }, { name = "kivy_deps.gstreamer" }, { name = "kivy_deps.angle" }, { name = "kivy_deps.glew" }]
+dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }]
 
 [packages.tool.kivyforge]
 direct_requirement = true
@@ -54,7 +54,7 @@ hashes = { sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd54212
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-07-08T03:38:35Z"
+generated_at = "2026-07-25T23:51:49Z"
 pyproject_sha256 = "d7b20f045b67ad5575de88c41a4b29cca1448d5623838a91738e29db63ca57f6"
 tool_kivyforge_schema_version = 1
 
