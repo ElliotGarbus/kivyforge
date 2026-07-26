@@ -130,6 +130,38 @@ into the recorded list even though none were installed as packages.
 Edges whose markers do not hold on iOS (with `extra` empty) are gone.
 **No `[[packages]]` entry appeared or disappeared.**
 
+### Why Garden / docutils / pygments / requests still appear
+
+This list is **not** "what the app installs on iOS." It is the marker-filtered
+read of Kivy's own wheel `Requires-Dist`. Those five names are declared
+**unconditionally** in the vendored iOS Kivy wheel — no `sys_platform` /
+`extra` gate:
+
+```
+Requires-Dist: Kivy-Garden>=0.1.4
+Requires-Dist: docutils
+Requires-Dist: pygments
+Requires-Dist: requests
+Requires-Dist: filetype
+```
+
+So for any target environment (including iOS) the edge recorder keeps them.
+That matches Kivy's packaging metadata, not an ideal mobile dependency set.
+Garden is a desktop extension registry; `docutils` / `pygments` / `requests`
+are only needed for specific widgets / `UrlRequest`. Upstream has not marked
+them platform- or feature-conditional.
+
+**What actually gets pinned** is the post-`exclude` install set. hello-kivy's
+`[tool.kivy.ios].exclude` already drops `kivy-garden`, `docutils`, `pygments`,
+`requests` (+ requests' transitive deps). The locked `[[packages]]` are only:
+
+`filetype`, `Kivy`, `more-itertools`
+
+(`filetype` stays because Kivy imports it unconditionally.) `exclude` prunes
+`[[packages]]` rows; it does **not** rewrite the parent package's recorded
+`dependencies = [...]` edges. Seeing Garden/docutils on that line while they
+are absent from `[[packages]]` is therefore expected with today's design.
+
 ## Step 5 — SPM path (`examples/mobile/keychain-spm`)
 
 `kivyforge lock -p ios --update` succeeded. Swift pins in the lock:
