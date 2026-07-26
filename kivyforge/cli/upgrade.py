@@ -78,9 +78,7 @@ def upgrade(
         )
 
 
-def _upgrade_android(
-    project_root: Path, python_only: bool, name: str | None
-) -> None:
+def _upgrade_android(project_root: Path, python_only: bool, name: str | None) -> None:
     """Re-fetch the pinned python.org runtime + .aar/.jar per the existing lock.
 
     Does not reinstall wheels, regenerate the project, or invoke Gradle

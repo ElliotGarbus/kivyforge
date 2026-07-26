@@ -69,9 +69,7 @@ def assemble_bundle(
 
     bootstrap = bundle_dir / "bootstrap"
     bootstrap.mkdir()
-    (bootstrap / "_kivyforge_bootstrap.py").write_text(
-        finder_source, encoding="utf-8"
-    )
+    (bootstrap / "_kivyforge_bootstrap.py").write_text(finder_source, encoding="utf-8")
     # Required, not optional: Kivy resolves the Activity by importing this
     # module, so an app built without it would start and then fail the moment
     # Kivy needed the Activity.
@@ -82,9 +80,7 @@ def assemble_bundle(
         (bootstrap / "_kivyforge_selftest.py").write_text(
             selftest_source, encoding="utf-8"
         )
-    (bootstrap / "ext_manifest.json").write_text(
-        ext_manifest_json, encoding="utf-8"
-    )
+    (bootstrap / "ext_manifest.json").write_text(ext_manifest_json, encoding="utf-8")
 
     stamp = _content_stamp(bundle_dir)
     (bundle_dir / "VERSION").write_text(stamp, encoding="utf-8")
@@ -93,11 +89,7 @@ def assemble_bundle(
 
 def _copy_stdlib(src: Path, dest: Path) -> None:
     def ignore(directory: str, names: list[str]) -> list[str]:
-        return [
-            n
-            for n in names
-            if n in _STDLIB_EXCLUDED_DIRS or n.endswith(".gz")
-        ]
+        return [n for n in names if n in _STDLIB_EXCLUDED_DIRS or n.endswith(".gz")]
 
     shutil.copytree(src, dest, ignore=ignore)
 

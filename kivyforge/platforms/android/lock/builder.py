@@ -197,9 +197,7 @@ def _resolve_runtimes(
     return runtimes
 
 
-def _hash_include_files(
-    android: AndroidConfig, root: Path
-) -> list[LockedIncludeFile]:
+def _hash_include_files(android: AndroidConfig, root: Path) -> list[LockedIncludeFile]:
     """One pin per staged file; a directory source expands to its files."""
     pins: list[LockedIncludeFile] = []
     for entry in android.include_files:
@@ -208,9 +206,7 @@ def _hash_include_files(
             if local.is_dir():
                 for child in sorted(local.rglob("*")):
                     if child.is_file():
-                        rel = (
-                            Path(source) / child.relative_to(local)
-                        ).as_posix()
+                        rel = (Path(source) / child.relative_to(local)).as_posix()
                         pins.append(
                             LockedIncludeFile(
                                 source=rel,

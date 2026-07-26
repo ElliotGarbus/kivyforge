@@ -73,9 +73,7 @@ def _from_raw(raw: dict) -> AndroidLockfile:
 
     schema_version = _check_tool_schema_version(tool)
 
-    runtimes = tuple(
-        _parse_runtime(r) for r in _as_list(tool, "python_android")
-    )
+    runtimes = tuple(_parse_runtime(r) for r in _as_list(tool, "python_android"))
     if not runtimes:
         raise LockError(
             "pylock.android.toml has no [[tool.kivyforge.python_android]] "
@@ -172,8 +170,7 @@ def _check_lock_version(raw: dict) -> str:
     major = lock_version.split(".", 1)[0]
     if not major.isdigit():
         raise LockError(
-            f"pylock.android.toml lock-version {lock_version!r} is not a valid "
-            "version."
+            f"pylock.android.toml lock-version {lock_version!r} is not a valid version."
         )
     if int(major) > SUPPORTED_LOCK_VERSION_MAJOR:
         raise LockError(
@@ -188,8 +185,7 @@ def _check_tool_schema_version(tool: dict) -> int:
     schema_version = tool.get("schema_version", TOOL_SCHEMA_VERSION)
     if not isinstance(schema_version, int) or isinstance(schema_version, bool):
         raise LockError(
-            "pylock.android.toml [tool.kivyforge].schema_version must be an "
-            "integer."
+            "pylock.android.toml [tool.kivyforge].schema_version must be an integer."
         )
     if schema_version > SUPPORTED_TOOL_SCHEMA_VERSION:
         raise LockError(

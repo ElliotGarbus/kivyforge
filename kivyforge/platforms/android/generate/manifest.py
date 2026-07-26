@@ -154,12 +154,9 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
         activity_attrs[key] = _attr_str(value)
     lines.append(f"        <activity {_attrs(activity_attrs)}>")
     lines.append("            <intent-filter>")
+    lines.append('                <action android:name="android.intent.action.MAIN" />')
     lines.append(
-        '                <action android:name="android.intent.action.MAIN" />'
-    )
-    lines.append(
-        "                <category "
-        'android:name="android.intent.category.LAUNCHER" />'
+        '                <category android:name="android.intent.category.LAUNCHER" />'
     )
     lines.append("            </intent-filter>")
 

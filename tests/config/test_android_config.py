@@ -88,7 +88,11 @@ class TestRuleRejections:
         [
             # rule 3 handled by shared schema_version parser (see below)
             ("rule8-min-floor", ["min_sdk = 23"], "below the floor"),
-            ("rule8-target-lt-min", ["min_sdk = 30", "target_sdk = 29"], "below min_sdk"),
+            (
+                "rule8-target-lt-min",
+                ["min_sdk = 30", "target_sdk = 29"],
+                "below min_sdk",
+            ),
             (
                 "rule8-compile-lt-target",
                 ["target_sdk = 35", "compile_sdk = 34"],
@@ -228,8 +232,7 @@ class TestVersionCode:
         a = load_android(
             text.replace(
                 "[tool.kivy.android.python]",
-                f'version_code = "auto"\nbuild = {build}\n\n'
-                "[tool.kivy.android.python]",
+                f'version_code = "auto"\nbuild = {build}\n\n[tool.kivy.android.python]',
             )
         )
         assert a.version_code == expected

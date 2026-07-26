@@ -50,9 +50,7 @@ def adb(*args: str, serial: str | None = None, check: bool = True) -> str:
     cmd += list(args)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if check and proc.returncode != 0:
-        raise AdbError(
-            f"adb {' '.join(args)} failed:\n{proc.stderr or proc.stdout}"
-        )
+        raise AdbError(f"adb {' '.join(args)} failed:\n{proc.stderr or proc.stdout}")
     return proc.stdout
 
 
@@ -68,9 +66,7 @@ def connected_devices() -> list[str]:
 
 def available_avds() -> list[str]:
     emulator = sdk_tool("emulator", subdir="emulator")
-    proc = subprocess.run(
-        [emulator, "-list-avds"], capture_output=True, text=True
-    )
+    proc = subprocess.run([emulator, "-list-avds"], capture_output=True, text=True)
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
@@ -90,8 +86,11 @@ def boot_emulator(avd: str) -> str:
         if new:
             serial = new[0]
             booted = adb(
-                "shell", "getprop", "sys.boot_completed",
-                serial=serial, check=False,
+                "shell",
+                "getprop",
+                "sys.boot_completed",
+                serial=serial,
+                check=False,
             ).strip()
             if booted == "1":
                 return serial
@@ -123,8 +122,7 @@ def resolve_device(
             return physical[0]
         if len(physical) > 1:
             raise AdbError(
-                f"multiple devices attached ({', '.join(physical)}); "
-                f"pass --serial."
+                f"multiple devices attached ({', '.join(physical)}); pass --serial."
             )
     emulators = [d for d in devices if d.startswith("emulator-")]
     if emulators:

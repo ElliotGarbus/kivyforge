@@ -131,7 +131,7 @@ class TestRender:
 
     def test_androidtest_generated(self):
         files = {f.relpath: f.content for f in androidtest_files()}
-        (path, content), = files.items()
+        ((path, content),) = files.items()
         assert path == (
             "androidTest/java/org/kivyforge/test/KivyforgeContractTest.java"
         )

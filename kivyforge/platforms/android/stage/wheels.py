@@ -20,9 +20,7 @@ class WheelStageError(Exception):
     pass
 
 
-def select_wheel(
-    package: LockedPackage, *, abi: str, min_sdk: int
-) -> LockedWheel:
+def select_wheel(package: LockedPackage, *, abi: str, min_sdk: int) -> LockedWheel:
     """Pick the wheel slice this ABI installs (android/01 §tag floor)."""
     best: tuple[int, LockedWheel] | None = None
     for wheel in package.wheels:

@@ -41,7 +41,7 @@ def android_abi(abi: str) -> str:
 def write_settings_gradle(dest: Path) -> None:
     _write(
         dest / "settings.gradle",
-        'pluginManagement {\n'
+        "pluginManagement {\n"
         "    repositories { google(); mavenCentral(); gradlePluginPortal() }\n"
         "}\n"
         "dependencyResolutionManagement {\n"
@@ -145,9 +145,7 @@ def write_app_build_gradle(
         "    androidTestImplementation 'androidx.test:runner:1.5.2'",
     ]
     if android.splash.source:
-        deps.append(
-            f"    implementation '{toolchain.CORE_SPLASHSCREEN_COORDINATE}'"
-        )
+        deps.append(f"    implementation '{toolchain.CORE_SPLASHSCREEN_COORDINATE}'")
     for lib in sorted(staged_libs):
         deps.append(f"    implementation files('libs/{lib}')")
     for coordinate in sorted(android.gradle.dependencies):
@@ -168,9 +166,7 @@ def write_app_build_gradle(
     shrink = "true" if (bs.shrink_resources and bs.minify) else "false"
     # Keep .so debug symbols unless a stripped release is configured (AGP does
     # the strip, tracking the toolchain + preserving 16 KB alignment).
-    keep_symbols_line = (
-        "" if strip else "            keepDebugSymbols += ['**/*.so']\n"
-    )
+    keep_symbols_line = "" if strip else "            keepDebugSymbols += ['**/*.so']\n"
     debug_symbol_level = {
         "symbol_table": "SYMBOL_TABLE",
         "full": "FULL",
@@ -352,8 +348,9 @@ def write_gradle_pins(dest: Path, lock: AndroidLockfile) -> None:
     ]
     for module in sorted(lock.gradle.resolved, key=lambda m: m.coordinate):
         for artifact in module.artifacts:
-            lock_lines.append(f"# {module.coordinate}  {artifact.name}  "
-                              f"sha256:{artifact.sha256}")
+            lock_lines.append(
+                f"# {module.coordinate}  {artifact.name}  sha256:{artifact.sha256}"
+            )
     _write(dest / "app" / "gradle.lockfile", "\n".join(lock_lines) + "\n")
 
 

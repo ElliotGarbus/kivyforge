@@ -26,9 +26,7 @@ class TestSigningPreflight:
     def test_no_keystore_actionable(self, tmp_path, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda _: None)  # skip keytool
         with pytest.raises(SigningError, match="code signing required"):
-            resolve_signing(
-                AndroidSigningConfig(), project_root=tmp_path
-            )
+            resolve_signing(AndroidSigningConfig(), project_root=tmp_path)
 
     def test_missing_keystore_file(self, tmp_path, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda _: None)
@@ -109,10 +107,7 @@ class TestManifestPolicy:
             enforce_release_manifest(xml, package="org.real.app")
 
     def test_extra_exported_component_fails(self):
-        body = (
-            '<service android:name="org.example.Leak" '
-            'android:exported="true"/>'
-        )
+        body = '<service android:name="org.example.Leak" android:exported="true"/>'
         with pytest.raises(ManifestPolicyError, match="exported"):
             enforce_release_manifest(_manifest(body=body), package="org.real.app")
 
@@ -145,9 +140,7 @@ class TestManifestPolicy:
 
     def test_dangerous_permission_is_info(self):
         perms = '<uses-permission android:name="android.permission.CAMERA"/>'
-        infos = enforce_release_manifest(
-            _manifest(perms=perms), package="org.real.app"
-        )
+        infos = enforce_release_manifest(_manifest(perms=perms), package="org.real.app")
         assert any("dangerous runtime permission" in i.message for i in infos)
 
     def test_findings_include_all_severities(self):

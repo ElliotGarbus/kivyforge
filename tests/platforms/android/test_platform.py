@@ -22,9 +22,7 @@ class TestRegistration:
         # even when the overlay is configured.
         assert AndroidPlatform.host_system is None
         with pytest.raises(Exception):
-            resolve_target(
-                None, configured={"android"}, env={}, host_system="Windows"
-            )
+            resolve_target(None, configured={"android"}, env={}, host_system="Windows")
 
     def test_explicit_selection_works(self):
         backend = resolve_target(
@@ -62,8 +60,7 @@ class TestRegistration:
 
         backend = AndroidPlatform()
         (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "x"\nversion = "1.0.0"\n'
-            '[tool.kivy]\napp_dir = "src"\n',
+            '[project]\nname = "x"\nversion = "1.0.0"\n[tool.kivy]\napp_dir = "src"\n',
             encoding="utf-8",
         )
         with pytest.raises(AndroidBuildError, match="tool.kivy.android"):

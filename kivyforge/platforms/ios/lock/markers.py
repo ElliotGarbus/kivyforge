@@ -40,9 +40,7 @@ def machine_for_slice(slice_suffix: str) -> str:
     )
 
 
-def ios_marker_environment(
-    *, python_version: str, slice_suffix: str
-) -> dict[str, str]:
+def ios_marker_environment(*, python_version: str, slice_suffix: str) -> dict[str, str]:
     """The PEP 508 environment a wheel would see on the given iOS slice.
 
     ``python_version`` is the full runtime version (e.g. ``3.14.6``).

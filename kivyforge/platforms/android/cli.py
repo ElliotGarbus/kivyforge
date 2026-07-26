@@ -322,9 +322,9 @@ def android_package(
     )
 
     # Manifest policy pre-flight on the GENERATED manifest (fail before Gradle).
-    manifest_xml = (
-        dest / "app" / "src" / "main" / "AndroidManifest.xml"
-    ).read_text(encoding="utf-8")
+    manifest_xml = (dest / "app" / "src" / "main" / "AndroidManifest.xml").read_text(
+        encoding="utf-8"
+    )
     try:
         infos = enforce_release_manifest(manifest_xml, package=android.package)
     except ManifestPolicyError as exc:
@@ -371,9 +371,7 @@ def android_run(
     dest = project_dir_for(project_root, config)
     apk = _debug_output(dest, "apk")
     if not apk.is_file():
-        raise AndroidBuildError(
-            f"no debug APK at {apk}; run without --no-build first."
-        )
+        raise AndroidBuildError(f"no debug APK at {apk}; run without --no-build first.")
 
     try:
         device = adb_mod.resolve_device(
@@ -424,9 +422,7 @@ def android_smoke(
     click.echo("Contract smoke test PASSED.")
 
 
-def _copy_include_files(
-    project_root: Path, dest: Path, android: AndroidConfig
-) -> None:
+def _copy_include_files(project_root: Path, dest: Path, android: AndroidConfig) -> None:
     generated = {
         "app/src/main/AndroidManifest.xml",
         "app/build.gradle",
@@ -439,8 +435,11 @@ def _copy_include_files(
         for source in entry.sources:
             src = project_root / source
             targets = (
-                [(child, target_dir / child.relative_to(src))
-                 for child in src.rglob("*") if child.is_file()]
+                [
+                    (child, target_dir / child.relative_to(src))
+                    for child in src.rglob("*")
+                    if child.is_file()
+                ]
                 if src.is_dir()
                 else [(src, target_dir / src.name)]
             )
@@ -511,8 +510,7 @@ def android_open(project_root: Path) -> None:
     dest = project_dir_for(project_root, config)
     if not dest.is_dir():
         raise AndroidBuildError(
-            f"{dest.name}/ does not exist yet; run `kivyforge build -p android` "
-            "first."
+            f"{dest.name}/ does not exist yet; run `kivyforge build -p android` first."
         )
     studio = shutil.which("studio") or shutil.which("studio.sh")
     if studio:

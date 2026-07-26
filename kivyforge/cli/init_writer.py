@@ -643,8 +643,7 @@ def render_android_tables(
         "[tool.kivy.android]",
         "schema_version = 1",
         package_line,
-        "version_code = 1  "
-        '# or "auto" to derive from [project].version (android/01)',
+        'version_code = 1  # or "auto" to derive from [project].version (android/01)',
         "min_sdk = 24",
         "target_sdk = 35",
         f"sdl = {sdl if sdl is not None else 2}  "

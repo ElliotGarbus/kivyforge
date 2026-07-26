@@ -190,9 +190,7 @@ class ScratchProjectResolver:
             ]
             if offline:
                 cmd.append("--offline")
-            proc = subprocess.run(
-                cmd, cwd=root, capture_output=True, text=True
-            )
+            proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
             if proc.returncode != 0:
                 raise MavenResolverError(
                     "Gradle could not resolve the declared Maven coordinates.\n"
@@ -204,9 +202,7 @@ class ScratchProjectResolver:
                     "Gradle wrote no verification-metadata.xml; cannot pin the "
                     "resolved Maven graph."
                 )
-            return parse_verification_metadata(
-                metadata.read_text(encoding="utf-8")
-            )
+            return parse_verification_metadata(metadata.read_text(encoding="utf-8"))
 
     def _gradle_command(self, root: Path) -> list[str]:
         """A standalone gradle if present, else the vendored wrapper in ``root``."""

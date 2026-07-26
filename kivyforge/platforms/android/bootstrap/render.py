@@ -54,8 +54,7 @@ def python_stem(python_version: str) -> str:
     parts = python_version.split(".")
     if len(parts) < 2 or not all(p.split("rc")[0].isdigit() for p in parts[:2]):
         raise RenderError(
-            f"cannot derive a libpython soname from python version "
-            f"{python_version!r}"
+            f"cannot derive a libpython soname from python version {python_version!r}"
         )
     return f"python{parts[0]}.{parts[1]}"
 
@@ -99,9 +98,7 @@ def render_bootstrap(*, sdl: int, python_version: str) -> list[RenderedFile]:
             "block was not found (re-extract from a proven prototype)."
         )
     activity = activity.replace(_PROTO_LIBRARIES_BLOCK, lib_lines)
-    out.append(
-        RenderedFile("java/org/kivy/android/PythonActivity.java", activity)
-    )
+    out.append(RenderedFile("java/org/kivy/android/PythonActivity.java", activity))
 
     # 2. The pyjnius glue (matched pair; see contract.py).
     out.append(
@@ -114,9 +111,7 @@ def render_bootstrap(*, sdl: int, python_version: str) -> list[RenderedFile]:
     # 2b. Kivy-compatibility shims (org.renpy.android.*), verbatim. Kivy's own
     # Python code autoclasses these (android/05 §namespace preservation).
     for compat in sorted((TEMPLATES_DIR / "java/org/renpy/android").glob("*.java")):
-        out.append(
-            RenderedFile(f"java/org/renpy/android/{compat.name}", _read(compat))
-        )
+        out.append(RenderedFile(f"java/org/renpy/android/{compat.name}", _read(compat)))
 
     # 3. Stock SDL Java glue for the generation, verbatim.
     for java in sorted(sdl_dir.rglob("*.java")):
@@ -126,9 +121,7 @@ def render_bootstrap(*, sdl: int, python_version: str) -> list[RenderedFile]:
     # 4. Native launcher sources (compiled by the NDK via externalNativeBuild).
     out.append(RenderedFile("cpp/main.c", _read(TEMPLATES_DIR / "cpp/main.c")))
     out.append(
-        RenderedFile(
-            "cpp/CMakeLists.txt", _read(TEMPLATES_DIR / "cpp/CMakeLists.txt")
-        )
+        RenderedFile("cpp/CMakeLists.txt", _read(TEMPLATES_DIR / "cpp/CMakeLists.txt"))
     )
     return out
 

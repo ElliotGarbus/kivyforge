@@ -56,9 +56,7 @@ def _resolve_one(
     offline: bool,
 ) -> LockedAndroidLib:
     if dep.source.startswith(("http://", "https://")):
-        sha256 = _hash_remote(
-            dep, downloader=downloader, cache=cache, offline=offline
-        )
+        sha256 = _hash_remote(dep, downloader=downloader, cache=cache, offline=offline)
         return LockedAndroidLib(
             name=dep.name,
             kind=dep.kind,

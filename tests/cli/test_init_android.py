@@ -49,9 +49,7 @@ class TestSeeding:
         # kivy is a direct dep -> the documented exclude block is seeded
         assert "kivy-garden" in str(android.get("exclude", ""))
         # The seeded file must round-trip through the real loader.
-        cfg = load_config_from_text(
-            content, require_ios=False, require_android=True
-        )
+        cfg = load_config_from_text(content, require_ios=False, require_android=True)
         assert cfg.android_required.package == "org.example.my_app"
 
     def test_seeded_signing_is_commented_stub(self, runner, tmp_path):

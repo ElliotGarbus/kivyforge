@@ -61,19 +61,13 @@ def _manifest_tree(android, orientation=("portrait",)):
 
 class TestManifest:
     def test_bare_permission_prefixed(self):
-        _, android = _android(
-            '[tool.kivy.android.permissions]\nuses = ["INTERNET"]\n'
-        )
+        _, android = _android('[tool.kivy.android.permissions]\nuses = ["INTERNET"]\n')
         _, tree = _manifest_tree(android)
-        names = [
-            e.get(f"{NS}name") for e in tree.findall("uses-permission")
-        ]
+        names = [e.get(f"{NS}name") for e in tree.findall("uses-permission")]
         assert names == ["android.permission.INTERNET"]
 
     def test_implied_features_non_required(self):
-        _, android = _android(
-            '[tool.kivy.android.permissions]\nuses = ["CAMERA"]\n'
-        )
+        _, android = _android('[tool.kivy.android.permissions]\nuses = ["CAMERA"]\n')
         _, tree = _manifest_tree(android)
         features = {
             e.get(f"{NS}name"): e.get(f"{NS}required")
@@ -114,9 +108,7 @@ class TestManifest:
             'title = "t", text = "x" }\n'
         )
         text, tree = _manifest_tree(android)
-        permissions = [
-            e.get(f"{NS}name") for e in tree.findall("uses-permission")
-        ]
+        permissions = [e.get(f"{NS}name") for e in tree.findall("uses-permission")]
         assert "android.permission.FOREGROUND_SERVICE" in permissions
         assert "android.permission.FOREGROUND_SERVICE_DATA_SYNC" in permissions
         service = tree.find("application/service")
@@ -138,10 +130,7 @@ class TestManifest:
         text, tree = _manifest_tree(android)
         assert "org.example.genapp.fp" in text
         activity = tree.find("application/activity")
-        actions = [
-            a.get(f"{NS}name")
-            for a in activity.findall("intent-filter/action")
-        ]
+        actions = [a.get(f"{NS}name") for a in activity.findall("intent-filter/action")]
         assert "android.intent.action.MAIN" in actions
         assert "android.intent.action.VIEW" in actions
 
@@ -161,9 +150,7 @@ class TestManifest:
             == "sensorLandscape"
         )
         assert (
-            screen_orientation(
-                ("portrait", "landscape-left", "landscape-right")
-            )
+            screen_orientation(("portrait", "landscape-left", "landscape-right"))
             == "fullSensor"
         )
 
@@ -172,9 +159,7 @@ class TestManifest:
             "android.permission.INTERNET",
             "android.permission.CAMERA",
         ]
-        assert "android.hardware.nfc" in implied_features(
-            ["android.permission.NFC"]
-        )
+        assert "android.hardware.nfc" in implied_features(["android.permission.NFC"])
 
 
 class TestProjectFiles:
@@ -249,7 +234,12 @@ class TestProjectFiles:
         config, android = _android()
         write_resources(tmp_path, config, android)
         icon = (
-            tmp_path / "app" / "src" / "main" / "res" / "mipmap-mdpi"
+            tmp_path
+            / "app"
+            / "src"
+            / "main"
+            / "res"
+            / "mipmap-mdpi"
             / "ic_launcher.png"
         )
         assert icon.is_file()
@@ -261,9 +251,7 @@ class TestProjectFiles:
             resolved=(
                 GradleResolvedModule(
                     coordinate="com.google.zxing:core:3.5.3",
-                    artifacts=(
-                        GradleArtifact(name="core-3.5.3.jar", sha256="c" * 64),
-                    ),
+                    artifacts=(GradleArtifact(name="core-3.5.3.jar", sha256="c" * 64),),
                 ),
             ),
         )

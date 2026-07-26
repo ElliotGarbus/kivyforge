@@ -74,8 +74,13 @@ def run(
     """Build (unless --no-build), install, and launch the app."""
     backend, project_root = resolve_target(cli_platform, verb="run")
 
-    android_only = {"--emulator": emulator, "--avd": avd, "--serial": serial,
-                    "--smoke": smoke, "--release": release}
+    android_only = {
+        "--emulator": emulator,
+        "--avd": avd,
+        "--serial": serial,
+        "--smoke": smoke,
+        "--release": release,
+    }
     used = [name for name, value in android_only.items() if value]
     if used and backend.name != "android":
         raise ToolchainError(

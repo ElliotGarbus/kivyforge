@@ -124,7 +124,9 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
     if java:
         return CheckResult("JDK", Status.PASS, java)
     return CheckResult(
-        "JDK", Status.FAIL, "no java on PATH and JAVA_HOME unset",
+        "JDK",
+        Status.FAIL,
+        "no java on PATH and JAVA_HOME unset",
         hint="install a JDK 17+ (AGP requires it) and set JAVA_HOME.",
     )
 
@@ -132,7 +134,8 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
 def _check_sdk(sdk: Path | None) -> CheckResult:
     if sdk is None:
         return CheckResult(
-            "Android SDK", Status.FAIL,
+            "Android SDK",
+            Status.FAIL,
             "ANDROID_HOME/ANDROID_SDK_ROOT unset and no SDK at the conventional "
             "location",
             hint="install the SDK and set ANDROID_HOME.",
@@ -140,7 +143,8 @@ def _check_sdk(sdk: Path | None) -> CheckResult:
     sdkmanager = sdk / "cmdline-tools" / "latest" / "bin" / f"sdkmanager{_BAT}"
     if not sdkmanager.exists():
         return CheckResult(
-            "Android SDK", Status.WARN,
+            "Android SDK",
+            Status.WARN,
             f"{sdk} exists but cmdline-tools/latest is missing",
             hint="install the 'cmdline-tools;latest' package.",
         )
@@ -155,12 +159,15 @@ def _check_build_tools(
     versions = probe.build_tools_versions(sdk)
     if not versions:
         return CheckResult(
-            "Build-tools / platform", Status.FAIL, "no build-tools installed",
+            "Build-tools / platform",
+            Status.FAIL,
+            "no build-tools installed",
             hint="sdkmanager 'build-tools;<version>'.",
         )
     if android is not None and not probe.platform_installed(sdk, android.compile_sdk):
         return CheckResult(
-            "Build-tools / platform", Status.FAIL,
+            "Build-tools / platform",
+            Status.FAIL,
             f"the compile_sdk platform (android-{android.compile_sdk}) is not "
             "installed",
             hint=f"sdkmanager 'platforms;android-{android.compile_sdk}'.",
@@ -176,7 +183,8 @@ def _check_ndk(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
     versions = probe.ndk_versions(sdk)
     if not versions:
         return CheckResult(
-            "NDK", Status.FAIL,
+            "NDK",
+            Status.FAIL,
             "no NDK installed (required for EVERY build — it compiles the native "
             "launcher)",
             hint="sdkmanager 'ndk;<version>' (r27+ recommended for 16 KB).",
@@ -192,7 +200,9 @@ def _check_adb(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
             adb = str(candidate)
     if adb is None:
         return CheckResult(
-            "adb", Status.WARN, "platform-tools not found",
+            "adb",
+            Status.WARN,
+            "platform-tools not found",
             hint="sdkmanager platform-tools (needed for `kivyforge run`).",
         )
     return CheckResult("adb", Status.PASS, adb)
@@ -203,13 +213,16 @@ def _check_emulator(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
     accel = probe.has_kvm_or_haxm()
     if not avds:
         return CheckResult(
-            "Emulator / virtualization", Status.WARN, "no AVD found",
+            "Emulator / virtualization",
+            Status.WARN,
+            "no AVD found",
             hint="create an AVD (Android Studio Device Manager or avdmanager) "
             "for `kivyforge run --emulator`.",
         )
     if not accel:
         return CheckResult(
-            "Emulator / virtualization", Status.WARN,
+            "Emulator / virtualization",
+            Status.WARN,
             f"AVDs present ({len(avds)}) but no hardware acceleration",
             hint="enable KVM (Linux) / HAXM or Hyper-V (macOS/Windows).",
         )
@@ -223,9 +236,7 @@ def _check_emulator(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
 # --------------------------------------------------------------------------- #
 def _check_sdl_kivy_match(config: Config, lock) -> CheckResult:
     android = config.android_required
-    kivy = next(
-        (p for p in lock.packages if p.name.lower() == "kivy"), None
-    )
+    kivy = next((p for p in lock.packages if p.name.lower() == "kivy"), None)
     if kivy is None:
         return CheckResult("SDL / Kivy match", Status.SKIP, "kivy not in the lock")
     from packaging.version import InvalidVersion, Version
@@ -239,7 +250,8 @@ def _check_sdl_kivy_match(config: Config, lock) -> CheckResult:
     expected = 3 if is_sdl3 else 2
     if android.sdl != expected:
         return CheckResult(
-            "SDL / Kivy match", Status.WARN,
+            "SDL / Kivy match",
+            Status.WARN,
             f"sdl = {android.sdl} but kivy {kivy.version} is SDL{expected}",
             hint=f"set sdl = {expected} and re-lock.",
         )
@@ -249,9 +261,7 @@ def _check_sdl_kivy_match(config: Config, lock) -> CheckResult:
 
 
 def _check_pyjnius_contract(lock) -> CheckResult:
-    pyjnius = next(
-        (p for p in lock.packages if p.name.lower() == "pyjnius"), None
-    )
+    pyjnius = next((p for p in lock.packages if p.name.lower() == "pyjnius"), None)
     if pyjnius is None:
         return CheckResult(
             "pyjnius / bootstrap match", Status.SKIP, "pyjnius not in the lock"
@@ -260,13 +270,15 @@ def _check_pyjnius_contract(lock) -> CheckResult:
         check_pyjnius_contract(pyjnius.version)
     except ContractError:
         return CheckResult(
-            "pyjnius / bootstrap match", Status.FAIL,
+            "pyjnius / bootstrap match",
+            Status.FAIL,
             f"locked pyjnius {pyjnius.version} is outside the bootstrap template's "
             f"invoke0 range ({COMPATIBLE_PYJNIUS})",
             hint="re-lock to a compatible pyjnius or upgrade kivyforge.",
         )
     return CheckResult(
-        "pyjnius / bootstrap match", Status.PASS,
+        "pyjnius / bootstrap match",
+        Status.PASS,
         f"pyjnius {pyjnius.version} in range",
     )
 
@@ -281,7 +293,8 @@ def _check_16k_alignment(project_dir: Path) -> CheckResult:
     if bad:
         names = ", ".join(f"{p.name} (0x{a:x})" for p, a in bad[:5])
         return CheckResult(
-            "16 KB alignment", Status.FAIL,
+            "16 KB alignment",
+            Status.FAIL,
             f"{len(bad)} native lib(s) below 16 KB LOAD alignment: {names}",
             hint="rebuild the offending wheel with NDK r28+ or "
             "-Wl,-z,max-page-size=16384 (android/03 §wheel content rules).",
@@ -307,7 +320,8 @@ def _check_abi_coverage(config: Config, lock) -> CheckResult:
                 missing.append(f"{package.name}/{abi}")
     if missing:
         return CheckResult(
-            "ABI coverage", Status.FAIL,
+            "ABI coverage",
+            Status.FAIL,
             f"missing wheel slices: {', '.join(missing[:5])}",
             hint="re-lock, or narrow [tool.kivy.android].abis.",
         )
@@ -320,7 +334,8 @@ def _check_signing(config: Config, project_root: Path) -> CheckResult:
     android = config.android_required
     if not android.signing.configured:
         return CheckResult(
-            "Signing (release)", Status.SKIP,
+            "Signing (release)",
+            Status.SKIP,
             "[tool.kivy.android.signing] not configured (debug builds are fine)",
         )
     from .signing import SigningError, resolve_signing
@@ -329,7 +344,9 @@ def _check_signing(config: Config, project_root: Path) -> CheckResult:
         resolve_signing(android.signing, project_root=project_root)
     except SigningError as exc:
         return CheckResult(
-            "Signing (release)", Status.FAIL, str(exc).splitlines()[0],
+            "Signing (release)",
+            Status.FAIL,
+            str(exc).splitlines()[0],
             hint="see `kivyforge package` signing prerequisites (android/07).",
         )
     return CheckResult("Signing (release)", Status.PASS, "keystore + alias resolve")
@@ -354,7 +371,8 @@ def _check_lock_hosts(probe: AndroidProbe, lock) -> CheckResult:
     unreachable = [h for h in sorted(hosts) if not probe.tcp_reachable(h, 443)]
     if unreachable:
         return CheckResult(
-            "Required hosts reachable", Status.WARN,
+            "Required hosts reachable",
+            Status.WARN,
             f"cannot reach: {', '.join(unreachable)}",
             hint="check your network; needed to fetch runtime/wheels.",
         )
@@ -381,7 +399,9 @@ def android_doctor(
             config = load_config(pyproject, require_ios=False, require_android=True)
         except ConfigError as exc:
             config_result = CheckResult(
-                "Android config", Status.FAIL, str(exc).splitlines()[0],
+                "Android config",
+                Status.FAIL,
+                str(exc).splitlines()[0],
                 hint="fix pyproject.toml; see the error above.",
             )
 
@@ -405,7 +425,8 @@ def android_doctor(
     android = config.android_required
     results.append(
         CheckResult(
-            "Android config", Status.PASS,
+            "Android config",
+            Status.PASS,
             f"{android.package} (min {android.min_sdk} / target "
             f"{android.target_sdk}, sdl {android.sdl}, "
             f"abis {', '.join(android.abis)})",
@@ -416,7 +437,8 @@ def android_doctor(
         CheckResult("App source directory", Status.PASS, str(app_dir))
         if app_dir.is_dir()
         else CheckResult(
-            "App source directory", Status.FAIL,
+            "App source directory",
+            Status.FAIL,
             f"[tool.kivy].app_dir does not exist: {app_dir}",
             hint="create it or fix app_dir.",
         )
@@ -427,9 +449,7 @@ def android_doctor(
         try:
             lock = lock_reader.load(lock_path)
         except Exception as exc:  # noqa: BLE001
-            results.append(
-                CheckResult("Lock", Status.FAIL, f"unreadable lock: {exc}")
-            )
+            results.append(CheckResult("Lock", Status.FAIL, f"unreadable lock: {exc}"))
             return results
         results += [
             _check_sdl_kivy_match(config, lock),
@@ -440,8 +460,12 @@ def android_doctor(
             results.append(_check_lock_hosts(probe, lock))
     else:
         results.append(
-            CheckResult("Lock", Status.WARN, "pylock.android.toml not found",
-                        hint="run `kivyforge lock -p android`.")
+            CheckResult(
+                "Lock",
+                Status.WARN,
+                "pylock.android.toml not found",
+                hint="run `kivyforge lock -p android`.",
+            )
         )
 
     from .cli import project_dir_for

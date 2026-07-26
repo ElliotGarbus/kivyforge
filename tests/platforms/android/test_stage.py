@@ -79,7 +79,9 @@ class TestJniLibs:
         _write(prefix_lib / "libssl_python.so")
         _write(prefix_lib / "libssl.so")  # plain copy: NOT shipped
         _write(
-            prefix_lib / "python3.14" / "lib-dynload"
+            prefix_lib
+            / "python3.14"
+            / "lib-dynload"
             / "_ssl.cpython-314-x86_64-linux-android.so"
         )
         stager = JniLibsStager(dest=tmp_path / "jni")

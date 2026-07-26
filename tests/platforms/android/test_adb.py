@@ -50,9 +50,7 @@ class TestResolveDevice:
 
     def test_boots_named_avd_when_none_connected(self, fake_adb):
         fake_adb["avds"] = ["Pixel_API_35", "kivyforge_x86_64"]
-        result = adb_mod.resolve_device(
-            prefer_emulator=True, avd="kivyforge_x86_64"
-        )
+        result = adb_mod.resolve_device(prefer_emulator=True, avd="kivyforge_x86_64")
         assert result == "emulator-5554"
         assert fake_adb["booted"] == "kivyforge_x86_64"
 

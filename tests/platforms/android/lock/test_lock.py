@@ -267,9 +267,7 @@ def _sample_lockfile() -> AndroidLockfile:
             resolved=(
                 GradleResolvedModule(
                     coordinate="com.google.zxing:core:3.5.3",
-                    artifacts=(
-                        GradleArtifact(name="core-3.5.3.jar", sha256="1" * 64),
-                    ),
+                    artifacts=(GradleArtifact(name="core-3.5.3.jar", sha256="1" * 64),),
                 ),
             ),
         ),

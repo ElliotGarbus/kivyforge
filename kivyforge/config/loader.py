@@ -1234,8 +1234,7 @@ def _parse_android_build_counter(android: dict, finder: _LineFinder) -> int:
             "[tool.kivy.android].build must be an integer in 0-99",
             key_path="tool.kivy.android.build",
             line=finder.line("build"),
-            hint="build is the re-upload counter used only when "
-            'version_code = "auto".',
+            hint='build is the re-upload counter used only when version_code = "auto".',
         )
     return build
 
@@ -1354,8 +1353,7 @@ def _parse_android_sdk_levels(
         )
     if target_sdk < min_sdk:
         raise ConfigError(
-            f"[tool.kivy.android].target_sdk {target_sdk} is below min_sdk "
-            f"{min_sdk}",
+            f"[tool.kivy.android].target_sdk {target_sdk} is below min_sdk {min_sdk}",
             key_path="tool.kivy.android.target_sdk",
             line=finder.line("target_sdk"),
         )
@@ -1377,8 +1375,7 @@ def _parse_android_sdl(android: dict, finder: _LineFinder) -> int:
             f"[tool.kivy.android].sdl must be 2 or 3, got {sdl!r}",
             key_path="tool.kivy.android.sdl",
             line=finder.line("sdl"),
-            hint="sdl = 2 targets Kivy 2.3.1 (SDL2); sdl = 3 targets Kivy 3.0 "
-            "(SDL3).",
+            hint="sdl = 2 targets Kivy 2.3.1 (SDL2); sdl = 3 targets Kivy 3.0 (SDL3).",
         )
     return sdl
 
@@ -1482,8 +1479,7 @@ def _parse_android_permissions(
         isinstance(p, str) and p.strip() for p in uses
     ):
         raise ConfigError(
-            "[tool.kivy.android.permissions].uses must be a list of non-empty "
-            "strings",
+            "[tool.kivy.android.permissions].uses must be a list of non-empty strings",
             key_path="tool.kivy.android.permissions.uses",
             line=finder.line("uses"),
         )
@@ -1568,7 +1564,9 @@ def _parse_android_icons(android: dict, finder: _LineFinder) -> AndroidIconConfi
             finder=finder,
             key="monochrome",
         )
-    return AndroidIconConfig(source=source, background=background, monochrome=monochrome)
+    return AndroidIconConfig(
+        source=source, background=background, monochrome=monochrome
+    )
 
 
 def _parse_android_splash(android: dict, finder: _LineFinder) -> AndroidSplashConfig:
@@ -1807,9 +1805,7 @@ def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
     return AndroidSrcConfig(java=_roots("java"), kotlin=_roots("kotlin"))
 
 
-def _parse_android_services(
-    android: dict, finder: _LineFinder
-) -> list[AndroidService]:
+def _parse_android_services(android: dict, finder: _LineFinder) -> list[AndroidService]:
     entries = android.get("services")
     if entries is None:
         return []
@@ -2060,7 +2056,7 @@ def _parse_android_manifest(
             import xml.etree.ElementTree as ET
 
             wrapped = (
-                '<kivyforge xmlns:android='
+                "<kivyforge xmlns:android="
                 '"http://schemas.android.com/apk/res/android">'
                 f"{fragment}</kivyforge>"
             )
@@ -2068,8 +2064,7 @@ def _parse_android_manifest(
                 ET.fromstring(wrapped)
             except ET.ParseError as exc:
                 raise ConfigError(
-                    f"[tool.kivy.android.manifest].{key} is not well-formed "
-                    f"XML: {exc}",
+                    f"[tool.kivy.android.manifest].{key} is not well-formed XML: {exc}",
                     key_path=f"tool.kivy.android.manifest.{key}",
                     line=finder.line(key),
                 ) from exc
@@ -2085,9 +2080,7 @@ def _parse_android_manifest(
     )
 
 
-def _parse_android_signing(
-    android: dict, finder: _LineFinder
-) -> AndroidSigningConfig:
+def _parse_android_signing(android: dict, finder: _LineFinder) -> AndroidSigningConfig:
     signing = android.get("signing")
     if signing is None:
         return AndroidSigningConfig()

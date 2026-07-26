@@ -39,8 +39,10 @@ class KivyforgeExtensionFinder:
         return spec
 
     def __repr__(self):
-        return (f"<KivyforgeExtensionFinder {len(self._mapping)} modules "
-                f"at {self._native_dir!r}>")
+        return (
+            f"<KivyforgeExtensionFinder {len(self._mapping)} modules "
+            f"at {self._native_dir!r}>"
+        )
 
 
 def install(manifest_path, native_dir):

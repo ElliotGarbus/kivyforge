@@ -26,11 +26,7 @@ def run_smoke(project_dir: Path, *, release: bool = False) -> None:
     selects it). ``release`` targets the release variant so the probe also
     exercises byte-compilation, stripping, and R8 under a test signing config.
     """
-    task = (
-        "connectedReleaseAndroidTest"
-        if release
-        else "connectedDebugAndroidTest"
-    )
+    task = "connectedReleaseAndroidTest" if release else "connectedDebugAndroidTest"
     try:
         run_gradle(project_dir, [task])
     except GradleError as exc:

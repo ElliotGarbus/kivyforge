@@ -43,8 +43,7 @@ def dumps(lock: AndroidLockfile) -> str:
     lines.append(f"generated_at = {_s(lock.generated_at)}")
     lines.append(f"pyproject_sha256 = {_s(lock.pyproject_sha256)}")
     lines.append(
-        "tool_kivy_android_schema_version = "
-        f"{lock.tool_kivy_android_schema_version}"
+        f"tool_kivy_android_schema_version = {lock.tool_kivy_android_schema_version}"
     )
     lines.append(f"sdl = {lock.sdl}")
 

@@ -54,9 +54,7 @@ class JniLibsStager:
         """Copy a soname-resolved library verbatim (name unchanged)."""
         self._add(source, source.name, provider=provider)
 
-    def add_extension_module(
-        self, source: Path, *, dotted: str, provider: str
-    ) -> None:
+    def add_extension_module(self, source: Path, *, dotted: str, provider: str) -> None:
         """Flatten one extension module and record it in the finder manifest."""
         flattened = f"libpy.{dotted}.so"
         existing = self._manifest.get(dotted)
@@ -180,9 +178,7 @@ def stage_runtime_libs(
     extensions = 0
     dynload = prefix_lib / python_stem / "lib-dynload"
     if not dynload.is_dir():
-        raise JniLibsError(
-            f"runtime prefix has no lib-dynload directory at {dynload}"
-        )
+        raise JniLibsError(f"runtime prefix has no lib-dynload directory at {dynload}")
     for so in sorted(dynload.glob(f"*{_SO_SUFFIX}")):
         dotted = so.name.split(".", 1)[0]
         stager.add_extension_module(so, dotted=dotted, provider="runtime")

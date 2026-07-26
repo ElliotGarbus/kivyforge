@@ -64,7 +64,7 @@ def _encode_qr(text: str, size: int = 512) -> Texture | None:
         for x in range(width):
             v = 0 if matrix.get(x, y) else 255
             i = (y * width + x) * 4
-            buf[i:i + 4] = bytes((v, v, v, 255))
+            buf[i : i + 4] = bytes((v, v, v, 255))
     texture = Texture.create(size=(width, height), colorfmt="rgba")
     texture.blit_buffer(bytes(buf), colorfmt="rgba", bufferfmt="ubyte")
     texture.flip_vertical()

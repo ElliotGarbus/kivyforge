@@ -96,7 +96,10 @@ class TestDepNamesForEnvironment:
             'pytest; extra == "dev"',
             'sphinx; extra == "doc"',
         ]
-        assert dep_names_for_environment(requires_dist, _env()) == ["requests", "filetype"]
+        assert dep_names_for_environment(requires_dist, _env()) == [
+            "requests",
+            "filetype",
+        ]
 
     def test_keeps_edges_whose_marker_holds_on_android(self):
         requires_dist = ['oscpy; platform_system == "Android"']
@@ -104,13 +107,17 @@ class TestDepNamesForEnvironment:
 
     def test_machine_gated_edge_follows_the_abi(self):
         requires_dist = ['fast-thing; platform_machine == "aarch64"']
-        assert dep_names_for_environment(requires_dist, _env("arm64_v8a")) == ["fast-thing"]
+        assert dep_names_for_environment(requires_dist, _env("arm64_v8a")) == [
+            "fast-thing"
+        ]
         assert dep_names_for_environment(requires_dist, _env("x86_64")) == []
 
     def test_unparseable_metadata_does_not_fail_the_lock(self):
         # Upstream's problem, not a reason to refuse to lock: fall back to the
         # permissive name-only reading (everything up to the first separator).
-        assert dep_names_for_environment(["not a valid requirement!!"], _env()) == ["not"]
+        assert dep_names_for_environment(["not a valid requirement!!"], _env()) == [
+            "not"
+        ]
 
     def test_empty(self):
         assert dep_names_for_environment([], _env()) == []

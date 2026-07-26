@@ -101,8 +101,16 @@ def _verify_alias(keystore: Path, alias: str, store_password: str) -> None:
         # clear error if the alias is truly wrong. Don't block on tool absence.
         return
     proc = subprocess.run(
-        [keytool, "-list", "-keystore", str(keystore), "-alias", alias,
-         "-storepass", store_password],
+        [
+            keytool,
+            "-list",
+            "-keystore",
+            str(keystore),
+            "-alias",
+            alias,
+            "-storepass",
+            store_password,
+        ],
         capture_output=True,
         text=True,
     )

@@ -72,7 +72,9 @@ def _by_name(results):
 class TestEnvironmentChecks:
     def test_all_healthy(self, tmp_path):
         results = android_doctor(
-            tmp_path, kivyforge_version="0", offline=True,
+            tmp_path,
+            kivyforge_version="0",
+            offline=True,
             probe=_healthy_probe(tmp_path),
         )
         by = _by_name(results)
@@ -121,24 +123,36 @@ class TestProjectChecks:
         # (compile_sdk >= target_sdk); the check under test is the *platform*
         # install, not config validity.
         (tmp_path / "pyproject.toml").write_text(
-            "\n".join([
-                "[project]", 'name = "app"', 'version = "1.0.0"',
-                'dependencies = ["kivy==2.3.1", "pyjnius"]',
-                "[tool.kivy]", 'app_dir = "src"',
-                "[tool.kivy.android]", "schema_version = 1",
-                'package = "org.real.app"',
-                f"target_sdk = {compile_sdk}", f"compile_sdk = {compile_sdk}",
-                "[tool.kivy.android.python]", 'version = "3.14.6"',
-            ]),
+            "\n".join(
+                [
+                    "[project]",
+                    'name = "app"',
+                    'version = "1.0.0"',
+                    'dependencies = ["kivy==2.3.1", "pyjnius"]',
+                    "[tool.kivy]",
+                    'app_dir = "src"',
+                    "[tool.kivy.android]",
+                    "schema_version = 1",
+                    'package = "org.real.app"',
+                    f"target_sdk = {compile_sdk}",
+                    f"compile_sdk = {compile_sdk}",
+                    "[tool.kivy.android.python]",
+                    'version = "3.14.6"',
+                ]
+            ),
             encoding="utf-8",
         )
 
     def test_config_and_app_source(self, tmp_path):
         self._project(tmp_path)
-        by = _by_name(android_doctor(
-            tmp_path, kivyforge_version="0", offline=True,
-            probe=_healthy_probe(tmp_path),
-        ))
+        by = _by_name(
+            android_doctor(
+                tmp_path,
+                kivyforge_version="0",
+                offline=True,
+                probe=_healthy_probe(tmp_path),
+            )
+        )
         assert by["Android config"].status is Status.PASS
         assert by["App source directory"].status is Status.PASS
         assert by["Lock"].status is Status.WARN  # no lock yet
@@ -146,25 +160,35 @@ class TestProjectChecks:
     def test_compile_sdk_platform_missing_fails(self, tmp_path):
         self._project(tmp_path, compile_sdk=34)
         probe = _healthy_probe(tmp_path)  # only android-35 installed
-        by = _by_name(android_doctor(
-            tmp_path, kivyforge_version="0", offline=True, probe=probe
-        ))
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
         assert by["Build-tools / platform"].status is Status.FAIL
 
     def test_invalid_config_fails_fast(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text(
-            "\n".join([
-                "[project]", 'name = "app"', 'version = "1.0.0"',
-                "[tool.kivy]", 'app_dir = "src"',
-                "[tool.kivy.android]", "schema_version = 1",
-                'package = "nodots"',
-            ]),
+            "\n".join(
+                [
+                    "[project]",
+                    'name = "app"',
+                    'version = "1.0.0"',
+                    "[tool.kivy]",
+                    'app_dir = "src"',
+                    "[tool.kivy.android]",
+                    "schema_version = 1",
+                    'package = "nodots"',
+                ]
+            ),
             encoding="utf-8",
         )
-        by = _by_name(android_doctor(
-            tmp_path, kivyforge_version="0", offline=True,
-            probe=_healthy_probe(tmp_path),
-        ))
+        by = _by_name(
+            android_doctor(
+                tmp_path,
+                kivyforge_version="0",
+                offline=True,
+                probe=_healthy_probe(tmp_path),
+            )
+        )
         assert by["Android config"].status is Status.FAIL
 
 
