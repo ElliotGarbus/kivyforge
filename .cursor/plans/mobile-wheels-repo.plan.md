@@ -328,15 +328,85 @@ switch itself.
 
 1. Repo name — proposed `kivy-mobile-wheels`, easy to rename later.
 
+## Deferred kivyforge-side work (tracked here, done in the kivyforge repo)
+
+None of these belong in the wheels repo, but the sequencing decisions live
+here, so they are recorded here rather than lost.
+
+### A. `templates/sdl3/` for Android SDL3
+`render_bootstrap(sdl=3)` currently raises `RenderError`. Needed before
+Phase 3's wheel is usable end-to-end. Also the gate for **real** validation of
+the `_kivy_bootstrap` contract: today's `KIVY_CONTRACT_OK` only proves
+kivyforge calling its own module, because there is no Android Kivy 3.0 wheel
+to exercise the merged Kivy consumer side against. Both Kivy and p4a have now
+merged the contract, so kivyforge is one of two bootstraps implementing a
+live interface — worth validating for real rather than by construction.
+
+### B. SDL glue sync check
+One-line check comparing kivyforge's vendored
+`platforms/android/bootstrap/templates/sdl2/` against the wheels repo's
+`recipes/android/sdl-glue/<version>/` at the pinned commit (see SDL-glue
+decision above).
+
+### C. Android splash screen — finish the feature
+
+**Resume after wheels Phase 2**, not before, and not after all seven phases.
+Phase 2 is where reproducible Android wheels + fast rebuilds arrive, which is
+the whole workflow benefit; Phase 3's SDL3 investigation has real unknowns and
+splash should not be hostage to it.
+
+**Not blocked — deprioritized.** Splash is a pure Java/theme/resources concern
+that runs before Python starts, so it is independent of which Kivy wheel is
+installed and is testable today with the local wheels. It is behind the wheels
+work because that work removes a single-machine bus factor and unblocks item A
+above, which is a correctness gap; splash is polish.
+
+**Current state: a stub.** `generate/project.py` appends
+`toolchain.CORE_SPLASHSCREEN_COORDINATE` to the Gradle deps when
+`[tool.kivy.android.splash].source` is set — and nothing consumes it.
+`write_resources()` emits only
+`<style name="Theme.Kivyforge" parent="{base_theme}" />` (no
+`Theme.SplashScreen` parent, no `windowSplashScreen*` attributes) and
+`PythonActivity.java` never calls `installSplashScreen()`. So `splash.source`
+currently has **no effect**.
+
+**Scope, settled in conversation — the Android *system* splash only**, never
+python-for-android's custom View overlay. The work is:
+
+- `Theme.SplashScreen` parent + `windowSplashScreen*` attributes driven by
+  `splash.source`, and `postSplashScreenTheme` pointing back at
+  `Theme.Kivyforge`.
+- `installSplashScreen()` in `PythonActivity.onCreate`.
+- Note `androidx.core:core-splashscreen` is the **backport**: wiring it is what
+  produces a splash at all on **API 24–30** (kivyforge's floor is 24). Without
+  it those devices get nothing today, while API 31+ gets the stock
+  theme-derived splash regardless of what `splash.source` points at.
+
+**Explicit non-goal: no `setKeepOnScreenCondition()`.** The system splash is
+dismissed by the framework at first window draw; nothing is held, so nothing
+needs releasing. This is the load-bearing reason `_kivy_bootstrap.py`
+correctly omits `remove_presplash()` — the contract spec states that a
+bootstrap with no splash to dismiss should omit the hook and that Kivy treats
+its absence as a no-op, with no warning.
+
+Holding the splash would require a release path for **both** Kivy generations,
+and that is the trap: Kivy 2.3.1 predates the contract and never calls
+`remove_presplash()`, so a hook-only release would hang the splash forever on
+2.3.1 — currently kivyforge's only validated Android configuration. Should the
+scope ever change, that needs solving first (a self-releasing condition
+kivyforge can observe, or an `android` shim module for 2.3.1 alongside the
+Kivy 3 hook), not discovered afterwards.
+
+Accepted consequence of the current scope: the splash dismisses at first
+window draw, leaving a blank surface for the Python-startup gap (~1.5s between
+`launcher: interpreter up` and `Start application main loop` on the emulator,
+plus bundle unpack before it). Closing that gap is exactly what a held splash
+would buy, and exactly what is being declined.
+
 ## Explicit non-goals
 
-- Not touching kivyforge's own code in this repo. Two follow-ups this plan
-  produces but does not do:
-  - The `templates/sdl3/` gap for Android SDL3 (`render_bootstrap(sdl=3)`
-    currently raises `RenderError`) — needed once Phase 3's wheel exists.
-  - The kivyforge-side sync check comparing
-    `platforms/android/bootstrap/templates/sdl2/` against this repo's
-    `recipes/android/sdl-glue/<version>/` (see SDL-glue decision above).
+- Not touching kivyforge's own code in this repo — the items above are done in
+  the kivyforge repo, on the schedule noted.
 - Not moving ownership to the Kivy org yet — personal, by decision above.
 - Not attempting PyPI Trusted Publishing yet — the recipes are written so that
   migration is straightforward later, not implemented now.
