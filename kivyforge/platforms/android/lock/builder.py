@@ -272,8 +272,7 @@ def _normalize_wheel_source(
             f"wheel resolved to {resolved}, which is outside the allowed "
             f"find_links scope for project directory {root}.\n"
             f"  Vendored wheels must live under the project directory, a "
-            f"sibling directory, or the enclosing repository "
-            f"(e.g. examples/wheels/android/)."
+            f"sibling directory, or the enclosing repository."
         ) from exc
     return None, rel
 

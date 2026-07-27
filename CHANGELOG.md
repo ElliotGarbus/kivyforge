@@ -43,13 +43,27 @@
 - **`kivyforge doctor -p android`** — JDK/SDK/build-tools/NDK/emulator/adb, plus
   project checks (SDL↔Kivy, the pyjnius contract, a hermetic **16 KB
   ELF-alignment scanner**, ABI coverage, signing, lock-host reachability).
-- **Examples** — `hello-android`, `pyjnius-deviceinfo` (device info via pyjnius),
-  and `qr-maven` (Google ZXing via the Maven channel + a Python-implements-Java
-  `invoke0` round-trip), plus `examples/verify-android.ps1`.
-- **Interim wheels.** Kivy 2.3.1 + pyjnius are vendored under
-  `examples/wheels/android/` until first-party wheels reach PyPI. The pyjnius
-  wheel is first-party (cibuildwheel, 16 KB-aligned); the Kivy wheel is interim
-  (p4a-derived, 4 KB-aligned — `doctor` flags it) pending a cibuildwheel build.
+- **Examples** — `hello-android` (Kivy 2.3.1 / SDL2), `hello-sdl3` (Kivy 3.0 /
+  SDL3), `pyjnius-deviceinfo` (device info via pyjnius), and `qr-maven`
+  (Google ZXing via the Maven channel + a Python-implements-Java `invoke0`
+  round-trip), plus `examples/verify-android.ps1`.
+- **First-party wheels, no vendoring.** Kivy (2.3.1 and 3.0), pyjnius, and the
+  matching SDL family are resolved from the
+  [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels)
+  index — a companion repo of first-party cibuildwheel cross-builds (official
+  SDL sources, 16 KB page-aligned, sonames unchanged for `System.loadLibrary`)
+  published as a static PEP 503 index. `hello-android` and `hello-sdl3` carry
+  their locks committed as validation evidence; the rest resolve like any
+  other dependency.
+- **SDL3 / Kivy 3.0 support.** `sdl = 3` renders the SDL3 bootstrap template
+  (`templates/sdl3/`) and pairs it with the matching wheel-repo glue;
+  `check_sdl_glue_contract()` fails the build on any Java/`.so` version
+  mismatch rather than the silent black-screen failure that mismatch would
+  otherwise produce.
+- **Validated on real hardware.** `kivyforge run --smoke` passes on an x86_64
+  emulator (API 31) **and** a Pixel 8a (Android 16 / API 36) for both the
+  SDL2 and SDL3 stacks, with the app visually confirmed rendering on-device —
+  see the [compatibility matrix](docs/design/platforms/android/08-compatibility-matrix.md).
 
 ### Windows backend (onedir folder)
 
