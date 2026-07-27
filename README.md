@@ -8,7 +8,7 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/kivyforge)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/kivyforge)
 
-[![kivyforge](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivy_ios.yml/badge.svg)](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivy_ios.yml)
+[![kivyforge](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivyforge.yml/badge.svg)](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivyforge.yml)
 
 kivyforge is a declarative, [PEP 621](https://peps.python.org/pep-0621/)-aligned
 build toolchain for [Kivy](https://kivy.org) (and other Python) apps. You
