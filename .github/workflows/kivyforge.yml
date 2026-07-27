@@ -27,6 +27,25 @@ jobs:
     - name: ruff format --check
       run: ruff format --check kivyforge tests
 
+  # The Android bootstrap vendors SDL's Java glue paired with the libSDL*.so
+  # the kivy-mobile-wheels repo ships (android/05 §matched pair;
+  # kivyforge/platforms/android/bootstrap/contract.py). check_sdl_glue_contract
+  # catches a version-stamp mismatch at build time, but only after the fact;
+  # this job catches the two repos' vendored copies silently diverging in
+  # *content* the moment either one changes.
+  sdl_glue_sync:
+    name: SDL glue sync (kivy-mobile-wheels)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Verify vendored SDL glue matches kivy-mobile-wheels
+      run: python scripts/check_sdl_glue_sync.py
+
   package:
     name: Package (build + twine)
     runs-on: ubuntu-latest

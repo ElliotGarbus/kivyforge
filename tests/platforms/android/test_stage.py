@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from kivyforge.lock.model import LockedPackage, LockedWheel
+from kivyforge.platforms.android.stage import wheels as wheels_mod
 from kivyforge.platforms.android.stage.bundle import BundleError, assemble_bundle
 from kivyforge.platforms.android.stage.jnilibs import (
     JniLibsError,
@@ -17,7 +19,11 @@ from kivyforge.platforms.android.stage.jnilibs import (
     stage_site_packages_extensions,
     stage_wheel_libs_dir,
 )
-from kivyforge.platforms.android.stage.wheels import WheelStageError, select_wheel
+from kivyforge.platforms.android.stage.wheels import (
+    WheelStageError,
+    install_wheels,
+    select_wheel,
+)
 
 
 def _write(path: Path, content: bytes = b"x") -> Path:
@@ -142,6 +148,90 @@ class TestSelectWheel:
         pkg = _pkg("android_24_x86_64")
         with pytest.raises(WheelStageError, match="arm64_v8a"):
             select_wheel(pkg, abi="arm64_v8a", min_sdk=24)
+
+    def test_non_numeric_api_tag_ignored(self):
+        # A malformed/foreign platform tag with a non-numeric "api" segment
+        # must not crash selection — it is simply not a candidate.
+        pkg = _pkg("android_24_arm64_v8a")
+        wheels = list(pkg.wheels) + [
+            LockedWheel(
+                name="p-1.0-cp314-cp314-android_x_arm64_v8a.whl",
+                url="https://x/android_x_arm64_v8a.whl",
+                sha256="a" * 64,
+            )
+        ]
+        pkg2 = LockedPackage(name="p", version="1.0", wheels=tuple(wheels))
+        chosen = select_wheel(pkg2, abi="arm64_v8a", min_sdk=24)
+        assert "android_24_arm64_v8a" in chosen.name
+
+    def test_multiple_pure_python_wheels_first_one_wins(self):
+        pkg = _pkg("py3-none-any")
+        wheels = tuple(pkg.wheels) * 2
+        pkg2 = LockedPackage(name="p", version="1.0", wheels=wheels)
+        chosen = select_wheel(pkg2, abi="arm64_v8a", min_sdk=24)
+        assert chosen.is_pure_python
+
+
+class TestInstallWheels:
+    def test_no_wheel_files_creates_empty_target(self, tmp_path):
+        target = tmp_path / "target"
+        install_wheels([], target, python_version="3.14.0")
+        assert target.is_dir()
+
+    def test_success_invokes_pip_with_expected_flags(self, tmp_path, monkeypatch):
+        target = tmp_path / "target"
+        wheel = tmp_path / "kivy-3.0.0-cp314-cp314-android_24_arm64_v8a.whl"
+        wheel.write_bytes(b"x")
+        pure = tmp_path / "attrs-24.0.0-py3-none-any.whl"
+        pure.write_bytes(b"x")
+        captured = {}
+
+        def fake_run(cmd, capture_output, text):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(wheels_mod.subprocess, "run", fake_run)
+        install_wheels(
+            [wheel, pure],
+            target,
+            python_version="3.14.0",
+            python_executable="/usr/bin/python3.14",
+        )
+        cmd = captured["cmd"]
+        assert cmd[0] == "/usr/bin/python3.14"
+        assert "--no-index" in cmd
+        assert "--target" in cmd
+        assert str(target) in cmd
+        assert "android_24_arm64_v8a" in cmd
+        assert "any" not in cmd  # the "any" tag is never passed to pip
+        assert str(wheel) in cmd
+        assert str(pure) in cmd
+
+    def test_default_python_executable_is_sys_executable(self, tmp_path, monkeypatch):
+        wheel = tmp_path / "p-1.0-py3-none-any.whl"
+        wheel.write_bytes(b"x")
+        captured = {}
+
+        def fake_run(cmd, capture_output, text):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr(wheels_mod.subprocess, "run", fake_run)
+        install_wheels([wheel], tmp_path / "target", python_version="3.14.0")
+        assert captured["cmd"][0] == wheels_mod.sys.executable
+
+    def test_pip_failure_wrapped(self, tmp_path, monkeypatch):
+        wheel = tmp_path / "p-1.0-py3-none-any.whl"
+        wheel.write_bytes(b"x")
+
+        def fake_run(cmd, capture_output, text):
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="", stderr="ERROR: no such wheel"
+            )
+
+        monkeypatch.setattr(wheels_mod.subprocess, "run", fake_run)
+        with pytest.raises(WheelStageError, match="could not install"):
+            install_wheels([wheel], tmp_path / "target", python_version="3.14.0")
 
 
 class TestBundle:

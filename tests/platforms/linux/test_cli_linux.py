@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -18,8 +19,14 @@ from kivyforge.lock.wheelruntime.model import (
     RuntimeArtifact,
     WheelRuntimeLock,
 )
+from kivyforge.platforms import HostCapabilityError
+from kivyforge.platforms.linux import AppDirError
 from kivyforge.platforms.linux import cli as _linux
 from kivyforge.platforms.linux.lock import dumps
+
+# Captured before the autouse fixture below monkeypatches it away, so tests
+# that want the *real* host-capability check can restore it explicitly.
+_REAL_REQUIRE_LINUX_HOST = _linux._require_linux_host
 
 PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.0.0'\nrequires-python='>=3.15'\n"
@@ -243,3 +250,123 @@ class TestPackage:
             result = runner.invoke(package, ["-p", "linux", "--arch", "arm64"])
             assert result.exit_code != 0
             assert "not in the lock" in result.output
+
+    def test_appimage_build_error_wrapped(
+        self, runner, tmp_path, fake_bundler, monkeypatch
+    ):
+        def fake_appimage(appdir, output, arch, **k):
+            raise AppDirError("appimagetool exploded")
+
+        monkeypatch.setattr(_linux, "build_appimage", fake_appimage)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(package, ["-p", "linux"])
+            assert result.exit_code != 0
+            assert "appimagetool exploded" in result.output
+
+
+class TestAssembleErrorWrapping:
+    def test_bundler_error_wrapped_on_build(self, runner, tmp_path, monkeypatch):
+        def fake_build(config, lock, project_root, *, arch=None, no_cache=False, **k):
+            raise AppDirError("bundler exploded")
+
+        monkeypatch.setattr(_linux, "build_appdir", fake_build)
+        monkeypatch.setattr(_linux, "_require_linux_host", lambda: None)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["-p", "linux"])
+            assert result.exit_code != 0
+            assert "bundler exploded" in result.output
+
+
+class TestRunEdgeCases:
+    def test_no_build_launches_existing_appdir(
+        self, runner, tmp_path, fake_bundler, monkeypatch
+    ):
+        launched = []
+        monkeypatch.setattr(
+            _linux.subprocess,
+            "run",
+            lambda cmd: launched.append(cmd) or subprocess.CompletedProcess(cmd, 0),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            # First build normally so an AppDir exists on disk.
+            result = runner.invoke(run, ["-p", "linux"])
+            assert result.exit_code == 0, result.output
+            launched.clear()
+
+            result = runner.invoke(run, ["-p", "linux", "--no-build"])
+            assert result.exit_code == 0, result.output
+            assert launched
+
+    def test_nonzero_exit_from_apprun_reported(
+        self, runner, tmp_path, fake_bundler, monkeypatch
+    ):
+        monkeypatch.setattr(
+            _linux.subprocess,
+            "run",
+            lambda cmd: subprocess.CompletedProcess(cmd, 7),
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(run, ["-p", "linux"])
+            assert result.exit_code != 0
+            assert "exited with status 7" in result.output
+
+
+class TestRequireLinuxHost:
+    def test_host_capability_error_wrapped(self, monkeypatch):
+        # fake_bundler (autouse) stubs _require_linux_host itself, so restore
+        # the real function to exercise its HostCapabilityError wrapping.
+        monkeypatch.setattr(_linux, "_require_linux_host", _REAL_REQUIRE_LINUX_HOST)
+
+        class FakePlatform:
+            def check_host_capability(self):
+                raise HostCapabilityError("no X11/Wayland session")
+
+        with patch.object(_linux, "get_platform", return_value=FakePlatform()):
+            with pytest.raises(_linux.ToolchainError, match="no X11/Wayland session"):
+                _linux._require_linux_host()
+
+
+class TestLockStateUnreadable:
+    def test_corrupt_lock_reports_unreadable(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            (Path(fs) / "pylock.linux.toml").write_text("not valid toml [[[")
+            result = runner.invoke(status, ["-p", "linux"])
+            assert result.exit_code == 0, result.output
+            assert "unreadable" in result.output
+
+    def test_corrupt_lock_reported_on_build(self, runner, tmp_path, fake_bundler):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            (Path(fs) / "pylock.linux.toml").write_text("not valid toml [[[")
+            result = runner.invoke(build, ["-p", "linux"])
+            assert result.exit_code != 0
+
+
+class TestHumanizeAges:
+    def test_minutes_and_hours_and_days_ago(self, runner, tmp_path, fake_bundler):
+        import os
+
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            root = _write_project(fs)
+            appdir = root / "build" / "linux" / "My App.AppDir"
+            appdir.mkdir(parents=True)
+
+            import time as time_mod
+
+            now = time_mod.time()
+            os.utime(appdir, (now - 300, now - 300))  # 5 minutes ago
+            result = runner.invoke(status, ["-p", "linux"])
+            assert "minute" in result.output
+
+            os.utime(appdir, (now - 7200, now - 7200))  # 2 hours ago
+            result = runner.invoke(status, ["-p", "linux"])
+            assert "hour" in result.output
+
+            os.utime(appdir, (now - 172800, now - 172800))  # 2 days ago
+            result = runner.invoke(status, ["-p", "linux"])
+            assert "day" in result.output

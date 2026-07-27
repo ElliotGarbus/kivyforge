@@ -7,6 +7,7 @@ import tarfile
 
 import pytest
 
+from kivyforge.artifacts.download import DownloadError
 from kivyforge.lock.wheelruntime.model import PythonRuntime, RuntimeArtifact
 from kivyforge.platforms.windows import WindowsBundleError, runtime_stage
 from kivyforge.platforms.windows.petools import (
@@ -86,6 +87,26 @@ class TestStageRuntime:
             runtime_stage.stage_runtime(
                 _runtime(("amd64",)), "arm64", tmp_path / "home", project_root=tmp_path
             )
+
+    def test_existing_home_is_replaced(self, tmp_path, monkeypatch):
+        archive = tmp_path / "amd64.tar.gz"
+        _make_pbs_archive(archive)
+        monkeypatch.setattr(runtime_stage, "_fetch", lambda *a, **k: archive)
+        home = tmp_path / "bundle" / "python"
+        home.mkdir(parents=True)
+        stale = home / "stale-leftover.txt"
+        stale.write_text("from a previous stage")
+
+        result = runtime_stage.stage_runtime(
+            _runtime(),
+            "amd64",
+            home,
+            project_root=tmp_path,
+            system_dir=_fake_system_dir(tmp_path),
+        )
+        assert result == home
+        assert (home / "python.exe").exists()
+        assert not stale.exists()  # stale prefix must be wiped, not merged
 
 
 class TestEnsureVcRuntime:
@@ -172,6 +193,85 @@ class TestEnsureVcRuntime:
         assert (home / runtime_stage.CXX_VC_RUNTIME).is_file()
 
 
+class TestFetch:
+    def test_derives_filename_and_delegates(self, tmp_path, monkeypatch):
+        captured = {}
+
+        def fake_fetch_artifact(
+            *, name, sha256, filename, url, project_root, cache, no_cache
+        ):
+            captured.update(
+                name=name,
+                sha256=sha256,
+                filename=filename,
+                url=url,
+                project_root=project_root,
+                no_cache=no_cache,
+            )
+            return tmp_path / filename
+
+        monkeypatch.setattr(runtime_stage, "fetch_artifact", fake_fetch_artifact)
+        artifact = RuntimeArtifact(
+            arch="amd64",
+            url="https://e/cpython-3.13.14-amd64.tar.gz",
+            sha256="deadbeef",
+        )
+        result = runtime_stage._fetch(
+            artifact, "amd64", tmp_path, cache=None, no_cache=True
+        )
+        assert result == tmp_path / "cpython-3.13.14-amd64.tar.gz"
+        assert captured["filename"] == "cpython-3.13.14-amd64.tar.gz"
+        assert captured["sha256"] == "deadbeef"
+        assert captured["no_cache"] is True
+
+    def test_url_without_filename_falls_back_to_arch_name(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            runtime_stage,
+            "fetch_artifact",
+            lambda **kw: tmp_path / kw["filename"],
+        )
+        artifact = RuntimeArtifact(arch="amd64", url="https://e/", sha256="x")
+        result = runtime_stage._fetch(
+            artifact, "amd64", tmp_path, cache=None, no_cache=False
+        )
+        assert result.name == "python-amd64.tar.gz"
+
+    def test_download_error_wrapped(self, tmp_path, monkeypatch):
+        def boom(**kw):
+            raise DownloadError("network unreachable")
+
+        monkeypatch.setattr(runtime_stage, "fetch_artifact", boom)
+        artifact = RuntimeArtifact(arch="amd64", url="https://e/py.tar.gz", sha256="x")
+        with pytest.raises(WindowsBundleError, match="network unreachable"):
+            runtime_stage._fetch(
+                artifact, "amd64", tmp_path, cache=None, no_cache=False
+            )
+
+
+class TestDefaultSystemDir:
+    def test_64bit_interpreter_uses_default_system32(self, monkeypatch):
+        monkeypatch.setattr(runtime_stage.struct, "calcsize", lambda fmt: 8)
+        assert runtime_stage._default_system_dir() == runtime_stage.DEFAULT_SYSTEM_DIR
+
+    def test_32bit_interpreter_prefers_sysnative_when_present(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(runtime_stage.struct, "calcsize", lambda fmt: 4)
+        sysroot = tmp_path / "Windows"
+        (sysroot / "Sysnative").mkdir(parents=True)
+        monkeypatch.setattr(runtime_stage.os, "environ", {"SystemRoot": str(sysroot)})
+        assert runtime_stage._default_system_dir() == sysroot / "Sysnative"
+
+    def test_32bit_interpreter_falls_back_without_sysnative(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(runtime_stage.struct, "calcsize", lambda fmt: 4)
+        sysroot = tmp_path / "Windows"
+        sysroot.mkdir()
+        monkeypatch.setattr(runtime_stage.os, "environ", {"SystemRoot": str(sysroot)})
+        assert runtime_stage._default_system_dir() == runtime_stage.DEFAULT_SYSTEM_DIR
+
+
 class TestExtract:
     def test_rejects_unknown_provider(self, tmp_path):
         archive = tmp_path / "a.tar.gz"
@@ -202,3 +302,9 @@ class TestExtract:
             tf.addfile(link)
         with pytest.raises(WindowsBundleError, match="unsafe member"):
             runtime_stage._extract(evil, tmp_path / "out", "python-build-standalone")
+
+    def test_corrupt_archive_reports_extraction_failure(self, tmp_path):
+        bogus = tmp_path / "not-a-real-archive.tar.gz"
+        bogus.write_bytes(b"this is not gzip/tar data at all")
+        with pytest.raises(WindowsBundleError, match="failed to extract"):
+            runtime_stage._extract(bogus, tmp_path / "out", "python-build-standalone")

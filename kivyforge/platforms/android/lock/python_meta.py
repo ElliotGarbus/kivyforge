@@ -75,7 +75,21 @@ class PythonAndroidProvider(Protocol):
 def read_min_api(archive_path: str | Path) -> int:
     """Read ``ANDROID_API_LEVEL`` from ``android-env.sh`` inside the tarball."""
     try:
-        with tarfile.open(archive_path, "r:gz") as tf:
+        with open(archive_path, "rb") as f:
+            return _read_min_api_from_fileobj(f)
+    except OSError:
+        return _MIN_API_FALLBACK
+
+
+def _read_min_api_from_fileobj(fileobj) -> int:
+    """Same as :func:`read_min_api`, but reads an already-open, seekable file.
+
+    ``_download`` reads it via its own live ``NamedTemporaryFile`` handle
+    rather than reopening the path — reopening a still-open ``NamedTemporaryFile``
+    by name is a documented POSIX-only guarantee (it silently fails on Windows).
+    """
+    try:
+        with tarfile.open(fileobj=fileobj, mode="r:gz") as tf:
             for member in tf.getmembers():
                 if not member.name.endswith("android-env.sh"):
                     continue
@@ -166,7 +180,8 @@ class PythonOrgAndroidProvider:
                             digest.update(chunk)
                             tmp.write(chunk)
                     tmp.flush()
-                    min_api = read_min_api(tmp.name)
+                    tmp.seek(0)
+                    min_api = _read_min_api_from_fileobj(tmp)
                 return digest.hexdigest(), min_api
             except OSError as exc:
                 last_exc = exc

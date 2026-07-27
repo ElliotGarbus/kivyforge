@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from pathlib import Path
+
+import pytest
 
 from kivyforge.config.loader import load_config_from_text
+from kivyforge.platforms.android.generate import project as project_mod
 from kivyforge.platforms.android.generate.manifest import (
     generate_manifest,
     implied_features,
@@ -12,10 +16,15 @@ from kivyforge.platforms.android.generate.manifest import (
     screen_orientation,
 )
 from kivyforge.platforms.android.generate.project import (
+    ProjectGenError,
+    android_abi,
+    stage_gradle_wrapper,
     write_app_build_gradle,
     write_gradle_pins,
     write_gradle_properties,
     write_resources,
+    write_root_build_gradle,
+    write_settings_gradle,
 )
 from kivyforge.platforms.android.lock.model import (
     AndroidLockfile,
@@ -267,3 +276,239 @@ class TestProjectFiles:
     def test_no_pins_no_files(self, tmp_path):
         write_gradle_pins(tmp_path, self._lock())
         assert not (tmp_path / "app" / "gradle.lockfile").exists()
+
+    def test_stale_verification_metadata_swept(self, tmp_path):
+        stale = tmp_path / "gradle" / "verification-metadata.xml"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("stale", encoding="utf-8")
+        write_gradle_pins(tmp_path, self._lock())
+        assert not stale.exists()
+
+
+class TestAndroidAbi:
+    def test_known_abis(self):
+        assert android_abi("arm64_v8a") == "arm64-v8a"
+        assert android_abi("x86_64") == "x86_64"
+
+
+class TestWriteSettingsGradle:
+    def test_content(self, tmp_path):
+        write_settings_gradle(tmp_path)
+        text = (tmp_path / "settings.gradle").read_text()
+        assert 'rootProject.name = "kivyforge-app"' in text
+        assert 'include ":app"' in text
+        assert "google()" in text
+
+
+class TestWriteRootBuildGradle:
+    def test_without_kotlin(self, tmp_path):
+        _, android = _android()
+        write_root_build_gradle(tmp_path, android)
+        text = (tmp_path / "build.gradle").read_text()
+        assert "com.android.application" in text
+        assert "kotlin.android" not in text
+
+    def test_with_kotlin(self, tmp_path):
+        _, android = _android("[tool.kivy.android.src]\nkotlin = ['extra/kotlin']\n")
+        write_root_build_gradle(tmp_path, android)
+        text = (tmp_path / "build.gradle").read_text()
+        assert "org.jetbrains.kotlin.android" in text
+
+
+class TestStageGradleWrapper:
+    def test_stages_wrapper_files(self, tmp_path):
+        stage_gradle_wrapper(tmp_path)
+        assert (tmp_path / "gradle" / "wrapper" / "gradle-wrapper.jar").is_file()
+        assert (tmp_path / "gradle" / "wrapper" / "gradle-wrapper.properties").is_file()
+        assert (tmp_path / "gradlew").is_file()
+        assert (tmp_path / "gradlew.bat").is_file()
+
+    def test_missing_vendored_jar_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            project_mod, "_WRAPPER_DIR", tmp_path / "no-such-wrapper-dir"
+        )
+        with pytest.raises(ProjectGenError, match="gradle-wrapper.jar missing"):
+            stage_gradle_wrapper(tmp_path / "dest")
+
+
+class TestWriteAppBuildGradleVariants:
+    def test_restricted_abi_filter(self, tmp_path):
+        config, android = _android()
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+            abis=("x86_64",),
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "abiFilters 'x86_64'" in text
+        assert "arm64-v8a" not in text
+
+    def test_kotlin_source_dirs_and_plugin(self, tmp_path):
+        config, android = _android(
+            "[tool.kivy.android.src]\n"
+            "java = ['extra/java']\n"
+            "kotlin = ['extra/kotlin']\n"
+        )
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "id 'org.jetbrains.kotlin.android'" in text
+        assert "java.srcDirs += 'extra/java'" in text
+        assert "java.srcDirs += 'extra/kotlin'" in text
+
+    def test_splash_source_adds_splashscreen_dependency(self, tmp_path):
+        config, android = _android(
+            "[tool.kivy.android.splash]\nsource = 'splash.png'\n"
+        )
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert project_mod.toolchain.CORE_SPLASHSCREEN_COORDINATE in text
+
+    def test_strip_native_libs_false_keeps_symbols(self, tmp_path):
+        config, android = _android(
+            "[tool.kivy.android.build_settings]\nstrip_native_libs = false\n"
+        )
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "keepDebugSymbols += ['**/*.so']" in text
+
+    def test_strip_native_libs_default_release_only_omits_keep_symbols(self, tmp_path):
+        # Default build_settings.strip_native_libs is the "release" tri-state,
+        # which _release_flag treats as stripped (matches ANDROID_RELEASE_ONLY).
+        config, android = _android()
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "keepDebugSymbols" not in text
+
+    def test_minify_and_shrink_resources_enabled(self, tmp_path):
+        config, android = _android(
+            "[tool.kivy.android.build_settings]\n"
+            "minify = true\n"
+            "shrink_resources = true\n"
+        )
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "minifyEnabled true" in text
+        assert "shrinkResources true" in text
+
+    def test_debug_symbols_full_and_none(self, tmp_path):
+        for level, expected in (("full", "FULL"), ("none", "NONE")):
+            config, android = _android(
+                f"[tool.kivy.android.build_settings]\ndebug_symbols = '{level}'\n"
+            )
+            write_app_build_gradle(
+                tmp_path / level,
+                config,
+                android,
+                python_version="3.14.6",
+                runtime_root=tmp_path / "rt",
+                staged_libs=[],
+            )
+            text = (tmp_path / level / "app" / "build.gradle").read_text()
+            assert f"debugSymbolLevel '{expected}'" in text
+
+    def test_signing_config_block_injected(self, tmp_path):
+        config, android = _android()
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+            signing_config_block="    signingConfigs {\n        release { }\n    }\n",
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "signingConfig signingConfigs.release" in text
+        assert "signingConfigs {" in text
+
+
+class TestWriteResources:
+    def test_custom_icon_source_skips_default(self, tmp_path):
+        config, android = _android("[tool.kivy.android.icons]\nsource = 'icon.png'\n")
+        (tmp_path / "icon.png").write_bytes(b"\x89PNG\r\n")
+        write_resources(tmp_path, config, android)
+        icon = (
+            tmp_path
+            / "app"
+            / "src"
+            / "main"
+            / "res"
+            / "mipmap-mdpi"
+            / "ic_launcher.png"
+        )
+        assert not icon.exists()
+
+    def test_base_theme_in_styles_xml(self, tmp_path):
+        config, android = _android()
+        write_resources(tmp_path, config, android)
+        styles = (
+            tmp_path / "app" / "src" / "main" / "res" / "values" / "styles.xml"
+        ).read_text()
+        assert android.base_theme in styles
+
+    def test_display_name_escaped_in_strings_xml(self, tmp_path):
+        text = BASE.replace(
+            '[tool.kivy]\napp_dir = "src"',
+            '[tool.kivy]\napp_dir = "src"\ndisplay_name = "R&D <App>"',
+        )
+        config = load_config_from_text(text, require_ios=False, require_android=True)
+        android = config.android_required
+        write_resources(tmp_path, config, android)
+        strings = (
+            tmp_path / "app" / "src" / "main" / "res" / "values" / "strings.xml"
+        ).read_text()
+        assert "R&amp;D &lt;App&gt;" in strings
+
+
+class TestPropStr:
+    def test_non_bool_value_stringified(self, tmp_path):
+        _, android = _android(
+            '[tool.kivy.android.gradle_properties]\n"org.gradle.workers.max" = 4\n'
+        )
+        write_gradle_properties(tmp_path, android)
+        text = (tmp_path / "gradle.properties").read_text()
+        assert "org.gradle.workers.max=4" in text
+
+
+class TestGradlePath:
+    def test_backslashes_converted_to_forward_slashes(self):
+        assert project_mod._gradle_path(Path("a") / "b" / "c") == "a/b/c"

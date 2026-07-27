@@ -26,17 +26,17 @@ direct_requirement = true
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
 url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev0/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-hashes = { sha256 = "9bd343eb6493a010dbf5665bcbb8410f410f4739be2532366fab88e9ae9ae8a1" }
+hashes = { sha256 = "e5c1606533824735bc428f151a28db3f4de9953e39bcffd6c53516f668d10f32" }
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
 url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev0/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-hashes = { sha256 = "c5dd880917ca53d52bfb9867d22636d2aba5651e22e8c21ec7756ccdc308fe91" }
+hashes = { sha256 = "009e3038c1c7f662c2fc81b4fc1e5423864445047724640bbfe2415af05a614a" }
 
 [[packages.wheels]]
 name = "kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
 url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev0/kivy-3.0.0.dev0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-hashes = { sha256 = "1fde7d1afa462efab3c598cd7fb31dcbdc27e65270348444a7bb07f01dd6f31d" }
+hashes = { sha256 = "656ab9d4e04a5793519c4e186cebf71d6d88fee1c4021b238e5cd2f78ec49e4b" }
 
 [[packages]]
 name = "more-itertools"

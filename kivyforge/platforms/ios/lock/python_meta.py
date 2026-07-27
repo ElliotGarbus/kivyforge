@@ -68,7 +68,21 @@ def read_ios_floor(archive_path: str | Path) -> str:
     archive is not a valid tarball (e.g. a test fixture).
     """
     try:
-        with tarfile.open(archive_path, "r:gz") as tf:
+        with open(archive_path, "rb") as f:
+            return _read_ios_floor_from_fileobj(f)
+    except OSError:
+        return _IOS_FLOOR_FALLBACK
+
+
+def _read_ios_floor_from_fileobj(fileobj) -> str:
+    """Same as :func:`read_ios_floor`, but reads an already-open, seekable file.
+
+    ``_download`` reads it via its own live ``NamedTemporaryFile`` handle
+    rather than reopening the path — reopening a still-open ``NamedTemporaryFile``
+    by name is a documented POSIX-only guarantee (it silently fails on Windows).
+    """
+    try:
+        with tarfile.open(fileobj=fileobj, mode="r:gz") as tf:
             for member in tf.getmembers():
                 if not member.name.endswith("Python.xcframework/Info.plist"):
                     continue
@@ -151,7 +165,8 @@ class PythonOrgProvider:
                             digest.update(chunk)
                             tmp.write(chunk)
                     tmp.flush()
-                    floor = read_ios_floor(tmp.name)
+                    tmp.seek(0)
+                    floor = _read_ios_floor_from_fileobj(tmp)
                 return digest.hexdigest(), floor
             except OSError as exc:
                 last_exc = exc
