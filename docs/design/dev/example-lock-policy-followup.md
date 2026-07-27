@@ -145,6 +145,24 @@ requires rebuilding or re-vendoring at least one wheel — `kivy-mobile-wheels`
 Releases only serve `url` sources) on one example, not to reverse the
 `examples/wheels/ios/` deletion for all of them.
 
+That gap is about human-facing/on-device demonstration specifically, not
+about test coverage of the mechanism — those are different things and were
+being conflated. Auditing the existing lock tests (2026-07-27) found the
+`path`-pin mechanism itself already well covered hermetically: `find_links`
+parsing + repo-boundary scope rules
+(`tests/config/test_loader.py`), `_normalize_wheel_source` given a real
+`file://` URI on real files (`test_find_links.py`), and the
+`LockedWheel(path=...)` <-> TOML round-trip (`tests/lock/test_pep751.py`).
+The one thing genuinely untested anywhere was the seam between those: a real
+`PipResolver` (every lock test injects `FakeResolver`) resolving a real,
+disk-only wheel end-to-end into a `path=` lock entry. Added
+`tests/platforms/ios/lock/test_real_pip_local_wheel.py` to close that —
+still no network (pure local `find_links`, `--no-index`), still fast (a
+hand-built `py3-none-any` wheel needs no iOS toolchain), but it is the one
+test in that package that spawns a real pip subprocess rather than a fake.
+This protects the mechanism from regressing; it does not restore an
+example-level demonstration, which remains the open question above.
+
 ## Where the work runs
 
 `kivyforge lock -p ios` is macOS-gated (`IosPlatform.check_host_capability`),
