@@ -22,7 +22,7 @@ min_sdk = 24
 target_sdk = 35
 sdl = 2
 abis = ["arm64_v8a", "x86_64"]
-find_links = ["../../wheels/android"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 
 exclude = ["kivy-garden", "docutils", "pygments"]
 

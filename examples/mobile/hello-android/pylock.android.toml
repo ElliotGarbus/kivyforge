@@ -55,13 +55,13 @@ direct_requirement = true
 
 [[packages.wheels]]
 name = "Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl"
-path = "../../wheels/android/Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl"
-hashes = { sha256 = "685323b4b64ea83078145e86a644158db10ba9ce62de758c3d78148addbef7f1" }
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-android-2.3.1/Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl"
+hashes = { sha256 = "078870f062a128f203144ebf3add844fcc0b966381a2010fd3a2840afedd905f" }
 
 [[packages.wheels]]
 name = "Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl"
-path = "../../wheels/android/Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl"
-hashes = { sha256 = "6ab89ca283393864b9a2e710e8c2400800e7160d34528280d5cf2406ce9357c2" }
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-android-2.3.1/Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl"
+hashes = { sha256 = "affdb2a7fc5054aa7788d9586bd620d9ccc35298664565be44ae36cdfca24a37" }
 
 [[packages]]
 name = "pyjnius"
@@ -72,13 +72,13 @@ direct_requirement = true
 
 [[packages.wheels]]
 name = "pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl"
-path = "../../wheels/android/pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl"
-hashes = { sha256 = "232b830e12e334909bec4c797e3e6d12f98d1c119dd622bcb570a942143e99c8" }
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/pyjnius-android-1.7.0/pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl"
+hashes = { sha256 = "d031b830fe8790657371a511464691e7d05e891d9fe230bc82de1e28b391711a" }
 
 [[packages.wheels]]
 name = "pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
-path = "../../wheels/android/pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
-hashes = { sha256 = "96b35a63ba4427527fa34ad66a6d1d0881ee7b029fcfb38f9314cf4f0b28fcff" }
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/pyjnius-android-1.7.0/pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
+hashes = { sha256 = "95f5a0bf80629971252d95bf328f33268e278ed8b0b035fd0b8c18cd0b032575" }
 
 [[packages]]
 name = "requests"
@@ -104,8 +104,8 @@ hashes = { sha256 = "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef72
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-07-25T23:29:13Z"
-pyproject_sha256 = "852c144e843b67505beb0c74e8f07f7507ce6171c6746ff9712d859d7af279a3"
+generated_at = "2026-07-27T12:05:07Z"
+pyproject_sha256 = "dd00b2e3783abfb4af16fe58deda6a6b583fe679eb9ac8ef4efb5181b095416e"
 tool_kivy_android_schema_version = 1
 sdl = 2
 

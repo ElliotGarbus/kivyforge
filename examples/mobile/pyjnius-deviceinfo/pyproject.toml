@@ -23,7 +23,7 @@ target_sdk = 35
 sdl = 2
 abis = ["arm64_v8a", "x86_64"]
 # Kivy 2.3.1 + pyjnius are cross-built and vendored until they land on PyPI.
-find_links = ["../../wheels/android"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 
 # Kivy's wheel declares deps a bundled app can't use on Android.
 exclude = [
