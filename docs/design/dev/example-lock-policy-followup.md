@@ -8,7 +8,21 @@
 > comment explaining why their lock is tracked, so it does not read as an
 > oversight.
 >
-> **Still open, all macOS-side** — see "Remaining work" at the end.
+> **Correction (2026-07-27):** this note originally claimed "every mobile
+> example now resolves from the index" and that `examples/wheels/ios/*.whl`
+> were unused-but-undeleted. Neither was true at the time — Phase 6 as
+> scoped had only repointed `hello-kivy` and `pyobjus-*`; `keychain-spm`,
+> `mobile-geometry`, and `svg-explorer` were still on local `find_links`
+> against that directory. Both gaps are now closed (see the addendum in
+> [`mobile-wheels-phase6-ios-findings.md`](mobile-wheels-phase6-ios-findings.md)):
+> all six iOS examples resolve from the index, and
+> `examples/wheels/ios/` has been deleted.
+>
+> **Still open:** no example demonstrates the local `path`-wheel shape (item
+> 1). That gap was flagged *before* the deletion above as a reason to
+> possibly keep one example deliberately on `find_links` — the deletion
+> proceeded anyway once all six examples were validated against the index,
+> so the gap is now real rather than hypothetical. See below.
 
 Raised while completing Phase 6 of the mobile-wheels plan. **Not urgent, and
 not a bug** — but three things no longer line up, and one of them was caused
@@ -95,57 +109,44 @@ The second is closer to how the tree already behaves and keeps the verifier
 honest; the first is closer to what is written down. Either is fine — the
 current state is neither.
 
-## Remaining work — all macOS-side
+## Remaining work — done (2026-07-27)
 
-Phase 6 repointed only the six examples that were being actively validated.
-A full survey of `examples/**/pyproject.toml` shows **three more still on
-local wheels**, all iOS:
+Phase 6 first repointed only the six examples that were being actively
+validated, leaving `keychain-spm`, `mobile-geometry`, and `svg-explorer` on
+local wheels (`find_links = ["../../wheels/ios"]`) — flagged here as a gap
+found by an independent survey of `examples/**/pyproject.toml`, run
+concurrently with the fix on the Mac.
 
-| Example | Currently | Needs |
-|---|---|---|
-| `examples/mobile/keychain-spm` | `find_links = ["../../wheels/ios"]` | repoint, re-lock, simulator run (also exercises SPM) |
-| `examples/mobile/mobile-geometry` | `find_links = ["../../wheels/ios"]` | repoint, re-lock, simulator run |
-| `examples/mobile/svg-explorer` | `find_links = ["../../wheels/ios"]` | repoint, re-lock, simulator run |
+All three have since been repointed at
+`extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]`,
+re-locked, and re-validated on the simulator (`keychain-spm` first, since it
+is the only example that also exercises `swift package resolve`). Package
+sets and wheel hashes were confirmed unchanged via `tomllib`, not by eye —
+only `path` → `url`. Full detail in the addendum to
+[`mobile-wheels-phase6-ios-findings.md`](mobile-wheels-phase6-ios-findings.md).
+`hello-world` (no dependencies) and the desktop examples (PyPI, never used
+`find_links`) were correctly out of scope and untouched.
 
-Replace with:
+### The cleanup, and the question it depended on
 
-```toml
-extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
-```
+With all six-plus-three examples on the index, nothing in the repo resolved
+from `examples/wheels/ios/` any more, and it was deleted — along with the
+`find_links` convention it supported for these examples.
 
-Expect the same result Phase 6 got for the other three: package sets and wheel
-hashes unchanged, `path` → `url` only. Verify that with `tomllib` rather than
-by eye — if a hash *does* move, the index is serving something different from
-the vendored copy and that needs explaining before it ships.
-
-`keychain-spm` is the one worth running first: it is the only example with
-Swift packages, so it exercises `swift package resolve` alongside the wheel
-resolution.
-
-**Not in scope:** `examples/mobile/hello-world` declares no dependencies at all
-(it is the Kivy-free runtime/bundling smoke test), so it has no wheels to
-repoint. The four desktop examples resolve from PyPI and never used
-`find_links`.
-
-Their locks stay gitignored under the policy above — only the two gate
-examples keep committed locks — so there will be no lock diff to review for
-any of the three. The validation is the simulator run.
-
-### Then the cleanup
-
-Once those three are repointed, **nothing** in the repo resolves from
-`examples/wheels/ios/`, and it can be removed along with the `find_links`
-convention it supported (noted in
-[`mobile-wheels-phase6-ios-findings.md`](mobile-wheels-phase6-ios-findings.md)).
-
-Before deleting, decide the `path`-shape question from item 1: `path` pins are
-still a supported lock shape and still what a user vendoring their own wheels
-produces, and after this cleanup no example demonstrates them. Keeping one
-example deliberately on `find_links` is the cheapest way to cover it — and
-`examples/wheels/ios/` is what such an example would need.
+That was flagged here as depending on a prior, still-unresolved decision:
+`path` pins are a supported lock shape and what a user vendoring their own
+wheels would produce, and once this cleanup lands **no example demonstrates
+that shape**. Keeping one example deliberately on `find_links` would have
+been the cheapest way to preserve coverage of it. The deletion went ahead
+without that example being kept, so the gap is now real, not hypothetical —
+see item 1 above and the correction note at the top of this file. If that
+coverage matters, the fix is to reintroduce local `path` wheels (which
+requires rebuilding or re-vendoring at least one wheel — `kivy-mobile-wheels`
+Releases only serve `url` sources) on one example, not to reverse the
+`examples/wheels/ios/` deletion for all of them.
 
 ## Where the work runs
 
 `kivyforge lock -p ios` is macOS-gated (`IosPlatform.check_host_capability`),
-and resolving Swift packages shells out to `swift package resolve`, so all of
-the above needs a Mac. The Android side is already complete.
+and resolving Swift packages shells out to `swift package resolve`, so all
+iOS-side work above needed a Mac. The Android side was already complete.

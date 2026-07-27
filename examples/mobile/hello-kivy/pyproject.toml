@@ -1,8 +1,8 @@
 [project]
 name = "hello-kivy"
 version = "0.1.0"
-# iOS bundles CPython 3.15.0b2. Kivy 3.0 (pre-release) is vendored under
-# examples/wheels/ios; desktop builds are intentionally not provided (they'd
+# iOS bundles CPython 3.15.0b2. Kivy 3.0 (pre-release) is resolved from the
+# kivy-mobile-wheels index; desktop builds are intentionally not provided (they'd
 # require a local Kivy 3.0 build — desktop examples live under examples/desktop
 # and use Kivy 2.3.1 from PyPI instead).
 requires-python = ">=3.14"

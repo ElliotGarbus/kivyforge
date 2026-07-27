@@ -103,19 +103,70 @@ an artifact of how the process was invoked, not a switch-related issue
 (confirmed separately by launching the already-installed app directly via
 `xcrun simctl launch`, which also rendered correctly).
 
-## Not done in this phase
+## Addendum (2026-07-27): the other three iOS examples, and cleanup
 
-`examples/wheels/ios/*.whl` (the vendored wheels) are now unused by these
-three examples but were not deleted — Phase 6 as scoped is about repointing
-and re-validating, not cleanup. Removing them (and the `find_links`
-convention they supported) is a reasonable follow-up once nothing else in
-the repo still depends on the local path.
+Phase 6 as originally scoped in the plan only named `hello-kivy` and
+`pyobjus-*` for the iOS side. That left `keychain-spm`, `mobile-geometry`,
+and `svg-explorer` still on local `find_links = ["../../wheels/ios"]` — a
+gap that `example-lock-policy-followup.md` incorrectly assumed was already
+closed ("every mobile example now resolves from the index"). It wasn't;
+`rg wheels/ios` still turned up `path = "../../wheels/ios/..."` entries in
+all three examples' locks after the first pass above. Closed that gap here
+rather than leave the tree in a mixed state.
+
+Same treatment as the first three: swapped `find_links` for
+`extra_index_urls` (plus the now-stale "Kivy 3.0 (pre-release) is vendored
+under examples/wheels/ios" header comment, fixed in all four examples that
+had it, including `hello-kivy`, which was missed in the first pass), ran
+`kivyforge lock -p ios --update`, and verified programmatically:
+
+| Example | Package set unchanged | Every Kivy/pyobjus wheel's sha256 unchanged |
+|---|---|---|
+| keychain-spm | yes (`Kivy`, `filetype`, `pyobjus`) | yes |
+| mobile-geometry | yes (`Kivy`, `filetype`) | yes |
+| svg-explorer | yes (`Kivy`, `certifi`, `charset-normalizer`, `filetype`, `idna`, `requests`, `urllib3`) | yes |
+
+`svg-explorer` picked up newer PyPI releases of `certifi` (2026.6.17 →
+2026.7.22) and `charset-normalizer` (3.4.7 → 3.4.9) — normal upstream drift
+in `requests`' transitive deps from `--update`, unrelated to the wheel
+source switch; the Kivy wheels' hashes were untouched.
+
+On-device gate, all three built + ran on the simulator with wheels from the
+index:
+
+- **keychain-spm** — renders the Keychain demo UI ("Backend: iOS Keychain
+  (KeychainAccess via @objc shim)") — this example also exercises Swift
+  Package Manager resolution (`KeychainAccess`), unaffected by the Python
+  wheel source change.
+- **mobile-geometry** — renders the safe-area/DPI/scale readout overlay.
+- **svg-explorer** — renders the SVG star with pinch/drag/twist controls —
+  also confirms `requests` (from the index-repointed Kivy dependency graph,
+  not excluded here unlike the other examples) still resolves correctly.
+
+All 6 iOS mobile examples (`hello-kivy`, `pyobjus-ball`,
+`pyobjus-deviceinfo`, `keychain-spm`, `mobile-geometry`, `svg-explorer`) now
+resolve their Kivy/pyobjus wheels from the `kivy-mobile-wheels` index.
+`examples/wheels/ios/` (the vendored `.whl` files plus its `.gitignore` /
+`.gitkeep`) was deleted — nothing in the example tree references it anymore.
+`examples/wheels/android/` (a sibling, unrelated to this phase) was left in
+place.
+
+Two remaining references to `examples/wheels/ios/` are intentionally kept:
+`scripts/build_ios_wheels.sh` / `scripts/build_pyobjus_ios_wheels.sh` still
+default their output there (now-superseded by the `kivy-mobile-wheels` CI
+from Phase 4, but left as-is — deleting/updating the build scripts wasn't
+part of this request); and the generic error-hint strings in
+`kivyforge/lock/find_links.py` and
+`kivyforge/platforms/ios/lock/builder.py` that mention
+`examples/wheels/ios/` as an illustrative convention for library users, not
+tied to this repo's example tree.
 
 ## Status
 
-iOS half of Phase 6 complete: all three iOS examples resolve against
+iOS half of Phase 6 complete: all six iOS examples resolve against
 `kivy-mobile-wheels`' live Pages index, re-locked cleanly with unchanged
-package sets and wheel hashes, and all three render correctly on the
-simulator. The Android half of Phase 6 (`hello-android`,
-`pyjnius-deviceinfo`; Android emulator + Pixel 8a) is out of scope here — it
-runs on the Windows machine per the plan's hardware split.
+package sets and wheel hashes, and all six render correctly on the
+simulator. `examples/wheels/ios/` has been removed. The Android half of
+Phase 6 (`hello-android`, `pyjnius-deviceinfo`, `qr-maven`; Android emulator
++ Pixel 8a) ran on the Windows machine per the plan's hardware split and
+landed separately (see `example-lock-policy-followup.md`).

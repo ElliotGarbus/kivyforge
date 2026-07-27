@@ -1,8 +1,8 @@
 [project]
 name = "svg-explorer"
 version = "0.1.0"
-# iOS bundles CPython 3.15.0b2. Kivy 3.0 (pre-release) is vendored under
-# examples/wheels/ios; desktop builds are intentionally not provided (they'd
+# iOS bundles CPython 3.15.0b2. Kivy 3.0 (pre-release) is resolved from the
+# kivy-mobile-wheels index; desktop builds are intentionally not provided (they'd
 # require a local Kivy 3.0 build — desktop examples live under examples/desktop
 # and use Kivy 2.3.1 from PyPI instead).
 requires-python = ">=3.14"
@@ -21,7 +21,7 @@ schema_version = 1
 bundle_id = "org.kivy.svg-explorer"
 build = 1
 deployment_target = "16.0"
-find_links = ["../../wheels/ios"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 # Kivy's wheel declares deps that are not needed at runtime on iOS.
 # Remove an entry only if your app actually uses that feature.
 exclude = [

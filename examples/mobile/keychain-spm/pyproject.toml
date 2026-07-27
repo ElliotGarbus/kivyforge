@@ -22,7 +22,7 @@ schema_version = 1
 bundle_id = "org.kivy.keychain-spm"
 build = 1
 deployment_target = "16.0"
-find_links = ["../../wheels/ios"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 # Kivy's wheel declares deps that are not needed at runtime on iOS.
 # Remove an entry only if your app actually uses that feature.
 exclude = [
