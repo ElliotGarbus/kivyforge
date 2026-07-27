@@ -101,15 +101,27 @@ def _copy_pure(src: Path, dest: Path) -> None:
     source into it (a per-ABI ``file:///`` URL for vendored wheels), which
     both breaks ABI identity by design and would leak local host paths into
     the shipped APK.
+
+    ``bin/`` — pip's console-script launchers — is dropped for the same class
+    of reason, and it is worth being explicit because the symptom is
+    confusing. Nothing on Android can invoke a console script, and pip
+    generates the launchers for the *host*: installing from Windows yields
+    Windows ``.exe`` wrappers (``filetype.exe``, ``idna.exe``, …) inside an
+    Android APK. They also embed the per-ABI target path, so they differ
+    between slices and trip the ABI-identity assertion — which is how this was
+    found: ``kivyforge build -p android`` across both ABIs failed with
+    "ABI content skew in the pure-Python payload: 'bin/filetype.exe'".
     """
 
     def ignore(directory: str, names: list[str]) -> list[str]:
         out = [n for n in names if n == "__pycache__" or n.endswith(".so")]
         if Path(directory).name.endswith(".dist-info"):
             out += [n for n in names if n == "direct_url.json"]
-        # top-level flat .libs/ was hoisted into jniLibs
         if Path(directory).resolve() == src.resolve():
+            # top-level flat .libs/ was hoisted into jniLibs
             out += [n for n in names if n == ".libs"]
+            # host-generated console scripts; see the docstring
+            out += [n for n in names if n == "bin"]
         return out
 
     if src.exists():
@@ -167,7 +179,9 @@ def _pure_hashes(root: Path) -> dict[str, str]:
             continue
         rel = path.relative_to(root)
         parts = rel.parts
-        if "__pycache__" in parts or parts[0] == ".libs":
+        # Mirrors _copy_pure's exclusions: anything not shipped must not be
+        # compared either, or the assertion fails on files the bundle drops.
+        if "__pycache__" in parts or parts[0] in (".libs", "bin"):
             continue
         if path.suffix == ".so":
             continue

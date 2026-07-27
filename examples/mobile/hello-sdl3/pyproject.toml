@@ -1,0 +1,35 @@
+[project]
+name = "hello-sdl3"
+version = "1.0.0"
+description = "The smallest kivyforge Android app on Kivy 3.0 / SDL3"
+requires-python = ">=3.14"
+dependencies = [
+    # Kivy 3.0 is unreleased, so the specifier has to admit a .dev version —
+    # pip excludes pre-releases unless the requirement asks for one.
+    "kivy>=3.0.0.dev0,<4",
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "Hello SDL3"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.hellosdl3"
+min_sdk = 24
+target_sdk = 35
+sdl = 3
+abis = ["arm64_v8a", "x86_64"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+
+# Kivy declares these unconditionally but nothing on Android needs them.
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"
+
+[tool.kivy.android.permissions]
+uses = ["INTERNET"]

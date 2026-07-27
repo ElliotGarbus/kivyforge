@@ -237,6 +237,28 @@ class TestBundle:
         # per-ABI install-source record never ships (leaks host paths)
         assert not (info / "direct_url.json").exists()
 
+    def test_console_scripts_never_ship(self, tmp_path):
+        """pip generates bin/ launchers for the *host*, so a Windows install
+        puts .exe wrappers in an Android APK. They also embed the per-ABI
+        target path, so they differ between slices and trip the identity
+        assertion — which is how this surfaced: a two-ABI build failed with
+        "ABI content skew ... 'bin/filetype.exe'"."""
+        stdlib, sp, app = self._stage(tmp_path)
+        for abi, root in sp.items():
+            _write(root / "bin" / "filetype.exe", f"launcher for {abi}".encode())
+        bundle = tmp_path / "bundle"
+        assemble_bundle(
+            bundle,
+            stdlib_src=stdlib,
+            site_packages_by_abi=sp,
+            canonical_abi="arm64_v8a",
+            app_src=app,
+            finder_source="# finder",
+            kivy_bootstrap_source="# kivy contract",
+            ext_manifest_json="{}",
+        )  # must not raise despite the per-ABI difference
+        assert not (bundle / "site-packages" / "bin").exists()
+
     def test_abi_content_skew_fails(self, tmp_path):
         stdlib, sp, app = self._stage(tmp_path, skew=True)
         with pytest.raises(BundleError, match="ABI content skew"):

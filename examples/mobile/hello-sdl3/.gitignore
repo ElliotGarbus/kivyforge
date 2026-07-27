@@ -1,0 +1,5 @@
+# pylock.android.toml is intentionally TRACKED here — this is the SDL3
+# on-device gate example, and its lock records the exact wheel hashes that
+# passed the contract smoke test and started Kivy 3.0 on the emulator. Same
+# reasoning as hello-android and hello-kivy; see "Example-repo lock policy" in
+# docs/design/common/03-lockfile-concept.md.
