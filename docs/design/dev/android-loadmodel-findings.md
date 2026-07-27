@@ -258,3 +258,49 @@ Kivy reports `v2.3.1` on CPython `3.14.6` with `sdl2` window/text/image
 providers on both. The emulator's SwiftShader GL surface does not appear in
 `adb screencap` (a capture limitation, not an app failure), so the visual
 confirmation comes from the Pixel's Mali-G715.
+
+## Kivy 3.0 / SDL3 on-device (first run)
+
+The [`hello-sdl3`](../../../examples/mobile/hello-sdl3) example is the SDL3 gate
+— deliberately the same shape as `hello-android`, so a difference between them
+is a difference in the bootstrap, not the app.
+
+| Leg | x86_64 (emulator, API 31) | arm64-v8a (Pixel 8a, Android 16 / API 36) |
+|---|---|---|
+| Contract smoke test | PASS | PASS |
+| `EXT_OK` / `PROXY_OK` / `KIVY_CONTRACT_OK` | PASS | PASS |
+| Kivy 3.0 starts, reaches main loop | PASS | PASS |
+| Kivy app renders | main loop runs; GL live | **verified visually** |
+
+On the Pixel, `kivyforge run -p android --arch arm64_v8a --smoke` reports
+`Contract smoke test PASSED`, and a plain launch logs:
+
+```
+[Kivy   ] v3.0.0.dev0
+[Python ] v3.14.6
+[Image  ] Providers: img_tex, img_dds, img_sdl3, img_thorvg_svg
+[Text   ] Providers: text_sdl3
+[Window ] Provider: sdl3
+[GL     ] Backend used <sdl3>
+[GL     ] OpenGL renderer <b'Mali-G715'>
+[Base   ] Start application main loop
+```
+
+`adb screencap` shows the app's label rendered on the Mali surface — the first
+visual confirmation of Kivy 3.0 / SDL3 on Android under kivyforge, and the
+thing the emulator could not supply.
+
+Two honest bounds on what this proves:
+
+- **`libc++_shared.so` was the trap.** Kivy's `_img_sdl3` carries a
+  `DT_NEEDED` on it; SDL2 needed no C++ runtime, so nothing shipped one. Every
+  structural check passed and the app ran — Kivy just listed `img_sdl3` among
+  *ignored* providers, so PNGs would silently not load. It is visible above as
+  `img_sdl3` being **present**, and only debug-level logging exposed the cause.
+  The wheels repo now ships the runtime.
+- **`kivy.mobile` is still a stub.** Kivy warns
+  `kivy.mobile Android support is not yet implemented. All kivy.mobile calls
+  will return safe fallback values.` The Activity-resolution half of the
+  `_kivy_bootstrap` contract is exercised (`KIVY_CONTRACT_OK`); the
+  platform-services half that would sit on top of it is not yet written
+  upstream, so this run cannot vouch for it.
