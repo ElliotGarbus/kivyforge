@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from kivyforge.platforms.android.bootstrap.contract import (
@@ -80,9 +82,48 @@ class TestRender:
         assert '"python3.15",' in activity
         assert '"python3.14",' not in activity
 
-    def test_sdl3_is_a_clear_error_until_validated(self):
-        with pytest.raises(RenderError, match="SDL3"):
-            render_bootstrap(sdl=3, python_version="3.14.6")
+    def test_sdl3_renders_its_own_glue(self):
+        files = _by_path(render_bootstrap(sdl=3, python_version="3.14.6"))
+        # SDL3 ships three classes SDL2 does not; rendering the SDL2 set for an
+        # sdl = 3 project would compile and then misbehave at runtime.
+        for name in ("SDLDummyEdit", "SDLInputConnection", "SDLSensorManager"):
+            assert f"java/org/libsdl/app/{name}.java" in files, name
+        assert "loadLibraries" in files["java/org/libsdl/app/SDLActivity.java"]
+
+    def test_sdl3_activity_loads_the_sdl3_family(self):
+        activity = _by_path(render_bootstrap(sdl=3, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonActivity.java"
+        ]
+        assert '"SDL3", "SDL3_image", "SDL3_mixer", "SDL3_ttf",' in activity
+        # Scoped to getLibraries(): the class docstring legitimately names both
+        # generations when explaining that the family is substituted.
+        libraries = re.search(r"return new String\[\] \{[^}]*\}", activity).group(0)
+        assert "SDL2" not in libraries
+
+    def test_generations_do_not_leak_into_each_other(self):
+        sdl2 = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))
+        sdl3 = _by_path(render_bootstrap(sdl=3, python_version="3.14.6"))
+        assert "SDLDummyEdit" not in " ".join(sdl2)
+        # The glue and the shipped libSDL*.so are a matched pair: SDLActivity
+        # compares its compiled-in version against nativeGetVersion() and
+        # aborts onCreate silently on a mismatch, so the wrong generation's
+        # glue is a black screen with nothing in logcat.
+        assert "SDL_MAJOR_VERSION = 2" in sdl2["java/org/libsdl/app/SDLActivity.java"]
+        assert "SDL_MAJOR_VERSION = 3" in sdl3["java/org/libsdl/app/SDLActivity.java"]
+
+    def test_sdl3_glue_matches_its_recorded_revision(self):
+        glue = sdl_version_from_glue(
+            (TEMPLATES_DIR / "sdl3/org/libsdl/app/SDLActivity.java").read_text(
+                encoding="utf-8"
+            )
+        )
+        revision = (TEMPLATES_DIR / "sdl3" / "SDL_REVISION.txt").read_text(
+            encoding="utf-8"
+        )
+        major, minor, patch = (
+            line.split()[-1] for line in revision.strip().splitlines()
+        )
+        assert glue == f"{major}.{minor}.{patch}"
 
     def test_python_stem(self):
         assert python_stem("3.14.6") == "python3.14"

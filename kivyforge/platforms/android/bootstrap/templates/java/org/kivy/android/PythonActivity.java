@@ -15,10 +15,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
 /**
- * Kivyforge Phase-0 prototype PythonActivity.
+ * Kivyforge PythonActivity.
  *
- * Load model under test (docs/design/platforms/android/05-bootstrap-android.md):
- *  - SDLActivity static init loads SDL2 family -> libpython -> libmain
+ * Generation-agnostic: the SDL family named in getLibraries() below is
+ * substituted at render time (SDL2 for Kivy 2.x, SDL3 for Kivy 3.x), and the
+ * matching org/libsdl/app glue is vendored alongside it.
+ *
+ * Load model (docs/design/platforms/android/05-bootstrap-android.md):
+ *  - SDLActivity static init loads the SDL family -> libpython -> libmain
  *    (getLibraries order below), so the SDL JNIEnv getter is resident before
  *    any Python runs.
  *  - The asset bundle (_python_bundle) is unpacked to app-private storage
