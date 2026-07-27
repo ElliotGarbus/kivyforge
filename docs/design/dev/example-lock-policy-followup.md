@@ -1,5 +1,16 @@
 # Follow-up: example lock policy has drifted from what's documented
 
+> **RESOLVED** — the "wider" option below was chosen and applied.
+> `common/03-lockfile-concept.md` now exempts the two on-device **gate**
+> examples (`hello-android`, `hello-kivy`) on the grounds that their locks are
+> validation evidence; `pyjnius-deviceinfo` and `qr-maven` were untracked and
+> gitignored to match the policy. Both gate examples carry a `.gitignore`
+> comment explaining why their lock is tracked, so it does not read as an
+> oversight.
+>
+> **Still open:** no example demonstrates the local `path`-wheel shape (item 1),
+> and `examples/wheels/ios/*.whl` remain unused but undeleted.
+
 Raised while completing Phase 6 of the mobile-wheels plan. **Not urgent, and
 not a bug** — but three things no longer line up, and one of them was caused
 by Phase 6 itself.

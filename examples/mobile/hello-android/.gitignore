@@ -1,0 +1,7 @@
+# pylock.android.toml is intentionally TRACKED here — this is an on-device
+# gate example, and its lock records the exact wheel hashes that passed the
+# contract smoke test on the x86_64 emulator and the Pixel 8a. Regenerating it
+# would detach that result from the binaries it was obtained from, and would
+# make `kivyforge lock -p android --check` (used by examples/verify-android.ps1)
+# unable to fail. See "Example-repo lock policy" in
+# docs/design/common/03-lockfile-concept.md.

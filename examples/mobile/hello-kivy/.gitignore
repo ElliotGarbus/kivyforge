@@ -1,4 +1,10 @@
 hello-kivy-ios/
-# pylock.ios.toml is intentionally tracked here (not gitignored like other
-# examples' locks) — it's the repo's one canonical, checked-in reference lock;
-# see "Example-repo lock policy" in docs/design/common/03-lockfile-concept.md.
+# pylock.ios.toml is intentionally TRACKED here — this is an on-device gate
+# example, and its lock records the exact wheel hashes that build, launch and
+# render on the iOS simulator. Regenerating it would detach that result from
+# the binaries it was obtained from.
+#
+# (It was previously kept as "the canonical path-wheel reference"; Phase 6
+# repointed this example at the wheels index, so it now records url + sha256
+# and no example demonstrates the path shape.) See "Example-repo lock policy"
+# in docs/design/common/03-lockfile-concept.md.

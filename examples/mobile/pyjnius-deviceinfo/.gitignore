@@ -1,0 +1,5 @@
+# Generated lock: regenerate with `kivyforge lock -p android` (see README).
+# Gitignored per the example-repo lock policy in
+# docs/design/common/03-lockfile-concept.md — only the on-device gate examples
+# (hello-android, hello-kivy) keep a committed lock, as validation evidence.
+pylock.*.toml

@@ -100,13 +100,36 @@ wheel or python.org xcframework build getting superseded at its URL) without
 anyone noticing until `kivyforge build` re-verifies a hash.
 
 So `examples/**/pylock.*.toml` is **gitignored** in this repo, with one deliberate
-exception: `examples/mobile/hello-kivy/pylock.ios.toml` stays committed as the
-single canonical, checked-in reference lock (it exercises the local `path`-wheel
-case, the shape most worth seeing "for real"). Every example's README documents
-`kivyforge lock` / `kivyforge lock --update` as the first step of running it, so
-regenerating a gitignored lock is an expected, already-documented part of the
-workflow — the same treatment already given to `examples/wheels/ios/*.whl` and the
-generated `<app>-ios/` Xcode trees.
+exception: the **on-device gate examples**, whose locks stay committed.
+
+| Example | Lock | Gate it backs |
+|---|---|---|
+| `examples/mobile/hello-android` | `pylock.android.toml` | x86_64 emulator + Pixel 8a contract smoke test |
+| `examples/mobile/hello-kivy` | `pylock.ios.toml` | iOS simulator build/launch/render |
+
+These two are exempt because their locks are **evidence, not just build input**.
+Each records the exact wheel hashes that passed a specific on-device run, so
+the validation result stays attached to the binaries it was obtained from. If
+the lock regenerates, the next run silently validates a different artifact —
+which matters now that the wheels come from a bridge index whose contents are
+rebuilt rather than immutable, and whose builds are not bit-reproducible.
+
+That also keeps `kivyforge lock --check` meaningful for them: it compares a
+committed lock against `pyproject.toml`, so against a gitignored lock it can
+only ever report "out of date". `examples/verify-android.ps1` runs that check
+and falls back to re-locking, so it stays correct either way — but only the
+gate example actually exercises it.
+
+Every other example's README documents `kivyforge lock` / `kivyforge lock
+--update` as the first step of running it, so regenerating a gitignored lock is
+an expected, already-documented part of the workflow — the same treatment given
+to `examples/wheels/ios/*.whl` and the generated `<app>-ios/` Xcode trees.
+
+> **Not currently demonstrated:** every mobile example now resolves from an
+> index, so no committed lock shows the local `path`-wheel shape a user
+> vendoring their own wheels would produce. `path` is still supported; if a
+> worked instance of it is wanted, it needs an example kept on `find_links`
+> deliberately.
 
 For schema *teaching* — as opposed to a real, buildable fixture — prefer the
 hand-annotated ["Worked example"](../platforms/ios/02-pylock-ios-spec.md#worked-example-full-lockfile-for-a-minimal-app)
