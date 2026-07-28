@@ -116,7 +116,7 @@ After pip installs a wheel per ABI, `kivyforge build` walks every installed whee
 for a `.libs/` directory and copies each `.so` it finds into the Gradle project's
 `app/src/main/jniLibs/<abi>/`, **keyed by the wheel's own platform tag** (not by
 any path inside the wheel). For the canonical Kivy app this is where the SDL
-family (SDL2 or SDL3 per `[tool.kivy.android].sdl`) and Kivy's compiled extensions
+family (SDL2 or SDL3 per `[tool.kivy.android].kivy_generation`) and Kivy's compiled extensions
 arrive. The wheel author (you, when cross-building Kivy) controls this payload —
 which is why building your own Kivy wheel, rather than trusting a community one,
 matters.

@@ -46,7 +46,7 @@ class TestDefaults:
         assert a.package == "org.kivy.touchtracer"
         assert a.version_code == 1 and a.version_code_auto is False
         assert (a.min_sdk, a.target_sdk, a.compile_sdk) == (24, 35, 35)
-        assert a.sdl == 2
+        assert a.kivy_generation == 2
         assert a.abis == ("arm64_v8a", "x86_64")
         assert a.base_theme == "Theme.Material3.DayNight.NoActionBar"
         assert a.python_required.version == "3.14.6"
@@ -98,7 +98,7 @@ class TestRuleRejections:
                 ["target_sdk = 35", "compile_sdk = 34"],
                 "below target_sdk",
             ),
-            ("rule9-sdl", ["sdl = 1"], "must be 2 or 3"),
+            ("rule9-sdl", ["kivy_generation = 1"], "must be 2 or 3"),
             ("rule10-abis-empty", ["abis = []"], "must not be empty"),
             ("rule10-abis-32bit", ['abis = ["x86"]'], "unsupported Android ABI"),
             (

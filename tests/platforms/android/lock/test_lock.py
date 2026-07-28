@@ -108,7 +108,7 @@ class TestBuilder:
     def test_minimal_lock(self):
         lock = _build()
         assert [r.abi for r in lock.python_android] == ["arm64_v8a", "x86_64"]
-        assert lock.sdl == 2
+        assert lock.kivy_generation == 2
         assert lock.tool_kivy_android_schema_version == 1
         pkg = lock.packages[0]
         assert pkg.direct_requirement is True
@@ -501,7 +501,7 @@ def _sample_lockfile() -> AndroidLockfile:
         generated_at="2026-07-24T00:00:00Z",
         pyproject_sha256="e" * 64,
         tool_kivy_android_schema_version=1,
-        sdl=2,
+        kivy_generation=2,
         android_libs=(
             LockedAndroidLib(
                 name="Sdk",

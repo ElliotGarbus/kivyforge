@@ -35,7 +35,7 @@ kivyforge_version = "0"
 generated_at = "t"
 pyproject_sha256 = "a"
 tool_kivy_android_schema_version = 1
-sdl = 2
+kivy_generation = 2
 
 {_VALID_RUNTIME}"""
 
@@ -44,7 +44,7 @@ class TestBaseSanity:
     def test_base_text_parses_cleanly(self):
         lock = reader.loads(_BASE)
         assert lock.python_android[0].abi == "arm64_v8a"
-        assert lock.sdl == 2
+        assert lock.kivy_generation == 2
 
     def test_load_reads_from_path(self, tmp_path):
         path = tmp_path / "pylock.android.toml"
@@ -87,14 +87,16 @@ class TestNoRuntimes:
 
 class TestSdlValidation:
     def test_invalid_sdl_rejected(self):
-        text = _BASE.replace("sdl = 2", "sdl = 5")
-        with pytest.raises(reader.LockError, match="sdl 5 invalid"):
+        text = _BASE.replace("kivy_generation = 2", "kivy_generation = 5")
+        with pytest.raises(reader.LockError, match="kivy_generation 5 invalid"):
             reader.loads(text)
 
 
 class TestGradleValidation:
     def test_gradle_not_a_table_rejected(self):
-        text = _BASE.replace("sdl = 2", 'sdl = 2\ngradle = "notadict"')
+        text = _BASE.replace(
+            "kivy_generation = 2", 'kivy_generation = 2\ngradle = "notadict"'
+        )
         with pytest.raises(reader.LockError, match=r"\[tool\.kivyforge\.gradle\]"):
             reader.loads(text)
 
@@ -135,6 +137,8 @@ class TestSchemaVersionValidation:
 
 class TestAsListValidation:
     def test_android_libs_not_a_list_rejected(self):
-        text = _BASE.replace("sdl = 2", 'sdl = 2\nandroid_libs = "notalist"')
+        text = _BASE.replace(
+            "kivy_generation = 2", 'kivy_generation = 2\nandroid_libs = "notalist"'
+        )
         with pytest.raises(reader.LockError, match="'android_libs' must be an array"):
             reader.loads(text)

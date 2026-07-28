@@ -254,10 +254,11 @@ Windows, macOS, or Linux. 64-bit only (`arm64_v8a`, `x86_64`).
       # 4b. ...or produce the signed release distributable
       kivyforge package -p android            # -> dist/android/<app>-<ver>.apk
 
-`sdl = 2` targets Kivy 2.3.1 (SDL2, stable); `sdl = 3` targets Kivy 3.0 (SDL3,
-pre-release) — mutually exclusive per app, and the SDL Java glue + `libSDL*.so`
-must come from the same release (`kivyforge build` fails fast on a mismatch
-rather than the silent black-screen failure that would otherwise produce).
+`kivy_generation = 2` targets Kivy 2.3.1 (SDL2, stable); `kivy_generation = 3`
+targets Kivy 3.0 (SDL3, pre-release) — mutually exclusive per app, and the SDL
+Java glue + `libSDL*.so` must come from the same release (`kivyforge build`
+fails fast on a mismatch rather than the silent black-screen failure that
+would otherwise produce).
 Debug builds sign with an auto-managed debug keystore; `package` requires a
 configured release keystore (`[tool.kivy.android.signing]`, passwords from
 environment variables, never in `pyproject.toml`).

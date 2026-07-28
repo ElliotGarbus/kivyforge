@@ -158,7 +158,7 @@ def build_lockfile(
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
         pyproject_sha256=compute_pyproject_sha256(pyproject_text),
         tool_kivy_android_schema_version=android.schema_version,
-        sdl=android.sdl,
+        kivy_generation=android.kivy_generation,
         android_libs=tuple(android_libs),
         gradle=gradle_pins,
         include_files=tuple(include_files),

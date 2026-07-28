@@ -101,7 +101,7 @@ class AndroidLockfile:
     generated_at: str
     pyproject_sha256: str
     tool_kivy_android_schema_version: int
-    sdl: int
+    kivy_generation: int
     android_libs: tuple[LockedAndroidLib, ...] = ()
     gradle: GradlePins = GradlePins()
     include_files: tuple[LockedIncludeFile, ...] = ()

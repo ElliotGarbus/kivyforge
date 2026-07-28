@@ -33,7 +33,7 @@ class TestStatus:
         out = capsys.readouterr().out
         assert "verbapp  (org.example.verbapp)" in out
         assert "Python:     3.14.6" in out
-        assert "sdl 2" in out
+        assert "kivy_generation 2" in out
         assert "Lock:       missing" in out
         assert "apk (debug)" in out and "not built" in out
 

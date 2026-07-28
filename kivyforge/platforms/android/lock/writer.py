@@ -45,7 +45,7 @@ def dumps(lock: AndroidLockfile) -> str:
     lines.append(
         f"tool_kivy_android_schema_version = {lock.tool_kivy_android_schema_version}"
     )
-    lines.append(f"sdl = {lock.sdl}")
+    lines.append(f"kivy_generation = {lock.kivy_generation}")
 
     # --- [[tool.kivyforge.python_android]] (one per ABI, sorted) ---
     for runtime in sorted(lock.python_android, key=lambda r: r.abi):

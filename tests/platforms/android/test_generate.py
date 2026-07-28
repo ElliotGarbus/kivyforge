@@ -189,7 +189,7 @@ class TestProjectFiles:
             generated_at="t",
             pyproject_sha256="b" * 64,
             tool_kivy_android_schema_version=1,
-            sdl=2,
+            kivy_generation=2,
             gradle=gradle,
         )
 

@@ -24,8 +24,8 @@ from .model import (
     DEFAULT_ANDROID_ABIS,
     DEFAULT_ANDROID_BASE_THEME,
     DEFAULT_ANDROID_KEY_PASSWORD_ENV,
+    DEFAULT_ANDROID_KIVY_GENERATION,
     DEFAULT_ANDROID_MIN_SDK,
-    DEFAULT_ANDROID_SDL,
     DEFAULT_ANDROID_STORE_PASSWORD_ENV,
     DEFAULT_ANDROID_TARGET_SDK,
     DEFAULT_DESKTOP_CATEGORIES,
@@ -48,7 +48,7 @@ from .model import (
     SUPPORTED_WINDOWS_SCHEMA_VERSION,
     VALID_ANDROID_ABIS,
     VALID_ANDROID_DEBUG_SYMBOLS,
-    VALID_ANDROID_SDL_GENERATIONS,
+    VALID_ANDROID_KIVY_GENERATIONS,
     VALID_FOREGROUND_SERVICE_TYPES,
     VALID_INTENT_DATA_KEYS,
     VALID_LINUX_ARCHS,
@@ -1115,7 +1115,7 @@ def _parse_android(
         android, finder, project, build=build
     )
     min_sdk, target_sdk, compile_sdk = _parse_android_sdk_levels(android, finder)
-    sdl = _parse_android_sdl(android, finder)
+    kivy_generation = _parse_android_kivy_generation(android, finder)
     abis = _parse_android_abis(android, finder)
 
     extra_index_urls = android.get("extra_index_urls", [])
@@ -1181,7 +1181,7 @@ def _parse_android(
         min_sdk=min_sdk,
         target_sdk=target_sdk,
         compile_sdk=compile_sdk,
-        sdl=sdl,
+        kivy_generation=kivy_generation,
         abis=abis,
         extra_index_urls=tuple(extra_index_urls),
         find_links=tuple(find_links),
@@ -1367,17 +1367,18 @@ def _parse_android_sdk_levels(
     return min_sdk, target_sdk, compile_sdk
 
 
-def _parse_android_sdl(android: dict, finder: _LineFinder) -> int:
+def _parse_android_kivy_generation(android: dict, finder: _LineFinder) -> int:
     # Rule 9.
-    sdl = android.get("sdl", DEFAULT_ANDROID_SDL)
-    if isinstance(sdl, bool) or sdl not in VALID_ANDROID_SDL_GENERATIONS:
+    generation = android.get("kivy_generation", DEFAULT_ANDROID_KIVY_GENERATION)
+    if isinstance(generation, bool) or generation not in VALID_ANDROID_KIVY_GENERATIONS:
         raise ConfigError(
-            f"[tool.kivy.android].sdl must be 2 or 3, got {sdl!r}",
-            key_path="tool.kivy.android.sdl",
-            line=finder.line("sdl"),
-            hint="sdl = 2 targets Kivy 2.3.1 (SDL2); sdl = 3 targets Kivy 3.0 (SDL3).",
+            f"[tool.kivy.android].kivy_generation must be 2 or 3, got {generation!r}",
+            key_path="tool.kivy.android.kivy_generation",
+            line=finder.line("kivy_generation"),
+            hint="kivy_generation = 2 targets Kivy 2.3.1 (SDL2); "
+            "kivy_generation = 3 targets Kivy 3.0 (SDL3).",
         )
-    return sdl
+    return generation
 
 
 def _parse_android_abis(android: dict, finder: _LineFinder) -> tuple[str, ...]:

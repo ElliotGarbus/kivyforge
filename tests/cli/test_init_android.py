@@ -42,7 +42,7 @@ class TestSeeding:
         assert android["schema_version"] == 1
         assert android["package"] == "org.example.my_app"
         assert android["min_sdk"] == 24
-        assert android["sdl"] == 2
+        assert android["kivy_generation"] == 2
         assert android["abis"] == ["arm64_v8a", "x86_64"]
         assert android["python"]["version"] == "3.14.6"
         assert android["permissions"]["uses"] == ["INTERNET"]

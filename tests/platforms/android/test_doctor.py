@@ -402,7 +402,7 @@ def _doctor_lock(*, packages=(), vendored=False):
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256="0" * 64,
         tool_kivy_android_schema_version=1,
-        sdl=2,
+        kivy_generation=2,
     )
 
 
@@ -419,7 +419,7 @@ class TestSdlKivyMatchDirect:
         lock = _doctor_lock(packages=[_wheel_pkg("kivy", "3.0.0")])
         result = _check_sdl_kivy_match(_config(), lock)
         assert result.status is Status.WARN
-        assert "SDL3" in result.hint or "sdl = 3" in result.hint
+        assert "kivy_generation = 3" in result.hint
 
     def test_warn_on_unparseable_kivy_version(self):
         lock = _doctor_lock(packages=[_wheel_pkg("kivy", "not-a-version")])

@@ -231,7 +231,7 @@ Build:
 |-------|--------|
 | App / package | `[project].name` / `[tool.kivy].display_name`; `[tool.kivy.android].package` |
 | Python | `[tool.kivy.android.python].version` |
-| Kivy/SDL | resolved `kivy` version + `[tool.kivy.android].sdl` |
+| Kivy/SDL | resolved `kivy` version + `[tool.kivy.android].kivy_generation` |
 | ABIs | `[tool.kivy.android].abis` |
 | Lock | `pyproject_sha256` compare — `in sync` / `out of date` / `missing` |
 | Build | presence + mtime of `.apk`/`.aab` under `app/build/outputs/` |
@@ -268,7 +268,7 @@ exit code is non-zero only on FAIL.
 | `adb` devices | environment | `adb` present; in `run`, at least one device/emulator reachable. |
 | kivyforge version | environment | Self-version + newer-on-PyPI nudge (best-effort). |
 | App source directory | project | `[tool.kivy].app_dir` resolves to an existing directory. |
-| SDL / Kivy match | project | `[tool.kivy.android].sdl` matches the resolved `kivy` version (SDL2 for `< 3.0`, SDL3 for `>= 3.0`); WARN on mismatch. |
+| SDL / Kivy match | project | `[tool.kivy.android].kivy_generation` matches the resolved `kivy` version (SDL2 for `< 3.0`, SDL3 for `>= 3.0`); WARN on mismatch. |
 | pyjnius / bootstrap match | project | The locked `pyjnius` version is within the bootstrap template's compatible range (the `NativeInvocationHandler.invoke0` ABI pair); **FAIL** otherwise — `kivyforge build` enforces the same gate and aborts before generating the bootstrap. |
 | 16 KB alignment | project | Every staged `.so` LOAD segment is 16 KB-aligned and the APK is 16 KB zip-aligned; FAIL on a 4 KB-aligned library (won't load on Android 15/16 16 KB-page devices). |
 | ABI coverage | project | Every compiled dependency has a wheel for each `[tool.kivy.android].abis` entry (mirrors the lock-time missing-ABI check; catches a stale lock). |

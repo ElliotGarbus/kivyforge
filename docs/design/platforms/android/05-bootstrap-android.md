@@ -119,8 +119,9 @@ universal artifact** across SDL generations. Its `.so`:
   3. `JNI_GetCreatedJavaVMs` from `libnativehelper.so` + `AttachCurrentThread` (SDL-independent, best-effort API 31+).
 
 So the bootstrap's only obligations for the `JNIEnv` are: **load the SDL matching
-`[tool.kivy.android].sdl` before Python imports run** (step 2 above), so tier 1 or
-tier 2 resolves. `sdl = 2` → the SDL2 glue + `libSDL2.so`; `sdl = 3` → SDL3.
+`[tool.kivy.android].kivy_generation` before Python imports run** (step 2 above),
+so tier 1 or tier 2 resolves. `kivy_generation = 2` → the SDL2 glue + `libSDL2.so`;
+`kivy_generation = 3` → SDL3.
 
 > **Kivy is SDL2 today.** The spike's prototype exercised SDL2 (tier 2) on an
 > x86_64 emulator and on arm64 hardware (Pixel 8a, Android 16 —
@@ -184,7 +185,7 @@ cryptic `dlopen`/symbol failure:
 
 - If none of the three `JNIEnv` tiers resolves, pyjnius raises a `RuntimeError`/`ImportError` naming the host contract ("needs a host that provides an in-process JVM; ensure SDL is loaded before `import jnius`").
 - The bootstrap logs the native-library load order to logcat, so a load-order regression is diagnosable.
-- `kivyforge doctor` checks that the bootstrap's SDL generation matches `[tool.kivy.android].sdl` and the resolved Kivy version.
+- `kivyforge doctor` checks that the bootstrap's SDL generation matches `[tool.kivy.android].kivy_generation` and the resolved Kivy version.
 
 ## Process and thread lifecycle
 

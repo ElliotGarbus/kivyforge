@@ -15,7 +15,7 @@
   (`arm64_v8a`, `x86_64` — the python.org runtime ships no 32-bit build).
 - **`[tool.kivy.android]` overlay** — `package` (applicationId), `version_code`
   (explicit or `"auto"` derived from `[project].version`), `min_sdk`/`target_sdk`/
-  `compile_sdk`, `sdl` (2 = Kivy 2.3.1, 3 = Kivy 3.0), `abis`, adaptive
+  `compile_sdk`, `kivy_generation` (2 = Kivy 2.3.1, 3 = Kivy 3.0), `abis`, adaptive
   `icons`/`splash` (AndroidX SplashScreen), `permissions` (+ implied
   `<uses-feature>` synthesis), `services`/`activities`/`intent_filters`, the
   manifest passthrough (+ raw-XML), `native.aars`/`.jars` and Maven `gradle`
@@ -55,7 +55,7 @@
   published as a static PEP 503 index. `hello-android` and `hello-sdl3` carry
   their locks committed as validation evidence; the rest resolve like any
   other dependency.
-- **SDL3 / Kivy 3.0 support.** `sdl = 3` renders the SDL3 bootstrap template
+- **SDL3 / Kivy 3.0 support.** `kivy_generation = 3` renders the SDL3 bootstrap template
   (`templates/sdl3/`) and pairs it with the matching wheel-repo glue;
   `check_sdl_glue_contract()` fails the build on any Java/`.so` version
   mismatch rather than the silent black-screen failure that mismatch would

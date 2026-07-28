@@ -248,15 +248,18 @@ def _check_sdl_kivy_match(config: Config, lock) -> CheckResult:
             "SDL / Kivy match", Status.WARN, f"unparseable kivy {kivy.version!r}"
         )
     expected = 3 if is_sdl3 else 2
-    if android.sdl != expected:
+    if android.kivy_generation != expected:
         return CheckResult(
             "SDL / Kivy match",
             Status.WARN,
-            f"sdl = {android.sdl} but kivy {kivy.version} is SDL{expected}",
-            hint=f"set sdl = {expected} and re-lock.",
+            f"kivy_generation = {android.kivy_generation} but kivy {kivy.version} "
+            f"is SDL{expected}",
+            hint=f"set kivy_generation = {expected} and re-lock.",
         )
     return CheckResult(
-        "SDL / Kivy match", Status.PASS, f"kivy {kivy.version} / sdl {android.sdl}"
+        "SDL / Kivy match",
+        Status.PASS,
+        f"kivy {kivy.version} / kivy_generation {android.kivy_generation}",
     )
 
 
@@ -428,7 +431,7 @@ def android_doctor(
             "Android config",
             Status.PASS,
             f"{android.package} (min {android.min_sdk} / target "
-            f"{android.target_sdk}, sdl {android.sdl}, "
+            f"{android.target_sdk}, kivy_generation {android.kivy_generation}, "
             f"abis {', '.join(android.abis)})",
         )
     )

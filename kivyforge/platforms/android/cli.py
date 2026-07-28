@@ -222,7 +222,9 @@ def android_build(
 
     # --- Step 7: (re)generate the Gradle project ---
     sdl_activity_java = ""
-    for rendered in render_bootstrap(sdl=android.sdl, python_version=python_version):
+    for rendered in render_bootstrap(
+        sdl=android.kivy_generation, python_version=python_version
+    ):
         out = app_main / rendered.relpath
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(rendered.content, encoding="utf-8", newline="\n")
@@ -484,7 +486,9 @@ def android_status(project_root: Path) -> None:
             )
         except LockError:
             lock_state = "unreadable"
-    click.echo(f"Kivy/SDL:   kivy {kivy_ver}  (sdl {android.sdl})")
+    click.echo(
+        f"Kivy/SDL:   kivy {kivy_ver}  (kivy_generation {android.kivy_generation})"
+    )
     click.echo(f"ABIs:       {', '.join(android.abis)}")
     click.echo(f"Lock:       {lock_state}")
 

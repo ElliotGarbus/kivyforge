@@ -602,7 +602,7 @@ def render_android_tables(
     has_kivy: bool = False,
     package: str | None = None,
     abis: list[str] | tuple[str, ...] | None = None,
-    sdl: int | None = None,
+    kivy_generation: int | None = None,
     icon_source: str | None = None,
     splash_source: str | None = None,
     splash_background: str | None = None,
@@ -614,8 +614,8 @@ def render_android_tables(
     change-me comment, ``min_sdk = 24``, the latest known target/compile SDK,
     both 64-bit ABIs, ``INTERNET`` as an ordinary editable permission, and
     commented TODO stubs for icons/splash/signing/find_links. On ``--force``
-    the caller passes the preserved values (package, abis, sdl, python,
-    icon/splash sources, signing).
+    the caller passes the preserved values (package, abis, kivy_generation,
+    python, icon/splash sources, signing).
     """
     display = app_slug.replace("_", " ").title()
     if abis is not None:
@@ -646,7 +646,7 @@ def render_android_tables(
         'version_code = 1  # or "auto" to derive from [project].version (android/01)',
         "min_sdk = 24",
         "target_sdk = 35",
-        f"sdl = {sdl if sdl is not None else 2}  "
+        f"kivy_generation = {kivy_generation if kivy_generation is not None else 2}  "
         "# 2 = Kivy 2.3.1 (SDL2); 3 = Kivy 3.0 (SDL3)",
         abis_line,
         '# find_links = ["wheels"]  '

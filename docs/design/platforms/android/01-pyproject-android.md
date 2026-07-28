@@ -124,7 +124,7 @@ version_code = 1
 min_sdk = 24
 target_sdk = 35
 compile_sdk = 35
-sdl = 2
+kivy_generation = 2
 abis = ["arm64_v8a", "x86_64"]
 ```
 
@@ -137,7 +137,7 @@ abis = ["arm64_v8a", "x86_64"]
 | `min_sdk`        | integer        | no       | `24`                       | `minSdkVersion`. **Floored at 24** — the first API level with RUNPATH (auditwheel's requirement for grafted `.so`s) and ~99% device coverage; also the floor the python.org Android runtime and the Android wheel tag ecosystem target. Rejected below 24 (see validation rules).                                       |
 | `target_sdk`     | integer        | no       | latest known stable        | `targetSdkVersion`. Init pins the latest stable API level kivyforge knows. Google Play enforces a moving `targetSdk` floor for new uploads.                                                                                                                                                                             |
 | `compile_sdk`    | integer        | no       | `= target_sdk`             | `compileSdkVersion`. Must be ≥ `target_sdk`.                                                                                                                                                                                                                                                                            |
-| `sdl`            | integer        | no       | `2`                        | Which **SDL generation** the bootstrap and native runtime target: `2` (Kivy 2.3.1) or `3` (Kivy 3.0). Selects the SDL Java glue and the SDL native-library soname the pyjnius runtime resolver / load order expects. See "SDL generation (`sdl`)" below and [bootstrap-android](05-bootstrap-android.md).                    |
+| `kivy_generation` | integer       | no       | `2`                        | Which **Kivy major generation** the bootstrap and native runtime target: `2` (Kivy 2.3.1) or `3` (Kivy 3.0). Named after the Kivy version, not the SDL generation it happens to pair with — it selects the SDL Java glue and the SDL native-library soname the pyjnius runtime resolver / load order expects, but configuring a build never requires knowing that pairing. See ["Kivy generation (`kivy_generation`)"](#kivy-generation-kivy_generation) below and [bootstrap-android](05-bootstrap-android.md).                    |
 | `abis`           | list of string | no       | `["arm64_v8a", "x86_64"]`  | Which Android ABIs `kivyforge lock` pins and `kivyforge build` packages. **64-bit only** — the python.org Android runtime does not ship 32-bit builds, so `armeabi_v7a` and `x86` are rejected. `arm64_v8a` is the real-device shipping target; `x86_64` is the emulator/CI testability ABI. See "ABIs (`abis`)" below.  |
 | `extra_index_urls` | list of string | no     | `[]`                       | Supplemental pip index URLs consulted *in addition to* PyPI when resolving Android wheels. `kivyforge lock` passes each as `--extra-index-url`. Empty by default; PyPI is always primary. Each resolved wheel's source URL is pinned in `pylock.android.toml`. Mirrors the iOS field. |
 | `find_links`     | list of string | no       | `[]`                       | Repo-relative directories of pre-built Android wheels consulted during `kivyforge lock` only (passed to pip as `--find-links`). Use when a dependency's Android wheels are vendored in the repo — **the canonical case is a locally cross-built `kivy` 2.3.1 wheel** (see "Local wheel directories" below). Entries must be repo-relative and must not escape the project directory. |
@@ -186,36 +186,42 @@ Examples: `1.0.0` → `1_000_000`; `1.2.3` → `1_020_300`; `1.2.3` with `build 
 The default remains a plain integer, so anyone who wants full manual control (or a
 non-derivable scheme) simply sets `version_code` to a number and ignores `build`.
 
-### SDL generation (`sdl`)
+### Kivy generation (`kivy_generation`)
 
-Kivy on Android is delivered as an SDL app, and the SDL major version is a
+Kivy on Android is delivered as an SDL app, and the SDL major version it uses is a
 **whole-stack decision**, not a per-package one:
 
-- **`sdl = 2`** targets **Kivy 2.3.1**, which is an SDL2 framework. The bootstrap
-  emits the SDL2 Java glue (`org.libsdl.app.*` at the SDL2 revision) and loads
-  `libSDL2.so`; the pyjnius runtime resolver finds the `JNIEnv` via SDL2's
+- **`kivy_generation = 2`** targets **Kivy 2.3.1**, which is an SDL2 framework. The
+  bootstrap emits the SDL2 Java glue (`org.libsdl.app.*` at the SDL2 revision) and
+  loads `libSDL2.so`; the pyjnius runtime resolver finds the `JNIEnv` via SDL2's
   `SDL_AndroidGetJNIEnv`.
-- **`sdl = 3`** targets **Kivy 3.0**, an SDL3 framework. The bootstrap emits the
-  SDL3 Java glue and loads `libSDL3.so`; pyjnius resolves via SDL3's
+- **`kivy_generation = 3`** targets **Kivy 3.0**, an SDL3 framework. The bootstrap
+  emits the SDL3 Java glue and loads `libSDL3.so`; pyjnius resolves via SDL3's
   `SDL_GetAndroidJNIEnv`.
 
 The **same pyjnius wheel serves both** — it carries no `DT_NEEDED` on any
 `libSDL` and resolves the getter at runtime by soname (per the
 [spike findings](../../dev/pyjnius-android-wheel-spike-findings.md)). Only the bootstrap's SDL Java glue and the SDL native `.so` differ between
-generations, which is exactly what `sdl` selects. `kivyforge init` sets `sdl`
-based on the Kivy version it seeds; changing your `kivy` pin across the 2→3
-boundary means flipping `sdl` and re-locking. The supported CPython/Kivy/SDL/
-pyjnius/ABI/minSdk combinations and their validation status are tabulated in the
-[compatibility matrix](08-compatibility-matrix.md). See
-[bootstrap-android §"SDL generation and the pyjnius contract"](05-bootstrap-android.md#sdl-generation-and-the-pyjnius-contract).
+generations, which is exactly what `kivy_generation` selects. `kivyforge init`
+sets `kivy_generation` based on the Kivy version it seeds; changing your `kivy`
+pin across the 2→3 boundary means flipping `kivy_generation` and re-locking. The
+supported CPython/Kivy/SDL/pyjnius/ABI/minSdk combinations and their validation
+status are tabulated in the [compatibility matrix](08-compatibility-matrix.md).
+See [bootstrap-android §"SDL generation and the pyjnius contract"](05-bootstrap-android.md#sdl-generation-and-the-pyjnius-contract).
 
 > **Why an explicit key rather than inferring it from the `kivy` version?** The
-> bootstrap is generated *before* wheels are installed, and the SDL generation
-> governs Java sources and native load order that must be fixed at project-
+> bootstrap is generated *before* wheels are installed, and the SDL generation it
+> emits governs Java sources and native load order that must be fixed at project-
 > generation time. An explicit key keeps that decision declarative and auditable,
 > and lets a non-Kivy SDL app (or a forked Kivy) state its generation directly.
-> `kivyforge doctor` warns if `sdl` and the resolved `kivy` version disagree
-> (SDL2 Kivy is `< 3.0`; SDL3 Kivy is `>= 3.0`).
+> `kivyforge doctor` warns if `kivy_generation` and the resolved `kivy` version
+> disagree (SDL2 Kivy is `< 3.0`; SDL3 Kivy is `>= 3.0`).
+>
+> **Why `kivy_generation` and not `sdl`?** The key is named after what you're
+> actually choosing — which Kivy major version to build — not the windowing
+> library that version happens to be built on. kivyforge translates that choice
+> into the matching SDL generation internally; configuring a build should never
+> require knowing that Kivy 2.x pairs with SDL2 and Kivy 3.x pairs with SDL3.
 
 ### ABIs (`abis`)
 
@@ -270,7 +276,7 @@ out-of-band with `cibuildwheel` and commit them to the repo:
 dependencies = ["kivy==2.3.1", "pyjnius"]
 
 [tool.kivy.android]
-sdl = 2
+kivy_generation = 2
 find_links = ["wheels"]     # locally cross-built kivy + pyjnius android_24_* wheels
 ```
 
@@ -737,7 +743,7 @@ version_code = 1
 min_sdk = 24
 target_sdk = 35
 compile_sdk = 35
-sdl = 2
+kivy_generation = 2
 abis = ["arm64_v8a", "x86_64"]
 # Kivy 2.3.1 + pyjnius are cross-built locally and vendored until on PyPI:
 find_links = ["wheels"]
@@ -774,7 +780,7 @@ key_alias = "upload"
 6. Omits `[tool.kivy].app_dir`, or sets it to the project root (`"."`), an empty string, an absolute path, or a path that escapes the project directory.
 7. Has `[tool.kivy].orientation` values outside the allowed set.
 8. Sets `[tool.kivy.android].min_sdk` below `24`, or `target_sdk`/`compile_sdk` less than `min_sdk`, or `compile_sdk < target_sdk`.
-9. Sets `[tool.kivy.android].sdl` to anything other than `2` or `3`.
+9. Sets `[tool.kivy.android].kivy_generation` to anything other than `2` or `3`.
 10. Sets `[tool.kivy.android].abis` to a non-list, an empty list, or a list containing any value other than `"arm64_v8a"` / `"x86_64"` (32-bit ABIs are rejected — the python.org runtime is 64-bit only).
 11. Lacks `[tool.kivy.android.python].version`, or specifies one for which no python.org Android embeddable package exists (verified at lock time), or one incompatible with `[project].requires-python`.
 12. Sets `find_links` entries that are absolute, empty, or escape the project directory.

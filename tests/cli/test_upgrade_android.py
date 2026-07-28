@@ -87,7 +87,7 @@ def _android_lock(
         generated_at="t",
         pyproject_sha256=compute_pyproject_sha256(pyproject_text),
         tool_kivy_android_schema_version=1,
-        sdl=2,
+        kivy_generation=2,
         android_libs=libs,
     )
 

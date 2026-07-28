@@ -287,7 +287,7 @@ def _render_overlay(
             _read_splash(table) if preserve else (None, None)
         )
         package = table.get("package") if preserve else None
-        sdl = table.get("sdl") if preserve else None
+        kivy_generation = table.get("kivy_generation") if preserve else None
         return render_android_tables(
             app_slug,
             signing=_read_android_signing(table) if preserve else None,
@@ -295,7 +295,10 @@ def _render_overlay(
             has_kivy=has_kivy,
             package=package if isinstance(package, str) and package else None,
             abis=_read_str_list(table, "abis") if preserve else None,
-            sdl=sdl if isinstance(sdl, int) and not isinstance(sdl, bool) else None,
+            kivy_generation=kivy_generation
+            if isinstance(kivy_generation, int)
+            and not isinstance(kivy_generation, bool)
+            else None,
             icon_source=_read_icon_source(table) if preserve else None,
             splash_source=splash_source,
             splash_background=splash_background,

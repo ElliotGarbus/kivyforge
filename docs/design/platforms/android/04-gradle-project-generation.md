@@ -112,7 +112,7 @@ staged `.so`s. This is the direct analog of Xcode compiling iOS's `main.m`: the
 platform toolchain compiles the bootstrap; kivyforge ships no native binary it
 built itself.
 
-- **Version-matched by construction.** The launcher links against the resolved python.org runtime (its `libpython3.x.so` and the matching CPython headers) and the SDL generation selected by `[tool.kivy.android].sdl`, so it always matches the pinned Python minor and SDL — there is **no prebuilt per-(ABI × Python × SDL) matrix** to build, vendor, hash-pin, and keep in sync.
+- **Version-matched by construction.** The launcher links against the resolved python.org runtime (its `libpython3.x.so` and the matching CPython headers) and the SDL generation selected by `[tool.kivy.android].kivy_generation`, so it always matches the pinned Python minor and SDL — there is **no prebuilt per-(ABI × Python × SDL) matrix** to build, vendor, hash-pin, and keep in sync.
 - **NDK is a required prerequisite for every build.** Because the launcher is compiled from source, the NDK is needed for *all* Android builds (debug included), not only symbol-exporting releases. `kivyforge doctor` detects it and prints an install hint but never installs it (the standing toolchain policy). The compile is a single small C file per ABI (seconds).
 - **Reproducible.** `kivyforge build` emits a pinned `ndkVersion` into `app/build.gradle`, so the launcher build is deterministic across hosts.
 

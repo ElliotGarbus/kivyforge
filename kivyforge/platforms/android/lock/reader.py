@@ -86,9 +86,12 @@ def _from_raw(raw: dict) -> AndroidLockfile:
         _parse_include_file(f) for f in _as_list(tool, "include_files")
     )
 
-    sdl = tool.get("sdl", 2)
-    if sdl not in (2, 3):
-        raise LockError(f"pylock.android.toml [tool.kivyforge].sdl {sdl!r} invalid.")
+    kivy_generation = tool.get("kivy_generation", 2)
+    if kivy_generation not in (2, 3):
+        raise LockError(
+            f"pylock.android.toml [tool.kivyforge].kivy_generation "
+            f"{kivy_generation!r} invalid."
+        )
 
     return AndroidLockfile(
         requires_python=raw.get("requires-python", ">=3.14"),
@@ -100,7 +103,7 @@ def _from_raw(raw: dict) -> AndroidLockfile:
         tool_kivy_android_schema_version=tool.get(
             "tool_kivy_android_schema_version", 1
         ),
-        sdl=sdl,
+        kivy_generation=kivy_generation,
         android_libs=android_libs,
         gradle=gradle,
         include_files=include_files,

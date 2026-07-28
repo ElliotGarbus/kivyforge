@@ -63,9 +63,12 @@ DEFAULT_ANDROID_MIN_SDK = 24
 # targetSdk default: the latest stable API level this kivyforge release knows.
 DEFAULT_ANDROID_TARGET_SDK = 35
 
-# SDL generations the bootstrap supports: 2 (Kivy 2.3.1) or 3 (Kivy 3.0).
-VALID_ANDROID_SDL_GENERATIONS = frozenset({2, 3})
-DEFAULT_ANDROID_SDL = 2
+# Kivy generations the bootstrap supports: 2 (Kivy 2.3.1, SDL2) or 3 (Kivy
+# 3.0, SDL3). Named after the Kivy major version, not the SDL generation it
+# happens to pair with, so configuring a build never requires knowing that
+# pairing.
+VALID_ANDROID_KIVY_GENERATIONS = frozenset({2, 3})
+DEFAULT_ANDROID_KIVY_GENERATION = 2
 
 # Google Play's versionCode ceiling; the auto-derivation formula must stay
 # under it (android/01 §auto-derived version_code).
@@ -620,7 +623,7 @@ class AndroidConfig:
     min_sdk: int = DEFAULT_ANDROID_MIN_SDK
     target_sdk: int = DEFAULT_ANDROID_TARGET_SDK
     compile_sdk: int = DEFAULT_ANDROID_TARGET_SDK
-    sdl: int = DEFAULT_ANDROID_SDL
+    kivy_generation: int = DEFAULT_ANDROID_KIVY_GENERATION
     abis: tuple[str, ...] = DEFAULT_ANDROID_ABIS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()

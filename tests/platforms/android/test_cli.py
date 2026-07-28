@@ -93,7 +93,7 @@ def _write_lock(project_root: Path, *, in_sync: bool = True, pyjnius_version="1.
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256=(compute_pyproject_sha256(text) if in_sync else "0" * 64),
         tool_kivy_android_schema_version=1,
-        sdl=2,
+        kivy_generation=2,
     )
     (project_root / "pylock.android.toml").write_text(
         lock_writer.dumps(lock), encoding="utf-8"

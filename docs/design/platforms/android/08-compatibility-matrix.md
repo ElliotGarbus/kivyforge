@@ -7,7 +7,7 @@
 > enforcement of its own. The pins it describes are enforced by `kivyforge`:
 >
 > - the **pyjnius / bootstrap `invoke0` range** (hard `build` gate + `doctor` FAIL — see [bootstrap-android](05-bootstrap-android.md#the-nativeinvocationhandler-matched-pair)),
-> - the **SDL ↔ Kivy rule** (`sdl = 2` ⇔ Kivy `< 3.0`, `sdl = 3` ⇔ Kivy `>= 3.0` — `doctor` WARN),
+> - the **SDL ↔ Kivy rule** (`kivy_generation = 2` ⇔ Kivy `< 3.0`, `kivy_generation = 3` ⇔ Kivy `>= 3.0` — `doctor` WARN),
 > - the **wheel-tag policy** (`wheel_tag_api ≤ min_sdk` — see [pyproject-android](01-pyproject-android.md)),
 > - the **ABI set** (64-bit only; `arm64_v8a` + `x86_64`).
 >
@@ -75,7 +75,7 @@ Notes:
   bootstrap-template change that adds a new contract version here.
 - **The local Kivy 2.3.1 wheel** is kivyforge-built (no dependency on third-party
   channels), per [artifact-distribution-android](03-artifact-distribution-android.md).
-- **Kivy 3.0 / SDL3** is first-class in the schema (`sdl = 3`) and now exercised
+- **Kivy 3.0 / SDL3** is first-class in the schema (`kivy_generation = 3`) and now exercised
   on-device against a `3.0.0.dev0` wheel. The row returns to **Pending** on
   Kivy 3.0 GA, since a snapshot is not the released artifact.
 - **The SDL Java glue and the `libSDL*.so` are a matched pair** in both

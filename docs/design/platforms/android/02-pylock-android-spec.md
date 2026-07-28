@@ -143,7 +143,7 @@ kivyforge_version = "3.0.0"
 generated_at = "2026-08-01T00:00:00Z"
 pyproject_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 tool_kivy_android_schema_version = 1
-sdl = 2
+kivy_generation = 2
 
 [[tool.kivyforge.python_android]]
 # Repeatable — one per ABI.
@@ -167,7 +167,7 @@ sdl = 2
 | `generated_at` | string | yes | ISO 8601 UTC timestamp. |
 | `pyproject_sha256` | string | yes | SHA-256 of the source `pyproject.toml` at lock time. `kivyforge build` recomputes and errors on mismatch (drift detection). |
 | `tool_kivy_android_schema_version` | integer | yes | Echoes `[tool.kivy.android].schema_version` from the source pyproject. |
-| `sdl` | integer | yes | The SDL generation this lock targets (`2` or `3`), echoed from `[tool.kivy.android].sdl`. Recorded because it governs which SDL native library the bootstrap load order and the pyjnius runtime resolver expect (see [bootstrap-android](05-bootstrap-android.md)). |
+| `kivy_generation` | integer | yes | The Kivy generation this lock targets (`2` or `3`), echoed from `[tool.kivy.android].kivy_generation`. Recorded because it governs which SDL native library the bootstrap load order and the pyjnius runtime resolver expect (see [bootstrap-android](05-bootstrap-android.md)). |
 
 ### `[[tool.kivyforge.python_android]]` — the runtime, per ABI
 
@@ -421,7 +421,7 @@ kivyforge_version = "3.0.0"
 generated_at = "2026-08-01T00:00:00Z"
 pyproject_sha256 = "e3b0c4..."
 tool_kivy_android_schema_version = 1
-sdl = 2
+kivy_generation = 2
 
 [[tool.kivyforge.python_android]]
 version = "3.14.6"
