@@ -459,6 +459,79 @@ class TestDiffSummary:
         assert builder_mod.diff_summary(old, old) == []
 
 
+class TestSemanticEqual:
+    """A freshly-resolved lock lists packages/android_libs/gradle.resolved in
+    resolver order; writer.py always sorts them before serializing. Same
+    content, different tuple order must still compare equal -- plain
+    dataclass equality does not (`kivyforge lock --check` would report a
+    same-content lock as stale)."""
+
+    def test_reordered_packages_still_equal(self):
+        base = _sample_lockfile()
+        second = dataclasses.replace(
+            base,
+            packages=base.packages
+            + (
+                LockedPackage(
+                    name="certifi",
+                    version="2026.6.17",
+                    wheels=(
+                        LockedWheel(
+                            name="certifi-2026.6.17-py3-none-any.whl",
+                            url="https://files.example/certifi.whl",
+                            sha256="9" * 64,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        reordered = dataclasses.replace(
+            second, packages=tuple(reversed(second.packages))
+        )
+        assert second.packages != reordered.packages  # the tuples really differ
+        assert builder_mod.semantic_equal(second, reordered)
+
+    def test_reordered_android_libs_and_gradle_resolved_still_equal(self):
+        base = _sample_lockfile()
+        extra_lib = LockedAndroidLib(
+            name="Analytics",
+            kind="aar",
+            version="1.0.0",
+            url="https://vendor.example/Analytics-1.0.0.aar",
+            sha256="3" * 64,
+        )
+        extra_module = GradleResolvedModule(
+            coordinate="androidx.core:core:1.13.0",
+            artifacts=(GradleArtifact(name="core-1.13.0.jar", sha256="4" * 64),),
+        )
+        lock = dataclasses.replace(
+            base,
+            android_libs=base.android_libs + (extra_lib,),
+            gradle=dataclasses.replace(
+                base.gradle, resolved=base.gradle.resolved + (extra_module,)
+            ),
+        )
+        reordered = dataclasses.replace(
+            lock,
+            android_libs=tuple(reversed(lock.android_libs)),
+            gradle=dataclasses.replace(
+                lock.gradle, resolved=tuple(reversed(lock.gradle.resolved))
+            ),
+        )
+        assert lock.android_libs != reordered.android_libs
+        assert builder_mod.semantic_equal(lock, reordered)
+
+    def test_genuinely_different_packages_not_equal(self):
+        base = _sample_lockfile()
+        changed = dataclasses.replace(
+            base,
+            packages=tuple(
+                dataclasses.replace(p, version="9.9.9") for p in base.packages
+            ),
+        )
+        assert not builder_mod.semantic_equal(base, changed)
+
+
 def _sample_lockfile() -> AndroidLockfile:
     return AndroidLockfile(
         requires_python=">=3.14",

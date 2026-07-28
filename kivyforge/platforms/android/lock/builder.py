@@ -315,11 +315,45 @@ def _check_abis_complete(
         )
 
 
-def semantic_equal(a: AndroidLockfile, b: AndroidLockfile) -> bool:
-    """Compare two lockfiles ignoring the volatile ``generated_at`` field."""
-    return dataclasses.replace(a, generated_at="") == dataclasses.replace(
-        b, generated_at=""
+def _normalized(lock: AndroidLockfile) -> AndroidLockfile:
+    """Sort every resolver-derived collection, ignoring ``generated_at``.
+
+    ``writer.py`` always sorts these before serializing, but a freshly
+    resolved lockfile (as ``--check`` builds to compare against) reflects
+    resolver-graph order instead -- same content, different tuple order.
+    Plain dataclass equality is order-sensitive, so comparing raw objects
+    reports a same-content lock as stale (found comparing a written lock
+    against itself, re-resolved). Sorting both sides by the writer's own
+    keys before comparing makes the comparison mean what "in sync" should:
+    same content, not same resolver iteration order.
+    """
+    gradle = dataclasses.replace(
+        lock.gradle,
+        resolved=tuple(
+            dataclasses.replace(
+                module, artifacts=tuple(sorted(module.artifacts, key=lambda a: a.name))
+            )
+            for module in sorted(lock.gradle.resolved, key=lambda m: m.coordinate)
+        ),
     )
+    return dataclasses.replace(
+        lock,
+        generated_at="",
+        packages=tuple(sorted(lock.packages, key=lambda p: p.sort_key)),
+        python_android=tuple(sorted(lock.python_android, key=lambda r: r.abi)),
+        android_libs=tuple(
+            sorted(lock.android_libs, key=lambda x: (x.name.lower(), x.version))
+        ),
+        include_files=tuple(
+            sorted(lock.include_files, key=lambda p: (p.dest, p.source))
+        ),
+        gradle=gradle,
+    )
+
+
+def semantic_equal(a: AndroidLockfile, b: AndroidLockfile) -> bool:
+    """Compare two lockfiles ignoring volatile timestamps and tuple order."""
+    return _normalized(a) == _normalized(b)
 
 
 def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
