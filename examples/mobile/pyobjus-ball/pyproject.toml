@@ -1,13 +1,13 @@
 [project]
 name = "pyobjus-ball"
 version = "0.1.0"
-requires-python = ">=3.15.0b2"
+requires-python = ">=3.15.0b4"
 dependencies = [
     "kivy>=3.0.0.dev0,<4",
     # pyobjus is an iOS-only package; it is silently skipped on other
     # platforms at runtime (the app falls back to touch steering).
-    # iOS wheels must be available via find_links or PyPI before running
-    # `kivyforge lock`.
+    # iOS wheels resolve from the kivy-mobile-wheels index (see
+    # [tool.kivy.ios].extra_index_urls below) before running `kivyforge lock`.
     "pyobjus",
 ]
 
@@ -50,7 +50,7 @@ exclude = [
 ]
 
 [tool.kivy.ios.python]
-version = "3.15.0b2"
+version = "3.15.0b4"
 
 [tool.kivy.ios.signing]
 team_id = ""

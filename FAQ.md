@@ -49,7 +49,7 @@ skip the drift check.
 
 `[tool.kivy.ios.python].version` must match a build that python.org actually
 publishes. iOS support is new, so during the preview period you may need a
-prerelease such as `3.15.0b2` rather than a final `3.15.0`. Set the version to a
+prerelease such as `3.15.0b4` rather than a final `3.15.0`. Set the version to a
 published release and re-run `kivyforge lock`.
 
 ### "invalid character in Bundle Identifier"

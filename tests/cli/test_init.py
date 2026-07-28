@@ -443,7 +443,7 @@ class TestUpdatePath:
             pp.write_text(self.PYPROJECT + "\n")
             runner.invoke(init, [])
             text = pp.read_text().replace(
-                'version = "3.15.0b2"', 'version = "3.15.0b1"'
+                'version = "3.15.0b4"', 'version = "3.15.0b1"'
             )
             pp.write_text(text)
             result = runner.invoke(init, ["--force"])

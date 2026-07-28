@@ -23,7 +23,7 @@ from ..config.model import (
 )
 
 # Default Python.xcframework version init seeds (spec 01).
-DEFAULT_PYTHON_VERSION = "3.15.0b2"
+DEFAULT_PYTHON_VERSION = "3.15.0b4"
 DEFAULT_DEPLOYMENT_TARGET = "13.0"
 # Default python-build-standalone version seeded for macOS/Linux (desktop
 # targets pin a released runtime, not a beta xcframework).

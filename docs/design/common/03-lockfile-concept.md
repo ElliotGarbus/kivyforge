@@ -123,7 +123,7 @@ gate example actually exercises it.
 Every other example's README documents `kivyforge lock` / `kivyforge lock
 --update` as the first step of running it, so regenerating a gitignored lock is
 an expected, already-documented part of the workflow — the same treatment given
-to `examples/wheels/ios/*.whl` and the generated `<app>-ios/` Xcode trees.
+to the generated `<app>-ios/`/`<app>-android/` Xcode/Gradle trees.
 
 > **Not currently demonstrated:** every mobile example now resolves from an
 > index, so no committed lock shows the local `path`-wheel shape a user

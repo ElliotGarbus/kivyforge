@@ -21,8 +21,8 @@ from kivyforge.platforms.ios.lock.python_meta import (
 
 def test_prerelease_url_under_base_release_dir():
     assert (
-        python_org_ios_url("3.15.0b2")
-        == "https://www.python.org/ftp/python/3.15.0/python-3.15.0b2-iOS-XCframework.tar.gz"
+        python_org_ios_url("3.15.0b4")
+        == "https://www.python.org/ftp/python/3.15.0/python-3.15.0b4-iOS-XCframework.tar.gz"
     )
 
 
@@ -36,7 +36,7 @@ def test_final_release_url():
 def test_lock_hashes_python_xcframework_from_artifact_cache(tmp_path):
     import hashlib
 
-    version = "3.15.0b2"
+    version = "3.15.0b4"
     filename = archive_filename(version)
     data = b"fake-xcframework-archive"
     sha = hashlib.sha256(data).hexdigest()
@@ -56,7 +56,7 @@ def test_lock_offline_requires_cached_python_xcframework(tmp_path):
     provider = PythonOrgProvider(cache=cache)
 
     try:
-        provider.get("3.15.0b2", offline=True)
+        provider.get("3.15.0b4", offline=True)
     except PythonXcframeworkError as exc:
         assert "not in the artifact cache" in str(exc)
     else:

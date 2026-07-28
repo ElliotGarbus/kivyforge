@@ -25,7 +25,7 @@ deployment_target = "13.0"
 source = "assets/icon-ios.png"
 
 [tool.kivy.ios.python]
-version = "3.15.0b2"
+version = "3.15.0b4"
 
 [tool.kivy.ios.signing]
 team_id = ""

@@ -47,8 +47,8 @@ mkdir -p "$OUTPUT_DIR" "$BUILD_ROOT"
 # --- CPython 3.15 macOS framework (cibuildwheel cross-builds iOS with it) -----
 CPYTHON_PKG_ID="org.python.Python.PythonFramework-3.15"
 CPYTHON_FRAMEWORK="/Library/Frameworks/Python.framework/Versions/3.15"
-CPYTHON_PKG_URL="https://www.python.org/ftp/python/3.15.0/python-3.15.0b2-macos11.pkg"
-CPYTHON_PKG_CACHE="${BUILD_ROOT}/python-3.15.0b2-macos11.pkg"
+CPYTHON_PKG_URL="https://www.python.org/ftp/python/3.15.0/python-3.15.0b4-macos11.pkg"
+CPYTHON_PKG_CACHE="${BUILD_ROOT}/python-3.15.0b4-macos11.pkg"
 
 if ! pkgutil --pkgs 2>/dev/null | grep -qx "$CPYTHON_PKG_ID"; then
   if [[ ! -d "$CPYTHON_FRAMEWORK" ]]; then

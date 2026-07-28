@@ -398,21 +398,21 @@ class TestRule10RequiresPython:
         assert cfg.ios_required.python_version == "3.15.0"
 
     def test_prerelease_needs_explicit_floor(self):
-        with pytest.raises(ConfigError, match="3.15.0b2") as exc:
+        with pytest.raises(ConfigError, match="3.15.0b4") as exc:
             load(
                 "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15'\n"
                 "[tool.kivy]\napp_dir='src'\n[tool.kivy.ios]\nschema_version=1\n"
-                "bundle_id='o.x.a'\n[tool.kivy.ios.python]\nversion='3.15.0b2'"
+                "bundle_id='o.x.a'\n[tool.kivy.ios.python]\nversion='3.15.0b4'"
             )
         assert "pre-release" in str(exc.value.hint)
 
     def test_prerelease_with_matching_floor(self):
         cfg = load(
-            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15.0b4'\n"
             "[tool.kivy]\napp_dir='src'\n[tool.kivy.ios]\nschema_version=1\n"
-            "bundle_id='o.x.a'\n[tool.kivy.ios.python]\nversion='3.15.0b2'"
+            "bundle_id='o.x.a'\n[tool.kivy.ios.python]\nversion='3.15.0b4'"
         )
-        assert cfg.ios_required.python_version == "3.15.0b2"
+        assert cfg.ios_required.python_version == "3.15.0b4"
 
 
 class TestInfoPlistManagedKeys:
@@ -666,7 +666,7 @@ class TestErrorFormatting:
 # Head opens [tool.kivy.macos]; extras append here; the python subtable comes
 # last so extra keys stay under [tool.kivy.macos] (TOML table scoping).
 _MACOS_HEAD = (
-    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b4'\n"
     "dependencies=['kivy']\n"
     "[tool.kivy]\napp_dir='src'\ndisplay_name='Hello'\n"
     "[tool.kivy.macos]\nschema_version=1\nbundle_id='org.example.hello'\n"
@@ -698,7 +698,7 @@ class TestMacosOverlay:
 
     def test_ios_and_macos_coexist(self):
         base = (
-            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+            "[project]\nname='a'\nversion='1'\nrequires-python='>=3.15.0b4'\n"
             "[tool.kivy]\napp_dir='src'\n"
             "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
             "[tool.kivy.ios.python]\nversion='3.15.0'\n"
@@ -920,7 +920,7 @@ class TestMacosRequiresPython:
 # Head opens [tool.kivy.linux]; extras append here; the python subtable comes
 # last so extra keys stay under [tool.kivy.linux] (TOML table scoping).
 _LINUX_HEAD = (
-    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b4'\n"
     "dependencies=['kivy']\n"
     "[tool.kivy]\napp_dir='src'\ndisplay_name='Hello'\n"
     "[tool.kivy.linux]\nschema_version=1\napp_id='org.example.hello'\n"
@@ -1093,7 +1093,7 @@ class TestIosAndLinuxCoexist:
 # Head opens [tool.kivy.windows]; extras append here; the python subtable comes
 # last so extra keys stay under [tool.kivy.windows] (TOML table scoping).
 _WINDOWS_HEAD = (
-    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b2'\n"
+    "[project]\nname='hello'\nversion='1'\nrequires-python='>=3.15.0b4'\n"
     "dependencies=['kivy']\n"
     "[tool.kivy]\napp_dir='src'\ndisplay_name='Hello'\n"
     "[tool.kivy.windows]\nschema_version=1\napp_id='Example.Hello'\n"

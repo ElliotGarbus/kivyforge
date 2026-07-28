@@ -80,16 +80,23 @@ every other platform:
 
 1. **Upstream-published Android wheels** (as the ecosystem publishes them) — consumed directly from PyPI under canonical names.
 2. **Supplemental indexes** via `[tool.kivy.android].extra_index_urls` (passed to pip as `--extra-index-url`); each resolved wheel's URL is pinned in the lock regardless of index.
-3. **Local/vendored wheels** via `[tool.kivy.android].find_links` — the canonical path for the **locally cross-built Kivy 2.3.1 and pyjnius wheels**.
+3. **Local/vendored wheels** via `[tool.kivy.android].find_links` — supported for a user's own locally cross-built wheels, but not what this project's examples use (see below).
 
 > **No dependency on community wheel channels.** kivyforge deliberately does **not**
 > resolve against the `kivyschool` Anaconda channel or any other community index by
-> default. The Kivy 2.3.1 and pyjnius Android wheels are **built by the project and
-> vendored** (via `find_links` + a `path` pin) until first-party wheels exist on
+> default. The Kivy 2.3.1 and pyjnius Android wheels are **built by the project**
+> and published to
+> [`kivy-mobile-wheels`](https://github.com/ElliotGarbus/kivy-mobile-wheels), a
+> personally-owned bridge repo that builds them in CI and serves them over a PEP
+> 503 index (layer 2 above, `extra_index_urls`) until first-party wheels exist on
 > PyPI. This keeps provenance canonical and the supply chain auditable — the same
-> reasoning behind the URL+SHA discipline everywhere else. When Kivy and pyjnius
-> publish Android wheels to PyPI, the `find_links` entry simply goes quiet and the
-> dependency resolves from PyPI with no config change beyond dropping `find_links`.
+> reasoning behind the URL+SHA discipline everywhere else. (Earlier revisions of
+> this project instead vendored these wheels locally via `find_links` + a `path`
+> pin, layer 3; that mechanism remains supported for a user's own local builds,
+> but the project's own examples no longer use it for Kivy/pyjnius.) When Kivy and
+> pyjnius publish Android wheels to PyPI, the `extra_index_urls` entry simply goes
+> quiet and the dependency resolves from PyPI with no config change beyond
+> dropping it.
 
 ### The Kivy wheel carries its native `.so` payload (`.libs/`)
 

@@ -290,7 +290,8 @@ index**:
   Windows (`greet.dll` loaded by name, `roll.exe` run by name).
 
 **Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS and Android, Kivy 3.0
-where the platform requires it:
+where the platform requires it (wheels from
+[`kivy-mobile-wheels`](https://github.com/ElliotGarbus/kivy-mobile-wheels)):
 
 *iOS:*
 
@@ -337,7 +338,7 @@ under `[tool.kivy]`, and iOS-specific settings live under `[tool.kivy.ios]`
 [project]
 name = "hello-world"
 version = "0.1.0"
-requires-python = ">=3.15.0b2"
+requires-python = ">=3.15.0b4"
 dependencies = []                       # PyPI/local deps resolved into the lockfile
 
 [tool.kivy]
@@ -354,7 +355,7 @@ deployment_target = "13.0"
 # exclude = ["docutils", "pygments"]    # drop transitive deps you don't use at runtime
 
 [tool.kivy.ios.python]
-version = "3.15.0b2"                     # python.org Python.xcframework version
+version = "3.15.0b4"                     # python.org Python.xcframework version
 
 [tool.kivy.ios.signing]
 team_id = ""                            # Apple Developer Team ID (device / release builds)
