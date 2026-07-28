@@ -242,7 +242,12 @@ def _check_sdl_kivy_match(config: Config, lock) -> CheckResult:
     from packaging.version import InvalidVersion, Version
 
     try:
-        is_sdl3 = Version(kivy.version) >= Version("3.0")
+        # ``.major`` reads only the release segment's leading number, so a
+        # pre-release like "3.0.0.dev202606221936" still counts as major 3 --
+        # a direct ``Version(...) >= Version("3.0")`` comparison would not:
+        # PEP 440 dev-releases sort *before* their final release, so that
+        # comparison is False for every Kivy 3.0 dev build.
+        is_sdl3 = Version(kivy.version).major >= 3
     except InvalidVersion:
         return CheckResult(
             "SDL / Kivy match", Status.WARN, f"unparseable kivy {kivy.version!r}"

@@ -427,6 +427,21 @@ class TestSdlKivyMatchDirect:
         assert result.status is Status.WARN
         assert "unparseable" in result.detail
 
+    def test_pass_on_kivy_3_dev_prerelease(self):
+        # Version("3.0.0.devN") < Version("3.0") under PEP 440 dev-release
+        # ordering, so a naive `>=` comparison would misclassify every Kivy
+        # 3.0 dev build as SDL2 and false-WARN here.
+        text = _PROJECT_PYPROJECT.replace(
+            'dependencies = ["kivy==2.3.1", "pyjnius"]',
+            'dependencies = ["kivy>=3.0.0.dev0", "pyjnius"]',
+        ).replace(
+            'abis = ["arm64_v8a", "x86_64"]',
+            'abis = ["arm64_v8a", "x86_64"]\nkivy_generation = 3',
+        )
+        config = _config(text)
+        lock = _doctor_lock(packages=[_wheel_pkg("kivy", "3.0.0.dev202606221936")])
+        assert _check_sdl_kivy_match(config, lock).status is Status.PASS
+
 
 class TestPyjniusContractDirect:
     def test_skip_when_absent(self):
