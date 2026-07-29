@@ -19,7 +19,7 @@ _PYPROJECT = (
     "dependencies=[]\n"
     "[tool.kivy]\ndisplay_name='My App'\napp_dir='src'\nentry_point='main'\n"
     "[tool.kivy.macos]\nschema_version=1\nbundle_id='org.example.myapp'\n"
-    "archs=['arm64','x86_64']\n"
+    "archs=['arm64']\n"
     "[tool.kivy.macos.python]\nversion='3.14.5'\n"
 )
 
@@ -28,7 +28,7 @@ def _config():
     return load_config_from_text(_PYPROJECT, require_ios=False, require_macos=True)
 
 
-def _lock(archs=("arm64", "x86_64"), native_binaries=()):
+def _lock(archs=("arm64",), native_binaries=()):
     return WheelRuntimeLock(
         platform="macos",
         requires_python=">=3.14",
@@ -49,29 +49,20 @@ def _lock(archs=("arm64", "x86_64"), native_binaries=()):
     )
 
 
-class TestResolveAssemblyArchs:
-    def test_none_returns_full_locked_set(self):
-        assert bundle.resolve_assembly_archs(("arm64", "x86_64"), None) == (
-            "arm64",
-            "x86_64",
-        )
+class TestResolveAssemblyArch:
+    def test_none_returns_the_locked_arch(self):
+        assert bundle.resolve_assembly_arch(("arm64",), None) == "arm64"
 
-    def test_single_arch_subset(self):
-        assert bundle.resolve_assembly_archs(("arm64", "x86_64"), "arm64") == ("arm64",)
+    def test_explicit_locked_arch(self):
+        assert bundle.resolve_assembly_arch(("arm64",), "arm64") == "arm64"
 
-    def test_universal2_requires_two(self):
-        with pytest.raises(AppBundleError, match="needs a lock covering both"):
-            bundle.resolve_assembly_archs(("arm64",), "universal2")
-
-    def test_universal2_ok_with_two(self):
-        assert bundle.resolve_assembly_archs(("arm64", "x86_64"), "universal2") == (
-            "arm64",
-            "x86_64",
-        )
+    def test_empty_lock_errors(self):
+        with pytest.raises(AppBundleError, match="covers no architectures"):
+            bundle.resolve_assembly_arch((), None)
 
     def test_arch_not_in_lock_errors(self):
         with pytest.raises(AppBundleError, match="not in the lock"):
-            bundle.resolve_assembly_archs(("arm64",), "x86_64")
+            bundle.resolve_assembly_arch(("arm64",), "x86_64")
 
 
 @pytest.fixture
@@ -87,27 +78,27 @@ def faked(monkeypatch):
         "order": [],
     }
 
-    def fake_runtime(runtime, archs, home, **k):
+    def fake_runtime(runtime, arch, home, **k):
         home.mkdir(parents=True, exist_ok=True)
         (home / "bin").mkdir()
         (home / "bin" / "python3").write_text("x")
-        calls["runtime"].append(tuple(archs))
+        calls["runtime"].append(arch)
         calls["order"].append("runtime")
         return home
 
-    def fake_wheels(packages, archs, lib, **k):
+    def fake_wheels(packages, arch, lib, **k):
         lib.mkdir(parents=True, exist_ok=True)
-        calls["wheels"].append(tuple(archs))
+        calls["wheels"].append(arch)
         calls["order"].append("wheels")
 
     def fake_native(lock, resources, **k):
         calls["native"].append(tuple(b.name for b in lock.native_binaries))
         calls["order"].append("native")
 
-    def fake_launcher(dest, *, entry_point, archs):
+    def fake_launcher(dest, *, entry_point, arch):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(b"\xcf\xfa\xed\xfe")  # Mach-O magic placeholder
-        calls["launcher"] = (entry_point, tuple(archs))
+        calls["launcher"] = (entry_point, arch)
 
     monkeypatch.setattr(bundle, "stage_runtime", fake_runtime)
     monkeypatch.setattr(bundle, "stage_wheels", fake_wheels)
@@ -144,7 +135,7 @@ class TestBuildAppBundle:
         # The bundle is ad-hoc signed once (on the temp tree, before the swap).
         assert len(faked["sign"]) == 1
 
-    def test_arch_subset_passed_to_stagers(self, tmp_path, faked):
+    def test_arch_passed_to_stagers(self, tmp_path, faked):
         root = _project(tmp_path)
         bundle.build_app_bundle(
             _config(),
@@ -154,8 +145,8 @@ class TestBuildAppBundle:
             staging_dir=tmp_path / "out",
             echo=lambda *a: None,
         )
-        assert faked["runtime"] == [("arm64",)]
-        assert faked["wheels"] == [("arm64",)]
+        assert faked["runtime"] == ["arm64"]
+        assert faked["wheels"] == ["arm64"]
 
     def test_native_binaries_staged_after_wheels(self, tmp_path, faked):
         from kivyforge.lock.wheelruntime.model import LockedNativeBinary

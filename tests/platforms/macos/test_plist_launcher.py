@@ -91,10 +91,6 @@ class TestLauncherCompileHermetic:
     assembly, chmod, and both failure branches get coverage on every host.
     """
 
-    def test_requires_at_least_one_arch(self, tmp_path):
-        with pytest.raises(AppBundleError, match="at least one arch"):
-            build_launcher(tmp_path / "x", entry_point="main", archs=())
-
     def test_missing_clang_is_actionable(self, tmp_path, monkeypatch):
         def no_clang(*a, **k):
             raise FileNotFoundError(2, "No such file or directory")
@@ -102,7 +98,7 @@ class TestLauncherCompileHermetic:
         monkeypatch.setattr(launcher_mod.subprocess, "run", no_clang)
         with pytest.raises(AppBundleError, match="clang not found"):
             build_launcher(
-                tmp_path / "MacOS" / "myapp", entry_point="main", archs=("arm64",)
+                tmp_path / "MacOS" / "myapp", entry_point="main", arch="arm64"
             )
 
     def test_compile_failure_reports_stderr(self, tmp_path, monkeypatch):
@@ -112,10 +108,10 @@ class TestLauncherCompileHermetic:
         monkeypatch.setattr(launcher_mod.subprocess, "run", fail)
         with pytest.raises(AppBundleError, match="failed to compile"):
             build_launcher(
-                tmp_path / "MacOS" / "myapp", entry_point="main", archs=("arm64",)
+                tmp_path / "MacOS" / "myapp", entry_point="main", arch="arm64"
             )
 
-    def test_success_passes_all_archs_and_marks_executable(self, tmp_path, monkeypatch):
+    def test_success_passes_arch_and_marks_executable(self, tmp_path, monkeypatch):
         recorded = {}
 
         def ok(cmd, **k):
@@ -126,13 +122,13 @@ class TestLauncherCompileHermetic:
 
         monkeypatch.setattr(launcher_mod.subprocess, "run", ok)
         dest = tmp_path / "MacOS" / "myapp"
-        build_launcher(dest, entry_point="main", archs=("arm64", "x86_64"))
+        build_launcher(dest, entry_point="main", arch="arm64")
         # build_launcher chmods 0o755 (a no-op on Windows CI hosts, hence no
         # executable-bit assertion here) and writes the compiled output.
         assert dest.exists()
-        # Every requested arch is forwarded to clang as a `-arch <a>` pair.
-        assert recorded["cmd"].count("-arch") == 2
-        assert "arm64" in recorded["cmd"] and "x86_64" in recorded["cmd"]
+        # The arch is forwarded to clang as a single `-arch <a>` pair.
+        assert recorded["cmd"].count("-arch") == 1
+        assert "arm64" in recorded["cmd"]
 
 
 # The launcher is a Mach-O stub built with `clang -arch ...`; that is a macOS-only
@@ -150,20 +146,10 @@ class TestLauncherCompile:
     def test_builds_thin_macho(self, tmp_path):
         host = "arm64" if platform.machine() == "arm64" else "x86_64"
         path = tmp_path / "MacOS" / "myapp"
-        build_launcher(path, entry_point="main", archs=(host,))
+        build_launcher(path, entry_point="main", arch=host)
         assert is_macho(path)
         assert macho_arches(path) == (host,)
         assert os.stat(path).st_mode & stat.S_IXUSR
-
-    def test_builds_universal2_macho(self, tmp_path):
-        path = tmp_path / "MacOS" / "myapp"
-        build_launcher(path, entry_point="main", archs=("arm64", "x86_64"))
-        assert is_macho(path)
-        assert set(macho_arches(path)) == {"arm64", "x86_64"}
-
-    def test_requires_at_least_one_arch(self, tmp_path):
-        with pytest.raises(AppBundleError, match="at least one arch"):
-            build_launcher(tmp_path / "x", entry_point="main", archs=())
 
     def test_child_sees_bin_first_on_path(self, tmp_path):
         import subprocess
@@ -171,7 +157,7 @@ class TestLauncherCompile:
         host = "arm64" if platform.machine() == "arm64" else "x86_64"
         contents = tmp_path / "My.app" / "Contents"
         launcher = contents / "MacOS" / "myapp"
-        build_launcher(launcher, entry_point="main", archs=(host,))
+        build_launcher(launcher, entry_point="main", arch=host)
 
         # A fake "python3" that ignores its script arg and prints PATH, standing
         # in for the interpreter the launcher execs.

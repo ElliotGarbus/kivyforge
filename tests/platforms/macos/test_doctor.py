@@ -17,7 +17,7 @@ from kivyforge.platforms.macos.doctor import run_macos_checks
 from tests.doctor.probe_fakes import FakeProbe
 
 
-def _macos_config(extra: str = "", archs="['arm64','x86_64']"):
+def _macos_config(extra: str = "", archs="['arm64']"):
     return load_config_from_text(
         textwrap.dedent(
             f"""
@@ -43,7 +43,7 @@ def _macos_config(extra: str = "", archs="['arm64','x86_64']"):
     )
 
 
-def _lock(*, packages=(), archs=("arm64", "x86_64"), floor=None):
+def _lock(*, packages=(), archs=("arm64",), floor=None):
     return WheelRuntimeLock(
         platform="macos",
         requires_python=">=3.14",
@@ -96,18 +96,29 @@ class TestArchCoverage:
         r = M.check_macos_arch_coverage(_macos_config(), _lock(packages=[pkg]))
         assert r.status is Status.PASS
 
-    def test_per_arch_missing_fails(self):
+    def test_thin_arm64_ok(self):
         pkg = LockedPackage(
             name="foo",
             version="1",
             wheels=(_wheel("foo-1-cp314-cp314-macosx_11_0_arm64.whl"),),
         )
         r = M.check_macos_arch_coverage(_macos_config(), _lock(packages=[pkg]))
+        assert r.status is Status.PASS
+
+    def test_wrong_arch_wheel_fails(self):
+        # An Intel-only wheel covers nothing on an arm64-only build.
+        pkg = LockedPackage(
+            name="foo",
+            version="1",
+            wheels=(_wheel("foo-1-cp314-cp314-macosx_11_0_x86_64.whl"),),
+        )
+        r = M.check_macos_arch_coverage(_macos_config(), _lock(packages=[pkg]))
         assert r.status is Status.FAIL
-        assert "x86_64" in r.detail
+        assert "arm64" in r.detail
 
     def test_runtime_missing_arch_fails(self):
-        r = M.check_macos_arch_coverage(_macos_config(), _lock(archs=("arm64",)))
+        # A stale lock whose runtime predates the arm64-only switch.
+        r = M.check_macos_arch_coverage(_macos_config(), _lock(archs=("x86_64",)))
         assert r.status is Status.FAIL
 
     def test_skip_without_lock(self):
@@ -203,18 +214,19 @@ class TestNativeBinaries:
     def test_pass_when_built_covers_archs(self, tmp_path, monkeypatch):
         self._built_bin(tmp_path)
         monkeypatch.setattr(M, "is_macho", lambda p: p.name == "roll")
-        monkeypatch.setattr(M, "macho_arches", lambda p: ("arm64", "x86_64"))
+        monkeypatch.setattr(M, "macho_arches", lambda p: ("arm64",))
         r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
         assert r.status is Status.PASS
         assert "cover" in r.detail
 
     def test_fail_when_built_missing_arch(self, tmp_path, monkeypatch):
+        # An Intel-only helper cannot load in an arm64 app.
         self._built_bin(tmp_path)
         monkeypatch.setattr(M, "is_macho", lambda p: p.name == "roll")
-        monkeypatch.setattr(M, "macho_arches", lambda p: ("arm64",))
+        monkeypatch.setattr(M, "macho_arches", lambda p: ("x86_64",))
         r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
         assert r.status is Status.FAIL
-        assert "roll missing x86_64" in r.detail
+        assert "roll missing arm64" in r.detail
 
     def test_fail_on_single_file_basename_collision(self, tmp_path):
         for rel in ("binaries/a/tool", "binaries/b/tool"):

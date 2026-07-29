@@ -31,9 +31,17 @@ from kivyforge.platforms.macos.lock import MacosProfile
 
 
 class FauxLinuxProfile(PlatformLockProfile):
-    """A minimal second profile: reuses config.macos as a stand-in overlay."""
+    """A minimal second profile: reuses config.macos as a stand-in overlay.
+
+    Its ``variants()`` are deliberately **not** read from the macOS overlay's
+    ``archs``: the point here is that the core is generic over however many
+    archs a profile declares, which must stay testable even though no shipping
+    platform is multi-arch today (macOS is arm64-only, Linux x86_64-only,
+    Windows amd64-only).
+    """
 
     platform = "faux"
+    ARCHS = ("x86_64", "arm64")
 
     def overlay(self, config):
         return config.macos
@@ -46,8 +54,7 @@ class FauxLinuxProfile(PlatformLockProfile):
 
     def variants(self, config):
         return tuple(
-            Variant(arch=a, platform_tag=f"manylinux_2_28_{a}")
-            for a in config.macos_required.archs
+            Variant(arch=a, platform_tag=f"manylinux_2_28_{a}") for a in self.ARCHS
         )
 
     def wheel_covers(self, platform_tag, archs):
@@ -104,14 +111,13 @@ class FakeProvider:
         )
 
 
-# Reuses the macOS overlay as a stand-in (its archs validate to arm64/x86_64);
-# the profile applies its own manylinux-style tags + coverage on top.
+# Reuses the macOS overlay purely as a stand-in for "some platform overlay";
+# the profile applies its own archs, manylinux-style tags, and coverage on top.
 _PYPROJECT = (
     "[project]\nname='myapp'\nversion='1'\nrequires-python='>=3.15'\n"
     "dependencies=['kivy']\n"
     "[tool.kivy]\napp_dir='src'\n"
     "[tool.kivy.macos]\nschema_version=1\nbundle_id='org.example.myapp'\n"
-    "archs=['x86_64','arm64']\n"
     "[tool.kivy.macos.python]\nversion='3.15.0'\n"
 )
 

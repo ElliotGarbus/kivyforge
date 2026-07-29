@@ -18,32 +18,24 @@ def _pkg(name, wheels):
     return LockedPackage(name=name, version="1.0", wheels=tuple(wheels))
 
 
-class TestSelectWheels:
-    def test_pure_python_single(self):
+class TestSelectWheel:
+    def test_pure_python(self):
         w = _wheel("foo-1.0-py3-none-any.whl")
-        base, extra = wheels_stage._select_wheels(_pkg("foo", [w]), ("arm64",))
-        assert base is w
-        assert extra == []
+        assert wheels_stage._select_wheel(_pkg("foo", [w]), "arm64") is w
 
-    def test_universal2_single(self):
+    def test_universal2_satisfies_arm64(self):
+        # A universal2 wheel *contains* arm64, so it is a valid pick.
         w = _wheel("foo-1.0-cp314-cp314-macosx_11_0_universal2.whl")
-        base, extra = wheels_stage._select_wheels(_pkg("foo", [w]), ("arm64", "x86_64"))
-        assert base is w
-        assert extra == []
+        assert wheels_stage._select_wheel(_pkg("foo", [w]), "arm64") is w
 
-    def test_per_arch_base_plus_extras(self):
-        arm = _wheel("foo-1.0-cp314-cp314-macosx_11_0_arm64.whl")
+    def test_thin_arm64(self):
+        w = _wheel("foo-1.0-cp314-cp314-macosx_11_0_arm64.whl")
+        assert wheels_stage._select_wheel(_pkg("foo", [w]), "arm64") is w
+
+    def test_intel_only_fails(self):
         intel = _wheel("foo-1.0-cp314-cp314-macosx_10_13_x86_64.whl")
-        base, extra = wheels_stage._select_wheels(
-            _pkg("foo", [arm, intel]), ("arm64", "x86_64")
-        )
-        assert base is arm
-        assert extra == [intel]
-
-    def test_missing_arch_fails(self):
-        arm = _wheel("foo-1.0-cp314-cp314-macosx_11_0_arm64.whl")
-        with pytest.raises(AppBundleError, match="no wheel for arch"):
-            wheels_stage._select_wheels(_pkg("foo", [arm]), ("arm64", "x86_64"))
+        with pytest.raises(AppBundleError, match="no arm64 wheel"):
+            wheels_stage._select_wheel(_pkg("foo", [intel]), "arm64")
 
 
 def _make_wheel(path, files: dict[str, bytes]) -> None:
@@ -80,44 +72,3 @@ class TestUnpack:
         target.mkdir()
         with pytest.raises(AppBundleError, match="unsafe path"):
             wheels_stage._unpack(wheel, target)
-
-
-class TestMergeWheelBinaries:
-    def test_lipo_merges_matching_macho(self, tmp_path, monkeypatch):
-        import struct
-
-        # A per-arch wheel shipping a fake Mach-O .so.
-        wheel = tmp_path / "foo-x86.whl"
-        _make_wheel(
-            wheel,
-            {"foo/_c.so": struct.pack(">I", 0xFEEDFACF) + b"intel"},
-        )
-        lib = tmp_path / "lib"
-        (lib / "foo").mkdir(parents=True)
-        (lib / "foo" / "_c.so").write_bytes(struct.pack(">I", 0xFEEDFACF) + b"arm")
-
-        calls = []
-
-        def fake_lipo(inputs, output):
-            calls.append((list(inputs), output))
-            output.write_bytes(b"fat")
-
-        monkeypatch.setattr(wheels_stage, "lipo_create", fake_lipo)
-        wheels_stage._merge_wheel_binaries(wheel, lib)
-
-        assert len(calls) == 1
-        assert (lib / "foo" / "_c.so").read_bytes() == b"fat"
-
-    def test_copies_arch_only_extension(self, tmp_path, monkeypatch):
-        import struct
-
-        wheel = tmp_path / "foo-x86.whl"
-        _make_wheel(wheel, {"foo/only_intel.so": struct.pack(">I", 0xFEEDFACF)})
-        lib = tmp_path / "lib"
-        (lib / "foo").mkdir(parents=True)  # no counterpart present
-
-        monkeypatch.setattr(
-            wheels_stage, "lipo_create", lambda *a: pytest.fail("should not lipo")
-        )
-        wheels_stage._merge_wheel_binaries(wheel, lib)
-        assert (lib / "foo" / "only_intel.so").exists()

@@ -33,7 +33,7 @@ class TestRoundTrip:
         assert {p.name for p in again.packages} == {p.name for p in lock.packages}
         assert again.python_runtime.provider == "python-build-standalone"
         assert again.python_runtime.floor == "11.0"
-        assert {a.arch for a in again.python_runtime.artifacts} == {"arm64", "x86_64"}
+        assert {a.arch for a in again.python_runtime.artifacts} == {"arm64"}
 
     def test_deterministic(self, macos_pyproject, tmp_path):
         lock = _build(macos_pyproject, tmp_path)

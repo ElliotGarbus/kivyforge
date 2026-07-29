@@ -42,55 +42,22 @@ class TestStageRuntime:
         monkeypatch.setattr(runtime_stage, "_fetch", lambda *a, **k: archive)
         home = tmp_path / "app" / "python"
         result = runtime_stage.stage_runtime(
-            _runtime(("arm64",)), ("arm64",), home, project_root=tmp_path
+            _runtime(("arm64",)), "arm64", home, project_root=tmp_path
         )
         assert result == home
         assert (home / "bin" / "python3").exists()
 
-    def test_universal_merges_macho(self, tmp_path, monkeypatch):
-        arm = tmp_path / "arm.tar.gz"
-        intel = tmp_path / "intel.tar.gz"
-        _make_pbs_archive(arm, marker=b"arm")
-        _make_pbs_archive(intel, marker=b"intel")
-        archives = {"arm64": arm, "x86_64": intel}
-        monkeypatch.setattr(
-            runtime_stage, "_fetch", lambda art, arch, *a, **k: archives[arch]
-        )
-        calls = []
-
-        def fake_lipo(inputs, output):
-            calls.append(list(inputs))
-            output.write_bytes(b"fat")
-
-        monkeypatch.setattr(runtime_stage, "lipo_create", fake_lipo)
-        home = tmp_path / "app" / "python"
-        runtime_stage.stage_runtime(
-            _runtime(("arm64", "x86_64")),
-            ("arm64", "x86_64"),
-            home,
-            project_root=tmp_path,
-        )
-        # python3 is Mach-O in both arches -> exactly one merge.
-        assert len(calls) == 1
-        assert (home / "bin" / "python3").read_bytes() == b"fat"
-
     def test_missing_arch_artifact_fails(self, tmp_path, monkeypatch):
-        archive = tmp_path / "arm.tar.gz"
-        _make_pbs_archive(archive, marker=b"arm")
+        archive = tmp_path / "intel.tar.gz"
+        _make_pbs_archive(archive, marker=b"intel")
         monkeypatch.setattr(runtime_stage, "_fetch", lambda *a, **k: archive)
-        # Runtime only has an arm64 artifact but x86_64 is also requested.
-        with pytest.raises(AppBundleError, match="no x86_64 runtime artifact"):
+        # A stale lock carrying only an Intel runtime artifact.
+        with pytest.raises(AppBundleError, match="no arm64 runtime artifact"):
             runtime_stage.stage_runtime(
-                _runtime(("arm64",)),
-                ("arm64", "x86_64"),
+                _runtime(("x86_64",)),
+                "arm64",
                 tmp_path / "home",
                 project_root=tmp_path,
-            )
-
-    def test_no_archs_fails(self, tmp_path):
-        with pytest.raises(AppBundleError, match="at least one arch"):
-            runtime_stage.stage_runtime(
-                _runtime(("arm64",)), (), tmp_path / "h", project_root=tmp_path
             )
 
 

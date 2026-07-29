@@ -24,7 +24,7 @@ def _build(toml, resolver, provider, **kw):
 
 
 class TestBuild:
-    def test_pins_all_three_slices_for_compiled(
+    def test_pins_both_slices_for_compiled(
         self, minimal_pyproject, fake_resolver, fake_python_provider
     ):
         lock = _build(minimal_pyproject, fake_resolver, fake_python_provider)
@@ -33,7 +33,6 @@ class TestBuild:
         assert tags == {
             "ios_13_0_arm64_iphoneos",
             "ios_13_0_arm64_iphonesimulator",
-            "ios_13_0_x86_64_iphonesimulator",
         }
 
     def test_pure_python_single_wheel(
@@ -92,34 +91,12 @@ class TestSimulatorArchs:
         _build(self._ARM64_ONLY, fake_resolver, fake_python_provider)
         assert fake_resolver.calls[0]["simulator_archs"] == ("arm64",)
 
-    def test_arm64_only_pins_two_slices(self, fake_resolver, fake_python_provider):
-        lock = _build(self._ARM64_ONLY, fake_resolver, fake_python_provider)
-        kivy = next(p for p in lock.packages if p.name == "kivy")
-        tags = {w.platform_tag for w in kivy.wheels}
-        assert tags == {
-            "ios_13_0_arm64_iphoneos",
-            "ios_13_0_arm64_iphonesimulator",
-        }
-
-    def test_arm64_only_does_not_require_x86_64(self, fake_python_provider):
-        # A resolver that has no x86_64 slice at all must still satisfy an
-        # arm64-only project (the dropped slice isn't a targeted one).
-        from tests.platforms.ios.lock.conftest import FakeResolver
-
-        resolver = FakeResolver(drop_slice="ios_13_0_x86_64_iphonesimulator")
-        lock = _build(self._ARM64_ONLY, resolver, fake_python_provider)
-        kivy = next(p for p in lock.packages if p.name == "kivy")
-        assert {w.platform_tag for w in kivy.wheels} == {
-            "ios_13_0_arm64_iphoneos",
-            "ios_13_0_arm64_iphonesimulator",
-        }
-
 
 class TestFailFast:
     def test_missing_slice_fails(self, minimal_pyproject, fake_python_provider):
         from tests.platforms.ios.lock.conftest import FakeResolver
 
-        resolver = FakeResolver(drop_slice="ios_13_0_x86_64_iphonesimulator")
+        resolver = FakeResolver(drop_slice="ios_13_0_arm64_iphonesimulator")
         with pytest.raises(BuildError, match="missing iOS wheel slice"):
             _build(minimal_pyproject, resolver, fake_python_provider)
 

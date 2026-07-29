@@ -1,8 +1,9 @@
 """Assemble (and optionally sign) the macOS ``.app`` bundle (macos-spec).
 
-Orchestrates the pieces: resolve the assembly arch set from the lock + ``--arch``,
-stage the runtime + wheels, copy the app sources, render the icon + Info.plist +
-launcher, and ad-hoc sign. Produces the layout documented in macos-spec:
+Orchestrates the pieces: resolve the assembly arch from the lock + ``--arch``
+(macOS is arm64-only, so this is always a single arch), stage the runtime +
+wheels, copy the app sources, render the icon + Info.plist + launcher, and
+ad-hoc sign. Produces the layout documented in macos-spec:
 
     <Name>.app/Contents/{Info.plist, MacOS/<exe>,
                          Resources/{app,lib,python,<exe>.icns}}
@@ -33,33 +34,20 @@ from .wheels_stage import stage_wheels
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store")
 
 
-def resolve_assembly_archs(
-    locked: tuple[str, ...], arch: str | None
-) -> tuple[str, ...]:
-    """The subset of the locked archs to assemble for an ``--arch`` request.
-
-    ``None`` -> the full locked set (universal2 when two). ``universal2`` -> the
-    full set (requires a multi-arch lock). A single arch -> just that arch.
-    Requesting an arch (or universal2) not covered by the lock is an error.
-    """
-    locked_set = set(locked)
+def resolve_assembly_arch(locked: tuple[str, ...], arch: str | None) -> str:
+    """The single arch to assemble. macOS ships arm64 only."""
+    if not locked:
+        raise AppBundleError(
+            "the lock covers no architectures; re-run `kivyforge lock -p macos`."
+        )
     if arch is None:
-        return locked
-    if arch == "universal2":
-        if len(locked) < 2:
-            raise AppBundleError(
-                "--arch universal2 needs a lock covering both arm64 and x86_64, "
-                f"but the lock only covers {', '.join(locked)}.\n"
-                '  Set [tool.kivy.macos].archs = ["arm64", "x86_64"] and re-lock.'
-            )
-        return locked
-    if arch not in locked_set:
+        return locked[0]
+    if arch not in locked:
         raise AppBundleError(
             f"--arch {arch} is not in the lock (covers {', '.join(locked)}).\n"
-            f"  Add {arch!r} to [tool.kivy.macos].archs and re-lock, or pick a "
-            "locked arch."
+            f"  macOS builds are arm64-only; pick a locked arch."
         )
-    return (arch,)
+    return arch
 
 
 def build_app_bundle(
@@ -75,7 +63,7 @@ def build_app_bundle(
     echo=click.echo,
 ) -> Path:
     """Build the ``.app`` and return its path."""
-    archs = resolve_assembly_archs(lock.archs, arch)
+    target_arch = resolve_assembly_arch(lock.archs, arch)
     cache = cache or ArtifactCache()
     staging_dir = staging_dir or (project_root / "build" / "macos")
     exe = config.app_slug
@@ -93,11 +81,12 @@ def build_app_bundle(
         resources = contents / "Resources"
         resources.mkdir()
 
-        label = "universal2" if len(archs) > 1 else archs[0]
-        echo(f"Staging CPython {lock.python_runtime.version} runtime ({label}) ...")
+        echo(
+            f"Staging CPython {lock.python_runtime.version} runtime ({target_arch}) ..."
+        )
         stage_runtime(
             lock.python_runtime,
-            archs,
+            target_arch,
             resources / "python",
             project_root=project_root,
             cache=cache,
@@ -107,7 +96,7 @@ def build_app_bundle(
         echo(f"Installing {len(lock.packages)} locked packages ...")
         stage_wheels(
             lock.packages,
-            archs,
+            target_arch,
             resources / "lib",
             project_root=project_root,
             cache=cache,
@@ -130,7 +119,7 @@ def build_app_bundle(
         build_launcher(
             contents / "MacOS" / exe,
             entry_point=config.kivy.entry_point,
-            archs=archs,
+            arch=target_arch,
         )
 
         plist = build_info_plist(config, executable=exe, icon_file=icon_file)

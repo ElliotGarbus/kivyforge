@@ -70,7 +70,7 @@ deployment_target = "13.0"
 | `bundle_id`         | string  | yes      | —        | iOS bundle identifier. Init suggests `org.example.<slug>` with a comment to change it.                                                                                                                                                               |
 | `build`             | integer | no       | `1`      | Build number (`CFBundleVersion`). Increment per submission.                                                                                                                                 |
 | `deployment_target` | string  | no       | `"13.0"` | Minimum iOS version. Must be >= the floor of the selected `Python.xcframework`.                                                                                                                                                                      |
-| `simulator_archs`   | list of string | no | `["arm64", "x86_64"]` | Which **simulator** CPU architectures `kivyforge lock` pins (and `kivyforge build` can target). The device slice is always `arm64` and is not configurable. Valid values: `"arm64"` (Apple-Silicon simulator hosts), `"x86_64"` (Intel simulator hosts). Must be non-empty; unknown values are rejected; duplicates are de-duped preserving order. Drop `"x86_64"` once you no longer build the simulator on Intel Macs — that slice stops being required *and* stops being pinned. See "Simulator architectures (`simulator_archs`)" below and [pylock spec §"Resolution semantics"](02-pylock-ios-spec.md#resolution-semantics). |
+| `simulator_archs`   | list of string | no | `["arm64"]` | Which **simulator** CPU architectures `kivyforge lock` pins. The device slice is always `arm64` and is not configurable. **`"arm64"` is the only allowed value**; `"x86_64"` is rejected with a migration message. Must be non-empty. See "Simulator architectures (`simulator_archs`)" below and [pylock spec §"Resolution semantics"](02-pylock-ios-spec.md#resolution-semantics). |
 | `extra_index_urls`  | list of string | no | `[]`     | Supplemental pip index URLs consulted *in addition to* PyPI when resolving iOS wheels. `kivyforge lock` passes each as `--extra-index-url` to pip. Plural-by-design, channel-agnostic, and **empty by default**; PyPI is always the primary source. Each resolved wheel's source URL is pinned in `pylock.ios.toml`'s `[[packages.wheels]]` (and its index recorded under `[packages.tool.kivyforge].source_index`) regardless of which index supplied it, keeping builds reproducible. As packages publish iOS wheels to PyPI proper, configured entries go quiet on their own. See [iOS artifact distribution §"Source registry: PyPI direct"](03-artifact-distribution-ios.md#source-registry-pypi-direct-plus-configurable-supplemental-indexes) and the [common overview](../../common/00-overview.md). |
 | `find_links`        | list of string | no | `[]`     | Repo-relative directories of pre-built wheels consulted during `kivyforge lock` only. Each entry is passed to pip as `--find-links` (pip's name for flat wheel directories or direct wheel URLs). Use when a dependency's iOS wheels are vendored in the repo but not published to PyPI or a supplemental index yet — e.g. locally cross-built `kivy` cp315 wheels under `wheels/`. Entries must be repo-relative (not absolute, must not escape the project directory). **Not** used at `kivyforge build` time; the lockfile's per-wheel `path` or `url` pins are authoritative after lock. See "Local wheel directories (`find_links`)" below and [pylock spec §"Locally built wheels"](02-pylock-ios-spec.md#locally-built-wheels-path). |
 | `exclude`           | list of string | no | `[]`     | Canonical package names to drop from the **resolved** dependency graph when writing `pylock.ios.toml`. Use it to prune transitive dependencies a package declares but that your app never exercises at runtime on iOS — most commonly the non-runtime tail of Kivy's own wheel (`kivy-garden`, `requests` + its transitive deps, `docutils`, `pygments`). A name listed here that is *also* a direct `[project].dependencies` entry is silently ignored (you cannot exclude what you explicitly depend on). Matching is by canonical name (PEP 503). See "Excluding unused transitive dependencies (`exclude`)" below. |
@@ -113,42 +113,24 @@ Semantics:
 
 ### Simulator architectures (`simulator_archs`)
 
-A compiled iOS package ships a separate wheel per *slice*. There are three in
-play: the device slice (`arm64` / `iphoneos`) and two simulator slices —
-`arm64` (run the simulator on an Apple-Silicon Mac) and `x86_64` (run it on an
-Intel Mac). `simulator_archs` controls which **simulator** slices `toolchain
-lock` resolves and pins; the device slice is always `arm64` and is not
-configurable (there is no 32-bit iOS).
+A compiled iOS package ships a separate wheel per *slice*. Two are in play: the
+device slice (`arm64` / `iphoneos`) and the simulator slice (`arm64` /
+`iphonesimulator`). The device slice is always `arm64` and is not configurable
+(there is no 32-bit iOS).
 
-The default, `["arm64", "x86_64"]`, pins all three slices so the committed
-`pylock.ios.toml` is reproducible on *any* lock/CI host — Apple Silicon and
-Intel alike — independent of the architecture of the machine that ran `lock`.
+**`arm64` is the only supported simulator arch.** The `x86_64` simulator slice
+existed solely to run the simulator on an Intel Mac, and macOS 27 stops
+installing on Intel hardware — so that slice has no host left to run on.
+`simulator_archs` defaults to `["arm64"]` and rejects `x86_64` with a migration
+message.
 
-```toml
-[tool.kivy.ios]
-# Apple-Silicon-only shop: stop requiring/pinning the Intel-simulator slice.
-simulator_archs = ["arm64"]
-```
+The key is retained for schema stability and because the device/simulator split
+is real, but there is only one valid value today.
 
-Why you'd narrow it:
-
-- **Avoid false rejections.** The "missing slice" fail-fast (see the pylock spec)
-  rejects a compiled dependency that lacks *any* required slice.
-  `x86_64_iphonesimulator` is the slice most likely to be absent upstream as the
-  ecosystem moves to Apple Silicon, so a package that ships only `arm64` wheels
-  would otherwise be rejected even though it's perfectly usable on an
-  Apple-Silicon simulator. Dropping `"x86_64"` removes that slice from the
-  required set.
-- **Smaller, faster locks.** One fewer pip resolution per compiled package and
-  no dead `x86_64` wheel pins.
-
-Why the default keeps `"x86_64"` for now: Intel Macs (and Intel CI runners) can
-still build and run the simulator, and the all-three default keeps a single
-committed lock working everywhere. Apple's transition to Apple Silicon is
-effectively complete and macOS support for Intel is winding down, so the
-expectation is that `"x86_64"` becomes opt-in (and eventually the default drops
-it) once Xcode stops shipping the Intel simulator — at which point existing
-`simulator_archs = ["arm64"]` projects need no change.
+Dropping the Intel slice also removes the "missing slice" fail-fast's most
+common false rejection: `x86_64_iphonesimulator` was the slice most likely to be
+absent upstream as the ecosystem moved to Apple Silicon, so a package shipping
+only `arm64` wheels is no longer rejected for lacking it.
 
 Changing `simulator_archs` changes `pyproject.toml`, so drift detection (see the
 pylock spec) requires a re-`lock` before the next `build`, exactly like any other
@@ -443,6 +425,6 @@ auto_signing = true
 10. Declares `[project].requires-python` incompatible with `[tool.kivy.ios.python].version`.
 11. Sets `[tool.kivy.ios].deployment_target` lower than the minimum iOS version supported by the selected `Python.xcframework` (verified at lock time; the xcframework metadata declares its floor; e.g. Python 3.15 requires iOS 13.0+).
 12. Sets `[tool.kivy.ios].find_links` entries that are absolute paths, empty, or paths that escape the project directory.
-13. Sets `[tool.kivy.ios].simulator_archs` to a non-list, a list containing non-strings, an empty list, or a list containing any value other than `"arm64"` / `"x86_64"`.
+13. Sets `[tool.kivy.ios].simulator_archs` to a non-list, a list containing non-strings, an empty list, or any value other than `"arm64"` (notably `"x86_64"`, which is rejected with a migration message).
 
 Validation errors are printed with the offending line number (TOML parsers expose this) and a remediation hint.

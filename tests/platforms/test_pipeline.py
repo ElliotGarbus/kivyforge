@@ -54,7 +54,7 @@ _MACOS_PYPROJECT = (
     "dependencies=[]\n"
     "[tool.kivy]\ndisplay_name='My App'\napp_dir='src'\nentry_point='main'\n"
     "[tool.kivy.macos]\nschema_version=1\nbundle_id='org.example.myapp'\n"
-    "archs=['arm64','x86_64']\n"
+    "archs=['arm64']\n"
     "[tool.kivy.macos.python]\nversion='3.14.5'\n"
 )
 
@@ -74,7 +74,7 @@ def _macos_project(root: Path) -> None:
                 RuntimeArtifact(arch="x86_64", url="https://e/i", sha256="y"),
             ),
         ),
-        archs=("arm64", "x86_64"),
+        archs=("arm64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256=compute_pyproject_sha256(_MACOS_PYPROJECT),
@@ -91,15 +91,15 @@ def macos_leaves(monkeypatch):
     from kivyforge.platforms.macos import bundle as macos_bundle
     from kivyforge.platforms.macos import cli as macos_cli
 
-    def fake_runtime(runtime, archs, home, **k):
+    def fake_runtime(runtime, arch, home, **k):
         (home / "bin").mkdir(parents=True)
         (home / "bin" / "python3").write_text("py")
         return home
 
-    def fake_wheels(packages, archs, lib, **k):
+    def fake_wheels(packages, arch, lib, **k):
         lib.mkdir(parents=True)
 
-    def fake_launcher(dest, *, entry_point, archs):
+    def fake_launcher(dest, *, entry_point, arch):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(b"\xcf\xfa\xed\xfe")
 

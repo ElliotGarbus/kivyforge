@@ -25,7 +25,8 @@ from ._platform import platform_option, reject_android_only, resolve_target
 )
 @click.option(
     "--arch",
-    type=click.Choice(["arm64", "x86_64", "universal2"]),
+    # x86_64 stays: it is the Linux arch and an Android ABI, not a macOS one.
+    type=click.Choice(["arm64", "x86_64"]),
     default=None,
     help="macOS: assemble a subset of the locked archs.",
 )

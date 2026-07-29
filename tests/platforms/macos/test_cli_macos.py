@@ -26,7 +26,7 @@ PYPROJECT = (
     "dependencies=[]\n"
     "[tool.kivy]\ndisplay_name='My App'\napp_dir='src'\nentry_point='main'\n"
     "[tool.kivy.macos]\nschema_version=1\nbundle_id='org.example.myapp'\n"
-    "archs=['arm64','x86_64']\n"
+    "archs=['arm64']\n"
     "[tool.kivy.macos.python]\nversion='3.14.5'\n"
 )
 
@@ -53,12 +53,9 @@ def _write_project(
         python_runtime=PythonRuntime(
             provider="python-build-standalone",
             version="3.14.5",
-            artifacts=(
-                RuntimeArtifact(arch="arm64", url="https://e/a", sha256="x"),
-                RuntimeArtifact(arch="x86_64", url="https://e/i", sha256="y"),
-            ),
+            artifacts=(RuntimeArtifact(arch="arm64", url="https://e/a", sha256="x"),),
         ),
-        archs=("arm64", "x86_64"),
+        archs=("arm64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256=(compute_pyproject_sha256(pyproject) if in_sync else "0" * 64),

@@ -19,7 +19,7 @@ schema_version = 1
 bundle_id = "org.example.desktop-viewer"
 build = 1
 minimum_system_version = "12.0"
-archs = ["arm64", "x86_64"]
+archs = ["arm64"]
 exclude = [
     "kivy-garden",
     "requests",

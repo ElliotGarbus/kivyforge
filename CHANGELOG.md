@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Breaking: Apple targets are Apple Silicon only
+
+- **`x86_64` removed from macOS and the iOS Simulator**, as a host *and* as a
+  target. macOS 27 stops installing on Intel hardware, GitHub's `macos-*-intel`
+  runners sunset in 2027, and macOS 28 removes Rosetta — so an Intel slice is
+  one nothing can execute or validate. Legacy tools continue to cover Intel;
+  a new toolchain does not need to carry it.
+  - `[tool.kivy.macos].archs` accepts only `["arm64"]` (the new default), and
+    `[tool.kivy.ios].simulator_archs` only `["arm64"]`. Both reject `x86_64`
+    with a migration message naming the fix.
+  - **universal2 builds are gone** along with the `lipo` merge machinery, and
+    `--arch universal2` is no longer a CLI choice.
+  - iOS locks now pin **two** slices (device arm64 + simulator arm64) instead
+    of three.
+  - **Migration:** set `archs = ["arm64"]` / `simulator_archs = ["arm64"]` (or
+    drop the keys — arm64 is the default) and re-lock.
+- **`universal2` *wheels* are unaffected** and still resolve normally — a
+  universal2 wheel contains arm64. The *build target* set narrowed; the
+  *wheel tag* set did not.
+
 ### Android backend (`.apk` / `.aab`)
 
 - **New `android` target.** `kivyforge lock/build/run/package -p android`

@@ -705,7 +705,21 @@ def _parse_macos_archs(macos: dict, finder: _LineFinder) -> tuple[str, ...]:
             "[tool.kivy.macos].archs must not be empty",
             key_path="tool.kivy.macos.archs",
             line=line,
-            hint='at least one of "arm64", "x86_64" is required.',
+            hint='"arm64" is the only supported macOS arch.',
+        )
+    if "x86_64" in raw:
+        raise ConfigError(
+            "[tool.kivy.macos].archs no longer supports x86_64; kivyforge builds "
+            "arm64-only macOS apps",
+            key_path="tool.kivy.macos.archs",
+            line=line,
+            hint=(
+                'set archs = ["arm64"] (or drop the key — arm64 is the default). '
+                "macOS 27 stops installing on Intel hardware and macOS 28 removes "
+                "Rosetta, so an x86_64 slice is one nothing can run or validate. "
+                "universal2 *wheels* are still resolved normally — this is the "
+                "build target, not the wheel tag."
+            ),
         )
     unknown = [a for a in raw if a not in VALID_MACOS_ARCHS]
     if unknown:
@@ -2374,8 +2388,9 @@ def _check_requires_python_generic(
 def _parse_simulator_archs(ios: dict, finder: _LineFinder) -> tuple[str, ...]:
     """``[tool.kivy.ios].simulator_archs`` — which simulator slices to pin.
 
-    Defaults to device-arm64-plus both simulator arches; a project that no longer
-    targets Intel simulator hosts may set ``["arm64"]`` to stop pinning x86_64.
+    arm64 only: the x86_64 simulator slice had value solely on an Intel Mac
+    host, and macOS 27 stops installing on Intel hardware. The key stays for
+    schema stability, but there is only one valid value.
     """
     raw = ios.get("simulator_archs")
     if raw is None:
@@ -2392,7 +2407,19 @@ def _parse_simulator_archs(ios: dict, finder: _LineFinder) -> tuple[str, ...]:
             "[tool.kivy.ios].simulator_archs must not be empty",
             key_path="tool.kivy.ios.simulator_archs",
             line=line,
-            hint='at least one of "arm64", "x86_64" is required.',
+            hint='"arm64" is the only supported simulator arch.',
+        )
+    if "x86_64" in raw:
+        raise ConfigError(
+            "[tool.kivy.ios].simulator_archs no longer supports x86_64; kivyforge "
+            "pins the arm64 simulator slice only",
+            key_path="tool.kivy.ios.simulator_archs",
+            line=line,
+            hint=(
+                'set simulator_archs = ["arm64"] (or drop the key — it is the '
+                "default). The x86_64 simulator slice only ran on an Intel Mac "
+                "host, and macOS 27 stops installing on Intel hardware."
+            ),
         )
     unknown = [a for a in raw if a not in VALID_SIMULATOR_ARCHS]
     if unknown:

@@ -53,7 +53,7 @@ schema_version = 1
 bundle_id = "org.example.myapp"        # CFBundleIdentifier
 build = 1                               # CFBundleVersion
 minimum_system_version = "12.0"         # LSMinimumSystemVersion
-archs = ["arm64", "x86_64"]             # lock/build architectures; two = universal2
+archs = ["arm64"]                       # the only supported macOS arch
 
 [tool.kivy.macos.python]
 version = "3.15.0"                       # bundled Python runtime version
@@ -72,7 +72,7 @@ Proposed field set (finalized in implementation):
 | `bundle_id` | string | yes | — | `CFBundleIdentifier` (reverse-DNS). |
 | `build` | integer | no | `1` | `CFBundleVersion`. |
 | `minimum_system_version` | string | no | *(runtime floor)* | `LSMinimumSystemVersion`; must be ≥ the bundled runtime's floor. |
-| `archs` | list of string | no | `["arm64", "x86_64"]` | Target architecture set the lock must cover; allowed values `arm64`, `x86_64`. Two entries ⇒ a universal2 build; one entry ⇒ a thin build. Drives required macOS wheel tags and the per-arch runtime pins. See ["Architectures"](#architectures-archs) below. |
+| `archs` | list of string | no | `["arm64"]` | Target architecture the lock must cover. **`arm64` is the only allowed value**; `x86_64` is rejected with a migration message. Kept list-shaped for symmetry with the other platforms. Drives the required macOS wheel tags and the runtime pin. See ["Architectures"](#architectures-archs) below. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (macOS tags), same semantics as iOS. |
 | `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
@@ -113,38 +113,39 @@ The macOS backend's concrete `RuntimeProvider` implementation is
 `PythonBuildStandaloneProvider` (a future `PythonOrgFrameworkProvider` lands
 when the official framework ships). `pylock.macos.toml` pins `provider` +
 `version` + per-artifact `url` + `sha256` — PBS ships **per-architecture**
-macOS archives, so a universal2 lock has two artifact entries (see below).
+macOS archives, so an arm64 lock has one artifact entry (see below).
 
 ### Architectures (`archs`)
 
-macOS apps can be `arm64`-only, `x86_64`-only, or **universal2** (both). Because
-this choice changes dependency resolution, it is a **lock-level** property set by
-`[tool.kivy.macos].archs` (default `["arm64", "x86_64"]` → universal2), with a
-build-time `--arch` override for the dev loop. The model mirrors iOS device/simulator
-slices: the lock is the superset, and `build`/`run`/`package` assemble a subset.
+macOS apps are **`arm64`-only**. `x86_64` is not a supported build target and
+neither is universal2: macOS 27 stops installing on Intel hardware and macOS 28
+removes Rosetta, so an Intel slice would be one nothing can execute or validate.
+`[tool.kivy.macos].archs` defaults to `["arm64"]` and rejects `x86_64` with a
+migration message.
+
+The key stays list-shaped for symmetry with the other platform overlays, but
+Apple is not adding a third macOS architecture, so there is no second entry to
+add and no `lipo` merge anywhere in the backend.
 
 Architecture propagates through three stages:
 
-- **Resolution (lock).** Each arch in `archs` requires every compiled dependency to
-  be available for it — either a `macosx_*_universal2` wheel or a matching
-  per-arch (`macosx_*_arm64` / `macosx_*_x86_64`) wheel. A dependency missing a
-  required arch (with no universal2 fallback) is a **fail-fast at lock time** with an
-  actionable message (the same treatment as a missing iOS slice). `pylock.macos.toml`
-  records the arch set and pins the wheels and per-arch runtimes accordingly. This is
-  also why the default is explicit: an Apple-Silicon-only project can set
-  `archs = ["arm64"]` to avoid requiring Intel wheels its deps may not publish.
-- **Runtime provider.** PBS publishes **per-architecture** macOS builds
-  (`aarch64-apple-darwin`, `x86_64-apple-darwin`), not universal2. For a two-arch
-  build the provider fetches both archives and `lipo`-merges the executable,
-  `libpython`, and every bundled `.dylib`/`.so` into a universal2 tree during
-  normalization; a thin build fetches one. (The eventual python.org framework may be
-  universal2 or per-arch — still unsettled upstream — and the bundler won't care
-  either way, since it consumes the canonical layout.)
-- **Assembly (`--arch`).** `build` / `run` / `package` produce a universal2 `.app`
-  from a two-arch lock by default. `--arch {arm64,x86_64,universal2}` selects a
-  **subset of the locked `archs`** for a faster/smaller build during iteration
-  (analogous to `--device` / `--simulator`); it needs no re-lock. Requesting an arch
-  not present in the lock is an actionable error (adjust `archs` and re-lock).
+- **Resolution (lock).** Every compiled dependency must have an arm64-compatible
+  wheel — either `macosx_*_arm64` or `macosx_*_universal2`. **A `universal2`
+  wheel is still perfectly valid**: it *contains* arm64. This is the important
+  distinction between the *build target* set (arm64 only) and the *wheel tag*
+  set (which still accepts `universal2`) — narrowing the former must never be
+  read as rejecting the latter, or most macOS wheels on PyPI would stop
+  resolving. A dependency with only an `x86_64` wheel is a **fail-fast at lock
+  time** with an actionable message.
+- **Runtime provider.** PBS publishes per-architecture macOS builds; the
+  provider fetches the `aarch64-apple-darwin` archive and ships it as-is. (The
+  eventual python.org framework may be universal2 or per-arch — still unsettled
+  upstream — and the bundler won't care either way, since it consumes the
+  canonical layout.)
+- **Assembly (`--arch`).** `build` / `run` / `package` produce an arm64 `.app`.
+  `--arch` remains accepted for symmetry with the other platforms but has only
+  one valid value; requesting an arch not present in the lock is an actionable
+  error.
 
 ### Watch item: official python.org relocatable macOS build
 
@@ -172,10 +173,10 @@ Same pattern as every platform (see [common lockfile concept](../../common/03-lo
 PEP 751 `[[packages]]` for wheels + a single `[tool.kivyforge]` extension table
 holding the runtime pin and provenance. The platform is identified by the
 filename. macOS wheels use standard macOS platform tags
-(`macosx_<ver>_arm64`, `macosx_<ver>_x86_64`, or `macosx_<ver>_universal2`);
-`kivyforge lock` resolves wheels for every arch in `[tool.kivy.macos].archs`
-(accepting a `universal2` wheel for either), records the arch set, and pins the
-matching **per-arch runtime artifacts** under `[tool.kivyforge]` (see
+(`macosx_<ver>_arm64` or `macosx_<ver>_universal2` — a `universal2` wheel is
+accepted because it contains arm64); `kivyforge lock` resolves wheels for
+`[tool.kivy.macos].archs`, records the arch set, and pins the matching
+**runtime artifact** under `[tool.kivyforge]` (see
 ["Architectures"](#architectures-archs)). Pure-Python deps resolve to
 `py3-none-any`, and everything is pinned by URL + SHA-256. Unlike iOS there is no
 per-slice framework conversion — macOS loads `.dylib`/`.so` extensions directly — so
@@ -220,9 +221,8 @@ canonical layout regardless of provider).
 > ad-hoc-signed as the bundle's main image). This is why every real bundler
 > (py2app, Briefcase, PyInstaller) ships a compiled stub. kivyforge compiles a
 > ~40-line C launcher with `clang` — always present, since `codesign` already
-> requires the Xcode command-line tools — for the assembled `archs` (universal2
-> when both). It's a trivial addition to the toolchain requirement, not a new
-> one.
+> requires the Xcode command-line tools — for the assembled arch. It's a
+> trivial addition to the toolchain requirement, not a new one.
 
 The launcher resolves the bundle relative to itself (via `_NSGetExecutablePath`,
 so the `.app` stays relocatable), points `PYTHONHOME` at the bundled runtime and
@@ -295,8 +295,8 @@ Semantics, per pipeline stage:
   yields the `bin` directory on Windows and Linux too.
 - **`doctor`** — each declared source exists/is reachable, no two single-file
   sources share a staged basename, and each staged Mach-O covers the assembled
-  archs (a thin `arm64` vendor dylib in a universal2 app fails only at load
-  time on Intel; FAIL names the file and missing arch).
+  arch (an Intel-only vendor dylib cannot load at all; FAIL names the file and
+  the missing arch).
 - **signing** — no new work: the deep sign already walks *every* Mach-O
   under the `.app` by file magic, so `Resources/bin` is swept — ad-hoc, or
   Developer ID with Hardened Runtime + timestamp — automatically. This is a
@@ -331,10 +331,9 @@ content, so a `.class` file under `app_dir` would be misidentified and fail
 - **`package -f app`** — produce the finished, **signed** `.app` (ad-hoc for now).
   `-f app` is the only format this phase supports; `.dmg`/installer is external.
 
-All three accept **`--arch {arm64,x86_64,universal2}`** to assemble a subset of the
-locked `archs` (default: the full locked set, i.e. universal2). A thin `--arch`
-speeds up the `run` iteration loop; requesting an arch not in the lock is an
-actionable error (adjust `[tool.kivy.macos].archs` and re-lock).
+All three accept **`--arch`** for symmetry with the other platforms, but macOS
+builds are arm64-only so `arm64` is its only valid value. Requesting an arch not
+in the lock is an actionable error.
 
 ## Code signing
 
@@ -467,7 +466,7 @@ xcrun stapler staple MyApp.dmg
 | kivyforge version | environment | Self-version; warn if newer on PyPI (best-effort). |
 | App source directory | project | `[tool.kivy].app_dir` resolves to an existing directory. |
 | Runtime floor vs. `minimum_system_version` | project | `[tool.kivy.macos].minimum_system_version` ≥ the bundled runtime's floor. |
-| Architecture coverage | project | Every arch in `[tool.kivy.macos].archs` has a resolvable wheel (per-arch or universal2) for each compiled dependency, and a per-arch runtime is available; FAIL names the offending package/arch. |
+| Architecture coverage | project | Every compiled dependency has a resolvable arm64 or `universal2` wheel, and the arm64 runtime is available; FAIL names the offending package. |
 | App icon | project | If `[tool.kivy.macos.icons].source` is set, FAIL unless a valid 1024×1024 PNG. SKIP if unset. |
 | find_links directories | project | If set, each entry is an existing directory containing `.whl` files. |
 | Required hosts reachable | project | TCP-connect to every host the lockfile fetches from (derived from `pylock.macos.toml`). |

@@ -19,7 +19,7 @@ orientation = ["portrait"]
 schema_version = 1
 bundle_id = "org.example.hello-native"
 build = 1
-archs = ["arm64", "x86_64"]
+archs = ["arm64"]
 # Kivy's macOS wheel declares deps unused by this app; prune them so the lock
 # stays lean.
 exclude = [

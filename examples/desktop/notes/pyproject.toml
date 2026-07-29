@@ -19,7 +19,7 @@ orientation = ["portrait"]
 schema_version = 1
 bundle_id = "org.example.notes"
 build = 1
-archs = ["arm64", "x86_64"]
+archs = ["arm64"]
 exclude = [
     "kivy-garden",
     "requests",

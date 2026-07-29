@@ -1,9 +1,11 @@
 """macOS lock profile — the platform-specific inputs to the wheel+runtime core.
 
-macOS variants are CPU architectures (``arm64``/``x86_64``); a ``universal2``
-wheel covers both. The bundled runtime comes from python-build-standalone (darwin
-triples). Everything else — resolve/serialize/build orchestration — is the shared
-core.
+macOS builds target ``arm64`` only, but wheel *tags* are a wider set: a
+``universal2`` wheel covers arm64 and is accepted, and ``x86_64`` tags are still
+parsed (they simply never match). Keeping ``VALID_WHEEL_ARCHS`` wider than the
+build-target set is deliberate — narrowing it would reject most macOS wheels on
+PyPI. The bundled runtime comes from python-build-standalone (darwin triples).
+Everything else — resolve/serialize/build orchestration — is the shared core.
 """
 
 from __future__ import annotations
@@ -95,10 +97,10 @@ class MacosProfile(PlatformLockProfile):
     def coverage_error(self, name: str, missing: list[str]) -> str:
         return (
             f"{name} is missing macOS wheel(s) for arch(es): {', '.join(missing)}.\n"
-            f"  A compiled package must publish a per-arch or universal2 wheel for "
-            f"every targeted arch to be locked reproducibly.\n"
-            f"  If this dependency has no Intel wheels, set "
-            f'[tool.kivy.macos].archs = ["arm64"] and re-lock.'
+            f"  A compiled package must publish an arm64 or universal2 wheel to "
+            f"be locked reproducibly.\n"
+            f"  Intel-only wheels cannot be used: kivyforge builds arm64-only "
+            f"macOS apps."
         )
 
     def floor_error(self, declared: str, runtime_floor: str, version: str) -> str:

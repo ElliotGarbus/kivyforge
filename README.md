@@ -44,15 +44,21 @@ Linux, macOS, and Windows**.
 | Target | Architectures | Output | Signing | Build host |
 |---|---|---|---|---|
 | [iOS](https://www.apple.com/ios/) device | arm64 (iPhone / iPad) | generated Xcode project → `.app` | Apple Developer signing via Xcode | macOS + [Xcode](https://developer.apple.com/xcode/) |
-| iOS Simulator | arm64, x86_64 | generated Xcode project → `.app` | none required | macOS + Xcode |
+| iOS Simulator | arm64 | generated Xcode project → `.app` | none required | macOS + Xcode |
 | [Android](https://www.android.com/) device / emulator | `arm64_v8a`, `x86_64` | generated Gradle/AGP project → `.apk` / `.aab` | auto debug keystore, or release keystore (v1–v4 schemes) | Windows, macOS, or Linux + JDK/Android SDK/NDK |
-| [macOS](https://www.apple.com/macos/) | arm64, x86_64, or universal2 (both) | `.app` | ad-hoc (default) **or** Developer ID sign + notarize + staple | macOS |
+| [macOS](https://www.apple.com/macos/) | arm64 (Apple Silicon) | `.app` | ad-hoc (default) **or** Developer ID sign + notarize + staple | macOS (Apple Silicon) |
 | [Linux](https://appimage.org/) | x86_64 (glibc ≥ 2.17) | `.AppImage` / AppDir | none | Linux |
 | [Windows](https://learn.microsoft.com/windows/) | amd64 | `onedir` folder + windowed launcher `.exe` | optional Authenticode (unsigned by default) | Windows |
 
 Desktop targets (macOS / Linux / Windows) bundle a self-contained runtime +
 wheels; on Linux, libGL/EGL and X11/Wayland come from the host. Building for iOS
 requires a Mac with Xcode; Android builds on any of the three desktop hosts.
+
+**Apple targets are Apple Silicon only.** kivyforge does not build Intel (`x86_64`)
+macOS apps or pin the Intel iOS-Simulator slice: macOS 27 stops installing on
+Intel hardware and macOS 28 removes Rosetta, so an Intel slice would be one
+nothing can execute or validate. `universal2` *wheels* are still resolved
+normally — they contain arm64.
 
 kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 
@@ -156,7 +162,7 @@ IDE. The macOS backend bundles a relocatable CPython + your wheels into a signed
       # 2. Resolve dependencies + pin the runtime into pylock.macos.toml
       kivyforge lock -p macos
 
-      # 3. Build the .app (universal2 by default; --arch arm64 for a thin build)
+      # 3. Build the .app (arm64)
       kivyforge build -p macos
 
       # 4a. Launch it (foreground, so you see stdout/tracebacks)

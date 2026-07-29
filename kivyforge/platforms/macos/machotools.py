@@ -1,10 +1,13 @@
 """Thin wrappers over the macOS binary tools the bundler needs.
 
-``lipo`` (merge per-arch Mach-O into universal2), ``codesign`` (ad-hoc signing —
-the mandatory Apple-Silicon floor), and Mach-O detection (so we only ever lipo /
-sign actual binaries, not text/data files). Kept isolated + injectable-friendly
-so the higher-level bundler logic stays testable and these are the only lines
-that shell out to Apple tools.
+``lipo -archs`` (read a Mach-O's architectures), ``codesign`` (ad-hoc signing —
+the mandatory Apple-Silicon floor), and Mach-O detection (so we only ever sign
+actual binaries, not text/data files). Kept isolated + injectable-friendly so
+the higher-level bundler logic stays testable and these are the only lines that
+shell out to Apple tools.
+
+There is no ``lipo -create`` wrapper: macOS builds are arm64-only, so nothing
+is ever merged into a universal binary.
 """
 
 from __future__ import annotations
@@ -64,14 +67,6 @@ def macho_arches(path: Path) -> tuple[str, ...]:
     if proc.returncode != 0:
         return ()
     return tuple(proc.stdout.split())
-
-
-def lipo_create(inputs: list[Path], output: Path) -> None:
-    """Merge single-arch Mach-O *inputs* into a universal2 Mach-O at *output*."""
-    if not inputs:
-        raise AppBundleError("lipo_create called with no inputs")
-    cmd = ["lipo", "-create", *[str(p) for p in inputs], "-output", str(output)]
-    _run(cmd)
 
 
 def codesign_adhoc(path: Path) -> None:

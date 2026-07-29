@@ -112,39 +112,33 @@ def check_macos_find_links(config: Config, project_root: Path) -> CheckResult:
 def check_macos_arch_coverage(
     config: Config, lock: MacosLockfile | None
 ) -> CheckResult:
-    archs = config.macos_required.archs
     if lock is None:
         return CheckResult("Architecture coverage", Status.SKIP, "no pylock.macos.toml")
+    # macOS is arm64-only, so this is a single-arch check: every compiled
+    # dependency needs an arm64 or universal2 wheel (universal2 contains arm64).
+    target = config.macos_required.archs[0]
 
-    runtime_archs = {a.arch for a in lock.python_runtime.artifacts}
-    missing_runtime = [a for a in archs if a not in runtime_archs]
-    if missing_runtime:
+    if target not in {a.arch for a in lock.python_runtime.artifacts}:
         return CheckResult(
             "Architecture coverage",
             Status.FAIL,
-            f"runtime missing arch(es): {', '.join(missing_runtime)}",
-            hint="re-run `kivyforge lock -p macos` after setting archs.",
+            f"runtime missing arch: {target}",
+            hint="re-run `kivyforge lock -p macos`.",
         )
 
     for pkg in lock.packages:
         if any(w.is_pure_python for w in pkg.wheels):
             continue
-        covered: set[str] = set()
-        for wheel in pkg.wheels:
-            arch = wheel_arch(wheel.platform_tag)
-            covered |= set(archs) if arch == "universal2" else ({arch} & set(archs))
-        missing = [a for a in archs if a not in covered]
-        if missing:
+        if not any(
+            wheel_arch(w.platform_tag) in ("universal2", target) for w in pkg.wheels
+        ):
             return CheckResult(
                 "Architecture coverage",
                 Status.FAIL,
-                f"{pkg.name} missing wheel(s) for: {', '.join(missing)}",
-                hint="a compiled dep needs a per-arch or universal2 wheel per arch; "
-                "re-lock or narrow [tool.kivy.macos].archs.",
+                f"{pkg.name} has no {target} wheel",
+                hint=f"a compiled dep needs a {target} or universal2 wheel; re-lock.",
             )
-    return CheckResult(
-        "Architecture coverage", Status.PASS, f"all deps cover {', '.join(archs)}"
-    )
+    return CheckResult("Architecture coverage", Status.PASS, f"all deps cover {target}")
 
 
 def check_macos_runtime_floor(
@@ -282,8 +276,7 @@ def check_macos_native_binaries(config: Config, project_root: Path) -> CheckResu
     (non-zip) sources may share a staged basename (they would overwrite each
     other in ``bin/``; zip-member collisions are caught at build time). When the
     bundle has been built, each Mach-O staged under ``Resources/bin`` must carry
-    every configured arch (a thin helper on a universal2 app would fail to
-    load/run on the other arch).
+    the target arch.
     """
     declared = config.macos_required.binaries
     if not declared:
@@ -326,7 +319,7 @@ def check_macos_native_binaries(config: Config, project_root: Path) -> CheckResu
             )
         staged[base] = dep.name
 
-    archs = config.macos_required.archs
+    target = config.macos_required.archs[0]
     bin_dir = (
         root
         / "build"
@@ -343,22 +336,20 @@ def check_macos_native_binaries(config: Config, project_root: Path) -> CheckResu
             if not is_macho(p):
                 continue
             machos += 1
-            present = set(macho_arches(p))
-            gaps = [a for a in archs if a not in present]
-            if gaps:
-                problems.append(f"{p.name} missing {', '.join(gaps)}")
+            if target not in set(macho_arches(p)):
+                problems.append(f"{p.name} missing {target}")
         if problems:
             return CheckResult(
                 "Native binaries",
                 Status.FAIL,
                 "; ".join(problems),
-                hint="rebuild the native binaries for every configured arch "
-                f"(e.g. clang -arch {' -arch '.join(archs)}), then re-lock.",
+                hint=f"rebuild the native binaries for {target} "
+                f"(e.g. clang -arch {target}), then re-lock.",
             )
         return CheckResult(
             "Native binaries",
             Status.PASS,
-            f"{machos} Mach-O cover {', '.join(archs)}",
+            f"{machos} Mach-O cover {target}",
         )
     return CheckResult(
         "Native binaries",

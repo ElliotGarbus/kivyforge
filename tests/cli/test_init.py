@@ -114,7 +114,7 @@ class TestWriterUnits:
         cfg = load_config_from_text(project + block)
         ios = cfg.ios_required
         # commented entries leave defaults in place
-        assert ios.simulator_archs == ("arm64", "x86_64")
+        assert ios.simulator_archs == ("arm64",)
         assert ios.icons.source is None
         assert ios.splash.source is None
 
@@ -529,9 +529,7 @@ class TestUpdatePath:
             # UTF-8 explicitly — Path defaults to the locale encoding on Windows.
             text = pp.read_text(encoding="utf-8")
             text = text.replace(
-                '# simulator_archs = ["arm64"]  '
-                '# drop "x86_64" once you no longer run the simulator on Intel Macs '
-                "(default pins both)",
+                '# simulator_archs = ["arm64"]  # the only supported slice (default)',
                 'simulator_archs = ["arm64"]',
             )
             text = text.replace(

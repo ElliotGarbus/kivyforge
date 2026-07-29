@@ -92,20 +92,14 @@ def render_launcher_source(entry_point: str) -> str:
     return _SOURCE.format(entry=entry_point)
 
 
-def build_launcher(dest: Path, *, entry_point: str, archs: tuple[str, ...]) -> None:
-    """Compile the launcher for *archs* to *dest* (universal2 when >1 arch)."""
-    if not archs:
-        raise AppBundleError("build_launcher requires at least one arch")
+def build_launcher(dest: Path, *, entry_point: str, arch: str) -> None:
+    """Compile the launcher for *arch* to *dest*."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     source = render_launcher_source(entry_point)
     with tempfile.TemporaryDirectory(prefix="kivy-launcher-") as tmp:
         src = Path(tmp) / "launcher.c"
         src.write_text(source, encoding="utf-8")
-        cmd = ["clang", "-O2", "-Wall"]
-        for arch in archs:
-            cmd += ["-arch", arch]
-        cmd += ["-o", str(dest), str(src)]
-        _compile(cmd)
+        _compile(["clang", "-O2", "-Wall", "-arch", arch, "-o", str(dest), str(src)])
     dest.chmod(0o755)
 
 

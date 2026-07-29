@@ -1,12 +1,13 @@
 """Acquire + normalize the bundled CPython runtime for the ``.app``.
 
 Consumes the provider-agnostic runtime pin from ``pylock.macos.toml`` (per-arch
-URL + SHA-256), fetches + verifies each requested arch's archive, extracts it,
-and produces a single **canonical relocatable CPython tree**: for a thin build
-that is the one arch as-is; for universal2 it is the first arch's tree with every
-Mach-O ``lipo``-merged with its counterpart(s) from the other arch(es). Nothing
-downstream (launcher, bundler, signing) knows or cares which provider produced
-it — the whole point of the runtime-provider seam.
+URL + SHA-256), fetches + verifies the arm64 archive, extracts it, and produces
+the **canonical relocatable CPython tree**. Nothing downstream (launcher,
+bundler, signing) knows or cares which provider produced it — the whole point of
+the runtime-provider seam.
+
+macOS is arm64-only, so there is no second arch and no ``lipo`` merge: the
+extracted tree ships as-is.
 """
 
 from __future__ import annotations
@@ -25,19 +26,18 @@ from kivyforge.lock.wheelruntime.runtime import (
 )
 
 from . import AppBundleError
-from .machotools import is_macho, lipo_create
 
 
 def stage_runtime(
     runtime: PythonRuntime,
-    archs: tuple[str, ...],
+    arch: str,
     home: Path,
     *,
     project_root: Path,
     cache: ArtifactCache | None = None,
     no_cache: bool = False,
 ) -> Path:
-    """Materialize the runtime for *archs* at *home*; return *home*.
+    """Materialize the runtime for *arch* at *home*; return *home*.
 
     *home* is the final CPython home directory (whose ``bin/python3`` the
     launcher execs). It is emptied and recreated. Deliberately placed under the
@@ -46,32 +46,24 @@ def stage_runtime(
     non-framework subdirs (e.g. ``lib/tk*``), whereas ``Resources`` content is
     sealed as data and the Mach-O files are signed individually.
     """
-    if not archs:
-        raise AppBundleError("stage_runtime requires at least one arch")
     cache = cache or ArtifactCache()
 
-    per_arch: dict[str, Path] = {}
     tmp = Path(tempfile.mkdtemp(prefix="kivy-runtime-"))
     try:
-        for arch in archs:
-            artifact = runtime.artifact_for(arch)
-            if artifact is None:
-                raise AppBundleError(
-                    f"the lock has no {arch} runtime artifact; re-run "
-                    f"`kivyforge lock -p macos` (locked archs: "
-                    f"{', '.join(a.arch for a in runtime.artifacts)})."
-                )
-            archive = _fetch(artifact, arch, project_root, cache, no_cache)
-            per_arch[arch] = _extract(archive, tmp / arch, runtime.provider)
+        artifact = runtime.artifact_for(arch)
+        if artifact is None:
+            raise AppBundleError(
+                f"the lock has no {arch} runtime artifact; re-run "
+                f"`kivyforge lock -p macos` (locked archs: "
+                f"{', '.join(a.arch for a in runtime.artifacts)})."
+            )
+        archive = _fetch(artifact, arch, project_root, cache, no_cache)
+        extracted = _extract(archive, tmp / arch, runtime.provider)
 
         if home.exists():
             shutil.rmtree(home)
         home.parent.mkdir(parents=True, exist_ok=True)
-
-        base_arch = archs[0]
-        shutil.copytree(per_arch[base_arch], home, symlinks=True)
-        if len(archs) > 1:
-            _merge_into(home, [per_arch[a] for a in archs[1:]])
+        shutil.copytree(extracted, home, symlinks=True)
         return home
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -116,22 +108,3 @@ def _safe_extractall(tf: tarfile.TarFile, into: Path) -> None:
     # Paths are validated above; fully_trusted preserves the runtime's
     # permissions and symlinks (the restrictive filters would rewrite them).
     tf.extractall(into, filter="fully_trusted")  # noqa: S202 — members validated just above
-
-
-def _merge_into(base: Path, others: list[Path]) -> None:
-    """lipo-merge every Mach-O in *base* with its counterpart(s) from *others*."""
-    for path in sorted(base.rglob("*")):
-        if not is_macho(path):
-            continue
-        rel = path.relative_to(base)
-        inputs = [path]
-        for other in others:
-            counterpart = other / rel
-            if is_macho(counterpart):
-                inputs.append(counterpart)
-        if len(inputs) < 2:
-            # Present in the base arch only (rare); leave it thin.
-            continue
-        merged = path.with_suffix(path.suffix + ".universal")
-        lipo_create(inputs, merged)
-        merged.replace(path)

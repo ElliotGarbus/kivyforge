@@ -102,7 +102,7 @@ Per-wheel fields (also PEP 751):
 
 ### Multi-platform wheels
 
-A compiled-extension wheel appears as **multiple `[[packages.wheels]]` entries inside the same `[[packages]]` block** — one per iOS slice `kivyforge lock` pins (device arm64, simulator arm64, and simulator x86_64; see "Resolution semantics"). `kivyforge build` selects the right entry per Xcode SDK and `--arch` at build time using the platform tag parsed from `wheels.name`.
+A compiled-extension wheel appears as **multiple `[[packages.wheels]]` entries inside the same `[[packages]]` block** — one per iOS slice `kivyforge lock` pins (device arm64 and simulator arm64; see "Resolution semantics"). `kivyforge build` selects the right entry per Xcode SDK and `--arch` at build time using the platform tag parsed from `wheels.name`.
 
 ### Pure-Python wheels
 
@@ -264,9 +264,9 @@ Some xcframeworks should be linked but not embedded (e.g. system-provided framew
 2. Fetches the `Python.xcframework` version's metadata from python.org (or a cache) to populate `[tool.kivyforge.python_xcframework]`.
 3. For each entry in `[project].dependencies`:
    - Invokes pip in resolve-only mode with the right iOS platform tags (`--platform`, `--python-version`, `--abi`, `--implementation`, `--only-binary=:all:`, `--dry-run` or equivalent) to identify the exact wheel for each package.
-   - **Pins every targeted iOS slice, host-independent.** For every package that carries a compiled extension, `kivyforge lock` resolves and pins a wheel entry for **each** targeted iOS slice — the device slice `ios_<target>_arm64_iphoneos` plus one simulator slice per configured `[tool.kivy.ios].simulator_archs` entry (by default `ios_<target>_arm64_iphonesimulator` and `ios_<target>_x86_64_iphonesimulator`) — regardless of the architecture of the host running `lock`. This keeps the committed lock reproducible across every host/CI permutation (Apple Silicon *and* `macos-15-intel`); `kivyforge build` then selects the matching slice per `--device` / `--simulator` / `--arch` at install time (see [iOS CLI §"Step 4 — pip platform tag"](04-cli-ios.md#step-4--pip-platform-tag)). Pure-Python packages are unaffected — they resolve to a single `py3-none-any` entry. The device slice is always `arm64`; the simulator set is configurable so a project that no longer targets Intel simulator hosts can drop `x86_64` (see [iOS pyproject §"Simulator architectures (`simulator_archs`)"](01-pyproject-ios.md#simulator-architectures-simulator_archs)).
+   - **Pins every targeted iOS slice, host-independent.** For every package that carries a compiled extension, `kivyforge lock` resolves and pins a wheel entry for **each** targeted iOS slice — the device slice `ios_<target>_arm64_iphoneos` plus the simulator slice `ios_<target>_arm64_iphonesimulator` — regardless of the architecture of the host running `lock`. This keeps the committed lock reproducible across every host/CI permutation; `kivyforge build` then selects the matching slice per `--device` / `--simulator` / `--arch` at install time (see [iOS CLI §"Step 4 — pip platform tag"](04-cli-ios.md#step-4--pip-platform-tag)). Pure-Python packages are unaffected — they resolve to a single `py3-none-any` entry. Both slices are `arm64`: the Intel simulator slice is no longer supported, since macOS 27 stops installing on Intel hardware (see [iOS pyproject §"Simulator architectures (`simulator_archs`)"](01-pyproject-ios.md#simulator-architectures-simulator_archs)).
    - **Two fail-fast conditions at lock time**, both producing a clear, host-independent error rather than letting `build` fail later on one specific runner:
-     - **Missing slice.** A compiled package that lacks a wheel for any *targeted* iOS slice upstream is rejected — a partially-pinned package would build on one Xcode destination and fail on another. The targeted set is the device slice plus the configured `[tool.kivy.ios].simulator_archs` (default: both simulator arches), so narrowing `simulator_archs` correspondingly narrows what counts as "missing" — an `arm64`-only project is not rejected for lacking an `x86_64` simulator wheel.
+     - **Missing slice.** A compiled package that lacks a wheel for any *targeted* iOS slice upstream is rejected — a partially-pinned package would build on one Xcode destination and fail on another. The targeted set is the device slice plus the arm64 simulator slice, so a package is never rejected for lacking an `x86_64` simulator wheel.
      - **Inconsistent version across slices.** Each iOS slice is resolved by a *separate* pip invocation (one per platform tag), and each independently picks the best wheel that satisfies the dependency constraint for that platform. Normally all targeted slices land on the same release. But the resolutions can disagree when upstream publishes a release's slices at *different times*: a maintainer's CI uploads the `iphoneos` and `iphonesimulator` wheels minutes apart, or the build for one slice failed on the newest version so only an older one is on the index. Then, against the same `>=3.0` constraint, the device tag may resolve to `3.0.1` while a simulator tag still only finds `3.0.0` — each resolution is locally correct, but they don't agree.
 
        This matters because `kivyforge lock` merges the per-slice wheels into a **single** `[[packages]]` entry that has one `version` field and a `wheels` array holding all the slices. If the slices disagreed, that entry would record `version = "3.0.1"` while its `wheels` array carried a `3.0.0` simulator wheel — a lockfile that *looks* fully pinned but installs **different binaries on device vs. simulator**. That produces the worst kind of bug: code that works in the simulator and crashes on device (or vice versa), with nothing in the committed lock to point at the cause.
@@ -328,9 +328,9 @@ requires-python = ">=3.10"
 [packages.tool.kivyforge]
 direct_requirement = true
 
-# kivy has a compiled C extension, so it ships one wheel per iOS slice. The
-# x86_64 simulator slice (ios_13_0_x86_64_iphonesimulator) is also pinned by
-# `kivyforge lock` but omitted here for brevity; see "Resolution semantics".
+# kivy has a compiled C extension, so it ships one wheel per iOS slice: the
+# device slice below plus ios_13_0_arm64_iphonesimulator, omitted here for
+# brevity; see "Resolution semantics".
 [[packages.wheels]]
 name = "kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
 url = "https://files.pythonhosted.org/packages/<hash>/kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"

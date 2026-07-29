@@ -147,11 +147,7 @@ def render_kivy_tables(
         archs_toml = ", ".join(f'"{a}"' for a in simulator_archs)
         sim_line = f"simulator_archs = [{archs_toml}]"
     else:
-        sim_line = (
-            '# simulator_archs = ["arm64"]  '
-            '# drop "x86_64" once you no longer run the simulator on Intel Macs '
-            "(default pins both)"
-        )
+        sim_line = '# simulator_archs = ["arm64"]  # the only supported slice (default)'
     lines: list[str] = []
     if include_shared:
         lines += [
@@ -368,7 +364,7 @@ def render_macos_tables(
         archs_toml = ", ".join(f'"{a}"' for a in archs)
         archs_line = f"archs = [{archs_toml}]"
     else:
-        archs_line = 'archs = ["arm64", "x86_64"]  # two entries = universal2; one = a thin build'
+        archs_line = 'archs = ["arm64"]  # the only supported macOS arch'
     lines: list[str] = []
     if include_shared:
         lines += [

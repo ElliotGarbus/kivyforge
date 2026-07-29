@@ -2,17 +2,17 @@
 
 Wheels are fetched + SHA-256-verified from ``pylock.macos.toml`` (URL or vendored
 path) and unpacked directly — no pip, so the bundler is independent of the host
-interpreter's version/arch. Per package, coverage for the assembly archs is
-satisfied by a ``universal2`` wheel, a pure-Python (``py3-none-any``) wheel, or a
-matching per-arch wheel; a universal2 *build* assembled from per-arch wheels
-``lipo``-merges the ``.so``/``.dylib`` extensions of the extra arch(es) into the
-base tree.
+interpreter's version/arch.
+
+macOS builds are arm64-only, so exactly one wheel is unpacked per package and
+there is no ``lipo`` merge. A ``universal2`` wheel is still perfectly valid — it
+*contains* arm64 — which is why the arch match accepts it alongside a thin
+``arm64`` wheel and a pure-Python one.
 """
 
 from __future__ import annotations
 
 import shutil
-import tempfile
 import zipfile
 from pathlib import Path
 
@@ -22,58 +22,43 @@ from kivyforge.lock.model import LockedPackage, LockedWheel
 
 from . import AppBundleError
 from .lock import wheel_arch
-from .machotools import is_macho, lipo_create
 
 
 def stage_wheels(
     packages: tuple[LockedPackage, ...],
-    archs: tuple[str, ...],
+    arch: str,
     lib_dir: Path,
     *,
     project_root: Path,
     cache: ArtifactCache | None = None,
     no_cache: bool = False,
 ) -> None:
-    """Unpack every package's wheels for *archs* into *lib_dir*."""
+    """Unpack every package's wheel for *arch* into *lib_dir*."""
     cache = cache or ArtifactCache()
     if lib_dir.exists():
         shutil.rmtree(lib_dir)
     lib_dir.mkdir(parents=True)
 
     for pkg in packages:
-        base_wheel, extra_wheels = _select_wheels(pkg, archs)
-        _unpack(_fetch(base_wheel, project_root, cache, no_cache), lib_dir)
-        for extra in extra_wheels:
-            _merge_wheel_binaries(_fetch(extra, project_root, cache, no_cache), lib_dir)
+        wheel = _select_wheel(pkg, arch)
+        _unpack(_fetch(wheel, project_root, cache, no_cache), lib_dir)
 
 
-def _select_wheels(
-    pkg: LockedPackage, archs: tuple[str, ...]
-) -> tuple[LockedWheel, list[LockedWheel]]:
-    """Pick the base wheel to unpack + any per-arch wheels to lipo-merge in.
+def _select_wheel(pkg: LockedPackage, arch: str) -> LockedWheel:
+    """The one wheel to unpack for *arch*.
 
-    Prefers a single fat wheel (pure-Python or universal2); otherwise assembles
-    from per-arch wheels (base = first arch, extras = the rest).
+    Pure-Python and ``universal2`` wheels both satisfy an arm64 build — the
+    latter *contains* arm64 — as does a thin ``arm64`` wheel.
     """
-    by_arch: dict[str, LockedWheel] = {}
     for wheel in pkg.wheels:
         if wheel.is_pure_python:
-            return wheel, []
-        arch = wheel_arch(wheel.platform_tag)
-        if arch == "universal2":
-            return wheel, []
-        if arch is not None:
-            by_arch[arch] = wheel
-
-    per_arch = [by_arch[a] for a in archs if a in by_arch]
-    if len(per_arch) != len(archs):
-        missing = [a for a in archs if a not in by_arch]
-        raise AppBundleError(
-            f"{pkg.name} {pkg.version} has no wheel for arch(es) "
-            f"{', '.join(missing)} in the lock.\n"
-            "  Re-run `kivyforge lock -p macos` (or narrow [tool.kivy.macos].archs)."
-        )
-    return per_arch[0], per_arch[1:]
+            return wheel
+        if wheel_arch(wheel.platform_tag) in ("universal2", arch):
+            return wheel
+    raise AppBundleError(
+        f"{pkg.name} {pkg.version} has no {arch} wheel in the lock.\n"
+        f"  Re-run `kivyforge lock -p macos`."
+    )
 
 
 def _fetch(wheel: LockedWheel, project_root, cache, no_cache) -> Path:
@@ -102,26 +87,6 @@ def _unpack(wheel: Path, target: Path) -> None:
             if src.is_dir():
                 _merge_tree(src, target)
         shutil.rmtree(data_dir, ignore_errors=True)
-
-
-def _merge_wheel_binaries(wheel: Path, lib_dir: Path) -> None:
-    """lipo-merge the Mach-O extensions of a per-arch *wheel* into *lib_dir*."""
-    with tempfile.TemporaryDirectory(prefix="kivy-wheel-arch-") as tmp:
-        staged = Path(tmp)
-        _unpack(wheel, staged)
-        for src in sorted(staged.rglob("*")):
-            if not is_macho(src):
-                continue
-            rel = src.relative_to(staged)
-            dest = lib_dir / rel
-            if not is_macho(dest):
-                # New extension only this arch ships; copy it in thin.
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dest)
-                continue
-            merged = dest.with_suffix(dest.suffix + ".universal")
-            lipo_create([dest, src], merged)
-            merged.replace(dest)
 
 
 def _merge_tree(src: Path, dest: Path) -> None:

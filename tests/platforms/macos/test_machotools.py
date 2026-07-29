@@ -42,10 +42,6 @@ class TestIsMacho:
 
 
 class TestToolWrappers:
-    def test_lipo_create_requires_inputs(self):
-        with pytest.raises(AppBundleError, match="no inputs"):
-            machotools.lipo_create([], "/tmp/out")
-
     def test_run_missing_tool_is_actionable(self, monkeypatch):
         def boom(*a, **k):
             raise FileNotFoundError("nope")
@@ -60,7 +56,7 @@ class TestToolWrappers:
 
         monkeypatch.setattr(subprocess, "run", fail)
         with pytest.raises(AppBundleError, match="boom"):
-            machotools.lipo_create(["/a", "/b"], "/out")
+            machotools.codesign_adhoc("/bin/x")
 
     def test_macho_arches_parses_lipo(self, monkeypatch):
         def ok(*a, **k):

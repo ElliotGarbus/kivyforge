@@ -43,7 +43,7 @@ PEP 621 `[project].dependencies` entries in the user's `pyproject.toml` are reso
 Two categories of wheel ship through this channel:
 
 1. **Upstream-published iOS wheels** — Pillow, numpy, matplotlib, cryptography, pyyaml (as upstream publishes), pycryptodome, kiwisolver, etc. Consumed directly from PyPI under canonical names.
-2. **Kivy-owned PyPI names with iOS wheels uploaded by Kivy** — `kivy` and `pyobjus`. iOS-tagged wheels (`ios_13_0_arm64_iphoneos`, `ios_13_0_arm64_iphonesimulator`, `ios_13_0_x86_64_iphonesimulator`) are published alongside any existing desktop wheels under the same package name. Because the build host is macOS, `kivyforge` passes `--platform ios_13_0_arm64_iphoneos` (and equivalent slices) to pip so that the iOS wheels are selected rather than the macOS ones.
+2. **Kivy-owned PyPI names with iOS wheels uploaded by Kivy** — `kivy` and `pyobjus`. iOS-tagged wheels (`ios_13_0_arm64_iphoneos`, `ios_13_0_arm64_iphonesimulator`) are published alongside any existing desktop wheels under the same package name. Because the build host is macOS, `kivyforge` passes `--platform ios_13_0_arm64_iphoneos` (and equivalent slices) to pip so that the iOS wheels are selected rather than the macOS ones.
 
 Wheel sourcing is implicit: every PEP 508 string in `[project].dependencies` resolves to a PyPI URL (or to a supplemental-index URL when PyPI doesn't carry the needed iOS slice — see the `extra_index_urls` discussion above). The user does not annotate `source = ...` per wheel; `kivyforge lock` resolves each dependency and pins the resolved wheel URL in `pylock.ios.toml`:
 

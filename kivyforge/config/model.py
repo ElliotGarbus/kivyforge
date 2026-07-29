@@ -19,10 +19,16 @@ SUPPORTED_MACOS_SCHEMA_VERSION = 1
 # The Linux overlay schema major version this build understands (linux-spec).
 SUPPORTED_LINUX_SCHEMA_VERSION = 1
 
-# macOS build architectures. Two entries => a universal2 build; one => a thin
-# build. Default is universal2 (arm64 + x86_64) unless the project narrows it.
-VALID_MACOS_ARCHS = frozenset({"arm64", "x86_64"})
-DEFAULT_MACOS_ARCHS = ("arm64", "x86_64")
+# macOS build architecture. arm64 only: macOS 27 stops installing on Intel
+# hardware and macOS 28 removes Rosetta, so an x86_64 slice would be one nothing
+# can execute or validate. Kept list-shaped for symmetry with the other
+# platforms, but there is no second arch to add and no universal2 build.
+#
+# This is the *build target* set, deliberately distinct from the *wheel tag* set
+# (macos/lock/profile.py VALID_WHEEL_ARCHS): a universal2 wheel is a perfectly
+# good arm64 wheel and is still accepted.
+VALID_MACOS_ARCHS = frozenset({"arm64"})
+DEFAULT_MACOS_ARCHS = ("arm64",)
 
 # Linux build architectures. Only x86_64 is allowed this phase; the field stays
 # list-shaped so aarch64 is purely additive later (linux-spec). Unlike macOS
@@ -176,11 +182,11 @@ DEFAULT_ENTRY_POINT = "main"
 DEFAULT_ORIENTATION = ("portrait",)
 
 # Simulator architectures pinned by ``kivyforge lock`` (spec 01/02). The device
-# slice is always arm64; these are the *simulator* slices. ``x86_64`` exists only
-# to run the simulator on an Intel Mac, so a project that no longer targets Intel
-# hosts may set ``simulator_archs = ["arm64"]`` and stop pinning the dying slice.
-VALID_SIMULATOR_ARCHS = frozenset({"arm64", "x86_64"})
-DEFAULT_SIMULATOR_ARCHS = ("arm64", "x86_64")
+# slice is always arm64; these are the *simulator* slices. arm64 only: the
+# x86_64 simulator slice had value only on an Intel Mac host, and macOS 27 stops
+# installing on Intel hardware.
+VALID_SIMULATOR_ARCHS = frozenset({"arm64"})
+DEFAULT_SIMULATOR_ARCHS = ("arm64",)
 
 # Info.plist keys kivyforge writes from the schema; users may not set these via
 # [tool.kivy.ios.info_plist] (spec 01).

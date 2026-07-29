@@ -24,11 +24,6 @@ name = "kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
 url = "https://files.pythonhosted.org/packages/aa/kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
 hashes = { sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
 
-[[packages.wheels]]
-name = "kivy-3.0.0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-url = "https://files.pythonhosted.org/packages/aa/kivy-3.0.0-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-hashes = { sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
-
 [[packages]]
 name = "more-itertools"
 version = "10.5.0"

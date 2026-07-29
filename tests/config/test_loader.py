@@ -503,21 +503,21 @@ class TestSimulatorArchs:
         "python = { version = '3.15.0' }\n"
     )
 
-    def test_default_is_both_archs(self):
+    def test_default_is_arm64_only(self):
         cfg = load(self._BASE)
-        assert cfg.ios_required.simulator_archs == ("arm64", "x86_64")
+        assert cfg.ios_required.simulator_archs == ("arm64",)
 
     def test_arm64_only(self):
         cfg = load(self._BASE + "simulator_archs=['arm64']\n")
         assert cfg.ios_required.simulator_archs == ("arm64",)
 
-    def test_explicit_both(self):
-        cfg = load(self._BASE + "simulator_archs=['arm64','x86_64']\n")
-        assert cfg.ios_required.simulator_archs == ("arm64", "x86_64")
+    def test_dedupes(self):
+        cfg = load(self._BASE + "simulator_archs=['arm64','arm64']\n")
+        assert cfg.ios_required.simulator_archs == ("arm64",)
 
-    def test_dedupes_preserving_order(self):
-        cfg = load(self._BASE + "simulator_archs=['x86_64','arm64','x86_64']\n")
-        assert cfg.ios_required.simulator_archs == ("x86_64", "arm64")
+    def test_x86_64_rejected(self):
+        with pytest.raises(ConfigError, match="no longer supports x86_64"):
+            load(self._BASE + "simulator_archs=['arm64','x86_64']\n")
 
     def test_unknown_arch_rejected(self):
         with pytest.raises(ConfigError, match="unknown simulator arch"):
@@ -693,7 +693,7 @@ class TestMacosOverlay:
         assert m.schema_version == 1
         assert m.build == 1
         assert m.minimum_system_version is None
-        assert m.archs == ("arm64", "x86_64")
+        assert m.archs == ("arm64",)
         assert m.python_version == "3.15.0"
 
     def test_ios_and_macos_coexist(self):
@@ -745,16 +745,17 @@ class TestMacosOverlay:
 
 class TestMacosArchs:
     def test_default(self):
-        assert _macos().macos_required.archs == ("arm64", "x86_64")
+        assert _macos().macos_required.archs == ("arm64",)
 
     def test_arm64_only(self):
         assert _macos("archs=['arm64']\n").macos_required.archs == ("arm64",)
 
-    def test_dedup_preserves_order(self):
-        assert _macos("archs=['x86_64','arm64','x86_64']\n").macos_required.archs == (
-            "x86_64",
-            "arm64",
-        )
+    def test_dedupes(self):
+        assert _macos("archs=['arm64','arm64']\n").macos_required.archs == ("arm64",)
+
+    def test_x86_64_rejected(self):
+        with pytest.raises(ConfigError, match="no longer supports x86_64"):
+            _macos("archs=['arm64','x86_64']\n")
 
     def test_empty_rejected(self):
         with pytest.raises(ConfigError, match="must not be empty"):
