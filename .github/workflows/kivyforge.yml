@@ -196,7 +196,7 @@ jobs:
           git push origin "HEAD:${GITHUB_REF_NAME}"
         fi
     - name: Upload re-vendored launcher assets (fallback if push is blocked)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: vendored-launcher
         path: |
@@ -272,12 +272,12 @@ jobs:
       with:
         python-version: '3.14'
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         distribution: temurin
         java-version: '17'
     - name: Set up the Android SDK
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v4
     - name: Install kivyforge (with the Android extra)
       run: |
         python -m pip install --upgrade pip
@@ -329,7 +329,7 @@ jobs:
           --keystore ci.keystore --key-alias ci
     - name: Upload the generated project on failure (for triage)
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: android-generated-project
         path: |
