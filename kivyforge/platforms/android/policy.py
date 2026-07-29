@@ -27,7 +27,22 @@ from dataclasses import dataclass
 
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
 _NS = f"{{{ANDROID_NS}}}"
-BOOTSTRAP_EXPORTED = {"org.kivy.android.PythonActivity"}
+
+# Exported components kivyforge itself ships in *every* generated project, not
+# something a user's pyproject.toml controls, so they are baked into the
+# allowlist rather than making every user rediscover and add them via
+# allow_exported:
+#   - org.kivy.android.PythonActivity: the app's own launcher.
+#   - androidx.profileinstaller.ProfileInstallReceiver: pulled in transitively
+#     by the hardcoded `com.google.android.material` dependency (generate/
+#     project.py). It is exported by AndroidX's own design so ADB/Play/
+#     Macrobenchmark tooling can trigger baseline-profile installation, and is
+#     itself gated by the system-only android.permission.DUMP, so no
+#     third-party app can reach it.
+BOOTSTRAP_EXPORTED = {
+    "org.kivy.android.PythonActivity",
+    "androidx.profileinstaller.ProfileInstallReceiver",
+}
 
 # The curated `lintRelease` subset the generated project runs as errors. These
 # are the checks Lint already does better than a hand-rolled XML walk: exported

@@ -143,6 +143,21 @@ class TestManifestPolicy:
         infos = enforce_release_manifest(_manifest(perms=perms), package="org.real.app")
         assert any("dangerous runtime permission" in i.message for i in infos)
 
+    def test_profileinstaller_receiver_is_allowed_by_default(self):
+        """`com.google.android.material` is a hardcoded dependency of every
+        generated project, and it transitively pulls in AndroidX's
+        profileinstaller library, which the AndroidX team exports by design
+        (gated by the system-only DUMP permission) so ADB/Play/Macrobenchmark
+        tooling can trigger baseline-profile installation. Every kivyforge
+        release build carries this component, so it must not force every
+        project to rediscover and allowlist it by hand."""
+        body = (
+            '<receiver android:name="androidx.profileinstaller.ProfileInstallReceiver" '
+            'android:exported="true"/>'
+        )
+        infos = enforce_release_manifest(_manifest(body=body), package="org.real.app")
+        assert infos == []
+
     def test_allow_exported_admits_a_named_component(self):
         """A dependency's exported component can't be edited out of
         pyproject.toml, so the allowlist is the sanctioned opt-in."""
