@@ -9,6 +9,14 @@
  * against. Kivy's startup path (getDPI/get_fontscale) uses only the
  * PythonActivity.mActivity reference; `context` is initialized lazily below so
  * the sensor/network helpers work without a cross-package assignment.
+ *
+ * vibrate/getDPI/checkNetwork call APIs Android has since deprecated
+ * (Vibrator#vibrate(int), Display#getMetrics, ConnectivityManager
+ * #getActiveNetworkInfo) but not removed; their replacements need API
+ * 26/30/29 respectively, above this project's min_sdk floor of 24, so the
+ * deprecated call is kept rather than forking this surface into two paths.
+ * @SuppressWarnings("deprecation") on each is a deliberate, understood
+ * choice, not an oversight — see android/05 for the min_sdk floor.
  */
 package org.renpy.android;
 
@@ -43,6 +51,7 @@ public class Hardware {
     public static final float defaultRv[] = {0f, 0f, 0f};
 
     /** Vibrate for s seconds. */
+    @SuppressWarnings("deprecation")
     public static void vibrate(double s) {
         Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
         if (v != null) {
@@ -153,6 +162,7 @@ public class Hardware {
     public static DisplayMetrics metrics = new DisplayMetrics();
 
     /** Get display DPI. */
+    @SuppressWarnings("deprecation")
     public static int getDPI() {
         // AND: Shouldn't have to get the metrics like this every time...
         PythonActivity.mActivity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
@@ -233,6 +243,7 @@ public class Hardware {
      *
      * <p>(only one connection can be active at a given moment, detects all network type)
      */
+    @SuppressWarnings("deprecation")
     public static boolean checkNetwork() {
         boolean state = false;
         final ConnectivityManager conMgr =
