@@ -143,6 +143,39 @@ class TestManifestPolicy:
         infos = enforce_release_manifest(_manifest(perms=perms), package="org.real.app")
         assert any("dangerous runtime permission" in i.message for i in infos)
 
+    def test_allow_exported_admits_a_named_component(self):
+        """A dependency's exported component can't be edited out of
+        pyproject.toml, so the allowlist is the sanctioned opt-in."""
+        body = (
+            '<activity android:name="com.vendor.sdk.Trampoline" '
+            'android:exported="true"/>'
+        )
+        infos = enforce_release_manifest(
+            _manifest(body=body),
+            package="org.real.app",
+            allow_exported=("com.vendor.sdk.Trampoline",),
+        )
+        assert infos == []
+
+    def test_allow_exported_is_per_component_not_a_blanket_off_switch(self):
+        body = (
+            '<activity android:name="com.vendor.sdk.Trampoline" '
+            'android:exported="true"/>'
+            '<service android:name="com.vendor.sdk.Other" '
+            'android:exported="true"/>'
+        )
+        with pytest.raises(ManifestPolicyError, match="com.vendor.sdk.Other"):
+            enforce_release_manifest(
+                _manifest(body=body),
+                package="org.real.app",
+                allow_exported=("com.vendor.sdk.Trampoline",),
+            )
+
+    def test_the_exported_failure_names_the_escape_hatch(self):
+        body = '<service android:name="org.example.Leak" android:exported="true"/>'
+        with pytest.raises(ManifestPolicyError, match="allow_exported"):
+            enforce_release_manifest(_manifest(body=body), package="org.real.app")
+
     def test_findings_include_all_severities(self):
         xml = _manifest(
             package="org.example.app",

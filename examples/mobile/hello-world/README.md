@@ -4,8 +4,10 @@ Pure Python (**no Kivy**, no dependencies, no wheels). Imports `src/main.py`,
 which prints `Hello World` to the platform console/log. Because it has no Kivy
 dependency it isolates the *toolchain* — the platform Python runtime + app
 bundling — from anything Kivy-related, which makes it the first example to run
-when bringing up a backend. It runs on **iOS today**, and is the natural home for
-an `[tool.kivy.android]` overlay once the Android backend lands.
+when bringing up a backend. This copy carries an **iOS** overlay only; the Android
+backend's equivalent first-run example is
+[`hello-android`](../hello-android) (which does add Kivy, since Android's runtime
+was brought up against it).
 
 On iOS it uses the official **python.org** `Python.xcframework` preview
 (**3.15.0b4**). The lockfile pins the archive URL and SHA-256.

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import click
 
-from ._platform import platform_option, resolve_target
+from ._platform import platform_option, reject_android_only, resolve_target
 
 
 @click.command()
@@ -55,6 +55,26 @@ from ._platform import platform_option, resolve_target
     default="app-store",
     help="Export method (only meaningful with --release).",
 )
+# --- Android-only ---
+@click.option(
+    "--debug",
+    is_flag=True,
+    help="Android: assemble the debug-signed artifact after generating.",
+)
+@click.option(
+    "-f",
+    "--format",
+    "fmt",
+    type=click.Choice(["apk", "aab"]),
+    default=None,
+    help="Android (with --debug): debug artifact format (default apk).",
+)
+@click.option(
+    "--abi",
+    type=click.Choice(["arm64_v8a", "x86_64"]),
+    default=None,
+    help="Android: restrict this build to one ABI.",
+)
 def build(
     cli_platform: str | None,
     target: str | None,
@@ -64,11 +84,15 @@ def build(
     team_id: str | None,
     signing_identity: str | None,
     export_method: str,
+    debug: bool,
+    fmt: str | None,
+    abi: str | None,
 ) -> None:
-    """Download artifacts, generate the Xcode project, and optionally build it."""
+    """Download artifacts, generate the platform project, and optionally build it."""
     # Resolve the target platform before any work so an unresolved target fails
     # fast with an actionable message (common design doc 02).
     backend, project_root = resolve_target(cli_platform, verb="build")
+    reject_android_only(backend, {"--debug": debug, "-f/--format": fmt, "--abi": abi})
 
     backend.build(
         project_root,
@@ -79,4 +103,7 @@ def build(
         team_id=team_id,
         signing_identity=signing_identity,
         export_method=export_method,
+        debug=debug,
+        fmt=fmt,
+        abi=abi,
     )

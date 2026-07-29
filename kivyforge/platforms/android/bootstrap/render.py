@@ -9,6 +9,13 @@ byte (the Phase-3 diff-clean gate).
 Substitution points today:
 - ``PythonActivity.java`` ``getLibraries()``: the SDL family for the selected
   generation + the ``pythonX.Y`` soname stem.
+- ``PythonActivity.java`` ``ENTRY_POINT``: ``[tool.kivy].entry_point``, which
+  the activity exports as ``KF_ENTRY_POINT`` for the launcher to import.
+- ``PythonService.java`` ``PYTHON_LIB``: the same soname stem, because a service
+  process loads libpython itself.
+
+The per-service subclasses named by the manifest are generated from config, not
+from a template; see ``generate/services.py``.
 
 ``main.c``/``CMakeLists.txt`` need no substitution (the launcher reads its
 environment at runtime; CMake gets ``PYTHON_VERSION`` as a Gradle argument).
@@ -16,6 +23,7 @@ environment at runtime; CMake gets ``PYTHON_VERSION`` as a Gradle argument).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +43,15 @@ _PROTO_LIBRARIES_BLOCK = (
     '            "python3.14",\n'
 )
 _PROTO_PYTHON_STEM = "python3.14"
+
+# PythonService loads libpython itself (no SDLActivity in a service process), so
+# the stem is substituted there too.
+_PROTO_SERVICE_PYTHON_LIB = 'private static final String PYTHON_LIB = "python3.14";'
+
+# The ENTRY_POINT constant as the template carries it; rendering the default
+# entry point back over it is a no-op (the diff-clean gate).
+_PROTO_ENTRY_POINT_LINE = '    private static final String ENTRY_POINT = "main";'
+_DOTTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
 class RenderError(Exception):
@@ -59,7 +76,9 @@ def python_stem(python_version: str) -> str:
     return f"python{parts[0]}.{parts[1]}"
 
 
-def render_bootstrap(*, sdl: int, python_version: str) -> list[RenderedFile]:
+def render_bootstrap(
+    *, sdl: int, python_version: str, entry_point: str = "main"
+) -> list[RenderedFile]:
     """Render every bootstrap source for the generated project's app module.
 
     Returns Java sources (kivyforge bootstrap + SDL glue), the native
@@ -98,7 +117,27 @@ def render_bootstrap(*, sdl: int, python_version: str) -> list[RenderedFile]:
             "block was not found (re-extract from a proven prototype)."
         )
     activity = activity.replace(_PROTO_LIBRARIES_BLOCK, lib_lines)
+    activity = _substitute_entry_point(activity, entry_point)
     out.append(RenderedFile("java/org/kivy/android/PythonActivity.java", activity))
+
+    # 1b. The unpack + environment helper both the activity and the generated
+    # services use, and the service base class they extend. The base loads
+    # libpython itself (a service process has no SDLActivity to do it), so the
+    # same stem is substituted there.
+    out.append(
+        RenderedFile(
+            "java/org/kivy/android/PythonBundle.java",
+            _read(TEMPLATES_DIR / "java/org/kivy/android/PythonBundle.java"),
+        )
+    )
+    out.append(
+        RenderedFile(
+            "java/org/kivy/android/PythonService.java",
+            _substitute_service_python_lib(
+                _read(TEMPLATES_DIR / "java/org/kivy/android/PythonService.java"), stem
+            ),
+        )
+    )
 
     # 2. The pyjnius glue (matched pair; see contract.py).
     out.append(
@@ -124,6 +163,41 @@ def render_bootstrap(*, sdl: int, python_version: str) -> list[RenderedFile]:
         RenderedFile("cpp/CMakeLists.txt", _read(TEMPLATES_DIR / "cpp/CMakeLists.txt"))
     )
     return out
+
+
+def _substitute_service_python_lib(service: str, stem: str) -> str:
+    if _PROTO_SERVICE_PYTHON_LIB not in service:
+        raise RenderError(
+            "PythonService.java template drifted: the PYTHON_LIB constant was "
+            "not found (re-extract from a proven prototype)."
+        )
+    return service.replace(
+        _PROTO_SERVICE_PYTHON_LIB,
+        f'private static final String PYTHON_LIB = "{stem}";',
+    )
+
+
+def _substitute_entry_point(activity: str, entry_point: str) -> str:
+    """Put ``[tool.kivy].entry_point`` into the activity's ENTRY_POINT constant.
+
+    The value lands inside a Java string literal, so it is re-validated here
+    even though the config loader already checked it: a value carrying a quote
+    or newline would otherwise be arbitrary Java in a generated source.
+    """
+    if not _DOTTED_IDENTIFIER.match(entry_point):
+        raise RenderError(
+            f"entry_point {entry_point!r} is not a valid dotted Python "
+            "identifier; cannot render the bootstrap for it."
+        )
+    if _PROTO_ENTRY_POINT_LINE not in activity:
+        raise RenderError(
+            "PythonActivity.java template drifted: the ENTRY_POINT constant "
+            "was not found (re-extract from a proven prototype)."
+        )
+    return activity.replace(
+        _PROTO_ENTRY_POINT_LINE,
+        f'    private static final String ENTRY_POINT = "{entry_point}";',
+    )
 
 
 def finder_source() -> str:

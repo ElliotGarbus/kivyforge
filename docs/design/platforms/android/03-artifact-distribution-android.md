@@ -1,6 +1,6 @@
 # Android — Artifact Distribution
 
-> **Status: design.** Companion to [pyproject-android](01-pyproject-android.md) and [pylock-android-spec](02-pylock-android-spec.md).
+> **Status: implemented (v1).** Companion to [pyproject-android](01-pyproject-android.md) and [pylock-android-spec](02-pylock-android-spec.md).
 
 This document defines, for the Android target, **where artifacts live**, **how
 they're verified**, **how kivyforge consumes them**, and **how lockfile entries
@@ -19,10 +19,14 @@ each matched to the shape the artifact naturally takes:
 
 Channels 1–3 share one consumption model: **kivyforge downloads the artifact,
 verifies its SHA-256, and stages it into the generated Gradle project.** Channel 4
-differs in *who downloads* — **Gradle owns resolve/fetch/compile** — but not in
-integrity: kivyforge still pins every resolved Maven artifact by SHA-256 and has
-Gradle enforce it. It is reconciled with the "no from-source pipeline" principle
-exactly as SPM is for iOS (see channel 4 below).
+differs in *who downloads* — **Gradle owns resolve/fetch/compile** — and, in v1,
+in how far integrity goes: kivyforge records every resolved Maven artifact's
+SHA-256 in the lock as an **audit record**, but does not have Gradle enforce it,
+because Gradle's `verification-metadata.xml` is whole-classpath and would require
+pinning AGP's own build classpath too (see channel 4 below, and
+[02 §Gradle pins](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins)).
+It is reconciled with the "no from-source pipeline" principle exactly as SPM is
+for iOS.
 
 ## The core invariant holds on Android
 
@@ -35,9 +39,11 @@ The pyjnius Android-wheel spike
 [pre-spike brief](../../dev/pyjnius-android-wheel-spike.md)) established that the
 load-bearing unknown — pyjnius, the Java bridge — can be a clean prebuilt wheel
 (Java-free, SDL-agnostic, `JNIEnv` resolved at runtime), proven on an x86_64
-emulator and arm64 hardware; the first-party PyPI wheel, the SDL3-host run, and
-first-party (kivyforge-stack) validation remain open (see the findings'
-acceptance-criteria status). With CPython Android (Tier 3), a Kivy Android
+emulator and arm64 hardware. Both of those wheels are now first-party
+cibuildwheel builds on the [`kivy-mobile-wheels`](https://github.com/ElliotGarbus/kivy-mobile-wheels)
+release index, and both SDL generations run on the kivyforge stack itself (see
+[08 compatibility-matrix](08-compatibility-matrix.md)); publishing them to PyPI
+is the remaining distribution step. With CPython Android (Tier 3), a Kivy Android
 wheel, and a pyjnius wheel all in hand, the Android backend is a **wheel-assembly
 + Gradle-drive** backend, not a from-source one — the same bet the desktop and iOS
 backends make. Genuine from-source compilation of a Maven dependency is deferred
@@ -117,9 +123,8 @@ for a `.libs/` directory and copies each `.so` it finds into the Gradle project'
 `app/src/main/jniLibs/<abi>/`, **keyed by the wheel's own platform tag** (not by
 any path inside the wheel). For the canonical Kivy app this is where the SDL
 family (SDL2 or SDL3 per `[tool.kivy.android].kivy_generation`) and Kivy's compiled extensions
-arrive. The wheel author (you, when cross-building Kivy) controls this payload —
-which is why building your own Kivy wheel, rather than trusting a community one,
-matters.
+arrive. The wheel author controls this payload — which is why the project builds
+its own Kivy wheel rather than trusting a community one.
 
 > **Flat only.** `.libs/` must be **flat**: `kivyforge build` copies the `.so`s it
 > finds directly under `.libs/` and treats **any subdirectory** (including an
@@ -143,7 +148,7 @@ Android wheels in the Kivy ecosystem must:
 
 - Contain `.so` extension modules at importable paths (so the runtime's import machinery + the `jniLibs` load path can resolve them; see [gradle-project-generation](04-gradle-project-generation.md)).
 - Bundle any host-provided-but-app-packaged native libraries under a flat top-level `.libs/` (SDL family in the Kivy wheel); the wheel's platform tag identifies the ABI, so no `<abi>/` subdirectory is used.
-- Be **16 KB page-aligned** (`.so` LOAD segments): Android 15/16 devices with 16 KB pages refuse to load 4 KB-aligned libraries. Build with NDK r28+ or `-Wl,-z,max-page-size=16384` (the pyjnius wheel already satisfies this; the bootstrap and runtime `.so`s must too — a toolchain task, see [gradle-project-generation §"16 KB alignment"](04-gradle-project-generation.md#16-kb-page-alignment)). Pass the flag **explicitly** even on a toolchain that already aligns: the spike found the pyjnius wheel's alignment under NDK r27 rode on CPython-Android's *implicit* `LDFLAGS`, so its build pins the flag in its cibuildwheel config as a drift guard ([findings, Step 7](../../dev/pyjnius-android-wheel-spike-findings.md)) — a locally cross-built Kivy wheel should do the same.
+- Be **16 KB page-aligned** (`.so` LOAD segments): Android 15/16 devices with 16 KB pages refuse to load 4 KB-aligned libraries. Build with NDK r28+ or `-Wl,-z,max-page-size=16384` (both first-party wheels, Kivy and pyjnius, satisfy this, as do the bootstrap and runtime `.so`s — see [gradle-project-generation §"16 KB alignment"](04-gradle-project-generation.md#16-kb-page-alignment)). Pass the flag **explicitly** even on a toolchain that already aligns: the spike found the pyjnius wheel's alignment under NDK r27 rode on CPython-Android's *implicit* `LDFLAGS`, so both wheels' cibuildwheel configs pin the flag as a drift guard ([findings, Step 7](../../dev/pyjnius-android-wheel-spike-findings.md)) — a locally cross-built wheel should do the same.
 - Carry **no `DT_NEEDED` on `libSDL*.so`** for the pyjnius wheel (it resolves the getter at runtime) — verified at the ELF level by the [spike findings](../../dev/pyjnius-android-wheel-spike-findings.md).
 - Not require Cython/compilers at consume time (Cython is a wheel-build-only tool).
 
@@ -186,22 +191,30 @@ each artifact to pin its SHA-256 into `[[tool.kivyforge.android_libs]]`;
 `[tool.kivy.android.gradle].dependencies` are Maven coordinates. Unlike channels
 1–3, this channel is **not** an artifact kivyforge downloads, verifies, and
 stages. `kivyforge lock` emits the coordinates into a scratch `build.gradle`, runs
-Gradle's dependency locking **and hash verification** to resolve the full
+Gradle's dependency locking **and hash verification** there to resolve the full
 transitive graph, and records every module + its per-artifact SHA-256 under
 `[[tool.kivyforge.gradle.resolved]]` in the lock. From there **Gradle** resolves,
 fetches, and (for source-only artifacts) compiles — kivyforge writes no build
-logic, but it does pin the resolved bytes.
+logic, and it records (but does not re-verify) the resolved bytes.
 
 This is the direct analog of the iOS **Swift Package Manager** channel, and it
 reconciles with the core invariant the same way: the invariant is *kivyforge runs
 no from-source build pipeline of its own*, and Gradle — the platform's own
 first-class dependency+build system — is categorically different from a bespoke
-recipe system. Integrity is enforced by the `gradle.lockfile` +
-`verification-metadata.xml` that `kivyforge build` materializes from
-`[[tool.kivyforge.gradle.resolved]]` — a **mandatory** content-hash check whenever
-Maven deps are declared, the analog of SPM's pinned revision + `.binaryTarget`
-checksums. The generated Gradle files live only in the regenerated
-`<app>-android/`; the committed lock is the single source of truth.
+recipe system.
+
+Integrity for this channel is, in v1, **recorded rather than enforced**: the
+coordinates are fully version-pinned in the generated `app/build.gradle`, and the
+resolved graph + per-artifact SHA-256 is committed in
+`[[tool.kivyforge.gradle.resolved]]` as an audit record (mirrored into
+`app/gradle.lockfile` as comments). It is *not* a content-hash gate at build time,
+because Gradle's dependency verification is whole-classpath and the lock resolves
+only the app's own coordinates — the deferral is spelled out in
+[pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins).
+This is the one place kivyforge's guarantee is weaker than SPM's pinned revision +
+`.binaryTarget` checksum, and the only channel where it is. Generated Gradle files
+live only in the regenerated `<app>-android/`; the committed lock is the single
+source of truth.
 
 ## Lockfile-entry to project-folder mapping
 
@@ -216,7 +229,7 @@ checksums. The generated Gradle files live only in the regenerated
 | Wheel-embedded `.libs/` (e.g. Kivy's SDL family) | `app/src/main/jniLibs/<abi>/` (ABI from the wheel tag) | Same. |
 | `[[tool.kivyforge.python_android]]` (per ABI) | stdlib → staged bundle; runtime `.so`s → `jniLibs/<abi>/` | Follows the embeddable package's documented layout. |
 | `[[tool.kivyforge.android_libs]]` (`.aar`/`.jar`) | `<app>-android/app/libs/` + `build.gradle` reference | Gradle links/merges. |
-| `[tool.kivyforge.gradle]` coordinates | emitted into `app/build.gradle`; resolved via materialized `gradle.lockfile` + `verification-metadata.xml` | Gradle owns fetch/compile; bytes pinned by SHA-256. |
+| `[tool.kivyforge.gradle]` coordinates | emitted (fully versioned) into `app/build.gradle`; the resolved graph mirrored into `app/gradle.lockfile` | Gradle owns fetch/compile; versions pinned, bytes hash-*recorded* (audit, not a v1 gate). |
 
 `kivyforge build` keeps native libs (`jniLibs/`) and pure-Python payload (the
 asset bundle) disjoint: `.so` files are loadable only from the extracted native

@@ -241,7 +241,7 @@ class TestProjectFiles:
 
     def test_default_icon_emitted_without_config(self, tmp_path):
         config, android = _android()
-        write_resources(tmp_path, config, android)
+        write_resources(tmp_path, config, android, project_root=tmp_path)
         icon = (
             tmp_path
             / "app"
@@ -272,6 +272,10 @@ class TestProjectFiles:
         assert ("c" * 64) in lockfile
         # v1 does not emit a strict verification-metadata.xml (see docstring).
         assert not (tmp_path / "gradle" / "verification-metadata.xml").exists()
+        # And the file says so, at the path a real Gradle lock would live: docs
+        # claiming enforcement here is exactly the drift this wording prevents.
+        assert "INFORMATIONAL" in lockfile
+        assert "dependency locking is not enabled" in lockfile
 
     def test_no_pins_no_files(self, tmp_path):
         write_gradle_pins(tmp_path, self._lock())
@@ -298,6 +302,26 @@ class TestWriteSettingsGradle:
         assert 'rootProject.name = "kivyforge-app"' in text
         assert 'include ":app"' in text
         assert "google()" in text
+
+    def test_declared_repositories_are_emitted(self, tmp_path):
+        """A private repo that the lock resolved from must also be declared in
+        the generated build, or the coordinate it supplied cannot resolve."""
+        _, android = _android(
+            "[tool.kivy.android.gradle]\n"
+            "dependencies = ['com.example:widget:1.0']\n"
+            "repositories = ['https://maven.example.com/releases']\n"
+        )
+        write_settings_gradle(tmp_path, android)
+        text = (tmp_path / "settings.gradle").read_text()
+        assert "maven { url = uri('https://maven.example.com/releases') }" in text
+        # The defaults stay, and the extra repo comes after them.
+        assert text.index("mavenCentral()") < text.index("maven.example.com")
+
+    def test_no_declared_repositories_keeps_the_defaults_only(self, tmp_path):
+        _, android = _android()
+        write_settings_gradle(tmp_path, android)
+        text = (tmp_path / "settings.gradle").read_text()
+        assert "maven {" not in text
 
 
 class TestWriteRootBuildGradle:
@@ -366,7 +390,9 @@ class TestWriteAppBuildGradleVariants:
         assert "java.srcDirs += 'extra/java'" in text
         assert "java.srcDirs += 'extra/kotlin'" in text
 
-    def test_splash_source_adds_splashscreen_dependency(self, tmp_path):
+    def test_splash_adds_no_dependency(self, tmp_path):
+        """The splash is theme attributes and generated drawables, so it must
+        not drag a Maven coordinate into an otherwise hermetic build."""
         config, android = _android(
             "[tool.kivy.android.splash]\nsource = 'splash.png'\n"
         )
@@ -379,7 +405,88 @@ class TestWriteAppBuildGradleVariants:
             staged_libs=[],
         )
         text = (tmp_path / "app" / "build.gradle").read_text()
-        assert project_mod.toolchain.CORE_SPLASHSCREEN_COORDINATE in text
+        assert "splashscreen" not in text
+
+    @pytest.mark.parametrize(
+        "setting,expected",
+        [("", "multiDexEnabled true"), ("multidex = false", "multiDexEnabled false")],
+    )
+    def test_multidex_reaches_gradle(self, tmp_path, setting, expected):
+        extra = f"[tool.kivy.android.build_settings]\n{setting}\n" if setting else ""
+        config, android = _android(extra)
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        assert expected in (tmp_path / "app" / "build.gradle").read_text()
+
+    def test_lint_runs_only_the_curated_subset_as_fatal(self, tmp_path):
+        """checkOnly narrows the run and `fatal` promotes exactly those, so a
+        future Lint's new checks can never block someone's release."""
+        from kivyforge.platforms.android.policy import LINT_CHECKS
+
+        config, android = _android("")
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        listing = ", ".join(f"'{c}'" for c in LINT_CHECKS)
+        assert f"checkOnly.addAll([{listing}])" in text
+        assert f"fatal.addAll([{listing}])" in text
+        assert "abortOnError = true" in text
+        # Not warningsAsErrors: that would make an unknown issue id (a stale
+        # pin against a newer Lint) fail every release build.
+        assert "warningsAsErrors" not in text
+
+    def test_merged_manifest_export_task_is_emitted(self, tmp_path):
+        """The release policy lints the merged manifest, and AGP's intermediates
+        layout is not a contract — so export it through the Artifacts API."""
+        from kivyforge.platforms.android.generate.project import (
+            MERGED_MANIFEST_RELPATH,
+            MERGED_MANIFEST_TASK,
+        )
+
+        config, android = _android("")
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "import com.android.build.api.artifact.SingleArtifact" in text
+        assert f"tasks.register('{MERGED_MANIFEST_TASK}', Copy)" in text
+        assert "SingleArtifact.MERGED_MANIFEST.INSTANCE" in text
+        assert f"rename {{ '{MERGED_MANIFEST_RELPATH.name}' }}" in text
+        # The Copy destination and the path the CLI reads must agree.
+        assert "layout.buildDirectory.dir('kivyforge')" in text
+        assert MERGED_MANIFEST_RELPATH.parts[:3] == ("app", "build", "kivyforge")
+
+    def test_the_import_precedes_the_plugins_block(self, tmp_path):
+        """Groovy requires imports at the top of the script."""
+        config, android = _android("")
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert text.startswith("import com.android.build.api.artifact.SingleArtifact")
+        assert text.index("import ") < text.index("plugins {")
 
     def test_strip_native_libs_false_keeps_symbols(self, tmp_path):
         config, android = _android(
@@ -460,26 +567,46 @@ class TestWriteAppBuildGradleVariants:
         assert "signingConfig signingConfigs.release" in text
         assert "signingConfigs {" in text
 
+    def test_release_test_variant_for_the_smoke_probe(self, tmp_path):
+        """The release smoke test needs testBuildType (AGP generates
+        connected<Variant>AndroidTest only for it) and a release signing config
+        it can share with the test APK — here the debug keystore."""
+        config, android = _android()
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+            release_signing_config="debug",
+            test_build_type="release",
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "testBuildType 'release'" in text
+        assert "signingConfig signingConfigs.debug" in text
+        # No signingConfigs {} block is needed: debug is AGP's built-in config.
+        assert "signingConfigs {" not in text
+
+    def test_no_test_build_type_by_default(self, tmp_path):
+        config, android = _android()
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "testBuildType" not in text
+        assert "signingConfig " not in text
+
 
 class TestWriteResources:
-    def test_custom_icon_source_skips_default(self, tmp_path):
-        config, android = _android("[tool.kivy.android.icons]\nsource = 'icon.png'\n")
-        (tmp_path / "icon.png").write_bytes(b"\x89PNG\r\n")
-        write_resources(tmp_path, config, android)
-        icon = (
-            tmp_path
-            / "app"
-            / "src"
-            / "main"
-            / "res"
-            / "mipmap-mdpi"
-            / "ic_launcher.png"
-        )
-        assert not icon.exists()
-
     def test_base_theme_in_styles_xml(self, tmp_path):
         config, android = _android()
-        write_resources(tmp_path, config, android)
+        write_resources(tmp_path, config, android, project_root=tmp_path)
         styles = (
             tmp_path / "app" / "src" / "main" / "res" / "values" / "styles.xml"
         ).read_text()
@@ -492,7 +619,7 @@ class TestWriteResources:
         )
         config = load_config_from_text(text, require_ios=False, require_android=True)
         android = config.android_required
-        write_resources(tmp_path, config, android)
+        write_resources(tmp_path, config, android, project_root=tmp_path)
         strings = (
             tmp_path / "app" / "src" / "main" / "res" / "values" / "strings.xml"
         ).read_text()

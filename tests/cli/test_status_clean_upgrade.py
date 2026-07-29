@@ -272,6 +272,93 @@ class TestClean:
             result = runner.invoke(clean, ["--cache"])
             assert result.exit_code == 0
 
+    def test_gradle_daemon_is_stopped_before_the_removal(
+        self, runner, tmp_path, monkeypatch
+    ):
+        """A live daemon holds handles under app/build, which makes removing
+        <app>-android/ fail outright on Windows — so the order matters."""
+        from kivyforge.platforms.android import gradlew as gradlew_mod
+
+        events = []
+
+        def fake_stop(project_dir):
+            events.append(("stop", project_dir.exists()))
+            return True
+
+        monkeypatch.setattr(gradlew_mod, "stop_gradle_daemon", fake_stop)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            android = Path(fs) / "myapp-android"
+            _write(fs)
+            (android / "app" / "build").mkdir(parents=True)
+            result = runner.invoke(clean, [])
+            assert result.exit_code == 0, result.output
+            assert events == [("stop", True)]
+            assert not android.exists()
+            assert "Stopped the project's Gradle daemon(s)." in result.output
+
+    def test_no_android_project_means_no_daemon_call(
+        self, runner, tmp_path, monkeypatch
+    ):
+        from kivyforge.platforms.android import gradlew as gradlew_mod
+
+        called = []
+        monkeypatch.setattr(
+            gradlew_mod, "stop_gradle_daemon", lambda p: called.append(p) or True
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            result = runner.invoke(clean, [])
+            assert result.exit_code == 0
+            assert called == []
+
+    def test_cache_all_flushes_the_shared_gradle_caches(
+        self, runner, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "kivyforge.cli.clean.ArtifactCache",
+            lambda *a, **k: type("C", (), {"clear": lambda self: None})(),
+        )
+        gradle_home = tmp_path / "gradle-home"
+        (gradle_home / "caches" / "modules-2").mkdir(parents=True)
+        (gradle_home / "daemon" / "8.11.1").mkdir(parents=True)
+        # Configuration, not cache: flushing it would cost every project on the
+        # machine a wrapper re-download for no benefit.
+        (gradle_home / "wrapper").mkdir()
+        (gradle_home / "gradle.properties").write_text("org.gradle.jvmargs=-Xmx2g\n")
+        monkeypatch.setenv("GRADLE_USER_HOME", str(gradle_home))
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            result = runner.invoke(clean, ["--cache-all"])
+            assert result.exit_code == 0, result.output
+        assert not (gradle_home / "caches").exists()
+        assert not (gradle_home / "daemon").exists()
+        assert (gradle_home / "wrapper").exists()
+        assert (gradle_home / "gradle.properties").exists()
+        assert "Flushed shared Gradle caches, daemon" in result.output
+
+    def test_plain_cache_spares_the_shared_gradle_home(
+        self, runner, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "kivyforge.cli.clean.ArtifactCache",
+            lambda *a, **k: type("C", (), {"clear": lambda self: None})(),
+        )
+        gradle_home = tmp_path / "gradle-home-2"
+        (gradle_home / "caches").mkdir(parents=True)
+        monkeypatch.setenv("GRADLE_USER_HOME", str(gradle_home))
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            result = runner.invoke(clean, ["--cache"])
+            assert result.exit_code == 0, result.output
+        assert (gradle_home / "caches").exists()
+
+    def test_cache_all_and_project_only_contradict(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            result = runner.invoke(clean, ["--cache-all", "--project-only"])
+            assert result.exit_code != 0
+            assert "contradict" in result.output
+
 
 class TestUpgrade:
     def test_refreshes_python_and_xcframeworks(self, runner, tmp_path, monkeypatch):

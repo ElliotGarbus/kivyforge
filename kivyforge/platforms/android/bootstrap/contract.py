@@ -67,14 +67,16 @@ def check_pyjnius_contract(locked_version: str) -> None:
         )
 
 
-# --- SDL glue <-> libSDL2.so ------------------------------------------------
+# --- SDL glue <-> libSDL<N>.so ----------------------------------------------
 # SDLActivity.onCreate compares its own compiled-in SDL_{MAJOR,MINOR,MICRO}
 # _VERSION constants against nativeGetVersion() and, when they differ, sets
 # mBrokenLibraries and *returns before creating the surface*. It logs nothing:
 # the app shows a black screen, SDL_main is never called, and no Python ever
 # runs — indistinguishable from a hung interpreter unless you know to look.
-# The Java glue and libSDL2.so must therefore come from the same SDL release
-# (docs/design/dev/android-wheel-build-recipe.md step 2).
+# The Java glue and the shipped libSDL<N>.so must therefore come from the same
+# SDL release (docs/design/dev/android-wheel-build-recipe.md step 2). Both
+# generations are checked: an SDL3 project whose wheel ships SDL2 fails just as
+# opaquely, so neither is allowed to skip the gate.
 
 _JAVA_VERSION_RE = re.compile(
     r"SDL_MAJOR_VERSION\s*=\s*(\d+).*?"
@@ -84,6 +86,40 @@ _JAVA_VERSION_RE = re.compile(
 )
 # SDL stamps its build with SDL_REVISION, e.g. "release-2.32.10-0-g5d2495703".
 _SO_REVISION_RE = re.compile(rb"release-(\d+)\.(\d+)\.(\d+)[-\w.]*")
+# The family core library, e.g. libSDL2.so / libSDL3.so (not libSDL2_image.so).
+_SDL_CORE_RE = re.compile(r"^libSDL(\d+)\.so$")
+
+
+def sdl_library_name(generation: int) -> str:
+    """The core SDL library the generation's Java glue will ``loadLibrary``."""
+    return f"libSDL{generation}.so"
+
+
+def check_sdl_generation(*, generation: int, staged: list[str]) -> None:
+    """The staged jniLibs must carry the SDL family the rendered glue loads.
+
+    A wheel shipping the other generation's SDL is not a version mismatch the
+    glue can detect — ``SDLActivity`` dies in its static initializer on
+    ``loadLibrary("SDL3")`` before any of its own code runs, so the build has to
+    catch it.
+    """
+    expected = sdl_library_name(generation)
+    if expected in staged:
+        return
+    present = sorted(name for name in staged if _SDL_CORE_RE.match(name))
+    if not present:
+        return  # nothing SDL staged (e.g. a Kivy-less project): nothing to check
+    raise ContractError(
+        f"kivy_generation = {generation} renders the SDL{generation} Java glue, "
+        f"which loads {expected} — but the staged native libraries provide "
+        f"{', '.join(present)}.\n"
+        "  SDLActivity loads the SDL family in its static initializer, so the "
+        "app dies with an UnsatisfiedLinkError before any kivyforge or Python "
+        "code runs.\n"
+        f"  Fix: set [tool.kivy.android].kivy_generation to match the Kivy "
+        f"wheel's SDL family, or lock a Kivy that ships {expected} "
+        "(android/05 §matched pair)."
+    )
 
 
 def sdl_version_from_glue(java_source: str) -> str:
@@ -99,7 +135,7 @@ def sdl_version_from_glue(java_source: str) -> str:
 
 
 def sdl_version_from_library(so_path: Path) -> str | None:
-    """The SDL version stamped into ``libSDL2.so``, or ``None`` if absent.
+    """The SDL version stamped into ``libSDL<N>.so``, or ``None`` if absent.
 
     ``None`` is not a failure: a stripped or unusually-built SDL simply cannot
     be checked, and refusing to build over it would be worse than the risk.
@@ -113,7 +149,7 @@ def sdl_version_from_library(so_path: Path) -> str | None:
 
 
 def check_sdl_glue_contract(*, java_source: str, so_path: Path) -> None:
-    """Hard build gate: the SDL Java glue must match the shipped libSDL2.so."""
+    """Hard build gate: the SDL Java glue must match the shipped libSDL<N>.so."""
     glue = sdl_version_from_glue(java_source)
     native = sdl_version_from_library(so_path)
     if native is None or glue == native:
@@ -125,6 +161,6 @@ def check_sdl_glue_contract(*, java_source: str, so_path: Path) -> None:
         "onCreate *silently* — the app would show a black screen with no "
         "error in logcat and no Python ever running.\n"
         "  Fix: ship the org/libsdl/app/*.java glue from the same SDL release "
-        "as the libSDL2.so in the Kivy wheel (android/05 §matched pair; "
+        f"as the {so_path.name} in the Kivy wheel (android/05 §matched pair; "
         "docs/design/dev/android-wheel-build-recipe.md step 2)."
     )

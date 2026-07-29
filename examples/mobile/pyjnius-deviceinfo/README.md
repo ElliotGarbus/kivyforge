@@ -10,6 +10,8 @@ kivyforge lock -p android
 kivyforge run -p android --emulator
 ```
 
-Watch logcat for the `DEVICEINFO_OK` marker with the resolved values. Featured
+Look for the `DEVICEINFO_OK` marker with the resolved values in the logcat dump
+`run` prints once the app has started (or `adb logcat` alongside it, to watch
+live). Featured
 APIs: `Build.MANUFACTURER/MODEL/SUPPORTED_ABIS`, `Build.VERSION`, the sticky
 `ACTION_BATTERY_CHANGED` broadcast, and `DisplayMetrics`.

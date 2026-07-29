@@ -135,6 +135,13 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
         "android:label": "@string/app_name",
         "android:icon": "@mipmap/ic_launcher",
         "android:theme": GENERATED_THEME,
+        # roundIcon only exists in the generated resources when an icon source
+        # is configured; naming it otherwise would fail AAPT.
+        **(
+            {"android:roundIcon": "@mipmap/ic_launcher_round"}
+            if android.icons.source
+            else {}
+        ),
         # extractNativeLibs is controlled via app/build.gradle's
         # packaging.jniLibs.useLegacyPackaging (AGP warns if set in the
         # manifest); the gradle setting is the toolchain-managed source.

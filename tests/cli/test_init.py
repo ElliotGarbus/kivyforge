@@ -372,6 +372,74 @@ class TestNoManifest:
         assert "requirements.txt found" in result.output
         assert "pyproject.toml" in result.output
 
+    SPEC = textwrap.dedent(
+        """
+        [app]
+        title = Touch Tracer
+        package.name = touchtracer
+        package.domain = org.kivy
+        version = 1.2.0
+        requirements = python3,kivy,pyjnius
+        icon.filename = %(source.dir)s/data/icon.png
+        android.minapi = 21
+        android.archs = arm64-v8a, armeabi-v7a
+        android.ndk = 25b
+        p4a.branch = develop
+        """
+    )
+
+    def test_buildozer_spec_only_shows_the_key_mapping(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            (init_mod.Path(fs) / "buildozer.spec").write_text(self.SPEC)
+            result = runner.invoke(init, [])
+        assert result.exit_code != 0
+        out = result.output
+        assert "buildozer.spec found but no pyproject.toml" in out
+        # The mapping, and the settings that have no counterpart at all.
+        assert "[tool.kivy.android].package" in out
+        assert "[tool.kivy.android].min_sdk" in out
+        assert "No kivyforge counterpart" in out
+        assert "p4a" in out
+
+    def test_buildozer_spec_echoes_the_users_own_values(self, runner, tmp_path):
+        """A bare mapping table makes the reader diff it against their file; the
+        values are already in hand."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            (init_mod.Path(fs) / "buildozer.spec").write_text(self.SPEC)
+            result = runner.invoke(init, [])
+        out = result.output
+        assert "currently: Touch Tracer" in out
+        assert "currently: org.kivy" in out
+        # Raw read: buildozer's %(...)s interpolation is not resolved here.
+        assert "%(source.dir)s/data/icon.png" in out
+
+    def test_unparseable_buildozer_spec_still_maps(self, runner, tmp_path):
+        """This is already an error path — a spec kivyforge cannot read must not
+        turn into a traceback."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            (init_mod.Path(fs) / "buildozer.spec").write_text(
+                "not an ini file at all\n"
+            )
+            result = runner.invoke(init, [])
+        assert result.exit_code != 0
+        assert "buildozer.spec found but no pyproject.toml" in result.output
+        assert "currently:" not in result.output
+
+    def test_a_pyproject_wins_over_a_buildozer_spec(self, runner, tmp_path):
+        """The spec message is for the no-pyproject case only; with one present,
+        init does its normal job and ignores the leftover spec."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            root = init_mod.Path(fs)
+            (root / "buildozer.spec").write_text(self.SPEC)
+            (root / "pyproject.toml").write_text(
+                '[project]\nname = "app"\nversion = "1.0.0"\n'
+                'dependencies = ["kivy>=3.0"]\n'
+            )
+            result = runner.invoke(init, ["-p", "android"])
+        assert result.exit_code == 0, result.output
+        assert "buildozer" not in result.output
+        assert "[tool.kivy.android]" in (root / "pyproject.toml").read_text()
+
 
 class TestUpdatePath:
     PYPROJECT = textwrap.dedent(

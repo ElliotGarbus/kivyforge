@@ -22,6 +22,7 @@ from kivyforge.config.loader import load_config
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.doctor.result import CheckResult, Status
 
+from . import toolchain
 from .bootstrap.contract import (
     COMPATIBLE_PYJNIUS,
     ContractError,
@@ -29,6 +30,7 @@ from .bootstrap.contract import (
 )
 from .elf import scan_alignment
 from .lock import reader as lock_reader
+from .splash import SPLASH_MIN_COMPILE_SDK
 
 _EXE = ".exe" if os.name == "nt" else ""
 _BAT = ".bat" if os.name == "nt" else ""
@@ -41,9 +43,12 @@ class AndroidProbe(Protocol):
     def ndk_versions(self, sdk: Path) -> list[str]: ...
     def build_tools_versions(self, sdk: Path) -> list[str]: ...
     def platform_installed(self, sdk: Path, api: int) -> bool: ...
+    def accepted_licenses(self, sdk: Path) -> list[str]: ...
     def avds(self) -> list[str]: ...
+    def connected_devices(self) -> list[str]: ...
     def has_kvm_or_haxm(self) -> bool: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
+    def latest_kivyforge_version(self) -> str | None: ...
 
 
 class RealAndroidProbe:
@@ -90,6 +95,15 @@ class RealAndroidProbe:
     def platform_installed(self, sdk: Path, api: int) -> bool:
         return (sdk / "platforms" / f"android-{api}").is_dir()
 
+    def accepted_licenses(self, sdk: Path) -> list[str]:
+        """The license hash files ``sdkmanager --licenses`` writes on accept."""
+        root = sdk / "licenses"
+        return (
+            sorted(p.name for p in root.iterdir() if p.is_file())
+            if root.is_dir()
+            else []
+        )
+
     def avds(self) -> list[str]:
         try:
             from .adb import available_avds
@@ -97,6 +111,19 @@ class RealAndroidProbe:
             return available_avds()
         except Exception:  # noqa: BLE001
             return []
+
+    def connected_devices(self) -> list[str]:
+        try:
+            from .adb import connected_devices
+
+            return connected_devices()
+        except Exception:  # noqa: BLE001
+            return []
+
+    def latest_kivyforge_version(self) -> str | None:
+        from kivyforge.doctor.probe import RealProbe
+
+        return RealProbe().latest_kivyforge_version()
 
     def has_kvm_or_haxm(self) -> bool:
         if os.name == "nt":
@@ -116,6 +143,30 @@ class RealAndroidProbe:
 # --------------------------------------------------------------------------- #
 # environment checks
 # --------------------------------------------------------------------------- #
+def _check_kivyforge_version(
+    probe: AndroidProbe, current: str, *, offline: bool
+) -> CheckResult:
+    """Report the running kivyforge, and nudge when PyPI has a newer one.
+
+    The generated project's toolchain pins (AGP, Gradle, NDK) move with a
+    kivyforge release, so "am I current" is a build-relevant question here, not
+    just housekeeping.
+    """
+    if offline:
+        return CheckResult("kivyforge", Status.PASS, f"{current} (offline)")
+    from kivyforge.doctor.checks_common import _ver_tuple
+
+    latest = probe.latest_kivyforge_version()
+    if latest and _ver_tuple(latest) > _ver_tuple(current):
+        return CheckResult(
+            "kivyforge",
+            Status.WARN,
+            f"{current} (latest {latest})",
+            hint="upgrade with `pip install -U kivyforge`.",
+        )
+    return CheckResult("kivyforge", Status.PASS, current)
+
+
 def _check_jdk(probe: AndroidProbe) -> CheckResult:
     jh = probe.java_home()
     if jh:
@@ -192,6 +243,61 @@ def _check_ndk(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
     return CheckResult("NDK", Status.PASS, ", ".join(versions))
 
 
+def _check_sdk_licenses(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
+    """Unaccepted SDK licenses stop AGP mid-build with an opaque message.
+
+    Acceptance is recorded as hash files under ``<sdk>/licenses/``; that is what
+    AGP's own auto-download consults, so their presence is the whole signal.
+    """
+    if sdk is None:
+        return CheckResult("SDK licenses", Status.SKIP, "no SDK root")
+    accepted = probe.accepted_licenses(sdk)
+    if not accepted:
+        return CheckResult(
+            "SDK licenses",
+            Status.WARN,
+            f"no accepted licenses recorded under {sdk / 'licenses'}",
+            hint="run `sdkmanager --licenses` and accept; otherwise Gradle "
+            "refuses to auto-install the SDK packages a build needs.",
+        )
+    return CheckResult("SDK licenses", Status.PASS, f"{len(accepted)} accepted")
+
+
+def _check_gradle_wrapper(project_dir: Path) -> CheckResult:
+    """The generated project builds through its own pinned wrapper (android/06).
+
+    Not the host's ``gradle``: the wrapper is what makes the Gradle version part
+    of kivyforge's toolchain pins, so a hand-edited or missing one is the
+    difference between a reproducible build and whatever the host has.
+    """
+    if not project_dir.is_dir():
+        return CheckResult(
+            "Gradle wrapper", Status.SKIP, "project not generated yet (run build)"
+        )
+    script = project_dir / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    properties = project_dir / "gradle" / "wrapper" / "gradle-wrapper.properties"
+    missing = [p.name for p in (script, properties) if not p.is_file()]
+    if missing:
+        return CheckResult(
+            "Gradle wrapper",
+            Status.FAIL,
+            f"missing {', '.join(missing)}",
+            hint="re-run `kivyforge build -p android` to regenerate the project.",
+        )
+    text = properties.read_text(encoding="utf-8")
+    if toolchain.GRADLE_VERSION not in text:
+        return CheckResult(
+            "Gradle wrapper",
+            Status.WARN,
+            f"distributionUrl is not the pinned Gradle {toolchain.GRADLE_VERSION}",
+            hint="the generated project is a managed artifact; rebuild rather "
+            "than editing it (a hand-edited wrapper is overwritten anyway).",
+        )
+    return CheckResult(
+        "Gradle wrapper", Status.PASS, f"gradle {toolchain.GRADLE_VERSION}"
+    )
+
+
 def _check_adb(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
     adb = probe.which("adb")
     if adb is None and sdk is not None:
@@ -205,7 +311,16 @@ def _check_adb(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
             "platform-tools not found",
             hint="sdkmanager platform-tools (needed for `kivyforge run`).",
         )
-    return CheckResult("adb", Status.PASS, adb)
+    devices = probe.connected_devices()
+    if not devices:
+        return CheckResult(
+            "adb",
+            Status.WARN,
+            f"{adb}; no device or emulator attached",
+            hint="attach a device (USB debugging on) or boot an AVD; "
+            "`kivyforge run` and `run --smoke` need one.",
+        )
+    return CheckResult("adb", Status.PASS, f"{adb}; {', '.join(devices)}")
 
 
 def _check_emulator(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
@@ -360,6 +475,286 @@ def _check_signing(config: Config, project_root: Path) -> CheckResult:
     return CheckResult("Signing (release)", Status.PASS, "keystore + alias resolve")
 
 
+def _check_icon(config: Config, project_root: Path) -> CheckResult:
+    from kivyforge.config.icons import icon_source_problem
+
+    icons = config.android_required.icons
+    if not icons.source:
+        return CheckResult(
+            "App icon",
+            Status.SKIP,
+            "no [tool.kivy.android.icons].source (default icon)",
+        )
+    problem = icon_source_problem(project_root / icons.source)
+    if problem:
+        return CheckResult(
+            "App icon",
+            Status.FAIL,
+            problem.splitlines()[0],
+            hint="a bad icon source fails the AAPT run, not the config load.",
+        )
+    # The layers are only referenced when set; a hex background is not a path.
+    for key, value in (
+        ("background", icons.background),
+        ("monochrome", icons.monochrome),
+    ):
+        if value and not value.startswith("#") and not (project_root / value).is_file():
+            return CheckResult(
+                "App icon",
+                Status.FAIL,
+                f"[tool.kivy.android.icons].{key} not found: {value}",
+            )
+    return CheckResult("App icon", Status.PASS, icons.source)
+
+
+def _check_splash(config: Config, project_root: Path) -> CheckResult:
+    """Catch a bad splash path here rather than at AAPT time (android/06)."""
+    from kivyforge.config.icons import IconSourceError, png_dimensions
+
+    android = config.android_required
+    splash = android.splash
+    if not splash.source:
+        return CheckResult(
+            "Splash assets", Status.SKIP, "no [tool.kivy.android.splash].source"
+        )
+    source = project_root / splash.source
+    if not source.is_file():
+        return CheckResult(
+            "Splash assets",
+            Status.FAIL,
+            f"[tool.kivy.android.splash].source not found: {source}",
+            hint="expected a PNG, or an AnimatedVectorDrawable XML.",
+        )
+    animated = source.suffix.lower() == ".xml"
+    if animated:
+        text = source.read_text(encoding="utf-8", errors="replace")
+        if "<vector" not in text and "<animated-vector" not in text:
+            return CheckResult(
+                "Splash assets",
+                Status.FAIL,
+                f"{splash.source} is XML but is neither a <vector> nor an "
+                "<animated-vector> drawable",
+            )
+        animated = "<animated-vector" in text
+    else:
+        try:
+            png_dimensions(source)
+        except (IconSourceError, OSError) as exc:
+            return CheckResult("Splash assets", Status.FAIL, str(exc).splitlines()[0])
+    if splash.branding and not (project_root / splash.branding).is_file():
+        return CheckResult(
+            "Splash assets",
+            Status.FAIL,
+            f"[tool.kivy.android.splash].branding not found: {splash.branding}",
+        )
+    if android.compile_sdk < SPLASH_MIN_COMPILE_SDK:
+        return CheckResult(
+            "Splash assets",
+            Status.FAIL,
+            f"windowSplashScreen* need compile_sdk >= {SPLASH_MIN_COMPILE_SDK}; "
+            f"this project compiles against android-{android.compile_sdk}",
+            hint="raise [tool.kivy.android].compile_sdk.",
+        )
+    if splash.animation_duration is not None and not animated:
+        return CheckResult(
+            "Splash assets",
+            Status.WARN,
+            f"animation_duration is set but {splash.source} is not an "
+            "AnimatedVectorDrawable; it will be ignored",
+        )
+    return CheckResult("Splash assets", Status.PASS, splash.source)
+
+
+def _check_include_files(config: Config, project_root: Path, lock) -> CheckResult:
+    """Report include_files drift as a warning before the build refuses it."""
+    from kivyforge.artifacts.verify import sha256_file
+
+    entries = config.android_required.include_files
+    if not entries:
+        return CheckResult(
+            "include_files", Status.SKIP, "no [[tool.kivy.android.include_files]]"
+        )
+    pins = {(p.dest, p.source): p.sha256 for p in lock.include_files}
+    staged: set[tuple[str, str]] = set()
+    drifted: list[str] = []
+    for entry in entries:
+        for source in entry.sources:
+            local = project_root / source
+            children = (
+                [c for c in sorted(local.rglob("*")) if c.is_file()]
+                if local.is_dir()
+                else [local]
+            )
+            for child in children:
+                rel = (
+                    (Path(source) / child.relative_to(local)).as_posix()
+                    if local.is_dir()
+                    else source
+                )
+                staged.add((entry.dest, rel))
+                recorded = pins.get((entry.dest, rel))
+                if not child.is_file():
+                    drifted.append(f"{rel} (missing)")
+                elif recorded is None:
+                    drifted.append(f"{rel} (not in the lock)")
+                elif recorded != sha256_file(child):
+                    drifted.append(f"{rel} (changed)")
+    drifted += [f"{source} (deleted)" for _dest, source in sorted(pins.keys() - staged)]
+    if drifted:
+        return CheckResult(
+            "include_files",
+            Status.WARN,
+            "drift vs. the lock: " + ", ".join(drifted),
+            hint="run `kivyforge lock -p android`; the build refuses to stage drift.",
+        )
+    return CheckResult(
+        "include_files", Status.PASS, f"{len(staged)} file(s) match the lock"
+    )
+
+
+def _check_find_links(config: Config, project_root: Path) -> CheckResult:
+    """A `find_links` dir that has moved or holds no wheels only shows up as an
+    unresolvable requirement at lock time; name it here instead."""
+    from kivyforge.lock.find_links import find_links_doctor_detail
+
+    entries = config.android_required.find_links
+    if not entries:
+        return CheckResult("find_links directories", Status.SKIP, "not configured")
+    root = project_root.resolve()
+    problems: list[tuple[str, str | None]] = []
+    empty: list[tuple[str, str | None]] = []
+    ok: list[str] = []
+    for entry in entries:
+        path = (root / entry).resolve()
+        detail, hint = find_links_doctor_detail(root, entry, path, platform="android")
+        if not path.is_dir():
+            problems.append((detail, hint))
+        elif not any(path.glob("*.whl")):
+            empty.append((detail, hint))
+        else:
+            ok.append(detail)
+    for bucket, status in ((problems, Status.FAIL), (empty, Status.WARN)):
+        if bucket:
+            return CheckResult(
+                "find_links directories",
+                status,
+                "; ".join(d for d, _ in bucket),
+                hint=next((h for _, h in bucket if h), ""),
+            )
+    return CheckResult("find_links directories", Status.PASS, "; ".join(ok))
+
+
+def _check_app_native_binaries(config: Config, project_root: Path) -> CheckResult:
+    """Native code in ``app_dir`` cannot work on Android, whatever its ABI.
+
+    ``app_dir`` is staged into the Python *asset* bundle and unpacked to
+    app-private storage at first launch, and Android refuses to ``dlopen`` a
+    library from there (W^X). Only ``jniLibs/`` — which kivyforge fills from
+    wheels — is a loadable location, so a ``.so`` here is dead weight at best.
+    """
+    from .elf import ElfError, machine_name, read_elf
+
+    app_dir = project_root / config.kivy.app_dir
+    if not app_dir.is_dir():
+        return CheckResult(
+            "App-local native binaries",
+            Status.SKIP,
+            f"app_dir does not exist: {app_dir}",
+        )
+    found: list[str] = []
+    for pattern in ("*.so", "*.dylib", "*.dll", "*.pyd"):
+        for binary in sorted(app_dir.rglob(pattern)):
+            rel = binary.relative_to(project_root).as_posix()
+            try:
+                info = read_elf(binary)
+            except (ElfError, OSError):
+                found.append(f"{rel} (not an ELF)")
+            else:
+                found.append(f"{rel} ({machine_name(info.machine)})")
+    if found:
+        return CheckResult(
+            "App-local native binaries",
+            Status.FAIL,
+            "; ".join(found),
+            hint="native code belongs in an Android wheel (jniLibs), not "
+            "app_dir: the asset bundle is unpacked to app-private storage, "
+            "which Android will not dlopen (android/03 §wheel content rules).",
+        )
+    return CheckResult(
+        "App-local native binaries", Status.PASS, "no native binaries in app_dir"
+    )
+
+
+def _check_manifest_policy(config: Config) -> CheckResult:
+    """Run `package`'s own release policy over the manifest kivyforge would
+    generate, so a footgun surfaces now rather than at release time.
+
+    This is the preflight's first pass only: the merged-manifest pass needs AGP,
+    so `kivyforge package` remains the gate that sees library manifests.
+    """
+    from .generate.manifest import generate_manifest
+    from .policy import check_release_manifest
+
+    android = config.android_required
+    try:
+        manifest_xml = generate_manifest(android, orientation=config.kivy.orientation)
+    except Exception as exc:  # noqa: BLE001 - a generation failure is its own report
+        return CheckResult(
+            "Manifest policy (release)",
+            Status.FAIL,
+            f"the manifest could not be generated: {exc}",
+        )
+    findings = check_release_manifest(
+        manifest_xml,
+        package=android.package,
+        allow_exported=android.manifest.allow_exported,
+    )
+    fails = [f.message for f in findings if f.severity == "FAIL"]
+    if fails:
+        return CheckResult(
+            "Manifest policy (release)",
+            Status.FAIL,
+            "; ".join(fails),
+            hint="`kivyforge package` blocks on these before signing; fix them "
+            "through the manifest escape hatches (android/04 §release policy).",
+        )
+    infos = [f.message for f in findings if f.severity == "INFO"]
+    if infos:
+        return CheckResult(
+            "Manifest policy (release)",
+            Status.PASS,
+            "no violations; advisory: " + "; ".join(infos),
+        )
+    return CheckResult("Manifest policy (release)", Status.PASS, "no violations")
+
+
+def _check_implied_features(config: Config) -> CheckResult:
+    """Report the `<uses-feature>` set `auto_features` will synthesize.
+
+    Play filters devices on these, so a permission quietly narrowing the store
+    audience is worth seeing before upload rather than after.
+    """
+    from .generate.manifest import implied_features, qualified_permissions
+
+    android = config.android_required
+    if not android.permissions.auto_features:
+        return CheckResult(
+            "Implied features", Status.SKIP, "permissions.auto_features is false"
+        )
+    explicit = {f.name for f in android.permissions.features}
+    permissions = qualified_permissions(android.permissions.uses)
+    synthesized = [f for f in implied_features(permissions) if f not in explicit]
+    if not synthesized:
+        return CheckResult(
+            "Implied features", Status.PASS, "no permission implies a feature"
+        )
+    return CheckResult(
+        "Implied features",
+        Status.PASS,
+        'synthesized android:required="false": ' + ", ".join(synthesized),
+    )
+
+
 def _check_lock_hosts(probe: AndroidProbe, lock) -> CheckResult:
     from urllib.parse import urlparse
 
@@ -371,6 +766,16 @@ def _check_lock_hosts(probe: AndroidProbe, lock) -> CheckResult:
         for wheel in package.wheels:
             if wheel.url:
                 hosts.add(urlparse(wheel.url).hostname or "")
+    # Channels 3 and 4 fetch too: a hosted .aar/.jar, and — when Maven
+    # coordinates are declared — Gradle's own repositories (the defaults it
+    # always consults plus any extra the project declares).
+    for lib in lock.android_libs:
+        if lib.url:
+            hosts.add(urlparse(lib.url).hostname or "")
+    if lock.gradle.declared:
+        hosts |= {"dl.google.com", "repo.maven.apache.org"}
+        for repo in lock.gradle.repositories:
+            hosts.add(urlparse(repo).hostname or "")
     hosts.discard("")
     if not hosts:
         return CheckResult(
@@ -415,9 +820,10 @@ def android_doctor(
 
     android = config.android if config else None
     results = [
-        CheckResult("kivyforge", Status.PASS, kivyforge_version),
+        _check_kivyforge_version(probe, kivyforge_version, offline=offline),
         _check_jdk(probe),
         _check_sdk(sdk),
+        _check_sdk_licenses(probe, sdk),
         _check_build_tools(probe, sdk, android),
         _check_ndk(probe, sdk),
         _check_adb(probe, sdk),
@@ -451,6 +857,12 @@ def android_doctor(
             hint="create it or fix app_dir.",
         )
     )
+    results.append(_check_app_native_binaries(config, cwd))
+    results.append(_check_icon(config, cwd))
+    results.append(_check_splash(config, cwd))
+    results.append(_check_find_links(config, cwd))
+    results.append(_check_manifest_policy(config))
+    results.append(_check_implied_features(config))
 
     lock_path = cwd / "pylock.android.toml"
     if lock_path.is_file():
@@ -463,6 +875,7 @@ def android_doctor(
             _check_sdl_kivy_match(config, lock),
             _check_pyjnius_contract(lock),
             _check_abi_coverage(config, lock),
+            _check_include_files(config, cwd, lock),
         ]
         if not offline:
             results.append(_check_lock_hosts(probe, lock))
@@ -479,6 +892,7 @@ def android_doctor(
     from .cli import project_dir_for
 
     project_dir = project_dir_for(cwd, config)
+    results.append(_check_gradle_wrapper(project_dir))
     if project_dir.is_dir():
         results.append(_check_16k_alignment(project_dir))
     results.append(_check_signing(config, cwd))

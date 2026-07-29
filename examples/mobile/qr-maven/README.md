@@ -22,8 +22,9 @@ kivyforge lock -p android
 kivyforge run -p android --emulator
 ```
 
-Markers in logcat: `INVOKE0_OK` (the round-trip fired) and `QR_OK` (the QR
-texture was produced by ZXing). Enter text and tap **Generate QR** to re-render.
+Markers in the logcat dump `run` prints (or `adb logcat` alongside it, to watch
+live): `INVOKE0_OK` (the round-trip fired) and `QR_OK` (the QR texture was
+produced by ZXing). Enter text and tap **Generate QR** to re-render.
 
 > **Requires a JDK at lock time** (only this example — the other two lock with
 > pip + python.org metadata alone). The resolved Maven graph is then committed

@@ -30,4 +30,5 @@ Consequences that hold on every platform:
 Each platform instantiates these rules with its own native-dependency channels and staging layout:
 
 - **iOS** — iOS wheels, `.xcframework` archives, and Swift Package Manager packages. See [iOS artifact distribution](../platforms/ios/03-artifact-distribution-ios.md).
-- **macOS / Linux / Windows / Android** — documented as each platform lands.
+- **Android** — Android wheels, the per-ABI python.org runtime, `.aar`/`.jar` archives, and Gradle/Maven coordinates. See [Android artifact distribution](../platforms/android/03-artifact-distribution-android.md).
+- **macOS / Linux / Windows** — wheels plus the python-build-standalone runtime; each platform's spec covers its own staging layout.

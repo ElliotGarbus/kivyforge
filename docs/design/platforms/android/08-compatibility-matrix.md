@@ -1,6 +1,6 @@
 # Android — Compatibility Matrix
 
-> **Status: design.** The single authoritative view of which
+> **Status: implemented (v1).** The single authoritative view of which
 > **CPython × Kivy/SDL × pyjnius (`invoke0`) × ABI × minSdk** combinations the
 > Android backend supports, and how well each is validated. This document is the
 > **human-readable projection of machine-checked gates** — it adds no new
@@ -38,7 +38,7 @@ separately at the end.
 > [contract smoke test](06-cli-android.md#--smoke-the-contract-smoke-test)
 > (`kivyforge run --smoke`) now runs **green under the first-party kivyforge
 > stack** — a kivyforge-generated project, built and run by `kivyforge
-> build`/`run`, not p4a — on an **x86_64 API-35 emulator**
+> build`/`run`, not p4a — on an **x86_64 API-31 emulator**
 > ([load-model findings, Phase 5](../../dev/android-loadmodel-findings.md)). That
 > promoted the **CPython 3.14 / Kivy 2.3.1 / SDL2 / x86_64** cell to
 > **Validated (emulator)**.
@@ -133,7 +133,8 @@ component change:
 | SDL ↔ Kivy rule | `doctor` **WARN** ([cli-android](06-cli-android.md)) |
 | `wheel_tag_api ≤ min_sdk` | `kivyforge lock` selection + `doctor` ABI coverage ([pyproject](01-pyproject-android.md)) |
 | 64-bit-only ABI set | `[tool.kivy.android].abis` validation ([pyproject](01-pyproject-android.md)) |
-| Row is **Validated** | `kivyforge run --smoke` green in first-party CI ([cli-android](06-cli-android.md#--smoke-the-contract-smoke-test)) |
+| Row is **Validated** | `kivyforge run --smoke` green on a cited first-party emulator **and** device run — not hosted CI, which has no device ([cli-android](06-cli-android.md#what-kivyforges-own-ci-gates-and-what-it-doesnt)) |
+| The generated project actually compiles | The hosted `android_gradle` job (AGP/AAPT/javac/NDK build of `hello-android` + the release policy path) on every push |
 
 Because every row maps to a gate the tool already enforces, this matrix is a
 *view*, not a second source of truth — updating a bootstrap template or a schema

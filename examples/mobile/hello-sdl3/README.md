@@ -7,9 +7,9 @@ bootstrap, not the app.
 
 ```bash
 kivyforge lock -p android
-kivyforge build -p android
+kivyforge build -p android              # generate hello-sdl3-android/ (no APK without --debug)
 kivyforge run -p android --smoke        # contract smoke test
-kivyforge run -p android                # launch it
+kivyforge run -p android                # build, install, launch it
 ```
 
 Wheels resolve from the [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels)

@@ -11,7 +11,7 @@ from __future__ import annotations
 import click
 
 from ._common import ToolchainError
-from ._platform import platform_option, resolve_target
+from ._platform import platform_option, reject_android_only, resolve_target
 
 
 @click.command()
@@ -59,6 +59,23 @@ from ._platform import platform_option, resolve_target
     "--no-verify-lock", is_flag=True, help="Skip the pyproject drift check (CI only)."
 )
 @click.option("--no-cache", is_flag=True, help="Force re-download of every artifact.")
+# --- Android-only ---
+@click.option(
+    "--abi",
+    type=click.Choice(["arm64_v8a", "x86_64"]),
+    default=None,
+    help="Android: restrict this package to one ABI.",
+)
+@click.option(
+    "--keystore",
+    default=None,
+    help="Android: override [tool.kivy.android.signing].keystore.",
+)
+@click.option(
+    "--key-alias",
+    default=None,
+    help="Android: override [tool.kivy.android.signing].key_alias.",
+)
 def package(
     cli_platform: str | None,
     fmt: str | None,
@@ -70,9 +87,16 @@ def package(
     notary_profile: str | None,
     no_verify_lock: bool,
     no_cache: bool,
+    abi: str | None,
+    keystore: str | None,
+    key_alias: str | None,
 ) -> None:
     """Build the signed, distributable artifact for the resolved platform."""
     backend, project_root = resolve_target(cli_platform, verb="package")
+    reject_android_only(
+        backend,
+        {"--abi": abi, "--keystore": keystore, "--key-alias": key_alias},
+    )
     fmt = _resolve_format(backend, fmt)
 
     backend.package(
@@ -86,6 +110,9 @@ def package(
         notary_profile=notary_profile,
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
+        abi=abi,
+        keystore=keystore,
+        key_alias=key_alias,
     )
 
 

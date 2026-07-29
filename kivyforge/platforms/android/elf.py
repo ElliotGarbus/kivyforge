@@ -24,11 +24,27 @@ class ElfError(Exception):
     pass
 
 
+# e_machine values for the two ABIs the python.org runtime ships.
+EM_X86_64 = 0x3E
+EM_AARCH64 = 0xB7
+_MACHINE_NAMES = {
+    EM_X86_64: "x86_64",
+    EM_AARCH64: "aarch64",
+    0x28: "armv7 (32-bit)",
+    0x03: "i386 (32-bit)",
+}
+
+
+def machine_name(e_machine: int) -> str:
+    return _MACHINE_NAMES.get(e_machine, f"e_machine 0x{e_machine:x}")
+
+
 @dataclass(frozen=True)
 class ElfInfo:
     is_64: bool
     max_load_align: int
     needed: tuple[str, ...]
+    machine: int = 0
 
     @property
     def is_16k_aligned(self) -> bool:
@@ -44,6 +60,7 @@ def read_elf(path: Path) -> ElfInfo:
     little = data[5] == 1
     is_64 = ei_class == 2
     end = "<" if little else ">"
+    e_machine = struct.unpack_from(end + "H", data, 0x12)[0]
 
     if is_64:
         e_phoff = struct.unpack_from(end + "Q", data, 0x20)[0]
@@ -77,7 +94,9 @@ def read_elf(path: Path) -> ElfInfo:
             dynamic_off, dynamic_size = p_offset, p_filesz
 
     needed = _read_needed(data, end, is_64, dynamic_off, dynamic_size, load_segments)
-    return ElfInfo(is_64=is_64, max_load_align=max_align, needed=needed)
+    return ElfInfo(
+        is_64=is_64, max_load_align=max_align, needed=needed, machine=e_machine
+    )
 
 
 def _read_needed(data, end, is_64, dyn_off, dyn_size, load_segments) -> tuple[str, ...]:

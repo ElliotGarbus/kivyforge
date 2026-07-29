@@ -55,19 +55,22 @@ class AndroidPlatform(Platform):
         team_id: str | None,
         signing_identity: str | None,
         export_method: str,
+        debug: bool = False,
+        fmt: str | None = None,
+        abi: str | None = None,
     ) -> None:
-        # `target` carries iOS-only selectors; Android uses --arch for the ABI
-        # restriction and the shared --debug arrives via export_method slot? No:
-        # build --debug is CLI-level; the base signature has no debug flag, so
-        # the Android CLI maps `target == "debug"` from the shared verb once
-        # Phase 5 wires `run`. For now: generate-only (android/06 `build`).
+        # `target` carries the iOS-only selectors. Without --debug, build stops
+        # after generating the project; with it, Gradle assembles the debug
+        # artifact (android/06 step 8). `--abi` is the Android spelling of the
+        # ABI restriction; `--arch` is accepted for it too.
         self.reject_ios_only_target(target)
         from .cli import android_build
 
         android_build(
             project_root,
-            debug=False,
-            abi=arch,
+            debug=debug,
+            fmt=fmt or "apk",
+            abi=abi or arch,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
         )
@@ -103,13 +106,18 @@ class AndroidPlatform(Platform):
         notary_profile: str | None,
         no_verify_lock: bool,
         no_cache: bool,
+        abi: str | None = None,
+        keystore: str | None = None,
+        key_alias: str | None = None,
     ) -> None:
         from .cli import android_package
 
         android_package(
             project_root,
             fmt=fmt,
-            arch=arch,
+            abi=abi or arch,
+            keystore=keystore,
+            key_alias=key_alias,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
         )

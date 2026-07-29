@@ -11,7 +11,9 @@ from kivyforge.platforms.android.bootstrap.contract import (
     INVOKE0_CONTRACT_VERSION,
     ContractError,
     check_pyjnius_contract,
+    check_sdl_generation,
     check_sdl_glue_contract,
+    sdl_library_name,
     sdl_version_from_glue,
     sdl_version_from_library,
 )
@@ -81,6 +83,38 @@ class TestRender:
         activity = files["java/org/kivy/android/PythonActivity.java"]
         assert '"python3.15",' in activity
         assert '"python3.14",' not in activity
+
+    def test_entry_point_substitution(self):
+        """A configured entry_point must reach the device: the activity exports
+        it as KF_ENTRY_POINT and the launcher imports that, so a project whose
+        launch module is not main.py starts instead of failing on import."""
+        files = _by_path(
+            render_bootstrap(sdl=2, python_version="3.14.6", entry_point="myapp.start")
+        )
+        activity = files["java/org/kivy/android/PythonActivity.java"]
+        assert 'ENTRY_POINT = "myapp.start";' in activity
+        assert 'ENTRY_POINT = "main";' not in activity
+        assert "PythonBundle.setEnvironment(this, bundleDir, ENTRY_POINT)" in activity
+        assert (
+            'Os.setenv("KF_ENTRY_POINT", entryPoint, true);'
+            in files["java/org/kivy/android/PythonBundle.java"]
+        )
+
+    def test_launcher_imports_the_configured_entry_point(self):
+        main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
+            "cpp/main.c"
+        ]
+        assert "os.environ.get('KF_ENTRY_POINT')" in main_c
+        # The old hardcoded import ignored [tool.kivy].entry_point entirely.
+        assert "import main\\n" not in main_c
+
+    @pytest.mark.parametrize(
+        "bad", ['main"; evil()', "main\nimport os", "1main", "pkg..mod", ""]
+    )
+    def test_entry_point_injection_rejected(self, bad):
+        # The value lands inside a Java string literal in a generated source.
+        with pytest.raises(RenderError, match="entry_point"):
+            render_bootstrap(sdl=2, python_version="3.14.6", entry_point=bad)
 
     def test_sdl3_renders_its_own_glue(self):
         files = _by_path(render_bootstrap(sdl=3, python_version="3.14.6"))
@@ -266,3 +300,46 @@ class TestSdlGlueContract:
     def test_non_stock_glue_is_rejected(self):
         with pytest.raises(ContractError, match="no SDL_MAJOR"):
             sdl_version_from_glue("class SDLActivity {}")
+
+    def test_sdl3_glue_is_checked_against_libsdl3(self, tmp_path):
+        """The gate must not be SDL2-only: an SDL3 project's glue is compared
+        against libSDL3.so, whose revision stamp has the same shape."""
+        java = (
+            "int SDL_MAJOR_VERSION = 3;\n"
+            "int SDL_MINOR_VERSION = 2;\n"
+            "int SDL_MICRO_VERSION = 4;\n"
+        )
+        so = tmp_path / "libSDL3.so"
+        so.write_bytes(b"\x7fELF" + b"\x00" * 8 + b"release-3.2.10-0-gabc" + b"\x00")
+        with pytest.raises(ContractError) as excinfo:
+            check_sdl_glue_contract(java_source=java, so_path=so)
+        assert "libSDL3.so" in str(excinfo.value)
+
+
+class TestSdlGenerationGate:
+    """kivy_generation and the wheel's SDL family must agree. A mismatch is not
+    something the glue can report: SDLActivity's static initializer calls
+    loadLibrary("SDL3"), so the process dies before any of its code runs."""
+
+    def test_matching_generation_passes(self):
+        check_sdl_generation(generation=2, staged=["libSDL2.so", "libSDL2_image.so"])
+        check_sdl_generation(generation=3, staged=["libSDL3.so"])
+
+    def test_generation_mismatch_is_actionable(self):
+        with pytest.raises(ContractError) as excinfo:
+            check_sdl_generation(generation=3, staged=["libSDL2.so"])
+        message = str(excinfo.value)
+        assert "libSDL3.so" in message and "libSDL2.so" in message
+        assert "kivy_generation" in message
+
+    def test_no_sdl_staged_is_not_a_failure(self):
+        # A project without Kivy stages no SDL at all; nothing to compare.
+        check_sdl_generation(generation=2, staged=["libpython3.14.so"])
+
+    def test_family_members_do_not_satisfy_the_core(self):
+        with pytest.raises(ContractError):
+            check_sdl_generation(generation=2, staged=["libSDL3.so", "libSDL2_ttf.so"])
+
+    def test_library_name(self):
+        assert sdl_library_name(2) == "libSDL2.so"
+        assert sdl_library_name(3) == "libSDL3.so"

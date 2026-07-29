@@ -558,6 +558,10 @@ class AndroidManifestConfig:
     application: dict[str, object] = field(default_factory=dict)
     activity: dict[str, object] = field(default_factory=dict)
     placeholders: dict[str, str] = field(default_factory=dict)
+    # Component names the release policy tolerates as exported, on top of the
+    # bootstrap's own. Needed because the policy lints the *merged* manifest, so
+    # a library's exported component is otherwise unfixable from pyproject.toml.
+    allow_exported: tuple[str, ...] = ()
     extra_manifest_xml: str = ""
     extra_application_xml: str = ""
     extra_activity_xml: str = ""

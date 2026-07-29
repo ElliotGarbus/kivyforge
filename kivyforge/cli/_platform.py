@@ -45,6 +45,22 @@ def configured_platforms(pyproject: Path) -> set[str]:
     return {name for name in available_platform_names() if name in kivy}
 
 
+def reject_android_only(backend: Platform, options: dict[str, object]) -> None:
+    """Fail when Android-only options are used against another platform.
+
+    The shared verbs carry the full option superset, so an option that only
+    Android acts on would otherwise be silently ignored elsewhere — the worst
+    outcome, since the user believes it took effect.
+    """
+    used = [name for name, value in options.items() if value]
+    if not used or backend.name == "android":
+        return
+    raise ToolchainError(
+        f"{', '.join(used)} {'is' if len(used) == 1 else 'are'} "
+        f"Android-only; not valid for {backend.name}."
+    )
+
+
 def resolve_target(
     cli_platform: str | None, *, verb: str = "build"
 ) -> tuple[Platform, Path]:

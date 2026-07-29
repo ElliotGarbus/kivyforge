@@ -13,7 +13,7 @@ from pathlib import Path
 
 from kivyforge.config.model import AndroidConfig, Config
 
-from .. import toolchain
+from .. import policy, toolchain
 from ..lock.model import AndroidLockfile
 
 # Wheel-tag ABI spelling -> Android's dashed directory/filter names.
@@ -29,6 +29,14 @@ ABI_TO_TRIPLET = {
 
 _WRAPPER_DIR = Path(__file__).parent.parent / "gradle_wrapper"
 
+# The generated task that copies AGP's merged release manifest somewhere stable,
+# and where it lands (relative to the generated project root). `kivyforge
+# package` runs the task, then lints the copy.
+MERGED_MANIFEST_TASK = "exportKivyforgeReleaseManifest"
+MERGED_MANIFEST_RELPATH = Path(
+    "app", "build", "kivyforge", "AndroidManifest-merged-release.xml"
+)
+
 
 class ProjectGenError(Exception):
     pass
@@ -38,18 +46,33 @@ def android_abi(abi: str) -> str:
     return ABI_TO_ANDROID[abi]
 
 
-def write_settings_gradle(dest: Path) -> None:
+def write_settings_gradle(dest: Path, android: AndroidConfig | None = None) -> None:
+    """Emit ``settings.gradle``, including any declared extra Maven repos.
+
+    ``[tool.kivy.android.gradle].repositories`` has to be honored here as well
+    as at lock time: the lock resolves the graph in a scratch project, so a
+    coordinate that only exists in a private repo would lock fine and then fail
+    to resolve in the generated build (android/01 §gradle).
+    """
+    extra = tuple(android.gradle.repositories) if android is not None else ()
+    repos = ["        google()", "        mavenCentral()"]
+    repos += [f"        maven {{ url = uri({_groovy_str(url)}) }}" for url in extra]
     _write(
         dest / "settings.gradle",
         "pluginManagement {\n"
         "    repositories { google(); mavenCentral(); gradlePluginPortal() }\n"
         "}\n"
         "dependencyResolutionManagement {\n"
-        "    repositories { google(); mavenCentral() }\n"
+        "    repositories {\n" + "\n".join(repos) + "\n    }\n"
         "}\n"
         'rootProject.name = "kivyforge-app"\n'
         'include ":app"\n',
     )
+
+
+def _groovy_str(value: str) -> str:
+    """A single-quoted Groovy string literal."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
 def write_root_build_gradle(dest: Path, android: AndroidConfig) -> None:
@@ -117,12 +140,21 @@ def write_app_build_gradle(
     staged_libs: list[str],
     abis: tuple[str, ...] | None = None,
     signing_config_block: str = "",
+    release_signing_config: str | None = None,
+    test_build_type: str | None = None,
 ) -> None:
     """Emit ``app/build.gradle``.
 
     ``abis`` is the *effective* ABI set for this build (a ``--abi`` restriction
     must narrow the Gradle abiFilters too, or AGP builds ABIs whose runtime was
     never staged); defaults to the full configured set.
+
+    ``release_signing_config`` names the signing config the release build type
+    uses (default: ``release`` when a ``signing_config_block`` was supplied,
+    otherwise unsigned). ``test_build_type`` selects which variant the
+    instrumented tests run against — AGP only generates
+    ``connected<Variant>AndroidTest`` for that one variant, so the release smoke
+    test needs it set to ``release``.
 
     ``runtime_root`` is the staging directory holding one extracted runtime
     per target triplet (``<runtime_root>/<triplet>/prefix``). AGP invokes
@@ -144,8 +176,6 @@ def write_app_build_gradle(
         "    androidTestImplementation 'androidx.test:core:1.5.0'",
         "    androidTestImplementation 'androidx.test:runner:1.5.2'",
     ]
-    if android.splash.source:
-        deps.append(f"    implementation '{toolchain.CORE_SPLASHSCREEN_COORDINATE}'")
     for lib in sorted(staged_libs):
         deps.append(f"    implementation files('libs/{lib}')")
     for coordinate in sorted(android.gradle.dependencies):
@@ -172,13 +202,27 @@ def write_app_build_gradle(
         "full": "FULL",
         "none": "NONE",
     }[bs.debug_symbols]
+    # At minSdk 21+ the platform loads multiple dex files natively, so this is
+    # only about whether AGP is *allowed* to split: left on, the bundled .aars
+    # plus the bootstrap can exceed the 64K method limit without failing the
+    # build; turned off, an over-limit project fails at dexing.
+    multidex = "true" if bs.multidex else "false"
+    signing_name = release_signing_config or ("release" if signing_config_block else "")
     release_signing = (
-        "            signingConfig signingConfigs.release\n"
-        if signing_config_block
+        f"            signingConfig signingConfigs.{signing_name}\n"
+        if signing_name
         else ""
     )
+    test_build_type_line = (
+        f"    testBuildType '{test_build_type}'\n" if test_build_type else ""
+    )
+
+    lint_checks = ", ".join(f"'{check}'" for check in policy.LINT_CHECKS)
+    merged_manifest_name = MERGED_MANIFEST_RELPATH.name
 
     text = f"""\
+import com.android.build.api.artifact.SingleArtifact
+
 plugins {{
 {chr(10).join(plugins)}
 }}
@@ -187,13 +231,14 @@ android {{
     namespace '{android.package}'
     compileSdk {android.compile_sdk}
     ndkVersion '{toolchain.NDK_VERSION}'
-
+{test_build_type_line}
     defaultConfig {{
         applicationId '{android.package}'
         minSdk {android.min_sdk}
         targetSdk {android.target_sdk}
         versionCode {android.version_code}
         versionName '{config.project.version}'
+        multiDexEnabled {multidex}
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {{ abiFilters {abis_filter} }}
         externalNativeBuild {{
@@ -241,6 +286,33 @@ android {{
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }}
+
+    // The release policy's delegated half (android/06 §package). checkOnly
+    // narrows the run to the curated subset and `fatal` raises exactly those to
+    // build-breaking, so a future Lint's new checks can never spuriously block a
+    // release (and a stale id stays a warning instead of failing every build).
+    // `kivyforge package` runs lintRelease before it assembles, so a finding
+    // blocks before signing.
+    lint {{
+        checkOnly.addAll([{lint_checks}])
+        fatal.addAll([{lint_checks}])
+        abortOnError = true
+        checkReleaseBuilds = true
+        htmlReport = true
+        xmlReport = true
+    }}
+}}
+
+// kivyforge's own half of the policy lints the *merged* release manifest, so
+// export it to a stable path (AGP's intermediates layout is not a contract).
+androidComponents {{
+    onVariants(selector().withName('release')) {{ variant ->
+        tasks.register('{MERGED_MANIFEST_TASK}', Copy) {{
+            from(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST.INSTANCE))
+            into(layout.buildDirectory.dir('kivyforge'))
+            rename {{ '{merged_manifest_name}' }}
+        }}
+    }}
 }}
 
 dependencies {{
@@ -265,7 +337,9 @@ def _release_flag(value: bool | str) -> bool:
     return value is True or value == ANDROID_RELEASE_ONLY
 
 
-def write_resources(dest: Path, config: Config, android: AndroidConfig) -> None:
+def write_resources(
+    dest: Path, config: Config, android: AndroidConfig, *, project_root: Path
+) -> None:
     res = dest / "app" / "src" / "main" / "res"
     values = res / "values"
     values.mkdir(parents=True, exist_ok=True)
@@ -274,45 +348,51 @@ def write_resources(dest: Path, config: Config, android: AndroidConfig) -> None:
         '<resources><string name="app_name">'
         f"{_xml_escape(config.display_name)}</string></resources>\n",
     )
-    _write(
-        values / "styles.xml",
-        "<resources>\n"
-        f'    <style name="Theme.Kivyforge" parent="{android.base_theme}" />\n'
-        "</resources>\n",
-    )
-    # Default launcher icon when no [tool.kivy.android.icons] is configured
-    # (android/01: "kivyforge emits a plain default launcher icon"). The full
-    # adaptive-icon pipeline from a 1024x1024 source is the icons.py work item.
-    if not android.icons.source:
-        mipmap = res / "mipmap-mdpi"
-        mipmap.mkdir(parents=True, exist_ok=True)
-        (mipmap / "ic_launcher.png").write_bytes(_default_icon_png())
+    # The generated manifest names @mipmap/ic_launcher unconditionally, so the
+    # icon set is written on every build — the default one when no source is
+    # configured, the full adaptive set when there is.
+    from ..icons import IconError, write_icons
+    from ..splash import SplashError, write_splash
+
+    try:
+        write_icons(res, config, android, project_root)
+    except IconError as exc:
+        raise ProjectGenError(str(exc)) from exc
+    try:
+        splash = write_splash(res, android, project_root)
+    except SplashError as exc:
+        raise ProjectGenError(str(exc)) from exc
+    _write(values / "styles.xml", _styles_xml(android, splash, v31=False))
+    if splash.configured:
+        # A values-v31 resource replaces the same-named one wholesale, so the
+        # override repeats the whole style rather than adding to it.
+        v31 = res / "values-v31"
+        v31.mkdir(parents=True, exist_ok=True)
+        _write(v31 / "styles.xml", _styles_xml(android, splash, v31=True))
 
 
-def _default_icon_png() -> bytes:
-    """A valid 48x48 solid-color PNG, generated without any imaging library."""
-    import struct
-    import zlib
-
-    size = 48
-    # Kivy-ish blue-grey, RGBA.
-    pixel = bytes((52, 73, 94, 255))
-    raw = b"".join(b"\x00" + pixel * size for _ in range(size))
-
-    def chunk(kind: bytes, payload: bytes) -> bytes:
+def _styles_xml(android: AndroidConfig, splash, *, v31: bool) -> str:
+    """The app theme, with the splash items the given API level understands."""
+    items: list[tuple[str, str]] = []
+    if splash.window_background is not None:
+        items.append(("android:windowBackground", splash.window_background))
+    if v31:
+        items += list(splash.v31_items)
+    if not items:
         return (
-            struct.pack(">I", len(payload))
-            + kind
-            + payload
-            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+            "<resources>\n"
+            f'    <style name="Theme.Kivyforge" parent="{android.base_theme}" />\n'
+            "</resources>\n"
         )
-
-    ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
+    body = "".join(
+        f'        <item name="{name}">{value}</item>\n' for name, value in items
+    )
     return (
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", ihdr)
-        + chunk(b"IDAT", zlib.compress(raw, 9))
-        + chunk(b"IEND", b"")
+        "<resources>\n"
+        f'    <style name="Theme.Kivyforge" parent="{android.base_theme}">\n'
+        f"{body}"
+        "    </style>\n"
+        "</resources>\n"
     )
 
 
@@ -323,8 +403,10 @@ def write_gradle_pins(dest: Path, lock: AndroidLockfile) -> None:
     version-pinned in ``app/build.gradle`` (``implementation 'g:a:v'``), and the
     **full resolved transitive graph with a per-artifact SHA-256 is the committed
     audit record in ``pylock.android.toml``** (``[[tool.kivyforge.gradle.resolved]]``);
-    `write_gradle_pins` mirrors that record into ``app/gradle.lockfile`` for
-    reference.
+    `write_gradle_pins` mirrors that record into ``app/gradle.lockfile`` as
+    comments, for reference. Neither Gradle dependency locking nor Gradle artifact
+    verification is enabled, so this channel's hashes are audited, not enforced —
+    the docs say so in those words (android/02 §Gradle pins).
 
     > **Scoped in v1.** Gradle's ``verification-metadata.xml`` enforces SHA-256
     > over the *entire* build classpath (AGP, androidx, transforms), not just the
@@ -345,6 +427,11 @@ def write_gradle_pins(dest: Path, lock: AndroidLockfile) -> None:
     lock_lines = [
         "# Generated by kivyforge from pylock.android.toml — the resolved Maven",
         "# graph (per-artifact SHA-256) is committed in pylock.android.toml.",
+        "#",
+        "# INFORMATIONAL. Gradle dependency locking is not enabled in this project,",
+        "# so this file gates nothing: it mirrors the lock's audit record at the",
+        "# path a Gradle lock would live. Declared coordinates are version-pinned",
+        "# in app/build.gradle. See docs/design/platforms/android/02 §Gradle pins.",
     ]
     for module in sorted(lock.gradle.resolved, key=lambda m: m.coordinate):
         for artifact in module.artifacts:

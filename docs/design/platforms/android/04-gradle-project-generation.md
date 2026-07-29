@@ -1,6 +1,6 @@
 # Android — Gradle Project Generation
 
-> **Status: design.** The Android analog of [iOS Xcode project generation](../ios/05-xcode-project-generation.md).
+> **Status: implemented (v1).** The Android analog of [iOS Xcode project generation](../ios/05-xcode-project-generation.md).
 
 This document defines how `kivyforge build` materializes a `pyproject.toml` (with
 `[tool.kivy]` + `[tool.kivy.android]`) + `pylock.android.toml` into a working
@@ -29,18 +29,17 @@ Building an Android app with kivyforge is a four-phase pipeline across two tools
 ├── gradle.properties               ← managed + [tool.kivy.android.gradle_properties]
 ├── gradlew, gradlew.bat            ← Gradle wrapper (pinned version)
 ├── gradle/
-│   ├── wrapper/gradle-wrapper.properties
-│   └── verification-metadata.xml   ← Gradle artifact SHA-256 verification (materialized from pylock)
+│   └── wrapper/gradle-wrapper.properties
 ├── app/
-│   ├── build.gradle                ← applicationId, SDK levels, ABI splits, signing, deps
-│   ├── gradle.lockfile             ← per-module Gradle dependency lock (materialized from pylock; only if Maven deps declared)
+│   ├── build.gradle                ← applicationId, SDK levels, ABI splits, signing, deps, lint subset
+│   ├── gradle.lockfile             ← the lock's resolved Maven graph, mirrored as comments (audit only; only if Maven deps declared)
 │   ├── libs/                       ← staged .aar/.jar (channel 3)
 │   ├── proguard-rules.pro          ← keep-rules for reflected classes (pyjnius autoclass)
 │   └── src/main/
 │       ├── AndroidManifest.xml     ← generated from [tool.kivy.android]
 │       ├── java/
 │       │   ├── org/kivy/android/   ← bootstrap: PythonActivity, PythonService, ...
-│       │   ├── org/libsdl/app/     ← SDL Java glue (SDL2 or SDL3 per `sdl`)
+│       │   ├── org/libsdl/app/     ← SDL Java glue (SDL2 or SDL3 per `kivy_generation`)
 │       │   └── org/jnius/          ← NativeInvocationHandler.java (pyjnius matched pair)
 │       ├── jniLibs/
 │       │   ├── arm64-v8a/          ← libpython, SDL family, wheel .libs/, flattened extension modules
@@ -50,8 +49,7 @@ Building an Android app with kivyforge is a four-phase pipeline across two tools
 │       ├── cpp/                    ← native launcher: main.c + CMakeLists.txt → libmain.so (NDK-compiled)
 │       └── res/                    ← generated icons (mipmap-*), splash theme, strings
 ├── python-runtime/                 ← extracted python.org runtime, per ABI (staging)
-├── pip-deps/                       ← installed wheels, per ABI (staging)
-└── app-src/                        ← app_dir staging (symlink on POSIX, junction on Windows, else copy)
+└── pip-deps/                       ← installed wheels, per ABI (staging)
 ```
 
 ### Why these folders, not others
@@ -60,7 +58,7 @@ Building an Android app with kivyforge is a four-phase pipeline across two tools
 - **`app/src/main/assets/_python_bundle/`** holds the pure-Python payload (stdlib, `pip-deps` site-packages, and the app's own code). Assets are packaged **uncompressed** — the toolchain adds the bundle to AGP's `androidResources.noCompress` list (not the default), so first-launch extraction is a straight copy rather than an inflate — and unpacked to app-private storage on first launch by the bootstrap: Python source cannot be imported directly from inside an APK/asset stream, so it is materialized to a real filesystem path.
 - **`java/org/kivy/android/` + `java/org/libsdl/app/`** hold the generated bootstrap. The `org.kivy.android.*` namespace is **preserved deliberately** so that `autoclass('org.kivy.android.PythonActivity')` and Plyer-style access keep working unmodified (see [bootstrap-android](05-bootstrap-android.md)).
 - **`app/src/main/cpp/`** holds kivyforge's native-launcher source (`main.c` + `CMakeLists.txt`). AGP's `externalNativeBuild` compiles it to `libmain.so` per ABI with the NDK (see "The native launcher (`libmain.so`)"); it is a build output, not a staged/downloaded library.
-- **`app-src/`** is an internal staging entry pointing at the user's `app_dir` (e.g. `../src`), so the packed bundle reflects the real source folder without copying `.py` files into the build tree. It is a **symlink on macOS/Linux, a directory junction on Windows** (both privilege-free for a local directory), falling back to a **plain copy** where neither can be created — a restricted Windows host without Developer Mode, or an `app_dir` on a different volume. `kivyforge run` re-packs the bundle every iteration regardless, so the copy fallback costs only a re-pack, not live-edit fidelity. `app_dir` must be a subdirectory (the project root `"."` is rejected), so the link never sweeps `pyproject.toml`/`.git`/build output into the app.
+- **The app's own code** is copied straight from `app_dir` into the bundle's `app/` subtree by the Stage step — there is no separate staging link. The bundle is rebuilt from scratch on every `build`, so there is nothing to keep in sync, and a link would only have added a Windows privilege/cross-volume failure mode for no gain. `app_dir` must be a subdirectory (the project root `"."` is rejected), so the copy never sweeps `pyproject.toml`/`.git`/build output into the app.
 - **`python-runtime/` and `pip-deps/`** are per-ABI *staging* areas that feed `jniLibs/` and the asset bundle; they are not packaged directly.
 
 ### Populating `jniLibs/<abi>/`
@@ -121,19 +119,22 @@ built itself.
 Android 15/16 devices with 16 KB memory pages refuse to load 4 KB-aligned `.so`s.
 Every native library kivyforge packages must be 16 KB-aligned:
 
-- **Wheels**: built with NDK r28+ / `-Wl,-z,max-page-size=16384` (the pyjnius wheel already is; the locally built Kivy wheel must be too — a wheel-build requirement, see [artifact-distribution-android §"Wheel content rules"](03-artifact-distribution-android.md#wheel-content-rules)).
-- **The python.org runtime**: `kivyforge doctor` verifies the extracted runtime `.so`s are 16 KB-aligned and warns if not.
-- **The APK**: zip-aligned with 16 KB alignment for uncompressed `.so`s. AGP's packaging + `zipalign -P 16` handles this; the toolchain sets the packaging options accordingly.
+- **Wheels**: built with NDK r28+ / `-Wl,-z,max-page-size=16384` — both first-party wheels (Kivy and pyjnius) are, and it is a requirement for any other Android wheel, see [artifact-distribution-android §"Wheel content rules"](03-artifact-distribution-android.md#wheel-content-rules).
+- **The python.org runtime**: its `.so`s land in `jniLibs/` like any other, so the check below covers them.
+- **The APK**: zip-aligned with 16 KB alignment for uncompressed `.so`s. AGP's packaging handles this; the toolchain sets the packaging options accordingly.
 
-`kivyforge doctor` includes a **16 KB alignment check** that scans every staged
-`.so`'s LOAD segment alignment and the APK zip alignment, failing loudly rather
-than shipping a library that crashes on a 16 KB device.
+`kivyforge doctor` includes a **16 KB alignment check** that reads the LOAD-segment
+alignment (`p_align`) of every `.so` staged under `app/src/main/jniLibs/` and FAILs
+naming each misaligned one, rather than shipping a library that crashes on a 16 KB
+device. It is a post-`build` check — before the first build there is nothing staged
+to read, and it SKIPs. The APK's *zip* alignment is AGP's to get right and is not
+re-verified here.
 
 ## The Python asset bundle
 
 The pure-Python payload is assembled into `app/src/main/assets/_python_bundle/`:
 
-- The stdlib pure-Python tree (from the runtime), the `pip-deps` site-packages (pure-Python content of installed wheels), the app's own code (from the `app-src/` staging link), and the generated extension-module manifest (`dotted-module → jniLibs filename`) the bootstrap finder consumes.
+- The stdlib pure-Python tree (from the runtime), the `pip-deps` site-packages (pure-Python content of installed wheels), the app's own code (copied from `app_dir`), and the generated extension-module manifest (`dotted-module → jniLibs filename`) the bootstrap finder consumes.
 - **ABI-independent by construction, and verified so.** Every ABI-specific `.so` is pulled into `jniLibs/<abi>/` (above), leaving only ABI-neutral content in the bundle. Since each ABI's wheels are installed into a *separate* per-ABI staging tree, `kivyforge build` assembles the single bundle from one **canonical ABI** (the first entry in `abis`) and then asserts the non-`.so` payload of every other ABI slice is **byte-for-byte identical** to it (per-file SHA-256). A divergence — an ABI slice shipping different Python source or data at the same version — fails the build naming the path and the two hashes, rather than silently shipping one ABI's Python to both. (Version skew across ABIs is already rejected at lock time; this catches content skew.)
 - On first launch the bootstrap unpacks it to app-private storage (`getFilesDir()`), version-stamped so an app update re-extracts. `PYTHONHOME`/`PYTHONPATH` point at the extracted location; `pip-deps` is registered via `site.addsitedir()` (not bare `PYTHONPATH`) so `.pth` files work — the same rule as the iOS bootstrap.
 
@@ -141,7 +142,7 @@ The pure-Python payload is assembled into `app/src/main/assets/_python_bundle/`:
 
 Per [`[tool.kivy.android.build_settings]`](01-pyproject-android.md#toolkivyandroidbuild_settings), the Stage step can shrink the bundle:
 
-- **`byte_compile`** (default: release-only) — compiles the entire Python payload to `.pyc` using the **target's own 3.14** at the right optimization level, so the emitted magic number matches the shipped `libpython3.14.so`. Debug builds keep `.py` for readable tracebacks and fast `kivyforge run` iteration.
+- **`byte_compile`** (default: release-only) — compiles the entire Python payload to `.pyc`. A `.pyc` is keyed to one exact CPython magic number, frozen at each `3.x.0`, so the compiler must be a **CPython of the target's minor version**: kivyforge is installed under whatever Python the host has, so it *discovers* a matching interpreter (`py -3.14` on Windows, `python3.14` elsewhere) rather than requiring itself to run under one. With the default `"release"`, no match degrades to shipping source with a warning; `byte_compile = true` reads as "I insist" and errors instead. Debug builds keep `.py` for readable tracebacks and fast `kivyforge run` iteration.
 - **`strip_source`** (default: release-only) — when byte-compiling, drops the paired `.py`, roughly halving the payload. Tracebacks still show file/line via the `.pyc` line table; only source text is unavailable.
 - **`strip_native_libs`** (default: release-only) — strips debug symbols from the shipped `.so`s (runtime + wheel extensions + wheel `.libs/`). This is done by **AGP** during packaging (via `packagingOptions.jniLibs.keepDebugSymbols`), not a bespoke kivyforge strip pass, so it tracks the toolchain and preserves 16 KB alignment. Debug keeps symbols in place. See **Native debug symbols** below for retaining the stripped symbols.
 
@@ -154,7 +155,7 @@ Stdlib module *pruning* is intentionally not a build knob here — it is unsafe 
 - `applicationId` = `[tool.kivy.android].package`; `versionName` = `[project].version`; `versionCode` = `[tool.kivy.android].version_code` (or the value derived from `[project].version` + `build` when it is `"auto"`, see [pyproject-android §"Auto-derived `version_code`"](01-pyproject-android.md#auto-derived-version_code)); `minSdk`/`targetSdk`/`compileSdk`.
 - **ABI filters** = `[tool.kivy.android].abis` (mapped to Android's `arm64-v8a`/`x86_64` names), plus per-ABI splits for the `.apk` and full ABI set for the `.aab`.
 - **Signing configs**: a `debug` config (Android debug keystore) and, when `[tool.kivy.android.signing]` is present, a `release` config reading the keystore + alias and the passwords from the configured env vars. The v1–v4 toggles apply to `.apk` outputs (`apksigner`); an `.aab` is JAR-signed with the same key (the schemes then apply to the APKs Play/`bundletool` derive from it).
-- **Dependencies**: `files(...)` entries for staged `libs/*.aar|*.jar` (channel 3) and `implementation` lines for `[tool.kivy.android.gradle].dependencies` (channel 4). Gradle dependency locking **and** artifact verification are enabled, and `kivyforge build` **materializes both `app/gradle.lockfile` (Gradle's per-module lock location) and `gradle/verification-metadata.xml` into the project from the resolved graph embedded in `pylock.android.toml`** (`[[tool.kivyforge.gradle.resolved]]`) — the reproducibility data is committed in the lock, never inside the disposable project (see [pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins)).
+- **Dependencies**: `files(...)` entries for staged `libs/*.aar|*.jar` (channel 3) and fully-versioned `implementation` lines for `[tool.kivy.android.gradle].dependencies` (channel 4). `kivyforge build` mirrors the resolved graph embedded in `pylock.android.toml` (`[[tool.kivyforge.gradle.resolved]]`) into `app/gradle.lockfile` as comments — an **audit record, not an enforced gate**: neither Gradle dependency locking nor Gradle artifact verification is enabled in the generated project, because Gradle's verification is whole-classpath and the lock resolves only the app's own coordinates (rationale and what would lift this: [pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins)). The reproducibility data is committed in the lock, never inside the disposable project; a stale strict `gradle/verification-metadata.xml` written by an older kivyforge is deleted on regeneration.
 - **Native launcher build**: `externalNativeBuild { cmake { path "src/main/cpp/CMakeLists.txt" } }` plus a pinned `ndkVersion`, so the NDK compiles the emitted launcher C into `libmain.so` per ABI (see "The native launcher (`libmain.so`)").
 - **Packaging options**: `jniLibs { useLegacyPackaging = true }` and the 16 KB packaging alignment; `jniLibs.keepDebugSymbols` is set from `[tool.kivy.android.build_settings].strip_native_libs` (kept for debug / when stripping is off, dropped for a stripped release).
 - **Native debug symbols**: for a stripped release, `buildTypes.release.ndk.debugSymbolLevel` is emitted from `[tool.kivy.android.build_settings].debug_symbols` (`SYMBOL_TABLE` / `FULL`), so AGP exports a `native-debug-symbols.zip` for crash symbolication (see below).
@@ -172,7 +173,7 @@ Stdlib module *pruning* is intentionally not a build knob here — it is unsafe 
 - `<application>` / `<activity>` attribute passthrough + `manifestPlaceholders` from `[tool.kivy.android.manifest]`, with kivyforge-managed attributes rejected if overridden (see [pyproject-android §"Manifest keys kivyforge manages"](01-pyproject-android.md#manifest-keys-kivyforge-manages)).
 - **Raw-XML fragments** from `manifest.extra_manifest_xml` (children of `<manifest>`, e.g. `<queries>`) and `manifest.extra_application_xml` (children of `<application>`, e.g. `<receiver>`/`<provider>`) injected verbatim after `${applicationId}`/placeholder substitution. Each fragment is parsed for well-formedness first; a malformed fragment fails the build with the XML error rather than letting AGP's manifest merger fail cryptically later.
 
-> **Release manifest policy is preflighted.** Raw XML and attribute passthrough make it possible to ship a footgun (an accidentally exported component, a `debuggable`/cleartext release, the `org.example.*` placeholder). `kivyforge package` lints the *merged* release manifest — a curated Android `lintRelease` subset plus kivyforge checks — and **fails before signing** on a policy violation. See [cli-android §`kivyforge package`](06-cli-android.md#kivyforge-package) and the `doctor` "Manifest policy (release)" check.
+> **Release manifest policy is preflighted.** Raw XML and attribute passthrough make it possible to ship a footgun (an accidentally exported component, a `debuggable`/cleartext release, the `org.example.*` placeholder). `kivyforge package` checks the generated manifest first (no Gradle work wasted), then runs a curated `lintRelease` subset and re-runs its own checks over AGP's *merged* release manifest — exported to `app/build/kivyforge/` by a generated task that reads `SingleArtifact.MERGED_MANIFEST` — and **fails before the release is assembled or signed**. A component a dependency insists on exporting is admitted per-name through `[tool.kivy.android.manifest].allow_exported`. See [cli-android §`kivyforge package`](06-cli-android.md#kivyforge-package).
 
 ### Theme and splash resources
 
@@ -180,7 +181,7 @@ Stdlib module *pruning* is intentionally not a build knob here — it is unsafe 
 from `[tool.kivy.android].base_theme` + `[tool.kivy.android.splash]`:
 
 - The app `<style>`'s `parent=` is `base_theme` (default: a `Theme.Material3.DayNight.NoActionBar`-family theme); this theme is the `android:theme` for the `<application>` and main activity.
-- The splash is wired through the **AndroidX core SplashScreen API** — the splash `<style>` sets `windowSplashScreenBackground` (`background`), `windowSplashScreenAnimatedIcon` (`source` — a static PNG *or* an AnimatedVectorDrawable), `windowSplashScreenIconBackgroundColor` (`icon_background`), `windowSplashScreenAnimationDuration` (`animation_duration`), and `windowSplashScreenBrandingImage` (`branding`). An animated splash therefore needs **no third-party dependency**; it is the platform mechanism. The `core-splashscreen` AndroidX library is added to `app/build.gradle` automatically when a splash is configured.
+- The splash is the **platform's own**, so it needs **no dependency and no code**: a `values-v31/styles.xml` override of the app `<style>` sets `windowSplashScreenBackground` (`background`), `windowSplashScreenAnimatedIcon` (`source` — a static PNG *or* an AnimatedVectorDrawable), `windowSplashScreenIconBackgroundColor` (`icon_background`), `windowSplashScreenAnimationDuration` (`animation_duration`), and `windowSplashScreenBrandingImage` (`branding`). Those attributes are API 31+, so the base theme additionally gets an `android:windowBackground` layer-list (the same color with the same icon centered) as `drawable/kf_splash.xml`: below API 31 it *is* the splash, and on every API level it covers the window between the system splash handing off and Kivy's first frame. A `values-v31` resource replaces the base one wholesale, so the override repeats the base theme's items.
 
 ### File injection (`include_files`)
 
@@ -245,15 +246,14 @@ pylock.android.toml (PEP 751 + [tool.kivyforge])
 | `gradlew`/`gradlew.bat`, `gradle/wrapper/*` | pinned Gradle wrapper | One-time |
 | `app/build.gradle` | template + `[tool.kivy.android]` | Yes (idempotent) |
 | `AndroidManifest.xml` | template + `[tool.kivy.android]` | Yes |
-| `java/org/kivy/android/*`, `java/org/libsdl/app/*`, `java/org/jnius/*` | bootstrap templates (per `sdl`) | Yes |
+| `java/org/kivy/android/*`, `java/org/libsdl/app/*`, `java/org/jnius/*` | bootstrap templates (per `kivy_generation`) | Yes |
 | `cpp/main.c`, `cpp/CMakeLists.txt` | native-launcher template (compiled to `libmain.so` by the NDK) | Yes |
 | `app/src/androidTest/*` | generated contract smoke test (launch + extension import + pyjnius proxy; drives the bootstrap self-test hook) | Yes |
 | `res/mipmap-*`, `res/values/styles.xml` (theme + splash) | `[tool.kivy.android.icons]` / `.splash]` / `base_theme` | Yes |
 | `jniLibs/<abi>/*.so` | runtime + wheel `.so`s + wheel `.libs/` (ABI from wheel tag; stripped per `strip_native_libs`) | Yes (cache-hit-able) |
 | `assets/_python_bundle/` | stdlib + pip-deps + app code (byte-compiled per `build_settings`) | Yes |
-| `app/gradle.lockfile`, `gradle/verification-metadata.xml` | materialized from `[[tool.kivyforge.gradle.resolved]]` in the lock | Yes (at build) |
-| user-supplied config files | `[tool.kivy.android.include_files]` | Yes (copied) |
-| `app-src/` | link (symlink/junction) or copy of `app_dir` | Yes |
+| `app/gradle.lockfile` | mirrored (as comments) from `[[tool.kivyforge.gradle.resolved]]` in the lock | Yes (at build) |
+| user-supplied config files | `[tool.kivy.android.include_files]` | Yes (copied, SHA-256-verified against the lock) |
 
 ## Idempotency
 

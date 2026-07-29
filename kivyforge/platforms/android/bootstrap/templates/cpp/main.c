@@ -1,15 +1,21 @@
-/* Kivyforge Phase-0 prototype native launcher (libmain.so).
+/* Kivyforge native launcher (libmain.so), from the Phase-0 prototype.
  *
- * SDL calls SDL_main() on its own thread after SDLActivity has loaded the
- * SDL family + libpython + this library. By that point PythonActivity has
- * unpacked the bundle and set the environment contract.
+ * Two callers, one sequence:
+ *  - SDL calls SDL_main() on its own thread after SDLActivity has loaded the
+ *    SDL family + libpython + this library. By that point PythonActivity has
+ *    unpacked the bundle and set the environment contract.
+ *  - PythonService calls nativeStart() from its own background thread, in its
+ *    own process, after doing the same unpack + environment setup. No SDL is
+ *    loaded there; nothing below needs it.
  *
  * This implements the 05-bootstrap-android.md launch sequence steps 4-6:
  * PyConfig with site_import deferred and explicit module search paths,
  * finder installation from the bundle manifest, site + addsitedir, then
- * the entry-point import.
+ * the entry-point import. Everything is read from the environment, so these
+ * sources carry no project-specific values.
  */
 #include <android/log.h>
+#include <jni.h>
 #include <Python.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,10 +30,9 @@ static int fail_status(const char *where, PyStatus status) {
     return 1;
 }
 
-/* SDL's Java glue dlopens libmain.so and dlsyms "SDL_main" — the symbol must
- * be exported regardless of compiler visibility defaults. */
-__attribute__((visibility("default")))
-int SDL_main(int argc, char *argv[]) {
+/* Initialize CPython from the unpacked bundle and import the entry point.
+ * Returns 0 on success. Shared by SDL_main and the service entry. */
+static int kf_start_python(void) {
     const char *bundle = getenv("KF_BUNDLE");
     const char *native_dir = getenv("KF_NATIVE_DIR");
     if (!bundle || !native_dir) {
@@ -82,10 +87,15 @@ int SDL_main(int argc, char *argv[]) {
         return fail_status("Py_InitializeFromConfig", status);
     LOGI("launcher: interpreter up");
 
-    /* Step 5: finder, then site, then pip-deps site dir. When
-     * KIVYFORGE_SELFTEST is set (the instrumented contract test's intent
-     * extra, forwarded to the env by PythonActivity), run the inert self-test
-     * hook instead of the app entry point. */
+    /* Step 5: finder, then site, then pip-deps site dir, then the entry point
+     * named by KF_ENTRY_POINT. When KIVYFORGE_SELFTEST is set (the instrumented
+     * contract test's intent extra, forwarded to the env by PythonActivity),
+     * run the inert self-test hook instead of the app entry point.
+     *
+     * KF_SERVICE_MARKER, when set, names a file the interpreter stamps once it
+     * is up and stamps again if the entry-point import raises — the signal the
+     * generated service contract test polls (a service entry point normally
+     * never returns, so there is nothing else to wait for). */
     const char *selftest = getenv("KIVYFORGE_SELFTEST");
     char code[4096];
     snprintf(code, sizeof code,
@@ -94,15 +104,22 @@ int SDL_main(int argc, char *argv[]) {
         "import site\n"
         "site.main()\n"
         "site.addsitedir(%s'%s')\n"
-        "import traceback\n"
+        "import importlib, os, traceback\n"
+        "_marker = os.environ.get('KF_SERVICE_MARKER')\n"
+        "if _marker:\n"
+        "    with open(_marker, 'w') as _f:\n"
+        "        _f.write('SERVICE_READY\\n')\n"
         "try:\n"
         "    if %d:\n"
         "        import _kivyforge_selftest\n"
         "        _kivyforge_selftest.run()\n"
         "    else:\n"
-        "        import main\n"
+        "        importlib.import_module(os.environ.get('KF_ENTRY_POINT') or 'main')\n"
         "except Exception:\n"
         "    traceback.print_exc()\n"
+        "    if _marker:\n"
+        "        with open(_marker, 'a') as _f:\n"
+        "            _f.write('SERVICE_ENTRY_FAILED\\n')\n"
         "    raise SystemExit(1)\n",
         "r", bootstrap_path, "r", native_dir, "r", sp_path,
         (selftest && selftest[0] == '1') ? 1 : 0);
@@ -113,4 +130,21 @@ int SDL_main(int argc, char *argv[]) {
      * finalize. A real app never reaches here while Kivy runs its loop. */
     Py_Finalize();
     return rc == 0 ? 0 : 1;
+}
+
+/* SDL's Java glue dlopens libmain.so and dlsyms "SDL_main" — the symbol must
+ * be exported regardless of compiler visibility defaults. */
+__attribute__((visibility("default")))
+int SDL_main(int argc, char *argv[]) {
+    return kf_start_python();
+}
+
+/* org.kivy.android.PythonService.nativeStart(): the same sequence for a
+ * generated service's process. Resolved by JNI name, so it must be exported. */
+__attribute__((visibility("default")))
+JNIEXPORT jint JNICALL
+Java_org_kivy_android_PythonService_nativeStart(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    return (jint)kf_start_python();
 }

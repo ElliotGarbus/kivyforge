@@ -72,6 +72,90 @@ class TestResolveDevice:
             adb_mod.resolve_device()
 
 
+class TestRequirePhysical:
+    """`run --device` asks for hardware; quietly booting an AVD instead is the
+    opposite of what was asked."""
+
+    def test_picks_the_single_physical_device(self, fake_adb):
+        fake_adb["devices"] = ["emulator-5554", "ABC123"]
+        assert adb_mod.resolve_device(require_physical=True) == "ABC123"
+
+    def test_never_falls_back_to_an_emulator(self, fake_adb):
+        fake_adb["devices"] = ["emulator-5554"]
+        fake_adb["avds"] = ["Pixel_API_35"]
+        with pytest.raises(adb_mod.AdbError, match="adb sees none"):
+            adb_mod.resolve_device(require_physical=True)
+        assert fake_adb["booted"] is None
+
+    def test_never_boots_an_avd(self, fake_adb):
+        fake_adb["avds"] = ["Pixel_API_35"]
+        with pytest.raises(adb_mod.AdbError, match="Enable USB debugging"):
+            adb_mod.resolve_device(require_physical=True)
+        assert fake_adb["booted"] is None
+
+    def test_still_defers_to_an_explicit_serial(self, fake_adb):
+        fake_adb["devices"] = ["ABC123"]
+        assert (
+            adb_mod.resolve_device(require_physical=True, serial="ABC123") == "ABC123"
+        )
+
+    def test_multiple_physical_still_requires_serial(self, fake_adb):
+        fake_adb["devices"] = ["ABC123", "DEF456"]
+        with pytest.raises(adb_mod.AdbError, match="multiple devices"):
+            adb_mod.resolve_device(require_physical=True)
+
+
+class TestDeviceAbi:
+    def _getprop(self, monkeypatch, values):
+        """Fake `adb shell getprop <name>` off a {name: value} map."""
+
+        def fake_adb(*args, **kw):
+            return values.get(args[-1], "")
+
+        monkeypatch.setattr(adb_mod, "adb", fake_adb)
+
+    def test_prefers_the_first_supported_entry_of_abilist(self, monkeypatch):
+        self._getprop(
+            monkeypatch,
+            {"ro.product.cpu.abilist": "arm64-v8a,armeabi-v7a,armeabi"},
+        )
+        assert adb_mod.device_abi("ABC123") == "arm64_v8a"
+
+    def test_x86_64_emulator(self, monkeypatch):
+        self._getprop(monkeypatch, {"ro.product.cpu.abilist": "x86_64,x86,arm64-v8a"})
+        assert adb_mod.device_abi("emulator-5554") == "x86_64"
+
+    def test_falls_back_to_the_single_abi_prop(self, monkeypatch):
+        """Very old images populate ro.product.cpu.abi only."""
+        self._getprop(monkeypatch, {"ro.product.cpu.abi": "arm64-v8a"})
+        assert adb_mod.device_abi("ABC123") == "arm64_v8a"
+
+    def test_none_when_nothing_kivyforge_builds_for(self, monkeypatch):
+        self._getprop(monkeypatch, {"ro.product.cpu.abilist": "armeabi-v7a,armeabi"})
+        assert adb_mod.device_abi("ABC123") is None
+
+    def test_none_when_the_device_answers_nothing(self, monkeypatch):
+        self._getprop(monkeypatch, {})
+        assert adb_mod.device_abi("ABC123") is None
+
+
+class TestHostAbi:
+    @pytest.mark.parametrize(
+        ("machine", "expected"),
+        [
+            ("x86_64", "x86_64"),
+            ("AMD64", "x86_64"),
+            ("arm64", "arm64_v8a"),
+            ("aarch64", "arm64_v8a"),
+        ],
+    )
+    def test_maps_the_host_machine(self, monkeypatch, machine, expected):
+        import platform as platform_mod
+
+        monkeypatch.setattr(platform_mod, "machine", lambda: machine)
+        assert adb_mod.host_abi() == expected
+
+
 class TestParsing:
     def test_connected_devices_parses_adb_output(self, monkeypatch):
         out = (

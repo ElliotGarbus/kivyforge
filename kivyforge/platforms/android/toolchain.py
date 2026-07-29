@@ -27,6 +27,3 @@ KOTLIN_VERSION = "1.9.22"
 # deterministic across hosts (android/04 §native launcher). r27.3 is the
 # proven prototype pin; cibuildwheel's wheels pin the same family.
 NDK_VERSION = "27.3.13750724"
-
-# AndroidX dependencies the generated module always uses.
-CORE_SPLASHSCREEN_COORDINATE = "androidx.core:core-splashscreen:1.0.1"

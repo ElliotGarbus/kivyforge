@@ -61,6 +61,12 @@ linux = [
 windows = [
     "Pillow>=10",
 ]
+# Android backend adaptive-icon generation (1024×1024 PNG → the mipmap density
+# set + adaptive layers). Only needed when [tool.kivy.android.icons].source is
+# configured; without it the build emits the plain default launcher icon.
+android = [
+    "Pillow>=10",
+]
 
 # ---------------------------------------------------------------------------
 # Setuptools package discovery

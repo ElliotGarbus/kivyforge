@@ -24,9 +24,12 @@
 >   but Gradle-*enforced* `verification-metadata.xml` is deferred (it requires
 >   pinning the entire AGP build classpath, not just the app's Maven deps). See
 >   [02 §Gradle pins](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins).
-> - **The Kivy 2.3.1 wheel is interim** (p4a-derived, 4 KB-aligned; `doctor`
->   FAILs its 16 KB check). The first-party cibuildwheel Kivy wheel is the one
->   open deliverable; pyjnius is already first-party.
+> - **Both Android wheels are first-party.** Kivy and pyjnius are built with
+>   cibuildwheel, 16 KB-aligned, and served from the
+>   [`kivy-mobile-wheels`](https://github.com/ElliotGarbus/kivy-mobile-wheels)
+>   release index (`doctor`'s 16 KB check PASSes on a project staged from them).
+>   They are not on PyPI yet, which is why examples add the index through
+>   `extra_index_urls`; see [03 §wheel sources](03-artifact-distribution-android.md).
 
 This document defines the **Android-specific overlay** in `pyproject.toml`: the
 `[tool.kivy.android]` table and its subtables. It layers on top of the shared
@@ -65,9 +68,10 @@ kivyforge's Android backend consumes the following PEP 621 keys directly; the re
 
 Icons and splash screens are platform-specific. Android uses **adaptive icons**
 (a foreground + background layer, per [Android adaptive icons](https://developer.android.com/develop/ui/views/launch/icon_design_adaptive))
-and a **splash screen** via the AndroidX SplashScreen API — which supports a
-static or **animated** (AnimatedVectorDrawable) icon natively, with no extra
-dependency. Each is declared in its own subtable. If `[tool.kivy.android.icons]`
+and the **platform splash screen** — the system splash window on API 31+, which
+supports a static or **animated** (AnimatedVectorDrawable) icon natively, with no
+extra dependency and no code in the activity. Each is declared in its own
+subtable. If `[tool.kivy.android.icons]`
 or `[tool.kivy.android.splash]` is absent, kivyforge emits a plain default
 launcher icon / no custom splash. The overall app theme (the splash's parent and
 the window backdrop) is set by [`[tool.kivy.android].base_theme`](#toolkivyandroid).
@@ -89,11 +93,24 @@ monochrome = "assets/icon-mono.png"        # optional; Android 13+ themed icon
 
 ### `[tool.kivy.android.splash]`
 
-The splash screen is wired through the **AndroidX core SplashScreen API**, whose
-model is a *centered icon on a background* (optionally animated) — not a
-full-bleed image. Every field below maps directly to a `windowSplashScreen*`
-theme attribute, so an animated splash is expressed with the platform's own
-mechanism and **no extra runtime dependency**.
+The splash screen is the **platform's own**, whose model is a *centered icon on a
+background* (optionally animated) — not a full-bleed image. Every field below
+maps directly to a `windowSplashScreen*` theme attribute emitted into
+`values-v31/`, so an animated splash is expressed with the platform's own
+mechanism, with **no runtime dependency** and no `installSplashScreen()` call in
+the load-order-sensitive part of the activity.
+
+Because those attributes only exist from API 31, `kivyforge build` also generates
+a `windowBackground` layer-list (the same background color with the same icon
+centered on it) into the base theme. That layer covers two gaps: on API 24–30
+there is no system splash at all, and on *every* API level it is what the window
+shows between the system splash handing off and Kivy drawing its first frame —
+which for a cold start (unpack the bundle, boot CPython) is seconds of otherwise
+blank window. `animation_duration` and `branding` are API 31 concepts and are
+inert below it; the icon is static there.
+
+A configured splash requires `compile_sdk >= 31`, since AAPT resolves attribute
+names against the compile SDK regardless of which `values-*` folder they sit in.
 
 ```toml
 [tool.kivy.android.splash]
@@ -106,8 +123,8 @@ branding = "assets/branding.png"     # optional bottom branding image
 
 | Field                | Type    | Required | Description                                                                                                                                                                 |
 | -------------------- | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `source`             | string  | no       | The centered splash icon → `windowSplashScreenAnimatedIcon`. A raster **PNG** yields a static splash; an **AnimatedVectorDrawable** XML yields an animated one (rendered natively by the SplashScreen API). |
-| `background`         | string  | no       | Hex color (`#rrggbb`) for the splash window background → `windowSplashScreenBackground`.                                                                                     |
+| `source`             | string  | no       | The centered splash icon → `windowSplashScreenAnimatedIcon`. A raster **PNG** is scaled into the platform's guaranteed-visible inner box (192dp of a 288dp canvas, or 160dp of 240dp when `icon_background` is set) and emitted per density; an **AnimatedVectorDrawable** XML is passed through untouched and animated natively. |
+| `background`         | string  | no       | Hex color (`#rrggbb`) for the splash window background → `windowSplashScreenBackground`. Defaults to white when a `source` is set and no background is given.                 |
 | `icon_background`    | string  | no       | Optional hex color for the circular backdrop behind the icon → `windowSplashScreenIconBackgroundColor`.                                                                     |
 | `animation_duration` | integer | no       | Animation length in **milliseconds** for an animated `source` → `windowSplashScreenAnimationDuration`. Ignored for a static PNG. Must be a positive integer.                |
 | `branding`           | string  | no       | Optional image shown at the bottom of the splash → `windowSplashScreenBrandingImage`.                                                                                       |
@@ -435,7 +452,7 @@ dependencies = [
 | `dependencies` | list of string | no       | Gradle dependency coordinates (`group:artifact:version`). Each is emitted as an `implementation` in `app/build.gradle`. Versions must be explicit (no dynamic `+` ranges) so the build is reproducible. |
 | `repositories` | list of string | no       | Extra Maven repository URLs, in addition to the always-present `google()` and `mavenCentral()`.                                                                          |
 
-Reproducibility for this channel pins the **full resolved transitive graph with a SHA-256 per artifact** in the lock; `kivyforge lock` resolves it via Gradle, and `kivyforge build` regenerates `gradle.lockfile` + `verification-metadata.xml` from it, so Maven artifacts are content-verified like every other channel. See [pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins) and the SPM-parallel rationale in [artifact-distribution-android §"Distribution channel 4"](03-artifact-distribution-android.md#distribution-channel-4-gradlemaven-dependencies).
+Reproducibility for this channel records the **full resolved transitive graph with a SHA-256 per artifact** in the lock (`kivyforge lock` resolves it via Gradle) and pins fully-versioned coordinates in the generated `app/build.gradle`. Unlike the other channels the hash is an **audit record, not a build-time gate** — Gradle's own verification is whole-classpath, so it cannot be scoped to just your Maven deps. See [pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins) and the SPM-parallel rationale in [artifact-distribution-android §"Distribution channel 4"](03-artifact-distribution-android.md#distribution-channel-4-gradlemaven-dependencies).
 
 ### `[tool.kivy.android.include_files]` — copy arbitrary files into the project
 
@@ -462,7 +479,7 @@ sources = ["config/network_security_config.xml", "config/backup_rules.xml"]
 | `sources` | list of string | yes      | Repo-relative files (or directories, copied recursively) to place into `dest`, keeping each source's basename. Entries must not escape the project directory. |
 
 - **Type**: array of tables (order preserved).
-- **Semantics**: pure file copy, run after project generation and before Gradle is invoked, so the files are visible to AGP (resource merge, `google-services` plugin, etc.). `kivyforge lock` records each source's SHA-256 so a changed config file is caught by drift detection. A copy that would overwrite a kivyforge-generated file (e.g. `AndroidManifest.xml`, `build.gradle`) is **rejected** — use the manifest/gradle passthroughs for those. This mirrors ksproject's `include`/asset-copy convention and Briefcase's ability to drop files into the scaffold.
+- **Semantics**: pure file copy, run after project generation and before Gradle is invoked, so the files are visible to AGP (resource merge, `google-services` plugin, etc.). `kivyforge lock` records each source's SHA-256, and `kivyforge build` **verifies every pin before staging**: an edited, added, or deleted file fails the build naming the file (and, for an edit, both hashes) and pointing at `kivyforge lock` to re-record. This is drift detection over your own repo files, not supply-chain integrity, so re-locking is always the fix; `--no-verify-lock` skips it along with every other lock check. A copy that would overwrite a kivyforge-generated file (e.g. `AndroidManifest.xml`, `build.gradle`) is **rejected** — use the manifest/gradle passthroughs for those. This mirrors ksproject's `include`/asset-copy convention and Briefcase's ability to drop files into the scaffold.
 
 > **`include_files` vs. `[tool.kivy].app_dir`.** `app_dir` is your Python payload
 > (packaged into the Python asset bundle and unpacked at runtime). `include_files`
@@ -546,6 +563,9 @@ application = { "android:largeHeap" = true, "android:usesCleartextTraffic" = fal
 activity    = { "android:launchMode" = "singleTop" }
 placeholders = { MAPS_API_KEY = "AIza..." }         # manifestPlaceholders
 
+# Components a dependency insists on exporting (release-policy opt-in):
+allow_exported = ["com.vendor.sdk.TrampolineActivity"]
+
 # Raw-XML escape hatches for elements the structured tables can't express:
 extra_manifest_xml = """
 <queries>
@@ -567,6 +587,7 @@ extra_activity_xml = ""    # extra children of the main <activity> (rarely neede
 | `application` | table | attributes | Attribute → value pairs merged into the generated `<application>` element. |
 | `activity` | table | attributes | Attribute → value pairs merged into the generated main `<activity>` element. |
 | `placeholders` | table | — | `manifestPlaceholders` (string → string). |
+| `allow_exported` | list of string | policy | Component class names the release policy tolerates as `android:exported="true"`, on top of the bootstrap's own `org.kivy.android.PythonActivity`. Needed because `kivyforge package` lints the **merged** manifest: a `.aar`/Maven dependency's exported component cannot be edited out of your `pyproject.toml`, and blocking the release forever would be the only alternative. Per-component and auditable — never a blanket off switch. Names are matched exactly as they appear in the merged manifest (fully qualified). |
 | `extra_manifest_xml` | string | raw XML | Verbatim child elements injected before the closing `</manifest>` — for elements with no structured field (`<queries>`, custom `<permission>` / `<permission-group>`, `<uses-sdk>` extras). |
 | `extra_application_xml` | string | raw XML | Verbatim child elements injected before the closing `</application>` — for `<receiver>`, `<provider>`, `<meta-data>`, extra `<service>`/`<activity>` you author by hand, etc. |
 | `extra_activity_xml` | string | raw XML | Verbatim child elements injected into the generated main `<activity>` (rarely needed; `intent_filters` covers the common case). |
@@ -642,7 +663,7 @@ debug_symbols = "symbol_table"  # "symbol_table" | "full" | "none" — native sy
 | `minify`           | bool | no       | `false` | Enable R8 for release builds. Off by default — R8 on a Python app mostly shrinks the thin Java bootstrap and risks stripping reflected classes (pyjnius `autoclass` targets); enable only with a tested keep-rules set. |
 | `shrink_resources` | bool | no       | `false` | Resource shrinking (requires `minify = true`).                                                                                                 |
 | `multidex`         | bool | no       | `true`  | Enable multidex. On by default because bundled `.aar`s + bootstrap easily exceed the 64K method limit; harmless at `minSdk 24` (native multidex). |
-| `byte_compile`     | `"release"` \| bool | no | `"release"` | Byte-compile the Python payload (app code + pure-Python deps + stdlib) to `.pyc` when staging the asset bundle. `"release"` compiles for release packaging (`kivyforge package`) only (debug builds keep `.py` for readable tracebacks and fast iteration); `true`/`false` force it on/off for all builds. Compilation is done with the target's own `3.14` under the correct optimization level so the magic number matches the shipped runtime. |
+| `byte_compile`     | `"release"` \| bool | no | `"release"` | Byte-compile the Python payload (app code + pure-Python deps + stdlib) to `.pyc` when staging the asset bundle. `"release"` compiles for release packaging (`kivyforge package`, and a plain `kivyforge build` that stages for it) only — debug builds keep `.py` for readable tracebacks and fast iteration; `true`/`false` force it on/off for all builds. See ["Which interpreter writes the `.pyc`"](#which-interpreter-writes-the-pyc). |
 | `strip_source`     | `"release"` \| bool | no | `"release"` | When byte-compiling, also drop the corresponding `.py` from the bundle (ship `.pyc` only), roughly halving the Python payload. `"release"` applies to release builds only. Independent stack traces still show file/line via the `.pyc` line table; only source *text* is unavailable. Ignored when `byte_compile` is off. |
 | `strip_native_libs`| `"release"` \| bool | no | `"release"` | Strip debug symbols from the shipped `.so`s (runtime, wheel extensions, wheel `.libs/`) — a large size win for release. **Performed by AGP** during packaging (kivyforge sets `packagingOptions.jniLibs.keepDebugSymbols` accordingly), not by a bespoke kivyforge strip step, so behavior tracks the toolchain. Off for debug so native crashes stay symbolicated in place. When on, symbols are **preserved to the debug-symbol artifact** per `debug_symbols` (below) rather than discarded — the same retain-symbols posture as iOS dSYMs. |
 | `debug_symbols`    | `"symbol_table"` \| `"full"` \| `"none"` | no | `"symbol_table"` (release) | Which native debug symbols AGP exports for **crash symbolication** of the stripped release `.so`s, mapped to AGP's [`debugSymbolLevel`](https://developer.android.com/studio/build/shrink-code#native-crash-support): `symbol_table` (function names — enough to symbolicate native stack frames; small), `full` (adds DWARF line tables — larger, enables source-line native debugging), `none` (export nothing). See ["Native debug symbols"](#native-debug-symbols). Ignored for debug builds (unstripped) and when `strip_native_libs` is off. |
@@ -656,6 +677,43 @@ debug_symbols = "symbol_table"  # "symbol_table" | "full" | "none" — native sy
 > pyjnius/`importlib` dynamic imports; prune deliberately via the resolution-graph
 > `exclude` field and app-level testing instead. See
 > [gradle-project-generation §"Python asset bundle"](04-gradle-project-generation.md#the-python-asset-bundle).
+
+### Which interpreter writes the `.pyc`
+
+A `.pyc` is loadable only by the exact CPython magic number that wrote it, and
+that number is frozen at each `3.x.0` — so any `3.x.z` works, but a different
+minor version does not: its output is silently ignored when the source ships
+alongside, and fails outright once `strip_source` has removed the source.
+
+kivyforge is installed under whatever Python the user has, which is usually *not*
+the version being shipped to the device, so it does not require being *run* under
+the target version. It looks for a matching interpreter — the current one first,
+then `py -X.Y` (Windows) / `pythonX.Y` — and compiles with that one.
+
+When no matching interpreter exists, the outcome depends on how the setting was
+written, because the two spellings mean different things:
+
+- `byte_compile = "release"` (the default) means *when it makes sense*: kivyforge
+  prints a note and ships source. A build nobody configured is never broken by
+  the absence of an interpreter nobody asked for.
+- `byte_compile = true` means *I insist*: the build fails, because silently
+  shipping source would leave the user believing the payload was compiled.
+
+Two further properties of the emitted `.pyc`, both deliberate:
+
+- **Hash-based, unchecked invalidation** ([PEP 552](https://peps.python.org/pep-0552/))
+  rather than the default mtime+size, which saves a `stat` per import on a device
+  whose sources cannot be newer than what shipped.
+- **Bundle-relative paths** (`compileall -s`), because a `.pyc` records the path
+  it was compiled from — the default would bake the build machine's directory
+  layout into the shipped APK and make the bundle's content stamp differ per
+  machine. Tracebacks still name the file.
+
+`strip_source` needs the **sourceless layout**: PEP 3147 looks for `foo.pyc` at
+the source's own path, never inside `__pycache__/`, so compiling to `__pycache__/`
+and then deleting the `.py` would ship a bundle that imports nothing at all.
+kivyforge emits `__pycache__/` when the source is kept and the source-adjacent
+layout when it is not.
 
 ### Native debug symbols
 
@@ -786,7 +844,7 @@ key_alias = "upload"
 12. Sets `find_links` entries that are absolute, empty, or escape the project directory.
 13. Declares a `[tool.kivy.android.gradle].dependencies` entry that is not a fully-versioned `group:artifact:version` coordinate (dynamic ranges are rejected for reproducibility).
 14. Declares a `native.aars`/`native.jars` `source` that is an absolute path or escapes the project directory.
-15. Sets reserved keys under `[tool.kivy.android.manifest]`, `[tool.kivy.android.gradle_properties]`, or otherwise collides with a kivyforge-managed manifest attribute.
+15. Sets reserved keys under `[tool.kivy.android.manifest]`, `[tool.kivy.android.gradle_properties]`, or otherwise collides with a kivyforge-managed manifest attribute; or sets `[tool.kivy.android.manifest].allow_exported` to anything other than a list of non-empty strings.
 16. Runs `kivyforge package` without a resolvable signing key (keystore/alias via `[tool.kivy.android.signing]` or CLI/env).
 17. Provides an `extra_manifest_xml` / `extra_application_xml` / `extra_activity_xml` fragment that is not well-formed XML (checked before manifest generation).
 18. Declares an `[[tool.kivy.android.include_files]]` entry whose `dest` is absolute or escapes the project, whose `sources` are absolute/escaping/missing, or that targets a kivyforge-generated file (e.g. `AndroidManifest.xml`, `build.gradle`).

@@ -25,9 +25,17 @@ from kivyforge.platforms.android import signing as signing_mod
 from kivyforge.platforms.android import smoke as smoke_mod
 from kivyforge.platforms.android.bootstrap.render import RenderedFile
 from kivyforge.platforms.android.doctor import RealAndroidProbe
+from kivyforge.platforms.android.generate.project import (
+    MERGED_MANIFEST_RELPATH,
+    MERGED_MANIFEST_TASK,
+)
 from kivyforge.platforms.android.gradlew import GradleError
 from kivyforge.platforms.android.lock import writer as lock_writer
-from kivyforge.platforms.android.lock.model import AndroidLockfile, PythonAndroidRuntime
+from kivyforge.platforms.android.lock.model import (
+    AndroidLockfile,
+    LockedIncludeFile,
+    PythonAndroidRuntime,
+)
 from kivyforge.platforms.android.stage.bundle import BundleError
 from kivyforge.platforms.android.stage.runtime import RuntimeStageError
 from kivyforge.platforms.android.stage.wheels import WheelStageError
@@ -59,7 +67,37 @@ def project(tmp_path):
     return tmp_path
 
 
-def _write_lock(project_root: Path, *, in_sync: bool = True, pyjnius_version="1.7.0"):
+def _include_pins(project_root: Path, dest: str, *sources: str):
+    """The include_files pins `kivyforge lock` would have recorded for *sources*."""
+    from kivyforge.artifacts.verify import sha256_file
+
+    pins = []
+    for source in sources:
+        local = project_root / source
+        children = (
+            [c for c in sorted(local.rglob("*")) if c.is_file()]
+            if local.is_dir()
+            else [local]
+        )
+        for child in children:
+            rel = (
+                (Path(source) / child.relative_to(local)).as_posix()
+                if local.is_dir()
+                else source
+            )
+            pins.append(
+                LockedIncludeFile(source=rel, dest=dest, sha256=sha256_file(child))
+            )
+    return tuple(pins)
+
+
+def _write_lock(
+    project_root: Path,
+    *,
+    in_sync: bool = True,
+    pyjnius_version="1.7.0",
+    include_files=(),
+):
     text = (project_root / "pyproject.toml").read_text(encoding="utf-8")
     packages = (
         LockedPackage(
@@ -94,6 +132,7 @@ def _write_lock(project_root: Path, *, in_sync: bool = True, pyjnius_version="1.
         pyproject_sha256=(compute_pyproject_sha256(text) if in_sync else "0" * 64),
         tool_kivy_android_schema_version=1,
         kivy_generation=2,
+        include_files=tuple(include_files),
     )
     (project_root / "pylock.android.toml").write_text(
         lock_writer.dumps(lock), encoding="utf-8"
@@ -114,6 +153,18 @@ def _gradle_output_for(dest: Path, tasks: list[str]) -> None:
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"fake")
+        if task == MERGED_MANIFEST_TASK:
+            # Stand in for AGP's manifest merge: with no library manifests to
+            # merge, the merged manifest is the generated one.
+            merged = dest / MERGED_MANIFEST_RELPATH
+            merged.parent.mkdir(parents=True, exist_ok=True)
+            source = dest / "app" / "src" / "main" / "AndroidManifest.xml"
+            merged.write_text(
+                source.read_text(encoding="utf-8")
+                if source.is_file()
+                else "<manifest/>",
+                encoding="utf-8",
+            )
 
 
 def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
@@ -155,13 +206,15 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
         return 0
 
     def fake_assemble_bundle(dest, **kw):
+        calls.setdefault("assemble_bundle", []).append(kw)
         dest.mkdir(parents=True, exist_ok=True)
         return "deadbeef"
 
     def fake_stdlib_dir(prefix, stem):
         return prefix / "lib" / stem
 
-    def fake_render_bootstrap(*, sdl, python_version):
+    def fake_render_bootstrap(*, sdl, python_version, entry_point="main"):
+        calls.setdefault("render_bootstrap", []).append(entry_point)
         return [
             RenderedFile("java/org/kivy/android/PythonActivity.java", "// activity\n")
         ]
@@ -191,14 +244,14 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
         "kivy_bootstrap_source": lambda: "",
         "selftest_source": lambda: "",
         "generate_manifest": fake_generate_manifest,
-        "write_settings_gradle": lambda dest: None,
+        "write_settings_gradle": lambda dest, android: None,
         "write_root_build_gradle": lambda dest, android: None,
         "write_gradle_properties": lambda dest, android: None,
         "stage_gradle_wrapper": lambda dest: None,
         "write_app_build_gradle": lambda dest, config, android, **kw: calls[
             "write_app_build_gradle"
         ].append(kw),
-        "write_resources": lambda dest, config, android: None,
+        "write_resources": lambda dest, config, android, **kw: None,
         "write_gradle_pins": lambda dest, lock: calls["write_gradle_pins"].append(lock),
         "run_gradle": fake_run_gradle,
     }
@@ -248,6 +301,214 @@ class TestAndroidBuildHappyPath:
         project, _ = build_env
         # Only one ABI is configured; passing it explicitly must not raise.
         cli.android_build(project, abi="arm64_v8a", no_cache=True)
+
+    def test_entry_point_reaches_the_bootstrap_and_bundle(self, project, build_env):
+        """The configured entry_point has to reach both the rendered activity
+        (which exports KF_ENTRY_POINT) and the bundle (which validates that the
+        module exists); otherwise the app imports main.py regardless."""
+        project, calls = build_env
+        pyproject = project / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8").replace(
+                'app_dir = "src"', 'app_dir = "src"\nentry_point = "app.start"'
+            ),
+            encoding="utf-8",
+        )
+        _write_lock(project)
+        cli.android_build(project)
+        assert calls["render_bootstrap"] == ["app.start"]
+        assert calls["assemble_bundle"][0]["entry_point"] == "app.start"
+
+
+SERVICES_TOML = """
+[[tool.kivy.android.services]]
+name = "Downloader"
+entry_point = "service_downloader"
+"""
+
+
+class TestGeneratedServices:
+    """A <service> in the manifest is only real if its class is in the APK."""
+
+    def _with_services(self, project, toml=SERVICES_TOML):
+        pyproject = project / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8") + toml, encoding="utf-8"
+        )
+        (project / "src" / "service_downloader.py").write_text("", encoding="utf-8")
+        _write_lock(project)
+
+    def test_declared_service_gets_its_class_written(self, build_env):
+        project, calls = build_env
+        self._with_services(project)
+        dest = cli.android_build(project)
+        main = dest / "app" / "src" / "main"
+        source = main / "java" / "org" / "kivy" / "android" / "ServiceDownloader.java"
+        assert source.is_file()
+        assert 'return "service_downloader";' in source.read_text(encoding="utf-8")
+
+    def test_service_entry_points_are_validated_by_the_bundle(self, build_env):
+        project, calls = build_env
+        self._with_services(project)
+        cli.android_build(project)
+        assert calls["assemble_bundle"][0]["service_entry_points"] == {
+            "Downloader": "service_downloader"
+        }
+
+    def test_service_probe_is_generated_with_the_service(self, build_env):
+        project, _ = build_env
+        self._with_services(project)
+        dest = cli.android_build(project)
+        probe = (
+            dest
+            / "app"
+            / "src"
+            / "androidTest"
+            / "java"
+            / "org"
+            / "kivyforge"
+            / "test"
+            / "KivyforgeServiceContractTest.java"
+        )
+        assert probe.is_file()
+        assert "ServiceDownloader.class" in probe.read_text(encoding="utf-8")
+
+    def test_no_services_generates_no_class_or_probe(self, build_env):
+        project, _ = build_env
+        dest = cli.android_build(project)
+        android_pkg = (
+            dest / "app" / "src" / "main" / "java" / "org" / "kivy" / "android"
+        )
+        assert not android_pkg.is_dir() or list(android_pkg.glob("Service*.java")) == []
+        probe_dir = (
+            dest / "app" / "src" / "androidTest" / "java" / "org" / "kivyforge" / "test"
+        )
+        assert not (probe_dir / "KivyforgeServiceContractTest.java").exists()
+
+    def test_removing_a_service_removes_its_generated_sources(self, build_env):
+        """The project dir is incremental, so a class for a service that is gone
+        would keep compiling in — and the probe would not compile at all."""
+        project, _ = build_env
+        self._with_services(project)
+        dest = cli.android_build(project)
+        stale = (
+            dest
+            / "app"
+            / "src"
+            / "main"
+            / "java"
+            / "org"
+            / "kivy"
+            / "android"
+            / "ServiceDownloader.java"
+        )
+        probe = (
+            dest
+            / "app"
+            / "src"
+            / "androidTest"
+            / "java"
+            / "org"
+            / "kivyforge"
+            / "test"
+            / "KivyforgeServiceContractTest.java"
+        )
+        assert stale.is_file() and probe.is_file()
+
+        (project / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+        _write_lock(project)
+        cli.android_build(project)
+        assert not stale.exists()
+        assert not probe.exists()
+
+
+class TestByteCompileResolution:
+    """``byte_compile``/``strip_source`` (android/01 §build_settings).
+
+    A .pyc is only loadable by the exact CPython that wrote it, and kivyforge
+    runs under whatever Python the user installed it with — usually not the one
+    being shipped. So the interesting behavior is which interpreter gets chosen
+    and what happens when there is none.
+    """
+
+    def _android(self, extra: str = ""):
+        from kivyforge.config.loader import load_config_from_text
+
+        text = PYPROJECT.replace(
+            "[tool.kivy.android.python]", extra + "\n[tool.kivy.android.python]"
+        )
+        config = load_config_from_text(text, require_ios=False, require_android=True)
+        return config.android_required
+
+    def _resolve(self, android, *, debug=False):
+        return cli._resolve_byte_compile(android, python_version="3.14.6", debug=debug)
+
+    def _found(self, monkeypatch, argv=("py", "-3.14")):
+        monkeypatch.setattr(cli, "_byte_compile_interpreter", lambda _v: argv)
+
+    def _missing(self, monkeypatch):
+        monkeypatch.setattr(cli, "_byte_compile_interpreter", lambda _v: None)
+
+    def test_release_default_compiles_and_strips(self, monkeypatch):
+        self._found(monkeypatch)
+        assert self._resolve(self._android()) == (("py", "-3.14"), True)
+
+    def test_debug_build_keeps_readable_sources(self, monkeypatch):
+        self._found(monkeypatch)
+        assert self._resolve(self._android(), debug=True) == (None, False)
+
+    def test_false_never_compiles(self, monkeypatch):
+        self._found(monkeypatch)
+        android = self._android(
+            "[tool.kivy.android.build_settings]\nbyte_compile = false\n"
+        )
+        assert self._resolve(android) == (None, False)
+
+    def test_strip_source_is_ignored_without_byte_compile(self, monkeypatch):
+        self._found(monkeypatch)
+        android = self._android(
+            "[tool.kivy.android.build_settings]\n"
+            "byte_compile = false\nstrip_source = true\n"
+        )
+        assert self._resolve(android) == (None, False)
+
+    def test_true_compiles_for_debug_too(self, monkeypatch):
+        self._found(monkeypatch)
+        android = self._android(
+            "[tool.kivy.android.build_settings]\n"
+            "byte_compile = true\nstrip_source = false\n"
+        )
+        assert self._resolve(android, debug=True) == (("py", "-3.14"), False)
+
+    def test_default_degrades_when_no_interpreter_exists(self, monkeypatch, capsys):
+        """The default must not break a build nobody configured: a user on 3.13
+        shipping 3.14 gets source, not a failure."""
+        self._missing(monkeypatch)
+        assert self._resolve(self._android()) == (None, False)
+        assert "not byte-compiling" in capsys.readouterr().out
+
+    def test_explicit_true_fails_when_no_interpreter_exists(self, monkeypatch):
+        """Asked for outright, silence would ship a bundle the user believes is
+        compiled."""
+        self._missing(monkeypatch)
+        android = self._android(
+            "[tool.kivy.android.build_settings]\nbyte_compile = true\n"
+        )
+        with pytest.raises(AndroidBuildError, match="no CPython 3.14 was found"):
+            self._resolve(android)
+
+    def test_this_interpreter_is_used_when_it_matches(self, monkeypatch):
+        import sys
+
+        version = f"{sys.version_info[0]}.{sys.version_info[1]}.0"
+        assert cli._byte_compile_interpreter(version) == ()
+
+    def test_the_choice_reaches_the_bundle(self, build_env, monkeypatch):
+        project, calls = build_env
+        self._found(monkeypatch, ("python3.14",))
+        cli.android_build(project)
+        assert calls["assemble_bundle"][0]["byte_compile"] == ("python3.14",)
+        assert calls["assemble_bundle"][0]["strip_source"] is True
 
 
 class TestAndroidBuildGates:
@@ -343,24 +604,66 @@ class TestAndroidBuildGates:
             cli.android_build(project, abi="x86")
 
 
+EXTRA_DEST = "app/src/main/assets/extra"
+
+
 class TestAndroidBuildIncludeFiles:
-    def test_include_files_copied(self, project, monkeypatch, tmp_path):
+    def _project_with_extra(self, project, monkeypatch, tmp_path, *, pins=True):
         text = PYPROJECT + (
             "\n[[tool.kivy.android.include_files]]\n"
-            'dest = "app/src/main/assets/extra"\n'
+            f'dest = "{EXTRA_DEST}"\n'
             'sources = ["extra"]\n'
         )
         (project / "pyproject.toml").write_text(text, encoding="utf-8")
-        (project / "extra").mkdir()
+        (project / "extra").mkdir(exist_ok=True)
         (project / "extra" / "data.txt").write_text("hi", encoding="utf-8")
-        _write_lock(project)
+        _write_lock(
+            project,
+            include_files=(_include_pins(project, EXTRA_DEST, "extra") if pins else ()),
+        )
         monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
-        calls: dict = {}
-        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
+        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls={})
 
+    def test_include_files_copied(self, project, monkeypatch, tmp_path):
+        self._project_with_extra(project, monkeypatch, tmp_path)
         dest = cli.android_build(project)
         copied = dest / "app" / "src" / "main" / "assets" / "extra" / "data.txt"
         assert copied.read_text(encoding="utf-8") == "hi"
+
+    def test_edited_file_fails_with_both_hashes(self, project, monkeypatch, tmp_path):
+        """The lock records a hash per staged file so drift is detectable; an
+        edited vendored asset used to ship with a lock that said otherwise."""
+        self._project_with_extra(project, monkeypatch, tmp_path)
+        (project / "extra" / "data.txt").write_text("edited", encoding="utf-8")
+        with pytest.raises(AndroidBuildError, match="has changed since the lock") as e:
+            cli.android_build(project)
+        message = str(e.value)
+        assert "locked:" in message and "on disk:" in message
+        assert "kivyforge lock" in message
+
+    def test_new_file_in_a_directory_source_fails(self, project, monkeypatch, tmp_path):
+        """A directory source is expanded per file at lock time, so a file added
+        afterwards has no pin at all."""
+        self._project_with_extra(project, monkeypatch, tmp_path)
+        (project / "extra" / "added.txt").write_text("new", encoding="utf-8")
+        with pytest.raises(AndroidBuildError, match="records no hash"):
+            cli.android_build(project)
+
+    def test_deleted_file_fails(self, project, monkeypatch, tmp_path):
+        """The per-file walk cannot see a deletion, so the leftover pins are."""
+        self._project_with_extra(project, monkeypatch, tmp_path)
+        (project / "extra" / "gone.txt").write_text("bye", encoding="utf-8")
+        _write_lock(project, include_files=_include_pins(project, EXTRA_DEST, "extra"))
+        (project / "extra" / "gone.txt").unlink()
+        with pytest.raises(AndroidBuildError, match="no longer exists"):
+            cli.android_build(project)
+
+    def test_no_verify_lock_skips_the_drift_check(self, project, monkeypatch, tmp_path):
+        """--no-verify-lock means the lock is not being enforced at all."""
+        self._project_with_extra(project, monkeypatch, tmp_path, pins=False)
+        dest = cli.android_build(project, no_verify_lock=True)
+        copied = dest / "app" / "src" / "main" / "assets" / "extra" / "data.txt"
+        assert copied.is_file()
 
     def test_include_files_overwriting_generated_rejected(
         self, project, monkeypatch, tmp_path
@@ -373,7 +676,10 @@ class TestAndroidBuildIncludeFiles:
         (project / "pyproject.toml").write_text(text, encoding="utf-8")
         (project / "evil").mkdir()
         (project / "evil" / "settings.gradle").write_text("x", encoding="utf-8")
-        _write_lock(project)
+        _write_lock(
+            project,
+            include_files=_include_pins(project, ".", "evil/settings.gradle"),
+        )
         monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
         calls: dict = {}
         _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
@@ -445,6 +751,23 @@ class TestLockedVersionAndStage:
             cli._stage(boom, RuntimeStageError)
 
 
+class TestArtifactExistenceGate:
+    """A green Gradle run plus a missing artifact means AGP's output layout
+    moved — announcing a path that isn't there is worse than failing."""
+
+    def test_missing_debug_artifact_fails(self, build_env, monkeypatch):
+        project, _ = build_env
+        monkeypatch.setattr(cli, "run_gradle", lambda dest, tasks, **kw: None)
+        with pytest.raises(AndroidBuildError, match="no artifact is at"):
+            cli.android_build(project, debug=True)
+
+    def test_present_artifact_is_returned(self, tmp_path):
+        apk = tmp_path / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
+        apk.parent.mkdir(parents=True)
+        apk.write_bytes(b"fake")
+        assert cli._require_artifact(apk, "assembleDebug") == apk
+
+
 class TestDebugReleaseOutputPaths:
     def test_debug_apk_and_aab(self, tmp_path):
         assert cli._debug_output(tmp_path, "apk").name == "app-debug.apk"
@@ -478,7 +801,7 @@ class TestAndroidPackage:
 
     def _fake_manifest_ok(self, monkeypatch):
         monkeypatch.setattr(
-            policy_mod, "enforce_release_manifest", lambda xml, *, package: []
+            policy_mod, "enforce_release_manifest", lambda xml, **kw: []
         )
 
     def test_success_assembles_release_apk(self, build_env, monkeypatch):
@@ -487,7 +810,10 @@ class TestAndroidPackage:
         self._fake_manifest_ok(monkeypatch)
         out = cli.android_package(project, fmt="apk")
         assert out.name == "app-release.apk"
-        assert calls["run_gradle"] == [("assembleRelease",)]
+        assert calls["run_gradle"] == [
+            ("lintRelease", MERGED_MANIFEST_TASK),
+            ("assembleRelease",),
+        ]
 
     def test_success_bundles_release_aab(self, build_env, monkeypatch):
         project, calls = build_env
@@ -495,7 +821,10 @@ class TestAndroidPackage:
         self._fake_manifest_ok(monkeypatch)
         out = cli.android_package(project, fmt="aab")
         assert out.name == "app-release.aab"
-        assert calls["run_gradle"] == [("bundleRelease",)]
+        assert calls["run_gradle"] == [
+            ("lintRelease", MERGED_MANIFEST_TASK),
+            ("bundleRelease",),
+        ]
 
     def test_manifest_policy_violation_blocks_before_gradle(
         self, build_env, monkeypatch
@@ -503,7 +832,7 @@ class TestAndroidPackage:
         project, calls = build_env
         self._fake_signing(monkeypatch)
 
-        def boom(manifest_xml, *, package):
+        def boom(manifest_xml, **kw):
             raise policy_mod.ManifestPolicyError(
                 [
                     policy_mod.PolicyFinding(
@@ -523,7 +852,7 @@ class TestAndroidPackage:
         monkeypatch.setattr(
             policy_mod,
             "enforce_release_manifest",
-            lambda xml, *, package: [
+            lambda xml, **kw: [
                 policy_mod.PolicyFinding("INFO", "cleartext traffic is disabled")
             ],
         )
@@ -543,16 +872,151 @@ class TestAndroidPackage:
             cli.android_package(project)
 
 
+_CLEAN_MANIFEST = (
+    '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+    "<application>"
+    '<activity android:name="org.kivy.android.PythonActivity" '
+    'android:exported="true">'
+    '<intent-filter><action android:name="android.intent.action.MAIN"/>'
+    '<category android:name="android.intent.category.LAUNCHER"/>'
+    "</intent-filter></activity>"
+    "</application></manifest>\n"
+)
+
+
+def _merged_manifest_with(dest: Path, body: str) -> None:
+    out = dest / MERGED_MANIFEST_RELPATH
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+        f"<application>{body}</application></manifest>\n",
+        encoding="utf-8",
+    )
+
+
+class TestMergedManifestPolicy:
+    """The generated manifest is only half the story: AGP merges library
+    manifests into what actually ships, so the policy runs again on that."""
+
+    def _ready(self, build_env, monkeypatch, *, extra_toml: str = ""):
+        """A project the *real* policy passes: a non-placeholder applicationId
+        and a generated manifest with exactly one bootstrap LAUNCHER."""
+        project, calls = build_env
+        TestAndroidPackage()._fake_signing(monkeypatch)
+        text = (project / "pyproject.toml").read_text(encoding="utf-8")
+        (project / "pyproject.toml").write_text(
+            text.replace("org.example.demoapp", "com.acme.demoapp") + extra_toml,
+            encoding="utf-8",
+        )
+        _write_lock(project)
+        monkeypatch.setattr(
+            cli, "generate_manifest", lambda android, *, orientation: _CLEAN_MANIFEST
+        )
+        return project, calls
+
+    def test_lint_and_the_export_task_run_before_assembling(
+        self, build_env, monkeypatch, capsys
+    ):
+        project, calls = self._ready(build_env, monkeypatch)
+        cli.android_package(project)
+        assert calls["run_gradle"][0] == ("lintRelease", MERGED_MANIFEST_TASK)
+        out = capsys.readouterr().out
+        assert "lintRelease" in out
+        assert "merged release manifest" in out
+
+    def _merge_in(self, monkeypatch, calls, body):
+        """Let the export task 'merge' an extra component into the manifest."""
+
+        def fake_run_gradle(dest, tasks, **kw):
+            calls["run_gradle"].append(tuple(tasks))
+            _gradle_output_for(dest, tasks)
+            if MERGED_MANIFEST_TASK in tasks:
+                _merged_manifest_with(dest, body)
+
+        monkeypatch.setattr(cli, "run_gradle", fake_run_gradle)
+
+    _VENDOR_EXPORTED = (
+        '<activity android:name="com.vendor.sdk.Trampoline" android:exported="true"/>'
+    )
+
+    def test_a_merged_only_violation_blocks_the_release(self, build_env, monkeypatch):
+        # The generated manifest is clean; the merge adds a library's exported
+        # activity, which only the second pass can see.
+        project, calls = self._ready(build_env, monkeypatch)
+        self._merge_in(monkeypatch, calls, self._VENDOR_EXPORTED)
+        with pytest.raises(AndroidBuildError, match="com.vendor.sdk.Trampoline"):
+            cli.android_package(project)
+        # Blocked before the release was assembled (and therefore signed).
+        assert calls["run_gradle"] == [("lintRelease", MERGED_MANIFEST_TASK)]
+
+    def test_allow_exported_admits_a_library_component(self, build_env, monkeypatch):
+        project, calls = self._ready(
+            build_env,
+            monkeypatch,
+            extra_toml="\n[tool.kivy.android.manifest]\n"
+            'allow_exported = ["com.vendor.sdk.Trampoline"]\n',
+        )
+        self._merge_in(
+            monkeypatch,
+            calls,
+            self._VENDOR_EXPORTED
+            + '<activity android:name="org.kivy.android.PythonActivity" '
+            'android:exported="true"><intent-filter>'
+            '<action android:name="android.intent.action.MAIN"/>'
+            '<category android:name="android.intent.category.LAUNCHER"/>'
+            "</intent-filter></activity>",
+        )
+        out = cli.android_package(project)
+        assert out.name == "app-release.apk"
+
+    def test_a_lint_finding_points_at_the_report(self, build_env, monkeypatch):
+        project, _ = self._ready(build_env, monkeypatch)
+
+        def boom(dest, tasks, **kw):
+            raise GradleError("Lint found 1 error")
+
+        monkeypatch.setattr(cli, "run_gradle", boom)
+        with pytest.raises(AndroidBuildError, match="lint-results-release.html"):
+            cli.android_package(project)
+
+    def test_a_missing_merged_manifest_is_an_error_not_a_pass(
+        self, build_env, monkeypatch
+    ):
+        project, calls = self._ready(build_env, monkeypatch)
+
+        def no_export(dest, tasks, **kw):
+            calls["run_gradle"].append(tuple(tasks))
+
+        monkeypatch.setattr(cli, "run_gradle", no_export)
+        with pytest.raises(AndroidBuildError, match="produced no manifest"):
+            cli.android_package(project)
+
+
+def _fake_device(monkeypatch, *, serial="emulator-5554", abi="arm64_v8a"):
+    """Stand in for an attached target: `run`/`--smoke` resolve one, then ask it
+    which ABI to build for."""
+    seen: dict = {}
+
+    def resolve(**kw):
+        seen.update(kw)
+        return serial
+
+    monkeypatch.setattr(adb_mod, "resolve_device", resolve)
+    monkeypatch.setattr(adb_mod, "device_abi", lambda dev: abi)
+    return seen
+
+
 class TestAndroidRun:
-    def test_no_build_missing_apk_raises(self, build_env):
+    def test_no_build_missing_apk_raises(self, build_env, monkeypatch):
         project, _ = build_env
+        _fake_device(monkeypatch)
         with pytest.raises(AndroidBuildError, match="no debug APK"):
             cli.android_run(project, no_build=True)
 
     def test_builds_then_installs_and_launches(self, build_env, monkeypatch):
         project, calls = build_env
         events = []
-        monkeypatch.setattr(adb_mod, "resolve_device", lambda **kw: "emulator-5554")
+        _fake_device(monkeypatch)
         monkeypatch.setattr(
             adb_mod, "install_apk", lambda dev, apk: events.append(("install", dev))
         )
@@ -586,7 +1050,7 @@ class TestAndroidRun:
         )
         apk.parent.mkdir(parents=True)
         apk.write_bytes(b"fake")
-        monkeypatch.setattr(adb_mod, "resolve_device", lambda **kw: "emulator-5554")
+        _fake_device(monkeypatch)
         monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
@@ -604,18 +1068,74 @@ class TestAndroidRun:
         with pytest.raises(AndroidBuildError, match="no device attached"):
             cli.android_run(project, wait_sec=0)
 
+    def test_abi_defaults_to_the_targets_own(self, build_env, monkeypatch):
+        """android/06 §run: `--abi`'s default is the target's architecture, and
+        the target itself is the accurate source for it."""
+        project, calls = build_env
+        _fake_device(monkeypatch, abi="arm64_v8a")
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, wait_sec=0)
+        # The build's effective ABI set reaches Gradle's abiFilters, so that is
+        # where the restriction is observable.
+        assert calls["write_app_build_gradle"][-1]["abis"] == ("arm64_v8a",)
+
+    def test_explicit_abi_still_wins(self, build_env, monkeypatch):
+        project, calls = build_env
+        _fake_device(monkeypatch, abi="x86_64")
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, abi="arm64_v8a", wait_sec=0)
+        assert calls["write_app_build_gradle"][-1]["abis"] == ("arm64_v8a",)
+
+    def test_device_needing_an_unlocked_abi_fails_before_gradle(
+        self, build_env, monkeypatch
+    ):
+        """Otherwise this only surfaces as adb's INSTALL_FAILED_NO_MATCHING_ABIS
+        after a full build."""
+        project, calls = build_env
+        _fake_device(monkeypatch, abi="x86_64")  # project locks arm64_v8a only
+        with pytest.raises(AndroidBuildError, match="needs the x86_64 ABI"):
+            cli.android_run(project, wait_sec=0)
+        assert not calls["run_gradle"]
+
+    def test_unknown_device_abi_falls_back_to_the_host(self, build_env, monkeypatch):
+        project, calls = build_env
+        _fake_device(monkeypatch, abi=None)  # e.g. a 32-bit-only device
+        monkeypatch.setattr(adb_mod, "host_abi", lambda: "arm64_v8a")
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, wait_sec=0)
+        assert calls["write_app_build_gradle"][-1]["abis"] == ("arm64_v8a",)
+
+    def test_require_physical_reaches_adb(self, build_env, monkeypatch):
+        project, _ = build_env
+        seen = _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, require_physical=True, wait_sec=0)
+        assert seen["require_physical"] is True
+
 
 class TestAndroidSmoke:
     def test_success(self, build_env, monkeypatch, capsys):
         project, calls = build_env
-        monkeypatch.setattr(adb_mod, "resolve_device", lambda **kw: "emulator-5554")
+        _fake_device(monkeypatch)
         monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
         cli.android_smoke(project)
         assert "PASSED" in capsys.readouterr().out
 
     def test_smoke_error_is_wrapped(self, build_env, monkeypatch):
         project, _ = build_env
-        monkeypatch.setattr(adb_mod, "resolve_device", lambda **kw: "emulator-5554")
+        _fake_device(monkeypatch)
 
         def boom(dest, *, release):
             raise smoke_mod.SmokeError("contract test failed")
@@ -633,6 +1153,60 @@ class TestAndroidSmoke:
         monkeypatch.setattr(adb_mod, "resolve_device", boom)
         with pytest.raises(AndroidBuildError, match="no AVD exists"):
             cli.android_smoke(project)
+
+    def test_debug_smoke_leaves_the_test_variant_alone(self, build_env, monkeypatch):
+        project, calls = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        cli.android_smoke(project)
+        gradle_kwargs = calls["write_app_build_gradle"][-1]
+        assert gradle_kwargs["test_build_type"] is None
+        assert gradle_kwargs["release_signing_config"] is None
+
+    def test_release_smoke_configures_the_release_test_variant(
+        self, build_env, monkeypatch, capsys
+    ):
+        """connectedReleaseAndroidTest only exists when the tests target the
+        release variant, and AGP refuses to assemble an unsigned release — so
+        without both, `run --smoke --release` could never have worked."""
+        project, calls = build_env
+        _fake_device(monkeypatch)
+        seen = {}
+        monkeypatch.setattr(
+            smoke_mod,
+            "run_smoke",
+            lambda dest, *, release: seen.update(release=release),
+        )
+        cli.android_smoke(project, release=True)
+        gradle_kwargs = calls["write_app_build_gradle"][-1]
+        assert gradle_kwargs["test_build_type"] == "release"
+        assert gradle_kwargs["release_signing_config"] == "debug"
+        assert seen["release"] is True
+        assert "debug keystore" in capsys.readouterr().out
+
+    def test_release_smoke_prefers_the_configured_release_identity(
+        self, project, monkeypatch, tmp_path
+    ):
+        keystore = tmp_path / "release.keystore"
+        keystore.write_bytes(b"fake-keystore")
+        pyproject = project / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8") + "\n[tool.kivy.android.signing]\n"
+            f'keystore = "{keystore.as_posix()}"\nkey_alias = "upload"\n',
+            encoding="utf-8",
+        )
+        _write_lock(project)
+        monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "fake-sdk"))
+        monkeypatch.setenv("KIVYFORGE_KEYSTORE_PASSWORD", "hunter2")
+        calls: dict = {}
+        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
+        monkeypatch.setattr(signing_mod, "_verify_alias", lambda *a, **kw: None)
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        cli.android_smoke(project, release=True)
+        gradle_kwargs = calls["write_app_build_gradle"][-1]
+        assert gradle_kwargs["release_signing_config"] == "release"
+        assert "upload" in gradle_kwargs["signing_config_block"]
 
 
 class TestAndroidOpen:

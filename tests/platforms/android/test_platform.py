@@ -76,6 +76,88 @@ class TestRegistration:
             )
 
 
+class TestVerbForwarding:
+    """The backend adapter is the only thing between the shared verbs and the
+    Android pipeline; a dropped or misnamed kwarg here makes a documented flag
+    silently do nothing (or, as `package` did with `arch=`, raise TypeError)."""
+
+    def _backend(self, monkeypatch):
+        import kivyforge.platforms.android.cli as android_cli
+
+        calls: dict[str, dict] = {}
+        monkeypatch.setattr(
+            android_cli,
+            "android_build",
+            lambda project_root, **kw: calls.setdefault("build", kw),
+        )
+        monkeypatch.setattr(
+            android_cli,
+            "android_package",
+            lambda project_root, **kw: calls.setdefault("package", kw),
+        )
+        return AndroidPlatform(), calls
+
+    def test_build_forwards_debug_format_and_abi(self, tmp_path, monkeypatch):
+        backend, calls = self._backend(monkeypatch)
+        backend.build(
+            tmp_path,
+            target=None,
+            arch=None,
+            no_verify_lock=False,
+            no_cache=False,
+            team_id=None,
+            signing_identity=None,
+            export_method="app-store",
+            debug=True,
+            fmt="aab",
+            abi="x86_64",
+        )
+        assert calls["build"]["debug"] is True
+        assert calls["build"]["fmt"] == "aab"
+        assert calls["build"]["abi"] == "x86_64"
+
+    def test_build_accepts_arch_as_the_abi(self, tmp_path, monkeypatch):
+        backend, calls = self._backend(monkeypatch)
+        backend.build(
+            tmp_path,
+            target=None,
+            arch="arm64_v8a",
+            no_verify_lock=False,
+            no_cache=False,
+            team_id=None,
+            signing_identity=None,
+            export_method="app-store",
+        )
+        assert calls["build"]["abi"] == "arm64_v8a"
+        assert calls["build"]["debug"] is False
+
+    def test_package_forwards_signing_overrides(self, tmp_path, monkeypatch):
+        backend, calls = self._backend(monkeypatch)
+        backend.package(
+            tmp_path,
+            fmt="aab",
+            arch=None,
+            team_id=None,
+            signing_identity=None,
+            export_method="app-store",
+            notarize=None,
+            notary_profile=None,
+            no_verify_lock=False,
+            no_cache=False,
+            abi="arm64_v8a",
+            keystore="release.keystore",
+            key_alias="upload",
+        )
+        assert calls["package"] == {
+            "fmt": "aab",
+            "abi": "arm64_v8a",
+            "keystore": "release.keystore",
+            "key_alias": "upload",
+            "no_verify_lock": False,
+            "no_cache": False,
+        }
+
+
 class TestDoctorStub:
     def test_environment_mode_runs(self, tmp_path: Path):
         backend = AndroidPlatform()

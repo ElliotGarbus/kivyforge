@@ -284,6 +284,149 @@ class TestBundle:
         ).read_text() == "# kivy contract"
         assert (bundle / "VERSION").read_text() == stamp
 
+    def _kwargs(self, tmp_path):
+        stdlib, sp, app = self._stage(tmp_path)
+        return dict(
+            stdlib_src=stdlib,
+            site_packages_by_abi=sp,
+            canonical_abi="arm64_v8a",
+            app_src=app,
+            finder_source="# finder",
+            kivy_bootstrap_source="# kivy contract",
+            ext_manifest_json="{}",
+        )
+
+    def test_byte_compile_keeps_source_in_the_pycache_layout(self, tmp_path):
+        """With the source shipped, .pyc belongs in __pycache__ — that is where
+        an import next to a .py looks for it."""
+        bundle = tmp_path / "bundle"
+        assemble_bundle(bundle, byte_compile=(), **self._kwargs(tmp_path))
+        assert (bundle / "app" / "main.py").is_file()
+        assert list((bundle / "app" / "__pycache__").glob("main.*.pyc"))
+        assert not (bundle / "app" / "main.pyc").exists()
+
+    def test_strip_source_uses_the_sourceless_layout(self, tmp_path):
+        """PEP 3147 sourceless imports only look for foo.pyc at the source's own
+        path; compiling into __pycache__ and deleting the .py would ship a
+        bundle that imports nothing at all."""
+        bundle = tmp_path / "bundle"
+        assemble_bundle(
+            bundle, byte_compile=(), strip_source=True, **self._kwargs(tmp_path)
+        )
+        assert (bundle / "app" / "main.pyc").is_file()
+        assert not (bundle / "app" / "main.py").exists()
+        assert not list(bundle.rglob("*.py"))
+        assert not list(bundle.rglob("__pycache__"))
+        # The finder and Kivy's contract module have to survive the strip.
+        assert (bundle / "bootstrap" / "_kivyforge_bootstrap.pyc").is_file()
+        assert (bundle / "bootstrap" / "_kivy_bootstrap.pyc").is_file()
+
+    def test_byte_compiled_stamp_is_deterministic(self, tmp_path):
+        """Hash-based .pyc, not mtime-based: an mtime in every .pyc would make
+        the bundle stamp differ per machine and re-unpack for no reason."""
+        one = assemble_bundle(
+            tmp_path / "b1",
+            byte_compile=(),
+            strip_source=True,
+            **self._kwargs(tmp_path),
+        )
+        two = assemble_bundle(
+            tmp_path / "b2",
+            byte_compile=(),
+            strip_source=True,
+            **self._kwargs(tmp_path),
+        )
+        assert one == two
+
+    def test_pyc_carries_no_host_paths(self, tmp_path):
+        """A .pyc records the path it was compiled from; the default would ship
+        the build machine's directory layout inside the APK."""
+        bundle = tmp_path / "bundle"
+        assemble_bundle(
+            bundle, byte_compile=(), strip_source=True, **self._kwargs(tmp_path)
+        )
+        blob = (bundle / "app" / "main.pyc").read_bytes()
+        assert str(tmp_path).encode() not in blob
+        # Bundle-relative, so tracebacks still name the file.
+        assert b"main.py" in blob
+
+    def test_syntax_error_fails_the_build(self, tmp_path):
+        kwargs = self._kwargs(tmp_path)
+        _write(kwargs["app_src"] / "broken.py", b"def (:\n")
+        with pytest.raises(BundleError, match="byte-compiling"):
+            assemble_bundle(tmp_path / "bundle", byte_compile=(), **kwargs)
+
+    def test_no_byte_compile_leaves_source_alone(self, tmp_path):
+        bundle = tmp_path / "bundle"
+        assemble_bundle(bundle, **self._kwargs(tmp_path))
+        assert (bundle / "app" / "main.py").is_file()
+        assert not list(bundle.rglob("*.pyc"))
+
+    def test_missing_entry_point_fails(self, tmp_path):
+        stdlib, sp, app = self._stage(tmp_path)
+        with pytest.raises(BundleError, match="entry point"):
+            assemble_bundle(
+                tmp_path / "bundle",
+                stdlib_src=stdlib,
+                site_packages_by_abi=sp,
+                canonical_abi="arm64_v8a",
+                app_src=app,
+                entry_point="nope",
+                finder_source="# finder",
+                kivy_bootstrap_source="# kivy contract",
+                ext_manifest_json="{}",
+            )
+
+    def test_dotted_and_package_entry_points_accepted(self, tmp_path):
+        stdlib, sp, app = self._stage(tmp_path)
+        _write(app / "pkg" / "__init__.py")
+        _write(app / "pkg" / "start.py", b"# start")
+        kwargs = dict(
+            stdlib_src=stdlib,
+            site_packages_by_abi=sp,
+            canonical_abi="arm64_v8a",
+            app_src=app,
+            finder_source="# finder",
+            kivy_bootstrap_source="# kivy contract",
+            ext_manifest_json="{}",
+        )
+        assemble_bundle(tmp_path / "b-dotted", entry_point="pkg.start", **kwargs)
+        # A package entry point runs its __init__.py (common pyproject spec).
+        assemble_bundle(tmp_path / "b-package", entry_point="pkg", **kwargs)
+
+    def test_missing_service_entry_point_names_the_service(self, tmp_path):
+        """A service's entry point fails in its own process, where nothing is
+        watching, so an unresolvable one has to fail the build instead."""
+        stdlib, sp, app = self._stage(tmp_path)
+        with pytest.raises(BundleError, match="services.*'Downloader'"):
+            assemble_bundle(
+                tmp_path / "bundle",
+                stdlib_src=stdlib,
+                site_packages_by_abi=sp,
+                canonical_abi="arm64_v8a",
+                app_src=app,
+                service_entry_points={"Downloader": "svc.worker"},
+                finder_source="# finder",
+                kivy_bootstrap_source="# kivy contract",
+                ext_manifest_json="{}",
+            )
+
+    def test_present_service_entry_point_passes(self, tmp_path):
+        stdlib, sp, app = self._stage(tmp_path)
+        _write(app / "svc" / "__init__.py")
+        _write(app / "svc" / "worker.py", b"# worker")
+        assemble_bundle(
+            tmp_path / "bundle",
+            stdlib_src=stdlib,
+            site_packages_by_abi=sp,
+            canonical_abi="arm64_v8a",
+            app_src=app,
+            service_entry_points={"Downloader": "svc.worker"},
+            finder_source="# finder",
+            kivy_bootstrap_source="# kivy contract",
+            ext_manifest_json="{}",
+        )
+
     def test_stamp_tracks_content(self, tmp_path):
         stdlib, sp, app = self._stage(tmp_path)
         kwargs = dict(

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kivyforge.config.loader import load_config_from_text
+from kivyforge.config.loader import load_config, load_config_from_text
 from kivyforge.doctor.result import Status
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.platforms.android.doctor import (
@@ -16,15 +16,24 @@ from kivyforge.platforms.android.doctor import (
     _check_16k_alignment,
     _check_abi_coverage,
     _check_build_tools,
+    _check_find_links,
+    _check_gradle_wrapper,
+    _check_icon,
+    _check_include_files,
     _check_lock_hosts,
     _check_pyjnius_contract,
     _check_sdk,
     _check_sdl_kivy_match,
     _check_signing,
+    _check_splash,
     android_doctor,
 )
 from kivyforge.platforms.android.elf import PAGE_16K, ElfError, read_elf, scan_alignment
-from kivyforge.platforms.android.lock.model import AndroidLockfile, PythonAndroidRuntime
+from kivyforge.platforms.android.lock.model import (
+    AndroidLockfile,
+    LockedIncludeFile,
+    PythonAndroidRuntime,
+)
 
 
 class FakeProbe:
@@ -38,6 +47,9 @@ class FakeProbe:
         self._avds = kw.get("avds", [])
         self._accel = kw.get("accel", True)
         self._reachable = kw.get("reachable", True)
+        self._licenses = kw.get("licenses", ["android-sdk-license"])
+        self._devices = kw.get("devices", ["emulator-5554"])
+        self._latest = kw.get("latest")
 
     def which(self, name):
         return self._which.get(name)
@@ -57,14 +69,23 @@ class FakeProbe:
     def platform_installed(self, sdk, api):
         return api in self._platforms
 
+    def accepted_licenses(self, sdk):
+        return list(self._licenses)
+
     def avds(self):
         return list(self._avds)
+
+    def connected_devices(self):
+        return list(self._devices)
 
     def has_kvm_or_haxm(self):
         return self._accel
 
     def tcp_reachable(self, host, port):
         return self._reachable
+
+    def latest_kivyforge_version(self):
+        return self._latest
 
 
 def _healthy_probe(sdk: Path):
@@ -161,7 +182,69 @@ class TestEnvironmentChecks:
             android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
         )
         assert by["adb"].status is Status.PASS
-        assert str(adb_path) == by["adb"].detail
+        assert by["adb"].detail.startswith(str(adb_path))
+
+    def test_adb_without_a_device_warns(self, tmp_path):
+        """`run` and `run --smoke` need something attached, so an adb with no
+        devices is a real gap, not a pass."""
+        probe = FakeProbe(
+            which={"java": "/j", "adb": "/sdk/adb"},
+            sdk=tmp_path,
+            ndk=["27"],
+            build_tools=["35.0.0"],
+            devices=[],
+        )
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["adb"].status is Status.WARN
+        assert "no device or emulator" in by["adb"].detail
+
+    def test_unaccepted_sdk_licenses_warn(self, tmp_path):
+        probe = FakeProbe(
+            which={"java": "/j"},
+            sdk=tmp_path,
+            ndk=["27"],
+            build_tools=["35.0.0"],
+            licenses=[],
+        )
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["SDK licenses"].status is Status.WARN
+        assert "sdkmanager --licenses" in by["SDK licenses"].hint
+
+    def test_newer_kivyforge_on_pypi_warns(self, tmp_path):
+        probe = FakeProbe(
+            which={"java": "/j"},
+            sdk=tmp_path,
+            ndk=["27"],
+            build_tools=["35.0.0"],
+            latest="9.9.9",
+        )
+        by = _by_name(
+            android_doctor(
+                tmp_path, kivyforge_version="1.0.0", offline=False, probe=probe
+            )
+        )
+        assert by["kivyforge"].status is Status.WARN
+        assert "9.9.9" in by["kivyforge"].detail
+
+    def test_offline_skips_the_pypi_lookup(self, tmp_path):
+        probe = FakeProbe(
+            which={"java": "/j"},
+            sdk=tmp_path,
+            ndk=["27"],
+            build_tools=["35.0.0"],
+            latest="9.9.9",
+        )
+        by = _by_name(
+            android_doctor(
+                tmp_path, kivyforge_version="1.0.0", offline=True, probe=probe
+            )
+        )
+        assert by["kivyforge"].status is Status.PASS
+        assert "offline" in by["kivyforge"].detail
 
 
 class TestSdkCheck:
@@ -307,6 +390,73 @@ class TestProjectChecks:
         assert by["App source directory"].status is Status.PASS
         assert by["Lock"].status is Status.WARN  # no lock yet
 
+    def test_icon_and_splash_skip_when_unconfigured(self, tmp_path):
+        self._project(tmp_path)
+        by = _by_name(
+            android_doctor(
+                tmp_path,
+                kivyforge_version="0",
+                offline=True,
+                probe=_healthy_probe(tmp_path),
+            )
+        )
+        assert by["App icon"].status is Status.SKIP
+        assert by["Splash assets"].status is Status.SKIP
+
+    def test_manifest_policy_and_implied_features_run_without_a_build(self, tmp_path):
+        """Both read only the config, so they are the preflight's cheapest half."""
+        self._project(tmp_path)
+        by = _by_name(
+            android_doctor(
+                tmp_path,
+                kivyforge_version="0",
+                offline=True,
+                probe=_healthy_probe(tmp_path),
+            )
+        )
+        assert by["Manifest policy (release)"].status is Status.PASS
+        assert by["Implied features"].status is Status.PASS
+        assert by["App-local native binaries"].status is Status.PASS
+        assert by["find_links directories"].status is Status.SKIP
+        # No generated project yet, so the wrapper cannot be judged.
+        assert by["Gradle wrapper"].status is Status.SKIP
+
+    def test_placeholder_package_fails_the_manifest_policy(self, tmp_path):
+        self._project(tmp_path)
+        text = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+        (tmp_path / "pyproject.toml").write_text(
+            text.replace('package = "org.real.app"', 'package = "org.example.app"'),
+            encoding="utf-8",
+        )
+        by = _by_name(
+            android_doctor(
+                tmp_path,
+                kivyforge_version="0",
+                offline=True,
+                probe=_healthy_probe(tmp_path),
+            )
+        )
+        policy = by["Manifest policy (release)"]
+        assert policy.status is Status.FAIL
+        assert "placeholder" in policy.detail
+
+    def test_native_binary_in_app_dir_fails(self, tmp_path):
+        self._project(tmp_path)
+        (tmp_path / "src" / "vendor").mkdir()
+        (tmp_path / "src" / "vendor" / "_fast.so").write_bytes(b"not an elf")
+        by = _by_name(
+            android_doctor(
+                tmp_path,
+                kivyforge_version="0",
+                offline=True,
+                probe=_healthy_probe(tmp_path),
+            )
+        )
+        native = by["App-local native binaries"]
+        assert native.status is Status.FAIL
+        assert "src/vendor/_fast.so" in native.detail
+        assert "jniLibs" in native.hint
+
     def test_compile_sdk_platform_missing_fails(self, tmp_path):
         self._project(tmp_path, compile_sdk=34)
         probe = _healthy_probe(tmp_path)  # only android-35 installed
@@ -377,7 +527,7 @@ def _wheel_pkg(name, version, *, abis=("arm64_v8a", "x86_64"), api=24):
     return LockedPackage(name=name, version=version, wheels=wheels)
 
 
-def _doctor_lock(*, packages=(), vendored=False):
+def _doctor_lock(*, packages=(), vendored=False, include_files=()):
     if vendored:
         runtime = PythonAndroidRuntime(
             version="3.14.6",
@@ -398,6 +548,7 @@ def _doctor_lock(*, packages=(), vendored=False):
         requires_python=">=3.14",
         packages=tuple(packages),
         python_android=(runtime,),
+        include_files=tuple(include_files),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256="0" * 64,
@@ -472,6 +623,192 @@ class TestAbiCoverageDirect:
         assert "x86_64" in result.detail
 
 
+class TestSplashCheckDirect:
+    """A splash typo should surface in doctor, not as an AAPT failure."""
+
+    def _config_with(self, extra: str):
+        return _config(_PROJECT_PYPROJECT + extra)
+
+    def _png(self, path: Path, *, size=(64, 64)):
+        from kivyforge.platforms.android.icons import default_icon_png
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(default_icon_png(size[0], (1, 2, 3, 255)))
+
+    def test_skip_when_unconfigured(self, tmp_path):
+        assert _check_splash(_config(), tmp_path).status is Status.SKIP
+
+    def test_fail_when_source_missing(self, tmp_path):
+        config = self._config_with(
+            "\n[tool.kivy.android.splash]\nsource = 'assets/splash.png'\n"
+        )
+        result = _check_splash(config, tmp_path)
+        assert result.status is Status.FAIL
+        assert "not found" in result.detail
+
+    def test_pass_for_a_valid_png(self, tmp_path):
+        self._png(tmp_path / "splash.png")
+        config = self._config_with(
+            "\n[tool.kivy.android.splash]\nsource = 'splash.png'\n"
+        )
+        assert _check_splash(config, tmp_path).status is Status.PASS
+
+    def test_fail_for_a_source_that_is_not_a_png(self, tmp_path):
+        (tmp_path / "splash.png").write_bytes(b"not a png")
+        config = self._config_with(
+            "\n[tool.kivy.android.splash]\nsource = 'splash.png'\n"
+        )
+        assert _check_splash(config, tmp_path).status is Status.FAIL
+
+    def test_fail_for_xml_that_is_not_a_drawable(self, tmp_path):
+        (tmp_path / "splash.xml").write_text("<resources/>", encoding="utf-8")
+        config = self._config_with(
+            "\n[tool.kivy.android.splash]\nsource = 'splash.xml'\n"
+        )
+        assert _check_splash(config, tmp_path).status is Status.FAIL
+
+    def test_pass_for_an_animated_vector(self, tmp_path):
+        (tmp_path / "splash.xml").write_text(
+            '<animated-vector xmlns:android="x"/>', encoding="utf-8"
+        )
+        config = self._config_with(
+            "\n[tool.kivy.android.splash]\n"
+            "source = 'splash.xml'\nanimation_duration = 700\n"
+        )
+        assert _check_splash(config, tmp_path).status is Status.PASS
+
+    def test_warn_when_duration_cannot_apply(self, tmp_path):
+        self._png(tmp_path / "splash.png")
+        config = self._config_with(
+            "\n[tool.kivy.android.splash]\n"
+            "source = 'splash.png'\nanimation_duration = 700\n"
+        )
+        result = _check_splash(config, tmp_path)
+        assert result.status is Status.WARN
+        assert "ignored" in result.detail
+
+    def test_fail_when_branding_missing(self, tmp_path):
+        self._png(tmp_path / "splash.png")
+        config = self._config_with(
+            "\n[tool.kivy.android.splash]\n"
+            "source = 'splash.png'\nbranding = 'brand.png'\n"
+        )
+        assert _check_splash(config, tmp_path).status is Status.FAIL
+
+
+class TestIconCheckDirect:
+    def test_skip_when_unconfigured(self, tmp_path):
+        assert _check_icon(_config(), tmp_path).status is Status.SKIP
+
+    def test_fail_when_source_missing(self, tmp_path):
+        config = _config(
+            _PROJECT_PYPROJECT + "\n[tool.kivy.android.icons]\nsource = 'icon.png'\n"
+        )
+        assert _check_icon(config, tmp_path).status is Status.FAIL
+
+    def test_fail_when_wrong_size(self, tmp_path):
+        from kivyforge.platforms.android.icons import default_icon_png
+
+        (tmp_path / "icon.png").write_bytes(default_icon_png(64, (1, 2, 3, 255)))
+        config = _config(
+            _PROJECT_PYPROJECT + "\n[tool.kivy.android.icons]\nsource = 'icon.png'\n"
+        )
+        result = _check_icon(config, tmp_path)
+        assert result.status is Status.FAIL
+        assert "64x64" in result.detail
+
+    def test_pass_and_layer_paths_checked(self, tmp_path):
+        from kivyforge.platforms.android.icons import default_icon_png
+
+        (tmp_path / "icon.png").write_bytes(default_icon_png(1024, (1, 2, 3, 255)))
+        base = _PROJECT_PYPROJECT + "\n[tool.kivy.android.icons]\nsource = 'icon.png'\n"
+        assert _check_icon(_config(base), tmp_path).status is Status.PASS
+        # A hex background is a color, not a path.
+        assert (
+            _check_icon(_config(base + "background = '#ffffff'\n"), tmp_path).status
+            is Status.PASS
+        )
+        assert (
+            _check_icon(_config(base + "background = 'bg.png'\n"), tmp_path).status
+            is Status.FAIL
+        )
+
+
+class TestIncludeFilesCheckDirect:
+    """Drift is a warning here and a build failure later, so doctor is where a
+    user finds out before Gradle time."""
+
+    def _setup(self, tmp_path, *, content=b"hi"):
+        (tmp_path / "extra").mkdir(exist_ok=True)
+        (tmp_path / "extra" / "data.txt").write_bytes(content)
+        config = _config(
+            _PROJECT_PYPROJECT + "\n[[tool.kivy.android.include_files]]\n"
+            'dest = "app/src/main/assets/extra"\n'
+            'sources = ["extra"]\n'
+        )
+        return config
+
+    def _lock_with(self, pins):
+        return _doctor_lock(include_files=pins)
+
+    def test_skip_when_unconfigured(self, tmp_path):
+        result = _check_include_files(_config(), tmp_path, _doctor_lock())
+        assert result.status is Status.SKIP
+
+    def test_pass_when_hashes_match(self, tmp_path):
+        from kivyforge.artifacts.verify import sha256_file
+
+        config = self._setup(tmp_path)
+        pins = (
+            LockedIncludeFile(
+                source="extra/data.txt",
+                dest="app/src/main/assets/extra",
+                sha256=sha256_file(tmp_path / "extra" / "data.txt"),
+            ),
+        )
+        result = _check_include_files(config, tmp_path, self._lock_with(pins))
+        assert result.status is Status.PASS
+
+    def test_warn_on_changed_content(self, tmp_path):
+        config = self._setup(tmp_path)
+        pins = (
+            LockedIncludeFile(
+                source="extra/data.txt",
+                dest="app/src/main/assets/extra",
+                sha256="c" * 64,
+            ),
+        )
+        result = _check_include_files(config, tmp_path, self._lock_with(pins))
+        assert result.status is Status.WARN
+        assert "changed" in result.detail
+
+    def test_warn_on_an_unlocked_file(self, tmp_path):
+        config = self._setup(tmp_path)
+        result = _check_include_files(config, tmp_path, self._lock_with(()))
+        assert result.status is Status.WARN
+        assert "not in the lock" in result.detail
+
+    def test_warn_on_a_deleted_file(self, tmp_path):
+        from kivyforge.artifacts.verify import sha256_file
+
+        config = self._setup(tmp_path)
+        pins = (
+            LockedIncludeFile(
+                source="extra/data.txt",
+                dest="app/src/main/assets/extra",
+                sha256=sha256_file(tmp_path / "extra" / "data.txt"),
+            ),
+            LockedIncludeFile(
+                source="extra/gone.txt",
+                dest="app/src/main/assets/extra",
+                sha256="d" * 64,
+            ),
+        )
+        result = _check_include_files(config, tmp_path, self._lock_with(pins))
+        assert result.status is Status.WARN
+        assert "deleted" in result.detail
+
+
 class TestSigningCheckDirect:
     def test_skip_when_unconfigured(self, tmp_path):
         assert _check_signing(_config(), tmp_path).status is Status.SKIP
@@ -528,6 +865,95 @@ class TestAlignmentCheckDirect:
         jni.mkdir(parents=True)
         (jni / "bad.so").write_bytes(_make_elf(0x1000))
         assert _check_16k_alignment(tmp_path).status is Status.FAIL
+
+
+class TestGradleWrapperCheckDirect:
+    def _wrapper(self, project: Path, version: str) -> None:
+        project.mkdir(parents=True, exist_ok=True)
+        (project / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
+        (project / "gradlew.bat").write_text("@echo off\n", encoding="utf-8")
+        props = project / "gradle" / "wrapper"
+        props.mkdir(parents=True)
+        (props / "gradle-wrapper.properties").write_text(
+            "distributionUrl=https\\://services.gradle.org/distributions/"
+            f"gradle-{version}-bin.zip\n",
+            encoding="utf-8",
+        )
+
+    def test_skip_before_the_project_is_generated(self, tmp_path):
+        assert _check_gradle_wrapper(tmp_path / "nope").status is Status.SKIP
+
+    def test_pass_on_the_pinned_version(self, tmp_path):
+        from kivyforge.platforms.android import toolchain
+
+        self._wrapper(tmp_path / "p", toolchain.GRADLE_VERSION)
+        result = _check_gradle_wrapper(tmp_path / "p")
+        assert result.status is Status.PASS
+        assert toolchain.GRADLE_VERSION in result.detail
+
+    def test_warn_when_the_distribution_drifted(self, tmp_path):
+        self._wrapper(tmp_path / "p", "7.0")
+        result = _check_gradle_wrapper(tmp_path / "p")
+        assert result.status is Status.WARN
+        assert "pinned Gradle" in result.detail
+
+    def test_fail_when_a_wrapper_piece_is_missing(self, tmp_path):
+        from kivyforge.platforms.android import toolchain
+
+        self._wrapper(tmp_path / "p", toolchain.GRADLE_VERSION)
+        (tmp_path / "p" / "gradle" / "wrapper" / "gradle-wrapper.properties").unlink()
+        result = _check_gradle_wrapper(tmp_path / "p")
+        assert result.status is Status.FAIL
+        assert "gradle-wrapper.properties" in result.detail
+
+
+class TestFindLinksCheckDirect:
+    def _config(self, tmp_path, entries):
+        links = ", ".join(f'"{e}"' for e in entries)
+        (tmp_path / "src").mkdir(exist_ok=True)
+        (tmp_path / "pyproject.toml").write_text(
+            "\n".join(
+                [
+                    "[project]",
+                    'name = "app"',
+                    'version = "1.0.0"',
+                    'dependencies = ["kivy==2.3.1", "pyjnius"]',
+                    "[tool.kivy]",
+                    'app_dir = "src"',
+                    "[tool.kivy.android]",
+                    "schema_version = 1",
+                    'package = "org.real.app"',
+                    f"find_links = [{links}]",
+                    "[tool.kivy.android.python]",
+                    'version = "3.14.6"',
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return load_config(
+            tmp_path / "pyproject.toml", require_ios=False, require_android=True
+        )
+
+    def test_fail_when_the_directory_is_gone(self, tmp_path):
+        config = self._config(tmp_path, ["wheels"])
+        result = _check_find_links(config, tmp_path)
+        assert result.status is Status.FAIL
+        assert "missing" in result.detail
+
+    def test_warn_when_the_directory_holds_no_wheels(self, tmp_path):
+        config = self._config(tmp_path, ["wheels"])
+        (tmp_path / "wheels").mkdir()
+        result = _check_find_links(config, tmp_path)
+        assert result.status is Status.WARN
+        assert "no .whl" in result.detail
+
+    def test_pass_when_wheels_are_present(self, tmp_path):
+        config = self._config(tmp_path, ["wheels"])
+        (tmp_path / "wheels").mkdir()
+        (tmp_path / "wheels" / "x-1.0-py3-none-any.whl").write_bytes(b"PK")
+        result = _check_find_links(config, tmp_path)
+        assert result.status is Status.PASS
+        assert "1 wheel(s)" in result.detail
 
 
 class TestAndroidDoctorWithLock:

@@ -2046,6 +2046,19 @@ def _parse_android_manifest(
             key_path="tool.kivy.android.manifest.placeholders",
         )
 
+    allow_exported_raw = table.get("allow_exported", [])
+    if not isinstance(allow_exported_raw, list) or not all(
+        isinstance(v, str) and v.strip() for v in allow_exported_raw
+    ):
+        raise ConfigError(
+            "[tool.kivy.android.manifest].allow_exported must be a list of "
+            "non-empty component class names",
+            key_path="tool.kivy.android.manifest.allow_exported",
+            line=finder.line("allow_exported"),
+            hint="each entry is a fully-qualified class as it appears in the "
+            "merged manifest, e.g. 'com.vendor.sdk.TrampolineActivity'.",
+        )
+
     def _xml_fragment(key: str) -> str:
         fragment = table.get(key, "")
         if not isinstance(fragment, str):
@@ -2075,6 +2088,7 @@ def _parse_android_manifest(
         application=application,
         activity=activity,
         placeholders=dict(placeholders_raw),
+        allow_exported=tuple(allow_exported_raw),
         extra_manifest_xml=_xml_fragment("extra_manifest_xml"),
         extra_application_xml=_xml_fragment("extra_application_xml"),
         extra_activity_xml=_xml_fragment("extra_activity_xml"),

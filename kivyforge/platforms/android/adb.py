@@ -104,10 +104,16 @@ def boot_emulator(avd: str) -> str:
 def resolve_device(
     *,
     prefer_emulator: bool = False,
+    require_physical: bool = False,
     serial: str | None = None,
     avd: str | None = None,
 ) -> str:
-    """android/06 selection rules -> a ready adb serial."""
+    """android/06 selection rules -> a ready adb serial.
+
+    ``require_physical`` is ``run --device``: never fall back to booting an
+    emulator, because silently testing on an AVD is the opposite of what the
+    user asked for.
+    """
     if serial:
         if serial not in connected_devices():
             raise AdbError(
@@ -116,13 +122,20 @@ def resolve_device(
             )
         return serial
     devices = connected_devices()
-    if not prefer_emulator:
+    if require_physical or not prefer_emulator:
         physical = [d for d in devices if not d.startswith("emulator-")]
         if len(physical) == 1:
             return physical[0]
         if len(physical) > 1:
             raise AdbError(
                 f"multiple devices attached ({', '.join(physical)}); pass --serial."
+            )
+        if require_physical:
+            attached = ", ".join(devices) or "none"
+            raise AdbError(
+                "--device asks for a physical device, but adb sees none "
+                f"(attached: {attached}). Enable USB debugging and authorize "
+                "this host, or drop --device to use an emulator."
             )
     emulators = [d for d in devices if d.startswith("emulator-")]
     if emulators:
@@ -139,6 +152,47 @@ def resolve_device(
     elif avd not in avds:
         raise AdbError(f"AVD {avd!r} not found (available: {', '.join(avds)}).")
     return boot_emulator(avd)
+
+
+# The two ABIs kivyforge builds for, keyed by the Android ABI names adb reports.
+_ABI_FROM_ANDROID = {"arm64-v8a": "arm64_v8a", "x86_64": "x86_64"}
+
+
+def device_abi(serial: str) -> str | None:
+    """The kivyforge ABI name for ``serial``'s preferred supported ABI.
+
+    Asking the target beats inferring it: an arm64 emulator on Apple Silicon and
+    an arm64 phone want the same ABI as an x86_64 AVD does not, and installing
+    the wrong one only fails later, as ``INSTALL_FAILED_NO_MATCHING_ABIS``.
+    Returns ``None`` when the device reports nothing kivyforge builds for (a
+    32-bit-only device), leaving the caller to decide.
+    """
+    out = adb(
+        "shell", "getprop", "ro.product.cpu.abilist", serial=serial, check=False
+    ).strip()
+    if not out:
+        out = adb(
+            "shell", "getprop", "ro.product.cpu.abi", serial=serial, check=False
+        ).strip()
+    for reported in out.split(","):
+        mapped = _ABI_FROM_ANDROID.get(reported.strip())
+        if mapped:
+            return mapped
+    return None
+
+
+def host_abi() -> str:
+    """The ABI an emulator runs at native speed on this host.
+
+    The fallback for :func:`device_abi`, and what android/06 documents for
+    ``run --emulator``: x86_64 system images on an x86_64 host, arm64 ones on an
+    arm64 host such as Apple Silicon.
+    """
+    import platform
+
+    return (
+        "arm64_v8a" if platform.machine().lower() in ("arm64", "aarch64") else "x86_64"
+    )
 
 
 def install_apk(serial: str, apk: Path) -> None:

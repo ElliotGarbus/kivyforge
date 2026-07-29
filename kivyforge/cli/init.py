@@ -54,6 +54,75 @@ from .init_writer import (
 )
 
 REQUIREMENTS_NAME = "requirements.txt"
+BUILDOZER_SPEC_NAME = "buildozer.spec"
+
+# buildozer.spec `[app]` key -> the kivyforge key that replaces it. The value is
+# the destination table and key; `None` means the setting has no counterpart
+# because kivyforge does the thing differently (see _BUILDOZER_DROPPED).
+_BUILDOZER_MAP: tuple[tuple[str, str], ...] = (
+    ("title", "[tool.kivy].display_name"),
+    ("package.name", "[tool.kivy.android].package  (with package.domain)"),
+    ("package.domain", "[tool.kivy.android].package  (with package.name)"),
+    ("version", "[project].version"),
+    ("source.dir", "[tool.kivy].app_dir"),
+    ("requirements", "[project].dependencies  (as PEP 508 requirements)"),
+    ("orientation", "[tool.kivy].orientation"),
+    ("icon.filename", "[tool.kivy.android.icons].source"),
+    ("presplash.filename", "[tool.kivy.android.splash].source"),
+    ("android.api", "[tool.kivy.android].target_sdk / compile_sdk"),
+    ("android.minapi", "[tool.kivy.android].min_sdk  (kivyforge's floor is 24)"),
+    (
+        "android.archs",
+        "[tool.kivy.android].abis  (arm64-v8a -> arm64_v8a; the 32-bit ABIs "
+        "armeabi-v7a and x86 are not supported)",
+    ),
+    ("android.permissions", "[tool.kivy.android.permissions].uses"),
+    ("android.features", "[[tool.kivy.android.permissions.features]]"),
+    ("services", "[[tool.kivy.android.services]]"),
+    ("android.meta_data", "[tool.kivy.android.manifest].extra_application_xml"),
+    ("android.add_activities", "[tool.kivy.android.manifest].extra_manifest_xml"),
+    ("android.gradle_dependencies", "[tool.kivy.android].gradle_dependencies"),
+    ("android.add_jars", "[[tool.kivy.android.android_libs]]"),
+    ("android.release_artifact", "`kivyforge package -f apk|aab`"),
+    ("android.debug_artifact", "`kivyforge build --debug -f apk|aab`"),
+)
+
+# Settings with no kivyforge counterpart, and why — these are the migration's
+# real work, so name them rather than letting the user discover them one by one.
+_BUILDOZER_DROPPED: tuple[tuple[str, str], ...] = (
+    (
+        "p4a.*, android.p4a_whitelist, android.blacklist_src",
+        "there is no python-for-android layer: dependencies are Android wheels "
+        "resolved by `kivyforge lock`.",
+    ),
+    (
+        "requirements with a p4a recipe (e.g. 'kivy,pyjnius,numpy')",
+        "each becomes a normal requirement; anything compiled needs an Android "
+        "wheel (see docs/design/platforms/android/03).",
+    ),
+    (
+        "android.ndk, android.sdk, android.ndk_api, android.gradle_version",
+        "kivyforge pins the toolchain itself; `kivyforge doctor -p android` "
+        "checks the host against those pins.",
+    ),
+    (
+        "android.add_src",
+        "app-side Java is not a kivyforge concept; the bootstrap's Java is "
+        "generated, and `include_files` covers extra assets.",
+    ),
+    (
+        "android.entrypoint, android.activity_class_name",
+        "the launcher is generated; `[tool.kivy].entry_point` names the Python "
+        "module to import instead.",
+    ),
+)
+
+_BUILDOZER_MSG_HEAD = (
+    "buildozer.spec found but no pyproject.toml.\n"
+    "  kivyforge is configured through pyproject.toml and will not migrate a\n"
+    "  buildozer.spec automatically. Create one with your app's metadata, then\n"
+    "  re-run `kivyforge init -p android`.\n"
+)
 
 _REQUIREMENTS_MSG = (
     "requirements.txt found but no pyproject.toml.\n"
@@ -80,10 +149,13 @@ def init(cli_platform: str | None, force: bool) -> None:
     cwd = Path.cwd()
     pyproject = cwd / PYPROJECT_NAME
     requirements = cwd / REQUIREMENTS_NAME
+    buildozer_spec = cwd / BUILDOZER_SPEC_NAME
 
     if pyproject.is_file():
         platform_name = _resolve_init_platform(cli_platform, pyproject)
         _run_update_path(pyproject, force=force, platform_name=platform_name)
+    elif buildozer_spec.is_file():
+        raise ToolchainError(_buildozer_migration_message(buildozer_spec))
     elif requirements.is_file():
         raise ToolchainError(_REQUIREMENTS_MSG)
     else:
@@ -98,6 +170,57 @@ def init(cli_platform: str | None, force: bool) -> None:
             f"    ]\n\n"
             f"  See https://packaging.python.org/tutorials/packaging-projects/ for details."
         )
+
+
+def _read_buildozer_spec(path: Path) -> dict[str, str]:
+    """The ``[app]`` section as a flat dict, or ``{}`` if it will not parse.
+
+    buildozer.spec is INI, but a hand-edited one need not be valid, and this is
+    an error path — a spec we cannot read still gets the generic key mapping.
+    """
+    import configparser
+
+    # Raw: buildozer.spec uses %(source.dir)s-style interpolation that means
+    # something to buildozer and nothing here, and utf-8-sig because an editor
+    # that BOMs the file would otherwise hide the section header.
+    parser = configparser.RawConfigParser(strict=False)
+    try:
+        parser.read(path, encoding="utf-8-sig")
+        if not parser.has_section("app"):
+            return {}
+        return {key: value.strip() for key, value in parser.items("app")}
+    except (configparser.Error, OSError, UnicodeDecodeError):
+        return {}
+
+
+def _buildozer_migration_message(path: Path) -> str:
+    """The non-zero exit's migration pointer (android/06 §init).
+
+    Echoes the spec's own values next to their kivyforge keys where it can:
+    a mapping table the user has to re-read against their file is busywork, and
+    the values are right there.
+    """
+    spec = _read_buildozer_spec(path)
+    lines = [_BUILDOZER_MSG_HEAD, "  Your buildozer.spec maps onto these keys:\n"]
+    width = max(len(key) for key, _ in _BUILDOZER_MAP)
+    for key, target in _BUILDOZER_MAP:
+        value = spec.get(key)
+        shown = f"    {key.ljust(width)}  ->  {target}"
+        if value:
+            shown += f"\n    {' ' * width}      currently: {_ellipsize(value)}"
+        lines.append(shown)
+    lines.append("\n  No kivyforge counterpart:\n")
+    for keys, why in _BUILDOZER_DROPPED:
+        lines.append(f"    {keys}\n      {why}")
+    lines.append(
+        "\n  Full reference: docs/design/platforms/android/01-pyproject-android.md"
+    )
+    return "\n".join(lines)
+
+
+def _ellipsize(value: str, limit: int = 70) -> str:
+    flat = " ".join(value.split())
+    return flat if len(flat) <= limit else flat[: limit - 3] + "..."
 
 
 def _resolve_init_platform(

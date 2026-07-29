@@ -18,9 +18,10 @@ instance both goes stale and pins a JNI reference to a dead Activity.
 
 Only ``get_activity()`` is implemented; the contract's optional members are
 deliberately absent.  ``get_context()`` would only repeat what Kivy already
-derives from the Activity.  ``remove_presplash()`` has nothing to do: kivyforge
-uses the androidx core-splashscreen system splash, which the framework dismisses
-on its own rather than exposing a view for anyone to tear down — unlike
+derives from the Activity.  ``remove_presplash()`` has nothing to do: kivyforge's
+splash is the platform's own — the system splash window on API 31+, and the
+theme's ``windowBackground`` below it — so it is dismissed by the framework when
+the first frame draws rather than being a View anyone can tear down, unlike
 python-for-android, which overlays a View and must remove it.  Kivy treats an
 absent hook as the no-op it is, so there is nothing to stub out.
 """

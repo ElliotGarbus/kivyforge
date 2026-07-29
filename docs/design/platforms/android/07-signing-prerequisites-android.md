@@ -1,6 +1,6 @@
 # Android — Signing Prerequisites (how to sign your kivyforge output)
 
-> **Status: design.** The Android sibling of
+> **Status: implemented (v1).** The Android sibling of
 > [signing-prerequisites-ios](../ios/08-signing-prerequisites-ios.md),
 > [signing-prerequisites-macos](../macos/signing-prerequisites-macos.md), and
 > [signing-prerequisites-windows](../windows/signing-prerequisites-windows.md).
@@ -38,9 +38,11 @@ enumerates what a user must set up **before** a signed release build.
 Complete these on the build host before a signed release build. The host may be
 **Windows, macOS, or Linux**.
 
-1. **A JDK (17+) and the Android SDK.** `kivyforge doctor` checks both, plus that
-   `sdkmanager --licenses` are accepted and the `compile_sdk` platform +
-   build-tools (which provide `apksigner`) are installed.
+1. **A JDK (17+), the Android SDK, and the NDK.** `kivyforge doctor` checks all
+   three, plus that `sdkmanager --licenses` have been accepted and that the
+   `compile_sdk` platform + build-tools (which provide `apksigner`) are installed.
+   The NDK is not optional even for a pure-Python app: it compiles the bootstrap's
+   native launcher (`libmain.so`) on every build.
 
 2. **A signing keystore + key.** Create one with `keytool` (bundled with the JDK)
    — this is your upload key for Play, or your app key for self-distribution:

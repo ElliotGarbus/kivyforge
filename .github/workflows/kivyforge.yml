@@ -242,6 +242,103 @@ jobs:
         python -c "from pathlib import Path; from kivyforge.platforms.windows.signing import SigntoolSigner; SigntoolSigner('$tp', 'http://timestamp.digicert.com', 'current_user').sign([Path('signed.exe')])"
         signtool verify /pa signed.exe
 
+  # The Android gate that unit tests structurally cannot be: every generated
+  # Gradle/CMake/Java/XML file is only a *string* until AGP, AAPT, the NDK, and
+  # javac actually consume it. This job builds a real app end to end from its
+  # committed lock — debug APK, then the release policy path (lintRelease + the
+  # merged-manifest export) against a throwaway keystore. No emulator: nothing
+  # here runs on-device, so the instrumented contract smoke test (android/06
+  # `run --smoke`) is still a local/manual gate.
+  android_gradle:
+    name: Android build (Gradle, no emulator)
+    runs-on: ubuntu-latest
+    env:
+      # The example this gate builds; its pylock.android.toml is committed, so
+      # the job needs no Gradle-at-lock-time and no resolver network beyond
+      # fetching the pinned artifacts.
+      APP_DIR: examples/mobile/hello-android
+      # One ABI is enough to compile the launcher and prove the load model; both
+      # would double the CMake work for no new signal.
+      ABI: x86_64
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python 3.14
+      # Must match [tool.kivy.android.python].version's minor: byte_compile
+      # ("release" by default) only writes .pyc when an interpreter with the
+      # target's magic number is available, and warns + ships source otherwise.
+      # Pinning it here means the release step exercises the .pyc path.
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Set up the Android SDK
+      uses: android-actions/setup-android@v3
+    - name: Install kivyforge (with the Android extra)
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,android]"
+    - name: Install the pinned NDK, CMake, and platform
+      # The NDK version is kivyforge's own pin, emitted into the generated
+      # app/build.gradle, so the one AGP resolves must be that one — not
+      # whichever the runner image happens to ship. Read it from the source of
+      # truth so a toolchain bump can't leave this workflow behind.
+      run: |
+        ndk="$(python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)')"
+        echo "Installing NDK ${ndk}"
+        sdkmanager --install "ndk;${ndk}" "cmake;3.22.1" "platforms;android-35"
+    - name: Doctor (Android)
+      # Advisory: doctor is allowed to report the known-interim Kivy wheel
+      # (4 KB-aligned) as a FAIL, so this step must not gate the build.
+      continue-on-error: true
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge doctor -p android
+    - name: Build the debug APK (assembleDebug)
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge build -p android --debug --abi "$ABI"
+    - name: Assert the APK carries the runtime, the launcher, and the bundle
+      working-directory: ${{ env.APP_DIR }}
+      run: |
+        apk="$(ls hello-android-android/app/build/outputs/apk/debug/*.apk)"
+        echo "Inspecting ${apk}"
+        unzip -l "$apk" > entries.txt
+        for want in \
+            "lib/${ABI}/libmain.so" \
+            "lib/${ABI}/libpython3.14.so" \
+            "assets/_python_bundle/"; do
+          grep -q -- "$want" entries.txt || {
+            echo "::error::${want} missing from the APK"; cat entries.txt; exit 1; }
+        done
+    - name: Exercise the release policy path (lintRelease + merged manifest)
+      # `package` is the only path that runs the curated lintRelease subset and
+      # the merged-manifest policy pass, and both live in generated Groovy — so
+      # a throwaway keystore is worth it to keep that code honest.
+      working-directory: ${{ env.APP_DIR }}
+      env:
+        KIVYFORGE_KEYSTORE_PASSWORD: ci-not-a-secret
+      run: |
+        keytool -genkeypair -noprompt -keystore ci.keystore -alias ci \
+          -storepass "$KIVYFORGE_KEYSTORE_PASSWORD" \
+          -keypass "$KIVYFORGE_KEYSTORE_PASSWORD" \
+          -keyalg RSA -keysize 2048 -validity 30 -dname "CN=kivyforge CI"
+        kivyforge package -p android --abi "$ABI" \
+          --keystore ci.keystore --key-alias ci
+    - name: Upload the generated project on failure (for triage)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-generated-project
+        path: |
+          ${{ env.APP_DIR }}/hello-android-android/app/build.gradle
+          ${{ env.APP_DIR }}/hello-android-android/settings.gradle
+          ${{ env.APP_DIR }}/hello-android-android/app/src/main/AndroidManifest.xml
+          ${{ env.APP_DIR }}/hello-android-android/app/build/reports/
+          ${{ env.APP_DIR }}/hello-android-android/app/build/kivyforge/
+
   # macOS integration: the full suite runs here too (pbxproj generation and
   # xcodebuild/simctl command construction get real-macOS coverage). The live
   # `kivyforge build --simulator` / `kivyforge run` smoke test against a

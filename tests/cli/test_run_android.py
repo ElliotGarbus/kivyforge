@@ -193,6 +193,81 @@ class TestAndroidRun:
         assert captured["serial"] == "ABC123"
 
 
+class TestAndroidDeviceSelector:
+    """`--device` is documented as Android's `--emulator` counterpart, so it has
+    to reach the backend rather than being silently ignored."""
+
+    def _captured_run(self, runner, project_root, monkeypatch, argv):
+        backend = _FakeBackend("android")
+        _patch_resolve_target(monkeypatch, backend, project_root)
+        captured: dict = {}
+        monkeypatch.setattr(
+            android_cli_mod,
+            "android_run",
+            lambda project_root, **kw: captured.update(kw),
+        )
+        return runner.invoke(run_cmd, argv), captured
+
+    def test_device_requires_a_physical_target(
+        self, runner, fake_project_root, monkeypatch
+    ):
+        result, captured = self._captured_run(
+            runner, fake_project_root, monkeypatch, ["--device"]
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["require_physical"] is True
+        assert captured["prefer_emulator"] is False
+
+    def test_default_auto_selects(self, runner, fake_project_root, monkeypatch):
+        """No selector: adb's own rules apply (a single attached device, else an
+        AVD), so nothing is forced."""
+        result, captured = self._captured_run(
+            runner, fake_project_root, monkeypatch, []
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["require_physical"] is False
+        assert captured["prefer_emulator"] is False
+
+    def test_device_and_emulator_are_mutually_exclusive(
+        self, runner, fake_project_root, monkeypatch
+    ):
+        result, _ = self._captured_run(
+            runner, fake_project_root, monkeypatch, ["--device", "--emulator"]
+        )
+        assert result.exit_code != 0
+        assert "opposite targets" in result.output
+
+    def test_device_with_avd_is_rejected(self, runner, fake_project_root, monkeypatch):
+        result, _ = self._captured_run(
+            runner, fake_project_root, monkeypatch, ["--device", "--avd", "Pixel"]
+        )
+        assert result.exit_code != 0
+        assert "--avd names an emulator" in result.output
+
+    def test_explicit_simulator_is_rejected_on_android(
+        self, runner, fake_project_root, monkeypatch
+    ):
+        result, _ = self._captured_run(
+            runner, fake_project_root, monkeypatch, ["--simulator"]
+        )
+        assert result.exit_code != 0
+        assert "--simulator is iOS-only" in result.output
+        assert "--emulator" in result.output
+
+    def test_device_reaches_smoke_too(self, runner, fake_project_root, monkeypatch):
+        backend = _FakeBackend("android")
+        _patch_resolve_target(monkeypatch, backend, fake_project_root)
+        captured: dict = {}
+        monkeypatch.setattr(
+            android_cli_mod,
+            "android_smoke",
+            lambda project_root, **kw: captured.update(kw),
+        )
+        result = runner.invoke(run_cmd, ["--smoke", "--device"])
+        assert result.exit_code == 0, result.output
+        assert captured["require_physical"] is True
+
+
 class TestNonAndroidRunStillDelegates:
     def test_non_android_backend_run_called(
         self, runner, fake_project_root, monkeypatch

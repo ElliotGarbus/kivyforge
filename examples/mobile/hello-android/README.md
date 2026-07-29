@@ -4,7 +4,7 @@ The smallest possible kivyforge Android app — a single Kivy `Label`.
 
 ```bash
 kivyforge lock -p android
-kivyforge build -p android --debug      # -> a debug APK
+kivyforge build -p android --debug      # -> hello-android-android/app/build/outputs/apk/debug/app-debug.apk
 kivyforge run -p android --emulator     # build, install, launch on an AVD
 ```
 

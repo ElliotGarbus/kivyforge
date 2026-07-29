@@ -2,10 +2,12 @@
 
 Drives the generated instrumented test via Gradle's own connected-test path
 (``connectedDebugAndroidTest`` / ``connectedReleaseAndroidTest``), which
-validates the two load-bearing runtime mechanisms — the extension-module
-finder and the pyjnius ``invoke0`` glue — on a real device/emulator with no
-app-specific test code. Non-zero exit on any failure; it is the mechanism that
-promotes a compatibility-matrix row to Validated (android/08).
+validates the load-bearing runtime mechanisms — the extension-module finder, the
+pyjnius ``invoke0`` glue, and, for a project that declares services, that a
+declared service really starts an interpreter in its own process — on a real
+device/emulator with no app-specific test code. Non-zero exit on any failure; it
+is the mechanism that promotes a compatibility-matrix row to Validated
+(android/08).
 """
 
 from __future__ import annotations
@@ -33,7 +35,8 @@ def run_smoke(project_dir: Path, *, release: bool = False) -> None:
         raise SmokeError(
             f"the contract smoke test failed ({task}).\n"
             "  This means a load-bearing runtime mechanism broke on-device — "
-            "the extension-module finder or the pyjnius invoke0 glue.\n"
+            "the extension-module finder, the pyjnius invoke0 glue, or a "
+            "declared service's interpreter.\n"
             f"  Gradle output is above; the test report is under "
             f"{project_dir / 'app' / 'build' / 'reports' / 'androidTests'}.\n"
             f"  {exc}"

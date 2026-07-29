@@ -222,6 +222,54 @@ class TestUpgradeAndroid:
                 result.output
             )
 
+    def test_libs_only_skips_the_runtime_entirely(self, runner, tmp_path, monkeypatch):
+        """The Android counterpart of --xcframeworks, which upgrade's own error
+        message has always pointed at."""
+        fetched = []
+        monkeypatch.setattr(
+            upgrade_mod,
+            "fetch_artifact",
+            lambda *, name, **kw: fetched.append(name) or Path("/x"),
+        )
+        lib = LockedAndroidLib(
+            name="Sdk.aar",
+            kind="aar",
+            version="1.0",
+            url="https://example/Sdk.aar",
+            sha256="c" * 64,
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_android(fs, lock=_android_lock(libs=(lib,)))
+            result = runner.invoke(upgrade, ["-p", "android", "--libs"])
+            assert result.exit_code == 0, result.output
+            assert fetched == ["Sdk.aar"]
+            assert "Refreshed 1 artifact(s)" in result.output
+
+    def test_python_and_libs_together_are_rejected(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_android(fs)
+            result = runner.invoke(upgrade, ["-p", "android", "--python", "--libs"])
+            assert result.exit_code != 0
+            assert "disjoint halves" in result.output
+
+    def test_libs_flag_rejected_off_android(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            root = Path(fs)
+            (root / "pyproject.toml").write_text(IOS_PYPROJECT, encoding="utf-8")
+            (root / "src").mkdir()
+            result = runner.invoke(upgrade, ["-p", "ios", "--libs"])
+            assert result.exit_code != 0
+            assert "--libs is Android-only" in result.output
+            assert "--xcframeworks" in result.output
+
+    def test_unknown_name_errors_with_the_known_ones(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_android(fs)
+            result = runner.invoke(upgrade, ["-p", "android", "--name", "nope"])
+            assert result.exit_code != 0
+            assert "no artifact named 'nope'" in result.output
+            assert "arm64_v8a" in result.output
+
     def test_xcframeworks_flag_rejected_on_android(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_android(fs)

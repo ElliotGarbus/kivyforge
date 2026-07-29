@@ -42,19 +42,43 @@ from ._platform import platform_option, resolve_target
     help="Only refresh native xcframework artifacts (iOS only).",
 )
 @click.option(
+    "--libs",
+    "libs_only",
+    is_flag=True,
+    help="Only refresh the locked .aar/.jar artifacts (Android only) — the "
+    "Android counterpart of --xcframeworks.",
+)
+@click.option(
     "--name",
     default=None,
     help="Only refresh a specific artifact by name (iOS: an xcframework name "
-    "or 'Python.xcframework'; macOS/Linux: a locked arch, e.g. 'arm64').",
+    "or 'Python.xcframework'; Android: an .aar/.jar name or an ABI; "
+    "macOS/Linux: a locked arch, e.g. 'arm64').",
 )
 def upgrade(
     cli_platform: str | None,
     python_only: bool,
     xcframeworks_only: bool,
+    libs_only: bool,
     name: str | None,
 ) -> None:
     """Re-fetch pinned runtime/native artifacts for the resolved platform's lock."""
     backend, project_root = resolve_target(cli_platform, verb="upgrade")
+
+    if libs_only and backend.name != "android":
+        raise ToolchainError(
+            f"--libs is Android-only; {backend.name} locks have no .aar/.jar "
+            + (
+                "artifacts. Use --xcframeworks for the iOS equivalent."
+                if backend.name == "ios"
+                else "artifacts."
+            )
+        )
+    if python_only and libs_only:
+        raise ToolchainError(
+            "--python and --libs select disjoint halves of the lock; pass one, "
+            "or neither to refresh everything."
+        )
 
     if backend.name == "ios":
         _upgrade_ios(project_root, python_only, xcframeworks_only, name)
@@ -63,7 +87,7 @@ def upgrade(
             raise ToolchainError(
                 "--xcframeworks is iOS-only; Android uses --libs for .aar/.jar."
             )
-        _upgrade_android(project_root, python_only, name)
+        _upgrade_android(project_root, python_only, libs_only, name)
     elif backend.name in ("macos", "linux", "windows"):
         if xcframeworks_only:
             raise ToolchainError(
@@ -78,7 +102,9 @@ def upgrade(
         )
 
 
-def _upgrade_android(project_root: Path, python_only: bool, name: str | None) -> None:
+def _upgrade_android(
+    project_root: Path, python_only: bool, libs_only: bool, name: str | None
+) -> None:
     """Re-fetch the pinned python.org runtime + .aar/.jar per the existing lock.
 
     Does not reinstall wheels, regenerate the project, or invoke Gradle
@@ -97,9 +123,10 @@ def _upgrade_android(project_root: Path, python_only: bool, name: str | None) ->
     except LockError as exc:
         raise ToolchainError(str(exc)) from exc
 
+    do_python = not libs_only
     do_libs = not python_only
     refreshed = skipped = 0
-    for runtime in lock.python_android:
+    for runtime in lock.python_android if do_python else ():
         if name and name not in (runtime.abi, "python"):
             continue
         if runtime.path:
@@ -134,6 +161,16 @@ def _upgrade_android(project_root: Path, python_only: bool, name: str | None) ->
                 no_cache=True,
             )
             refreshed += 1
+    if name and refreshed == 0 and skipped == 0:
+        known = sorted(
+            {r.abi for r in lock.python_android}
+            | {lib.name for lib in lock.android_libs}
+        )
+        raise ToolchainError(
+            f"no artifact named {name!r} found in {lock_path.name}. "
+            f"Known name(s): {', '.join(known) or 'none'} (or 'python' for "
+            "every runtime)."
+        )
     click.echo(
         f"Refreshed {refreshed} artifact(s)"
         + (f"; {skipped} vendored (path) entry(ies) skipped." if skipped else ".")

@@ -68,6 +68,14 @@ class TestDefaults:
         a = load_android(with_lines("target_sdk = 34"))
         assert a.compile_sdk == 34
 
+    def test_allow_exported_defaults_empty_and_round_trips(self):
+        assert load_android(BASE).manifest.allow_exported == ()
+        a = load_android(
+            BASE + "\n[tool.kivy.android.manifest]\n"
+            'allow_exported = ["com.vendor.sdk.Trampoline"]\n'
+        )
+        assert a.manifest.allow_exported == ("com.vendor.sdk.Trampoline",)
+
 
 class TestRuleRejections:
     """One test per android/01 validation rule this layer owns."""
@@ -134,6 +142,19 @@ class TestRuleRejections:
                     'extra_manifest_xml = "<queries><intent></queries>"',
                 ],
                 "not well-formed",
+            ),
+            (
+                "allow-exported-not-a-list",
+                [
+                    "[tool.kivy.android.manifest]",
+                    'allow_exported = "com.vendor.sdk.Trampoline"',
+                ],
+                "list of\\s+non-empty component class names",
+            ),
+            (
+                "allow-exported-empty-entry",
+                ["[tool.kivy.android.manifest]", 'allow_exported = ["", "a.B"]'],
+                "list of\\s+non-empty component class names",
             ),
             (
                 "rule19-bad-tristate",

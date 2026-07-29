@@ -66,6 +66,9 @@ class WindowsPlatform(Platform):
         team_id: str | None,
         signing_identity: str | None,
         export_method: str,
+        debug: bool = False,
+        fmt: str | None = None,
+        abi: str | None = None,
     ) -> None:
         self.reject_ios_only_target(target)
         from .cli import windows_build
@@ -103,6 +106,9 @@ class WindowsPlatform(Platform):
         notary_profile: str | None,
         no_verify_lock: bool,
         no_cache: bool,
+        abi: str | None = None,
+        keystore: str | None = None,
+        key_alias: str | None = None,
     ) -> None:
         from .cli import windows_package
 

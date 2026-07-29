@@ -650,7 +650,10 @@ def render_android_tables(
         "# 2 = Kivy 2.3.1 (SDL2); 3 = Kivy 3.0 (SDL3)",
         abis_line,
         '# find_links = ["wheels"]  '
-        "# TODO: vendored android wheels (kivy/pyjnius) until they are on PyPI",
+        "# TODO: a local wheelhouse, for wheels you cross-build yourself",
+        "# extra_index_urls = "
+        '["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]  '
+        "# TODO: the first-party kivy/pyjnius android wheels, until they are on PyPI",
     ]
     if has_kivy:
         lines += [""] + _KIVY_EXCLUDE_LINES

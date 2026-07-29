@@ -71,6 +71,21 @@ macOS** (Xcode-based), so the iOS workflow below is useful only on a Mac:
 
       sudo xcodebuild -license
 
+**Building for Android** works from Windows, macOS, or Linux, and needs three
+user-installed prerequisites (kivyforge never installs a host toolchain — it only
+detects one):
+
+- A **JDK 17+** on `PATH` or `JAVA_HOME`.
+- The **Android SDK** (`ANDROID_HOME`/`ANDROID_SDK_ROOT`), with the `compile_sdk`
+  platform, build-tools, platform-tools, and accepted licenses
+  (`sdkmanager --licenses`). Android Studio's SDK Manager covers all of it.
+- The **NDK** — required for *every* Android build, not just apps with native
+  code: it compiles the bootstrap's native launcher (`libmain.so`).
+
+`kivyforge doctor -p android` checks each of these and prints the `sdkmanager`
+command for whatever is missing. Add an AVD (or attach a device with USB debugging
+enabled) before `kivyforge run`.
+
 ## Installation
 
 Use a Python virtual environment (host Python 3.13+). This is required: it
@@ -103,8 +118,8 @@ Install kivyforge from this repository (it is not yet published to PyPI):
 
 > **Detailed documentation.** For the full design and reference docs — the
 > cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
-> artifact distribution, the CLI shape, and the per-platform backends (iOS,
-> macOS, Linux, Windows) — start with the
+> artifact distribution, the CLI shape, and the per-platform backends (Android,
+> iOS, macOS, Linux, Windows) — start with the
 > [kivyforge design overview](docs/design/common/00-overview.md).
 
 ## Quick start (iOS)
@@ -240,19 +255,24 @@ and Gradle-drive backend, no python-for-android recipe system, no per-app C
 compilation. It needs a JDK, the Android SDK, and the NDK, but builds on
 Windows, macOS, or Linux. 64-bit only (`arm64_v8a`, `x86_64`).
 
-      # 1. Add a [tool.kivy.android] table to pyproject.toml (package, sdl, ...)
+      # 1. Seed [tool.kivy] + [tool.kivy.android] into pyproject.toml
+      kivyforge init -p android               # then set `package`, kivy_generation, ...
 
       # 2. Resolve dependencies + pin the runtime into pylock.android.toml
       kivyforge lock -p android
 
-      # 3. Build the Gradle project + assemble the APK (build/android/<app>/)
-      kivyforge build -p android --debug
+      # 3. Generate the Gradle project (<app>-android/) and assemble a debug APK
+      kivyforge build -p android --debug      # -> <app>-android/app/build/outputs/apk/debug/
 
       # 4a. Install and launch on a connected device or emulator
       kivyforge run -p android --emulator
 
       # 4b. ...or produce the signed release distributable
-      kivyforge package -p android            # -> dist/android/<app>-<ver>.apk
+      kivyforge package -p android            # -> <app>-android/app/build/outputs/apk/release/
+      kivyforge package -p android -f aab     # -> .../outputs/bundle/release/ (Play upload)
+
+Without `--debug`, step 3 stops after generating the project — ready to open in
+Android Studio (`kivyforge open -p android`) or to drive `gradlew` by hand.
 
 `kivy_generation = 2` targets Kivy 2.3.1 (SDL2, stable); `kivy_generation = 3`
 targets Kivy 3.0 (SDL3, pre-release) — mutually exclusive per app, and the SDL
@@ -290,8 +310,8 @@ index**:
   `[tool.kivy.<platform>.native.binaries]`; builds and runs on macOS, Linux, and
   Windows (`greet.dll` loaded by name, `roll.exe` run by name).
 
-**Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS and Android, Kivy 3.0
-where the platform requires it (wheels from
+**Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS and Android; iOS on
+Kivy 3.0, Android on either generation (wheels from
 [`kivy-mobile-wheels`](https://github.com/ElliotGarbus/kivy-mobile-wheels)):
 
 *iOS:*
@@ -377,47 +397,56 @@ for `UrlRequest`).
 
 ## Commands
 
-The verbs are platform-neutral; the descriptions and artifacts below reflect the
-iOS target available today.
+The verbs are platform-neutral; each resolves a target from `-p/--platform`, the
+`KIVYFORGE_PLATFORM` environment variable, or the host default, and then does the
+platform's version of the same job.
 
-      kivyforge init       Seed [tool.kivy] / [tool.kivy.ios] into pyproject.toml
-      kivyforge lock       Generate pylock.ios.toml from pyproject.toml
-      kivyforge build      Download artifacts, generate the Xcode project, build
+      kivyforge init       Seed [tool.kivy] + the target's overlay into pyproject.toml
+      kivyforge lock       Generate pylock.<platform>.toml from pyproject.toml
+      kivyforge build      Download artifacts, generate the native project, build
       kivyforge run        Build (unless --no-build), install, and launch the app
-      kivyforge open       Open <app>-ios/<app>.xcodeproj in Xcode
+      kivyforge package    Produce the signed, distributable artifact
+      kivyforge open       Open the generated project in Xcode / Android Studio
       kivyforge status     Show app identity, Python version, lock sync, build state
       kivyforge clean      Remove generated artifacts in the project folder
-      kivyforge upgrade    Re-fetch pinned Python.xcframework / xcframework artifacts
+      kivyforge upgrade    Re-fetch the pinned runtime and native artifacts
       kivyforge doctor     Run environment and project health checks
 
 Run `kivyforge <command> -h` (or `kf <command> -h`) for the full set of
 options on any verb. A few common ones:
 
 - `kivyforge lock --check` — CI pre-flight; exits non-zero if the lock is stale.
-- `kivyforge build --simulator | --device | --release` — pick the build flavor.
-- `kivyforge run --list-devices` — list available simulators and devices.
+- `kivyforge build --simulator | --device | --release` (iOS) — pick the build flavor.
+- `kivyforge build --debug [--abi arm64_v8a|x86_64]` (Android) — assemble a debug APK, optionally for one ABI.
+- `kivyforge run --list-devices` — list available simulators/emulators and devices.
+- `kivyforge run --smoke` (Android) — run the generated on-device contract test.
 - `kivyforge clean --cache` — also flush the artifact download cache.
 
-Downloaded artifacts (`Python.xcframework` and other xcframeworks) are cached
-under `~/Library/Caches/kivy-ios/artifacts/` and shared across projects.
+Downloaded artifacts (`Python.xcframework`, the per-ABI Android runtime,
+`.aar`/`.jar`s, runtime archives) are cached per-user and shared across projects.
 
 ## Typical workflow
 
-A normal session is a one-time setup followed by a tight edit → run loop.
-The generated project **links** your source directory (`app/` is a symlink to
-`app_dir`), so editing Python source needs no rebuild — just relaunch. You only
+A normal session is a one-time setup followed by a tight edit → run loop. You only
 re-run `kivyforge lock` when dependencies change, and `kivyforge build` when you
-change app config (or need to regenerate the Xcode project).
+change app config (or need to regenerate the native project).
+
+How cheap the inner loop is depends on the platform. On **iOS** the generated
+project *links* your source directory (`app/` is a symlink to `app_dir`), so
+editing Python source needs no rebuild — just relaunch. On **Android** the app's
+code is packed into the APK's asset bundle, so a source edit needs a re-pack:
+`kivyforge run` does that for you every iteration, which is why the Android loop
+goes through `run` rather than a bare relaunch.
 
 ```mermaid
 flowchart TD
     A["kivyforge init<br/>seed pyproject.toml"] --> B["Edit pyproject.toml<br/>dependencies + app config"]
     B --> C["Write your app<br/>src/main.py"]
-    C --> D["kivyforge lock<br/>→ pylock.ios.toml"]
-    D --> E["kivyforge build<br/>fetch artifacts + generate .xcodeproj"]
+    C --> D["kivyforge lock<br/>→ pylock.&lt;platform&gt;.toml"]
+    D --> E["kivyforge build<br/>fetch artifacts + generate the native project"]
     E --> F{"Launch it"}
-    F -->|from the CLI| G["kivyforge run --simulator"]
-    F -->|from Xcode| H["kivyforge open → ⌘R"]
+    F -->|from the CLI| G["kivyforge run<br/>--simulator / --emulator / --device"]
+    F -->|from the IDE| H["kivyforge open → Xcode ⌘R / Android Studio Run"]
     G --> I(["Iterate"])
     H --> I
     I -->|changed Python source| F

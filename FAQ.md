@@ -6,13 +6,15 @@ kivyforge is a declarative, PEP 621-aligned build toolchain for
 [Kivy](https://kivy.org) (and other Python) apps — the successor to kivy-ios,
 python-for-android, and buildozer. You describe your app once in `pyproject.toml`
 and kivyforge packages it for the platform you target. The goal is to support
-every platform Kivy runs on (Android, iOS, Linux, macOS, Windows); today the
-implemented targets are **iOS, macOS, Linux, and Windows**. On iOS the toolchain
-resolves dependencies into a lockfile, downloads the official `Python.xcframework`
-plus prebuilt iOS wheels, and generates an
-[Xcode](https://developer.apple.com/xcode/) `.xcodeproj`; the desktop backends
-bundle a relocatable CPython plus wheels into a `.app` (macOS), an AppImage/AppDir
-(Linux), or a run-from-folder `onedir` (Windows).
+every platform Kivy runs on, and all five — **Android, iOS, Linux, macOS, and
+Windows** — are implemented. On iOS the toolchain resolves dependencies into a
+lockfile, downloads the official `Python.xcframework` plus prebuilt iOS wheels,
+and generates an [Xcode](https://developer.apple.com/xcode/) `.xcodeproj`; on
+Android it does the same with the per-ABI python.org Android runtime and Android
+wheels and generates a Gradle/[AGP](https://developer.android.com/build) project
+that produces a signed `.apk`/`.aab`; the desktop backends bundle a relocatable
+CPython plus wheels into a `.app` (macOS), an AppImage/AppDir (Linux), or a
+run-from-folder `onedir` (Windows).
 
 For the full workflow see the [README](README.md); for design and reference
 details see the [design docs](docs/design/common/00-overview.md). When something looks

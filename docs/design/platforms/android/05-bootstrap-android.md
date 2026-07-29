@@ -1,15 +1,16 @@
 # Android — Bootstrap Design
 
-> **Status: design.** The Android analog of the iOS [`main.m` embedding
+> **Status: implemented (v1).** The Android analog of the iOS [`main.m` embedding
 > bootstrap](../ios/05-xcode-project-generation.md#mainm--python-embedding-bootstrap)
 > and the Windows [bootloader](../windows/bootloader-windows.md). This is the
 > load-bearing document for the pyjnius/SDL runtime contract worked out in the
 > pyjnius Android-wheel spike — see the
 > [spike findings](../../dev/pyjnius-android-wheel-spike-findings.md) (evidence)
 > and the [pre-spike brief](../../dev/pyjnius-android-wheel-spike.md). The
-> first-party PyPI wheel, the SDL3-host run, and first-party (kivyforge-stack)
-> validation are still open; the runtime contract below reflects the spike's
-> findings and prototype, not a shipped release.
+> contract below is now what `kivyforge build` emits on every build, validated on
+> the kivyforge stack itself for **both** SDL generations (see
+> [08 compatibility-matrix](08-compatibility-matrix.md)); publishing the
+> first-party wheels to PyPI is the remaining distribution step.
 
 The bootstrap is how a launched Android app **starts the JVM-hosted process,
 loads native libraries in the right order, initializes the embedded CPython
@@ -123,13 +124,14 @@ So the bootstrap's only obligations for the `JNIEnv` are: **load the SDL matchin
 so tier 1 or tier 2 resolves. `kivy_generation = 2` → the SDL2 glue + `libSDL2.so`;
 `kivy_generation = 3` → SDL3.
 
-> **Kivy is SDL2 today.** The spike's prototype exercised SDL2 (tier 2) on an
-> x86_64 emulator and on arm64 hardware (Pixel 8a, Android 16 —
-> [findings, Steps 4 & 7](../../dev/pyjnius-android-wheel-spike-findings.md));
-> the SDL3 tier-1 path is identical by construction but not yet exercised
-> (Kivy 3.0 lands the SDL3 host). Both are first-class in the schema. Full
-> first-party validation under the kivyforge stack, across ABIs and both SDL
-> generations, remains open — the spike's runs used a p4a test harness.
+> **Both generations are exercised.** The spike's prototype established the SDL2
+> (tier 2) path on an x86_64 emulator and on arm64 hardware (Pixel 8a, Android 16 —
+> [findings, Steps 4 & 7](../../dev/pyjnius-android-wheel-spike-findings.md)) using
+> a p4a test harness; both `kivy_generation = 2` (Kivy 2.3.1 / SDL2) and
+> `kivy_generation = 3` (Kivy 3.0 / SDL3, tier 1) now run on the **kivyforge**
+> stack itself, via the `hello-android` and `hello-sdl3` examples. See
+> [08 compatibility-matrix](08-compatibility-matrix.md) for which combinations
+> those runs cover.
 
 ### The `NativeInvocationHandler` matched pair
 
@@ -142,13 +144,17 @@ so kivyforge enforces the pairing explicitly:
 - **Hard build gate (not a warning).** The bootstrap template and the pinned pyjnius wheel both carry a compatibility marker. `kivyforge build` **fails** — and `kivyforge doctor` reports **FAIL** — when the locked `pyjnius` version falls outside the template's declared compatible range. The `invoke0` native-method signature is an ABI contract; a mismatch is a guaranteed runtime crash, never something to ship. The fix is to re-lock to a compatible `pyjnius` or update kivyforge for a newer template.
 - Even so, pyjnius resolves `autoclass('org.jnius.NativeInvocationHandler')` at proxy-creation, so any residual mismatch that slipped through still surfaces as a clear `ClassNotFound`/`NoSuchMethodError` at first use — not silent corruption.
 
-> **Implementation status.** The wheel-side half of this marker does not exist
-> yet: the spike wheel carries only a version comment, and the findings note
-> "nothing enforces it once packaging is out of the loop"
+> **Where the marker lives.** Only the *bootstrap* half is machine-readable: the
+> template declares the range it is written against (`COMPATIBLE_PYJNIUS` in
+> `bootstrap/contract.py`), and `build`/`doctor` compare the **locked pyjnius
+> version** against it. The wheel itself carries no marker — the spike wheel had
+> only a version comment, and the findings noted "nothing enforces it once
+> packaging is out of the loop"
 > ([findings, "Java-glue delivery"](../../dev/pyjnius-android-wheel-spike-findings.md)).
-> Adding a machine-readable compatibility marker to the pyjnius wheel build, and
-> declaring the matching range in the bootstrap template, is an open work item
-> for the first Android backend release.
+> Version-range checking is therefore what enforces the pairing in v1; a
+> machine-readable marker in the wheel would let the check assert the `invoke0`
+> signature itself instead of trusting the version, and remains a wheel-build work
+> item.
 
 The supported `invoke0` ranges per bootstrap-template version, alongside the
 CPython/Kivy/SDL/ABI/minSdk combinations they pair with, are tabulated in the
@@ -185,7 +191,7 @@ cryptic `dlopen`/symbol failure:
 
 - If none of the three `JNIEnv` tiers resolves, pyjnius raises a `RuntimeError`/`ImportError` naming the host contract ("needs a host that provides an in-process JVM; ensure SDL is loaded before `import jnius`").
 - The bootstrap logs the native-library load order to logcat, so a load-order regression is diagnosable.
-- `kivyforge doctor` checks that the bootstrap's SDL generation matches `[tool.kivy.android].kivy_generation` and the resolved Kivy version.
+- `kivyforge doctor` cross-checks `[tool.kivy.android].kivy_generation` against the **resolved Kivy version** in the lock (SDL2 below 3.0, SDL3 at or above), warning on a mismatch before a build wastes time on it. `kivyforge build` then enforces the stronger form, where the evidence actually is: it verifies the **staged `libSDL*.so`** matches the generation whose Java glue it is about to emit, and aborts otherwise.
 
 ## Process and thread lifecycle
 

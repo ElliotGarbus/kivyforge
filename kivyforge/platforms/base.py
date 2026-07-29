@@ -71,6 +71,11 @@ class Platform(ABC):
     # Default implementations raise so an unimplemented verb surfaces clearly.
     # Every registered backend overrides the verbs it supports; the ``cli`` verbs
     # pass the full option superset and each backend takes what it needs.
+    #
+    # Options that only one platform acts on (``debug``/``fmt``/``abi`` and the
+    # Android keystore overrides) are keyword-with-default: the CLI rejects them
+    # for the platforms they do not apply to, so those backends accept and
+    # ignore them rather than each verb growing a per-platform call shape.
 
     def build(
         self,
@@ -83,6 +88,9 @@ class Platform(ABC):
         team_id: str | None,
         signing_identity: str | None,
         export_method: str,
+        debug: bool = False,
+        fmt: str | None = None,
+        abi: str | None = None,
     ) -> None:
         raise NotImplementedError(f"build is not supported for {self.name!r}.")
 
@@ -110,6 +118,9 @@ class Platform(ABC):
         notary_profile: str | None,
         no_verify_lock: bool,
         no_cache: bool,
+        abi: str | None = None,
+        keystore: str | None = None,
+        key_alias: str | None = None,
     ) -> None:
         raise NotImplementedError(f"package is not supported for {self.name!r}.")
 

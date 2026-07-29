@@ -13,6 +13,10 @@ Layout under ``app/src/main/assets/_python_bundle/``:
   module, and ``ext_manifest.json``.
 - ``VERSION``        — content stamp; a changed bundle re-extracts on-device.
 
+``byte_compile``/``strip_source`` (android/01 §build_settings) act on the
+assembled tree just before the stamp is taken, so the stamp always describes
+what actually ships.
+
 **ABI-independent by construction, and verified so**: the bundle is assembled
 from the canonical ABI (first in ``abis``); every other ABI's non-``.so``
 site-packages payload must be byte-for-byte identical or the build fails
@@ -55,6 +59,10 @@ def assemble_bundle(
     kivy_bootstrap_source: str,
     ext_manifest_json: str,
     selftest_source: str = "",
+    entry_point: str = "main",
+    service_entry_points: dict[str, str] | None = None,
+    byte_compile: tuple[str, ...] | None = None,
+    strip_source: bool = False,
 ) -> str:
     """Assemble the bundle; returns the content stamp written to ``VERSION``."""
     if bundle_dir.exists():
@@ -65,7 +73,12 @@ def assemble_bundle(
     canonical_sp = site_packages_by_abi[canonical_abi]
     _copy_pure(canonical_sp, bundle_dir / "site-packages")
     _assert_abi_identity(site_packages_by_abi, canonical_abi)
-    _copy_app(app_src, bundle_dir / "app")
+    _copy_app(
+        app_src,
+        bundle_dir / "app",
+        entry_point=entry_point,
+        service_entry_points=service_entry_points or {},
+    )
 
     bootstrap = bundle_dir / "bootstrap"
     bootstrap.mkdir()
@@ -82,9 +95,104 @@ def assemble_bundle(
         )
     (bootstrap / "ext_manifest.json").write_text(ext_manifest_json, encoding="utf-8")
 
+    if byte_compile is not None:
+        _byte_compile(bundle_dir, compiler=byte_compile, strip_source=strip_source)
+
     stamp = _content_stamp(bundle_dir)
     (bundle_dir / "VERSION").write_text(stamp, encoding="utf-8")
     return stamp
+
+
+def _byte_compile(
+    bundle_dir: Path, *, compiler: tuple[str, ...], strip_source: bool
+) -> None:
+    """Compile the bundle's Python payload to ``.pyc`` in place (android/01).
+
+    *compiler* is an interpreter argv prefix whose version matches the target
+    runtime (empty for this interpreter); the caller is what establishes that,
+    because a ``.pyc`` is only loadable by the exact CPython that wrote it.
+
+    Two layouts, and the difference matters:
+
+    - Keeping the source, the ``.pyc`` goes in ``__pycache__/`` as usual, so
+      imports find it next to the ``.py`` it was built from.
+    - Shipping ``.pyc`` only requires the *legacy* layout — PEP 3147 sourceless
+      imports look for ``foo.pyc`` at the source's own path, never inside
+      ``__pycache__/``. Compiling to ``__pycache__/`` and then deleting the
+      ``.py`` would produce a bundle that imports nothing at all.
+
+    Hash-based, unchecked invalidation (PEP 552) is used rather than the default
+    mtime+size: it saves a stat per import on a device that cannot have a newer
+    source than the one shipped, and it keeps an mtime out of every ``.pyc``.
+
+    Paths are stripped to be bundle-relative for the same reason
+    ``_copy_pure`` drops ``direct_url.json``: a ``.pyc`` records the path it was
+    compiled from, so the default would both leak local host paths into the
+    shipped APK and make the content stamp differ per machine.
+    """
+    for name in ("stdlib", "site-packages", "app", "bootstrap"):
+        target = bundle_dir / name
+        if not target.is_dir():
+            continue
+        if not _compile_tree(
+            target, compiler=compiler, legacy=strip_source, stripdir=bundle_dir
+        ):
+            raise BundleError(
+                f"byte-compiling the bundle's {name}/ failed; the output above "
+                "names the file.\n"
+                "  A syntax error in app code fails here rather than on-device; "
+                "fix it, or set [tool.kivy.android.build_settings].byte_compile "
+                "= false."
+            )
+        if strip_source:
+            for source in target.rglob("*.py"):
+                if source.with_suffix(".pyc").is_file():
+                    source.unlink()
+            # Nothing can import from __pycache__ once the sources are gone.
+            for cache in target.rglob("__pycache__"):
+                shutil.rmtree(cache, ignore_errors=True)
+
+
+def _compile_tree(
+    target: Path, *, compiler: tuple[str, ...], legacy: bool, stripdir: Path
+) -> bool:
+    if not compiler:
+        import compileall
+        import py_compile
+
+        return bool(
+            compileall.compile_dir(
+                target,
+                quiet=1,
+                legacy=legacy,
+                optimize=0,
+                invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+                force=True,
+                stripdir=str(stripdir),
+            )
+        )
+    import subprocess
+
+    argv = [
+        *compiler,
+        "-m",
+        "compileall",
+        "-q",
+        "-f",
+        "--invalidation-mode",
+        "unchecked-hash",
+        "-s",
+        str(stripdir),
+    ]
+    if legacy:
+        argv.append("-b")
+    argv.append(str(target))
+    try:
+        return subprocess.run(argv, check=False).returncode == 0
+    except OSError as exc:
+        raise BundleError(
+            f"could not run {' '.join(compiler)} to byte-compile the bundle: {exc}"
+        ) from exc
 
 
 def _copy_stdlib(src: Path, dest: Path) -> None:
@@ -130,10 +238,37 @@ def _copy_pure(src: Path, dest: Path) -> None:
         dest.mkdir(parents=True)
 
 
-def _copy_app(src: Path, dest: Path) -> None:
+def _require_module(src: Path, entry_point: str, hint: str) -> None:
+    """A dotted entry point must resolve to a module or package in ``app_dir``.
+
+    ``pkg.start`` maps to a nested module; a package entry point is imported
+    through its ``__init__.py``. Catching an unresolvable one here beats a black
+    screen and an ImportError in logcat.
+    """
+    rel = "/".join(entry_point.split("."))
+    if not (src / f"{rel}.py").is_file() and not (src / rel / "__init__.py").is_file():
+        raise BundleError(f"entry point {rel}.py not found in {src.name}/ ({hint}).")
+
+
+def _copy_app(
+    src: Path,
+    dest: Path,
+    *,
+    entry_point: str = "main",
+    service_entry_points: dict[str, str],
+) -> None:
     if not src.is_dir():
         raise BundleError(
             f"[tool.kivy].app_dir does not exist or is not a directory: {src}"
+        )
+    _require_module(src, entry_point, "set [tool.kivy].entry_point")
+    # A service whose entry point does not exist starts, comes up, and then dies
+    # on the import in a separate process — where nothing is watching.
+    for name, service_entry in sorted(service_entry_points.items()):
+        _require_module(
+            src,
+            service_entry,
+            f"set entry_point for [[tool.kivy.android.services]] {name!r}",
         )
 
     def ignore(directory: str, names: list[str]) -> list[str]:

@@ -10,7 +10,7 @@ flowchart TD
     iface --> mac["platforms/macos\n(.app generator)"]
     iface --> lin["platforms/linux\n(AppImage/AppDir)"]
     iface --> win["platforms/windows\n(onedir folder)"]
-    iface --> andr["platforms/android (later)"]
+    iface --> andr["platforms/android\n(Gradle/AGP, .aar/Maven, NDK launcher)"]
     subgraph core [kivyforge/core]
       cfg["config: [project]/[tool.kivy] + overlay registry"]
       lock["lock engine: PEP 751 [[packages]] generic + platform hooks"]

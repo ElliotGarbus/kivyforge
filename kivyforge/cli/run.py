@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import click
+from click.core import ParameterSource
 
 from ..platforms.ios.cli import ios_list_devices
 from ._common import ToolchainError
-from ._platform import platform_option, resolve_target
+from ._platform import platform_option, reject_android_only, resolve_target
 
 
 @click.command()
@@ -19,7 +20,10 @@ from ._platform import platform_option, resolve_target
     help="Target the iOS simulator (default).",
 )
 @click.option(
-    "--device", "target", flag_value="device", help="Target a connected device."
+    "--device",
+    "target",
+    flag_value="device",
+    help="Target a connected device (Android: a physical one, never an AVD).",
 )
 @click.option(
     "--arch",
@@ -58,6 +62,12 @@ from ._platform import platform_option, resolve_target
     is_flag=True,
     help="Android (with --smoke): target the release variant.",
 )
+@click.option(
+    "--abi",
+    type=click.Choice(["arm64_v8a", "x86_64"]),
+    default=None,
+    help="Android: restrict the implicit build to one ABI.",
+)
 def run(
     cli_platform: str | None,
     target: str,
@@ -70,26 +80,45 @@ def run(
     serial: str | None,
     smoke: bool,
     release: bool,
+    abi: str | None,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
     backend, project_root = resolve_target(cli_platform, verb="run")
 
-    android_only = {
-        "--emulator": emulator,
-        "--avd": avd,
-        "--serial": serial,
-        "--smoke": smoke,
-        "--release": release,
-    }
-    used = [name for name, value in android_only.items() if value]
-    if used and backend.name != "android":
-        raise ToolchainError(
-            f"{', '.join(used)} {'is' if len(used) == 1 else 'are'} "
-            f"Android-only; not valid for {backend.name}."
-        )
+    reject_android_only(
+        backend,
+        {
+            "--emulator": emulator,
+            "--avd": avd,
+            "--serial": serial,
+            "--smoke": smoke,
+            "--release": release,
+            "--abi": abi,
+        },
+    )
+    abi = abi or arch
 
     if backend.name == "android":
         from ..platforms.android.cli import android_run, android_smoke
+
+        # --simulator is the default flag value, so only an *explicit* one is a
+        # mistake worth reporting; the source is how click tells the two apart.
+        source = click.get_current_context().get_parameter_source("target")
+        explicit = target if source is ParameterSource.COMMANDLINE else None
+        if explicit == "simulator":
+            raise ToolchainError(
+                "--simulator is iOS-only; Android's equivalent is --emulator."
+            )
+        if explicit == "device" and emulator:
+            raise ToolchainError(
+                "--device and --emulator select opposite targets; pass one, or "
+                "neither to auto-select (a single attached device, else an AVD)."
+            )
+        if explicit == "device" and avd is not None:
+            raise ToolchainError(
+                "--avd names an emulator to boot, which --device rules out; pass one."
+            )
+        require_physical = explicit == "device"
 
         if list_devices:
             from ..platforms.android import adb as adb_mod
@@ -101,19 +130,21 @@ def run(
             android_smoke(
                 project_root,
                 release=release,
-                abi=arch,
+                abi=abi,
                 serial=serial,
                 avd=avd,
                 prefer_emulator=emulator or avd is not None,
+                require_physical=require_physical,
             )
         else:
             android_run(
                 project_root,
                 no_build=no_build,
-                abi=arch,
+                abi=abi,
                 serial=serial or destination,
                 avd=avd,
                 prefer_emulator=emulator or avd is not None,
+                require_physical=require_physical,
             )
         return
 
