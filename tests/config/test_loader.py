@@ -830,6 +830,31 @@ class TestMacosNativeBinaries:
             )
 
 
+class TestMacosBuildSettings:
+    def test_defaults_are_release_only(self):
+        bs = _macos().macos_required.build_settings
+        assert bs.byte_compile == "release"
+        assert bs.strip_source == "release"
+
+    def test_explicit_bools_accepted(self):
+        bs = _macos(
+            "[tool.kivy.macos.build_settings]\n"
+            "byte_compile = true\nstrip_source = false\n"
+        ).macos_required.build_settings
+        assert bs.byte_compile is True
+        assert bs.strip_source is False
+
+    def test_invalid_tristate_rejected(self):
+        with pytest.raises(ConfigError, match='bool or the string "release"'):
+            _macos('[tool.kivy.macos.build_settings]\nstrip_source = "always"\n')
+
+    def test_non_table_rejected(self):
+        with pytest.raises(
+            ConfigError, match=r"\[tool.kivy.macos.build_settings\] must be a table"
+        ):
+            _macos("build_settings = true\n")
+
+
 class TestMacosSigning:
     def test_default_unconfigured(self):
         signing = _macos().macos_required.signing
@@ -1073,6 +1098,31 @@ class TestLinuxNativeBinaries:
             _linux('[tool.kivy.linux.native.binaries]\nsdk = "libgreet.so"\n')
 
 
+class TestLinuxBuildSettings:
+    def test_defaults_are_release_only(self):
+        bs = _linux().linux_required.build_settings
+        assert bs.byte_compile == "release"
+        assert bs.strip_source == "release"
+
+    def test_explicit_bools_accepted(self):
+        bs = _linux(
+            "[tool.kivy.linux.build_settings]\n"
+            "byte_compile = true\nstrip_source = false\n"
+        ).linux_required.build_settings
+        assert bs.byte_compile is True
+        assert bs.strip_source is False
+
+    def test_invalid_tristate_rejected(self):
+        with pytest.raises(ConfigError, match='bool or the string "release"'):
+            _linux('[tool.kivy.linux.build_settings]\nstrip_source = "always"\n')
+
+    def test_non_table_rejected(self):
+        with pytest.raises(
+            ConfigError, match=r"\[tool.kivy.linux.build_settings\] must be a table"
+        ):
+            _linux("build_settings = true\n")
+
+
 class TestIosAndLinuxCoexist:
     def test_all_three_platforms(self):
         base = (
@@ -1274,6 +1324,31 @@ class TestWindowsNativeBinaries:
                 "[tool.kivy.windows.native.binaries]\n"
                 'sdk = { version = "1.0", source = "../../sdk.dll" }\n'
             )
+
+
+class TestWindowsBuildSettings:
+    def test_defaults_are_release_only(self):
+        bs = _windows().windows_required.build_settings
+        assert bs.byte_compile == "release"
+        assert bs.strip_source == "release"
+
+    def test_explicit_bools_accepted(self):
+        bs = _windows(
+            "[tool.kivy.windows.build_settings]\n"
+            "byte_compile = true\nstrip_source = false\n"
+        ).windows_required.build_settings
+        assert bs.byte_compile is True
+        assert bs.strip_source is False
+
+    def test_invalid_tristate_rejected(self):
+        with pytest.raises(ConfigError, match='bool or the string "release"'):
+            _windows('[tool.kivy.windows.build_settings]\nstrip_source = "always"\n')
+
+    def test_non_table_rejected(self):
+        with pytest.raises(
+            ConfigError, match=r"\[tool.kivy.windows.build_settings\] must be a table"
+        ):
+            _windows("build_settings = true\n")
 
 
 class TestWindowsRequiresPython:

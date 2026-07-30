@@ -288,6 +288,35 @@ class NativeBinaryDep:
     source: str
 
 
+# byte_compile / strip_source (desktop build_settings) accept a bool or this
+# string, applying only to `kivyforge package` builds -- shared across
+# Windows/Linux/macOS since the setting and its semantics are identical on
+# all three. Distinct from ANDROID_RELEASE_ONLY (same value, kept separate so
+# nothing here can accidentally couple to Android's own tri-state).
+DESKTOP_RELEASE_ONLY = "release"
+
+
+@dataclass(frozen=True)
+class DesktopBuildSettings:
+    """``[tool.kivy.<platform>.build_settings]`` -- shared across Windows,
+    Linux, and macOS (macos-spec / windows-spec / linux-spec).
+
+    Deliberately smaller than ``AndroidBuildSettings``: desktop has no
+    Gradle/R8, so there is no ``minify``/``shrink_resources``/``multidex``
+    analog, and no native-library stripping distinct from ``strip_source``.
+
+    ``byte_compile`` / ``strip_source`` are a bool or the string ``"release"``
+    (apply to `kivyforge package` only -- the default; a plain `build` always
+    keeps source, matching the dev-loop/shippable-artifact split each desktop
+    backend already draws for signing). **stdlib is never stripped** regardless
+    of this setting -- only the app's own code and installed wheels are, since
+    the platform runtime ships its stdlib pre-compiled already.
+    """
+
+    byte_compile: bool | str = DESKTOP_RELEASE_ONLY
+    strip_source: bool | str = DESKTOP_RELEASE_ONLY
+
+
 # SPM version-rule kinds (spec 07), mapping 1:1 to Swift Package Manager's own
 # requirement rules. Each ``requirement`` inline table sets exactly one of these.
 VALID_SWIFT_REQUIREMENT_KINDS = frozenset(
@@ -394,6 +423,7 @@ class MacosConfig:
     entitlements: dict[str, object] = field(default_factory=dict)
     signing: MacosSigningConfig = field(default_factory=MacosSigningConfig)
     binaries: tuple[NativeBinaryDep, ...] = ()
+    build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
 
 
 @dataclass(frozen=True)
@@ -437,6 +467,7 @@ class WindowsConfig:
     icons: IconConfig = field(default_factory=IconConfig)
     signing: WindowsSigningConfig = field(default_factory=WindowsSigningConfig)
     binaries: tuple[NativeBinaryDep, ...] = ()
+    build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
 
 
 @dataclass(frozen=True)
@@ -691,6 +722,7 @@ class LinuxConfig:
     icons: IconConfig = field(default_factory=IconConfig)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
     binaries: tuple[NativeBinaryDep, ...] = ()
+    build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
 
 
 @dataclass(frozen=True)

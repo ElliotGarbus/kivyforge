@@ -35,6 +35,7 @@ from .model import (
     DEFAULT_WINDOWS_ARCHS,
     DEFAULT_WINDOWS_STORE_SCOPE,
     DEFAULT_WINDOWS_TIMESTAMP_URL,
+    DESKTOP_RELEASE_ONLY,
     FREEDESKTOP_MAIN_CATEGORIES,
     MANAGED_ANDROID_ACTIVITY_ATTRS,
     MANAGED_ANDROID_APPLICATION_ATTRS,
@@ -78,6 +79,7 @@ from .model import (
     AndroidSrcConfig,
     Author,
     Config,
+    DesktopBuildSettings,
     DesktopConfig,
     IconConfig,
     IosConfig,
@@ -607,6 +609,7 @@ def _parse_macos(
     signing = _parse_macos_signing(macos, finder)
     _check_macos_entitlements_notarizable(entitlements, signing, finder)
     binaries = _parse_native_binaries(macos, "macos", finder)
+    build_settings = _parse_desktop_build_settings(macos, "macos", finder)
 
     return MacosConfig(
         schema_version=schema_version,
@@ -622,6 +625,7 @@ def _parse_macos(
         entitlements=entitlements,
         signing=signing,
         binaries=tuple(binaries),
+        build_settings=build_settings,
     )
 
 
@@ -827,6 +831,7 @@ def _parse_linux(
     icons = _parse_platform_icons(linux, key_path="tool.kivy.linux.icons")
     desktop = _parse_desktop(linux, finder)
     binaries = _parse_native_binaries(linux, "linux", finder)
+    build_settings = _parse_desktop_build_settings(linux, "linux", finder)
 
     return LinuxConfig(
         schema_version=schema_version,
@@ -840,6 +845,7 @@ def _parse_linux(
         icons=icons,
         desktop=desktop,
         binaries=tuple(binaries),
+        build_settings=build_settings,
     )
 
 
@@ -976,6 +982,7 @@ def _parse_windows(
     icons = _parse_platform_icons(windows, key_path="tool.kivy.windows.icons")
     signing = _parse_windows_signing(windows, finder)
     binaries = _parse_native_binaries(windows, "windows", finder)
+    build_settings = _parse_desktop_build_settings(windows, "windows", finder)
 
     return WindowsConfig(
         schema_version=schema_version,
@@ -988,6 +995,7 @@ def _parse_windows(
         icons=icons,
         signing=signing,
         binaries=tuple(binaries),
+        build_settings=build_settings,
     )
 
 
@@ -2731,6 +2739,38 @@ def _parse_native_binaries(
         _validate_artifact_source("native binary", name, source, key_path)
         out.append(NativeBinaryDep(name=name, version=version, source=source))
     return out
+
+
+def _parse_desktop_build_settings(
+    overlay: dict, platform: str, finder: _LineFinder
+) -> DesktopBuildSettings:
+    """Parse ``[tool.kivy.<platform>.build_settings]``.
+
+    Shared across the desktop backends (Windows/Linux/macOS have no Android-
+    style minify/R8/multidex, so this is just the two release tri-states); the
+    ``platform`` string only shapes the ``key_path`` used in diagnostics.
+    """
+    table = overlay.get("build_settings")
+    base = f"tool.kivy.{platform}.build_settings"
+    if table is None:
+        return DesktopBuildSettings()
+    if not isinstance(table, dict):
+        raise ConfigError(f"[{base}] must be a table", key_path=base)
+
+    def _tri(key: str) -> bool | str:
+        value = table.get(key, DESKTOP_RELEASE_ONLY)
+        if isinstance(value, bool) or value == DESKTOP_RELEASE_ONLY:
+            return value
+        raise ConfigError(
+            f'[{base}].{key} must be a bool or the string "release"',
+            key_path=f"{base}.{key}",
+            line=finder.line(key),
+        )
+
+    return DesktopBuildSettings(
+        byte_compile=_tri("byte_compile"),
+        strip_source=_tri("strip_source"),
+    )
 
 
 def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDep]:
