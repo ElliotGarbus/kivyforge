@@ -32,6 +32,10 @@ from pathlib import Path
 
 from kivyforge.artifacts.verify import sha256_file
 
+# Imported as a module, not by name: ``assemble_bundle`` takes a *parameter*
+# called ``byte_compile`` (the compiler argv), so a bare import would shadow.
+from kivyforge.bundle import pycompile
+
 BUNDLE_DIRNAME = "_python_bundle"
 
 _STDLIB_EXCLUDED_DIRS = {
@@ -108,90 +112,35 @@ def _byte_compile(
 ) -> None:
     """Compile the bundle's Python payload to ``.pyc`` in place (android/01).
 
-    *compiler* is an interpreter argv prefix whose version matches the target
-    runtime (empty for this interpreter); the caller is what establishes that,
-    because a ``.pyc`` is only loadable by the exact CPython that wrote it.
+    The mechanics live in :mod:`kivyforge.bundle.pycompile` (shared with the
+    desktop backends); this only names the payload areas and translates the
+    failure into a ``BundleError`` carrying the Android config key.
 
-    Two layouts, and the difference matters:
+    Android compiles **all four** areas, stdlib included — unlike desktop,
+    which leaves the stdlib alone. The payload is unpacked to app-private
+    storage on first launch, so stripping stdlib source is what keeps the APK
+    (and that unpack) small.
 
-    - Keeping the source, the ``.pyc`` goes in ``__pycache__/`` as usual, so
-      imports find it next to the ``.py`` it was built from.
-    - Shipping ``.pyc`` only requires the *legacy* layout — PEP 3147 sourceless
-      imports look for ``foo.pyc`` at the source's own path, never inside
-      ``__pycache__/``. Compiling to ``__pycache__/`` and then deleting the
-      ``.py`` would produce a bundle that imports nothing at all.
-
-    Hash-based, unchecked invalidation (PEP 552) is used rather than the default
-    mtime+size: it saves a stat per import on a device that cannot have a newer
-    source than the one shipped, and it keeps an mtime out of every ``.pyc``.
-
-    Paths are stripped to be bundle-relative for the same reason
-    ``_copy_pure`` drops ``direct_url.json``: a ``.pyc`` records the path it was
-    compiled from, so the default would both leak local host paths into the
-    shipped APK and make the content stamp differ per machine.
+    Paths are stripped to be bundle-relative for the same reason ``_copy_pure``
+    drops ``direct_url.json``: a ``.pyc`` records the path it was compiled from,
+    so the default would both leak local host paths into the shipped APK and
+    make the content stamp differ per machine.
     """
-    for name in ("stdlib", "site-packages", "app", "bootstrap"):
-        target = bundle_dir / name
-        if not target.is_dir():
-            continue
-        if not _compile_tree(
-            target, compiler=compiler, legacy=strip_source, stripdir=bundle_dir
-        ):
-            raise BundleError(
-                f"byte-compiling the bundle's {name}/ failed; the output above "
-                "names the file.\n"
-                "  A syntax error in app code fails here rather than on-device; "
-                "fix it, or set [tool.kivy.android.build_settings].byte_compile "
-                "= false."
-            )
-        if strip_source:
-            for source in target.rglob("*.py"):
-                if source.with_suffix(".pyc").is_file():
-                    source.unlink()
-            # Nothing can import from __pycache__ once the sources are gone.
-            for cache in target.rglob("__pycache__"):
-                shutil.rmtree(cache, ignore_errors=True)
-
-
-def _compile_tree(
-    target: Path, *, compiler: tuple[str, ...], legacy: bool, stripdir: Path
-) -> bool:
-    if not compiler:
-        import compileall
-        import py_compile
-
-        return bool(
-            compileall.compile_dir(
-                target,
-                quiet=1,
-                legacy=legacy,
-                optimize=0,
-                invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
-                force=True,
-                stripdir=str(stripdir),
-            )
-        )
-    import subprocess
-
-    argv = [
-        *compiler,
-        "-m",
-        "compileall",
-        "-q",
-        "-f",
-        "--invalidation-mode",
-        "unchecked-hash",
-        "-s",
-        str(stripdir),
+    trees = [
+        bundle_dir / name for name in ("stdlib", "site-packages", "app", "bootstrap")
     ]
-    if legacy:
-        argv.append("-b")
-    argv.append(str(target))
     try:
-        return subprocess.run(argv, check=False).returncode == 0
-    except OSError as exc:
+        pycompile.byte_compile(
+            trees,
+            compiler=compiler,
+            strip_source=strip_source,
+            stripdir=bundle_dir,
+        )
+    except pycompile.PycompileError as exc:
         raise BundleError(
-            f"could not run {' '.join(compiler)} to byte-compile the bundle: {exc}"
+            f"{exc}\n"
+            "  Fix it, or set [tool.kivy.android.build_settings].byte_compile "
+            "= false."
         ) from exc
 
 
