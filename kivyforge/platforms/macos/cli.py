@@ -34,6 +34,7 @@ def macos_build(
     no_verify_lock: bool,
     no_cache: bool,
     sign: bool = True,
+    release: bool = False,
 ) -> Path:
     """Assemble (and ad-hoc sign) the macOS ``.app``; return its path."""
     _require_macos_host()
@@ -57,6 +58,7 @@ def macos_build(
             arch=arch,
             sign=sign,
             no_cache=no_cache,
+            release=release,
         )
     except AppBundleError as exc:
         raise ToolchainError(str(exc)) from exc
@@ -132,6 +134,7 @@ def macos_package(
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
             sign=True,
+            release=True,
         )
         click.echo(
             f"Packaged {app.relative_to(project_root)} (ad-hoc signed).\n"
@@ -157,6 +160,7 @@ def macos_package(
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
         sign=False,
+        release=True,
     )
     try:
         click.echo(f"Developer ID signing with {identity!r} ...")

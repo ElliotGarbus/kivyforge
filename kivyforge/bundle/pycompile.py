@@ -32,12 +32,40 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 
 class PycompileError(Exception):
     """Byte-compilation failed, or the compiler could not be run."""
+
+
+def select_compiler(
+    *, staged_interpreter: Path, native: bool, python_version: str
+) -> tuple[str, ...] | None:
+    """Pick the interpreter argv to byte-compile the staged payload with.
+
+    The staged interpreter is the one actually shipped, so it is the first
+    choice — but only when *native*, i.e. the caller has confirmed it can run
+    on this host without emulation, which kivyforge never depends on. When it
+    can't run here, fall back to this process's own interpreter: a ``.pyc``'s
+    magic number is keyed to CPython's *minor* version only, never
+    architecture, so any interpreter of the right minor will do regardless of
+    which arch it runs on. Returns ``None`` when neither works, telling the
+    caller to degrade (skip compiling, ship source) rather than write a
+    ``.pyc`` nothing can load.
+    """
+    if native and staged_interpreter.is_file():
+        return (str(staged_interpreter),)
+    if sys.version_info[:2] == _target_minor(python_version):
+        return ()
+    return None
+
+
+def _target_minor(python_version: str) -> tuple[int, int]:
+    parts = python_version.split(".")[:2]
+    return (int(parts[0].split("rc")[0]), int(parts[1].split("rc")[0]))
 
 
 def byte_compile(

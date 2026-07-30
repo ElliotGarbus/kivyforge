@@ -380,7 +380,12 @@ class TestAssembleAndArch:
         monkeypatch.setattr(cli, "build_onedir", boom)
         with pytest.raises(ToolchainError, match="bundle assembly blew up"):
             cli._assemble(
-                _config(project), object(), project, arch=None, no_cache=False
+                _config(project),
+                object(),
+                project,
+                arch=None,
+                no_cache=False,
+                release=False,
             )
 
     def test_resolve_arch_translates_bundle_error(self):

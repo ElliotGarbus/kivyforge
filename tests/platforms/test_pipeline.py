@@ -56,6 +56,9 @@ _MACOS_PYPROJECT = (
     "[tool.kivy.macos]\nschema_version=1\nbundle_id='org.example.myapp'\n"
     "archs=['arm64']\n"
     "[tool.kivy.macos.python]\nversion='3.14.5'\n"
+    # The fake staged python3 below is a stub, not a real interpreter; byte
+    # compilation actually executing it is exercised by tests/bundle instead.
+    "[tool.kivy.macos.build_settings]\nbyte_compile=false\n"
 )
 
 
@@ -145,6 +148,9 @@ _LINUX_PYPROJECT = (
     "[tool.kivy]\ndisplay_name='My App'\napp_dir='src'\nentry_point='main'\n"
     "[tool.kivy.linux]\nschema_version=1\napp_id='org.example.myapp'\n"
     "[tool.kivy.linux.python]\nversion='3.15.0'\n"
+    # The fake staged python3 below is a stub, not a real interpreter; byte
+    # compilation actually executing it is exercised by tests/bundle instead.
+    "[tool.kivy.linux.build_settings]\nbyte_compile=false\n"
 )
 
 
@@ -233,6 +239,9 @@ _WINDOWS_PYPROJECT = (
     "[tool.kivy]\ndisplay_name='My App'\napp_dir='src'\nentry_point='main'\n"
     "[tool.kivy.windows]\nschema_version=1\napp_id='Acme.MyApp'\n"
     "[tool.kivy.windows.python]\nversion='3.13'\n"
+    # The fake staged python.exe below is a stub, not a real interpreter; byte
+    # compilation actually executing it is exercised by tests/bundle instead.
+    "[tool.kivy.windows.build_settings]\nbyte_compile=false\n"
 )
 
 

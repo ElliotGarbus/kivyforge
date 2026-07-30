@@ -66,7 +66,9 @@ def windows_build(
     """Assemble the Windows onedir bundle; return its path."""
     _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
-    bundle = _assemble(config, lock, project_root, arch=arch, no_cache=no_cache)
+    bundle = _assemble(
+        config, lock, project_root, arch=arch, no_cache=no_cache, release=False
+    )
     click.echo(f"Built {bundle.relative_to(project_root)}")
     return bundle
 
@@ -87,7 +89,9 @@ def windows_package(
     _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
     target_arch = _resolve_arch(lock, arch)
-    bundle = _assemble(config, lock, project_root, arch=target_arch, no_cache=no_cache)
+    bundle = _assemble(
+        config, lock, project_root, arch=target_arch, no_cache=no_cache, release=True
+    )
 
     # The dist folder name matches the build tree: the display_name run through
     # the Windows filename sanitizer (windows-spec), not the raw project.name.
@@ -166,9 +170,11 @@ def windows_status(project_root: Path) -> None:
     click.echo(f"Build:      {_build_state(onedir_path(config, project_root))}")
 
 
-def _assemble(config, lock, project_root, *, arch, no_cache) -> Path:
+def _assemble(config, lock, project_root, *, arch, no_cache, release) -> Path:
     try:
-        return build_onedir(config, lock, project_root, arch=arch, no_cache=no_cache)
+        return build_onedir(
+            config, lock, project_root, arch=arch, no_cache=no_cache, release=release
+        )
     except WindowsBundleError as exc:
         raise ToolchainError(str(exc)) from exc
 

@@ -36,7 +36,9 @@ def linux_build(
     """Assemble the Linux AppDir; return its path."""
     _require_linux_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
-    appdir = _assemble(config, lock, project_root, arch=arch, no_cache=no_cache)
+    appdir = _assemble(
+        config, lock, project_root, arch=arch, no_cache=no_cache, release=False
+    )
     click.echo(f"Built {appdir.relative_to(project_root)}")
     return appdir
 
@@ -53,7 +55,9 @@ def linux_package(
     _require_linux_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
     target_arch = _resolve_arch(lock, arch)
-    appdir = _assemble(config, lock, project_root, arch=target_arch, no_cache=no_cache)
+    appdir = _assemble(
+        config, lock, project_root, arch=target_arch, no_cache=no_cache, release=True
+    )
 
     if fmt == "folder":
         click.echo(
@@ -92,9 +96,11 @@ def linux_package(
     return result
 
 
-def _assemble(config, lock, project_root, *, arch, no_cache) -> Path:
+def _assemble(config, lock, project_root, *, arch, no_cache, release) -> Path:
     try:
-        return build_appdir(config, lock, project_root, arch=arch, no_cache=no_cache)
+        return build_appdir(
+            config, lock, project_root, arch=arch, no_cache=no_cache, release=release
+        )
     except AppDirError as exc:
         raise ToolchainError(str(exc)) from exc
 

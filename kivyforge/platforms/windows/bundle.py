@@ -22,12 +22,14 @@ step.
 
 from __future__ import annotations
 
+import platform
 import shutil
 from pathlib import Path
 
 import click
 
 from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
 
 from . import WindowsBundleError
@@ -67,6 +69,56 @@ def bundle_dir_name(config: Config) -> str:
     return windows_safe_name(config.display_name)
 
 
+def _setting_applies(value: bool | str, *, release: bool) -> bool:
+    """A ``build_settings`` tri-state resolved for the build being produced."""
+    if isinstance(value, bool):
+        return value
+    return release  # DESKTOP_RELEASE_ONLY
+
+
+def _resolve_byte_compile(
+    config: Config,
+    *,
+    staged_interpreter: Path,
+    target_arch: str,
+    python_version: str,
+    release: bool,
+) -> tuple[tuple[str, ...] | None, bool]:
+    """Decide whether to byte-compile, and with which interpreter.
+
+    Returns ``(compiler_argv_or_None, strip_source)``; ``None`` means do not
+    byte-compile. ``byte_compile = true`` is read as "I insist", so a missing
+    interpreter is an error; the default ``"release"`` degrades to shipping
+    source with a warning rather than breaking a build the user never
+    configured.
+    """
+    settings = config.windows_required.build_settings
+    if not _setting_applies(settings.byte_compile, release=release):
+        return None, False
+    native = platform.machine().lower() == target_arch
+    compiler = select_compiler(
+        staged_interpreter=staged_interpreter,
+        native=native,
+        python_version=python_version,
+    )
+    if compiler is None:
+        message = (
+            f"this project ships CPython {python_version}, and no CPython of "
+            "that minor could be found to byte-compile with (a .pyc is only "
+            "loadable by the exact CPython minor that wrote it)"
+        )
+        if settings.byte_compile is True:
+            raise WindowsBundleError(
+                "[tool.kivy.windows.build_settings].byte_compile = true but "
+                f"{message}.\n"
+                "  Install a matching CPython, or set byte_compile = false."
+            )
+        click.echo(f"[stage] not byte-compiling: {message}.")
+        return None, False
+    strip = _setting_applies(settings.strip_source, release=release)
+    return compiler, strip
+
+
 def build_onedir(
     config: Config,
     lock: WindowsLockfile,
@@ -76,6 +128,7 @@ def build_onedir(
     staging_dir: Path | None = None,
     no_cache: bool = False,
     cache: ArtifactCache | None = None,
+    release: bool = False,
     echo=click.echo,
 ) -> Path:
     """Build the onedir bundle tree and return its path.
@@ -132,6 +185,32 @@ def build_onedir(
             )
 
         _copy_app_sources(config, project_root, bundle / "app")
+
+        compiler, strip_source = _resolve_byte_compile(
+            config,
+            staged_interpreter=bundle / "python" / "python.exe",
+            target_arch=target_arch,
+            python_version=lock.python_runtime.version,
+            release=release,
+        )
+        if compiler is not None:
+            with_what = " ".join(compiler) if compiler else "this interpreter"
+            echo(
+                f"[stage] byte-compiling the Python payload with {with_what}"
+                + (" (.pyc only)" if strip_source else "")
+            )
+            try:
+                byte_compile(
+                    [bundle / "app", bundle / "python" / "Lib" / "site-packages"],
+                    compiler=compiler,
+                    strip_source=strip_source,
+                    stripdir=bundle,
+                )
+            except PycompileError as exc:
+                raise WindowsBundleError(
+                    f"{exc}\n  Fix it, or set "
+                    "[tool.kivy.windows.build_settings].byte_compile = false."
+                ) from exc
 
         write_bootstrap(
             bundle,
