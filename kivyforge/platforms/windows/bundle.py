@@ -15,9 +15,15 @@ module, then place + resource-patch the launcher. Produces:
 The tree is assembled **in place** (see :mod:`.fsswap`): a freshly written tree
 cannot be reliably renamed on Windows because the antivirus scanner holds new
 files open, so any previous bundle is reserved first and restored if assembly
-fails — a broken build never destroys a working one. The onedir folder is itself
-a shipped distributable (portable use) *and* the input to the Phase 7 packaging
-step.
+fails — a broken build never destroys a working one.
+
+The onedir *folder* is a distributable format either way (portable use, zip it
+up yourself) — but *this* build's contents depend on ``release``: ``build``/
+``run`` (``release=False``) keep readable ``.py`` for fast iteration, while
+``package`` (``release=True``) additionally byte-compiles per
+``[tool.kivy.windows.build_settings]`` before copying the tree into
+``dist/windows``. ``release`` is a build-policy flag, not a statement about
+whether the folder *can* be distributed.
 """
 
 from __future__ import annotations

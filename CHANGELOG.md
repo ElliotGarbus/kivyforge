@@ -22,6 +22,27 @@
   universal2 wheel contains arm64. The *build target* set narrowed; the
   *wheel tag* set did not.
 
+### Desktop source stripping (Windows/Linux/macOS)
+
+- **New `[tool.kivy.<platform>.build_settings]` table** on Windows, Linux, and
+  macOS, matching what Android's own `build_settings` already does:
+  `byte_compile` and `strip_source` (each `"release"` | `true` | `false`,
+  default `"release"`). `"release"` applies only to `kivyforge package` —
+  `build`/`run` always keep readable `.py` for fast iteration.
+  - Only the app sources and installed site-packages are compiled/stripped;
+    the staged Python stdlib is never touched (readable tracebacks,
+    `inspect`/`linecache` stay intact).
+  - The compiler is the bundle's own staged interpreter when it can run on
+    the host (never Rosetta or any other emulation), else the interpreter
+    running `kivyforge` itself on a matching CPython minor, else the default
+    degrades to shipping source with a note (`byte_compile = true` fails the
+    build instead of silently shipping source).
+  - On macOS this runs before ad-hoc signing, since codesign seals the
+    bundle.
+  - Previously only PyInstaller (bytecode-only) and Flet (bytecode-only by
+    default since v0.86) did this; kivyforge's desktop backends shipped raw
+    `.py` unconditionally until now.
+
 ### Android backend (`.apk` / `.aab`)
 
 - **New `android` target.** `kivyforge lock/build/run/package -p android`

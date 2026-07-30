@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from kivyforge.config import load_config
@@ -196,6 +198,94 @@ class TestBuildOnedir:
         (root / "src" / "main.py").unlink()
         with pytest.raises(WindowsBundleError, match="entry point main.py not found"):
             bundle.build_onedir(config, _lock(), root, echo=lambda *a, **k: None)
+
+
+class TestByteCompileResolution:
+    """``byte_compile``/``strip_source`` (windows-spec §build_settings).
+
+    ``select_compiler`` is stubbed here (it has its own tests in
+    tests/bundle/test_pycompile.py); the interesting behavior at this layer is
+    the tri-state resolution and the degrade-vs-error split.
+    """
+
+    def _config(self, extra: str = ""):
+        from kivyforge.config.loader import load_config_from_text
+
+        text = _PYPROJECT.replace(
+            "[tool.kivy.windows.python]", extra + "\n[tool.kivy.windows.python]"
+        )
+        return load_config_from_text(text, require_ios=False, require_windows=True)
+
+    def _resolve(self, config, *, release=True):
+        return bundle._resolve_byte_compile(
+            config,
+            staged_interpreter=Path("unused.exe"),
+            target_arch="amd64",
+            python_version="3.13.14",
+            release=release,
+        )
+
+    def _select(self, monkeypatch, result):
+        monkeypatch.setattr(bundle, "select_compiler", lambda **kw: result)
+
+    def test_release_default_compiles_and_strips(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        assert self._resolve(self._config()) == (("staged-python",), True)
+
+    def test_dev_build_keeps_readable_sources(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        assert self._resolve(self._config(), release=False) == (None, False)
+
+    def test_false_never_compiles(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        config = self._config(
+            "[tool.kivy.windows.build_settings]\nbyte_compile = false\n"
+        )
+        assert self._resolve(config) == (None, False)
+
+    def test_strip_source_is_ignored_without_byte_compile(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        config = self._config(
+            "[tool.kivy.windows.build_settings]\n"
+            "byte_compile = false\nstrip_source = true\n"
+        )
+        assert self._resolve(config) == (None, False)
+
+    def test_true_compiles_for_dev_build_too(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        config = self._config(
+            "[tool.kivy.windows.build_settings]\n"
+            "byte_compile = true\nstrip_source = false\n"
+        )
+        assert self._resolve(config, release=False) == (("staged-python",), False)
+
+    def test_default_degrades_when_no_compiler_found(self, monkeypatch, capsys):
+        self._select(monkeypatch, None)
+        assert self._resolve(self._config()) == (None, False)
+        assert "not byte-compiling" in capsys.readouterr().out
+
+    def test_explicit_true_fails_when_no_compiler_found(self, monkeypatch):
+        self._select(monkeypatch, None)
+        config = self._config(
+            "[tool.kivy.windows.build_settings]\nbyte_compile = true\n"
+        )
+        with pytest.raises(WindowsBundleError, match="byte_compile = true"):
+            self._resolve(config)
+
+    def test_the_choice_reaches_the_bundle(self, project, fake_stages, monkeypatch):
+        root, config = project
+        monkeypatch.setattr(bundle, "select_compiler", lambda **kw: ())
+        calls = []
+        monkeypatch.setattr(
+            bundle, "byte_compile", lambda trees, **kw: calls.append((trees, kw))
+        )
+        bundle.build_onedir(
+            config, _lock(), root, release=True, echo=lambda *a, **k: None
+        )
+        assert calls
+        trees, kw = calls[0]
+        assert root / "build" / "windows" / "My App" / "app" in trees
+        assert kw["strip_source"] is True
 
 
 class TestResolveAssemblyArch:

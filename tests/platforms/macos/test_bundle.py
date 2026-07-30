@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import plistlib
+from pathlib import Path
 
 import pytest
 
@@ -117,6 +118,109 @@ def _project(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "main.py").write_text("print('hi')")
     return tmp_path
+
+
+class TestByteCompileResolution:
+    """``byte_compile``/``strip_source`` (macos-spec §build_settings).
+
+    ``select_compiler`` is stubbed here (it has its own tests in
+    tests/bundle/test_pycompile.py); the interesting behavior at this layer is
+    the tri-state resolution, the degrade-vs-error split, and — the
+    macOS-specific wrinkle — that it runs before ad-hoc signing.
+    """
+
+    def _config(self, extra: str = ""):
+        text = _PYPROJECT.replace(
+            "[tool.kivy.macos.python]", extra + "\n[tool.kivy.macos.python]"
+        )
+        return load_config_from_text(text, require_ios=False, require_macos=True)
+
+    def _resolve(self, config, *, release=True):
+        return bundle._resolve_byte_compile(
+            config,
+            staged_interpreter=Path("unused"),
+            target_arch="arm64",
+            python_version="3.14.5",
+            release=release,
+        )
+
+    def _select(self, monkeypatch, result):
+        monkeypatch.setattr(bundle, "select_compiler", lambda **kw: result)
+
+    def test_release_default_compiles_and_strips(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        assert self._resolve(self._config()) == (("staged-python",), True)
+
+    def test_dev_build_keeps_readable_sources(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        assert self._resolve(self._config(), release=False) == (None, False)
+
+    def test_false_never_compiles(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        config = self._config(
+            "[tool.kivy.macos.build_settings]\nbyte_compile = false\n"
+        )
+        assert self._resolve(config) == (None, False)
+
+    def test_strip_source_is_ignored_without_byte_compile(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        config = self._config(
+            "[tool.kivy.macos.build_settings]\n"
+            "byte_compile = false\nstrip_source = true\n"
+        )
+        assert self._resolve(config) == (None, False)
+
+    def test_true_compiles_for_dev_build_too(self, monkeypatch):
+        self._select(monkeypatch, ("staged-python",))
+        config = self._config(
+            "[tool.kivy.macos.build_settings]\n"
+            "byte_compile = true\nstrip_source = false\n"
+        )
+        assert self._resolve(config, release=False) == (("staged-python",), False)
+
+    def test_default_degrades_when_no_compiler_found(self, monkeypatch, capsys):
+        self._select(monkeypatch, None)
+        assert self._resolve(self._config()) == (None, False)
+        assert "not byte-compiling" in capsys.readouterr().out
+
+    def test_explicit_true_fails_when_no_compiler_found(self, monkeypatch):
+        self._select(monkeypatch, None)
+        config = self._config("[tool.kivy.macos.build_settings]\nbyte_compile = true\n")
+        with pytest.raises(AppBundleError, match="byte_compile = true"):
+            self._resolve(config)
+
+    def test_the_choice_reaches_the_bundle_before_signing(
+        self, tmp_path, faked, monkeypatch
+    ):
+        root = _project(tmp_path)
+        monkeypatch.setattr(bundle, "select_compiler", lambda **kw: ())
+        calls = []
+
+        def fake_byte_compile(trees, **kw):
+            faked["order"].append("byte_compile")
+            calls.append((trees, kw))
+
+        def fake_sign(app):
+            faked["order"].append("sign")
+            faked["sign"].append(app)
+            return 1
+
+        monkeypatch.setattr(bundle, "byte_compile", fake_byte_compile)
+        monkeypatch.setattr(bundle, "sign_bundle_adhoc", fake_sign)
+
+        bundle.build_app_bundle(
+            _config(),
+            _lock(),
+            root,
+            staging_dir=tmp_path / "out",
+            release=True,
+            echo=lambda *a: None,
+        )
+        assert calls
+        trees, kw = calls[0]
+        assert [t.parts[-1] for t in trees] == ["app", "lib"]
+        assert kw["strip_source"] is True
+        assert faked["order"].index("byte_compile") < faked["order"].index("sign")
 
 
 class TestBuildAppBundle:

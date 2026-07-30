@@ -1,6 +1,6 @@
 # Plan: drop Intel macOS, then add desktop source stripping
 
-> **Status: agreed, Phase A in progress (2026-07-27).** Two sequenced changes.
+> **Status: done (2026-07-29).** Two sequenced changes.
 > **Phase A** removes `x86_64` from macOS and the iOS Simulator entirely — as a
 > host *and* as a target. **Phase B** adds `byte_compile` / `strip_source` to the
 > three desktop backends, matching what Android already does.

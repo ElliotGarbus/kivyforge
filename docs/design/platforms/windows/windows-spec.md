@@ -153,6 +153,10 @@ thumbprint = "A1B2C3..."         # SHA-1 thumbprint of a cert in the Windows cer
 # sdk    = { version = "2.1.0", source = "https://vendor.example/sdk-2.1.0-win64.zip" }
 # ffmpeg = { version = "7.1",   source = "binaries/windows/ffmpeg.exe" }
 
+[tool.kivy.windows.build_settings]
+byte_compile = "release"   # "release" | true | false — .pyc for app/ + site-packages
+strip_source = "release"   # "release" | true | false — drop .py once byte-compiled
+
 # extra_index_urls / find_links / exclude behave as on iOS/macOS/Linux.
 ```
 
@@ -192,6 +196,23 @@ is found in one store but signed against the other. See
 Native binaries: `[tool.kivy.windows.native.binaries]` declares non-wheel
 DLLs / helper executables; empty by default. Full semantics in
 ["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels).
+
+Build settings: `[tool.kivy.windows.build_settings]` controls byte-compiling
+the shipped Python payload — `app\` and `Lib\site-packages\` only, never the
+staged stdlib (Windows PBS ships it as `.pyc` already). `byte_compile` /
+`strip_source` are each `"release"` (the default, meaning `package` only —
+`build`/`run` always keep readable `.py` for fast iteration) or an explicit
+`true`/`false`. `strip_source` is ignored while `byte_compile` is off. The
+compiler is picked in order: the bundle's own staged `python.exe` when it can
+run on this host (target arch == host arch — kivyforge never depends on
+emulation); otherwise the interpreter running `kivyforge` itself, if its
+CPython minor matches the target (a `.pyc`'s magic number is keyed to minor
+version only, not architecture); otherwise, `byte_compile = "release"`
+degrades to shipping source with a note, while `byte_compile = true` fails
+the build outright. Same defaults and ladder as [macos-spec](../macos/macos-spec.md)
+and [linux-spec](../linux/linux-spec.md); Android's own `build_settings`
+(which additionally compiles the stdlib) documents the shared rationale in
+[01-pyproject-android §build_settings](../android/01-pyproject-android.md#toolkivyandroidbuild_settings).
 
 Shared `[tool.kivy]` keys consumed: `display_name` (→ the version resource's
 product name and the packaged folder name), `app_dir`, `entry_point`.

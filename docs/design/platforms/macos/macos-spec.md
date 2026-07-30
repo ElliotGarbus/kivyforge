@@ -61,6 +61,10 @@ version = "3.15.0"                       # bundled Python runtime version
 [tool.kivy.macos.icons]
 source = "assets/icon-macos.png"        # 1024×1024 PNG → generated .icns
 
+[tool.kivy.macos.build_settings]
+byte_compile = "release"   # "release" | true | false — .pyc for Resources/app + Resources/lib
+strip_source = "release"   # "release" | true | false — drop .py once byte-compiled
+
 # extra_index_urls / find_links / exclude behave as on iOS (macOS-tagged wheels).
 ```
 
@@ -85,6 +89,23 @@ and the free-form `[tool.kivy.macos.entitlements]` table configure the
 Developer ID distribution path — see
 ["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple).
 Both are optional; without them `package` ships the ad-hoc floor.
+
+Build settings: `[tool.kivy.macos.build_settings]` controls byte-compiling the
+shipped Python payload — `Resources/app/` and `Resources/lib/` only, never
+the staged stdlib. `byte_compile` / `strip_source` are each `"release"` (the
+default, meaning `package` only — `build`/`run` always keep readable `.py`)
+or an explicit `true`/`false`; `strip_source` is ignored while `byte_compile`
+is off. The compiler is picked in order: the bundle's own staged
+`Resources/python/bin/python3` when it can run on this host (target arch ==
+host arch — kivyforge never depends on Rosetta or any other emulation);
+otherwise the interpreter running `kivyforge` itself, if its CPython minor
+matches the target (a `.pyc`'s magic number is keyed to minor version only,
+not architecture); otherwise, `byte_compile = "release"` degrades to
+shipping source with a note, while `byte_compile = true` fails the build
+outright. Byte-compilation always runs **before** ad-hoc signing — codesign
+seals the bundle, so mutating it afterward would invalidate the signature.
+Same defaults and ladder as [windows-spec](../windows/windows-spec.md) and
+[linux-spec](../linux/linux-spec.md).
 
 Shared `[tool.kivy]` keys consumed: `display_name` (→ `CFBundleName` /
 `CFBundleDisplayName`), `app_dir`, `entry_point`. `orientation` is not meaningful

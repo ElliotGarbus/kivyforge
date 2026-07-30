@@ -76,6 +76,10 @@ source = "assets/icon.png"       # 1024×1024 PNG → root icon + hicolor sizes
 [tool.kivy.linux.desktop]
 categories = ["Utility"]         # freedesktop main categories for the .desktop entry
 
+[tool.kivy.linux.build_settings]
+byte_compile = "release"   # "release" | true | false — .pyc for usr/app + usr/lib
+strip_source = "release"   # "release" | true | false — drop .py once byte-compiled
+
 # extra_index_urls / find_links / exclude behave as on iOS/macOS.
 ```
 
@@ -114,6 +118,21 @@ concept and have no subtable.
 Desktop entry: `[tool.kivy.linux.desktop].categories` supplies the freedesktop
 main categories written into the `.desktop` `Categories=` key (default
 `Utility`).
+
+Build settings: `[tool.kivy.linux.build_settings]` controls byte-compiling the
+shipped Python payload — `usr/app/` and `usr/lib/` only, never the staged
+stdlib. `byte_compile` / `strip_source` are each `"release"` (the default,
+meaning `package` only — `build`/`run` always keep readable `.py`) or an
+explicit `true`/`false`; `strip_source` is ignored while `byte_compile` is
+off. The compiler is picked in order: the bundle's own staged
+`usr/python/bin/python3` when it can run on this host (target arch == host
+arch — kivyforge never depends on emulation); otherwise the interpreter
+running `kivyforge` itself, if its CPython minor matches the target (a
+`.pyc`'s magic number is keyed to minor version only, not architecture);
+otherwise, `byte_compile = "release"` degrades to shipping source with a
+note, while `byte_compile = true` fails the build outright. Same defaults and
+ladder as [windows-spec](../windows/windows-spec.md) and
+[macos-spec](../macos/macos-spec.md).
 
 Shared `[tool.kivy]` keys consumed: `display_name` (→ `.desktop` `Name=`),
 `app_dir`, `entry_point`. `orientation` is not meaningful on desktop and is
