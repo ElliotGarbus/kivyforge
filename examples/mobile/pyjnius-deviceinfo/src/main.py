@@ -22,8 +22,12 @@ def safe_area_insets():
     Geometry comes from Kivy core's ``kivy.mobile``, which is mobile-only and
     raises ``ImportError`` on desktop — hence the platform guard and the zero
     fallback, so this example is unchanged when run on a desktop for a quick
-    smoke-test. ``get_safe_area()`` reports **layout points** on both iOS and
-    Android; ``get_scale()`` converts those to Kivy window pixels.
+    smoke-test.
+
+    The two platforms report different units: iOS gives UIKit **points**,
+    so they are scaled to Kivy window pixels; Android already gives
+    **pixels**, which is Kivy's layout coordinate system there, so scaling
+    again would inflate the padding by the display density.
 
     On Android this keeps the info rows clear of the status bar and the
     gesture-navigation pill.
@@ -34,8 +38,8 @@ def safe_area_insets():
         from kivy.mobile import get_safe_area, get_scale
     except ImportError:
         return [0, 0, 0, 0]
-    insets = get_safe_area()  # layout points
-    scale = get_scale()  # -> Kivy window pixels
+    insets = get_safe_area()
+    scale = get_scale() if platform == "ios" else 1.0
     return [
         insets["left"] * scale,
         insets["top"] * scale,
