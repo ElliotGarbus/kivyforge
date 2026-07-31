@@ -142,12 +142,12 @@ jobs:
     - name: Verify vendored rcedit matches its pinned SHA-256
       run: python -m kivyforge.platforms.windows.vendor.fetch_rcedit --check
     - name: Rebuild the launcher from source and byte-compare (reproducibility)
-      # Uses the full MSVC VCTOOLSVERSION pinned in vendor/TOOLSET.txt via
-      # vcvarsall -vcvars_ver (e.g. 14.51.36231 — not just major.minor). If this
+      # Uses the MSVC VCTOOLSVERSION + Windows SDK pinned in vendor/TOOLSET.txt
+      # via vcvarsall (e.g. 14.51.36231 / 10.0.26100.0 — not "latest"). If this
       # fails with "cl not found" / vcvars error the runner image dropped that
-      # exact build; if it fails with a SHA mismatch the C source changed
+      # exact pair; if it fails with a SHA mismatch the C source changed
       # without re-vendoring. Either way: Actions → Run workflow
-      # (`revendor_launcher`) to re-pin against the runner's current toolset.
+      # (`revendor_launcher`) to re-pin against the runner's current defaults.
       run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
     - name: Exercise the launcher end-to-end (spawn/argv/exit-code/env)
       run: pytest tests/platforms/windows/test_launcher_exe.py -v --no-cov
@@ -177,8 +177,8 @@ jobs:
       shell: pwsh
       run: |
         # Drop the stale pin so build_launcher resolves the runner's default
-        # (current, in-support) toolset and records its full VCTOOLSVERSION
-        # in TOOLSET.txt.
+        # (current, in-support) MSVC + Windows SDK and records both in
+        # TOOLSET.txt.
         Remove-Item kivyforge\platforms\windows\vendor\TOOLSET.txt -ErrorAction SilentlyContinue
         python -m kivyforge.platforms.windows.launcher.build_launcher build
     - name: Verify the re-vendored launcher is reproducible on this runner
@@ -194,8 +194,9 @@ jobs:
         if git diff --cached --quiet; then
           echo "Launcher already reproducible with the current toolset; nothing to commit."
         else
-          toolset="$(cat kivyforge/platforms/windows/vendor/TOOLSET.txt)"
-          git commit -m "chore(windows): re-vendor launcher for MSVC toolset ${toolset}"
+          # TOOLSET.txt is multi-line (MSVC + Windows SDK); flatten for the subject.
+          toolset="$(grep -v '^#' kivyforge/platforms/windows/vendor/TOOLSET.txt | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+          git commit -m "chore(windows): re-vendor launcher for ${toolset}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
         fi
     - name: Upload re-vendored launcher assets (fallback if push is blocked)

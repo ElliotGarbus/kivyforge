@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -44,17 +45,23 @@ VENDOR_DIR = HERE.parent / "vendor"
 LAUNCHER_NAME = "launcher-amd64.exe"
 VENDORED_LAUNCHER = VENDOR_DIR / LAUNCHER_NAME
 MANIFEST = VENDOR_DIR / "SHA256SUMS"
-# The MSVC toolset that produced the vendored binary. Byte-identity holds only
-# for a fixed toolset (the PE "rich header" encodes the compiler build), so
-# build and the CI verify both pin this via vcvarsall -vcvars_ver.
+# The MSVC + Windows SDK pin that produced the vendored binary. Byte-identity
+# holds only for a fixed compiler *and* a fixed Windows SDK (the PE encodes
+# both — even with ``/Brepro``): build and CI verify load them via
+# ``vcvarsall <arch> <winsdk> -vcvars_ver=<tools>``.
 #
-# Pin the *full* VCTOOLSVERSION (e.g. ``14.51.36231``), not just major.minor.
-# ``-vcvars_ver=14.51`` means "latest installed 14.51.xxxxx", and hosted
-# ``windows-latest`` runners can carry more than one image build of the same
-# major.minor in the pool at once — pinning only major.minor then makes
-# verify flip between two PE hashes run-to-run. The full version freezes the
-# exact compiler; when a runner image drops it, verify fails loudly and the
-# ``revendor_launcher`` workflow re-pins against the new default.
+# ``TOOLSET.txt`` format (one or two lines, ``#`` comments allowed)::
+#
+#     14.51.36231          # full VCTOOLSVERSION (required)
+#     10.0.26100.0         # WindowsSDKVersion (optional but recorded by build)
+#
+# Pin the *full* VCTOOLSVERSION, not just major.minor: ``-vcvars_ver=14.51``
+# means "latest installed 14.51.xxxxx", and hosted ``windows-latest`` runners
+# can mix image builds that share a major.minor but not a patch. Likewise pin
+# the Windows SDK: two images with the same MSVC but different "latest" SDKs
+# still emit different PEs (observed: 307-byte drift with identical
+# VCTOOLSVERSION). When a runner image drops either pin, verify fails loudly
+# and ``revendor_launcher`` re-pins against the new defaults.
 TOOLSET_FILE = VENDOR_DIR / "TOOLSET.txt"
 
 # Deterministic compile/link flags. Keep this list in lockstep with any change
@@ -67,17 +74,51 @@ class LauncherBuildError(Exception):
     """The launcher could not be compiled or failed its reproducibility check."""
 
 
-def pinned_toolset() -> str | None:
-    """The pinned MSVC toolset (full ``VCTOOLSVERSION``), or ``None`` if unrecorded.
+@dataclass(frozen=True)
+class ToolsetPin:
+    """The exact MSVC + Windows SDK pair a launcher binary was built with."""
 
-    Legacy ``TOOLSET.txt`` values that only recorded ``major.minor`` (e.g.
-    ``14.51``) are still returned as-is; ``do_build`` rewrites them to the
-    full version on the next re-vendor.
+    vc_tools: str
+    winsdk: str | None = None
+
+    def label(self) -> str:
+        return (
+            f"MSVC {self.vc_tools} + Windows SDK {self.winsdk}"
+            if self.winsdk
+            else f"MSVC {self.vc_tools}"
+        )
+
+
+def pinned_toolset() -> ToolsetPin | None:
+    """The pinned MSVC (+ optional Windows SDK), or ``None`` if unrecorded.
+
+    Accepts legacy single-line ``major.minor`` / full-version-only pins;
+    ``do_build`` rewrites them to the two-line full form on the next re-vendor.
     """
-    if TOOLSET_FILE.is_file():
-        text = TOOLSET_FILE.read_text(encoding="utf-8").strip()
-        return text or None
-    return None
+    if not TOOLSET_FILE.is_file():
+        return None
+    lines = [
+        line.strip()
+        for line in TOOLSET_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not lines:
+        return None
+    vc_tools = lines[0]
+    winsdk = lines[1] if len(lines) > 1 else None
+    return ToolsetPin(vc_tools, winsdk)
+
+
+def write_toolset_pin(pin: ToolsetPin) -> None:
+    """Persist *pin* so CI verify can reload the exact same vcvars pair."""
+    lines = [
+        "# MSVC VCTOOLSVERSION + Windows SDK used to build launcher-amd64.exe.",
+        "# Re-vendor via the `revendor_launcher` CI workflow when either drifts.",
+        pin.vc_tools,
+    ]
+    if pin.winsdk:
+        lines.append(pin.winsdk)
+    TOOLSET_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _vc_tools_version(env: dict[str, str]) -> str:
@@ -85,13 +126,24 @@ def _vc_tools_version(env: dict[str, str]) -> str:
     return env.get("VCTOOLSVERSION", "").strip()
 
 
-def _vcvars_env(arch: str = "x64", *, vcvars_ver: str | None = None) -> dict[str, str]:
+def _windows_sdk_version(env: dict[str, str]) -> str:
+    """The ``WindowsSDKVersion`` from a vcvars environment, trailing ``\\`` stripped."""
+    return env.get("WINDOWSSDKVERSION", "").strip().strip("\\")
+
+
+def _vcvars_env(
+    arch: str = "x64",
+    *,
+    vcvars_ver: str | None = None,
+    winsdk_version: str | None = None,
+) -> dict[str, str]:
     """Return the environment after loading the Visual Studio dev vars for *arch*.
 
     Locates the toolset with ``vswhere`` and runs ``vcvarsall.bat``, capturing
     the resulting environment so ``cl``/``link`` resolve without the caller
-    being inside a Developer Command Prompt. ``vcvars_ver`` pins the toolset
-    (e.g. ``14.38``) for reproducibility.
+    being inside a Developer Command Prompt. ``vcvars_ver`` pins the MSVC
+    toolset (full ``VCTOOLSVERSION``, e.g. ``14.51.36231``); ``winsdk_version``
+    pins the Windows SDK (e.g. ``10.0.26100.0``).
     """
     program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     vswhere = (
@@ -135,19 +187,23 @@ def _vcvars_env(arch: str = "x64", *, vcvars_ver: str | None = None) -> dict[str
     # Run vcvarsall then `set`, and parse the exported environment back out.
     # A temp batch file avoids the nested-quote mangling that breaks passing the
     # whole compound command (with a quoted, space-containing path) as one arg.
+    # Positional form: vcvarsall <arch> [winsdk_version] [-vcvars_ver=...].
     marker = "__KIVYFORGE_ENV__"
+    sdk_arg = f" {winsdk_version}" if winsdk_version else ""
     ver_arg = f" -vcvars_ver={vcvars_ver}" if vcvars_ver else ""
     with tempfile.TemporaryDirectory(prefix="kivy-vcvars-") as tmp:
         bat = Path(tmp) / "env.bat"
         bat.write_text(
-            f'@echo off\r\ncall "{vcvarsall}" {arch}{ver_arg} >nul\r\n'
+            f'@echo off\r\ncall "{vcvarsall}" {arch}{sdk_arg}{ver_arg} >nul\r\n'
             f"echo {marker}\r\nset\r\n",
             encoding="utf-8",
         )
         result = subprocess.run(["cmd", "/c", str(bat)], capture_output=True, text=True)
     if result.returncode != 0 or marker not in result.stdout:
         raise LauncherBuildError(
-            f"failed to initialize the MSVC environment via {vcvarsall}:\n"
+            f"failed to initialize the MSVC environment via {vcvarsall}"
+            f" (arch={arch}, winsdk={winsdk_version or 'latest'}, "
+            f"vcvars_ver={vcvars_ver or 'latest'}):\n"
             f"{result.stdout}\n{result.stderr}"
         )
     env: dict[str, str] = {}
@@ -173,13 +229,15 @@ def compile_c_source(
     extra_libs: tuple[str, ...] = (),
     arch: str = "x64",
     vcvars_ver: str | None = None,
+    winsdk_version: str | None = None,
 ) -> Path:
     """Deterministically compile a single C *source* to *dest* with MSVC.
 
     Shared by the launcher build and the launcher end-to-end test (which builds
     a tiny console stub standing in for ``python.exe``). ``subsystem`` links
     ``/SUBSYSTEM:<subsystem>``; ``extra_libs`` appends import libraries;
-    ``vcvars_ver`` pins the MSVC toolset for byte-reproducibility.
+    ``vcvars_ver`` / ``winsdk_version`` pin the MSVC toolset and Windows SDK
+    for byte-reproducibility.
     """
     if sys.platform != "win32":
         raise LauncherBuildError(
@@ -188,7 +246,7 @@ def compile_c_source(
     if not source.is_file():
         raise LauncherBuildError(f"C source missing: {source}")
     env = {k.upper(): v for k, v in os.environ.items()} | _vcvars_env(
-        arch, vcvars_ver=vcvars_ver
+        arch, vcvars_ver=vcvars_ver, winsdk_version=winsdk_version
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="kivy-cc-") as tmp:
@@ -216,11 +274,20 @@ def compile_c_source(
 
 
 def compile_launcher(
-    dest: Path, *, arch: str = "x64", vcvars_ver: str | None = None
+    dest: Path,
+    *,
+    arch: str = "x64",
+    vcvars_ver: str | None = None,
+    winsdk_version: str | None = None,
 ) -> Path:
     """Compile ``launcher.c`` to *dest* deterministically. Returns *dest*."""
     return compile_c_source(
-        SOURCE, dest, subsystem="WINDOWS", arch=arch, vcvars_ver=vcvars_ver
+        SOURCE,
+        dest,
+        subsystem="WINDOWS",
+        arch=arch,
+        vcvars_ver=vcvars_ver,
+        winsdk_version=winsdk_version,
     )
 
 
@@ -235,8 +302,8 @@ def _which(tool: str, env: dict[str, str]) -> str:
     if found is None:
         pin = pinned_toolset()
         hint = (
-            f" The pinned toolset {pin!r} (vendor/TOOLSET.txt) may not be "
-            "installed on this machine/runner — re-vendor against a current "
+            f" The pinned toolset {pin.label()!r} (vendor/TOOLSET.txt) may not "
+            "be installed on this machine/runner — re-vendor against a current "
             "toolset via the `revendor_launcher` CI workflow."
             if pin
             else " The Visual Studio C++ build tools may be incomplete."
@@ -287,23 +354,32 @@ def _write_manifest(entries: dict[str, str]) -> None:
 
 def do_build() -> int:
     pin = pinned_toolset()
-    # Resolve the toolset once, record its full VCTOOLSVERSION, and compile
-    # against that exact version — never re-resolve via a major.minor alias,
-    # which would silently pick a different patch build on another runner.
-    env = {k.upper(): v for k, v in os.environ.items()} | _vcvars_env(vcvars_ver=pin)
+    # Resolve once, record the full MSVC + Windows SDK pair, and compile
+    # against that exact pair — never re-resolve via a major.minor / "latest
+    # SDK" alias, which would silently pick different builds on another runner.
+    env = {k.upper(): v for k, v in os.environ.items()} | _vcvars_env(
+        vcvars_ver=pin.vc_tools if pin else None,
+        winsdk_version=pin.winsdk if pin else None,
+    )
     tools_version = _vc_tools_version(env)
+    sdk_version = _windows_sdk_version(env)
     if not tools_version:
         raise LauncherBuildError(
             "vcvars did not export VCTOOLSVERSION; cannot record a "
             "reproducible toolset pin in vendor/TOOLSET.txt."
         )
-    TOOLSET_FILE.write_text(tools_version + "\n", encoding="utf-8")
-    compile_launcher(VENDORED_LAUNCHER, vcvars_ver=tools_version)
+    recorded = ToolsetPin(tools_version, sdk_version or None)
+    write_toolset_pin(recorded)
+    compile_launcher(
+        VENDORED_LAUNCHER,
+        vcvars_ver=recorded.vc_tools,
+        winsdk_version=recorded.winsdk,
+    )
     digest = sha256_of(VENDORED_LAUNCHER)
     entries = _read_manifest()
     entries[LAUNCHER_NAME] = digest
     _write_manifest(entries)
-    print(f"built {VENDORED_LAUNCHER} ({digest}); toolset {tools_version}")
+    print(f"built {VENDORED_LAUNCHER} ({digest}); {recorded.label()}")
     return 0
 
 
@@ -316,12 +392,19 @@ def do_verify() -> int:
     vendored = VENDORED_LAUNCHER.read_bytes()
     pin = pinned_toolset()
     # Resolve first so a missing/mismatched pin fails with the toolset name,
-    # and so the mismatch error can report which compiler actually ran.
-    env = {k.upper(): v for k, v in os.environ.items()} | _vcvars_env(vcvars_ver=pin)
-    used = _vc_tools_version(env)
+    # and so the mismatch error can report which compiler + SDK actually ran.
+    env = {k.upper(): v for k, v in os.environ.items()} | _vcvars_env(
+        vcvars_ver=pin.vc_tools if pin else None,
+        winsdk_version=pin.winsdk if pin else None,
+    )
+    used = ToolsetPin(_vc_tools_version(env), _windows_sdk_version(env) or None)
     with tempfile.TemporaryDirectory(prefix="kivy-launcher-verify-") as tmp:
         rebuilt_path = Path(tmp) / LAUNCHER_NAME
-        compile_launcher(rebuilt_path, vcvars_ver=pin)
+        compile_launcher(
+            rebuilt_path,
+            vcvars_ver=pin.vc_tools if pin else None,
+            winsdk_version=pin.winsdk if pin else None,
+        )
         rebuilt = rebuilt_path.read_bytes()
     if rebuilt != vendored:
         raise LauncherBuildError(
@@ -329,12 +412,13 @@ def do_verify() -> int:
             f"binary ({VENDORED_LAUNCHER}).\n"
             f"  vendored: {len(vendored)} bytes, sha256={hashlib.sha256(vendored).hexdigest()}\n"
             f"  rebuilt:  {len(rebuilt)} bytes, sha256={hashlib.sha256(rebuilt).hexdigest()}\n"
-            f"  pinned toolset: {pin or '(none)'}; compiler used: {used or '(unknown)'}\n"
+            f"  pinned: {pin.label() if pin else '(none)'}; "
+            f"compiler used: {used.label()}\n"
             "  Either the C source changed without re-vendoring (run `build`), "
-            "or this runner's MSVC build differs from the one that produced the "
-            "vendored binary — pin the full VCTOOLSVERSION in vendor/TOOLSET.txt "
-            "and re-vendor via the `revendor_launcher` CI workflow when the "
-            "hosted image rolls."
+            "or this runner's MSVC/Windows-SDK pair differs from the one that "
+            "produced the vendored binary — pin both in vendor/TOOLSET.txt and "
+            "re-vendor via the `revendor_launcher` CI workflow when the hosted "
+            "image rolls."
         )
     manifest = _read_manifest()
     expected = manifest.get(LAUNCHER_NAME)
@@ -345,8 +429,7 @@ def do_verify() -> int:
             f"pin {expected}."
         )
     print(
-        f"verified {VENDORED_LAUNCHER} is reproducible ({actual}); "
-        f"toolset {used or pin or 'latest'}"
+        f"verified {VENDORED_LAUNCHER} is reproducible ({actual}); {used.label()}"
     )
     return 0
 
