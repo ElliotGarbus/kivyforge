@@ -494,7 +494,9 @@ class TestByteCompileResolution:
         android = self._android(
             "[tool.kivy.android.build_settings]\nbyte_compile = true\n"
         )
-        with pytest.raises(AndroidBuildError, match="no CPython 3.14 was found"):
+        with pytest.raises(
+            AndroidBuildError, match=r"no \*final\* release of CPython 3\.14"
+        ):
             self._resolve(android)
 
     def test_this_interpreter_is_used_when_it_matches(self, monkeypatch):
@@ -509,6 +511,63 @@ class TestByteCompileResolution:
         cli.android_build(project)
         assert calls["assemble_bundle"][0]["byte_compile"] == ("python3.14",)
         assert calls["assemble_bundle"][0]["strip_source"] is True
+
+
+class TestPreReleaseInterpretersRejected:
+    """A pre-release of the *right* minor must not be used as the compiler.
+
+    CPython bumps the .pyc magic number through the alpha/beta cycle and only
+    freezes it at the first release candidate, so 3.14.0a7 (magic 3621) writes
+    bytecode that shipped 3.14.6 (magic 3627) refuses to import — while still
+    answering "3.14" to a bare version check. Caught in the field: an Android
+    build picked a 3.14.0a7 and produced an unbootable bundle, visible only
+    because two 3.14 stdlib modules use t-string syntax the alpha cannot parse.
+    """
+
+    def _fake_interpreter(self, monkeypatch, minor: str, releaselevel: str):
+        """Stand in for a real interpreter answering the probe."""
+        import subprocess
+
+        class _Proc:
+            returncode = 0
+            stdout = f"{minor} {releaselevel}\n"
+            stderr = ""
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
+
+    def test_final_release_accepted(self, monkeypatch):
+        self._fake_interpreter(monkeypatch, "3.14", "final")
+        assert cli._reports_version(("python3.14",), "3.14") is True
+
+    def test_alpha_rejected(self, monkeypatch):
+        self._fake_interpreter(monkeypatch, "3.14", "alpha")
+        assert cli._reports_version(("python3.14",), "3.14") is False
+
+    def test_beta_rejected(self, monkeypatch):
+        self._fake_interpreter(monkeypatch, "3.14", "beta")
+        assert cli._reports_version(("python3.14",), "3.14") is False
+
+    def test_release_candidate_rejected(self, monkeypatch):
+        # Safe in principle (the magic freezes at rc1), but the margin is not
+        # worth it when the fallback is simply shipping readable source.
+        self._fake_interpreter(monkeypatch, "3.14", "candidate")
+        assert cli._reports_version(("python3.14",), "3.14") is False
+
+    def test_wrong_minor_still_rejected(self, monkeypatch):
+        self._fake_interpreter(monkeypatch, "3.13", "final")
+        assert cli._reports_version(("python3.14",), "3.14") is False
+
+    def test_running_under_a_prerelease_is_not_used_in_process(self, monkeypatch):
+        """The `return ()` in-process shortcut needs the same guard."""
+        import sys
+
+        version = f"{sys.version_info[0]}.{sys.version_info[1]}.0"
+        monkeypatch.setattr(
+            "kivyforge.bundle.pycompile.is_final_release", lambda: False
+        )
+        # No other interpreter can be found either, so the search degrades.
+        monkeypatch.setattr(cli, "_reports_version", lambda argv, tag: False)
+        assert cli._byte_compile_interpreter(version) is None
 
 
 class TestAndroidBuildGates:

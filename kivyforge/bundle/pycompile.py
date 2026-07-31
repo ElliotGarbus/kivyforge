@@ -50,17 +50,33 @@ def select_compiler(
     choice — but only when *native*, i.e. the caller has confirmed it can run
     on this host without emulation, which kivyforge never depends on. When it
     can't run here, fall back to this process's own interpreter: a ``.pyc``'s
-    magic number is keyed to CPython's *minor* version only, never
-    architecture, so any interpreter of the right minor will do regardless of
-    which arch it runs on. Returns ``None`` when neither works, telling the
-    caller to degrade (skip compiling, ship source) rather than write a
-    ``.pyc`` nothing can load.
+    magic number is keyed to CPython's *minor* version, never architecture, so
+    an interpreter of the right minor will do regardless of which arch it runs
+    on — provided it is a **final** release (see :func:`is_final_release`).
+    Returns ``None`` when neither works, telling the caller to degrade (skip
+    compiling, ship source) rather than write a ``.pyc`` nothing can load.
     """
     if native and staged_interpreter.is_file():
         return (str(staged_interpreter),)
-    if sys.version_info[:2] == _target_minor(python_version):
+    if sys.version_info[:2] == _target_minor(python_version) and is_final_release():
         return ()
     return None
+
+
+def is_final_release() -> bool:
+    """Whether *this* interpreter can write ``.pyc`` a release runtime loads.
+
+    Matching the CPython *minor* version is necessary but not sufficient: the
+    magic number is bumped repeatedly through the alpha/beta cycle and is only
+    frozen at the first release candidate. So a 3.14 alpha writes bytecode a
+    shipped 3.14.6 rejects at import, even though both are "3.14" — and with
+    the source stripped, that is an app that cannot boot.
+
+    Release candidates are excluded too. The freeze makes them safe in
+    principle, but the margin is not worth the risk when the fallback is
+    simply shipping readable source.
+    """
+    return sys.version_info.releaselevel == "final"
 
 
 def _target_minor(python_version: str) -> tuple[int, int]:

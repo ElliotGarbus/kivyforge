@@ -97,9 +97,16 @@ def _byte_compile_interpreter(python_version: str) -> tuple[str, ...] | None:
     """Find an interpreter that can write ``.pyc`` for the target runtime.
 
     A ``.pyc`` is keyed to one exact CPython magic number, and that number is
-    frozen at each ``3.x.0`` — so any ``3.x.z`` will do, but a different minor
-    version will not: its output is silently ignored when the source ships
-    alongside, and fails outright once the source is stripped.
+    frozen at each minor's first **release candidate** — so any *final*
+    ``3.x.z`` will do, but a different minor will not: its output is silently
+    ignored when the source ships alongside, and fails outright once the source
+    is stripped.
+
+    A pre-release of the *right* minor is the trap. CPython bumps the magic
+    number repeatedly through the alpha/beta cycle, so 3.14.0a7 (magic 3621)
+    writes bytecode that shipped 3.14.6 (magic 3627) refuses to import —
+    while still answering "3.14" to a version check. Candidates must therefore
+    report ``releaselevel == "final"``, not merely the right minor.
 
     kivyforge is installed under whatever Python the user has, which is usually
     *not* the version being shipped to the device, so this looks for a matching
@@ -110,8 +117,10 @@ def _byte_compile_interpreter(python_version: str) -> tuple[str, ...] | None:
     import os
     import sys
 
+    from kivyforge.bundle.pycompile import is_final_release
+
     target = _target_minor(python_version)
-    if sys.version_info[:2] == target:
+    if sys.version_info[:2] == target and is_final_release():
         return ()
     tag = f"{target[0]}.{target[1]}"
     candidates: list[tuple[str, ...]] = []
@@ -127,18 +136,32 @@ def _byte_compile_interpreter(python_version: str) -> tuple[str, ...] | None:
 
 
 def _reports_version(argv: tuple[str, ...], tag: str) -> bool:
+    """Whether *argv* is a **final** release of CPython minor *tag*.
+
+    The releaselevel half is load-bearing, not belt-and-braces: an alpha of the
+    right minor passes a bare version check and then writes ``.pyc`` the
+    shipped runtime cannot import (see :func:`_byte_compile_interpreter`).
+    """
     import subprocess
 
     try:
         proc = subprocess.run(
-            [*argv, "-c", "import sys;print('%d.%d' % sys.version_info[:2])"],
+            [
+                *argv,
+                "-c",
+                "import sys;print('%d.%d %s' % (sys.version_info[0],"
+                " sys.version_info[1], sys.version_info.releaselevel))",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
         return False
-    return proc.returncode == 0 and proc.stdout.strip() == tag
+    if proc.returncode != 0:
+        return False
+    parts = proc.stdout.split()
+    return len(parts) == 2 and parts[0] == tag and parts[1] == "final"
 
 
 def _resolve_byte_compile(
@@ -159,16 +182,19 @@ def _resolve_byte_compile(
     if compiler is None:
         target = ".".join(str(p) for p in _target_minor(python_version))
         message = (
-            f"this project ships CPython {target}, and no CPython {target} was "
-            "found to byte-compile with (a .pyc is only loadable by the exact "
-            "CPython that wrote it)"
+            f"this project ships CPython {python_version}, and no *final* "
+            f"release of CPython {target} was found to byte-compile with (a "
+            "pre-release of the right minor is not enough — CPython only "
+            "freezes the .pyc magic number at the first release candidate, so "
+            f"e.g. {target}.0a7 writes bytecode {python_version} refuses to "
+            "import)"
         )
         if settings.byte_compile is True:
             raise AndroidBuildError(
                 "[tool.kivy.android.build_settings].byte_compile = true but "
                 f"{message}.\n"
-                f"  Install CPython {target} (kivyforge will find it), or set "
-                "byte_compile = false."
+                f"  Install a final CPython {target} release (kivyforge will "
+                "find it), or set byte_compile = false."
             )
         click.echo(f"[stage] not byte-compiling: {message}.")
         return None, False
