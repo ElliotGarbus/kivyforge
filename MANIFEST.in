@@ -5,3 +5,9 @@ recursive-include kivyforge/platforms/ios/templates *
 recursive-include kivyforge/tools *.py
 
 prune .git
+# setuptools' legacy sdist default sweeps in top-level tests/test*.py, which
+# picked up exactly one file (tests/test_icon.py) while the rest of the suite
+# lives in subdirectories -- an incoherent partial. The suite is not shipped;
+# it runs from the repo (tox/pytest), and the git tag is the reference for
+# anyone who wants it.
+prune tests

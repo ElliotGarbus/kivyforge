@@ -1,5 +1,20 @@
 name: PyPI release
-on: [push]
+
+# Tags publish; manual dispatch is a dry run (builds + `twine check`, no
+# upload) -- useful because a PyPI version number is burned permanently once
+# uploaded and cannot be re-used even after deleting the release.
+#
+# Auth is a scoped API token, deliberately not Trusted Publishing: OIDC binds
+# to the repository path, so configuring it before this repo moves to the Kivy
+# org would leave a stale entry that whoever re-creates the vacated path could
+# publish through. Switch to OIDC once, against the final path, and add
+# `permissions: id-token: write` then.
+# See docs/design/dev/roadmap.md (P0, P5).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   pypi_release:
@@ -18,7 +33,7 @@ jobs:
         python -m build
         twine check dist/*
     - name: Publish package
-      if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags')
+      if: startsWith(github.ref, 'refs/tags/')
       uses: pypa/gh-action-pypi-publish@v1.14.0
       with:
         user: __token__
