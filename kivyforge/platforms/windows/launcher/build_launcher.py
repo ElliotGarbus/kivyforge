@@ -44,9 +44,17 @@ VENDOR_DIR = HERE.parent / "vendor"
 LAUNCHER_NAME = "launcher-amd64.exe"
 VENDORED_LAUNCHER = VENDOR_DIR / LAUNCHER_NAME
 MANIFEST = VENDOR_DIR / "SHA256SUMS"
-# The MSVC toolset (major.minor) that produced the vendored binary. Byte-identity
-# holds only for a fixed toolset (the PE "rich header" encodes it), so build and
-# the CI verify both pin this; CI selects it via vcvarsall -vcvars_ver.
+# The MSVC toolset that produced the vendored binary. Byte-identity holds only
+# for a fixed toolset (the PE "rich header" encodes the compiler build), so
+# build and the CI verify both pin this via vcvarsall -vcvars_ver.
+#
+# Pin the *full* VCTOOLSVERSION (e.g. ``14.51.36231``), not just major.minor.
+# ``-vcvars_ver=14.51`` means "latest installed 14.51.xxxxx", and hosted
+# ``windows-latest`` runners can carry more than one image build of the same
+# major.minor in the pool at once — pinning only major.minor then makes
+# verify flip between two PE hashes run-to-run. The full version freezes the
+# exact compiler; when a runner image drops it, verify fails loudly and the
+# ``revendor_launcher`` workflow re-pins against the new default.
 TOOLSET_FILE = VENDOR_DIR / "TOOLSET.txt"
 
 # Deterministic compile/link flags. Keep this list in lockstep with any change
@@ -60,11 +68,21 @@ class LauncherBuildError(Exception):
 
 
 def pinned_toolset() -> str | None:
-    """The pinned MSVC toolset (``major.minor``), or ``None`` if unrecorded."""
+    """The pinned MSVC toolset (full ``VCTOOLSVERSION``), or ``None`` if unrecorded.
+
+    Legacy ``TOOLSET.txt`` values that only recorded ``major.minor`` (e.g.
+    ``14.51``) are still returned as-is; ``do_build`` rewrites them to the
+    full version on the next re-vendor.
+    """
     if TOOLSET_FILE.is_file():
         text = TOOLSET_FILE.read_text(encoding="utf-8").strip()
         return text or None
     return None
+
+
+def _vc_tools_version(env: dict[str, str]) -> str:
+    """The ``VCTOOLSVERSION`` from a vcvars environment, or empty if unset."""
+    return env.get("VCTOOLSVERSION", "").strip()
 
 
 def _vcvars_env(arch: str = "x64", *, vcvars_ver: str | None = None) -> dict[str, str]:
@@ -269,19 +287,23 @@ def _write_manifest(entries: dict[str, str]) -> None:
 
 def do_build() -> int:
     pin = pinned_toolset()
-    # Resolve the actual toolset and record major.minor so the CI verify can pin
-    # the same one. When already pinned, honor the pin.
+    # Resolve the toolset once, record its full VCTOOLSVERSION, and compile
+    # against that exact version — never re-resolve via a major.minor alias,
+    # which would silently pick a different patch build on another runner.
     env = {k.upper(): v for k, v in os.environ.items()} | _vcvars_env(vcvars_ver=pin)
-    tools_version = env.get("VCTOOLSVERSION", "")
-    major_minor = ".".join(tools_version.split(".")[:2]) if tools_version else ""
-    if major_minor:
-        TOOLSET_FILE.write_text(major_minor + "\n", encoding="utf-8")
-    compile_launcher(VENDORED_LAUNCHER, vcvars_ver=pin or major_minor or None)
+    tools_version = _vc_tools_version(env)
+    if not tools_version:
+        raise LauncherBuildError(
+            "vcvars did not export VCTOOLSVERSION; cannot record a "
+            "reproducible toolset pin in vendor/TOOLSET.txt."
+        )
+    TOOLSET_FILE.write_text(tools_version + "\n", encoding="utf-8")
+    compile_launcher(VENDORED_LAUNCHER, vcvars_ver=tools_version)
     digest = sha256_of(VENDORED_LAUNCHER)
     entries = _read_manifest()
     entries[LAUNCHER_NAME] = digest
     _write_manifest(entries)
-    print(f"built {VENDORED_LAUNCHER} ({digest}); toolset {major_minor or 'latest'}")
+    print(f"built {VENDORED_LAUNCHER} ({digest}); toolset {tools_version}")
     return 0
 
 
@@ -293,6 +315,10 @@ def do_verify() -> int:
         )
     vendored = VENDORED_LAUNCHER.read_bytes()
     pin = pinned_toolset()
+    # Resolve first so a missing/mismatched pin fails with the toolset name,
+    # and so the mismatch error can report which compiler actually ran.
+    env = {k.upper(): v for k, v in os.environ.items()} | _vcvars_env(vcvars_ver=pin)
+    used = _vc_tools_version(env)
     with tempfile.TemporaryDirectory(prefix="kivy-launcher-verify-") as tmp:
         rebuilt_path = Path(tmp) / LAUNCHER_NAME
         compile_launcher(rebuilt_path, vcvars_ver=pin)
@@ -303,9 +329,12 @@ def do_verify() -> int:
             f"binary ({VENDORED_LAUNCHER}).\n"
             f"  vendored: {len(vendored)} bytes, sha256={hashlib.sha256(vendored).hexdigest()}\n"
             f"  rebuilt:  {len(rebuilt)} bytes, sha256={hashlib.sha256(rebuilt).hexdigest()}\n"
+            f"  pinned toolset: {pin or '(none)'}; compiler used: {used or '(unknown)'}\n"
             "  Either the C source changed without re-vendoring (run `build`), "
-            "or the MSVC toolset differs from the one that produced the vendored "
-            "binary (pin the same Visual Studio toolset in CI)."
+            "or this runner's MSVC build differs from the one that produced the "
+            "vendored binary — pin the full VCTOOLSVERSION in vendor/TOOLSET.txt "
+            "and re-vendor via the `revendor_launcher` CI workflow when the "
+            "hosted image rolls."
         )
     manifest = _read_manifest()
     expected = manifest.get(LAUNCHER_NAME)
@@ -315,7 +344,10 @@ def do_verify() -> int:
             f"vendored launcher SHA-256 {actual} does not match the manifest "
             f"pin {expected}."
         )
-    print(f"verified {VENDORED_LAUNCHER} is reproducible ({actual})")
+    print(
+        f"verified {VENDORED_LAUNCHER} is reproducible ({actual}); "
+        f"toolset {used or pin or 'latest'}"
+    )
     return 0
 
 

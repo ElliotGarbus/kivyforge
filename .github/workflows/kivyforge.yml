@@ -142,10 +142,12 @@ jobs:
     - name: Verify vendored rcedit matches its pinned SHA-256
       run: python -m kivyforge.platforms.windows.vendor.fetch_rcedit --check
     - name: Rebuild the launcher from source and byte-compare (reproducibility)
-      # Uses the MSVC toolset pinned in vendor/TOOLSET.txt via vcvarsall
-      # -vcvars_ver. If this fails with "cl not found" the runner image dropped
-      # the pinned toolset — run the `revendor_launcher` workflow (Actions ->
-      # Run workflow) to re-vendor against the runner's current toolset.
+      # Uses the full MSVC VCTOOLSVERSION pinned in vendor/TOOLSET.txt via
+      # vcvarsall -vcvars_ver (e.g. 14.51.36231 — not just major.minor). If this
+      # fails with "cl not found" / vcvars error the runner image dropped that
+      # exact build; if it fails with a SHA mismatch the C source changed
+      # without re-vendoring. Either way: Actions → Run workflow
+      # (`revendor_launcher`) to re-pin against the runner's current toolset.
       run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
     - name: Exercise the launcher end-to-end (spawn/argv/exit-code/env)
       run: pytest tests/platforms/windows/test_launcher_exe.py -v --no-cov
@@ -175,7 +177,8 @@ jobs:
       shell: pwsh
       run: |
         # Drop the stale pin so build_launcher resolves the runner's default
-        # (current, in-support) toolset and records its major.minor in TOOLSET.txt.
+        # (current, in-support) toolset and records its full VCTOOLSVERSION
+        # in TOOLSET.txt.
         Remove-Item kivyforge\platforms\windows\vendor\TOOLSET.txt -ErrorAction SilentlyContinue
         python -m kivyforge.platforms.windows.launcher.build_launcher build
     - name: Verify the re-vendored launcher is reproducible on this runner

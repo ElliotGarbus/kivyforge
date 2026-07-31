@@ -805,8 +805,9 @@ Linux):
   launcher into `<bundle>\<name>.exe`).
 - `kivyforge/platforms/windows/vendor/` — the prebuilt, pinned assets consumed
   at assembly time: `launcher-amd64.exe` and `rcedit-x64.exe`, their
-  `SHA256SUMS` manifest, `TOOLSET.txt` (the MSVC toolset the launcher was
-  vendored against — see the CI `revendor_launcher` job), the `rcedit`
+  `SHA256SUMS` manifest, `TOOLSET.txt` (the full MSVC `VCTOOLSVERSION` the
+  launcher was vendored against — e.g. `14.51.36231`, not just major.minor;
+  see the CI `revendor_launcher` job), the `rcedit`
   `LICENSE`/`NOTICE`, and `fetch_rcedit.py` (re-fetch/verify helper).
 - `kivyforge/platforms/windows/lock/` — the lock profile + runtime provider
   (`profile.py`, `runtime.py` with the `x86_64-pc-windows-msvc` triple map),
