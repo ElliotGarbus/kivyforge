@@ -1,0 +1,38 @@
+[project]
+name = "android-safe-area"
+version = "1.0.0"
+description = "Safe-area insets on Android via kivy.mobile (Kivy 3.0 / SDL3)"
+requires-python = ">=3.14"
+dependencies = [
+    # kivy.mobile does not exist in Kivy 2.3.1, so this example cannot run on
+    # generation 2 — see kivy_generation below. Kivy 3.0 is unreleased, so the
+    # specifier has to admit a .dev version: pip excludes pre-releases unless
+    # the requirement asks for one.
+    "kivy>=3.0.0.dev0,<4",
+    # kivy.mobile._platform.android reaches WindowInsets through pyjnius.
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "Safe Area"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait", "landscape-left", "landscape-right"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.safearea"
+# API 30 is where typed WindowInsets (systemBars / displayCutout) arrive.
+# min_sdk stays at 24 to match the other examples; kivy.mobile returns all-zero
+# insets below 30, which the app reports rather than hiding.
+min_sdk = 24
+target_sdk = 35
+kivy_generation = 3
+abis = ["arm64_v8a", "x86_64"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+
+# Kivy declares these unconditionally but nothing on Android needs them.
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"
