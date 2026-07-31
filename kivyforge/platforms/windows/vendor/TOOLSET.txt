@@ -1,1 +1,4 @@
+# MSVC VCTOOLSVERSION + Windows SDK used to build launcher-amd64.exe.
+# Re-vendor via the `revendor_launcher` CI workflow when either drifts.
 14.51.36231
+10.0.26100.0
