@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from kivyforge.cli._common import ToolchainError
 from kivyforge.platforms import get_platform, resolve_target
 from kivyforge.platforms.android import AndroidPlatform
 
@@ -45,25 +46,23 @@ class TestRegistration:
             backend.check_host_capability(host_system=host)  # must not raise
 
     def test_status_without_config_is_actionable(self, tmp_path: Path):
-        from kivyforge.platforms.android import AndroidBuildError
 
         backend = AndroidPlatform()
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "x"\nversion = "1.0.0"\n[tool.kivy]\napp_dir = "src"\n',
             encoding="utf-8",
         )
-        with pytest.raises(AndroidBuildError, match="tool.kivy.android"):
+        with pytest.raises(ToolchainError, match="tool.kivy.android"):
             backend.status(tmp_path)
 
     def test_build_without_config_is_actionable(self, tmp_path: Path):
-        from kivyforge.platforms.android import AndroidBuildError
 
         backend = AndroidPlatform()
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "x"\nversion = "1.0.0"\n[tool.kivy]\napp_dir = "src"\n',
             encoding="utf-8",
         )
-        with pytest.raises(AndroidBuildError, match="tool.kivy.android"):
+        with pytest.raises(ToolchainError, match="tool.kivy.android"):
             backend.build(
                 tmp_path,
                 target=None,

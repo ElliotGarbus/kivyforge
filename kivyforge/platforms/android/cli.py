@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 
 from kivyforge.artifacts.download import fetch_artifact
+from kivyforge.cli._common import ToolchainError
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.reader import LockError, is_in_sync
@@ -60,6 +61,32 @@ from .stage.jnilibs import (
 )
 from .stage.runtime import RuntimeStageError, extract_runtime, stdlib_dir
 from .stage.wheels import WheelStageError, install_wheels, select_wheel
+
+
+def user_facing(fn):
+    """Render ``AndroidBuildError`` as a clean CLI error, not a traceback.
+
+    ``AndroidBuildError`` is the backend's canonical failure type — every
+    expected problem (missing SDK tool, drift, contract violation, Gradle
+    failure) is funnelled into it with an actionable message. But it is a
+    plain ``Exception``, so left alone it escapes as an unhandled traceback,
+    burying that message under 40 lines of stack.
+
+    The other four backends translate at their own CLI boundary
+    (``raise ToolchainError(str(exc))``); Android had no such boundary. This
+    decorator is that boundary, applied to the public entry points, so the
+    translation cannot be forgotten on a new one.
+    """
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except AndroidBuildError as exc:
+            raise ToolchainError(str(exc)) from exc
+
+    return wrapper
 
 
 def project_dir_for(project_root: Path, config: Config) -> Path:
@@ -205,6 +232,7 @@ def _resolve_byte_compile(
     return compiler, strip
 
 
+@user_facing
 def android_build(
     project_root: Path,
     *,
@@ -507,6 +535,7 @@ def _require_artifact(path: Path, task: str) -> Path:
     return path
 
 
+@user_facing
 def android_package(
     project_root: Path,
     *,
@@ -621,6 +650,7 @@ def _release_output(dest: Path, fmt: str) -> Path:
     return outputs / "bundle" / "release" / "app-release.aab"
 
 
+@user_facing
 def android_run(
     project_root: Path,
     *,
@@ -709,6 +739,7 @@ def _abi_for_device(device: str, android: AndroidConfig) -> str:
     return abi
 
 
+@user_facing
 def android_smoke(
     project_root: Path,
     *,
@@ -886,6 +917,7 @@ def _verify_include_file(
         )
 
 
+@user_facing
 def android_status(project_root: Path) -> None:
     """Read-only project snapshot (android/06 §status)."""
     from kivyforge.lock.model import canonical_name
@@ -937,6 +969,7 @@ def android_status(project_root: Path) -> None:
             click.echo(f"  {label:<16} not built")
 
 
+@user_facing
 def android_open(project_root: Path) -> None:
     """Open the generated project in Android Studio (android/06 §open)."""
     config, _ = _load_config_only(project_root)

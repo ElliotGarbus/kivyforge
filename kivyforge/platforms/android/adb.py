@@ -36,9 +36,30 @@ def sdk_tool(name: str, *, subdir: str) -> str:
 
     tool = _shutil.which(name)
     if tool is None:
+        # Name the directory actually searched. "looked in the SDK" is not
+        # actionable when the SDK root came from an ANDROID_HOME pointing
+        # somewhere unexpected — which is the usual cause, and is invisible
+        # unless the resolved path is printed.
+        if sdk is None:
+            where = (
+                "no Android SDK found (ANDROID_HOME and ANDROID_SDK_ROOT are "
+                "unset, and no SDK is in the default location)"
+            )
+        else:
+            source = next(
+                (
+                    f"${v}"
+                    for v in ("ANDROID_HOME", "ANDROID_SDK_ROOT")
+                    if os.environ.get(v)
+                ),
+                "the default SDK location",
+            )
+            where = f"not in {sdk / subdir} (SDK root from {source})"
         raise AdbError(
-            f"{name} not found (looked in the SDK's {subdir}/ and PATH); "
-            f"run `kivyforge doctor -p android`."
+            f"{name} not found: {where}, and not on PATH.\n"
+            f"  Fix: point ANDROID_HOME at an SDK containing {subdir}/{name}"
+            f"{_EXE}, or run `kivyforge doctor -p android` for the full "
+            "environment report."
         )
     return tool
 

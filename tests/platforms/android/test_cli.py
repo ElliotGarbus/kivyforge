@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from kivyforge.cli._common import ToolchainError
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.platforms.android import AndroidBuildError, cli
@@ -582,7 +583,7 @@ class TestAndroidBuildGates:
         monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
         calls: dict = {}
         _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
-        with pytest.raises(AndroidBuildError, match="invoke0"):
+        with pytest.raises(ToolchainError, match="invoke0"):
             cli.android_build(project)
         assert not calls["fetch"]  # never got to step 2
 
@@ -618,7 +619,7 @@ class TestAndroidBuildGates:
             (target / ".libs").mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr(cli, "install_wheels", fake_install_wheels)
-        with pytest.raises(AndroidBuildError, match="SDL version mismatch"):
+        with pytest.raises(ToolchainError, match="SDL version mismatch"):
             cli.android_build(project)
 
     def test_runtime_stage_error_wrapped(self, build_env, monkeypatch):
@@ -628,7 +629,7 @@ class TestAndroidBuildGates:
             raise RuntimeStageError("bad tarball")
 
         monkeypatch.setattr(cli, "extract_runtime", boom)
-        with pytest.raises(AndroidBuildError, match="bad tarball"):
+        with pytest.raises(ToolchainError, match="bad tarball"):
             cli.android_build(project)
 
     def test_wheel_stage_error_wrapped(self, build_env, monkeypatch):
@@ -638,7 +639,7 @@ class TestAndroidBuildGates:
             raise WheelStageError("pip blew up")
 
         monkeypatch.setattr(cli, "install_wheels", boom)
-        with pytest.raises(AndroidBuildError, match="pip blew up"):
+        with pytest.raises(ToolchainError, match="pip blew up"):
             cli.android_build(project)
 
     def test_bundle_error_wrapped(self, build_env, monkeypatch):
@@ -648,7 +649,7 @@ class TestAndroidBuildGates:
             raise BundleError("bundle assembly failed")
 
         monkeypatch.setattr(cli, "assemble_bundle", boom)
-        with pytest.raises(AndroidBuildError, match="bundle assembly failed"):
+        with pytest.raises(ToolchainError, match="bundle assembly failed"):
             cli.android_build(project)
 
     def test_gradle_error_wrapped_on_debug(self, build_env, monkeypatch):
@@ -658,12 +659,12 @@ class TestAndroidBuildGates:
             raise GradleError("gradle exploded")
 
         monkeypatch.setattr(cli, "run_gradle", boom)
-        with pytest.raises(AndroidBuildError, match="gradle exploded"):
+        with pytest.raises(ToolchainError, match="gradle exploded"):
             cli.android_build(project, debug=True)
 
     def test_invalid_abi_raises(self, build_env):
         project, _ = build_env
-        with pytest.raises(AndroidBuildError, match="not in"):
+        with pytest.raises(ToolchainError, match="not in"):
             cli.android_build(project, abi="x86")
 
 
@@ -698,7 +699,7 @@ class TestAndroidBuildIncludeFiles:
         edited vendored asset used to ship with a lock that said otherwise."""
         self._project_with_extra(project, monkeypatch, tmp_path)
         (project / "extra" / "data.txt").write_text("edited", encoding="utf-8")
-        with pytest.raises(AndroidBuildError, match="has changed since the lock") as e:
+        with pytest.raises(ToolchainError, match="has changed since the lock") as e:
             cli.android_build(project)
         message = str(e.value)
         assert "locked:" in message and "on disk:" in message
@@ -709,7 +710,7 @@ class TestAndroidBuildIncludeFiles:
         afterwards has no pin at all."""
         self._project_with_extra(project, monkeypatch, tmp_path)
         (project / "extra" / "added.txt").write_text("new", encoding="utf-8")
-        with pytest.raises(AndroidBuildError, match="records no hash"):
+        with pytest.raises(ToolchainError, match="records no hash"):
             cli.android_build(project)
 
     def test_deleted_file_fails(self, project, monkeypatch, tmp_path):
@@ -718,7 +719,7 @@ class TestAndroidBuildIncludeFiles:
         (project / "extra" / "gone.txt").write_text("bye", encoding="utf-8")
         _write_lock(project, include_files=_include_pins(project, EXTRA_DEST, "extra"))
         (project / "extra" / "gone.txt").unlink()
-        with pytest.raises(AndroidBuildError, match="no longer exists"):
+        with pytest.raises(ToolchainError, match="no longer exists"):
             cli.android_build(project)
 
     def test_no_verify_lock_skips_the_drift_check(self, project, monkeypatch, tmp_path):
@@ -747,7 +748,7 @@ class TestAndroidBuildIncludeFiles:
         calls: dict = {}
         _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
 
-        with pytest.raises(AndroidBuildError, match="include_files"):
+        with pytest.raises(ToolchainError, match="include_files"):
             cli.android_build(project)
 
 
@@ -821,7 +822,7 @@ class TestArtifactExistenceGate:
     def test_missing_debug_artifact_fails(self, build_env, monkeypatch):
         project, _ = build_env
         monkeypatch.setattr(cli, "run_gradle", lambda dest, tasks, **kw: None)
-        with pytest.raises(AndroidBuildError, match="no artifact is at"):
+        with pytest.raises(ToolchainError, match="no artifact is at"):
             cli.android_build(project, debug=True)
 
     def test_present_artifact_is_returned(self, tmp_path):
@@ -844,7 +845,7 @@ class TestDebugReleaseOutputPaths:
 class TestAndroidPackage:
     def test_signing_not_configured_raises(self, build_env):
         project, _ = build_env
-        with pytest.raises(AndroidBuildError, match="code signing required"):
+        with pytest.raises(ToolchainError, match="code signing required"):
             cli.android_package(project)
 
     def _fake_signing(self, monkeypatch):
@@ -905,7 +906,7 @@ class TestAndroidPackage:
             )
 
         monkeypatch.setattr(policy_mod, "enforce_release_manifest", boom)
-        with pytest.raises(AndroidBuildError, match="exported component"):
+        with pytest.raises(ToolchainError, match="exported component"):
             cli.android_package(project)
         assert not calls["run_gradle"]  # blocked before Gradle ran
 
@@ -931,7 +932,7 @@ class TestAndroidPackage:
             raise GradleError("release build failed")
 
         monkeypatch.setattr(cli, "run_gradle", boom)
-        with pytest.raises(AndroidBuildError, match="release build failed"):
+        with pytest.raises(ToolchainError, match="release build failed"):
             cli.android_package(project)
 
 
@@ -1007,7 +1008,7 @@ class TestMergedManifestPolicy:
         # activity, which only the second pass can see.
         project, calls = self._ready(build_env, monkeypatch)
         self._merge_in(monkeypatch, calls, self._VENDOR_EXPORTED)
-        with pytest.raises(AndroidBuildError, match="com.vendor.sdk.Trampoline"):
+        with pytest.raises(ToolchainError, match="com.vendor.sdk.Trampoline"):
             cli.android_package(project)
         # Blocked before the release was assembled (and therefore signed).
         assert calls["run_gradle"] == [("lintRelease", MERGED_MANIFEST_TASK)]
@@ -1039,7 +1040,7 @@ class TestMergedManifestPolicy:
             raise GradleError("Lint found 1 error")
 
         monkeypatch.setattr(cli, "run_gradle", boom)
-        with pytest.raises(AndroidBuildError, match="lint-results-release.html"):
+        with pytest.raises(ToolchainError, match="lint-results-release.html"):
             cli.android_package(project)
 
     def test_a_missing_merged_manifest_is_an_error_not_a_pass(
@@ -1051,7 +1052,7 @@ class TestMergedManifestPolicy:
             calls["run_gradle"].append(tuple(tasks))
 
         monkeypatch.setattr(cli, "run_gradle", no_export)
-        with pytest.raises(AndroidBuildError, match="produced no manifest"):
+        with pytest.raises(ToolchainError, match="produced no manifest"):
             cli.android_package(project)
 
 
@@ -1073,7 +1074,7 @@ class TestAndroidRun:
     def test_no_build_missing_apk_raises(self, build_env, monkeypatch):
         project, _ = build_env
         _fake_device(monkeypatch)
-        with pytest.raises(AndroidBuildError, match="no debug APK"):
+        with pytest.raises(ToolchainError, match="no debug APK"):
             cli.android_run(project, no_build=True)
 
     def test_builds_then_installs_and_launches(self, build_env, monkeypatch):
@@ -1128,7 +1129,7 @@ class TestAndroidRun:
             raise adb_mod.AdbError("no device attached")
 
         monkeypatch.setattr(adb_mod, "resolve_device", boom)
-        with pytest.raises(AndroidBuildError, match="no device attached"):
+        with pytest.raises(ToolchainError, match="no device attached"):
             cli.android_run(project, wait_sec=0)
 
     def test_abi_defaults_to_the_targets_own(self, build_env, monkeypatch):
@@ -1162,7 +1163,7 @@ class TestAndroidRun:
         after a full build."""
         project, calls = build_env
         _fake_device(monkeypatch, abi="x86_64")  # project locks arm64_v8a only
-        with pytest.raises(AndroidBuildError, match="needs the x86_64 ABI"):
+        with pytest.raises(ToolchainError, match="needs the x86_64 ABI"):
             cli.android_run(project, wait_sec=0)
         assert not calls["run_gradle"]
 
@@ -1204,7 +1205,7 @@ class TestAndroidSmoke:
             raise smoke_mod.SmokeError("contract test failed")
 
         monkeypatch.setattr(smoke_mod, "run_smoke", boom)
-        with pytest.raises(AndroidBuildError, match="contract test failed"):
+        with pytest.raises(ToolchainError, match="contract test failed"):
             cli.android_smoke(project)
 
     def test_adb_error_is_wrapped(self, build_env, monkeypatch):
@@ -1214,7 +1215,7 @@ class TestAndroidSmoke:
             raise adb_mod.AdbError("no AVD exists")
 
         monkeypatch.setattr(adb_mod, "resolve_device", boom)
-        with pytest.raises(AndroidBuildError, match="no AVD exists"):
+        with pytest.raises(ToolchainError, match="no AVD exists"):
             cli.android_smoke(project)
 
     def test_debug_smoke_leaves_the_test_variant_alone(self, build_env, monkeypatch):
@@ -1274,7 +1275,7 @@ class TestAndroidSmoke:
 
 class TestAndroidOpen:
     def test_missing_project_raises(self, project):
-        with pytest.raises(AndroidBuildError, match="does not exist yet"):
+        with pytest.raises(ToolchainError, match="does not exist yet"):
             cli.android_open(project)
 
     def test_opens_with_studio_found(self, project, monkeypatch):
@@ -1358,3 +1359,51 @@ class TestAndroidStatusLockStates:
         cli.android_status(project)
         out = capsys.readouterr().out
         assert "apk (debug)" in out and "built" in out
+
+
+class TestErrorsRenderCleanly:
+    """Android failures must reach the user as `Error: ...`, not a traceback.
+
+    AndroidBuildError is the backend's canonical failure type and carries an
+    actionable message, but it is a plain Exception. Without translation at
+    the CLI boundary it escapes unhandled and click prints a stack instead of
+    the message. The other four backends translate in their own cli.py;
+    Android had no such boundary until `user_facing`.
+    """
+
+    def test_decorator_translates_to_the_clean_click_error(self):
+        @cli.user_facing
+        def boom():
+            raise AndroidBuildError("adb not found; run `kivyforge doctor`.")
+
+        with pytest.raises(ToolchainError) as exc:
+            boom()
+        # ClickException renders as "Error: <message>" with no traceback.
+        assert "adb not found" in str(exc.value)
+        assert exc.value.exit_code == 1
+
+    def test_other_exceptions_are_not_swallowed(self):
+        @cli.user_facing
+        def boom():
+            raise ValueError("a real bug, not a user error")
+
+        with pytest.raises(ValueError):
+            boom()
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "android_build",
+            "android_package",
+            "android_run",
+            "android_smoke",
+            "android_status",
+            "android_open",
+        ],
+    )
+    def test_every_public_entry_point_is_wrapped(self, name):
+        fn = getattr(cli, name)
+        assert getattr(fn, "__wrapped__", None) is not None, (
+            f"{name} is not decorated with @user_facing, so an "
+            "AndroidBuildError from it would surface as a traceback"
+        )
