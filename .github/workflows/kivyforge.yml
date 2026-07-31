@@ -142,12 +142,16 @@ jobs:
     - name: Verify vendored rcedit matches its pinned SHA-256
       run: python -m kivyforge.platforms.windows.vendor.fetch_rcedit --check
     - name: Rebuild the launcher from source and byte-compare (reproducibility)
-      # Uses the MSVC VCTOOLSVERSION + Windows SDK pinned in vendor/TOOLSET.txt
-      # via vcvarsall (e.g. 14.51.36231 / 10.0.26100.0 — not "latest"). If this
-      # fails with "cl not found" / vcvars error the runner image dropped that
-      # exact pair; if it fails with a SHA mismatch the C source changed
-      # without re-vendoring. Either way: Actions → Run workflow
-      # (`revendor_launcher`) to re-pin against the runner's current defaults.
+      # Cross-runner byte-identity comes from the linker's
+      # /EMITTOOLVERSIONINFO:NO (no PE "rich header", so the serviced cl/link
+      # build is not stamped into the image — VCTOOLSVERSION does NOT pin that;
+      # see build_launcher.py's docstring). The TOOLSET.txt pin (e.g. 14.51.36231
+      # / 10.0.26100.0, loaded via vcvarsall — not "latest") holds code
+      # generation steady on top of it. If this fails with "cl not found" / a
+      # vcvars error the runner image dropped that exact pair; if it fails with a
+      # byte mismatch the C source or the compile/link flags changed without
+      # re-vendoring. Either way: Actions → Run workflow (`revendor_launcher`)
+      # to re-pin against the runner's current defaults.
       run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
     - name: Exercise the launcher end-to-end (spawn/argv/exit-code/env)
       run: pytest tests/platforms/windows/test_launcher_exe.py -v --no-cov

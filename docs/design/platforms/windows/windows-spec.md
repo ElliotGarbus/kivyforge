@@ -535,6 +535,20 @@ self-location via `GetModuleFileNameW`, and the same
 `PYTHONHOME`/`PYTHONPATH`/`PYTHONNOUSERSITE` env contract as the macOS and
 Linux launchers.
 
+**Byte-reproducibility.** CI rebuilds the launcher from source and byte-compares
+it against the vendored binary. Three linker/compiler flags carry that:
+`/Brepro` (content hash instead of a wall-clock PE timestamp), `/RELEASE`
+(deterministic checksum), and **`/EMITTOOLVERSIONINFO:NO`**, which omits the PE
+"rich header". The last one is what makes the result reproducible *across
+machines*, and it is not interchangeable with pinning the toolset: the rich
+header stamps the **serviced `cl`/`link` build**, which `VCTOOLSVERSION` does
+not identify — that names a toolset *directory*, and Microsoft updates the
+compiler inside it (toolset `14.38.33130` ships `cl` `19.38.33133`). Two hosted
+runner images reporting the same `14.51.36231` were observed running `cl` builds
+`36248` and `36252`, producing PEs that differed by 307 bytes with byte-identical
+machine code. `TOOLSET.txt` still pins MSVC + the Windows SDK, but for the other
+failure mode: a genuinely different toolchain can emit different *code*.
+
 ## `init` / `build` / `run` / `package` / `status`
 
 - **`init`** — seeds the `[tool.kivy.windows]` overlay (and `[tool.kivy]` if
@@ -809,6 +823,10 @@ Linux):
   Windows SDK the launcher was vendored against — e.g. `14.51.36231` +
   `10.0.26100.0`; see the CI `revendor_launcher` job), the `rcedit`
   `LICENSE`/`NOTICE`, and `fetch_rcedit.py` (re-fetch/verify helper).
+  `TOOLSET.txt` pins **code generation** only; cross-machine byte-identity
+  comes from linking with `/EMITTOOLVERSIONINFO:NO`, since `VCTOOLSVERSION`
+  names a toolset *directory* and not the serviced `cl.exe` inside it — see
+  the [Launcher](#launcher) section.
 - `kivyforge/platforms/windows/lock/` — the lock profile + runtime provider
   (`profile.py`, `runtime.py` with the `x86_64-pc-windows-msvc` triple map),
   built on the shared `kivyforge/lock/wheelruntime/` engine.

@@ -103,6 +103,41 @@ lesson.**
   and the error must name it. This is doubly relevant for Android (Gradle / AGP /
   build-tools / NDK all drift).
 
+### 3b. …and the toolset pin was chasing a version that does not exist
+
+The follow-on to §3, worth its own entry because the first two fixes were both
+*plausible and wrong* — a good example of a bug that punishes reasoning by
+analogy and only yields to reading the bytes.
+
+- **What bit us.** After the re-vendor path existed, `verify` still flipped
+  between exactly two PE hashes on `windows-latest`. Pinning the full
+  `VCTOOLSVERSION` (14.51 → 14.51.36231) did not fix it. Also pinning
+  `WindowsSDKVersion` did not fix it. Both re-vendors just moved which hash was
+  "the vendored one."
+- **Root cause.** `VCTOOLSVERSION` names the **toolset directory**, not the
+  compiler in it, and Microsoft services `cl.exe` in place: toolset
+  `14.38.33130` ships `cl` **19.38.33133**; the CI images both reported
+  `14.51.36231` while running `cl` builds **36248** and **36252**. That build
+  number goes into the PE **rich header** — whose length shift moved every
+  subsequent file offset and perturbed the `/Brepro` hash. 307 bytes of drift,
+  and **not one byte of it was code**. The pin could never have worked: vcvars
+  selects by the version that doesn't discriminate, and hosted runner image
+  builds are not selectable at all.
+- **The fix.** Link with **`/EMITTOOLVERSIONINFO:NO`** — omit the rich header
+  entirely. Verified by patching the compiler stamp inside a `.obj` and
+  relinking: 73 bytes of drift with the header, **byte-identical without it**
+  (the `/Brepro` hash stops depending on tool identity once the stamp is gone).
+  `has_tool_version_stamp` then asserts the flag took effect, so a toolchain
+  that stops honoring it fails loudly instead of silently re-breaking. The
+  toolset pin stays, demoted to what it can actually deliver: stable *code
+  generation*.
+- **Lesson.** **Diff the artifact before pinning anything.** Two rounds of
+  plausible-sounding pins cost more than one structural diff would have — the
+  rich-header offset shift was visible in the first 240 bytes. And more
+  generally: **make the artifact not encode the environment**, rather than
+  trying to freeze an environment you do not control. A version string is only a
+  pin if it actually identifies the bits.
+
 ### 4. Runtime/DLL discovery is host-dependent and arch-sensitive
 
 - **What bit us.** PBS ships `vcruntime140*.dll` but **not** `msvcp140.dll`; we

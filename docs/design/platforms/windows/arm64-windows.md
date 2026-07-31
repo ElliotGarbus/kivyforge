@@ -98,8 +98,9 @@ as-is; the work is producing and wiring a second binary:
 - **`build_launcher.py`:** `LAUNCHER_NAME` / `VENDORED_LAUNCHER` become
   per-arch; thread arch through `compile_launcher` / `_vcvars_env`; `TOOLSET.txt`
   either per-arch or a shared pin; the `verify` reproducibility gate runs per
-  arch. Determinism (`/Brepro` + `/RELEASE` + pinned toolset) is unchanged — the
-  cross-compiled arm64 output is byte-reproducible for a fixed ARM64 toolset.
+  arch. Determinism (`/Brepro` + `/RELEASE` + `/EMITTOOLVERSIONINFO:NO` +
+  pinned toolset) is unchanged and arch-independent — the cross-compiled arm64
+  output is byte-reproducible on the same terms as amd64.
 - **`assets.py` / `launcher/__init__.py`:** `vendored_launcher()` must select
   `launcher-<arch>.exe` by **target** arch; `copy_launcher` / `place_launcher`
   thread the target arch through (today `vendored_launcher()` takes no arch).

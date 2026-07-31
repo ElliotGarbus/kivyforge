@@ -142,9 +142,12 @@
   (`thumbprint`/`timestamp_url`/`store_scope`), and the shared
   `extra_index_urls`/`find_links`/`exclude`.
 - **Prebuilt, reproducible launcher** — a single vendored windowed launcher
-  `.exe` (built once from `launcher.c` with MSVC `/Brepro` + `/RELEASE`, SHA-256
-  pinned, byte-reproducibility gated in CI) is parameterized per app only by its
-  *resources* (icon + version) via the vendored `rcedit` — no per-build compiler.
+  `.exe` (built once from `launcher.c` with MSVC `/Brepro` + `/RELEASE` +
+  `/EMITTOOLVERSIONINFO:NO`, SHA-256 pinned, byte-reproducibility gated in CI —
+  the last flag drops the PE "rich header", whose serviced `cl`/`link` build
+  stamp otherwise differs between runner images sharing one `VCTOOLSVERSION`) is
+  parameterized per app only by its *resources* (icon + version) via the
+  vendored `rcedit` — no per-build compiler.
   The launcher self-locates, sets the AppUserModelID, hands the console off on
   `run` while suppressing the flash on double-click, and spawns the bundled
   `python.exe` under a Job object.

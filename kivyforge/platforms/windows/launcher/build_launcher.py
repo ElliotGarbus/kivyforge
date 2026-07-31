@@ -12,13 +12,27 @@ that binary and its reproducibility gate:
         Recompile to a temp dir and byte-compare against the vendored binary,
         failing on any drift.  This is the CI reproducibility check.
 
-Determinism: MSVC ``/Brepro`` on both the compile and link steps replaces the
-PE timestamp with a content hash (no wall-clock time), and the linker
-``/RELEASE`` writes a deterministic checksum.  kivyforge's launcher **appends
-nothing** to the binary, so there is no zip/timestamp tail to non-determinize it
-(unlike distlib).  Byte-identity holds for a *fixed MSVC toolset*: the PE "rich
-header" encodes the compiler build, so CI must pin the same Visual Studio
-toolset that produced the vendored binary (the workflow does).
+Determinism, in three flags: ``/Brepro`` on both the compile and link steps
+replaces the PE timestamp with a content hash (no wall-clock time), the linker
+``/RELEASE`` writes a deterministic checksum, and ``/EMITTOOLVERSIONINFO:NO``
+omits the PE **"rich header"** — the block stamping the exact build of every
+tool that touched the image.  kivyforge's launcher **appends nothing** to the
+binary, so there is no zip/timestamp tail to non-determinize it (unlike
+distlib).
+
+``/EMITTOOLVERSIONINFO:NO`` is what makes the binary reproducible *across
+machines*, and it is not optional: ``VCTOOLSVERSION`` (the toolset directory
+name, e.g. ``14.51.36231``) does **not** identify the compiler shipped inside
+it — ``cl`` there reports a different build (e.g. ``19.51.36248``), and Microsoft
+services that binary in place.  Two hosted runner images can therefore expose
+the same ``VCTOOLSVERSION`` while running ``cl``/``link`` builds ``36248`` and
+``36252``.  Those builds land in the rich header, whose length shifts every
+following file offset and perturbs the ``/Brepro`` hash: 307 bytes of drift with
+*byte-identical machine code*.  No pin can fix that (vcvars selects by directory
+version, which is the thing that doesn't discriminate) — so drop the stamp.
+
+The toolset pin below is still worth keeping, but for the other half of the
+problem: a genuinely different MSVC or Windows SDK can emit different *code*.
 
 Windows-only (needs ``cl``/``link`` from Visual Studio Build Tools).
 """
@@ -45,28 +59,30 @@ VENDOR_DIR = HERE.parent / "vendor"
 LAUNCHER_NAME = "launcher-amd64.exe"
 VENDORED_LAUNCHER = VENDOR_DIR / LAUNCHER_NAME
 MANIFEST = VENDOR_DIR / "SHA256SUMS"
-# The MSVC + Windows SDK pin that produced the vendored binary. Byte-identity
-# holds only for a fixed compiler *and* a fixed Windows SDK (the PE encodes
-# both — even with ``/Brepro``): build and CI verify load them via
-# ``vcvarsall <arch> <winsdk> -vcvars_ver=<tools>``.
+# The MSVC + Windows SDK pin that produced the vendored binary: build and CI
+# verify load them via ``vcvarsall <arch> <winsdk> -vcvars_ver=<tools>``.
 #
 # ``TOOLSET.txt`` format (one or two lines, ``#`` comments allowed)::
 #
 #     14.51.36231          # full VCTOOLSVERSION (required)
 #     10.0.26100.0         # WindowsSDKVersion (optional but recorded by build)
 #
-# Pin the *full* VCTOOLSVERSION, not just major.minor: ``-vcvars_ver=14.51``
-# means "latest installed 14.51.xxxxx", and hosted ``windows-latest`` runners
-# can mix image builds that share a major.minor but not a patch. Likewise pin
-# the Windows SDK: two images with the same MSVC but different "latest" SDKs
-# still emit different PEs (observed: 307-byte drift with identical
-# VCTOOLSVERSION). When a runner image drops either pin, verify fails loudly
-# and ``revendor_launcher`` re-pins against the new defaults.
+# This pin holds *code generation* steady — a different MSVC or SDK can inline
+# different CRT/SDK code and change the emitted instructions. It deliberately
+# does **not** carry the burden of pinning the compiler *identity*: the module
+# docstring explains why it cannot (VCTOOLSVERSION names a directory, not the
+# serviced ``cl`` inside it), which is what ``/EMITTOOLVERSIONINFO:NO`` handles
+# instead. Pin the *full* VCTOOLSVERSION rather than major.minor, though:
+# ``-vcvars_ver=14.51`` means "latest installed 14.51.xxxxx". When a runner
+# image drops either pin, verify fails loudly and ``revendor_launcher`` re-pins
+# against the new defaults.
 TOOLSET_FILE = VENDOR_DIR / "TOOLSET.txt"
 
-# Deterministic compile/link flags. Keep this list in lockstep with any change
-# that would alter the emitted bytes (both here and in the CI workflow).
+# Deterministic compile/link flags. Keep these lists in lockstep with any change
+# that would alter the emitted bytes (both here and in the CI workflow); every
+# change to them requires a re-vendor.
 _CL_FLAGS = ["/nologo", "/c", "/O1", "/Brepro", "/utf-8", "/DUNICODE", "/D_UNICODE"]
+_LINK_FLAGS = ["/nologo", "/Brepro", "/RELEASE", "/EMITTOOLVERSIONINFO:NO"]
 _LINK_LIBS = ["kernel32.lib", "shell32.lib"]
 
 
@@ -257,10 +273,10 @@ def compile_c_source(
         link_exe = _which("link", env)
         cl = [cl_exe, *_CL_FLAGS, f"/Fo{obj}", str(source)]
         _run(cl, cwd=tmpdir, env=env, step="compile")
-        link_flags = ["/nologo", "/Brepro", "/RELEASE", f"/SUBSYSTEM:{subsystem}"]
         link = [
             link_exe,
-            *link_flags,
+            *_LINK_FLAGS,
+            f"/SUBSYSTEM:{subsystem}",
             f"/OUT:{out}",
             str(obj),
             *_LINK_LIBS,
@@ -321,6 +337,37 @@ def _run(cmd: list[str], *, cwd: Path, env: dict[str, str], step: str) -> None:
         )
 
 
+def has_tool_version_stamp(image: bytes) -> bool:
+    """True if *image* (PE bytes) still carries an MSVC "rich header".
+
+    The rich header sits between the DOS stub and the ``PE\\0\\0`` signature at
+    ``e_lfanew``, and records the exact build of every tool that contributed to
+    the image — which is precisely what differs between two runner images
+    carrying the same ``VCTOOLSVERSION``. ``/EMITTOOLVERSIONINFO:NO`` omits it;
+    this is the assertion that the flag took effect, so a toolchain that
+    quietly stops honoring it fails the build instead of silently re-breaking
+    cross-machine reproducibility.
+    """
+    if len(image) < 0x40 or image[:2] != b"MZ":
+        return False
+    e_lfanew = int.from_bytes(image[0x3C:0x40], "little")
+    if not 0x40 <= e_lfanew <= len(image):
+        return False
+    return b"Rich" in image[0x40:e_lfanew]
+
+
+def _reject_tool_version_stamp(image: bytes, what: str) -> None:
+    if has_tool_version_stamp(image):
+        raise LauncherBuildError(
+            f"the {what} carries an MSVC tool-version ('rich') header, so "
+            "/EMITTOOLVERSIONINFO:NO did not take effect. That header stamps "
+            "the serviced cl/link build, which differs between runner images "
+            "sharing one VCTOOLSVERSION — leaving it in makes the binary "
+            "non-reproducible across machines. Check that the linker still "
+            "supports the flag before vendoring this binary."
+        )
+
+
 def sha256_of(path: Path) -> str:
     h = hashlib.sha256()
     h.update(path.read_bytes())
@@ -375,6 +422,7 @@ def do_build() -> int:
         vcvars_ver=recorded.vc_tools,
         winsdk_version=recorded.winsdk,
     )
+    _reject_tool_version_stamp(VENDORED_LAUNCHER.read_bytes(), "freshly built launcher")
     digest = sha256_of(VENDORED_LAUNCHER)
     entries = _read_manifest()
     entries[LAUNCHER_NAME] = digest
@@ -406,19 +454,31 @@ def do_verify() -> int:
             winsdk_version=pin.winsdk if pin else None,
         )
         rebuilt = rebuilt_path.read_bytes()
+    _reject_tool_version_stamp(rebuilt, "freshly compiled launcher")
     if rebuilt != vendored:
+        # A vendored binary that still carries the stamp predates
+        # /EMITTOOLVERSIONINFO:NO and can never match a current rebuild — say so
+        # rather than sending the reader off to compare toolset versions.
+        cause = (
+            "  The vendored binary still carries an MSVC tool-version ('rich') "
+            "header, so it predates the /EMITTOOLVERSIONINFO:NO link flag and "
+            "cannot match a current rebuild. Re-vendor once via the "
+            "`revendor_launcher` CI workflow; this is expected on the commit "
+            "that introduced the flag."
+            if has_tool_version_stamp(vendored)
+            else "  Either the C source or the compile/link flags changed "
+            "without re-vendoring (run `build`), or this runner's "
+            "MSVC/Windows-SDK pair emits different code than the one that "
+            "produced the vendored binary — re-vendor via the "
+            "`revendor_launcher` CI workflow when the hosted image rolls."
+        )
         raise LauncherBuildError(
             "the freshly compiled launcher does not byte-match the vendored "
             f"binary ({VENDORED_LAUNCHER}).\n"
             f"  vendored: {len(vendored)} bytes, sha256={hashlib.sha256(vendored).hexdigest()}\n"
             f"  rebuilt:  {len(rebuilt)} bytes, sha256={hashlib.sha256(rebuilt).hexdigest()}\n"
             f"  pinned: {pin.label() if pin else '(none)'}; "
-            f"compiler used: {used.label()}\n"
-            "  Either the C source changed without re-vendoring (run `build`), "
-            "or this runner's MSVC/Windows-SDK pair differs from the one that "
-            "produced the vendored binary — pin both in vendor/TOOLSET.txt and "
-            "re-vendor via the `revendor_launcher` CI workflow when the hosted "
-            "image rolls."
+            f"compiler used: {used.label()}\n" + cause
         )
     manifest = _read_manifest()
     expected = manifest.get(LAUNCHER_NAME)
@@ -428,9 +488,7 @@ def do_verify() -> int:
             f"vendored launcher SHA-256 {actual} does not match the manifest "
             f"pin {expected}."
         )
-    print(
-        f"verified {VENDORED_LAUNCHER} is reproducible ({actual}); {used.label()}"
-    )
+    print(f"verified {VENDORED_LAUNCHER} is reproducible ({actual}); {used.label()}")
     return 0
 
 
