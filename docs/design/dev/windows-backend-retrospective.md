@@ -138,6 +138,24 @@ analogy and only yields to reading the bytes.
   trying to freeze an environment you do not control. A version string is only a
   pin if it actually identifies the bits.
 
+### 3c. The self-healing path healed itself out of its own gate
+
+- **What bit us.** Every `revendor_launcher` run committed a new binary whose
+  reproducibility gate then **never ran**. Three commits in the history exist
+  only to poke CI awake afterwards.
+- **Root cause.** GitHub does not start workflow runs from pushes made with the
+  default `GITHUB_TOKEN` (a recursion guard). A job that commits on your behalf
+  therefore lands its change *outside* CI — silently.
+- **The fix.** A `revendor_verify` job that `needs: revendor_launcher` and checks
+  out the SHA that job pushed. A separate job also means a separate runner VM,
+  so it is a genuine cross-machine check — the same-job verify inside
+  `revendor_launcher` never could be, which is why the drift in §3b survived a
+  passing re-vendor twice.
+- **Lesson.** **A bot commit is an untested commit.** Any job that writes to the
+  repo needs its verification wired as an explicit dependent job; do not assume
+  the normal push-triggered CI will pick it up. Applies to any future
+  auto-update job (lockfile refreshes, vendored-asset bumps).
+
 ### 4. Runtime/DLL discovery is host-dependent and arch-sensitive
 
 - **What bit us.** PBS ships `vcruntime140*.dll` but **not** `msvcp140.dll`; we

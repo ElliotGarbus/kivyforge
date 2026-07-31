@@ -123,9 +123,10 @@ jobs:
     # launcher-arm64.exe — cross-compile on this same x64 runner via
     # `vcvarsall x64_arm64` (add the VC.Tools.ARM64 component), or add an arm64
     # runner; a build-arch matrix is the natural shape. See arm64-windows.md §10.
-    # Skipped on manual re-vendor runs: revendor_launcher already rebuilds +
-    # verifies against the runner's current toolset, and this job would only
-    # fail on stale vendored files it checked out before that sibling committed.
+    # Skipped on manual re-vendor runs: this job would only fail on the stale
+    # vendored files it checked out before its sibling committed. The equivalent
+    # gate for those runs is revendor_verify, which runs these same steps on a
+    # fresh runner against the commit revendor_launcher just pushed.
     if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
     steps:
@@ -162,10 +163,15 @@ jobs:
     # runner image dropped the pinned MSVC toolset. Rebuilds the launcher with the
     # runner's current (in-support) toolset, self-checks reproducibility, and
     # commits the refreshed binary + SHA256SUMS + TOOLSET.txt back to the branch.
+    # The self-check here is same-runner only; revendor_verify is the real gate.
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     permissions:
       contents: write
+    outputs:
+      # The commit revendor_verify must check out — the one this job pushed, or
+      # the checked-out commit when the launcher was already up to date.
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
     - name: Checkout kivyforge
       uses: actions/checkout@v6
@@ -186,8 +192,12 @@ jobs:
         Remove-Item kivyforge\platforms\windows\vendor\TOOLSET.txt -ErrorAction SilentlyContinue
         python -m kivyforge.platforms.windows.launcher.build_launcher build
     - name: Verify the re-vendored launcher is reproducible on this runner
+      # Same-machine check only — it catches a broken build before committing,
+      # but proves nothing about cross-runner drift (the failure mode that
+      # /EMITTOOLVERSIONINFO:NO exists to kill). revendor_verify does that.
       run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
     - name: Commit and push the re-vendored launcher (if changed)
+      id: commit
       shell: bash
       run: |
         git config user.name "github-actions[bot]"
@@ -203,6 +213,7 @@ jobs:
           git commit -m "chore(windows): re-vendor launcher for ${toolset}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
         fi
+        echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
     - name: Upload re-vendored launcher assets (fallback if push is blocked)
       uses: actions/upload-artifact@v6
       with:
@@ -211,6 +222,40 @@ jobs:
           kivyforge/platforms/windows/vendor/launcher-amd64.exe
           kivyforge/platforms/windows/vendor/SHA256SUMS
           kivyforge/platforms/windows/vendor/TOOLSET.txt
+
+  revendor_verify:
+    name: Verify the re-vendored launcher (fresh runner)
+    # revendor_launcher pushes with the default GITHUB_TOKEN, and GitHub does not
+    # start new workflow runs from those pushes (recursion guard) — so a re-vendor
+    # commit lands with its reproducibility gate never having run, until someone
+    # notices and pushes an empty commit. This job closes that hole: a separate
+    # job means a **different runner VM**, which is exactly the cross-machine
+    # comparison the gate is for (the same-job check above cannot see that drift).
+    needs: revendor_launcher
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+    - name: Checkout the re-vendored commit
+      uses: actions/checkout@v6
+      with:
+        # The commit revendor_launcher pushed, not the one that triggered this
+        # run. If the push was blocked this ref will not exist on the remote and
+        # this job fails loudly — grab the `vendored-launcher` artifact instead.
+        ref: ${{ needs.revendor_launcher.outputs.sha }}
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Rebuild the launcher from source and byte-compare (reproducibility)
+      run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
+    - name: Exercise the launcher end-to-end (spawn/argv/exit-code/env)
+      # The re-vendored binary is what ships; prove it runs, not just that its
+      # bytes reproduce. Nothing else exercises it on a workflow_dispatch run.
+      run: pytest tests/platforms/windows/test_launcher_exe.py -v --no-cov
 
   windows_signing:
     name: Authenticode sign + verify (self-signed, Windows)
