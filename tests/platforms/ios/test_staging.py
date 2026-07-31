@@ -137,6 +137,8 @@ class TestByteCompileResolution:
             echo=messages.append,
         )
         assert any("not byte-compiling" in m for m in messages)
+        # The notice must say how to fix it, not just what happened.
+        assert any("Fix: install a final CPython" in m for m in messages)
         # Degraded: the copy is untouched source, not partially compiled.
         assert (layout.app / "main.py").is_file()
 

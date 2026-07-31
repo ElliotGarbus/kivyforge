@@ -85,18 +85,24 @@ def _resolve_byte_compile(
         python_version=python_version,
     )
     if compiler is None:
-        message = (
-            f"this project ships CPython {python_version}, and no CPython of "
-            "that minor could be found to byte-compile with (a .pyc is only "
-            "loadable by the exact CPython minor that wrote it)"
+        minor = ".".join(python_version.split(".")[:2])
+        headline = (
+            f"no final CPython {minor} found (this project ships {python_version})"
+        )
+        why_and_fix = (
+            "  Pre-releases do not count: CPython only freezes the .pyc "
+            f"magic number at the first release candidate, so a {minor} alpha "
+            f"writes bytecode {python_version} refuses to import.\n"
+            f"  Fix: install a final CPython {minor} — kivyforge finds it "
+            "automatically — or set byte_compile = false in "
+            "[tool.kivy.macos.build_settings]."
         )
         if settings.byte_compile is True:
             raise AppBundleError(
-                "[tool.kivy.macos.build_settings].byte_compile = true but "
-                f"{message}.\n"
-                "  Install a matching CPython, or set byte_compile = false."
+                "[tool.kivy.macos.build_settings].byte_compile = true, but "
+                f"{headline}.\n{why_and_fix}"
             )
-        click.echo(f"[stage] not byte-compiling: {message}.")
+        click.echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
         return None, False
     strip = _setting_applies(settings.strip_source, release=release)
     return compiler, strip

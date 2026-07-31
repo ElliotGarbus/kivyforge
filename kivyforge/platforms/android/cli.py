@@ -181,22 +181,23 @@ def _resolve_byte_compile(
     compiler = _byte_compile_interpreter(python_version)
     if compiler is None:
         target = ".".join(str(p) for p in _target_minor(python_version))
-        message = (
-            f"this project ships CPython {python_version}, and no *final* "
-            f"release of CPython {target} was found to byte-compile with (a "
-            "pre-release of the right minor is not enough — CPython only "
-            "freezes the .pyc magic number at the first release candidate, so "
-            f"e.g. {target}.0a7 writes bytecode {python_version} refuses to "
-            "import)"
+        headline = (
+            f"no final CPython {target} found (this project ships {python_version})"
+        )
+        why_and_fix = (
+            "  Pre-releases do not count: CPython only freezes the .pyc magic "
+            f"number at the first release candidate, so a {target} alpha writes "
+            f"bytecode {python_version} refuses to import.\n"
+            f"  Fix: install a final CPython {target} — kivyforge finds it "
+            "automatically — or set byte_compile = false in "
+            "[tool.kivy.android.build_settings]."
         )
         if settings.byte_compile is True:
             raise AndroidBuildError(
-                "[tool.kivy.android.build_settings].byte_compile = true but "
-                f"{message}.\n"
-                f"  Install a final CPython {target} release (kivyforge will "
-                "find it), or set byte_compile = false."
+                "[tool.kivy.android.build_settings].byte_compile = true, but "
+                f"{headline}.\n{why_and_fix}"
             )
-        click.echo(f"[stage] not byte-compiling: {message}.")
+        click.echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
         return None, False
     # Documented as "ignored when byte_compile is off": stripping sources with
     # no .pyc beside them would ship a bundle that imports nothing.

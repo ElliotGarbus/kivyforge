@@ -391,6 +391,8 @@ class TestCompilePipDeps:
             echo=messages.append,
         )
         assert any("not byte-compiling" in m for m in messages)
+        # The notice must say how to fix it, not just what happened.
+        assert any("Fix: install a final CPython" in m for m in messages)
 
     def test_explicit_true_fails_when_no_compiler_found(self, tmp_path, monkeypatch):
         self._select(monkeypatch, None)

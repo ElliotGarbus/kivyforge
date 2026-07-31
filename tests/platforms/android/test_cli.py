@@ -485,7 +485,10 @@ class TestByteCompileResolution:
         shipping 3.14 gets source, not a failure."""
         self._missing(monkeypatch)
         assert self._resolve(self._android()) == (None, False)
-        assert "not byte-compiling" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "not byte-compiling" in out
+        # The notice must say how to fix it, not just what happened.
+        assert "Fix: install a final CPython" in out
 
     def test_explicit_true_fails_when_no_interpreter_exists(self, monkeypatch):
         """Asked for outright, silence would ship a bundle the user believes is
@@ -494,10 +497,11 @@ class TestByteCompileResolution:
         android = self._android(
             "[tool.kivy.android.build_settings]\nbyte_compile = true\n"
         )
-        with pytest.raises(
-            AndroidBuildError, match=r"no \*final\* release of CPython 3\.14"
-        ):
+        with pytest.raises(AndroidBuildError, match=r"no final CPython 3\.14") as exc:
             self._resolve(android)
+        # The message must say how to get out of it, not just what went wrong.
+        assert "Fix: install a final CPython 3.14" in str(exc.value)
+        assert "byte_compile = false" in str(exc.value)
 
     def test_this_interpreter_is_used_when_it_matches(self, monkeypatch):
         import sys

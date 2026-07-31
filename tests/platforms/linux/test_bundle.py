@@ -171,7 +171,10 @@ class TestByteCompileResolution:
     def test_default_degrades_when_no_compiler_found(self, monkeypatch, capsys):
         self._select(monkeypatch, None)
         assert self._resolve(self._config()) == (None, False)
-        assert "not byte-compiling" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "not byte-compiling" in out
+        # The notice must say how to fix it, not just what happened.
+        assert "Fix: install a final CPython" in out
 
     def test_explicit_true_fails_when_no_compiler_found(self, monkeypatch):
         self._select(monkeypatch, None)

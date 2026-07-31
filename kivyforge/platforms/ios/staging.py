@@ -195,18 +195,24 @@ def _compile_app_copy(
         staged_interpreter=Path(), native=False, python_version=python_version
     )
     if compiler is None:
-        message = (
-            f"this project ships CPython {python_version}, and no CPython of "
-            "that minor could be found to byte-compile with (a .pyc is only "
-            "loadable by the exact CPython minor that wrote it)"
+        minor = ".".join(python_version.split(".")[:2])
+        headline = (
+            f"no final CPython {minor} found (this project ships {python_version})"
+        )
+        why_and_fix = (
+            "  Pre-releases do not count: CPython only freezes the .pyc "
+            f"magic number at the first release candidate, so a {minor} alpha "
+            f"writes bytecode {python_version} refuses to import.\n"
+            f"  Fix: install a final CPython {minor} — kivyforge finds it "
+            "automatically — or set byte_compile = false in "
+            "[tool.kivy.ios.python.build_settings]."
         )
         if settings.byte_compile is True:
             raise StagingError(
-                "[tool.kivy.ios.python.build_settings].byte_compile = true but "
-                f"{message}.\n"
-                "  Install a matching CPython, or set byte_compile = false."
+                "[tool.kivy.ios.python.build_settings].byte_compile = true, but "
+                f"{headline}.\n{why_and_fix}"
             )
-        echo(f"[stage] not byte-compiling app sources: {message}.")
+        echo(f"[stage] not byte-compiling app sources: {headline}.\n{why_and_fix}")
         return
     strip_source = _setting_applies(settings.strip_source, release=True)
     with_what = " ".join(compiler) if compiler else "this interpreter"
