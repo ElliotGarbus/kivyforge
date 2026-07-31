@@ -648,6 +648,65 @@ class TestBuildSettingTypes:
         }
 
 
+# Full-table [tool.kivy.ios.python], not _VALID_IOS's inline form: a
+# build_settings *subtable* can only follow a real table header, not an
+# inline one (TOML forbids adding keys to an already-closed inline table).
+_IOS_PYTHON_TABLE = (
+    "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+    "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
+    "[tool.kivy.ios.python]\nversion='3.15.0'\n"
+)
+
+
+class TestIosPythonBuildSettings:
+    """``[tool.kivy.ios.python.build_settings]`` — byte_compile/strip_source,
+    the same release tri-state as the desktop backends (pyproject-ios)."""
+
+    def test_defaults_are_release_only(self):
+        bs = load(_IOS_PYTHON_TABLE).ios_required.python_build_settings
+        assert bs.byte_compile == "release"
+        assert bs.strip_source == "release"
+
+    def test_explicit_bools_accepted(self):
+        bs = load(
+            _IOS_PYTHON_TABLE + "[tool.kivy.ios.python.build_settings]\n"
+            "byte_compile = true\nstrip_source = false\n"
+        ).ios_required.python_build_settings
+        assert bs.byte_compile is True
+        assert bs.strip_source is False
+
+    def test_invalid_tristate_rejected(self):
+        with pytest.raises(ConfigError, match='bool or the string "release"'):
+            load(
+                _IOS_PYTHON_TABLE + "[tool.kivy.ios.python.build_settings]\n"
+                'strip_source = "always"\n'
+            )
+
+    def test_non_table_rejected(self):
+        with pytest.raises(
+            ConfigError,
+            match=r"\[tool.kivy.ios.python.build_settings\] must be a table",
+        ):
+            load(
+                "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+                "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
+                "[tool.kivy.ios.python]\nversion='3.15.0'\nbuild_settings=true\n"
+            )
+
+    def test_does_not_collide_with_xcode_build_settings(self):
+        # [tool.kivy.ios].build_settings (Xcode passthrough, dict[str, str]) and
+        # [tool.kivy.ios.python].build_settings (this tri-state) are unrelated
+        # tables despite the shared leaf name; both must parse independently.
+        cfg = load(
+            _IOS_PYTHON_TABLE + "[tool.kivy.ios.python.build_settings]\n"
+            "byte_compile = true\n"
+            "[tool.kivy.ios.xcode.build_settings]\n"
+            'SWIFT_VERSION = "5.0"\n'
+        )
+        assert cfg.ios_required.python_build_settings.byte_compile is True
+        assert cfg.ios_required.build_settings == {"SWIFT_VERSION": "5.0"}
+
+
 class TestSyntaxError:
     def test_bad_toml_reports_line(self):
         with pytest.raises(ConfigError, match="invalid TOML"):

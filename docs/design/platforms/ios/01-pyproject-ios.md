@@ -190,6 +190,48 @@ version = "3.15.0"
 
 Future fields (xcframework URL override, explicit SHA) are described in the [pylock spec](02-pylock-ios-spec.md) since they belong in the lock when present.
 
+### `[tool.kivy.ios.python.build_settings]`
+
+```toml
+[tool.kivy.ios.python.build_settings]
+byte_compile = "release"   # "release" | true | false — .pyc for app + pip-deps
+strip_source = "release"   # "release" | true | false — drop .py once byte-compiled
+```
+
+Nested under `python` (not directly under `ios`) because `ios.build_settings`
+already names the free-form `[tool.kivy.ios.xcode.build_settings]` passthrough
+table — the two are unrelated despite the shared leaf name.
+
+The same `byte_compile`/`strip_source` release tri-state as the desktop
+backends (macos-spec / windows-spec / linux-spec) and Android's own
+`build_settings`: `"release"` (the default) applies only to `kivyforge
+package` — `build`/`run` always keep readable `.py`. `strip_source` is
+ignored while `byte_compile` is off.
+
+**Scope, and why it differs from `build`/`run`'s symlink.** `build`/`run`
+stage `app/` as a **symlink** to `[tool.kivy].app_dir` (spec 06 "symlink, not
+copy") for fast edit-rebuild iteration — compiling/stripping through that
+symlink would delete `.py` files from the user's actual source tree, which is
+never acceptable. So `package` stages a **real, disposable copy** of
+`app_dir` instead, and only that copy — plus the collected `pip-deps-*`
+slices, which are already host-owned build output — gets compiled/stripped.
+The staged `Python.xcframework` stdlib is never touched, matching every
+other platform.
+
+Third-party pip-deps are already public (installable from PyPI); an app's own
+source is not. If only one side could be protected, the app's own source is
+the one worth it — but here both are covered, matching every other backend's
+app+deps scope.
+
+**Compiler selection.** The `Python.xcframework` ships no standalone
+interpreter binary to shell out to — it's a linkable library, not an
+executable — so unlike desktop, the "staged interpreter" rung of the ladder
+never applies on iOS. Compilation always uses the interpreter running
+`kivyforge` itself, if its CPython minor matches `[tool.kivy.ios.python].version`
+(a `.pyc`'s magic number is keyed to minor version only, not architecture);
+otherwise `byte_compile = "release"` degrades to shipping source with a
+note, while `byte_compile = true` fails the build outright.
+
 ### `[tool.kivy.ios.native.xcframeworks]`
 
 ```toml

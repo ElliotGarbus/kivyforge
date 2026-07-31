@@ -43,6 +43,26 @@
     default since v0.86) did this; kivyforge's desktop backends shipped raw
     `.py` unconditionally until now.
 
+### iOS source stripping
+
+- **New `[tool.kivy.ios.python.build_settings]` table** (nested under
+  `python`, since `[tool.kivy.ios].build_settings` already names the Xcode
+  passthrough table): the same `byte_compile`/`strip_source` release
+  tri-state as Android and the desktop backends, covering both `pip-deps`
+  (third-party wheels) and the app's own source.
+  - `build`/`run` are unaffected — `app/` stays a symlink to `app_dir` for
+    fast iteration, exactly as before.
+  - `kivyforge package` now stages `app/` as a real, disposable copy instead
+    of a symlink and compiles/strips *that* — the user's actual source tree
+    is never touched. Switching back to `build`/`run` afterward reclaims the
+    copy for the symlink automatically.
+  - The staged `Python.xcframework` stdlib is never touched (it's a
+    prebuilt, opaque library either way).
+  - `Python.xcframework` ships no standalone interpreter to shell out to, so
+    compilation always uses the `kivyforge`-hosting interpreter itself (on a
+    matching CPython minor) or degrades — there is no "staged interpreter"
+    rung the way desktop has.
+
 ### Android backend (`.apk` / `.aab`)
 
 - **New `android` target.** `kivyforge lock/build/run/package -p android`

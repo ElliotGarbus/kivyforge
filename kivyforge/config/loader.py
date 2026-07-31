@@ -485,6 +485,7 @@ def _parse_ios(
     signing = _parse_signing(ios, finder)
     info_plist = _parse_info_plist(ios, finder)
     build_settings = _parse_build_settings(ios, finder)
+    python_build_settings = _parse_ios_python_build_settings(ios, finder)
     privacy_source = _parse_privacy(ios)
     entitlements = _parse_entitlements(ios)
 
@@ -507,6 +508,7 @@ def _parse_ios(
         privacy_manifest_source=privacy_source,
         info_plist=info_plist,
         build_settings=build_settings,
+        python_build_settings=python_build_settings,
     )
 
 
@@ -609,7 +611,9 @@ def _parse_macos(
     signing = _parse_macos_signing(macos, finder)
     _check_macos_entitlements_notarizable(entitlements, signing, finder)
     binaries = _parse_native_binaries(macos, "macos", finder)
-    build_settings = _parse_desktop_build_settings(macos, "macos", finder)
+    build_settings = _parse_desktop_build_settings(
+        macos.get("build_settings"), "tool.kivy.macos.build_settings", finder
+    )
 
     return MacosConfig(
         schema_version=schema_version,
@@ -831,7 +835,9 @@ def _parse_linux(
     icons = _parse_platform_icons(linux, key_path="tool.kivy.linux.icons")
     desktop = _parse_desktop(linux, finder)
     binaries = _parse_native_binaries(linux, "linux", finder)
-    build_settings = _parse_desktop_build_settings(linux, "linux", finder)
+    build_settings = _parse_desktop_build_settings(
+        linux.get("build_settings"), "tool.kivy.linux.build_settings", finder
+    )
 
     return LinuxConfig(
         schema_version=schema_version,
@@ -982,7 +988,9 @@ def _parse_windows(
     icons = _parse_platform_icons(windows, key_path="tool.kivy.windows.icons")
     signing = _parse_windows_signing(windows, finder)
     binaries = _parse_native_binaries(windows, "windows", finder)
-    build_settings = _parse_desktop_build_settings(windows, "windows", finder)
+    build_settings = _parse_desktop_build_settings(
+        windows.get("build_settings"), "tool.kivy.windows.build_settings", finder
+    )
 
     return WindowsConfig(
         schema_version=schema_version,
@@ -2742,16 +2750,16 @@ def _parse_native_binaries(
 
 
 def _parse_desktop_build_settings(
-    overlay: dict, platform: str, finder: _LineFinder
+    table: dict | None, base: str, finder: _LineFinder
 ) -> DesktopBuildSettings:
-    """Parse ``[tool.kivy.<platform>.build_settings]``.
+    """Parse a ``byte_compile``/``strip_source`` tri-state table at *base*.
 
-    Shared across the desktop backends (Windows/Linux/macOS have no Android-
-    style minify/R8/multidex, so this is just the two release tri-states); the
-    ``platform`` string only shapes the ``key_path`` used in diagnostics.
+    Shared by every backend with this release tri-state and no Android-style
+    minify/R8/multidex: Windows/Linux/macOS at ``<platform>.build_settings``,
+    and iOS at ``ios.python.build_settings`` (a nested path, since
+    ``ios.build_settings`` is already the Xcode passthrough table). *base*
+    only shapes the ``key_path`` used in diagnostics.
     """
-    table = overlay.get("build_settings")
-    base = f"tool.kivy.{platform}.build_settings"
     if table is None:
         return DesktopBuildSettings()
     if not isinstance(table, dict):
@@ -2770,6 +2778,25 @@ def _parse_desktop_build_settings(
     return DesktopBuildSettings(
         byte_compile=_tri("byte_compile"),
         strip_source=_tri("strip_source"),
+    )
+
+
+def _parse_ios_python_build_settings(
+    ios: dict, finder: _LineFinder
+) -> DesktopBuildSettings:
+    """Parse ``[tool.kivy.ios.python.build_settings]``.
+
+    Nested under ``python`` (not directly under ``ios``) because
+    ``ios.build_settings`` already names the free-form Xcode passthrough
+    table (``[tool.kivy.ios.xcode.build_settings]``'s dataclass attribute);
+    ``[tool.kivy.ios.python]`` is otherwise the natural home for anything
+    about the shipped Python payload, and it is already a required table
+    (see ``_parse_python_version``), so it is always present by this point.
+    """
+    python = ios.get("python")
+    table = python.get("build_settings") if isinstance(python, dict) else None
+    return _parse_desktop_build_settings(
+        table, "tool.kivy.ios.python.build_settings", finder
     )
 
 

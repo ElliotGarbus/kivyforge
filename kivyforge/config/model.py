@@ -290,8 +290,8 @@ class NativeBinaryDep:
 
 # byte_compile / strip_source (desktop build_settings) accept a bool or this
 # string, applying only to `kivyforge package` builds -- shared across
-# Windows/Linux/macOS since the setting and its semantics are identical on
-# all three. Distinct from ANDROID_RELEASE_ONLY (same value, kept separate so
+# Windows/Linux/macOS/iOS since the setting and its semantics are identical on
+# all four. Distinct from ANDROID_RELEASE_ONLY (same value, kept separate so
 # nothing here can accidentally couple to Android's own tri-state).
 DESKTOP_RELEASE_ONLY = "release"
 
@@ -299,16 +299,17 @@ DESKTOP_RELEASE_ONLY = "release"
 @dataclass(frozen=True)
 class DesktopBuildSettings:
     """``[tool.kivy.<platform>.build_settings]`` -- shared across Windows,
-    Linux, and macOS (macos-spec / windows-spec / linux-spec).
+    Linux, macOS (macos-spec / windows-spec / linux-spec), and iOS's
+    ``[tool.kivy.ios.python.build_settings]`` (pyproject-ios).
 
-    Deliberately smaller than ``AndroidBuildSettings``: desktop has no
+    Deliberately smaller than ``AndroidBuildSettings``: these backends have no
     Gradle/R8, so there is no ``minify``/``shrink_resources``/``multidex``
     analog, and no native-library stripping distinct from ``strip_source``.
 
     ``byte_compile`` / ``strip_source`` are a bool or the string ``"release"``
     (apply to `kivyforge package` only -- the default; a plain `build` always
-    keeps source, matching the dev-loop/shippable-artifact split each desktop
-    backend already draws for signing). **stdlib is never stripped** regardless
+    keeps source, matching the dev-loop/shippable-artifact split each backend
+    already draws for signing). **stdlib is never stripped** regardless
     of this setting -- only the app's own code and installed wheels are, since
     the platform runtime ships its stdlib pre-compiled already.
     """
@@ -380,6 +381,9 @@ class IosConfig:
     privacy_manifest_source: str | None = None
     info_plist: dict[str, object] = field(default_factory=dict)
     build_settings: dict[str, str] = field(default_factory=dict)
+    python_build_settings: DesktopBuildSettings = field(
+        default_factory=DesktopBuildSettings
+    )
 
 
 @dataclass(frozen=True)

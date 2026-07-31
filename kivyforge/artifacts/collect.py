@@ -13,8 +13,11 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
+from ..bundle.pycompile import PycompileError, byte_compile, select_compiler
+from ..config.model import DesktopBuildSettings
 from ..lock.model import LockedWheel
 from ..platforms.ios.lock.model import Lockfile
 from .cache import ArtifactCache
@@ -75,6 +78,9 @@ def collect_artifacts(
     no_cache: bool = False,
     runner=subprocess.run,
     python_executable: str | None = None,
+    release: bool = False,
+    build_settings: DesktopBuildSettings | None = None,
+    echo: Callable[[str], None] = lambda msg: None,
 ) -> None:
     cache = cache or ArtifactCache()
 
@@ -106,6 +112,13 @@ def collect_artifacts(
             runner=runner,
             python_executable=python_executable,
         )
+        _compile_pip_deps(
+            slice_pip_deps,
+            python_version=lock.python_xcframework.version,
+            release=release,
+            build_settings=build_settings,
+            echo=echo,
+        )
         _stamp_collected(slice_pip_deps)
         copy_wheel_frameworks(slice_pip_deps, layout.frameworks, existing=staged)
     _install_native_xcframeworks(
@@ -129,6 +142,71 @@ def _stamp_collected(slice_pip_deps: Path) -> None:
     """
     marker = slice_pip_deps.parent / f"{slice_pip_deps.name}.collected"
     marker.write_text("", encoding="utf-8")
+
+
+def _setting_applies(value: bool | str, *, release: bool) -> bool:
+    """A ``build_settings`` tri-state resolved for the build being produced."""
+    if isinstance(value, bool):
+        return value
+    return release  # DESKTOP_RELEASE_ONLY
+
+
+def _compile_pip_deps(
+    slice_pip_deps: Path,
+    *,
+    python_version: str,
+    release: bool,
+    build_settings: DesktopBuildSettings | None,
+    echo: Callable[[str], None],
+) -> None:
+    """Byte-compile/strip a collected pip-deps slice, per ``build_settings``.
+
+    Mirrors each desktop backend's own ``_resolve_byte_compile`` (macOS/Linux/
+    Windows ``bundle.py``), with one iOS-specific simplification: the
+    Python.xcframework ships no standalone interpreter binary to shell out to
+    (it's a linkable library, not an executable), so the "staged interpreter"
+    rung of the compiler ladder never applies here — it always falls straight
+    to "this process's interpreter, if its CPython minor matches the target",
+    or degrades.
+    """
+    settings = build_settings or DesktopBuildSettings()
+    if not _setting_applies(settings.byte_compile, release=release):
+        return
+    compiler = select_compiler(
+        staged_interpreter=Path(), native=False, python_version=python_version
+    )
+    if compiler is None:
+        message = (
+            f"this project ships CPython {python_version}, and no CPython of "
+            "that minor could be found to byte-compile with (a .pyc is only "
+            "loadable by the exact CPython minor that wrote it)"
+        )
+        if settings.byte_compile is True:
+            raise CollectError(
+                "[tool.kivy.ios.python.build_settings].byte_compile = true but "
+                f"{message}.\n"
+                "  Install a matching CPython, or set byte_compile = false."
+            )
+        echo(f"[stage] not byte-compiling pip-deps: {message}.")
+        return
+    strip_source = _setting_applies(settings.strip_source, release=release)
+    with_what = " ".join(compiler) if compiler else "this interpreter"
+    echo(
+        f"[stage] byte-compiling pip-deps with {with_what}"
+        + (" (.pyc only)" if strip_source else "")
+    )
+    try:
+        byte_compile(
+            [slice_pip_deps],
+            compiler=compiler,
+            strip_source=strip_source,
+            stripdir=slice_pip_deps,
+        )
+    except PycompileError as exc:
+        raise CollectError(
+            f"{exc}\n  Fix it, or set "
+            "[tool.kivy.ios.python.build_settings].byte_compile = false."
+        ) from exc
 
 
 def _install_python_xcframework(lock, layout, *, cache, downloader, no_cache) -> None:

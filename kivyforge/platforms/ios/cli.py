@@ -138,8 +138,18 @@ def prepare_build(
 
     build_slices = _resolve_slices(target, arch, config.ios.deployment_target)
     tags = ", ".join(s.platform_tag for s in build_slices)
+    # Only `kivyforge package` (target="release") gets byte-compiled/stripped
+    # app sources + pip-deps; `build`/`run` always keep readable .py, matching
+    # every other platform's release-only default.
+    release = target == "release"
     try:
-        layout = create_staging(config, project_root)
+        layout = create_staging(
+            config,
+            project_root,
+            release=release,
+            python_version=lock.python_xcframework.version if release else None,
+            echo=click.echo,
+        )
         click.echo(f"Collecting artifacts for {tags} ...")
         collect_artifacts(
             lock,
@@ -147,6 +157,9 @@ def prepare_build(
             build_slices=build_slices,
             project_root=project_root,
             no_cache=no_cache,
+            release=release,
+            build_settings=config.ios.python_build_settings,
+            echo=click.echo,
         )
         materialize_project(
             config,

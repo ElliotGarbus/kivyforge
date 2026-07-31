@@ -12,10 +12,16 @@ from pathlib import Path
 
 import pytest
 
+from kivyforge.artifacts import collect as collect_mod
 from kivyforge.artifacts.cache import ArtifactCache
-from kivyforge.artifacts.collect import collect_artifacts
+from kivyforge.artifacts.collect import (
+    CollectError,
+    _compile_pip_deps,
+    collect_artifacts,
+)
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.artifacts.wheels import BuildSlice
+from kivyforge.config.model import DesktopBuildSettings
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.platforms.ios.lock.model import (
     LockedXcframework,
@@ -316,3 +322,232 @@ def test_collect_no_packages_skips_pip(tmp_path, layout, cache):
         runner=boom,
     )
     assert (layout.python_xcframework / "Info.plist").is_file()
+
+
+class TestCompilePipDeps:
+    """``byte_compile``/``strip_source`` for a collected pip-deps slice
+    (pyproject-ios §build_settings). ``select_compiler`` is stubbed here (it
+    has its own tests in tests/bundle/test_pycompile.py); the interesting
+    behavior at this layer is the tri-state resolution and the
+    degrade-vs-error split.
+    """
+
+    def _select(self, monkeypatch, result):
+        monkeypatch.setattr(collect_mod, "select_compiler", lambda **kw: result)
+
+    def _deps_with_module(self, tmp_path):
+        deps = tmp_path / "pip-deps-device"
+        (deps / "pkg").mkdir(parents=True)
+        (deps / "pkg" / "mod.py").write_text("x = 1\n")
+        return deps
+
+    def test_release_default_compiles_and_strips(self, tmp_path, monkeypatch):
+        self._select(monkeypatch, ())
+        deps = self._deps_with_module(tmp_path)
+        _compile_pip_deps(
+            deps,
+            python_version="3.15.0",
+            release=True,
+            build_settings=None,
+            echo=lambda m: None,
+        )
+        assert not (deps / "pkg" / "mod.py").exists()
+        assert (deps / "pkg" / "mod.pyc").is_file()
+
+    def test_dev_build_skips(self, tmp_path, monkeypatch):
+        self._select(monkeypatch, ())
+        deps = self._deps_with_module(tmp_path)
+        _compile_pip_deps(
+            deps,
+            python_version="3.15.0",
+            release=False,
+            build_settings=None,
+            echo=lambda m: None,
+        )
+        assert (deps / "pkg" / "mod.py").exists()
+
+    def test_false_never_compiles(self, tmp_path, monkeypatch):
+        self._select(monkeypatch, ())
+        deps = self._deps_with_module(tmp_path)
+        _compile_pip_deps(
+            deps,
+            python_version="3.15.0",
+            release=True,
+            build_settings=DesktopBuildSettings(byte_compile=False),
+            echo=lambda m: None,
+        )
+        assert (deps / "pkg" / "mod.py").exists()
+
+    def test_default_degrades_when_no_compiler_found(self, tmp_path, monkeypatch):
+        self._select(monkeypatch, None)
+        deps = tmp_path / "pip-deps-device"
+        deps.mkdir()
+        messages = []
+        _compile_pip_deps(
+            deps,
+            python_version="3.15.0",
+            release=True,
+            build_settings=None,
+            echo=messages.append,
+        )
+        assert any("not byte-compiling" in m for m in messages)
+
+    def test_explicit_true_fails_when_no_compiler_found(self, tmp_path, monkeypatch):
+        self._select(monkeypatch, None)
+        deps = tmp_path / "pip-deps-device"
+        deps.mkdir()
+        with pytest.raises(CollectError, match="byte_compile = true"):
+            _compile_pip_deps(
+                deps,
+                python_version="3.15.0",
+                release=True,
+                build_settings=DesktopBuildSettings(byte_compile=True),
+                echo=lambda m: None,
+            )
+
+    def test_missing_dir_is_a_noop(self, tmp_path, monkeypatch):
+        # _install_wheels may not create slice_pip_deps at all when a slice
+        # has zero third-party deps.
+        self._select(monkeypatch, ())
+        deps = tmp_path / "pip-deps-device"
+        _compile_pip_deps(  # no raise
+            deps,
+            python_version="3.15.0",
+            release=True,
+            build_settings=None,
+            echo=lambda m: None,
+        )
+
+
+class TestCollectArtifactsByteCompileWiring:
+    def test_release_reaches_the_pip_deps_slice(
+        self, tmp_path, layout, cache, monkeypatch
+    ):
+        monkeypatch.setattr(collect_mod, "select_compiler", lambda **kw: ())
+        art = tmp_path / "art"
+        art.mkdir()
+        py_tar = _make_python_tarball(art)
+        wheel = art / "purepkg-1.0-py3-none-any.whl"
+        wheel.write_bytes(b"fake wheel")
+
+        lock = Lockfile(
+            requires_python=">=3.15",
+            packages=(
+                LockedPackage(
+                    name="purepkg",
+                    version="1.0",
+                    wheels=(
+                        LockedWheel(
+                            name=wheel.name,
+                            sha256=sha256_file(wheel),
+                            path=str(wheel.relative_to(tmp_path)),
+                        ),
+                    ),
+                ),
+            ),
+            python_xcframework=PythonXcframework(
+                version="3.15.0",
+                url="https://example/python.tar.gz",
+                sha256=sha256_file(py_tar),
+            ),
+            kivyforge_version="3.0.0.dev0",
+            generated_at="2026-01-01T00:00:00Z",
+            pyproject_sha256="d" * 64,
+            tool_kivyforge_schema_version=1,
+        )
+
+        class FakeDownloader:
+            def fetch_to(self, url, dest):
+                import shutil
+
+                shutil.copyfile(py_tar, dest)
+
+        def fake_runner(cmd, capture_output=True, text=True):
+            # Simulate pip actually installing a pure-Python module.
+            target = Path(cmd[cmd.index("--target") + 1])
+            (target / "purepkg.py").write_text("x = 1\n")
+
+            class P:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return P()
+
+        collect_artifacts(
+            lock,
+            layout,
+            build_slices=[BuildSlice("device", "arm64", "13.0")],
+            project_root=tmp_path,
+            cache=cache,
+            downloader=FakeDownloader(),
+            runner=fake_runner,
+            release=True,
+            build_settings=DesktopBuildSettings(byte_compile=True, strip_source=True),
+        )
+
+        assert not (layout.pip_deps_device / "purepkg.py").exists()
+        assert (layout.pip_deps_device / "purepkg.pyc").is_file()
+
+    def test_dev_build_never_compiles(self, tmp_path, layout, cache):
+        art = tmp_path / "art"
+        art.mkdir()
+        py_tar = _make_python_tarball(art)
+        wheel = art / "purepkg-1.0-py3-none-any.whl"
+        wheel.write_bytes(b"fake wheel")
+
+        lock = Lockfile(
+            requires_python=">=3.15",
+            packages=(
+                LockedPackage(
+                    name="purepkg",
+                    version="1.0",
+                    wheels=(
+                        LockedWheel(
+                            name=wheel.name,
+                            sha256=sha256_file(wheel),
+                            path=str(wheel.relative_to(tmp_path)),
+                        ),
+                    ),
+                ),
+            ),
+            python_xcframework=PythonXcframework(
+                version="3.15.0",
+                url="https://example/python.tar.gz",
+                sha256=sha256_file(py_tar),
+            ),
+            kivyforge_version="3.0.0.dev0",
+            generated_at="2026-01-01T00:00:00Z",
+            pyproject_sha256="d" * 64,
+            tool_kivyforge_schema_version=1,
+        )
+
+        class FakeDownloader:
+            def fetch_to(self, url, dest):
+                import shutil
+
+                shutil.copyfile(py_tar, dest)
+
+        def fake_runner(cmd, capture_output=True, text=True):
+            target = Path(cmd[cmd.index("--target") + 1])
+            (target / "purepkg.py").write_text("x = 1\n")
+
+            class P:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return P()
+
+        collect_artifacts(
+            lock,
+            layout,
+            build_slices=[BuildSlice("device", "arm64", "13.0")],
+            project_root=tmp_path,
+            cache=cache,
+            downloader=FakeDownloader(),
+            runner=fake_runner,
+            # release defaults to False; build_settings defaults to "release".
+        )
+
+        assert (layout.pip_deps_device / "purepkg.py").exists()
