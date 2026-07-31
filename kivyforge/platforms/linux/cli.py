@@ -88,7 +88,8 @@ def linux_package(
     click.echo(
         f"Packaged {result.relative_to(project_root)}.\n"
         "  Distribute the .AppImage directly (chmod +x, then run). The host needs "
-        "glibc ≥ the effective floor, libGL/libEGL, and an X11/Wayland session.\n"
+        "glibc >= the effective floor, libGL/libEGL, and an X11/Wayland "
+        "session.\n"
         "  No libfuse2 package is required (static-FUSE runtime embedded). If the "
         "host lacks kernel FUSE (/dev/fuse) — e.g. some containers/CI — run it "
         "with --appimage-extract-and-run (or APPIMAGE_EXTRACT_AND_RUN=1)."
