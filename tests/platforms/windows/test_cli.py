@@ -171,9 +171,6 @@ class TestPackage:
         # Junk that must never reach dist/.
         (built / ".git").mkdir()
         (built / ".git" / "config").write_text("[core]\n")
-        (built / "app" / "__pycache__").mkdir()
-        (built / "app" / "__pycache__" / "main.cpython-313.pyc").write_bytes(b"x")
-        (built / "app" / "main.pyc").write_bytes(b"x")
         (built / ".DS_Store").write_bytes(b"x")
         (built / "Thumbs.db").write_bytes(b"x")
         (built / "app" / "notes.swp").write_bytes(b"x")
@@ -192,6 +189,20 @@ class TestPackage:
             "bin",
             "bin/sdk.dll",
         }
+
+    def test_does_not_exclude_pyc_or_pycache(self, project, monkeypatch):
+        # __pycache__/*.pyc used to be treated as junk before byte-compilation
+        # existed; now they're the actual shipped payload of build_settings
+        # .byte_compile, and must survive the copy into dist/.
+        built = self._canonical_bundle(project)
+        (built / "app" / "__pycache__").mkdir()
+        (built / "app" / "__pycache__" / "main.cpython-313.pyc").write_bytes(b"x")
+        (built / "app" / "stripped.pyc").write_bytes(b"x")
+
+        dest = self._package(project, built, monkeypatch)
+
+        assert (dest / "app" / "__pycache__" / "main.cpython-313.pyc").exists()
+        assert (dest / "app" / "stripped.pyc").exists()
 
     def test_replaces_existing_dist_dir(self, project, monkeypatch):
         built = self._canonical_bundle(project)

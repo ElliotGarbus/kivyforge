@@ -34,13 +34,16 @@ from .lock import WindowsLockfile
 from .lock import load as load_windows_lock
 from .signing import select_signer
 
-# Never copy build cache, VCS metadata, or editor droppings into the shipped
-# dist tree. The onedir bundle is assembled clean, so this is defense in depth
-# (and covers a build/ dir a user pointed packaging at directly).
+# Never copy VCS metadata or editor droppings into the shipped dist tree. The
+# onedir bundle is assembled clean, so this is defense in depth (and covers a
+# build/ dir a user pointed packaging at directly).
+#
+# Deliberately does NOT exclude __pycache__/*.pyc/*.pyo: those used to be junk
+# patterns before byte-compilation existed, but [tool.kivy.windows
+# .build_settings] now makes .pyc the actual shipped payload -- excluding it
+# here would silently ship an empty app/ once strip_source has deleted the
+# .py, which is exactly what byte_compile/strip_source is supposed to produce.
 _PACKAGE_IGNORE = shutil.ignore_patterns(
-    "__pycache__",
-    "*.pyc",
-    "*.pyo",
     ".git",
     ".gitignore",
     ".gitattributes",
