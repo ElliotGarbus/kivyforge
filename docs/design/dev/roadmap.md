@@ -70,9 +70,16 @@ existing API token is the correct tool.
 
 **Notes**
 
-- `pip install kivyforge` skips pre-releases unless `--pre`, so a `.dev0`
-  upload holds the name without inviting anyone to install an unfinished
-  toolchain. This is the property that makes reserving-by-uploading safe.
+- **Pre-releases are not as invisible as they look.** pip excludes a
+  pre-release only when a **stable release also exists**; when a pre-release
+  is the *only* release on the index, `packaging`'s specifier filter falls
+  back to it. So while `3.0.0.dev0` is the sole release, a plain
+  `pip install kivyforge` installs it — `--pre` is not required. This
+  corrects an earlier assumption recorded here; verified empirically against
+  the live index in a clean venv. It resolves itself once a stable `3.0.0`
+  ships. If the package must be non-installable in the meantime, **yank**
+  `3.0.0.dev0` (PEP 592): a yanked release still holds the name, and stays
+  installable when pinned exactly, but is skipped by ordinary resolution.
 - `[project.urls]` still points at `ElliotGarbus/kivyforge`. That is accurate
   today; it is a P5 transition task, not a P0 blocker.
 - The default branch is `modernization-rfc` (with a stale `master` present).
@@ -80,6 +87,16 @@ existing API token is the correct tool.
   branch situation should be resolved before the real 3.0.0.
 
 **Done when** `pip install --pre kivyforge` installs `3.0.0.dev0` from PyPI.
+**— done 2026-07-31**, published from tag `v3.0.0.dev0` (commit `191b5829`);
+wheel + sdist both live, verified by clean-venv install from the live index.
+
+**Open follow-up (needs a PyPI UI action).** The first upload had to use an
+**account-scoped** token, because project-scoped tokens can only be minted for
+projects that already exist. Now that `kivyforge` exists, replace the GitHub
+secret with a **project-scoped** token limited to `kivyforge` and delete the
+account-scoped one, so a leaked CI secret cannot reach anything else on the
+account. This is a stopgap either way — P5 removes the token entirely in
+favour of OIDC.
 
 ---
 
