@@ -19,13 +19,42 @@ banner makes clear which backend is active.
 from __future__ import annotations
 
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.lang import Builder
+from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.uix.boxlayout import BoxLayout
+from kivy.utils import platform
 
 DARK_BG = (0.08, 0.09, 0.12, 1)
 SERVICE_KEY = "github_token"  # the demo stores one named secret
+BASE_PADDING = 20  # dp; matches the KV padding, which is the desktop baseline
+
+
+def safe_area_insets():
+    """Device safe-area insets as Kivy pixels: ``[left, top, right, bottom]``.
+
+    Geometry comes from Kivy core's ``kivy.mobile``, which is mobile-only and
+    raises ``ImportError`` on desktop — hence the platform guard and the zero
+    fallback, so this example is unchanged when run on a desktop for a quick
+    smoke-test. ``get_safe_area()`` reports **layout points** on both iOS and
+    Android; ``get_scale()`` converts those to Kivy window pixels.
+    """
+    if platform not in ("ios", "android"):
+        return [0, 0, 0, 0]
+    try:
+        from kivy.mobile import get_safe_area, get_scale
+    except ImportError:
+        return [0, 0, 0, 0]
+    insets = get_safe_area()  # layout points
+    scale = get_scale()  # -> Kivy window pixels
+    return [
+        insets["left"] * scale,
+        insets["top"] * scale,
+        insets["right"] * scale,
+        insets["bottom"] * scale,
+    ]
 
 
 def _objc_str(value) -> str | None:
@@ -154,6 +183,22 @@ class KeychainRoot(BoxLayout):
             if self._store.native
             else "Backend: in-memory fallback\n(not on iOS)"
         )
+
+    def on_kv_post(self, _base_widget) -> None:
+        # Inset content past the notch / Dynamic Island and home indicator, so
+        # the TextInput and buttons stay tappable. The safe area is not settled
+        # at kv_post and changes with orientation, so refresh on the next frame
+        # and on every resize.
+        Clock.schedule_once(self._refresh_safe_area, 0)
+        Window.bind(on_resize=self._on_resize)
+
+    def _on_resize(self, *_) -> None:
+        Clock.schedule_once(self._refresh_safe_area, 0)
+
+    def _refresh_safe_area(self, *_) -> None:
+        base = dp(BASE_PADDING)
+        left, top, right, bottom = safe_area_insets()
+        self.padding = [base + left, base + top, base + right, base + bottom]
 
     def save(self) -> None:
         value = self.ids.secret.text.strip()

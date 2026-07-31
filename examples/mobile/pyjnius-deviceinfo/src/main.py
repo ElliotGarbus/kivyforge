@@ -7,12 +7,47 @@ pyjnius bridge is delivered as a prebuilt Android wheel.
 """
 
 from kivy.app import App
+from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.lang import Builder
+from kivy.metrics import dp
 from kivy.utils import platform
+
+BASE_PADDING = 16  # dp; matches the KV padding, which is the desktop baseline
+
+
+def safe_area_insets():
+    """Device safe-area insets as Kivy pixels: ``[left, top, right, bottom]``.
+
+    Geometry comes from Kivy core's ``kivy.mobile``, which is mobile-only and
+    raises ``ImportError`` on desktop — hence the platform guard and the zero
+    fallback, so this example is unchanged when run on a desktop for a quick
+    smoke-test. ``get_safe_area()`` reports **layout points** on both iOS and
+    Android; ``get_scale()`` converts those to Kivy window pixels.
+
+    On Android this keeps the info rows clear of the status bar and the
+    gesture-navigation pill.
+    """
+    if platform not in ("ios", "android"):
+        return [0, 0, 0, 0]
+    try:
+        from kivy.mobile import get_safe_area, get_scale
+    except ImportError:
+        return [0, 0, 0, 0]
+    insets = get_safe_area()  # layout points
+    scale = get_scale()  # -> Kivy window pixels
+    return [
+        insets["left"] * scale,
+        insets["top"] * scale,
+        insets["right"] * scale,
+        insets["bottom"] * scale,
+    ]
+
 
 KV = """
 ScrollView:
     GridLayout:
+        id: content
         cols: 1
         padding: '16dp'
         spacing: '8dp'
@@ -78,6 +113,27 @@ class DeviceInfoApp(App):
     def build(self):
         self.info_text = _device_info()
         return Builder.load_string(KV)
+
+    def on_start(self):
+        # The scrolling content carries the padding (the root ScrollView does
+        # not), and it is an anonymous KV widget, so this is driven from the
+        # App. The safe area is not settled at on_start and changes with
+        # orientation, so refresh on the next frame and on every resize.
+        Clock.schedule_once(self._refresh_safe_area, 0)
+        Window.bind(on_resize=self._on_resize)
+
+    def _on_resize(self, *_):
+        Clock.schedule_once(self._refresh_safe_area, 0)
+
+    def _refresh_safe_area(self, *_):
+        base = dp(BASE_PADDING)
+        left, top, right, bottom = safe_area_insets()
+        self.root.ids.content.padding = [
+            base + left,
+            base + top,
+            base + right,
+            base + bottom,
+        ]
 
 
 # kivyforge *imports* the entry-point module (it is not run as __main__), so

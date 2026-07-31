@@ -13,9 +13,43 @@ Kivy texture and display it for user-entered text.
 """
 
 from kivy.app import App
+from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.graphics.texture import Texture
 from kivy.lang import Builder
+from kivy.metrics import dp
 from kivy.utils import platform
+
+BASE_PADDING = 16  # dp; matches the KV padding, which is the desktop baseline
+
+
+def safe_area_insets():
+    """Device safe-area insets as Kivy pixels: ``[left, top, right, bottom]``.
+
+    Geometry comes from Kivy core's ``kivy.mobile``, which is mobile-only and
+    raises ``ImportError`` on desktop — hence the platform guard and the zero
+    fallback, so this example is unchanged when run on a desktop for a quick
+    smoke-test. ``get_safe_area()`` reports **layout points** on both iOS and
+    Android; ``get_scale()`` converts those to Kivy window pixels.
+
+    On Android this keeps the entry field and button clear of the status bar
+    and the gesture-navigation pill.
+    """
+    if platform not in ("ios", "android"):
+        return [0, 0, 0, 0]
+    try:
+        from kivy.mobile import get_safe_area, get_scale
+    except ImportError:
+        return [0, 0, 0, 0]
+    insets = get_safe_area()  # layout points
+    scale = get_scale()  # -> Kivy window pixels
+    return [
+        insets["left"] * scale,
+        insets["top"] * scale,
+        insets["right"] * scale,
+        insets["bottom"] * scale,
+    ]
+
 
 KV = """
 BoxLayout:
@@ -105,6 +139,20 @@ class QrApp(App):
         self.status_text = _prove_invoke0()
         self._root.ids.status.text = self.status_text
         self.render(self._root.ids.entry.text)
+        # The root is an anonymous KV widget, so the padding is driven from the
+        # App rather than a root-widget class. The safe area is not settled at
+        # on_start and changes with orientation, so refresh on the next frame
+        # and on every resize.
+        Clock.schedule_once(self._refresh_safe_area, 0)
+        Window.bind(on_resize=self._on_resize)
+
+    def _on_resize(self, *_):
+        Clock.schedule_once(self._refresh_safe_area, 0)
+
+    def _refresh_safe_area(self, *_):
+        base = dp(BASE_PADDING)
+        left, top, right, bottom = safe_area_insets()
+        self._root.padding = [base + left, base + top, base + right, base + bottom]
 
     def render(self, text: str):
         texture = _encode_qr(text)

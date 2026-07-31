@@ -33,11 +33,40 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.lang import Builder
+from kivy.metrics import dp
 from kivy.properties import NumericProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
+from kivy.utils import platform
 
 DARK_BG = (0.08, 0.09, 0.12, 1)
+BASE_PADDING = 16  # dp; matches the KV padding, which is the desktop baseline
+
+
+def safe_area_insets():
+    """Device safe-area insets as Kivy pixels: ``[left, top, right, bottom]``.
+
+    Geometry comes from Kivy core's ``kivy.mobile``, which is mobile-only and
+    raises ``ImportError`` on desktop — hence the platform guard and the zero
+    fallback, so this example is unchanged when run on a desktop for a quick
+    smoke-test. ``get_safe_area()`` reports **layout points** on both iOS and
+    Android; ``get_scale()`` converts those to Kivy window pixels.
+    """
+    if platform not in ("ios", "android"):
+        return [0, 0, 0, 0]
+    try:
+        from kivy.mobile import get_safe_area, get_scale
+    except ImportError:
+        return [0, 0, 0, 0]
+    insets = get_safe_area()  # layout points
+    scale = get_scale()  # -> Kivy window pixels
+    return [
+        insets["left"] * scale,
+        insets["top"] * scale,
+        insets["right"] * scale,
+        insets["bottom"] * scale,
+    ]
+
 
 KV = """
 <BallWidget>:
@@ -277,7 +306,23 @@ class PyobjusBallRoot(BoxLayout):
         except Exception as exc:  # pragma: no cover — device-only path
             self.status_text = f"Native init error: {exc}"
 
+        # Inset the play field past the notch / Dynamic Island and home
+        # indicator — the ball bounces off the padded edge, so it stays inside
+        # the region the system actually leaves to the app. The safe area is
+        # not settled at kv_post and changes with orientation, so refresh on
+        # the next frame and on every resize.
+        Clock.schedule_once(self._refresh_safe_area, 0)
+        Window.bind(on_resize=self._on_resize)
+
         Clock.schedule_interval(self._update, 1.0 / 60.0)
+
+    def _on_resize(self, *_) -> None:
+        Clock.schedule_once(self._refresh_safe_area, 0)
+
+    def _refresh_safe_area(self, *_) -> None:
+        base = dp(BASE_PADDING)
+        left, top, right, bottom = safe_area_insets()
+        self.padding = [base + left, base + top, base + right, base + bottom]
 
     def __del__(self) -> None:
         if self._accel:
