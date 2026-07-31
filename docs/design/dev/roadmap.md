@@ -90,13 +90,17 @@ existing API token is the correct tool.
 **— done 2026-07-31**, published from tag `v3.0.0.dev0` (commit `191b5829`);
 wheel + sdist both live, verified by clean-venv install from the live index.
 
-**Open follow-up (needs a PyPI UI action).** The first upload had to use an
+**Token scope — done 2026-07-31.** The first upload had to use an
 **account-scoped** token, because project-scoped tokens can only be minted for
-projects that already exist. Now that `kivyforge` exists, replace the GitHub
-secret with a **project-scoped** token limited to `kivyforge` and delete the
-account-scoped one, so a leaked CI secret cannot reach anything else on the
-account. This is a stopgap either way — P5 removes the token entirely in
-favour of OIDC.
+projects that already exist. Once `kivyforge` existed the GitHub secret was
+replaced with a token scoped to `kivyforge` alone and the account-scoped one
+deleted, so a leaked CI secret cannot reach anything else on the account. A
+stopgap either way — P5 removes the token entirely in favour of OIDC.
+
+The scoped token is untested until the next upload: PyPI has no
+token-validation endpoint, and `workflow_dispatch` skips the publish step
+(it is gated on `refs/tags/`). That is acceptable because an auth failure
+consumes no version — the next tag is a safe test.
 
 ---
 
