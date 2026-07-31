@@ -10,6 +10,8 @@ we would do differently, and — most usefully — to translate each lesson into
 This is a developer note, not a spec. For *what* the Windows backend does, see
 [windows-spec.md](../platforms/windows/windows-spec.md); for the clean-machine
 DLL/runtime findings, see [windows-dll-findings.md](windows-dll-findings.md).
+How the Android carry-forward below actually landed is scored in
+[android-backend-retrospective.md](android-backend-retrospective.md).
 
 ---
 
