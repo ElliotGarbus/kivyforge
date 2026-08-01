@@ -158,6 +158,36 @@ emulator (x86_64) and a Pixel 8a (arm64_v8a).
 
 ## P2 — `doctor` check for byte-compile misconfiguration
 
+> **Prerequisite: install a final CPython 3.14 — and note the validation gap
+> that its absence has been hiding.**
+>
+> The dev machine's only CPython 3.14 is a `3.14.0a7`, which the release-level
+> guard correctly refuses. Every Android build here therefore takes the degrade
+> path and ships source. The consequence is easy to miss: **`strip_source` has
+> never actually executed on Android or iOS.** Phase B shipped it for the
+> mobile backends, the unit tests cover the mechanics, and the *desktop* path
+> is verified against a real artifact (`dice-roller`'s Windows `dist/` contains
+> `app/main.pyc` and no `.py`) — but no mobile build has produced a stripped
+> payload even once.
+>
+> Verified 2026-07-31: the staged Android bundle still contains
+> `_python_bundle/app/main.py`.
+>
+> Install a **final** CPython 3.14.x (64-bit) and preferably remove the alpha,
+> which is also the `*` default for `py -3.14` and so wins the launcher's
+> lookup. That unblocks two things:
+>
+> - **Validating the feature.** Build `android-safe-area` with
+>   `byte_compile = true`, confirm the bundle is `.pyc`-only, and confirm it
+>   still boots on the Pixel. Sourceless imports (PEP 3147 legacy layout) are
+>   exactly the kind of thing that works in a unit test and fails on a device.
+> - **Testing this check properly.** With only an alpha present the doctor
+>   check can only be seen degrading; a final 3.14 lets its PASS path be
+>   exercised too, so the check is confirmed rather than merely run.
+>
+> **iOS stays unvalidated regardless** — it needs a macOS host, which no amount
+> of Windows Python fixes.
+
 **The gap.** A `byte_compile` setup that cannot find a matching CPython minor
 only surfaces when `kivyforge package` actually runs — `kivyforge doctor` says
 nothing. With the default `"release"` tri-state the build then degrades
