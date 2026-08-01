@@ -1305,12 +1305,42 @@ class TestAndroidOpen:
 
 
 class TestWriteLocalProperties:
-    def test_skips_when_android_home_set(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("ANDROID_HOME", str(tmp_path))
+    def test_written_even_when_android_home_is_set(self, tmp_path, monkeypatch):
+        """AGP prefers sdk.dir over the environment, so it must be written.
+
+        The file used to be skipped when ANDROID_HOME was set, on the belief
+        that the env var wins. It does not — which meant a file from an earlier
+        build kept overriding a correct ANDROID_HOME.
+        """
+        sdk = tmp_path / "sdk"
+        sdk.mkdir()
+        monkeypatch.setenv("ANDROID_HOME", str(sdk))
         dest = tmp_path / "proj"
         dest.mkdir()
         cli._write_local_properties(dest)
-        assert not (dest / "local.properties").exists()
+        content = (dest / "local.properties").read_text(encoding="utf-8")
+        assert "sdk.dir=" in content
+        assert str(sdk).replace("\\", "\\\\").replace(":", "\\:") in content
+
+    def test_stale_path_is_rewritten_not_left_in_place(self, tmp_path, monkeypatch):
+        """The regression: an SDK that moved must not strand the old path.
+
+        A stale sdk.dir points AGP at a directory that no longer exists, so it
+        cannot find android.jar and javac dies complaining about java.lang —
+        an error that names neither the SDK nor this file.
+        """
+        sdk = tmp_path / "new-sdk"
+        sdk.mkdir()
+        monkeypatch.setenv("ANDROID_HOME", str(sdk))
+        dest = tmp_path / "proj"
+        dest.mkdir()
+        (dest / "local.properties").write_text(
+            "sdk.dir=C\\:\\\\gone\\\\Android\\\\Sdk\n", encoding="utf-8"
+        )
+        cli._write_local_properties(dest)
+        content = (dest / "local.properties").read_text(encoding="utf-8")
+        assert "gone" not in content
+        assert str(sdk).replace("\\", "\\\\").replace(":", "\\:") in content
 
     def test_writes_when_sdk_detected(self, tmp_path, monkeypatch):
         monkeypatch.delenv("ANDROID_HOME", raising=False)

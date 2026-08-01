@@ -1003,21 +1003,28 @@ def _load_config_only(project_root: Path):
 
 
 def _write_local_properties(dest: Path) -> None:
-    """Point Gradle at the detected SDK when ANDROID_HOME is not exported.
+    """Point Gradle at the resolved SDK, rewriting the file every build.
 
     ``local.properties`` is machine-local by convention and lives inside the
     regenerated (gitignored) project, so writing it here is safe and matches
-    what Android Studio itself does. The env var still wins when set.
-    """
-    import os
+    what Android Studio itself does.
 
-    if os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT"):
-        return
+    Written unconditionally, including when ANDROID_HOME is set. AGP resolves
+    ``sdk.dir`` from this file **in preference to** the environment, so a file
+    left over from an earlier build silently overrides a correct ANDROID_HOME
+    — and if that recorded path has since moved, AGP cannot find android.jar
+    and javac fails with "Unable to find package java.lang in classpath or
+    bootclasspath", which names neither the SDK nor this file. Rewriting from
+    ``sdk_root()`` (which reads ANDROID_HOME first) keeps the two in step and
+    makes a stale path self-healing.
+    """
     from .doctor import RealAndroidProbe
 
     sdk = RealAndroidProbe().sdk_root()
     if sdk is None:
-        return  # gradle will surface the standard actionable error
+        # Leave any existing file alone: without a resolvable SDK there is
+        # nothing better to write, and gradle surfaces the standard error.
+        return
     escaped = str(sdk).replace("\\", "\\\\").replace(":", "\\:")
     (dest / "local.properties").write_text(
         f"sdk.dir={escaped}\n", encoding="utf-8", newline="\n"
