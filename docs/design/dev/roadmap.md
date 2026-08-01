@@ -139,6 +139,20 @@ re-demonstrate it.
 
 **Done when** each of the five insets its content past the notch / Dynamic
 Island / home indicator, and still runs unchanged on desktop.
+**— done 2026-07-31.**
+
+**Two things the work turned up, both since resolved.** The units differ per
+platform: `get_safe_area()` returns UIKit **points** on iOS but **pixels** on
+Android, and Kivy's own `kivy/mobile/__init__.py` documents "layout points"
+for both with no caveat. Following that doc scaled Android by the display
+density (2–3.5×); the helper now scales iOS only.
+
+And Kivy 2.3.1 has no `kivy/mobile` module at all, so the three Android
+examples on `kivy_generation = 2` can never report a safe area. Rather than
+move them to generation 3 — which would collapse the gen-2/gen-3 coverage
+split the compatibility matrix tracks — a purpose-built generation-3 example
+was added: `examples/mobile/android-safe-area`. Validated on an API-36
+emulator (x86_64) and a Pixel 8a (arm64_v8a).
 
 ---
 
@@ -163,6 +177,31 @@ build cannot disagree:
 Covers Windows, Linux, macOS, iOS (`[tool.kivy.ios.python.build_settings]`)
 and Android. Note iOS/cross-arch cases never have a staged interpreter to fall
 back on, so the check must pass `native=False` there exactly as the build does.
+
+**A pre-release of the right minor is not enough — reuse
+`select_compiler()`, do not reimplement the version test.** CPython bumps the
+`.pyc` magic number through the alpha/beta cycle and only freezes it at the
+first release candidate, so 3.14.0a7 (magic 3621) writes bytecode that shipped
+3.14.6 (magic 3627) refuses to import, while still answering "3.14" to a
+version check. `select_compiler()` and Android's `_reports_version()` now both
+require `releaselevel == "final"`; a doctor check that only compared minors
+would pass exactly where the build fails, which is worse than no check.
+
+Found the hard way on 2026-07-31: an Android build picked up a 3.14.0a7 and
+died on two 3.14 stdlib modules using t-string syntax the alpha cannot parse.
+That was luck — without the SyntaxError it would have shipped a bundle whose
+stdlib bytecode the device rejects, sources already stripped, with no clue as
+to why. See the `TestPreReleaseInterpretersRejected` tests.
+
+**A live test case is already on the dev machine.** Its only CPython 3.14 is
+that 3.14.0a7, so any Android/iOS project pinning 3.14.x hits the degrade path
+today — the check should fire there immediately, which makes it easy to
+confirm the check works rather than merely runs.
+
+**Message shape.** Follow the form the six backends now share: a short
+headline, then the *why* (pre-releases do not count, and the reason), then an
+explicit `Fix:` line naming both ways out. The degrade path is the one that
+matters most — it is silent, and until 2026-07-31 it offered no remedy at all.
 
 **Done when** `kivyforge doctor` reports the condition on every platform that
 has the setting.
