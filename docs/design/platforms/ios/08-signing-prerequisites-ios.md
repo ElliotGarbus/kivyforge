@@ -63,6 +63,20 @@ Complete these on the macOS build host before a signed build.
    or the `KIVYFORGE_TEAM_ID` / `KIVYFORGE_SIGNING_IDENTITY` env vars — the
    recommended path for CI and team projects that don't commit signing config.
 
+6. **Enable any capabilities your entitlements require.** If
+   `[tool.kivy.ios.entitlements]` declares keys — HealthKit, App Groups, push
+   (`aps-environment`), associated domains — the matching **capability must be
+   enabled on the App ID** at the
+   [Developer portal](https://developer.apple.com/account), and the provisioning
+   profile regenerated afterward. `codesign` requires the app's entitlements to
+   be a *subset* of what the profile grants, so a capability you never enabled
+   fails the archive. With `auto_signing = true` Xcode can often register it for
+   you mid-build; with a pinned `provisioning_profile` it cannot, and the profile
+   must already carry the entitlement. `build` and `doctor` both cross-check the
+   declared keys against a pinned profile and name any it does not grant, rather
+   than letting `xcodebuild` fail with a message that points at neither
+   (see [iOS CLI](04-cli-ios.md#kivyforge-build)).
+
 6. **Decide automatic vs. manual signing:**
    - `auto_signing = true` (default) → every signing `xcodebuild` invocation gets
      `-allowProvisioningUpdates`, so Xcode registers the App ID and

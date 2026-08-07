@@ -290,13 +290,25 @@ The only case that historically required an explicit per-app framework list was 
 
 ```toml
 [tool.kivy.ios.entitlements]
-"com.apple.security.network.client" = true
-"com.apple.developer.healthkit" = false
+"com.apple.developer.healthkit" = true                                  # bool
+"aps-environment" = "development"                                       # string
+"com.apple.security.application-groups" = ["group.org.example.myapp"]   # list
 ```
 
 - **Type**: table of plist key → plist value (bool, string, or list).
-- **Semantics**: written verbatim into the generated `<app>.entitlements` file. Pass-through; no Kivy-specific validation.
+- **Semantics**: written verbatim into the generated `<app>.entitlements` file. Pass-through — kivyforge never rewrites a value or infers a key you did not declare.
 - iOS-only.
+
+> **Entitlements are not self-service.** Most entitlement keys correspond to a
+> **capability that must be enabled on your App ID** at developer.apple.com;
+> `codesign` requires the app's entitlements to be a *subset* of what the
+> provisioning profile grants. Declaring a key here does not create that
+> capability — it only asks for it. Because a mismatch otherwise fails deep
+> inside `xcodebuild` with a message that names neither this table nor the
+> portal action that fixes it, `kivyforge build` cross-checks declared keys
+> against the pinned profile before signing, and `kivyforge doctor` reports the
+> same comparison. See [iOS CLI §`kivyforge build`](04-cli-ios.md#kivyforge-build) for
+> the exact behavior under automatic vs. manual signing.
 
 ### `[tool.kivy.ios.signing]`
 
