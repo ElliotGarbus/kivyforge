@@ -27,6 +27,7 @@ from kivyforge.config.icons import IconSourceError
 from kivyforge.lock import LockError, is_in_sync
 from kivyforge.platforms.base import HostCapabilityError
 
+from .entitlements import preflight_entitlements
 from .lock import load
 from .materialize import materialize_project
 from .staging import StagingError, create_staging
@@ -76,8 +77,18 @@ def ios_build(
     if target is not None:
         try:
             preflight_signing(config, target, team_id_flag=team_id)
+            ungranted = preflight_entitlements(config, project_root, target)
         except SigningError as exc:
             raise ToolchainError(str(exc)) from exc
+        if ungranted:
+            # auto_signing is on; -allowProvisioningUpdates may still register
+            # these, so name them rather than blocking the build.
+            click.echo(
+                "Warning: entitlements not granted by the pinned provisioning "
+                f"profile: {', '.join(ungranted)}\n"
+                "  auto_signing is on, so Xcode may register them at build time.",
+                err=True,
+            )
 
     prepare_build(
         config,

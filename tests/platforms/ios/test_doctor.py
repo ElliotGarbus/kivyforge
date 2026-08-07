@@ -258,7 +258,9 @@ class TestRunModes:
     def test_environment_mode_skips_project(self, fake_probe):
         results = run_checks(fake_probe, kivyforge_version="3.0.0", config=None)
         skipped = [r for r in results if r.status is Status.SKIP]
-        assert len(skipped) == 10
+        assert len(skipped) == 11
+        # Every project check must be represented, not silently dropped.
+        assert "Entitlements vs. profile" in {r.name for r in skipped}
 
     def test_project_mode_runs_all(self, fake_probe, config, tmp_path):
         results = run_checks(

@@ -22,6 +22,12 @@ from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
 
+from .entitlements import (
+    ProfileError,
+    missing_entitlements,
+    read_profile,
+    resolve_profile_path,
+)
 from .lock import load
 from .lock.model import Lockfile
 
@@ -155,9 +161,8 @@ def check_provisioning_profile(config: Config, project_root: Path) -> CheckResul
     profile = config.ios_required.signing.provisioning_profile
     if not profile:
         return CheckResult("Provisioning profile", Status.PASS, "not set")
-    path = (
-        (project_root / profile) if not Path(profile).is_absolute() else Path(profile)
-    )
+    path = resolve_profile_path(config, project_root)
+    assert path is not None  # non-empty provisioning_profile always resolves
     if not path.exists():
         return CheckResult(
             "Provisioning profile",
@@ -166,6 +171,58 @@ def check_provisioning_profile(config: Config, project_root: Path) -> CheckResul
             hint="point provisioning_profile at an existing .mobileprovision.",
         )
     return CheckResult("Provisioning profile", Status.PASS, profile)
+
+
+def check_entitlements_vs_profile(config: Config, project_root: Path) -> CheckResult:
+    """Declared entitlements must be a subset of what the pinned profile grants.
+
+    FAIL under manual signing (the pinned profile is the one that will sign, so a
+    missing key is a certain ``codesign`` failure); WARN under automatic signing,
+    where ``-allowProvisioningUpdates`` may register the capability mid-build.
+    """
+    name = "Entitlements vs. profile"
+    declared = config.ios_required.entitlements
+    if not declared:
+        return CheckResult(name, Status.SKIP, "no entitlements declared")
+
+    path = resolve_profile_path(config, project_root)
+    if path is None:
+        return CheckResult(name, Status.SKIP, "no provisioning_profile pinned")
+    if not path.exists():
+        # The Provisioning profile check already FAILs on a missing file.
+        return CheckResult(name, Status.SKIP, f"{path.name} not found")
+
+    try:
+        profile = read_profile(path)
+    except ProfileError as exc:
+        return CheckResult(
+            name,
+            Status.WARN,
+            str(exc),
+            hint="entitlements could not be verified against the profile.",
+        )
+
+    missing = missing_entitlements(declared, profile.entitlements)
+    if not missing:
+        return CheckResult(
+            name, Status.PASS, f"{len(declared)} granted by {profile.name}"
+        )
+
+    auto = config.ios_required.signing.auto_signing
+    app_id = f" on App ID {profile.app_id}" if profile.app_id else ""
+    hint = (
+        f"enable the matching capability{app_id} at developer.apple.com and "
+        "regenerate the profile, or remove the key from "
+        "[tool.kivy.ios.entitlements]."
+    )
+    if auto:
+        hint += " auto_signing is on, so Xcode may register it at build time."
+    return CheckResult(
+        name,
+        Status.WARN if auto else Status.FAIL,
+        f"not granted by {profile.name}: {', '.join(missing)}",
+        hint=hint,
+    )
 
 
 def check_find_links(config: Config, project_root: Path) -> CheckResult:
@@ -353,6 +410,7 @@ def run_ios_checks(
             "App source directory",
             "Signing identity",
             "Provisioning profile",
+            "Entitlements vs. profile",
             "App icon",
             "Swift package toolchain",
             "find_links directories",
@@ -368,6 +426,7 @@ def run_ios_checks(
         C.check_app_dir(config, project_root),
         check_signing_identity(probe, config),
         check_provisioning_profile(config, project_root),
+        check_entitlements_vs_profile(config, project_root),
         check_app_icon(config, project_root),
         check_swift_toolchain(probe, config),
         check_find_links(config, project_root),
