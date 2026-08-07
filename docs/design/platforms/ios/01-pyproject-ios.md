@@ -305,9 +305,9 @@ The only case that historically required an explicit per-app framework list was 
 > provisioning profile grants. Declaring a key here does not create that
 > capability — it only asks for it. Because a mismatch otherwise fails deep
 > inside `xcodebuild` with a message that names neither this table nor the
-> portal action that fixes it, `kivyforge build` cross-checks declared keys
-> against the pinned profile before signing, and `kivyforge doctor` reports the
-> same comparison. See [iOS CLI §`kivyforge build`](04-cli-ios.md#kivyforge-build) for
+> portal action that fixes it, `kivyforge build` and `kivyforge run --device`
+> cross-check declared keys against the pinned profile before signing, and
+> `kivyforge doctor` reports the same comparison. See [iOS CLI §`kivyforge build`](04-cli-ios.md#kivyforge-build) for
 > the exact behavior under automatic vs. manual signing.
 
 ### `[tool.kivy.ios.signing]`

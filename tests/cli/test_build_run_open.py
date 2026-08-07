@@ -20,6 +20,7 @@ from kivyforge.platforms.ios.lock import (
     dumps,
 )
 from kivyforge.platforms.ios.xcode import runner as runner_mod
+from tests.platforms.ios.test_entitlements import write_profile
 
 # These orchestrate iOS build/run/open, which stage the symlinked <app>-ios/app
 # tree; skip on hosts without the symlink privilege (stock Windows).
@@ -176,6 +177,78 @@ class TestBuildStep7:
             result = runner.invoke(build, ["--device"])
             assert result.exit_code != 0
             assert "code signing required" in result.output
+
+
+def _relock(root: Path, text: str) -> None:
+    """Rewrite pyproject and re-pin its hash so the drift check stays happy."""
+    root.joinpath("pyproject.toml").write_text(text)
+    lock = Lockfile(
+        requires_python=">=3.15",
+        packages=(),
+        python_xcframework=PythonXcframework(
+            version="3.15.0", url="https://e/p.tar.gz", sha256="c" * 64
+        ),
+        kivyforge_version="3.0.0.dev0",
+        generated_at="t",
+        pyproject_sha256=compute_pyproject_sha256(text),
+        tool_kivyforge_schema_version=1,
+    )
+    root.joinpath("pylock.ios.toml").write_text(dumps(lock))
+
+
+def _project_with_ungranted_entitlement(fs: str, *, auto_signing: bool) -> Path:
+    """A project declaring HealthKit against a profile that grants nothing."""
+    root = _write_project(fs)
+    write_profile(root / "dev.mobileprovision", {})
+    # [tool.kivy.ios.signing] is the last table in PYPROJECT, so these append to it.
+    _relock(
+        root,
+        root.joinpath("pyproject.toml").read_text()
+        + 'provisioning_profile = "dev.mobileprovision"\n'
+        + f"auto_signing = {str(auto_signing).lower()}\n"
+        '\n[tool.kivy.ios.entitlements]\n"com.apple.developer.healthkit" = true\n',
+    )
+    return root
+
+
+class TestEntitlementsPreflight:
+    """codesign needs app entitlements ⊆ profile entitlements; catch it up front."""
+
+    def test_device_build_fails_fast_under_manual_signing(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _project_with_ungranted_entitlement(fs, auto_signing=False)
+            result = runner.invoke(build, ["--device"])
+            assert result.exit_code != 0
+            assert "com.apple.developer.healthkit" in result.output
+            assert "developer.apple.com" in result.output
+
+    def test_device_build_warns_under_auto_signing(
+        self, runner, tmp_path, record_xcodebuild
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _project_with_ungranted_entitlement(fs, auto_signing=True)
+            result = runner.invoke(build, ["--device"])
+            assert result.exit_code == 0, result.output
+            assert "com.apple.developer.healthkit" in result.output
+            # -allowProvisioningUpdates may still register it, so the build runs.
+            assert any("xcodebuild" in " ".join(c) for c in record_xcodebuild)
+
+    def test_run_device_is_checked_too(self, runner, tmp_path, record_xcodebuild):
+        # `run` signs via its own xcodebuild call rather than going through
+        # ios_build, so it must repeat the check rather than inherit it.
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _project_with_ungranted_entitlement(fs, auto_signing=False)
+            result = runner.invoke(run_cmd, ["--device"])
+            assert result.exit_code != 0
+            assert "com.apple.developer.healthkit" in result.output
+
+    def test_run_no_build_skips_the_check(self, runner, tmp_path, record_xcodebuild):
+        # --no-build installs an already-signed .app: signing already happened,
+        # so there is nothing to pre-empt and the check must not fire.
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _project_with_ungranted_entitlement(fs, auto_signing=False)
+            result = runner.invoke(run_cmd, ["--device", "--no-build"])
+            assert "com.apple.developer.healthkit" not in result.output
 
 
 class TestRun:

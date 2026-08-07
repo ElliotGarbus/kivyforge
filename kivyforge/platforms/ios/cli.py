@@ -58,6 +58,20 @@ from .xcode.commands import SIGNING_IDENTITY_ENV, resolve_signing_identity
 # ---- build --------------------------------------------------------------- #
 
 
+def _ungranted_warning(keys: list[str]) -> str:
+    """Non-fatal note for entitlements the pinned profile does not grant.
+
+    Only reachable under ``auto_signing = true``, where ``xcodebuild`` gets
+    ``-allowProvisioningUpdates`` and may register the capability mid-build —
+    so these are named rather than treated as a certain failure.
+    """
+    return (
+        "Warning: entitlements not granted by the pinned provisioning profile: "
+        f"{', '.join(keys)}\n"
+        "  auto_signing is on, so Xcode may register them at build time."
+    )
+
+
 def ios_build(
     project_root: Path,
     *,
@@ -81,14 +95,7 @@ def ios_build(
         except SigningError as exc:
             raise ToolchainError(str(exc)) from exc
         if ungranted:
-            # auto_signing is on; -allowProvisioningUpdates may still register
-            # these, so name them rather than blocking the build.
-            click.echo(
-                "Warning: entitlements not granted by the pinned provisioning "
-                f"profile: {', '.join(ungranted)}\n"
-                "  auto_signing is on, so Xcode may register them at build time.",
-                err=True,
-            )
+            click.echo(_ungranted_warning(ungranted), err=True)
 
     prepare_build(
         config,
@@ -379,6 +386,12 @@ def ios_run(
         if not no_build:
             if target == "device":
                 preflight_signing(config, "device")
+                # run signs via its own xcodebuild invocation rather than going
+                # through ios_build, so the entitlements check must repeat here.
+                # --no-build installs an already-signed .app: nothing to pre-empt.
+                ungranted = preflight_entitlements(config, project_root, "device")
+                if ungranted:
+                    click.echo(_ungranted_warning(ungranted), err=True)
             prepare_build(
                 config,
                 project_root,

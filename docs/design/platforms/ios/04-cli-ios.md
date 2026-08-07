@@ -169,6 +169,8 @@ Flags:
 
 If the lock is out of date (drift check fails in step 1), `run` propagates the same error as `kivyforge build` and exits non-zero before doing anything else.
 
+`run --device` signs, so it applies the same **signing and entitlements pre-flights** described under [`kivyforge build`](#kivyforge-build) — it invokes `xcodebuild` itself rather than delegating to `build`, so the checks are repeated rather than inherited. `--no-build` skips both: it installs an already-signed `.app`, so signing has already happened and there is nothing left to pre-empt.
+
 **Install and launch sequence:**
 
 1. For `--simulator`: boot the target simulator if not already running (`xcrun simctl boot`), install the `.app` (`xcrun simctl install`), launch (`xcrun simctl launch --console-pty`).
