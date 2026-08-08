@@ -266,6 +266,15 @@ The consumer verifies both the file path and the source's `package` declaration.
 This closes the substitution path described above, by construction rather than
 by vigilance.
 
+**The namespace also bounds `[android.proguard].keep`**, because a keep rule is a
+capability rather than data. R8 shrinking is opt-in and global: a single
+`-keep class ** { *; }` from a transitive dependency silently disables it for the
+entire app, defeating a setting the app author deliberately turned on. So every
+class-matching pattern a package contributes MUST resolve within its declared
+`java_namespace`, and a consumer MUST reject one that does not — naming the
+distribution and the offending rule. A package may protect its own reflected
+classes; it may not make policy for anyone else's.
+
 ### 2. `required` is app-only
 
 A package may declare the features its permissions imply, but never their
