@@ -39,6 +39,7 @@ Two concrete data points:
   cannot subclass. Nothing consumes the packaged copy — p4a's `add_src` takes a
   *repo-relative* path — so the app author still hunts it down in site-packages
   and hand-adds three Bluetooth permissions.
+
 This is not Android-only. The same gap exists on iOS — a package needing an SPM
 dependency and an `NSCameraUsageDescription` string — and it is **sharper**
 there: a missing Android permission yields a catchable denial, while a missing
@@ -164,13 +165,13 @@ from discovery, so excluding them from the Python asset bundle is exact.
 contract = "1"
 
 [android]
-java-namespace = "org.example.mypkg"
+java_namespace = "org.example.mypkg"
 
 [android.requires]
-compile-sdk = 34
-min-sdk = 24
+compile_sdk = 34
+min_sdk = 24
 
-[android.source]
+[android.src]
 java = ["java"]              # relative to this file
 kotlin = []
 
@@ -178,42 +179,82 @@ kotlin = []
 dependencies = ["com.google.firebase:firebase-messaging:23.4.0"]
 repositories = []
 
-[android.manifest]
-permissions = ["INTERNET", "POST_NOTIFICATIONS"]
+[android.permissions]
+uses = ["INTERNET", "POST_NOTIFICATIONS"]
 features = [{ name = "android.hardware.bluetooth_le" }]   # `required` not settable
 
-[[android.manifest.services]]
-name = "org.example.mypkg.PushService"
+[[android.components]]
+kind = "service"             # service | activity | receiver | provider
+name = "org.example.mypkg.PushService"   # a class shipped in [android.src]
 exported = false             # MUST be false; true is rejected
 
 [android.proguard]
 keep = ["-keep class org.example.mypkg.** { *; }"]
 
 [ios]
-swift-packages = [
-  { url = "https://github.com/example/shim", requirement = { from = "1.2.0" }, products = ["Shim"] },
-]
-swift-symbol-prefix = "MyPkg"
+swift_symbol_prefix = "MyPkg"
 
 [ios.requires]
-deployment-target = "15.0"
+deployment_target = "15.0"
 
-[ios.source]
+[ios.native.swift_packages]
+Shim = { url = "https://github.com/example/shim", requirement = { from = "1.2.0" }, products = ["Shim"] }
+
+[ios.src]
 swift = ["swift"]            # small @objc shims only
 
-[ios.info-plist]
+[ios.info_plist]
 NSBluetoothAlwaysUsageDescription = "Connects to your fitness tracker."
 
-[[ios.entitlements-required]]
+[[ios.entitlements_required]]
 key = "aps-environment"
 reason = "Push notification delivery"
 ```
+
+### Relationship to the app's own schema
+
+Much of this vocabulary already exists in `[tool.kivy.<platform>]`. That is
+**deliberate, not redundant**: the two say the same kinds of things with a
+different *speaker* and different *authority*. The precedent is `Requires-Dist`
+in a wheel versus `dependencies` in the app's `pyproject.toml` — identical
+syntax, two speakers, merged by the consumer, and nobody calls it duplication.
+The speaker *is* the information: it determines provenance, review status, and
+what the declaration is allowed to do.
+
+Names match kivyforge's spelling wherever the semantics are identical, so nobody
+carries a translation table. Where they diverge, the divergence is the point.
+
+| Sidecar | App equivalent | Who may set what |
+| --- | --- | --- |
+| `[android].java_namespace` | — | package only; the app owns every namespace by default |
+| `[android.requires].compile_sdk` / `min_sdk` | `[tool.kivy.android].min_sdk` | app **sets**; package declares a **floor** ([obligation 6](#consumer-obligations)) |
+| `[android.src].java` / `kotlin` | `[tool.kivy.android.src]` | identical |
+| `[android.gradle]` | `[tool.kivy.android.gradle]` | identical |
+| `[android.permissions].uses` | `[tool.kivy.android.permissions].uses` | identical |
+| `[android.permissions].features` | `[tool.kivy.android.permissions].features` | package may name a feature; **only the app** may set `required` |
+| `[[android.components]]` | `[[tool.kivy.android.activities]]` | shapes differ — see below |
+| `[android.proguard].keep` | *(none — gap in kivyforge)* | app has `build_settings.minify` with nowhere to declare keep rules |
+| `[ios].swift_symbol_prefix` | — | package only |
+| `[ios.requires].deployment_target` | `[tool.kivy.ios].deployment_target` | app **sets**; package declares a **floor** |
+| `[ios.native.swift_packages]` | `[tool.kivy.ios.native.swift_packages]` | identical |
+| `[ios.src].swift` | — | package only; an app puts Swift in its own Xcode target |
+| `[ios.info_plist]` | `[tool.kivy.ios.info_plist]` | identical |
+| `[[ios.entitlements_required]]` | `[tool.kivy.ios.entitlements]` | app **writes values**; package **requests a capability** it cannot grant |
+
+**Why `components` rather than `services`.** kivyforge's
+`[[tool.kivy.android.services]]` *generates* a `PythonService` subclass running a
+Python `entry_point`. A package-declared component is the opposite: a Java class
+the package already ships, registered in the manifest. That is kivyforge's
+`activities` shape (declare a class provided via `src`), not its `services`
+shape. Reusing the name `services` for different semantics would be a worse trap
+than a different name, so the sidecar uses one `components` array with an
+explicit `kind`.
 
 ## The three rules
 
 ### 1. Namespace ownership
 
-A package declares `java-namespace` and may contribute Java/Kotlin only under it.
+A package declares `java_namespace` and may contribute Java/Kotlin only under it.
 The consumer verifies both the file path and the source's `package` declaration.
 
 - Reserved prefixes are rejected outright: `org.kivy.android`, `org.libsdl.app`,
@@ -269,12 +310,12 @@ A conforming consumer **MUST**:
    component on a package's declaration alone.
 5. Record each package's contribution with a content hash, and fail the build when
    the effective set drifts from what was recorded.
-6. Fail when a package's `requires` (compile-sdk, min-sdk, deployment-target)
+6. Fail when a package's `requires` (compile_sdk, min_sdk, deployment_target)
    exceeds the app's configured value, naming the package.
 7. Exclude sidecar directories from the Python payload.
 8. Read the sidecar **without importing** the package.
 9. Name the contributing distribution in every diagnostic.
-10. Treat `entitlements-required` as a prerequisite to **report**, never a value
+10. Treat `entitlements_required` as a prerequisite to **report**, never a value
     to write.
 11. **Fail** when one distribution declares more than one entry in the group,
     naming it — rather than picking one or merging them silently.
@@ -324,12 +365,12 @@ simulator slices), never a bare `.dylib`.
 
 Note the Swift namespace guarantee is **weaker** than the Java one: Swift source
 compiled into the app target shares one module with no package namespace, so
-`swift-symbol-prefix` is advisory — the consumer attributes a redeclaration error
+`swift_symbol_prefix` is advisory — the consumer attributes a redeclaration error
 to the contributing package rather than preventing it. Documented as weaker
 rather than pretended equivalent.
 
 **Version coupling needs almost no machinery.** Three things were conflated.
-Build-toolchain constraints (`compile-sdk`, `deployment-target`) need schema
+Build-toolchain constraints (`compile_sdk`, `deployment_target`) need schema
 fields and obligation 6. Runtime library coupling ("I need pyjnius ≥ 1.6") is
 already a normal Python dependency. Bootstrap coupling needs *nothing*, because
 rule 1 forbids packages from writing into bootstrap namespaces — they can only
