@@ -105,7 +105,7 @@ file, covering every platform the package supports:**
 
 ```toml
 [project.entry-points."native-integration.v1"]
-native = "mypkg/_native/native.toml"
+native = "mypkg._native"
 ```
 
 - Entry points are a [PEP 621](https://peps.python.org/pep-0621/) field, so
@@ -113,9 +113,19 @@ native = "mypkg/_native/native.toml"
   maturin. This is why the sidecar is static package data rather than something a
   custom PEP 517 backend generates: a backend-based design needs a wrapper per
   backend, forever, and locks out every backend nobody wrote one for.
-- The value is a distribution-relative path resolved with
-  `importlib.metadata.Distribution.locate_file()`. **The package is never
-  imported.** This is a hard requirement, not an optimization.
+- **The value is a module reference, not a path**, and the sidecar is
+  `native.toml` inside it. The
+  [entry-points specification](https://packaging.python.org/en/latest/specifications/entry-points/)
+  defines a value as an object reference — `module` optionally followed by
+  `:attr` — so a bare module name is conformant while a filesystem path is not.
+  Nothing would *break* if a path were used (no installer validates the value,
+  and only `EntryPoint.load()` parses it, which a consumer never calls), but the
+  audience for this convention is exactly the people who would notice.
+- The consumer maps `mypkg._native` → `mypkg/_native/native.toml` and reads it
+  with `importlib.metadata.Distribution.locate_file()`. **The package is never
+  imported** — a module *reference* is not a module *import*. This is a hard
+  requirement, not an optimization: the build host is a desktop, and an
+  Android-only package may not be importable there at all.
 - `.v1` in the group name is the version gate: a v2 consumer ignores v1 groups
   outright, which is cleaner than negotiating inside the file.
 
@@ -150,11 +160,17 @@ Payload lives inside the package directory, shipped as ordinary package data:
 ```
 mypkg/
   __init__.py
-  _native/
-    native.toml
+  _native/                ← the module the entry point references
+    __init__.py
+    native.toml           ← fixed name; the entry point does not spell it
     java/org/example/mypkg/Bridge.java
     swift/MyPkgShim.swift
 ```
+
+The directory needs an `__init__.py` only so it is a real module for the entry
+point to reference; nothing ever imports it. `native.toml` sits at a **fixed
+name** inside — the entry point identifies the module, convention supplies the
+filename, which is what keeps the value a conformant object reference.
 
 Nothing lands at the site-packages root. The builder knows every sidecar path
 from discovery, so excluding them from the Python asset bundle is exact.
