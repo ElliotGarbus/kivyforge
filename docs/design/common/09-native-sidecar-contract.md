@@ -317,8 +317,10 @@ A conforming consumer **MUST**:
    file or copy order.
 4. Never grant a permission, promote a feature to required, or accept an exported
    component on a package's declaration alone.
-5. Record each package's contribution with a content hash, and fail the build when
-   the effective set drifts from what was recorded.
+5. Record each package's resolved contribution durably and in **reviewable**
+   form, and fail the build when the effective set drifts from that record. See
+   [Recording and review](#recording-and-review) — this obligation is about
+   disclosure, not integrity.
 6. Fail when a package's `requires` (compile_sdk, min_sdk, deployment_target)
    exceeds the app's configured value, naming the package.
 7. Exclude sidecar directories from the Python payload.
@@ -329,9 +331,72 @@ A conforming consumer **MUST**:
 11. **Fail** when one distribution declares more than one entry in the group,
     naming it — rather than picking one or merging them silently.
 
-Obligation 5 is the review gate. The lock diff *is* the review — one deliberate
-look during code review, not an interactive prompt. It is also the obligation
-that cannot be retrofitted: get it into v1 or it never arrives.
+Obligation 5 is the review gate, and the one that cannot be retrofitted: get it
+into v1 or it never arrives.
+
+## Recording and review
+
+This obligation is easy to over-engineer. Start from what a lock already gives
+you.
+
+**Integrity is already solved — do not re-solve it.** A package's sidecar ships
+*inside its wheel*, and the lock already pins that wheel by SHA-256. The
+declaration is therefore transitively immutable: it cannot change without the
+wheel hash changing, and a changed wheel hash is already a lock diff. A separate
+hash over the sidecar would be redundant for anything installed from a wheel.
+
+**Disclosure is the actual gap.** What a wheel hash does *not* tell a reviewer is
+what the declaration *says*. This diff:
+
+```
+- kivy-firebase-push 1.0.0  sha256:aaa…
++ kivy-firebase-push 1.1.0  sha256:bbb…
+```
+
+reads identically whether 1.1.0 fixed a typo or began requesting
+`RECEIVE_BOOT_COMPLETED` and registering a boot receiver. A hash cannot carry
+that, and it is the entire point of the gate.
+
+**So the record is the resolved contribution, in readable form, per package.**
+For kivyforge that is the existing per-package lock extension, sitting beside the
+wheel pin that already secures it:
+
+```toml
+[[packages]]
+name = "kivy-firebase-push"
+version = "1.1.0"
+
+[packages.tool.kivyforge.native_integration]
+java_namespace = "org.kivyschool.firebase"
+gradle_dependencies = ["com.google.firebase:firebase-messaging:23.4.0"]
+permissions = ["INTERNET", "POST_NOTIFICATIONS", "RECEIVE_BOOT_COMPLETED"]
+components = ["org.kivyschool.firebase.PushService"]
+java_sources = 2
+```
+
+The same bump now reads as `+ RECEIVE_BOOT_COMPLETED` in a pull request — one
+line, reviewed where code review already happens, with no interactive prompt for
+anyone to click through.
+
+**Path and editable installs do need their own hash**, because nothing pins them:
+there is no wheel and no wheel hash. For those the consumer records a content
+hash over the sidecar and every file it references, exactly as
+[`include_files`](../platforms/android/01-pyproject-android.md) does today, and
+re-locking is always the fix.
+
+**Drift is a build-time failure.** `build` recomputes the effective set from the
+installed distributions and fails when it differs from the record, naming the
+package and the delta. That catches an install that bypassed the lock, an
+editable package edited in place, and a resolver that quietly chose differently.
+
+**What the contract mandates, and what it leaves to the consumer.** Not every
+toolchain has a lockfile — Briefcase and python-for-android do not — so
+requiring one would make the contract unimplementable for them. The normative
+requirement is therefore the *property*, not the file format: a change in what
+packages contribute **MUST NOT pass silently**, and the consumer MUST keep a
+durable record to diff against. A lock entry is kivyforge's mechanism and the
+recommended one; a checksum file beside the generated project would satisfy the
+contract equally.
 
 ## Platform divergences
 
