@@ -2,14 +2,15 @@
 
 A convention letting a **Python package declare the native material it needs** —
 Java/Kotlin source, Maven coordinates, permissions, SPM packages, Info.plist
-keys — so a mobile build tool can discover and stage it, instead of every app
-author transcribing it by hand from a README.
+keys — so an app build tool can discover and stage it, instead of every app
+author transcribing it by hand from a README. The declaration is discovered
+through a `native-integration.v1` entry point; v1 scopes it to Android and iOS.
 
 > **Status: proposal. Nothing here is implemented.** This document records the
 > design and the reasoning behind each decision so the shape can be reviewed
 > before any code exists. It is deliberately written to be readable by
-> maintainers of *other* toolchains (Briefcase, ksproject, python-for-android,
-> Chaquopy) — the convention is worthless if only kivyforge reads it.
+> maintainers of *other* toolchains (Briefcase, python-for-android, Chaquopy) —
+> the convention is worthless if only kivyforge reads it.
 
 ## Why it exists
 
@@ -23,7 +24,7 @@ the person on the hook may not know it is in the tree.
 **The package knows what it needs; the app author is the one obliged to say it.**
 That inversion is the whole problem.
 
-Three concrete data points:
+Two concrete data points:
 
 - **[KivMob](https://github.com/MichaelStott/KivMob)** (AdMob for Kivy, on PyPI)
   requires five separate hand-copied `buildozer.spec` settings — a Maven
@@ -38,14 +39,16 @@ Three concrete data points:
   cannot subclass. Nothing consumes the packaged copy — p4a's `add_src` takes a
   *repo-relative* path — so the app author still hunts it down in site-packages
   and hand-adds three Bluetooth permissions.
-- **[ksproject](https://github.com/kivy-school/ksproject)** has a working
-  end-to-end implementation of this idea (see [Prior art](#prior-art-ksproject)).
-  The mechanism is proven; the guardrails are what is missing.
-
 This is not Android-only. The same gap exists on iOS — a package needing an SPM
 dependency and an `NSCameraUsageDescription` string — and it is **sharper**
 there: a missing Android permission yields a catchable denial, while a missing
 iOS usage-description string terminates the app.
+
+The mechanism is not speculative — working implementations of the general idea
+exist in the Kivy ecosystem, notably
+[ksproject](https://github.com/kivy-school/ksproject). What this document adds is
+the provenance and review discipline: per-package attribution, namespace
+ownership, hashes in the lock, and normative obligations on the consumer.
 
 ## Scope
 
@@ -66,76 +69,78 @@ handles stays there.** This contract covers only what wheels have no story for �
 the Gradle/JVM and Xcode/SPM side. That keeps it small and makes it defensible
 without asking wheels to do anything new about binaries.
 
-## Prior art: ksproject
+## Why per-package, not a merged tree
 
-ksproject ships this today. Packages declare native material in their own
-`pyproject.toml`; custom PEP 517 backends (`ksp-builder`, `pyjnius-builder`)
-inject it into the wheel as dot-prefixed root directories; the build tool scans
-installed site-packages and stages what it finds.
+The tempting implementation is to let every package write its native material
+into one shared location under `site-packages` — a single `.java/` tree the
+builder stages wholesale — and let the installer do the merging for free. It is
+less code, and it is the wrong shape.
 
-**Worth keeping:**
+**A merged tree destroys provenance at install time.** Once the files are
+overlaid, the builder cannot tell which distribution contributed which file, and
+everything downstream becomes impossible: no collision detection, no per-package
+hashing, no review gate, and no way to report *which* package added a permission.
+Every obligation in this document depends on knowing who contributed what.
 
-- Declarative config in the package's own `pyproject.toml`
-- Separating native assets from the Python payload (their staging task excludes
-  dot-dirs from the asset bundle)
-- Merge-with-dedup for coordinates and permissions
-- Import-free discovery — the build host is a desktop, and an Android-only
-  package may not import there
-- Following path/workspace dependencies, so monorepo development behaves like
-  published wheels
-- **No AAR channel.** Whether deliberate or not, this is the right call.
+It also opens a code-substitution path. A shared source tree is last-writer-wins
+by construction, so a package shipping `org/kivy/android/PythonActivity.java`
+silently replaces the bootstrap's own Activity — unauthenticated, reachable by any
+transitive dependency, with no signal at any stage. That is not a hypothetical
+shape: `denver_sw351` already writes into `org/kivy/android/` today, because "put
+my glue next to the bootstrap's glue" is the obvious instinct when the tree is
+shared.
 
-**The one architectural change:** ksproject merges **by filesystem overlay** —
-every package writes into a shared `site_packages/<abi>/.java/` tree, so pip does
-the merging for free. Elegant, and it **destroys provenance at install time**. By
-the time the builder looks, it cannot tell which distribution contributed which
-file. Every gap follows from that single choice: no collision detection, no
-per-package hashing, no review gate, no way to report who added a permission.
-
-Concretely, in ksproject today:
-
-- `pip_install.py` copies local dot-dirs with
-  `shutil.copytree(..., dirs_exist_ok=True)` — silent overwrite, and the project
-  itself is copied *first*, so a local dependency overwrites the app's own Java.
-- The generated Gradle `Copy` task stages `site_packages/<abi>/.java/` into
-  `app/src/main/java/` **after** the bootstrap's own `PythonActivity.java`,
-  `PythonService.java`, and `GenericBroadcastReceiver.java` are written there.
-  A package shipping `.java/org/kivy/android/PythonActivity.java` silently
-  replaces the bootstrap's Activity.
-
-That last one is an unauthenticated code-substitution path into the app's entry
-point, reachable by any transitive dependency. It is not hypothetical-shaped:
-`denver_sw351` already writes into `org/kivy/android/` on the p4a side, because
-"put my glue next to the bootstrap's glue" is the obvious instinct.
-
-> Verified by reading the source, not by executing a collision. Reproduce before
-> reporting.
-
-**So: contributions stay inside the package, and the builder walks
-distributions rather than a merged tree.** Provenance comes free, and namespace
-enforcement, hashing, gating, and reporting all become possible.
+**So contributions stay inside the package and the builder walks
+distributions.** Provenance comes free, and namespace enforcement, hashing,
+gating, and reporting all become possible. The merge becomes explicit code the
+consumer owns, rather than a side effect of unpacking order.
 
 ## Mechanism
 
 ### Discovery
 
-An entry point marks participation and points at the sidecar:
+An entry point marks participation and points at the sidecar. **One entry, one
+file, covering every platform the package supports:**
 
 ```toml
-[project.entry-points."mobile-native.v1"]
-android = "mypkg/_native/android.toml"
-ios = "mypkg/_native/ios.toml"
+[project.entry-points."native-integration.v1"]
+native = "mypkg/_native/native.toml"
 ```
 
 - Entry points are a [PEP 621](https://peps.python.org/pep-0621/) field, so
   **every build backend supports them** — setuptools, hatchling, flit, pdm,
-  maturin. This is the reason to prefer static data over ksproject's custom-backend
-  approach, which needs a wrapper per backend forever.
+  maturin. This is why the sidecar is static package data rather than something a
+  custom PEP 517 backend generates: a backend-based design needs a wrapper per
+  backend, forever, and locks out every backend nobody wrote one for.
 - The value is a distribution-relative path resolved with
   `importlib.metadata.Distribution.locate_file()`. **The package is never
   imported.** This is a hard requirement, not an optimization.
 - `.v1` in the group name is the version gate: a v2 consumer ignores v1 groups
   outright, which is cleaner than negotiating inside the file.
+
+**The declaration is not in `pyproject.toml`.** It cannot be: `pyproject.toml` is
+a build-time input, and arbitrary `[tool.*]` tables do not survive into the wheel
+or into `site-packages` — only PEP 621 metadata a backend translates into
+`.dist-info/` does. Consumers read *installed* distributions, so they never see
+it. That is exactly why a design that authors the schema in `pyproject.toml`
+needs a custom build backend to copy it into the wheel, and why this one uses
+static package data instead.
+
+**One file, not one per platform**, so the `contract` version is declared once
+and validated in a single read before anything is trusted. Adding a platform
+later is a new table, not a new entry point plus a new file.
+
+Because the platform lives *inside* the file, the entry point's **name** carries
+no meaning — nothing in the protocol reads it. Both sides are therefore pinned:
+
+- A producer **MUST** use the literal name `native`.
+- A consumer **MUST** iterate every entry in the group and ignore the name
+  regardless.
+
+Strict in what you emit, liberal in what you accept. Without the second rule a
+consumer would inevitably look up `"native"` by name and *silently skip* any
+package that labelled it differently — the package installs, the build succeeds,
+and the permission simply never lands.
 
 ### Layout
 
@@ -145,13 +150,13 @@ Payload lives inside the package directory, shipped as ordinary package data:
 mypkg/
   __init__.py
   _native/
-    android.toml
+    native.toml
     java/org/example/mypkg/Bridge.java
+    swift/MyPkgShim.swift
 ```
 
 Nothing lands at the site-packages root. The builder knows every sidecar path
-from discovery, so excluding them from the Python asset bundle is exact rather
-than a dot-prefix heuristic.
+from discovery, so excluding them from the Python asset bundle is exact.
 
 ### Schema
 
@@ -253,21 +258,28 @@ A conforming consumer **MUST**:
 
 1. Reject a `contract` major version it does not understand, rather than ignoring
    unrecognized fields.
-2. Enforce namespace ownership, and **fail** on collision — never resolve by
+2. Discover by **iterating every entry** in the `native-integration.v1` group,
+   ignoring the entry-point name — never by looking up the name `native`. A
+   name-keyed lookup silently skips any package that labelled it differently, and
+   silent skipping is the worst available failure mode here: the package
+   installs, the build succeeds, and the declaration simply never lands.
+3. Enforce namespace ownership, and **fail** on collision — never resolve by
    file or copy order.
-3. Never grant a permission, promote a feature to required, or accept an exported
+4. Never grant a permission, promote a feature to required, or accept an exported
    component on a package's declaration alone.
-4. Record each package's contribution with a content hash, and fail the build when
+5. Record each package's contribution with a content hash, and fail the build when
    the effective set drifts from what was recorded.
-5. Fail when a package's `requires` (compile-sdk, min-sdk, deployment-target)
+6. Fail when a package's `requires` (compile-sdk, min-sdk, deployment-target)
    exceeds the app's configured value, naming the package.
-6. Exclude sidecar directories from the Python payload.
-7. Read the sidecar **without importing** the package.
-8. Name the contributing distribution in every diagnostic.
-9. Treat `entitlements-required` as a prerequisite to **report**, never a value to
-   write.
+7. Exclude sidecar directories from the Python payload.
+8. Read the sidecar **without importing** the package.
+9. Name the contributing distribution in every diagnostic.
+10. Treat `entitlements-required` as a prerequisite to **report**, never a value
+    to write.
+11. **Fail** when one distribution declares more than one entry in the group,
+    naming it — rather than picking one or merging them silently.
 
-Obligation 4 is the review gate. The lock diff *is* the review — one deliberate
+Obligation 5 is the review gate. The lock diff *is* the review — one deliberate
 look during code review, not an interactive prompt. It is also the obligation
 that cannot be retrofitted: get it into v1 or it never arrives.
 
@@ -318,7 +330,7 @@ rather than pretended equivalent.
 
 **Version coupling needs almost no machinery.** Three things were conflated.
 Build-toolchain constraints (`compile-sdk`, `deployment-target`) need schema
-fields and obligation 5. Runtime library coupling ("I need pyjnius ≥ 1.6") is
+fields and obligation 6. Runtime library coupling ("I need pyjnius ≥ 1.6") is
 already a normal Python dependency. Bootstrap coupling needs *nothing*, because
 rule 1 forbids packages from writing into bootstrap namespaces — they can only
 *call* bootstrap classes, which is a loose Python-level dependency that tracks the
@@ -326,12 +338,33 @@ Kivy API and is expressible as `kivy>=2.3,<3`. An `x-<consumer>` extension
 namespace was considered and **rejected**: it hedged against a problem rule 1
 removes, and unused extension points calcify.
 
-**Naming: neutral, and no `[tool.]` table at all.** Because the sidecar is static
-data rather than backend-generated, the package's `pyproject.toml` needs only the
-entry point — there is no `[tool.X]` namespace to bikeshed. The group name avoids
-"kivy" and "kivyforge" deliberately: naming it after one toolchain guarantees the
-others never adopt it, and they are the constituency that makes this a convention
-instead of a feature.
+**Naming: `native-integration`, and no `[tool.]` table at all.** Because the
+sidecar is static data rather than backend-generated, the package's
+`pyproject.toml` needs only the entry point — there is no `[tool.X]` namespace to
+bikeshed. The group name avoids "kivy" and "kivyforge" deliberately: naming it
+after one toolchain guarantees the others never adopt it, and they are the
+constituency that makes this a convention instead of a feature.
+
+The word choice does real work, because the sidecar spans three tiers — glue
+source, dependency coordinates, and manifest declarations — and most candidates
+covered only one of them. `*-source` and `*-code` name the glue and miss the
+manifests; `*-requirements` names the declarations and misses that source
+actually ships; bare `native-*` misses that permissions and Info.plist keys are
+not native code; bare `platform-*` is too broad to mean anything.
+**"Integration" is the one word true of all three tiers**, and it is already the
+term platform SDK documentation uses for exactly this bundle — *to integrate this
+SDK: add the dependency, add the permission, add the service class*.
+
+`native-interface` was considered and rejected despite reading well: in this
+domain "native interface" is JNI (pyjnius is literally *Python Java Native
+Interface*), so it would misdirect the very maintainers the convention targets,
+and "interface" names a code boundary — which a Maven coordinate and a usage
+description string are not.
+
+"Mobile" was deliberately left out of the key. This document scopes v1 to Android
+and iOS, but macOS already has `entitlements` and Info.plist channels, so the iOS
+half has a live desktop analog; baking "mobile" into a global registry key would
+foreclose a platform kivyforge already supports.
 
 ## Out of v1
 
@@ -345,8 +378,9 @@ their own `pyproject.toml`.
 
 **Prebuilt iOS binaries** — see the Swift decision above.
 
-**Native `.so` sidecars.** ksproject's `.libs/<abi>/` is not merely redundant
-with tagged wheels, it is incompatible: encoding the ABI as a subdirectory only
+**Native `.so` sidecars.** A sidecar `.libs/<abi>/` channel is not merely
+redundant with tagged wheels, it is incompatible: encoding the ABI as a
+subdirectory only
 makes sense inside a fat `py3-none-any` wheel, which contradicts PEP 738 tagging.
 kivyforge takes the ABI from the wheel tag and rejects a nested `.libs/<abi>/` as
 malformed. See [08 — native-binaries channel](08-native-binaries-channel.md) for
@@ -357,19 +391,12 @@ the app-level equivalent.
 Deliberately sequenced so the specification *describes* something rather than
 proposing it.
 
-1. **Report the ksproject namespace issue** — independently and immediately. It
-   is a live substitution path in a shipping tool, and arriving with a concrete
-   bug and a concrete fix is a better opening than a spec proposal.
-2. **Build the reference reader as a standalone library**, not inside
+1. **Build the reference reader as a standalone library**, not inside
    `kivyforge/`. It discovers, parses, validates, and enforces — turning the
    consumer obligations from prose into code paths that a consumer gets by
    *using* the parser rather than by remembering. A parser living under
    `kivyforge/` reads as a KivyForge feature no matter what the README says.
-3. **Read ksproject's existing layout too**, as a legacy shape mapping onto the
-   same internal model, with a warning that it carries no provenance. They are
-   the one shipping implementation; inventing a third convention makes three,
-   whereas accepting theirs makes one convention with two readers immediately.
-4. **Then, if it spreads**, write it up as a PyPA interoperability specification.
+2. **Then, if it spreads**, write it up as a PyPA interoperability specification.
    The precedent is [PEP 561](https://peps.python.org/pep-0561/), not PEP 725: a
    marker file, a non-installer consumer (a type checker), and normative
    obligations on that consumer — standardized *after* the practice existed.
