@@ -334,9 +334,11 @@ A conforming consumer **MUST**:
 4. Never grant a permission, promote a feature to required, or accept an exported
    component on a package's declaration alone.
 5. Record each package's resolved contribution durably and in **reviewable**
-   form, and fail the build when the effective set drifts from that record. See
+   form; **report the delta** wherever that record changes, naming the
+   distribution and how it entered the tree; and fail the build when the
+   effective set drifts from the record. See
    [Recording and review](#recording-and-review) — this obligation is about
-   disclosure, not integrity.
+   disclosure, not integrity. Recording without reporting satisfies neither half.
 6. Fail when a package's `requires` (compile_sdk, min_sdk, deployment_target)
    exceeds the app's configured value, naming the package.
 7. Exclude sidecar directories from the Python payload.
@@ -404,6 +406,35 @@ re-locking is always the fix.
 installed distributions and fails when it differs from the record, naming the
 package and the delta. That catches an install that bypassed the lock, an
 editable package edited in place, and a resolver that quietly chose differently.
+
+**Reporting, not only recording.** The artifact is the durable half; on its own it
+is not enough. Whoever runs the command that *changes* the record is the person
+best placed to act on it, and making them wait for a code-review diff wastes that
+moment. So the consumer reports the delta where the change happens — for
+kivyforge, at `kivyforge lock`:
+
+```
+Native integrations resolved: 3 packages
+  analytics-shim 2.1.0  (via some-ui-lib)
+    + permission  ACCESS_FINE_LOCATION
+    + feature     android.hardware.location.gps  (required=false)
+```
+
+Three things a report has to carry: **which distribution**, **how it entered the
+tree**, and **the delta**. The middle one matters most for exactly the case that
+motivates the gate — a transitive dependency the app author has never heard of.
+Naming `some-ui-lib` as the path turns "what is `analytics-shim`?" into an
+actionable question.
+
+`kivyforge doctor` additionally reports the current effective set as a standing
+advisory — parallel to its implied-features check — so the state is inspectable
+without re-locking.
+
+**Disclosure is not enforcement, deliberately.** If nobody reads the diff, it
+ships. A blocking prompt in a build loop gets click-through within a week and
+then provides nothing, so the design buys something more durable instead: the
+change is **never invisible and always attributable**, before the fact in a diff
+and after the fact in a committed file. Silent merging gives neither.
 
 **What the contract mandates, and what it leaves to the consumer.** Not every
 toolchain has a lockfile — Briefcase and python-for-android do not — so
