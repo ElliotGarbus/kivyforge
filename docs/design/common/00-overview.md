@@ -62,6 +62,7 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 | 06 | [Packaging scope](06-packaging-scope.md) | Build-and-sign-the-artifact vs. external-installer principle |
 | 07 | [Runtime provider pattern](07-runtime-provider-pattern.md) | The shared `RuntimeProvider` abstraction desktop platforms (macOS, Linux, Windows) use to bridge to a relocatable CPython |
 | 08 | [Native-binaries channel](08-native-binaries-channel.md) | The shared `[tool.kivy.<platform>.native.binaries]` channel for non-wheel native code (**placeholder — revisit after Windows**) |
+| 09 | [Native-sidecar contract](09-native-sidecar-contract.md) | How a PyPI package declares the Java/Maven/SPM/manifest material it needs, so it composes instead of being hand-transcribed (**proposal — not implemented**) |
 
 ### iOS
 
