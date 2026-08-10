@@ -89,7 +89,7 @@ longer do.
 | `[[android.contributes.permissions]]` | `[tool.kivy.android.permissions].uses` | identical semantics, plus a `reason` carried into the report |
 | `[[android.contributes.features]]` | `[tool.kivy.android.permissions].features` | package may name a feature; **only the app** may set `required` |
 | `[[android.contributes.components]]` | `[[tool.kivy.android.activities]]` | shapes differ — see below; `exported_required` + reason is a request the app approves via `allow_exported` |
-| `[android.contributes.r8].keep_classes` | `[tool.kivy.android.proguard].keep` | app writes raw directives; a package writes **class patterns only**, bounded by its owned namespaces |
+| `[android.contributes.r8].keep_classes` | `[tool.kivy.android.proguard].keep` | app writes raw directives; a package writes **class patterns only**, bounded by its owned namespaces or a declared dependency's group |
 | `[ios.owns].swift_symbol_prefixes` | — | package only |
 | `[ios.requires].deployment_target` | `[tool.kivy.ios].deployment_target` | app **sets**; package declares a **floor** |
 | `[[ios.requires.entitlements]]` | `[tool.kivy.ios.entitlements]` | app **writes values**; package **requests a capability** it cannot grant |
@@ -120,7 +120,7 @@ The spec's consumer requirements, mapped onto machinery we have or need.
 | Application-side permission suppression | **new** — a `deny` list in `[tool.kivy.android.permissions]`; suppressed entries omitted from the manifest (with their implied features) and shown in the lock report and doctor |
 | Fail when `requires` exceeds app config | **new** — compare against `min_sdk` / `deployment_target` |
 | Report contributed repositories with distinct prominence | **new** — a dedicated block in the lock report and a doctor advisory |
-| Validate `keep_classes` patterns against owned namespaces | **new** — generation side lands via [`[tool.kivy.android.proguard]`](../platforms/android/01-pyproject-android.md#toolkivyandroidproguard--r8-keep-rules) |
+| Validate `keep_classes` patterns against their permitted scopes (owned namespaces + declared dependency groups) | **new** — generation side lands via [`[tool.kivy.android.proguard]`](../platforms/android/01-pyproject-android.md#toolkivyandroidproguard--r8-keep-rules) |
 | Pin `from`-ranged Swift package resolutions in the lock | **new** — extends the existing SPM lock handling |
 | Record + report the delta; fail on drift | **new** — see below |
 | Report `[[ios.requires.entitlements]]` as a prerequisite | **exists** — the entitlements pre-flight and doctor check |
