@@ -117,6 +117,7 @@ The spec's consumer requirements, mapped onto machinery we have or need.
 | Enforce `[owns]` claims, fail on collision | **new** — closest existing analog is the `.so` duplicate policy in [04](../platforms/android/04-gradle-project-generation.md) |
 | Never promote a feature to `required` | **exists** — `auto_features` semantics, wider input |
 | Gate `exported_required` on app approval | **exists** — merged-manifest lint + per-component `allow_exported` is exactly the approval mechanism |
+| Application-side permission suppression | **new** — a `deny` list in `[tool.kivy.android.permissions]`; suppressed entries omitted from the manifest (with their implied features) and shown in the lock report and doctor |
 | Fail when `requires` exceeds app config | **new** — compare against `min_sdk` / `deployment_target` |
 | Report contributed repositories with distinct prominence | **new** — a dedicated block in the lock report and a doctor advisory |
 | Validate `keep_classes` patterns against owned namespaces | **new** — generation side lands via [`[tool.kivy.android.proguard]`](../platforms/android/01-pyproject-android.md#toolkivyandroidproguard--r8-keep-rules) |
