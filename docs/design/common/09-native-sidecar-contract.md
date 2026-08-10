@@ -51,10 +51,10 @@ text.
 
 | | |
 | --- | --- |
-| **Discovery** | A `native-integration.v1` entry point whose value is a **dotted resource anchor** (never loaded, never imported) locating `native.toml` |
+| **Discovery** | A `native_integration.v1` entry point (underscore — PyPA group names forbid hyphens) whose value is an importable module reference, never loaded or imported, locating `native.toml`; candidates restricted to the app's dependency closure |
 | **Declaration** | One `native.toml` per distribution, shipped as ordinary package data, covering every platform |
-| **Categories** | Everything a package declares is **`owns`** (exclusive, collision-checked claims — Java namespaces, Swift prefixes), **`requires`** (conditions the app must satisfy — SDK floors, entitlements, app-supplied values), or **`contributes`** (material staged on its behalf) |
-| **Authority** | Only the app may set a feature `required`; an exported component or a contributed Maven repository is a *request* the app approves (`exported_required` + reason; repositories reported with distinct prominence) |
+| **Categories** | Everything a package declares is **`owns`** (exclusive, collision-checked claims — Java namespaces), **`requires`** (conditions the app must satisfy — SDK floors, entitlements, app-supplied values), or **`contributes`** (material staged on its behalf). Unknown keys fail closed; the `contract` minor negotiates capabilities |
+| **Authority** | Only the app may set a feature `required`; an exported component is a *request* the app approves (`exported_required` + reason, with v1 `view_links` generating the OAuth/deep-link intent filter); contributed repositories are content-restricted to their declared groups/modules and reported with distinct prominence |
 | **Data, not code** | A sidecar never carries scripts, hooks, or build arguments; a consumer never executes declared content |
 | **Out of scope** | Prebuilt `.aar`, prebuilt iOS binaries, native `.so` (already solved by PEP 738 / PEP 730 tagged wheels) |
 
@@ -85,12 +85,12 @@ longer do.
 | `[[android.requires.application_values]]` | `[tool.kivy.android.manifest]` | package **requests a value** it cannot supply (e.g. an API key's `meta-data`); app provides it |
 | `[android.contributes.src]` | `[tool.kivy.android.src]` | identical semantics |
 | `[[android.contributes.gradle_dependencies]]` | `[tool.kivy.android.gradle].dependencies` | identical semantics; sidecar entries are objects with a `configuration` (v1: `implementation` only) |
-| `[[android.contributes.gradle_repositories]]` | `[tool.kivy.android.gradle].repositories` | package may contribute, but the lock/report gives repositories **distinct prominence** (supply-chain surface) |
-| `[[android.contributes.permissions]]` | `[tool.kivy.android.permissions].uses` | identical semantics, plus a `reason` carried into the report |
+| `[[android.contributes.gradle_repositories]]` | `[tool.kivy.android.gradle].repositories` | package must declare `groups`/`modules`; kivyforge emits Gradle content filtering (`exclusiveContent`) and gives repositories **distinct prominence** in lock/report |
+| `[[android.contributes.permissions]]` | `[tool.kivy.android.permissions].uses` | identical semantics; canonical manifest names (`android.permission.*`), `reason` carried into the report |
 | `[[android.contributes.features]]` | `[tool.kivy.android.permissions].features` | package may name a feature; **only the app** may set `required` |
-| `[[android.contributes.components]]` | `[[tool.kivy.android.activities]]` | shapes differ — see below; `exported_required` + reason is a request the app approves via `allow_exported` |
+| `[[android.contributes.components]]` | `[[tool.kivy.android.activities]]` | shapes differ — see below; provenance is producer source (owned namespace) or `from_dependency` (declared coordinate); `exported_required` + reason is a request the app approves via `allow_exported`; `view_links` generates the VIEW/DEFAULT/BROWSABLE filter |
 | `[android.contributes.r8].keep_classes` | `[tool.kivy.android.proguard].keep` | app writes raw directives; a package writes **class patterns only**, bounded by its owned namespaces or a declared dependency's group |
-| `[ios.owns].swift_symbol_prefixes` | — | package only |
+| `[ios].swift_symbol_prefixes` | — | producer guidance, not ownership — `@objc` runtime names are global across modules, so exclusivity is unenforceable |
 | `[ios.requires].deployment_target` | `[tool.kivy.ios].deployment_target` | app **sets**; package declares a **floor** |
 | `[[ios.requires.entitlements]]` | `[tool.kivy.ios.entitlements]` | app **writes values**; package **requests a capability** it cannot grant |
 | `[[ios.contributes.swift_packages]]` | `[tool.kivy.ios.native.swift_packages]` | identical semantics; requirement is one of `exact`/`from`/`revision`, `branch` forbidden; `from` resolutions are pinned in the lock |
@@ -112,14 +112,18 @@ The spec's consumer requirements, mapped onto machinery we have or need.
 
 | Requirement | Status in kivyforge |
 | --- | --- |
-| Discover by iterating the group, never importing | **new** |
-| Reject unknown `contract` major | **new** |
+| Discover by iterating the group within the app's dependency closure, never importing | **new** — the closure is what `pylock.<platform>.toml` already resolves |
+| Enforce the contract gate (major + minor) and fail closed on unknown keys | **new** |
 | Enforce `[owns]` claims, fail on collision | **new** — closest existing analog is the `.so` duplicate policy in [04](../platforms/android/04-gradle-project-generation.md) |
 | Never promote a feature to `required` | **exists** — `auto_features` semantics, wider input |
 | Gate `exported_required` on app approval | **exists** — merged-manifest lint + per-component `allow_exported` is exactly the approval mechanism |
 | Application-side permission suppression | **new** — a `deny` list in `[tool.kivy.android.permissions]`; suppressed entries omitted from the manifest (with their implied features) and shown in the lock report and doctor |
 | Fail when `requires` exceeds app config | **new** — compare against `min_sdk` / `deployment_target` |
-| Report contributed repositories with distinct prominence | **new** — a dedicated block in the lock report and a doctor advisory |
+| Content-restrict contributed repositories (`exclusiveContent`) and report with distinct prominence | **new** — a dedicated block in the lock report and a doctor advisory |
+| Lock resolved Gradle graph / pin SwiftPM `from` resolutions; reject `-SNAPSHOT` | **partially exists** — the lock already records the resolved Maven graph; enforcement + SwiftPM pinning are new |
+| Generate `view_links` intent filters (activity-only, export-gated) | **new** — VIEW/DEFAULT/BROWSABLE + data, app values via manifest placeholders (already supported) |
+| Hash sidecar inputs per file (SHA-256, normalized paths) | **new** — extends the `include_files` hashing pattern to every producer |
+| SHOULD-report merged-manifest delta from resolved dependencies | **partially exists** — `kivyforge package` already lints the merged manifest; reporting the delta is new |
 | Validate `keep_classes` patterns against their permitted scopes (owned namespaces + declared dependency groups) | **new** — generation side lands via [`[tool.kivy.android.proguard]`](../platforms/android/01-pyproject-android.md#toolkivyandroidproguard--r8-keep-rules) |
 | Pin `from`-ranged Swift package resolutions in the lock | **new** — extends the existing SPM lock handling |
 | Record + report the delta; fail on drift | **new** — see below |
