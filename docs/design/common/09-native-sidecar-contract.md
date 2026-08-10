@@ -51,11 +51,11 @@ text.
 
 | | |
 | --- | --- |
-| **Discovery** | A `native-integration.v1` entry point whose value is a **module reference**, resolved without importing the package |
+| **Discovery** | A `native-integration.v1` entry point whose value is a **dotted resource anchor** (never loaded, never imported) locating `native.toml` |
 | **Declaration** | One `native.toml` per distribution, shipped as ordinary package data, covering every platform |
-| **Rule 1** | A package declares a `java_namespace` and may contribute only under it; bootstrap prefixes reserved; collisions fail |
-| **Rule 2** | Only the app may set a feature `required` |
-| **Rule 3** | Only the app may set a component `exported` |
+| **Categories** | Everything a package declares is **`owns`** (exclusive, collision-checked claims — Java namespaces, Swift prefixes), **`requires`** (conditions the app must satisfy — SDK floors, entitlements, app-supplied values), or **`contributes`** (material staged on its behalf) |
+| **Authority** | Only the app may set a feature `required`; an exported component or a contributed Maven repository is a *request* the app approves (`exported_required` + reason; repositories reported with distinct prominence) |
+| **Data, not code** | A sidecar never carries scripts, hooks, or build arguments; a consumer never executes declared content |
 | **Out of scope** | Prebuilt `.aar`, prebuilt iOS binaries, native `.so` (already solved by PEP 738 / PEP 730 tagged wheels) |
 
 Two properties drive everything: contributions stay **per-distribution**, so
@@ -72,26 +72,30 @@ syntax, two speakers, merged by the consumer, and nobody calls it duplication.
 The speaker *is* the information: it determines provenance, review status, and
 what the declaration is allowed to do.
 
-Names match kivyforge's spelling wherever the semantics are identical, so nobody
-carries a translation table. Where they diverge, the divergence is the point.
+The sidecar's `owns`/`requires`/`contributes` structure supersedes exact
+name-alignment with kivyforge's tables (an external-review restructure, adopted
+because it makes the security model legible from the shape alone). This table is
+therefore the translation table; semantics still line up even where spellings no
+longer do.
 
 | Sidecar | App equivalent | Who may set what |
 | --- | --- | --- |
-| `[android].java_namespace` | — | package only; the app owns every namespace by default |
+| `[android.owns].java_namespaces` | — | package only; the app owns every namespace by default |
 | `[android.requires].compile_sdk` / `min_sdk` | `[tool.kivy.android].min_sdk` | app **sets**; package declares a **floor** |
-| `[android.src].java` / `kotlin` | `[tool.kivy.android.src]` | identical |
-| `[android.gradle]` | `[tool.kivy.android.gradle]` | identical |
-| `[android.permissions].uses` | `[tool.kivy.android.permissions].uses` | identical |
-| `[android.permissions].features` | `[tool.kivy.android.permissions].features` | package may name a feature; **only the app** may set `required` |
-| `[[android.components]]` | `[[tool.kivy.android.activities]]` | shapes differ — see below |
-| `[android.proguard].keep` | `[tool.kivy.android.proguard].keep` | identical, but a package's patterns are bounded by its `java_namespace` |
-| `[[android.manifest.meta_data_required]]` | `[tool.kivy.android.manifest]` | package **requests a value** it cannot supply; app provides it |
-| `[ios].swift_symbol_prefix` | — | package only |
+| `[[android.requires.application_values]]` | `[tool.kivy.android.manifest]` | package **requests a value** it cannot supply (e.g. an API key's `meta-data`); app provides it |
+| `[android.contributes.src]` | `[tool.kivy.android.src]` | identical semantics |
+| `[[android.contributes.gradle_dependencies]]` | `[tool.kivy.android.gradle].dependencies` | identical semantics; sidecar entries are objects with a `configuration` (v1: `implementation` only) |
+| `[[android.contributes.gradle_repositories]]` | `[tool.kivy.android.gradle].repositories` | package may contribute, but the lock/report gives repositories **distinct prominence** (supply-chain surface) |
+| `[[android.contributes.permissions]]` | `[tool.kivy.android.permissions].uses` | identical semantics, plus a `reason` carried into the report |
+| `[[android.contributes.features]]` | `[tool.kivy.android.permissions].features` | package may name a feature; **only the app** may set `required` |
+| `[[android.contributes.components]]` | `[[tool.kivy.android.activities]]` | shapes differ — see below; `exported_required` + reason is a request the app approves via `allow_exported` |
+| `[android.contributes.r8].keep_classes` | `[tool.kivy.android.proguard].keep` | app writes raw directives; a package writes **class patterns only**, bounded by its owned namespaces |
+| `[ios.owns].swift_symbol_prefixes` | — | package only |
 | `[ios.requires].deployment_target` | `[tool.kivy.ios].deployment_target` | app **sets**; package declares a **floor** |
-| `[ios.native.swift_packages]` | `[tool.kivy.ios.native.swift_packages]` | identical |
-| `[ios.src].swift` | — | package only; an app puts Swift in its own Xcode target |
-| `[ios.info_plist]` | `[tool.kivy.ios.info_plist]` | identical |
-| `[[ios.entitlements_required]]` | `[tool.kivy.ios.entitlements]` | app **writes values**; package **requests a capability** it cannot grant |
+| `[[ios.requires.entitlements]]` | `[tool.kivy.ios.entitlements]` | app **writes values**; package **requests a capability** it cannot grant |
+| `[[ios.contributes.swift_packages]]` | `[tool.kivy.ios.native.swift_packages]` | identical semantics; requirement is one of `exact`/`from`/`revision`, `branch` forbidden; `from` resolutions are pinned in the lock |
+| `[ios.contributes.src]` | — | package only; an app puts Swift in its own Xcode target |
+| `[ios.contributes.info_plist]` | `[tool.kivy.ios.info_plist]` | split into `values` (scalars, fail on collision) and `append` (arrays, merged) |
 
 **Why `components` rather than `services`.** kivyforge's
 `[[tool.kivy.android.services]]` *generates* a `PythonService` subclass running a
@@ -110,14 +114,16 @@ The spec's consumer requirements, mapped onto machinery we have or need.
 | --- | --- |
 | Discover by iterating the group, never importing | **new** |
 | Reject unknown `contract` major | **new** |
-| Enforce `java_namespace`, fail on collision | **new** — closest existing analog is the `.so` duplicate policy in [04](../platforms/android/04-gradle-project-generation.md) |
+| Enforce `[owns]` claims, fail on collision | **new** — closest existing analog is the `.so` duplicate policy in [04](../platforms/android/04-gradle-project-generation.md) |
 | Never promote a feature to `required` | **exists** — `auto_features` semantics, wider input |
-| Never accept `exported = true` | **exists** — merged-manifest lint + per-component `allow_exported` |
+| Gate `exported_required` on app approval | **exists** — merged-manifest lint + per-component `allow_exported` is exactly the approval mechanism |
 | Fail when `requires` exceeds app config | **new** — compare against `min_sdk` / `deployment_target` |
-| Bound package ProGuard rules by namespace | **new** — depends on [`[tool.kivy.android.proguard]`](../platforms/android/01-pyproject-android.md#toolkivyandroidproguard--r8-keep-rules) |
+| Report contributed repositories with distinct prominence | **new** — a dedicated block in the lock report and a doctor advisory |
+| Validate `keep_classes` patterns against owned namespaces | **new** — generation side lands via [`[tool.kivy.android.proguard]`](../platforms/android/01-pyproject-android.md#toolkivyandroidproguard--r8-keep-rules) |
+| Pin `from`-ranged Swift package resolutions in the lock | **new** — extends the existing SPM lock handling |
 | Record + report the delta; fail on drift | **new** — see below |
-| Report `entitlements_required` as a prerequisite | **exists** — the entitlements pre-flight and doctor check |
-| Report `meta_data_required` as a prerequisite | **new** |
+| Report `[[ios.requires.entitlements]]` as a prerequisite | **exists** — the entitlements pre-flight and doctor check |
+| Report `[[android.requires.application_values]]` as a prerequisite | **new** |
 | Exclude sidecar dirs from the Python payload | **new** — the stager already excludes non-payload trees |
 | Name the contributing distribution in diagnostics | **new**, but free once contributions stay per-package |
 
@@ -148,7 +154,7 @@ name = "kivy-firebase-push"
 version = "1.1.0"
 
 [packages.tool.kivyforge.native_integration]
-java_namespace = "org.kivyschool.firebase"
+java_namespaces = ["org.kivyschool.firebase"]
 gradle_dependencies = ["com.google.firebase:firebase-messaging:23.4.0"]
 permissions = ["INTERNET", "POST_NOTIFICATIONS", "RECEIVE_BOOT_COMPLETED"]
 components = ["org.kivyschool.firebase.PushService"]
@@ -196,7 +202,7 @@ be `pip install`ed on a desktop for development.
 
 The Swift namespace guarantee is **weaker** than the Java one: Swift compiled
 into the app target shares one module with no package namespace, so
-`swift_symbol_prefix` is advisory. Documented as weaker rather than pretended
+`swift_symbol_prefixes` is advisory. Documented as weaker rather than pretended
 equivalent.
 
 **Version coupling needs almost no machinery.** Three things were conflated.
