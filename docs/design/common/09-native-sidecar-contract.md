@@ -133,7 +133,7 @@ can be matched to the requirement that asked for it:
 | `[[android.requires.application_values]]` | `id` | `[tool.kivy.android.application_values]` |
 | contributed permission | permission `name` | `[tool.kivy.android.permissions].deny` |
 | `exported_required` component | component `name` | `allow_exported` (exists) |
-| repository `credentials_required` | repository `url` | `[tool.kivy.android.gradle.repository_credentials]` |
+| repository `credentials_required` | repository `url` — we key by **host**, see below | `[tool.kivy.android.gradle.repository_credentials]` |
 | `[[ios.requires.entitlements]]` | `key` | `[tool.kivy.ios.entitlements]` (exists) |
 | `[[ios.requires.usage_descriptions]]` | `key` | `[tool.kivy.ios.info_plist]` |
 | `[[ios.requires.application_files]]` | `name` | bundle-resource config |
@@ -166,10 +166,29 @@ pasted into the file next to it. Mapbox already assumes the indirection —
 
 ```toml
 # the app's pyproject.toml — the reference is committed, the value is not
-[tool.kivy.android.gradle.repository_credentials."https://api.mapbox.com/downloads/v2/releases/maven"]
+[tool.kivy.android.gradle.repository_credentials."api.mapbox.com"]
 username = "mapbox"
 password = { env = "MAPBOX_DOWNLOADS_TOKEN" }
 ```
+
+**We key by host, not by the full URL.** The spec joins the answer to the
+declaration by the repository's `url`, and keying on it literally would mean
+
+```toml
+[tool.kivy.android.gradle.repository_credentials."https://api.mapbox.com/downloads/v2/releases/maven"]
+```
+
+which nobody wants to type or read in a review diff. The host is the part a
+credential actually belongs to — one set of credentials per host is how
+`.netrc`, `~/.gradle/gradle.properties` and every credential helper already
+work.
+
+It is lossy in exactly one case: two contributed repositories sharing a host
+with different paths and different credentials. We make that a **hard error**
+naming both distributions rather than guessing, which is cheap, diagnosable, and
+has never been observed. The spec defines the join and leaves the spelling to
+us (§2.2), so this is ours to simplify — as long as the simplification fails
+loudly at the boundary rather than silently picking one.
 
 A literal **MAY** be accepted so a developer experimenting is not blocked, but
 must not be the only option. `doctor` is the natural place to warn when one is
@@ -228,7 +247,7 @@ Grouped as §8 groups them; the numbers are the spec's own.
 | Never convert a declared Gradle version to `strictly`; show **requested-versus-resolved** where they differ | **new** — a declared version is a requirement, and conflict resolution may select higher |
 | Reject a resolved Swift graph containing a branch or path dependency | **new** |
 | Bound a contributed repository to its groups/modules, and reject a credential in URL user-info | **new** — content filtering, *not* `exclusiveContent`. The consumer obligation is deliberately narrow: no algorithm decides whether an arbitrary string is a secret, so we reject what is syntactically identifiable and warn on the rest |
-| Fail when a repository declaring `credentials_required` has none configured, naming the distribution | **new** — rather than attempting resolution and surfacing a bare `401` |
+| Fail when a repository declaring `credentials_required` has none configured, naming the distribution | **new** — rather than attempting resolution and surfacing a bare `401`. Credentials are keyed by host; two contributed repositories sharing a host is a hard error |
 | On resolution **failure**, report every coordinate and package with the distribution that declared it | **new** — the resolver names an artifact; only we can name the Python package behind it |
 
 **Generated project material** (11, 13, 20, 24)
