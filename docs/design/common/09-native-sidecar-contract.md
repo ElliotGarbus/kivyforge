@@ -116,6 +116,71 @@ shape. Reusing the name `services` for different semantics would be a worse trap
 than a different name, so the sidecar uses one `components` array with an
 explicit `kind`.
 
+## The application's side — the answer surface
+
+§2.2 says every `requires` is answered by the **application, through the
+consumer's own configuration**, and defines the capability rather than the
+spelling. The spelling is therefore ours to design, and it is a real surface: at
+26 consumer requirements there are nine distinct things an app may need to say
+back.
+
+**The join key is not ours to choose.** A consumer's config format is its own,
+but the key an answer is filed under comes from the declaration, so the answer
+can be matched to the requirement that asked for it:
+
+| Producer declares | We must key the answer on | Proposed spelling |
+| --- | --- | --- |
+| `[[android.requires.application_values]]` | `id` | `[tool.kivy.android.application_values]` |
+| contributed permission | permission `name` | `[tool.kivy.android.permissions].deny` |
+| `exported_required` component | component `name` | `allow_exported` (exists) |
+| repository `credentials_required` | repository `url` | `[tool.kivy.android.gradle.repository_credentials]` |
+| `[[ios.requires.entitlements]]` | `key` | `[tool.kivy.ios.entitlements]` (exists) |
+| `[[ios.requires.usage_descriptions]]` | `key` | `[tool.kivy.ios.info_plist]` |
+| `[[ios.requires.application_files]]` | `name` | bundle-resource config |
+| `[[ios.requires.app_extensions]]` | `kind` | extra-target config |
+| `[[ios.requires.url_schemes]]` | **the distribution** | acknowledgement list |
+
+Note the first row. Our mapping table above pairs `application_values` with
+`[tool.kivy.android.manifest]`, which is the right *analogy* but the wrong
+*key*: the app answers under the producer's logical `id`, and we translate to
+the manifest key the sidecar names in `manifest_meta_data`. The answer surface is
+new, not an existing table with extra entries.
+
+The last row is the odd one, and deliberately: `url_schemes` names no key,
+because the scheme is the app's to choose. It is joined by distribution, and the
+spec forbids a sidecar declaring more than one — so our acknowledgement can be a
+flat list of distribution names.
+
+### Credentials must be answerable without committing them
+
+This is the one place §2.2 constrains us rather than leaving it open. A
+build-time credential **MUST** be supplyable by indirection — an environment
+variable, a secret store, a file outside the project — and we **MUST NOT**
+require it in a file we tell the app author to commit.
+
+That rule lands squarely on us, because our natural answer surface is
+`pyproject.toml`, which is committed by definition. Doc §9's prohibition on
+recording a credential in the lock would be theatre if the same secret had to be
+pasted into the file next to it. Mapbox already assumes the indirection —
+`~/.gradle/gradle.properties`, outside the project.
+
+```toml
+# the app's pyproject.toml — the reference is committed, the value is not
+[tool.kivy.android.gradle.repository_credentials."https://api.mapbox.com/downloads/v2/releases/maven"]
+username = "mapbox"
+password = { env = "MAPBOX_DOWNLOADS_TOKEN" }
+```
+
+A literal **MAY** be accepted so a developer experimenting is not blocked, but
+must not be the only option. `doctor` is the natural place to warn when one is
+in use.
+
+**Ordinary application values are not secrets, and should not be treated as
+such.** A Sentry DSN or an AdMob app ID is embedded in the shipped APK and
+readable by anyone who unzips it; committing those is not a leak, and routing
+them through the environment buys nothing but friction. Only the build-time
+credential — which never reaches the device — must stay out of the repository.
+
 ## What kivyforge must implement
 
 The spec's 25 consumer requirements, mapped onto machinery we have or need.
@@ -138,7 +203,7 @@ Grouped as §8 groups them; the numbers are the spec's own.
 | Compute every namespace/prefix/group containment on **dot-separated segments**, never raw string prefixes | **new** — small, and the likeliest place two consumers diverge |
 | Reserve our own bootstrap namespaces | **done** — `org.kivy.android`, `org.libsdl.app`, `org.jnius` are already on the spec's reserved list |
 
-**Prerequisites — never satisfied by us** (6, 8, 21, 22, 23, 25)
+**Prerequisites — never satisfied by us** (6, 8, 21, 22, 23, 25, 26)
 
 | Requirement | Status in kivyforge |
 | --- | --- |
@@ -149,6 +214,9 @@ Grouped as §8 groups them; the numbers are the spec's own.
 | Fail when `exported_required` has no approval — never fall back to unexported | **exists** — `allow_exported` is the approval mechanism |
 | Fail when an application value is unsupplied, or an inline reference names no declared `id` | **new** — §6.3 now separates logical `id` from `manifest_meta_data` |
 | Application-side permission suppression, absent from the **effective merged** manifest | **new** — a `deny` list in `[tool.kivy.android.permissions]`; emitting `tools:node="remove"` when a resolved `.aar` also declares it is the part that makes it real |
+| Offer a means to answer **every** `requires`, each filed under the key §2.2 names — not a key of our choosing | **new** — nine answer paths; see [the answer surface](#the-applications-side--the-answer-surface) |
+| Accept a build-time credential **by indirection**, never only as a literal in a committed file | **new** — the rule exists because `pyproject.toml` is our natural answer surface and is committed by definition |
+| Reject a sidecar declaring more than one `url_schemes` entry | **new** — it carries no identifier, so two would be indistinguishable to whoever answers them |
 
 **Native dependency resolution** (10, 12, 16)
 
@@ -159,7 +227,8 @@ Grouped as §8 groups them; the numbers are the spec's own.
 | Record the resolved **revision** for Swift packages, not only the version | **new** — extends the SPM lock handling |
 | Never convert a declared Gradle version to `strictly`; show **requested-versus-resolved** where they differ | **new** — a declared version is a requirement, and conflict resolution may select higher |
 | Reject a resolved Swift graph containing a branch or path dependency | **new** |
-| Bound a contributed repository to its groups/modules, and reject a credential in URL user-info | **new** — content filtering, *not* `exclusiveContent` |
+| Bound a contributed repository to its groups/modules, and reject a credential in URL user-info | **new** — content filtering, *not* `exclusiveContent`. The consumer obligation is deliberately narrow: no algorithm decides whether an arbitrary string is a secret, so we reject what is syntactically identifiable and warn on the rest |
+| Fail when a repository declaring `credentials_required` has none configured, naming the distribution | **new** — rather than attempting resolution and surfacing a bare `401` |
 | On resolution **failure**, report every coordinate and package with the distribution that declared it | **new** — the resolver names an artifact; only we can name the Python package behind it |
 
 **Generated project material** (11, 13, 20, 24)
@@ -317,7 +386,10 @@ stops meaning what it says.
 `credentials_required = true` on a repository, the record carries the
 *requirement* and never the value. The hazard is specific to us: §9's own
 machinery — hash every input, keep the record durable and diffable — is exactly
-what would launder a credential into version control.
+what would launder a credential into version control. §2.2 closes the other half
+of the same hole by requiring that the value be supplyable without ever entering
+a committed file; keeping it out of the lock while requiring it in
+`pyproject.toml` would achieve nothing.
 
 **Provenance is worth storing even though §9 only requires reporting it.** The
 `(via some-ui-lib)` path is a report obligation; the record is not required to
