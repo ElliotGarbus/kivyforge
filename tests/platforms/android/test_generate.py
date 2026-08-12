@@ -74,7 +74,7 @@ class TestReservedApplicationAttrs:
 
     def test_android_name_rejected(self):
         _, android = _android(
-            '[tool.kivy.android.manifest.application]\n'
+            "[tool.kivy.android.manifest.application]\n"
             '"android:name" = ".MyApplication"\n'
         )
         with pytest.raises(ManifestError) as exc:
@@ -84,8 +84,7 @@ class TestReservedApplicationAttrs:
 
     def test_other_application_attrs_still_pass_through(self):
         _, android = _android(
-            '[tool.kivy.android.manifest.application]\n'
-            '"android:allowBackup" = false\n'
+            '[tool.kivy.android.manifest.application]\n"android:allowBackup" = false\n'
         )
         _, tree = _manifest_tree(android)
         app = tree.find("application")
