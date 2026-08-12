@@ -21,6 +21,7 @@
 #import <UIKit/UIKit.h>
 #include <Python.h>
 #include "kivyforge_bootstrap.h"
+#include "kivyforge_native_modules.h"
 
 typedef struct {
     const char *entry_module;
@@ -33,6 +34,19 @@ static _BootstrapArgs _g_args;
 static void _crash(NSString *message) {
     NSLog(@"kivyforge bootstrap fatal: %@", message);
     exit(1);
+}
+
+/* Add every package-contributed native module to the interpreter's inittab.
+ * Failing loudly here is deliberate: the alternative is an app that starts,
+ * imports a same-named typing stub the package ships for off-device editing,
+ * and returns None from every call. */
+static void kivyforge_register_native_modules(void) {
+    for (const KivyforgeNativeModule *m = kivyforge_native_modules; m->name; ++m) {
+        if (PyImport_AppendInittab(m->name, m->initfunc) == -1) {
+            _crash([NSString stringWithFormat:
+                @"PyImport_AppendInittab failed for native module \"%s\"", m->name]);
+        }
+    }
 }
 
 /* Shared Python initialisation — no SDL dependency. */
@@ -61,6 +75,13 @@ static void _run_python(void) {
     preconfig.utf8_mode = 1;
     status = Py_PreInitialize(&preconfig);
     if (PyStatus_Exception(status)) _crash(@"Py_PreInitialize failed");
+
+    /* Register package-contributed native modules into the inittab. This must
+     * happen after Py_PreInitialize and before Py_InitializeFromConfig: these
+     * modules are compiled into the app target rather than loaded from a
+     * shared object, so `import` cannot find them any other way. The table is
+     * empty unless packages declared modules (SPEC.md §7.7). */
+    kivyforge_register_native_modules();
 
     PyConfig config;
     PyConfig_InitPythonConfig(&config);

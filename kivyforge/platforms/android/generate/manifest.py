@@ -61,6 +61,21 @@ class ManifestError(Exception):
     pass
 
 
+# ``<application android:name>`` is a singleton slot: exactly one class can
+# occupy it. Leaving it settable means two SDKs that both want startup work
+# cannot coexist, and it is the slot a native-integration sidecar must never be
+# able to claim (native-integration SPEC.md §6.1, and the reasoning behind the
+# deferred startup-hook proposal). The generated bootstrap owns it, so that a
+# future hook mechanism has one place to dispatch from.
+RESERVED_APPLICATION_ATTRS: dict[str, str] = {
+    "android:name": (
+        "It is a singleton slot — only one Application class can occupy it — so "
+        "the generated bootstrap owns it. If you need work at process start, it "
+        "belongs in the bootstrap, not in a replacement Application class."
+    ),
+}
+
+
 def qualified_permissions(uses: tuple[str, ...]) -> list[str]:
     """Bare names get the ``android.permission.`` prefix; dotted pass verbatim."""
     return [p if "." in p else f"android.permission.{p}" for p in uses]
@@ -147,6 +162,12 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
         # manifest); the gradle setting is the toolchain-managed source.
     }
     for key, value in sorted(android.manifest.application.items()):
+        if key in RESERVED_APPLICATION_ATTRS:
+            raise ManifestError(
+                f"{key} on <application> is reserved for the generated bootstrap "
+                f"and cannot be set through [tool.kivy.android.manifest.application]. "
+                f"{RESERVED_APPLICATION_ATTRS[key]}"
+            )
         app_attrs[key] = _attr_str(value)
     lines.append(f"    <application {_attrs(app_attrs)}>")
 

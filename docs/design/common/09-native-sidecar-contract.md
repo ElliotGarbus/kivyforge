@@ -123,7 +123,14 @@ The spec's consumer requirements, mapped onto machinery we have or need.
 | Lock resolved Gradle graph / pin SwiftPM `from` resolutions; reject `-SNAPSHOT` | **partially exists** — the lock already records the resolved Maven graph; enforcement + SwiftPM pinning are new |
 | Generate `view_links` intent filters (activity-only, export-gated) | **new** — VIEW/DEFAULT/BROWSABLE + data, app values via manifest placeholders (already supported) |
 | Hash sidecar inputs per file (SHA-256, normalized paths) | **new** — extends the `include_files` hashing pattern to every producer |
-| SHOULD-report merged-manifest delta from resolved dependencies | **partially exists** — `kivyforge package` already lints the merged manifest; reporting the delta is new |
+| Report the delta from resolved dependencies' own manifests — now a **MUST** on Android | **partially exists** — `kivyforge package` already lints the merged manifest; per-artifact attribution is new. Bounded by reading each resolved `.aar`'s own `AndroidManifest.xml`, not by replicating AGP's merger |
+| Register package-contributed native Python modules into the inittab (§7.7) | **seam exists** — see *Bootstrap seams* below |
+| Own `<application android:name>` rather than letting config set it (§6.1) | **exists** — see *Bootstrap seams* below |
+| Reject a sidecar carrying a repository credential; never record a supplied one | **new** — cuts against the lock's hash-everything default, which is exactly why the spec states it |
+| Fail when building for a platform the sidecar's `platforms` key omits (§4.5) | **new** |
+| Report the remaining `[ios.requires]` prerequisites — app extensions, application files, URL schemes — and never satisfy them | **partially exists** — the entitlements pre-flight generalizes |
+| Attribute a *failed* native resolution back to the declaring distributions | **new** — the resolver's error names an artifact, not a Python package |
+| Compute namespace/prefix/group containment on dot-separated segments | **new** — a string-prefix test would both false-collide and false-accept |
 | Validate `keep_classes` patterns against their permitted scopes (owned namespaces + declared dependency groups) | **new** — generation side lands via [`[tool.kivy.android.proguard]`](../platforms/android/01-pyproject-android.md#toolkivyandroidproguard--r8-keep-rules) |
 | Pin `from`-ranged Swift package resolutions in the lock | **new** — extends the existing SPM lock handling |
 | Record + report the delta; fail on drift | **new** — see below |
@@ -136,6 +143,47 @@ Note how much of the *authority* half already exists. `auto_features` and
 `allow_exported` were built for app-declared inputs and generalize to
 package-declared ones unchanged — which is a good sign the split was drawn in the
 right place.
+
+## Bootstrap seams
+
+Two things in the generated bootstraps had to change **before** the reader
+exists, because they are structural preconditions rather than features. Both are
+inert today: nothing fills the iOS table, and nothing was previously setting the
+Android attribute.
+
+**iOS — an inittab hook (`§7.7`).** Some packages implement a Python extension
+module in Swift; the Swift compiles into the app target against this app's own
+interpreter, so there is no shared object and `dlopen` never runs. Such a module
+is invisible to `import` until it is registered, and registration must happen
+before `Py_InitializeFromConfig`. `kivyforge_bootstrap.m` had no such point.
+
+It now calls `kivyforge_register_native_modules()` between `Py_PreInitialize` and
+`Py_InitializeFromConfig`, iterating a table in a generated
+`kivyforge_native_modules.h` — the same per-project-header pattern as
+`main_config.h`, so `main.m` and the bootstrap stay stable. With no contributed
+modules the table holds only its terminator and the loop does nothing.
+
+This matters more than one package: PyCoreLocation, PyWebViews, PyPHPicker,
+PyCamera, PyCoreBluetooth, PyCoreMidi, PyTextToSpeech and PySpeechRecognizer are
+all built this way. Without the hook they compile, link, and fail at `import`.
+
+The registration failing is fatal by design. Packages ship a same-named typing
+stub for off-device editing, so a silently skipped registration would otherwise
+surface as an app that imports successfully and returns `None` from every call.
+
+**Android — the `<application android:name>` slot (`§6.1`).** `manifest.py` merged
+`[tool.kivy.android.manifest.application]` verbatim, so an app author could set
+`android:name` and replace the Application class. That is a singleton slot: only
+one class occupies it, so ceding it leaves no way for two SDKs that both need
+startup work to coexist, and it is the slot a sidecar must never be able to
+claim. It is now reserved, with a `ManifestError` naming why. Every other
+attribute still passes through.
+
+Nothing here implies startup hooks are coming. Sentry demonstrates the opposite
+— it reaches pre-application initialisation with a `ContentProvider` in its own
+AAR plus manifest meta-data, no producer code at launch — which is part of why
+that proposal stayed deferred. The slot is reserved so the question stays open,
+not because it is settled.
 
 ## Recording and review — kivyforge's mechanism
 

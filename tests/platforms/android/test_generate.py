@@ -10,6 +10,7 @@ import pytest
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.platforms.android.generate import project as project_mod
 from kivyforge.platforms.android.generate.manifest import (
+    ManifestError,
     generate_manifest,
     implied_features,
     qualified_permissions,
@@ -66,6 +67,31 @@ NS = "{http://schemas.android.com/apk/res/android}"
 def _manifest_tree(android, orientation=("portrait",)):
     text = generate_manifest(android, orientation=orientation)
     return text, ET.fromstring(text)
+
+
+class TestReservedApplicationAttrs:
+    """<application android:name> is the bootstrap's, not the app author's."""
+
+    def test_android_name_rejected(self):
+        _, android = _android(
+            '[tool.kivy.android.manifest.application]\n'
+            '"android:name" = ".MyApplication"\n'
+        )
+        with pytest.raises(ManifestError) as exc:
+            generate_manifest(android, orientation=("portrait",))
+        assert "android:name" in str(exc.value)
+        assert "singleton slot" in str(exc.value)
+
+    def test_other_application_attrs_still_pass_through(self):
+        _, android = _android(
+            '[tool.kivy.android.manifest.application]\n'
+            '"android:allowBackup" = false\n'
+        )
+        _, tree = _manifest_tree(android)
+        app = tree.find("application")
+        assert app.get(NS + "allowBackup") == "false"
+        # The bootstrap keeps the name slot unset rather than ceding it.
+        assert app.get(NS + "name") is None
 
 
 class TestManifest:

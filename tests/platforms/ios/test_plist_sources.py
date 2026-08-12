@@ -10,7 +10,12 @@ from kivyforge.config import load_config_from_text
 from kivyforge.platforms.ios.entitlements import write_entitlements
 from kivyforge.platforms.ios.plist import build_info_plist, write_info_plist
 from kivyforge.platforms.ios.privacy import STUB_MANIFEST, write_privacy_manifest
-from kivyforge.platforms.ios.sources import render_main_config_h
+from kivyforge.platforms.ios.sources import (
+    NativeModule,
+    render_main_config_h,
+    render_native_modules_h,
+    write_sources,
+)
 
 
 class TestInfoPlist:
@@ -167,3 +172,48 @@ class TestMainConfigHeader:
         header = render_main_config_h(cfg)
         assert 'ENTRY_POINT        "pkg.start"' in header
         assert 'PYTHON_MAJOR_MINOR "3.14"' in header
+
+
+class TestNativeModulesHeader:
+    """§7.7 inittab seam — packages may implement a Python module natively."""
+
+    def test_empty_table_is_the_normal_case(self):
+        header = render_native_modules_h()
+        assert "{NULL, NULL}" in header
+        # No entries and no extern declarations when nothing was contributed.
+        assert "extern PyObject *" not in header
+        assert header.count("{") == header.count("}")
+
+    def test_entries_and_externs(self):
+        header = render_native_modules_h(
+            [
+                NativeModule("web_views", "PyInit_WebViews"),
+                NativeModule("py_core_location", "PyInit_PyCoreLocation"),
+            ]
+        )
+        assert "extern PyObject *PyInit_WebViews(void);" in header
+        assert '{"web_views", PyInit_WebViews},' in header
+        assert '{"py_core_location", PyInit_PyCoreLocation},' in header
+        # Terminator always last so the bootstrap loop stops.
+        assert header.index('{"py_core_location"') < header.index("{NULL, NULL}")
+
+    def test_python_name_need_not_match_init_symbol(self):
+        # PyWebViews the package, WebViews the Swift type, web_views the module.
+        header = render_native_modules_h([NativeModule("web_views", "PyInit_WebViews")])
+        assert '{"web_views", PyInit_WebViews}' in header
+
+    def test_write_sources_emits_the_header(self, config, tmp_path):
+        write_sources(config, tmp_path)
+        emitted = (tmp_path / "kivyforge_native_modules.h").read_text()
+        assert "KIVYFORGE_NATIVE_MODULES_H" in emitted
+        # The bootstrap includes it unconditionally, so it must always exist.
+        bootstrap = (tmp_path / "kivyforge_bootstrap.m").read_text()
+        assert '#include "kivyforge_native_modules.h"' in bootstrap
+
+    def test_registration_precedes_interpreter_init(self, config, tmp_path):
+        write_sources(config, tmp_path)
+        bootstrap = (tmp_path / "kivyforge_bootstrap.m").read_text()
+        # PyImport_AppendInittab is only honoured before Py_InitializeFromConfig.
+        assert bootstrap.index("kivyforge_register_native_modules()") < bootstrap.index(
+            "Py_InitializeFromConfig(&config)"
+        )
