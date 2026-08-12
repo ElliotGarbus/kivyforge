@@ -16,7 +16,7 @@ transcribing it by hand from a README.
 > disagree, the spec wins and this file is stale.
 
 > **Status: proposal.** Nothing is implemented beyond the two bootstrap seams
-> below. Synced against SPEC.md at 25 consumer requirements — the spec has been
+> below. Synced against SPEC.md at 26 consuming-tool requirements — the spec has been
 > through two external reviews and ten worked integration cases since this
 > document was first written, and several arguments here were superseded rather
 > than merely extended.
@@ -121,7 +121,7 @@ explicit `kind`.
 §2.2 says every `requires` is answered by the **application, through the
 consumer's own configuration**, and defines the capability rather than the
 spelling. The spelling is therefore ours to design, and it is a real surface: at
-26 consumer requirements there are nine distinct things an app may need to say
+26 consuming-tool requirements there are nine distinct things an app may need to say
 back.
 
 **The join key is not ours to choose.** A consumer's config format is its own,
@@ -202,7 +202,8 @@ credential — which never reaches the device — must stay out of the repositor
 
 ## What kivyforge must implement
 
-The spec's 25 consumer requirements, mapped onto machinery we have or need.
+The spec's 26 requirements on a consuming tool, mapped onto machinery we have
+or need.
 Grouped as §8 groups them; the numbers are the spec's own.
 
 **Discovery and the sidecar** (1–4, 14)
