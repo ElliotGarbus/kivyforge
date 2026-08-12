@@ -46,7 +46,9 @@ def make_config(*, entitlements="", profile="", auto_signing=True):
         f"[tool.kivy.ios.signing]\nauto_signing={str(auto_signing).lower()}\n"
     )
     if profile:
-        text += f'provisioning_profile = "{profile}"\n'
+        # TOML literal string: Windows paths contain backslashes, which a basic
+        # (double-quoted) string would treat as escape sequences (\U... -> error).
+        text += f"provisioning_profile = '{profile}'\n"
     if entitlements:
         text += f"[tool.kivy.ios.entitlements]\n{entitlements}\n"
     return load_config_from_text(text)
