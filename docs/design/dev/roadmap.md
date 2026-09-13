@@ -1,33 +1,83 @@
-# Roadmap — post-stripping work queue
+# Roadmap
 
-> **Status: agreed 2026-07-30.** Six items, ordered. Phase B (byte-compile /
-> `strip_source` across Android, the three desktop backends, and iOS) is done
-> and validated on a real Windows release build; this is what follows it.
+> **Status: re-planned 2026-09-12** after a break in development. The
+> 2026-07-30 queue had six items; P0 (PyPI name) and P1 (safe-area examples)
+> shipped, P2–P5 were never started, and four new items have been added.
+> Active items are now numbered 1–8; each one that had an old label says so, so
+> a commit message mentioning "P2" or "P3" still resolves.
 >
-> Decisions already taken (see each item for the reasoning):
-> **PyPI name reserved first** · **aarch64 is cross-build capable, validated
-> natively on a Pi** · **docs are MkDocs Material → GitHub Pages** ·
-> **PyPI stays a solo-owner personal project until the GitHub repo moves to
-> the Kivy org.**
+> Standing decisions, unchanged: **aarch64 is cross-build capable** ·
+> **docs are MkDocs Material → GitHub Pages** · **PyPI stays a solo-owner
+> personal project until the GitHub repo moves to the Kivy org** ·
+> **no emulation anywhere in the build path**.
 
-## Why this order
+## Where things stand
 
-The name reservation is first because it is the only item that is *cheap and
-time-sensitive at once* — `kivyforge` is unclaimed on PyPI today, the project
-is publicly discussed, and a `.dev0` upload costs an afternoon. Everything
-else can slip without anyone else being able to take it from us.
+Phase B (byte-compile / `strip_source`) is implemented across Android, the
+three desktop backends, and iOS, and is validated on a real Windows release
+build. It is **not** validated on Android or iOS — see item 1.
 
-After that the order is: small independent wins (P1, P2) → the large feature
-with a hardware lead time (P3) → docs, which want a settled feature surface
-(P4) → the real release, which wants docs to link to (P5).
+- **Item 1 is done (2026-09-13).** CPython 3.14.7 (64-bit) is installed, Android
+  `strip_source` has produced a real `.pyc`-only bundle that runs on a Pixel 8a,
+  and the byte-compile doctor check ships on all five backends. It also exposed
+  and fixed a live resolver bug; see the item. **Item 2 is next.**
+- iOS remains unvalidated end-to-end, and no amount of Windows-side work
+  changes that: it needs a macOS host.
 
-`build-for` vs `build-on` architecture (previously tracked as its own
-deferred item) is **not** listed separately: Linux aarch64 is precisely the
-case that makes it live, so it is folded into P3.
+## Execution order
+
+| # | Item | Size | Gate |
+|---|---|---|---|
+| ~~1~~ | ~~Validate mobile `strip_source`, then the byte-compile doctor check~~ *(was P2)* | S | **done 2026-09-13** |
+| 2 | Test matrix + test plan | S–M | none |
+| 3 | Output layer: `rich` rendering + `--json` | M | none |
+| 4 | Linux aarch64 → Raspberry Pi target *(was P3)* | L | Linux host; Pi hardware to finish |
+| 5 | E2E automation against the matrix | M–L | items 2, 3 |
+| 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
+| 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
+| 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
+
+**Why this order.** Item 1 was first because it closes a *correctness* gap: a
+feature that ships today could silently strip sources and produce a bundle a
+device refuses to import. That instinct paid off — the work exposed a second,
+live bug (two disagreeing interpreter resolvers, so iOS and cross-arch desktop
+silently shipped source) that nothing else on this list would have surfaced.
+Nothing should be built on top of an unvalidated packaging path.
+
+Item 2 is second because it is cheap writing and it is the thing that makes
+the rest of this list decidable. Right now "is Android byte-compile proven?"
+is answered by prose in this file and by hand-inspecting a staged bundle. That
+is exactly how the item-1 gap survived from July to now.
+
+Items 3, 4 and 5 are ordered by *how much rework the other order costs*.
+`rich` and `--json` are one item, not two, because both rewrite the same ~119
+`click.echo` call sites — done separately, every output site is edited twice.
+And that layer lands before aarch64 so the new Linux code is written against
+the final console API, and before E2E automation because asserting on a JSON
+envelope is far more durable than screen-scraping progress text.
+
+Item 6 wants a settled CLI surface, which item 3 changes (it adds `--json`
+everywhere) and item 4 changes (it adds an arch). Item 7 is event-driven
+rather than order-driven — nothing in it should start before the repo actually
+moves — but it wants docs to link to, so it sits after item 6.
+
+Item 8 is last by its own stated condition — "after all platforms are working
+and tested" — and because it is the largest thing on this list by a wide
+margin. It has one cheap early move that is worth taking out of order; see the
+item.
+
+`build-for` vs `build-on` architecture (previously tracked as its own deferred
+item) is **not** listed separately: Linux aarch64 is precisely the case that
+makes it live, so it is folded into item 4.
 
 ---
 
-## P0 — Reserve `kivyforge` on PyPI
+## Completed
+
+Kept in full as the record of what was decided and why. Both shipped
+2026-07-31. Where the text below defers something "to P5", read **item 7**.
+
+### P0 — Reserve `kivyforge` on PyPI
 
 **Why first.** Verified 2026-07-30: `pypi.org/pypi/kivyforge/json` returns
 404, so the name is free — and squattable. There is no PyPI mechanism to
@@ -104,7 +154,7 @@ consumes no version — the next tag is a safe test.
 
 ---
 
-## P1 — Safe-area usage in the mobile examples
+### P1 — Safe-area usage in the mobile examples
 
 **Current state.** 2 of 11 mobile examples already use
 `kivy.mobile.get_safe_area()`: `mobile-geometry` (308 lines — the dedicated
@@ -156,26 +206,35 @@ emulator (x86_64) and a Pixel 8a (arm64_v8a).
 
 ---
 
-## P2 — `doctor` check for byte-compile misconfiguration
+## Active queue
 
-> **Prerequisite: install a final CPython 3.14 — and note the validation gap
-> that its absence has been hiding.**
+### 1. Validate mobile `strip_source`, then add the byte-compile doctor check
+
+*Was P2, and now explicitly two deliverables in this order: the validation is
+the point, the check is what stops the gap recurring.*
+
+> **Prerequisite: install a final CPython 3.14, 64-bit.**
 >
-> The dev machine's only CPython 3.14 is a `3.14.0a7`, which the release-level
-> guard correctly refuses. Every Android build here therefore takes the degrade
-> path and ships source. The consequence is easy to miss: **`strip_source` has
+> Re-verified 2026-09-12: the dev machine's only CPython 3.14 is still
+> `3.14.0a7`, which the release-level guard correctly refuses. It is also a
+> **32-bit** install (`Python314-32`) and still the `*` default for
+> `py -3.14`, so it wins the launcher's lookup. The releaselevel is the
+> blocker — a `.pyc`'s magic number is keyed to the minor version, not the
+> word size, so 32-bitness would not by itself break byte-compiling — but
+> install 64-bit anyway and remove the alpha. Every Android build here
+> currently takes the degrade path and ships source.
+>
+> The consequence is easy to miss: **`strip_source` has
 > never actually executed on Android or iOS.** Phase B shipped it for the
 > mobile backends, the unit tests cover the mechanics, and the *desktop* path
 > is verified against a real artifact (`dice-roller`'s Windows `dist/` contains
 > `app/main.pyc` and no `.py`) — but no mobile build has produced a stripped
 > payload even once.
 >
-> Verified 2026-07-31: the staged Android bundle still contains
-> `_python_bundle/app/main.py`.
+> Verified 2026-07-31, and nothing has rebuilt it since: the staged Android
+> bundle still contains `_python_bundle/app/main.py`.
 >
-> Install a **final** CPython 3.14.x (64-bit) and preferably remove the alpha,
-> which is also the `*` default for `py -3.14` and so wins the launcher's
-> lookup. That unblocks two things:
+> Installing the final 3.14 unblocks two things:
 >
 > - **Validating the feature.** Build `android-safe-area` with
 >   `byte_compile = true`, confirm the bundle is `.pyc`-only, and confirm it
@@ -233,12 +292,271 @@ headline, then the *why* (pre-releases do not count, and the reason), then an
 explicit `Fix:` line naming both ways out. The degrade path is the one that
 matters most — it is silent, and until 2026-07-31 it offered no remedy at all.
 
-**Done when** `kivyforge doctor` reports the condition on every platform that
-has the setting.
+**Done when** an `android-safe-area` release build produces a `.pyc`-only
+bundle that boots on the Pixel 8a, **and** `kivyforge doctor` reports the
+misconfiguration on every platform that has the setting. iOS gets the same
+treatment when a macOS host is available; it does not block this item.
+**— done 2026-09-13.** Both deliverables landed; iOS is covered by the check but
+its artifact remains unvalidated, which needs a macOS host and does not block.
+
+### What the work turned up — 2026-09-12/13
+
+**CPython 3.14.7 (64-bit) installed, and `strip_source` has now actually run on
+Android for the first time.** The build reported `byte-compiling the Python
+payload with py -3.14 (.pyc only)`, and the staged bundle is what it should be:
+**0 `.py`, 1036 `.pyc`, no `__pycache__`**, with `app/main.pyc` in the legacy
+sourceless layout. Header magic is **3627** (a 3.14 final; the alpha's was 3621)
+and flags `1` = hash-based/unchecked per PEP 552. **This overturns the
+2026-07-31 finding** that the bundle still contained `_python_bundle/app/main.py`.
+
+**It boots and runs on the Pixel 8a — validated 2026-09-13.** Kivy reports
+`Installed at ".../site-packages/kivy/__init__.pyc"`, the GL stack comes up
+(Mali-G715, OpenGL ES 3.2), and Kivy reaches `Start application main loop` and
+renders. The *installed, unpacked* payload on the device is `.pyc`-only —
+**0 `.py`, 1036 `.pyc`, 0 `__pycache__`**, `app/main.pyc` — so the check is
+against what the device actually imports, not just the staged tree. No
+`ImportError` or bad-magic anywhere: bytecode written by 3.14.7 loads under
+3.14.6, confirming the magic-is-keyed-to-minor assumption on real hardware.
+The app's own output cross-checks too: it reports a 121 px top inset, matching
+the `displayCutoutSafeInsets=Rect(0, 121 - 0, 0)` the window manager reports.
+
+**A trap for the next person doing device validation.** Two runs appeared to
+hang after `[INFO] [Window] Provider: sdl3` with no error. That is not a
+byte-compile failure and not an app bug — it is SDL waiting for a surface that
+never arrives because the screen is locked or the notification shade has input
+focus (`mCurrentFocus=NotificationShade` / `AlternateBouncerView` in
+`dumpsys window`). `deviceLocked=0` from `dumpsys trust` is **not** sufficient;
+check `mCurrentFocus` is the app's activity. `adb shell svc power stayon true`
+avoids the doze/relock cycle mid-test. Worth encoding as a precondition in the
+manual checklist item 2 produces, because the symptom looks exactly like a
+sourceless-import failure.
+
+**The premise of this item was wrong: there were two resolvers, and they
+disagreed.** Android never used `select_compiler()` — it had its own
+`_byte_compile_interpreter()` that *searches* (PEP 397 launcher, then
+`python3.X`), while `select_compiler()` only ever considered the staged
+interpreter or kivyforge's own process. Measured on this host, same target:
+
+| | result |
+|---|---|
+| `select_compiler(native=False, "3.14.6")` | `None` — degrade, ship source |
+| Android's search | `('py', '-3.14')` — byte-compile |
+
+So a check built on `select_compiler()` as planned would have reported a
+problem for Android where none existed. Worse, the disagreement was a **live
+bug**: iOS and every cross-arch desktop build silently shipped source on this
+machine despite a usable 3.14.7 being installed. What settled the design is
+that all six backends *already* tell the user "install a final CPython — 
+kivyforge finds it automatically", which was only true on Android.
+
+**Fixed by unifying, not by special-casing the check.** The search moved into
+`bundle/pycompile.py` as `find_interpreter()`; `select_compiler()` now falls
+back to it, and Android calls it directly. `target_minor()` is shared too
+(it was duplicated). Both resolvers now return `('py', '-3.14')` for the case
+above, so the doctor check reuses the one function the build uses and cannot
+drift from it. Interpreter-search tests moved to `tests/bundle/test_pycompile.py`
+with the code, and `select_compiler()` — which had **no tests at all**, despite
+five other test modules pointing at them — now has them.
+
+**Check shape as built.** `check_byte_compile()` in `doctor/checks_common.py`,
+wired into all five backends, reached through a new `Probe.byte_compile_interpreter()`
+so it stays hermetic. Severity is as specified (`true` → FAIL, `"release"` →
+WARN, `false` → SKIP), plus one case the plan did not anticipate: when the build
+is **native** the staged runtime compiles its own payload and nothing on the
+host matters, so that PASSes without probing. `builds_natively()` is deliberately
+conservative — it requires *every* configured arch to match the host, because
+claiming "native" on the strength of one matching arch would hide exactly the
+cross-build case worth reporting. Verified live on Android: PASS naming
+`py -3.14`, WARN and FAIL by pinning a 3.15 that does not exist, and FAIL exits
+non-zero.
+
+**Two things to carry forward.**
+
+- **`kivyforge run` can never exercise this path.** `android_run()` hardcodes
+  `debug=True`, so the `"release"` tri-state always resolves false in the dev
+  loop; validating on-device required setting `byte_compile = true` explicitly.
+  That is a structural reason the gap survived, and an argument for a
+  `run --release` or an equivalent escape hatch. Not fixed here.
+- **The convenient live degrade case is gone.** This file noted that the dev
+  machine's alpha made the WARN path fire on any 3.14 project; installing 3.14.7
+  removed that. The WARN/FAIL paths now need a deliberately unavailable version
+  (3.15.0 was used), which is a better test anyway but no longer free.
+
+**iOS remains unvalidated** end-to-end — it needs a macOS host. The doctor check
+covers it; `strip_source` on iOS has still never produced a real artifact.
 
 ---
 
-## P3 — Linux aarch64 (Raspberry Pi), cross-build capable
+### 2. Test matrix + test plan
+
+**New 2026-09-12.** Deliverable is one document,
+`docs/design/dev/test-matrix.md`, plus the manual checklist it references. The
+matrix below is the starting content, not the finished doc.
+
+**Why this is worth writing down rather than just testing more.** Item 1 exists
+because a shipped feature had never run, and the way that was discovered was
+someone opening a staged bundle and looking for `main.py`. There is no place in
+the repo that answers "which host × target × tier combinations have actually
+been exercised, and when." This file has been standing in for that, in prose,
+and it drifted.
+
+**Host × target capability.** Derived from each backend's
+`check_host_capability()`, not aspirational:
+
+| Target ↓ / Host → | Windows x86_64 | macOS arm64 | Linux x86_64 |
+|---|---|---|---|
+| Windows x86_64 | native | ✗ | ✗ |
+| macOS arm64 | ✗ | native | ✗ |
+| Linux x86_64 | ✗ (WSL2 only) | ✗ | native |
+| Linux aarch64 (Pi) | ✗ (WSL2 only) | ✗ | **cross** (item 4) |
+| Android arm64-v8a / x86_64 | cross | cross | cross |
+| iOS device + simulator | ✗ | native-only | ✗ |
+
+The consequence worth stating in the doc: **from the Windows dev box only
+Windows and Android are reachable.** The Raspberry Pi target needs a Linux
+x86_64 host — WSL2 counts as one — and iOS/macOS need a Mac. Two of the eight
+roadmap items are therefore host-blocked rather than effort-blocked, which is
+useful to know when picking what to work on in a given week.
+
+**Tiers.** Each tier is a different cost/confidence trade, and the split
+matters because only T5 is genuinely manual:
+
+| Tier | What it proves | Automatable | Where it runs |
+|---|---|---|---|
+| T0 unit | logic, hermetic | yes (exists) | CI, every push |
+| T1 generation | generated Gradle/Xcode/AppDir trees match golden files | yes (partial) | CI |
+| T2 toolchain | real `gradle` / `xcodebuild` / `appimagetool` succeed | yes (partial) | CI |
+| T3 artifact assertions | the produced artifact is *correct* | **yes — mostly missing** | CI |
+| T4 launch smoke | app reaches its first frame | yes (emulator/simulator) | CI + local |
+| T5 hardware | real device behaviour | **no** | manual, logged |
+
+**T3 is the priority, and the argument is item 1.** T3 is a post-build
+inspection pass with no device and no human in it: assert the payload is
+`.pyc`-only when `strip_source` is on, assert ELF class and machine for the
+target arch (`elftools.py` already parses this), assert Mach-O arch
+(`machotools.py`), assert no host-arch binary leaked into a cross-build,
+assert the merged `AndroidManifest.xml` and `Info.plist` contain what config
+asked for, assert signatures verify. Every one of those is a file read.
+**A T3 check would have caught the item-1 gap on the day it shipped**, which
+makes this the highest-value test work available.
+
+**Host-dependent, not just target-dependent** — the doc needs a column for
+this, because these are real and have all bitten:
+
+- byte-compile takes the native or the cross path depending on host arch, so
+  the same target is built by a different code path per host.
+- Windows needs Developer Mode for symlinks (`requires_symlinks` already
+  exists), has a path-length ceiling that staging can hit, and has a cp1252
+  console that constrains user-facing strings (see item 3).
+- macOS and Windows are case-insensitive; Linux is not. Staging collisions
+  appear on one host and not another.
+- Windows launcher reproducibility is pinned to an exact MSVC toolset, so the
+  runner image is part of the test definition.
+
+**Manual, and the doc must say so explicitly** with a checklist and a dated
+results log: iOS device install + launch, notarization (needs an Apple ID and
+network), Authenticode with a real cert (CI's self-signed loop is not the same
+test), Raspberry Pi run, physical Android device, and store submission.
+
+**Work**
+
+- Write `test-matrix.md`: the two tables above, the host-dependency column, the
+  manual checklist, and a results log with dates.
+- Add `integration`, `requires_device`, `requires_toolchain` pytest markers —
+  today the unit/integration split is implicit in which CI job runs.
+- Inventory which cells CI covers today (`lint`, `unit_tests`,
+  `windows_tests`, `windows_launcher`, `windows_signing`, `android_gradle`,
+  `macos_integration`) and mark the gaps rather than guessing at them.
+
+**Done when** the matrix names every host × target × tier cell as covered,
+uncovered, or manual, and CI job names map onto cells.
+
+---
+
+### 3. Output layer: `rich` rendering and `--json`
+
+**New 2026-09-12. These are deliberately one item.** User output today is ~119
+`click.echo` calls plus `CheckResult.render()`, with no central console —
+counted across `platforms/*/cli.py` (Android 37, iOS 20, macOS 10, Linux 9,
+Windows 7) and the shared verbs. Colour and JSON both need to intercept every
+one of those sites. Introduce the seam once, then hang two renderers off it,
+rather than editing 119 call sites twice.
+
+**Shape.** A `kivyforge/report/` module: backends and verbs emit *events* and
+structured results instead of formatted strings; a human renderer (`rich`) and
+a JSON renderer consume them. `ToolchainError` grows structured fields.
+
+**The stdout/stderr rule is the load-bearing decision.** Machine output goes to
+**stdout**; human progress and log lines go to **stderr**. That makes
+`kf build -p android --json > build.json` work while the user still watches
+progress, and it means `--json` never has to suppress progress to stay
+parseable. Everything else in this item is easier once that is fixed.
+
+**`rich` has one real conflict to respect.** Commit 219a8148 pinned
+user-facing strings to a cp1252-safe set because the legacy Windows console
+cannot encode arbitrary Unicode. `rich`'s default boxes, rules and spinners are
+Unicode. So: pick ASCII box styles, no emoji, and let `rich` detect the console
+rather than assuming UTF-8. Also honour `NO_COLOR` / `FORCE_COLOR`, drop colour
+when stdout is not a TTY, and add `--no-color`. `rich` becomes a hard
+dependency — acceptable, it is pure Python with no transitive weight.
+
+**Order within the item.** `doctor` first: `CheckResult` is already a frozen
+dataclass with `name`/`status`/`detail`/`hint`, so it is a near-free
+`--json` and it is the single most useful one to an agent, which needs to know
+whether a build is even possible before attempting it. `status` next, which
+needs actual refactoring — `linux_status()` and its peers `click.echo` computed
+strings like `"out of date (run `kivyforge lock -p linux`)"`, so the state has
+to be returned rather than printed. Then `lock`, `build`, `package`.
+
+**Making kivyforge agent-friendly — beyond `--json`.** In rough value order:
+
+1. **A stable envelope, versioned.** Every `--json` response carries
+   `{"schema": 1, "kivyforge": "...", "command": ..., "platform": ...,
+   "ok": bool, "data": {...}, "diagnostics": [...]}`. Agents branch on shape;
+   an unversioned shape is a shape that breaks silently.
+2. **Report artifact paths in `data`.** `{"artifacts": [{"path", "kind",
+   "sha256"}]}`. Build layout is deterministic (`build/<platform>/…`,
+   `dist/…`), but an agent currently has to know that from docs or guess. This
+   is cheap and removes a whole class of flailing.
+3. **Stable diagnostic IDs.** Failures are prose strings today, and an agent
+   cannot branch on prose. Give each a code — `KF-LOCK-DRIFT`,
+   `KF-BYTECOMPILE-NO-INTERP`, `KF-HOST-INCAPABLE`. Note
+   `native_integration` already does exactly this (`ni.req.N`, `ni.decl.*`,
+   `ni.adv.S*`), so adopting the discipline now also pre-pays item 8.
+4. **An exit-code taxonomy.** `ToolchainError.exit_code` is `1` for
+   everything, so an agent cannot tell "you configured this wrong" from
+   "this toolchain is missing" from "the build failed" — and those want
+   different reactions. Reserve: 1 config/user error, 2 environment/toolchain
+   missing, 3 lock drift, 4 build failure.
+5. **Promote the `Fix:` convention to a field.** The backends already share a
+   message shape ending in an explicit `Fix:` line (established in item 1).
+   Emit it as `diagnostics[].remediation` instead of burying it in prose.
+6. **Capability introspection**, e.g. `kivyforge capabilities --json`:
+   platforms, valid archs, package formats, and **which hosts can build which
+   targets**. That last one is the matrix from item 2, and it is precisely the
+   fact that stops an agent trying to build iOS on Windows.
+7. **Non-interactive guarantees.** No verb should ever prompt; add `--no-input`
+   so that is contractual rather than incidental, and keep progress rendering
+   off when not a TTY.
+8. **`AGENTS.md`** at the repo root for agents working *on* kivyforge (how to
+   run the suite, the coverage gate, the ruff config, the cp1252 rule), plus a
+   short "driving kivyforge from an agent" page in item 6's docs.
+
+Optional, worth a look but not committed here: a `--dry-run` plan mode on
+`build`/`package` so an agent can validate config without paying for a full
+build.
+
+**This item is also test infrastructure.** Item 5's assertions get to compare
+JSON documents instead of grepping progress text, which is why item 3 comes
+first.
+
+**Done when** every verb accepts `--json`, output is on stdout with progress on
+stderr, the envelope is schema-versioned, and a golden-file test pins the
+envelope for each verb.
+
+---
+
+### 4. Linux aarch64 — Raspberry Pi as a *target*, not a host
 
 **Groundwork that already exists** — this is more additive than it looks:
 
@@ -279,18 +597,95 @@ emulation anywhere**, consistent with the principle established in Phase B.
   a cross-build genuinely loses something.
 - Docs: rewrite the linux-spec Architectures section.
 
-**Validation.** Cross-build from x86_64 can be validated immediately (build an
-aarch64 AppImage, verify ELF classes and that no host binary leaked in).
-Native build + actually *running* the AppImage waits on the Pi hardware.
+**Scope narrowed 2026-09-12: the Pi is a target, never a host.** The earlier
+plan also required a natively-built AppImage on the Pi. Dropped. kivyforge
+never has to run on the Pi, which removes the whole question of whether a Pi is
+a viable dev machine (SD-card I/O, 4–8 GB RAM, a toolchain install nobody will
+maintain) and leaves exactly one supported path: **cross-build on Linux x86_64,
+run on the Pi.** Convenient, because it is also the path the architecture
+already anticipates — the payload is prebuilt artifacts throughout, so nothing
+needs to execute an aarch64 binary at build time.
 
-**Deferred, unchanged:** win-arm64.
+Two consequences to write into `linux-spec.md`:
 
-**Done when** an aarch64 AppImage built on x86_64 runs on a Raspberry Pi, and
-a natively-built one does too.
+- `check_host_capability()` still requires a Linux host, so **the Windows dev
+  box cannot build this target at all** — WSL2 or a Linux box is a hard
+  prerequisite, not a convenience. This is the item's real gate.
+- Native aarch64 *building* is not unsupported-forever, just untested and
+  unclaimed. Say so, rather than implying it works.
+
+**Pi specifics to settle while implementing**
+
+- **Which Pi, which OS.** Baseline is 64-bit Raspberry Pi OS (Debian-based) on
+  Pi 4 / Pi 5. Its glibc sets the real floor the manylinux ladder must clear —
+  check it against `effective_glibc_floor()` rather than assuming the x86_64
+  floor transfers.
+- **32-bit ARM is out of scope.** `armv7l` / `armhf` means a third arch, a
+  different PBS triple, and a manylinux tier with far worse wheel coverage.
+  Not worth it while 64-bit Pi OS is the default image.
+- **Wheel availability is the likely surprise**, not the build. Verify at lock
+  time that the dependency closure actually has `manylinux_*_aarch64` wheels;
+  a plain `linux_aarch64` wheel from `find_links` gets the same mandated
+  warning x86_64 already gives.
+- **GPU/display is a run-time question, not a packaging one**, but it is where
+  a Pi run will actually fail first. Note the expectation (SDL under the KMS/DRM
+  or X11/Wayland stack the Pi image ships) so a failure there is not
+  misdiagnosed as a build bug.
+
+**Validation.** The cross-build half validates immediately on a Linux x86_64
+host with no Pi present, and it is all T3 work from item 2: build an aarch64
+AppImage, assert every ELF is `ELFCLASS64` / `EM_AARCH64`, and assert no
+host-arch binary leaked into the AppDir. Actually *running* it waits on
+hardware.
+
+**Deferred, unchanged:** win-arm64. Also deferred: aarch64 as a build host.
+
+**Done when** an aarch64 AppImage cross-built on Linux x86_64 launches and runs
+on a Raspberry Pi 4 or 5 under 64-bit Raspberry Pi OS.
 
 ---
 
-## P4 — End-user docs (MkDocs Material → GitHub Pages)
+### 5. E2E automation against the matrix
+
+**New 2026-09-12.** Item 2 decides *what* to test; this item builds it. Split
+out because the doc is a week and the harness is not, and because it depends on
+item 3's JSON output to assert against.
+
+**Work, in the order that buys the most per unit of effort**
+
+- **T3 artifact assertions first**, as a reusable pytest helper library rather
+  than per-platform copy-paste: payload is `.pyc`-only, ELF/Mach-O/PE arch
+  matches the target, no host binary in a cross-build, manifest and
+  `Info.plist` contain what config declared, signatures verify. These run
+  wherever the artifact was produced and need no device.
+- **Drive the CLI through `--json`** rather than parsing progress output. This
+  is the difference between a suite that survives a wording change and one
+  that does not.
+- **Extend CI per matrix cell.** Add a Linux job that builds an aarch64
+  AppImage (cross, T2+T3) once item 4 lands. Add an Android emulator job for
+  T4 — CI deliberately skips the emulator today, and `run --smoke` already
+  exists to be driven. Add an iOS simulator job on the macOS runner when the
+  wheels it waits on are published.
+- **A small fixture-app set** rather than testing against the full 11 examples:
+  one minimal app per target plus one that exercises native binaries, wheels
+  with extension modules, icons, and `strip_source`. Full-example builds stay
+  a nightly, not a per-push cost.
+- **The manual checklist becomes runnable**: a short script that prints the
+  exact commands for a manual pass and records the results into the matrix
+  doc's log, so a hardware session produces a dated artifact instead of a
+  memory.
+
+**Deliberately not automated:** anything needing an Apple ID, a real signing
+cert, a physical device, or store submission. Item 2's checklist owns those.
+
+**Done when** T0–T4 run in CI for every cell the matrix marks automatable, and
+a hardware pass has a documented, repeatable procedure.
+
+---
+
+### 6. End-user docs (MkDocs Material → GitHub Pages)
+
+*Was P4.*
 
 **Current state.** `docs/guides/` is an intentional placeholder whose README
 says guides will be *derived* from `docs/design/` — design docs are the source
@@ -313,6 +708,13 @@ every internal link.
 - CLI reference: `init` / `lock` / `build` / `run` / `package` / `doctor` /
   `status` / `clean` / `upgrade`.
 - Troubleshooting, including signing prerequisites per platform.
+- **Which host can build which target** — the item-2 matrix restated for end
+  users. Verified 2026-09-12 that nothing in the repo states this in one place,
+  and it is the first thing a new user gets wrong.
+- **Raspberry Pi** as a section under the Linux guide rather than a platform of
+  its own: it is an aarch64 AppImage cross-built on x86_64 (item 4).
+- **Driving kivyforge from an agent or from CI** — `--json`, the envelope, the
+  exit-code taxonomy, diagnostic IDs (item 3).
 
 **Transition-safety.** Pages will publish to `elliotgarbus.github.io/kivyforge`
 and move to `kivy.github.io/kivyforge` after the repo transfer. Therefore: use
@@ -325,7 +727,9 @@ branch.
 
 ---
 
-## P5 — Real 3.0.0 release + Kivy transition checklist
+### 7. Real 3.0.0 release + Kivy transition checklist
+
+*Was P5. Event-driven: nothing here starts before the GitHub repo moves.*
 
 Everything deferred from P0 lands here, together, once the GitHub repo is
 under the Kivy org.
@@ -344,3 +748,92 @@ under the Kivy org.
 **Ordering note.** Nothing here should start before the repo actually moves —
 doing any of it early means doing it twice, and in the Trusted Publishing case
 means leaving an exploitable stale entry behind (see P0).
+
+---
+
+### 8. `native_integration` support for Android and iOS
+
+**New 2026-09-12.** Target: post-3.0.0. Gated by its author's own condition —
+after all platforms are working and tested — which is items 1–5.
+
+**What it is.** `native_integration`
+(`C:\Users\ellio\PycharmProjects\native-integration`) is a draft-v1 convention
+plus a reference reader: a Python package ships a `native.toml` sidecar,
+discovered through the `native_integration.v1` entry point, declaring what it
+**owns** (Java namespaces), **requires** from the app (SDK floors, manifest
+values, manual actions), and **contributes** (Gradle coordinates, Maven repos,
+permissions, components, R8 keeps, SwiftPM packages, `Info.plist` entries,
+Swift/Java source). Contract version `1.0`; library at `0.1.0.dev0`. Android
+and iOS only — desktop is the build host, not a profile.
+
+**The split that makes this tractable.** The library is a *reader*, explicitly
+not a build tool: it discovers, validates, resolves, and records. It never
+writes Gradle or Xcode output. So kivyforge's work is two clearly separable
+halves, and only the second is large.
+
+- **Read half (small).** Depend on `native-integration`; build a `Closure` from
+  the already-resolved **target-platform** dependency set (not the build host's
+  — this is requirement 1 and easy to get wrong); map kivyforge config onto
+  `Application`; call `discover()` then `read()`; fail the build on
+  `not integration.ok` and render `integration.report()` through item 3's
+  reporter.
+- **Generate half (large).** Roughly 15 spec requirements the reader explicitly
+  leaves to the consumer, and they land squarely in the two backends kivyforge
+  already generates projects for: inject Gradle dependencies and scoped
+  repositories, merge permissions/`meta-data`/components/`view_links` into the
+  manifest, apply R8 keeps, stage contributed Java/Kotlin/Swift source, add
+  SwiftPM packages to the generated Xcode project, write
+  `PrivacyInfo.xcprivacy` and `Info.plist` entries, register Swift↔Python
+  modules, link `-ObjC` when a sidecar asks for categories, exclude `_native/`
+  from the device payload, lock and SHA-verify the resolved Maven and SwiftPM
+  graphs, and persist the acceptance record with a gate on changes.
+
+**Three things kivyforge already has that fit, and one that does not.**
+`[tool.kivy.android]` Gradle deps, `[tool.kivy.ios.native.swift_packages]`, and
+`[tool.kivy.*.native.binaries]` are the same *kind* of declaration, just
+authored by the app instead of by a dependency — so the staging and locking
+machinery mostly exists. What does not exist is anywhere for the app to
+**answer** a dependency: no config surface for per-distribution values,
+acknowledgements, permission suppressions, export approvals, or credentials.
+That is a new `[tool.kivy.native.<distribution>]` overlay and it needs
+designing before any code.
+
+**One bootstrap obligation to check early, because it could be structural.**
+The spec requires the Android bootstrap activity to be an
+`androidx.activity.ComponentActivity` (or subclass), and requires iOS URL
+callbacks from `application(_:open:options:)` to reach app code rather than
+being swallowed. kivyforge's bootstrap is a vendored SDL activity. **Confirm
+what it actually inherits from before committing to this item** — if it is not
+already a `ComponentActivity` that is a bootstrap change, and bootstrap changes
+are the riskiest edits in the Android backend.
+
+**The one cheap early move, and why it is worth doing out of order.** The spec
+names kivyforge as its intended first consumer and says the contract stays
+unfrozen until a real consumer builds to a device — and no consumer exists, so
+52 conformance cases and 18 example sidecars have never met a build tool. A
+**read-half-only spike** (map `Application`, run `discover()` + `read()`,
+report, generate nothing) is small, is throwaway, and is the only way to find
+out whether the config surface above is designable before the contract freezes.
+Doing it during item 5 or 6, decoupled from the generator, costs little and
+could save a v2 of the contract. It should not be allowed to grow into the
+generate half early.
+
+**Work**
+
+- Spike the read half; feed findings back into the spec before freeze.
+- Design the `[tool.kivy.native.<distribution>]` answer surface.
+- Verify the `ComponentActivity` obligation against the current bootstrap.
+- Generate half, Android first (kivyforge's Gradle generation is the more
+  mature of the two), then iOS.
+- Persist `native-integration.record` and implement the acceptance gate,
+  including first-build acceptance.
+- Wire `native-integration conformance --profile android|ios -- kivyforge …`
+  into CI as a matrix cell (item 5).
+
+**Done when** an app depending on a sidecar-shipping package builds and runs on
+a real Android device and a real iPhone with no hand-edited Gradle or Xcode
+settings, and the conformance corpus passes for both profiles.
+
+**Prerequisite that is not ours:** `native-integration` is not on PyPI. Either
+it publishes, or kivyforge vendors the reader — decide before the release that
+ships this, not after.
