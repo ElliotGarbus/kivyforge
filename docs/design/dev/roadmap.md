@@ -749,13 +749,12 @@ means leaving an exploitable stale entry behind (see P0).
 **New 2026-09-12.** Target: post-3.0.0. Gated by its author's own condition —
 after all platforms are working and tested — which is items 1–5.
 
-> **Read [`09-native-sidecar-contract.md`](../common/09-native-sidecar-contract.md)
-> first; it supersedes this entry.** That is kivyforge's adoption record, synced
-> against the spec's 26 consuming-tool requirements and already through two
-> external reviews — and two bootstrap seams are implemented. This section was
-> drafted from the spec repo without it and restates a subset; where they
-> disagree, doc 09 wins (and the spec repo wins over doc 09). What remains useful
-> here is only the sizing and the queue position.
+> **`SPEC.md` in the
+> [native-integration](https://github.com/ElliotGarbus/native-integration) repo is
+> the only normative source**, and this entry was drafted from it, which is the
+> right basis. [Doc 09](../common/09-native-sidecar-contract.md) was an earlier
+> in-repo adoption record that the spec then moved ahead of; it has been reduced
+> to a pointer, so nothing here needs reconciling against it.
 
 **What it is.** `native_integration`
 (`C:\Users\ellio\PycharmProjects\native-integration`) is a draft-v1 convention
