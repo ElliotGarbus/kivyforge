@@ -749,6 +749,14 @@ means leaving an exploitable stale entry behind (see P0).
 **New 2026-09-12.** Target: post-3.0.0. Gated by its author's own condition —
 after all platforms are working and tested — which is items 1–5.
 
+> **Read [`09-native-sidecar-contract.md`](../common/09-native-sidecar-contract.md)
+> first; it supersedes this entry.** That is kivyforge's adoption record, synced
+> against the spec's 26 consuming-tool requirements and already through two
+> external reviews — and two bootstrap seams are implemented. This section was
+> drafted from the spec repo without it and restates a subset; where they
+> disagree, doc 09 wins (and the spec repo wins over doc 09). What remains useful
+> here is only the sizing and the queue position.
+
 **What it is.** `native_integration`
 (`C:\Users\ellio\PycharmProjects\native-integration`) is a draft-v1 convention
 plus a reference reader: a Python package ships a `native.toml` sidecar,
