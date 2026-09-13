@@ -15,12 +15,20 @@
 
 Phase B (byte-compile / `strip_source`) is implemented across Android, the
 three desktop backends, and iOS, and is validated on a real Windows release
-build. It is **not** validated on Android or iOS — see item 1.
+build **and on Android** (Pixel 8a, 2026-09-13 — see item 1). iOS is still
+unvalidated, and needs a Mac.
 
 - **Item 1 is done (2026-09-13).** CPython 3.14.7 (64-bit) is installed, Android
   `strip_source` has produced a real `.pyc`-only bundle that runs on a Pixel 8a,
   and the byte-compile doctor check ships on all five backends. It also exposed
-  and fixed a live resolver bug; see the item. **Item 2 is next.**
+  and fixed a live resolver bug; see the item.
+- **Item 2 is done (2026-09-13).** [`test-matrix.md`](test-matrix.md) now answers
+  "which host × target × tier has actually been exercised, and when", and the
+  tier markers make it selectable. It found that **only Android has real
+  toolchain coverage** — no CI job runs `kivyforge build` for any desktop target
+  — and closed a second silent-skip hole of item 1's exact shape. **Item 3 is
+  next**, and item 5 now has a concrete first move (T3 assertions, then a Linux
+  build job) plus the blocker it has to clear.
 - iOS remains unvalidated end-to-end, and no amount of Windows-side work
   changes that: it needs a macOS host.
 
@@ -29,7 +37,7 @@ build. It is **not** validated on Android or iOS — see item 1.
 | # | Item | Size | Gate |
 |---|---|---|---|
 | ~~1~~ | ~~Validate mobile `strip_source`, then the byte-compile doctor check~~ *(was P2)* | S | **done 2026-09-13** |
-| 2 | Test matrix + test plan | S–M | none |
+| ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | 3 | Output layer: `rich` rendering + `--json` | M | none |
 | 4 | Linux aarch64 → Raspberry Pi target *(was P3)* | L | Linux host; Pi hardware to finish |
 | 5 | E2E automation against the matrix | M–L | items 2, 3 |
@@ -44,10 +52,12 @@ live bug (two disagreeing interpreter resolvers, so iOS and cross-arch desktop
 silently shipped source) that nothing else on this list would have surfaced.
 Nothing should be built on top of an unvalidated packaging path.
 
-Item 2 is second because it is cheap writing and it is the thing that makes
-the rest of this list decidable. Right now "is Android byte-compile proven?"
-is answered by prose in this file and by hand-inspecting a staged bundle. That
-is exactly how the item-1 gap survived from July to now.
+Item 2 was second because it is cheap writing and it is what makes the rest of
+this list decidable — before it, "is Android byte-compile proven?" was answered
+by prose in this file and by hand-inspecting a staged bundle, which is exactly
+how the item-1 gap survived from July to September. It earned its place twice
+over: writing the coverage down turned up a second silent-skip hole (the macOS
+Mach-O tests) and gave item 5 an ordered gap list instead of a blank page.
 
 Items 3, 4 and 5 are ordered by *how much rework the other order costs*.
 `rich` and `--json` are one item, not two, because both rewrite the same ~119
@@ -389,87 +399,54 @@ covers it; `strip_source` on iOS has still never produced a real artifact.
 
 ### 2. Test matrix + test plan
 
-**New 2026-09-12.** Deliverable is one document,
-`docs/design/dev/test-matrix.md`, plus the manual checklist it references. The
-matrix below is the starting content, not the finished doc.
+**Status: done 2026-09-13.** Delivered as
+[`test-matrix.md`](test-matrix.md) — host × target capability, the six tiers,
+per-cell coverage naming the CI job that produces it, the host-dependency list,
+a prioritized gap list, the manual checklist, and a dated results log. The
+tables that used to live here moved there rather than being copied, because two
+copies drifting is the failure this item exists to prevent.
 
-**Why this is worth writing down rather than just testing more.** Item 1 exists
-because a shipped feature had never run, and the way that was discovered was
-someone opening a staged bundle and looking for `main.py`. There is no place in
-the repo that answers "which host × target × tier combinations have actually
-been exercised, and when." This file has been standing in for that, in prose,
-and it drifted.
+**Also landed:** the `integration`, `requires_toolchain`, and `requires_device`
+markers, so "which tier does CI run" is now `pytest -m "not integration"` (2515
+of 2530 tests) rather than a question about which job invokes which paths.
 
-**Host × target capability.** Derived from each backend's
-`check_host_capability()`, not aspirational:
+**What the inventory found — four things that change later items:**
 
-| Target ↓ / Host → | Windows x86_64 | macOS arm64 | Linux x86_64 |
-|---|---|---|---|
-| Windows x86_64 | native | ✗ | ✗ |
-| macOS arm64 | ✗ | native | ✗ |
-| Linux x86_64 | ✗ (WSL2 only) | ✗ | native |
-| Linux aarch64 (Pi) | ✗ (WSL2 only) | ✗ | **cross** (item 4) |
-| Android arm64-v8a / x86_64 | cross | cross | cross |
-| iOS device + simulator | ✗ | native-only | ✗ |
+1. **Only Android has real toolchain coverage.** `android_gradle` drives AGP,
+   the pinned NDK, CMake, and `javac` for real. Linux, macOS, and iOS have
+   *none*: no CI job runs `kivyforge build` for any desktop target, and
+   `appimagetool`, `codesign`, `lipo`, `hdiutil`, `xcodebuild`, and `simctl`
+   have never executed outside a mock. `macos_integration` runs `pytest -q` and
+   nothing more — its whole marginal value over `unit_tests` is two Mach-O
+   launcher tests.
+2. **A silent-skip hole of exactly item 1's shape, found and closed.** Those two
+   macOS tests were gated by one `skipif` covering both "wrong host" and "no
+   clang". On the macOS runner — the only place they can run — a missing clang
+   would have skipped them and left the job green. Split into a platform gate
+   (skip, correctly) and a toolchain gate that fails under
+   `KIVYFORGE_REQUIRE_TOOLCHAIN`, now set on the three jobs that exist for their
+   toolchain. Same reasoning as the existing `KIVYFORGE_REQUIRE_SYMLINKS`.
+3. **T3 artifact assertions are the cheapest real win, and barely exist.**
+   `android_gradle`'s are three `unzip -l | grep` presence checks. Nothing
+   asserts `.pyc`-only under `strip_source`, nothing checks a `.pyc` magic
+   number against the shipped runtime, nothing asserts ELF/Mach-O arch — even
+   though `android/elf.py`, `linux/elftools.py`, and `macos/machotools.py`
+   already parse all of it. **A T3 pass would have caught item 1 on day one**,
+   which is the argument for item 5 leading with T3 rather than with a device.
+4. **Item 5 has a concrete blocker to solve first.** The four
+   `examples/desktop/*` projects commit `pylock.windows.toml` and nothing else —
+   no `pylock.linux.toml` or `pylock.macos.toml` exists in the repo. So a desktop
+   build job must either lock at CI time (network, resolver, lock drift as a new
+   failure mode) or the examples need committed locks. `android_gradle` avoids
+   this by consuming a committed lock, and that is the model to copy. Linux is
+   the cheapest first target: `ubuntu-latest`, no signing identity, no Mac.
 
-The consequence worth stating in the doc: **from the Windows dev box only
-Windows and Android are reachable.** The Raspberry Pi target needs a Linux
-x86_64 host — WSL2 counts as one — and iOS/macOS need a Mac. Two of the eight
-roadmap items are therefore host-blocked rather than effort-blocked, which is
-useful to know when picking what to work on in a given week.
-
-**Tiers.** Each tier is a different cost/confidence trade, and the split
-matters because only T5 is genuinely manual:
-
-| Tier | What it proves | Automatable | Where it runs |
-|---|---|---|---|
-| T0 unit | logic, hermetic | yes (exists) | CI, every push |
-| T1 generation | generated Gradle/Xcode/AppDir trees match golden files | yes (partial) | CI |
-| T2 toolchain | real `gradle` / `xcodebuild` / `appimagetool` succeed | yes (partial) | CI |
-| T3 artifact assertions | the produced artifact is *correct* | **yes — mostly missing** | CI |
-| T4 launch smoke | app reaches its first frame | yes (emulator/simulator) | CI + local |
-| T5 hardware | real device behaviour | **no** | manual, logged |
-
-**T3 is the priority, and the argument is item 1.** T3 is a post-build
-inspection pass with no device and no human in it: assert the payload is
-`.pyc`-only when `strip_source` is on, assert ELF class and machine for the
-target arch (`elftools.py` already parses this), assert Mach-O arch
-(`machotools.py`), assert no host-arch binary leaked into a cross-build,
-assert the merged `AndroidManifest.xml` and `Info.plist` contain what config
-asked for, assert signatures verify. Every one of those is a file read.
-**A T3 check would have caught the item-1 gap on the day it shipped**, which
-makes this the highest-value test work available.
-
-**Host-dependent, not just target-dependent** — the doc needs a column for
-this, because these are real and have all bitten:
-
-- byte-compile takes the native or the cross path depending on host arch, so
-  the same target is built by a different code path per host.
-- Windows needs Developer Mode for symlinks (`requires_symlinks` already
-  exists), has a path-length ceiling that staging can hit, and has a cp1252
-  console that constrains user-facing strings (see item 3).
-- macOS and Windows are case-insensitive; Linux is not. Staging collisions
-  appear on one host and not another.
-- Windows launcher reproducibility is pinned to an exact MSVC toolset, so the
-  runner image is part of the test definition.
-
-**Manual, and the doc must say so explicitly** with a checklist and a dated
-results log: iOS device install + launch, notarization (needs an Apple ID and
-network), Authenticode with a real cert (CI's self-signed loop is not the same
-test), Raspberry Pi run, physical Android device, and store submission.
-
-**Work**
-
-- Write `test-matrix.md`: the two tables above, the host-dependency column, the
-  manual checklist, and a results log with dates.
-- Add `integration`, `requires_device`, `requires_toolchain` pytest markers —
-  today the unit/integration split is implicit in which CI job runs.
-- Inventory which cells CI covers today (`lint`, `unit_tests`,
-  `windows_tests`, `windows_launcher`, `windows_signing`, `android_gradle`,
-  `macos_integration`) and mark the gaps rather than guessing at them.
-
-**Done when** the matrix names every host × target × tier cell as covered,
-uncovered, or manual, and CI job names map onto cells.
+**One correction to the plan this item started from:** the draft capability
+table, written from memory rather than from the code, counted five platforms.
+There are **seven target cells** — Android and iOS each carry two arches, and
+they are genuinely different builds. It also implied win-arm64 was reachable:
+the host gate is arch-agnostic by design, but `VALID_WINDOWS_ARCHS` is
+`{amd64}`, so config rejects it today. Same for Linux `aarch64`, which is item 4.
 
 ---
 
@@ -674,6 +651,22 @@ item 3's JSON output to assert against.
   exact commands for a manual pass and records the results into the matrix
   doc's log, so a hardware session produces a dated artifact instead of a
   memory.
+
+**Sharpened by item 2's inventory (2026-09-13)** — two changes to the above:
+
+- **A plain Linux `x86_64` build job comes before the aarch64 one, and does not
+  wait on item 4.** Linux is the emptiest column in the matrix (unit tests only;
+  `appimagetool` has never executed outside a mock) and the cheapest to fill:
+  `ubuntu-latest`, no signing identity, no Mac.
+- **Clear the lock blocker first.** The four `examples/desktop/*` projects commit
+  `pylock.windows.toml` and nothing else, so any desktop build job must either
+  lock at CI time — network, a resolver run, and lock drift as a new failure mode
+  — or the fixture apps must ship committed locks. `android_gradle` builds from a
+  committed lock and needs no resolver; copy that. This decides the shape of the
+  "small fixture-app set" above, so it is the first thing to settle.
+
+See [`test-matrix.md`](test-matrix.md) §5 for the full gap list in priority
+order; it is the work queue for this item.
 
 **Deliberately not automated:** anything needing an Apple ID, a real signing
 cert, a physical device, or store submission. Item 2's checklist owns those.
