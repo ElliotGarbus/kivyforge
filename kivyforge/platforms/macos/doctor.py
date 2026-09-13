@@ -430,12 +430,21 @@ def run_macos_checks(
             "Signing identity type",
             "Notary setup",
             "Required hosts reachable",
+            C.BYTE_COMPILE_NAME,
         ):
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
         return results
 
+    macos = config.macos_required
     results += [
         C.check_app_dir(config, project_root),
+        C.check_byte_compile(
+            probe,
+            byte_compile=macos.build_settings.byte_compile,
+            python_version=macos.python_version,
+            table="tool.kivy.macos.build_settings",
+            native=C.builds_natively(probe, macos.archs),
+        ),
         check_macos_arch_coverage(config, lock),
         check_macos_runtime_floor(config, lock),
         check_macos_app_icon(config, project_root),

@@ -383,6 +383,7 @@ def run_linux_checks(
     if config is None:
         for name in (
             "App source directory",
+            C.BYTE_COMPILE_NAME,
             "glibc floor",
             "Architecture coverage",
             "App icon",
@@ -394,8 +395,16 @@ def run_linux_checks(
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
         return results
 
+    linux = config.linux_required
     results += [
         C.check_app_dir(config, project_root),
+        C.check_byte_compile(
+            probe,
+            byte_compile=linux.build_settings.byte_compile,
+            python_version=linux.python_version,
+            table="tool.kivy.linux.build_settings",
+            native=C.builds_natively(probe, linux.archs),
+        ),
         check_linux_glibc_floor(config, lock),
         check_linux_arch_coverage(config, lock),
         check_linux_app_icon(config, project_root),

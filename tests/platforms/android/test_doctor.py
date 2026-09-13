@@ -49,6 +49,7 @@ class FakeProbe:
         self._reachable = kw.get("reachable", True)
         self._licenses = kw.get("licenses", ["android-sdk-license"])
         self._devices = kw.get("devices", ["emulator-5554"])
+        self._byte_compiler = kw.get("byte_compiler", ())
         self._latest = kw.get("latest")
 
     def which(self, name):
@@ -86,6 +87,10 @@ class FakeProbe:
 
     def latest_kivyforge_version(self):
         return self._latest
+
+    def byte_compile_interpreter(self, python_version):
+        # () means "this interpreter"; None would mean no match was found.
+        return self._byte_compiler
 
 
 def _healthy_probe(sdk: Path):

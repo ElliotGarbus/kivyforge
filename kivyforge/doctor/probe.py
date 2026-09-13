@@ -64,11 +64,27 @@ class Probe(Protocol):
     def code_signing_thumbprints(self, store_scope: str) -> list[str]: ...
     def build_output_locked(self, path: Path) -> bool | None: ...
     def filesystem_type(self, path: Path) -> str | None: ...
+    def byte_compile_interpreter(
+        self, python_version: str
+    ) -> tuple[str, ...] | None: ...
+    def host_machine(self) -> str: ...
 
 
 class RealProbe:
     def host_system(self) -> str:
         return _platform.system()
+
+    def byte_compile_interpreter(self, python_version: str) -> tuple[str, ...] | None:
+        """Delegate to the *build's* resolver, so the two cannot disagree."""
+        from ..bundle.pycompile import find_interpreter
+
+        return find_interpreter(python_version)
+
+    def host_machine(self) -> str:
+        """Lower-cased ``platform.machine()``, the spelling each backend's arch
+        vocabulary is chosen to match (``amd64`` on Windows, ``arm64`` on Apple
+        Silicon, ``x86_64`` on Linux) — so a target arch compares directly."""
+        return _platform.machine().lower()
 
     def has_codesign(self) -> bool:
         return shutil.which("codesign") is not None

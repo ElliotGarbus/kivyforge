@@ -33,6 +33,9 @@ class FakeProbe:
         self._thumbprints = overrides.get("thumbprints", [])
         self._output_locked = overrides.get("output_locked", None)
         self._filesystem = overrides.get("filesystem", "NTFS")
+        # A found byte-compiler by default: () means "this interpreter".
+        self._byte_compiler = overrides.get("byte_compiler", ())
+        self._machine = overrides.get("machine", "arm64")
 
     def host_system(self):
         return self._host
@@ -114,3 +117,9 @@ class FakeProbe:
 
     def filesystem_type(self, path):
         return self._filesystem
+
+    def byte_compile_interpreter(self, python_version):
+        return self._byte_compiler
+
+    def host_machine(self):
+        return self._machine

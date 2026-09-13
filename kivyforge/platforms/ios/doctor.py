@@ -418,12 +418,23 @@ def run_ios_checks(
             "App-local native binaries",
             "App-level privacy manifest",
             "xcframework privacy manifests",
+            C.BYTE_COMPILE_NAME,
         ):
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
         return results
 
+    ios = config.ios_required
     results += [
         C.check_app_dir(config, project_root),
+        # iOS never has a runnable staged interpreter: Python.xcframework is a
+        # linkable library, not an executable, so native= is always False here.
+        C.check_byte_compile(
+            probe,
+            byte_compile=ios.python_build_settings.byte_compile,
+            python_version=ios.python_version,
+            table="tool.kivy.ios.python.build_settings",
+            native=False,
+        ),
         check_signing_identity(probe, config),
         check_provisioning_profile(config, project_root),
         check_entitlements_vs_profile(config, project_root),

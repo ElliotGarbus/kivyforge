@@ -75,6 +75,98 @@ def check_kivyforge_version(
     return CheckResult("kivyforge version", Status.PASS, current)
 
 
+BYTE_COMPILE_NAME = "Byte-compile interpreter"
+
+
+def builds_natively(probe: Probe, archs: tuple[str, ...]) -> bool:
+    """Whether *every* configured arch can run on this host.
+
+    Conservative on purpose: if any configured arch is foreign, the check must
+    evaluate the host-interpreter fallback, because that is the rung the build
+    will land on for that arch. Claiming "native" on the strength of one
+    matching arch would hide exactly the cross-build case worth reporting.
+    """
+    host = probe.host_machine()
+    return bool(archs) and all(arch == host for arch in archs)
+
+
+def check_byte_compile(
+    probe: Probe,
+    *,
+    byte_compile: bool | str,
+    python_version: str | None,
+    table: str,
+    native: bool,
+) -> CheckResult:
+    """Whether a configured ``byte_compile`` can actually find a compiler.
+
+    The gap this closes: a ``byte_compile`` setting that cannot find a matching
+    CPython only surfaces when the build runs, and with the default ``"release"``
+    tri-state it then degrades *quietly* to shipping source — the one outcome
+    someone who configured stripping does not want to discover after the fact.
+
+    Severity follows how the build reads the setting. ``true`` means "I insist",
+    so a missing interpreter is a hard failure there and a FAIL here; the default
+    ``"release"`` means "when it makes sense", so it degrades and is a WARN.
+
+    *native* must be passed exactly as the build computes it: when the build can
+    run the interpreter it stages, that shipped runtime compiles its own payload
+    and nothing on the host matters. Android and iOS never can (there is no
+    runnable staged interpreter for either), and a cross-arch desktop build
+    cannot either.
+    """
+    if byte_compile is False:
+        return CheckResult(
+            BYTE_COMPILE_NAME, Status.SKIP, f"byte_compile = false in [{table}]"
+        )
+    setting = "true" if byte_compile is True else f'"{byte_compile}"'
+    if native:
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            Status.PASS,
+            f"byte_compile = {setting}; the staged runtime compiles its own payload",
+        )
+    if python_version is None:
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            Status.SKIP,
+            f"byte_compile = {setting}, but no Python version is configured",
+        )
+    minor = ".".join(python_version.split(".")[:2])
+    compiler = probe.byte_compile_interpreter(python_version)
+    if compiler is not None:
+        found = "this interpreter" if compiler == () else " ".join(compiler)
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            Status.PASS,
+            f"byte_compile = {setting}; CPython {minor} via {found}",
+        )
+    # Same headline/why/Fix shape the six backends use at build time.
+    hint = (
+        f"Pre-releases do not count: CPython only freezes the .pyc magic number "
+        f"at the first release candidate, so a {minor} alpha writes bytecode "
+        f"{python_version} refuses to import.\n"
+        f"       Fix: install a final CPython {minor} — kivyforge finds it "
+        f"automatically — or set byte_compile = false in [{table}]."
+    )
+    if byte_compile is True:
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            Status.FAIL,
+            f"byte_compile = true, but no final CPython {minor} found "
+            f"(this project ships {python_version}); the build will fail",
+            hint=hint,
+        )
+    return CheckResult(
+        BYTE_COMPILE_NAME,
+        Status.WARN,
+        f"byte_compile = {setting}, but no final CPython {minor} found "
+        f"(this project ships {python_version}); release builds will "
+        f"silently ship source",
+        hint=hint,
+    )
+
+
 def check_app_dir(config: Config, project_root: Path) -> CheckResult:
     """``app_dir`` must resolve to an existing directory — it carries the app's
     Python source into the bundle. Config validation only checks the *string*

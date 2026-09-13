@@ -20,6 +20,7 @@ from typing import Protocol
 from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config
 from kivyforge.config.model import AndroidConfig, Config
+from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.result import CheckResult, Status
 
 from . import toolchain
@@ -49,11 +50,20 @@ class AndroidProbe(Protocol):
     def has_kvm_or_haxm(self) -> bool: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
     def latest_kivyforge_version(self) -> str | None: ...
+    def byte_compile_interpreter(
+        self, python_version: str
+    ) -> tuple[str, ...] | None: ...
 
 
 class RealAndroidProbe:
     def which(self, name: str) -> str | None:
         return shutil.which(name)
+
+    def byte_compile_interpreter(self, python_version: str) -> tuple[str, ...] | None:
+        """Delegate to the *build's* resolver, so the two cannot disagree."""
+        from kivyforge.bundle.pycompile import find_interpreter
+
+        return find_interpreter(python_version)
 
     def java_home(self) -> str | None:
         jh = os.environ.get("JAVA_HOME")
@@ -844,6 +854,19 @@ def android_doctor(
             f"{android.package} (min {android.min_sdk} / target "
             f"{android.target_sdk}, kivy_generation {android.kivy_generation}, "
             f"abis {', '.join(android.abis)})",
+        )
+    )
+    # Android never has a runnable staged interpreter — the payload targets an
+    # ARM/x86 device — so native= is always False, exactly as the build resolves
+    # it. The version comes from config rather than the lock so the check works
+    # before a first `kivyforge lock`.
+    results.append(
+        C.check_byte_compile(
+            probe,
+            byte_compile=android.build_settings.byte_compile,
+            python_version=android.python.version if android.python else None,
+            table="tool.kivy.android.build_settings",
+            native=False,
         )
     )
     app_dir = cwd / config.kivy.app_dir

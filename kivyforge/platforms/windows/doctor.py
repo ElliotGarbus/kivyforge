@@ -476,6 +476,7 @@ def _add_host(hosts: set[tuple[str, int]], url: str) -> None:
 
 _PROJECT_CHECK_NAMES = (
     "App source directory",
+    C.BYTE_COMPILE_NAME,
     "AppUserModelID",
     "Architecture coverage",
     "App icon",
@@ -513,8 +514,16 @@ def run_windows_checks(
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
         return results
 
+    windows = config.windows_required
     results += [
         C.check_app_dir(config, project_root),
+        C.check_byte_compile(
+            probe,
+            byte_compile=windows.build_settings.byte_compile,
+            python_version=windows.python_version,
+            table="tool.kivy.windows.build_settings",
+            native=C.builds_natively(probe, windows.archs),
+        ),
         check_windows_app_id(config),
         check_windows_arch_coverage(config, lock),
         check_windows_app_icon(config, project_root),
