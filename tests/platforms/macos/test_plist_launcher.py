@@ -21,6 +21,7 @@ from kivyforge.platforms.macos.plist import (
     DEFAULT_MINIMUM_SYSTEM_VERSION,
     build_info_plist,
 )
+from tests.conftest import skip_missing_toolchain
 
 _BASE = (
     "[project]\nname='myapp'\nversion='2.5.0'\nrequires-python='>=3.14'\n"
@@ -135,14 +136,21 @@ class TestLauncherCompileHermetic:
 # operation (Linux clang rejects `-arch`/can't emit Mach-O), matching the fact
 # that the whole `.app` build only runs on macOS hosts. The macOS integration CI
 # job exercises these; skip them elsewhere.
-_CAN_BUILD_MACHO = sys.platform == "darwin" and shutil.which("clang") is not None
-
-
+#
+# Wrong host and missing clang are deliberately two separate gates: off macOS
+# there is nothing to test, but *on* macOS an absent clang means the one job that
+# covers this silently covered nothing, so KIVYFORGE_REQUIRE_TOOLCHAIN turns it
+# into a failure.
+@pytest.mark.requires_toolchain
 @pytest.mark.skipif(
-    not _CAN_BUILD_MACHO,
-    reason="Mach-O launcher build requires macOS + clang (Xcode CLT)",
+    sys.platform != "darwin", reason="Mach-O launcher build is macOS-only"
 )
 class TestLauncherCompile:
+    @pytest.fixture(autouse=True)
+    def _needs_clang(self):
+        if shutil.which("clang") is None:
+            skip_missing_toolchain("clang", "install the Xcode command line tools")
+
     def test_builds_thin_macho(self, tmp_path):
         host = "arm64" if platform.machine() == "arm64" else "x86_64"
         path = tmp_path / "MacOS" / "myapp"

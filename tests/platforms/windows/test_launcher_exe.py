@@ -20,7 +20,9 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.requires_windows
+from tests.conftest import skip_missing_toolchain
+
+pytestmark = [pytest.mark.requires_windows, pytest.mark.requires_toolchain]
 
 # A console-subsystem stand-in for python.exe. It writes its own PID, the Python
 # isolation env vars, and every forwarded argv entry (UTF-8, one per line) to the
@@ -95,7 +97,7 @@ def launcher_bundle(tmp_path_factory):
     try:
         compile_c_source(stub_src, root / "python" / "python.exe", subsystem="CONSOLE")
     except LauncherBuildError as exc:
-        pytest.skip(f"MSVC not available to build the launcher test stub: {exc}")
+        skip_missing_toolchain("MSVC", f"cannot build the launcher test stub: {exc}")
 
     import shutil
 
