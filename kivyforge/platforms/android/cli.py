@@ -13,6 +13,7 @@ from pathlib import Path
 import click
 
 from kivyforge.artifacts.download import fetch_artifact
+from kivyforge.bundle.pycompile import find_interpreter, target_minor
 from kivyforge.cli._common import ToolchainError
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config
@@ -115,82 +116,6 @@ def _setting_applies(value: bool | str, *, release: bool) -> bool:
     return release  # ANDROID_RELEASE_ONLY
 
 
-def _target_minor(python_version: str) -> tuple[int, int]:
-    parts = python_version.split(".")[:2]
-    return (int(parts[0].split("rc")[0]), int(parts[1].split("rc")[0]))
-
-
-def _byte_compile_interpreter(python_version: str) -> tuple[str, ...] | None:
-    """Find an interpreter that can write ``.pyc`` for the target runtime.
-
-    A ``.pyc`` is keyed to one exact CPython magic number, and that number is
-    frozen at each minor's first **release candidate** — so any *final*
-    ``3.x.z`` will do, but a different minor will not: its output is silently
-    ignored when the source ships alongside, and fails outright once the source
-    is stripped.
-
-    A pre-release of the *right* minor is the trap. CPython bumps the magic
-    number repeatedly through the alpha/beta cycle, so 3.14.0a7 (magic 3621)
-    writes bytecode that shipped 3.14.6 (magic 3627) refuses to import —
-    while still answering "3.14" to a version check. Candidates must therefore
-    report ``releaselevel == "final"``, not merely the right minor.
-
-    kivyforge is installed under whatever Python the user has, which is usually
-    *not* the version being shipped to the device, so this looks for a matching
-    one rather than insisting on being run under it. Returns ``()`` for "this
-    interpreter", an argv prefix for another one, or ``None`` when there is no
-    match to be found.
-    """
-    import os
-    import sys
-
-    from kivyforge.bundle.pycompile import is_final_release
-
-    target = _target_minor(python_version)
-    if sys.version_info[:2] == target and is_final_release():
-        return ()
-    tag = f"{target[0]}.{target[1]}"
-    candidates: list[tuple[str, ...]] = []
-    if os.name == "nt":
-        # The PEP 397 launcher is the reliable way to reach a specific version
-        # on Windows; versioned executables are usually not on PATH there.
-        candidates.append(("py", f"-{tag}"))
-    candidates += [(f"python{tag}",), (f"python{target[0]}",), ("python",)]
-    for candidate in candidates:
-        if _reports_version(candidate, tag):
-            return candidate
-    return None
-
-
-def _reports_version(argv: tuple[str, ...], tag: str) -> bool:
-    """Whether *argv* is a **final** release of CPython minor *tag*.
-
-    The releaselevel half is load-bearing, not belt-and-braces: an alpha of the
-    right minor passes a bare version check and then writes ``.pyc`` the
-    shipped runtime cannot import (see :func:`_byte_compile_interpreter`).
-    """
-    import subprocess
-
-    try:
-        proc = subprocess.run(
-            [
-                *argv,
-                "-c",
-                "import sys;print('%d.%d %s' % (sys.version_info[0],"
-                " sys.version_info[1], sys.version_info.releaselevel))",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    if proc.returncode != 0:
-        return False
-    parts = proc.stdout.split()
-    return len(parts) == 2 and parts[0] == tag and parts[1] == "final"
-
-
 def _resolve_byte_compile(
     android: AndroidConfig, *, python_version: str, debug: bool
 ) -> tuple[tuple[str, ...] | None, bool]:
@@ -205,9 +130,9 @@ def _resolve_byte_compile(
     settings = android.build_settings
     if not _setting_applies(settings.byte_compile, release=not debug):
         return None, False
-    compiler = _byte_compile_interpreter(python_version)
+    compiler = find_interpreter(python_version)
     if compiler is None:
-        target = ".".join(str(p) for p in _target_minor(python_version))
+        target = ".".join(str(p) for p in target_minor(python_version))
         headline = (
             f"no final CPython {target} found (this project ships {python_version})"
         )

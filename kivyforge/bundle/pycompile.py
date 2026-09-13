@@ -30,6 +30,7 @@ that wrote it.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -49,18 +50,76 @@ def select_compiler(
     The staged interpreter is the one actually shipped, so it is the first
     choice — but only when *native*, i.e. the caller has confirmed it can run
     on this host without emulation, which kivyforge never depends on. When it
-    can't run here, fall back to this process's own interpreter: a ``.pyc``'s
-    magic number is keyed to CPython's *minor* version, never architecture, so
-    an interpreter of the right minor will do regardless of which arch it runs
-    on — provided it is a **final** release (see :func:`is_final_release`).
+    can't run here, fall back to any **final** CPython of the target's minor
+    this host can offer (:func:`find_interpreter`): a ``.pyc``'s magic number is
+    keyed to CPython's *minor* version, never architecture, so an interpreter of
+    the right minor will do regardless of which arch it runs on.
     Returns ``None`` when neither works, telling the caller to degrade (skip
     compiling, ship source) rather than write a ``.pyc`` nothing can load.
     """
     if native and staged_interpreter.is_file():
         return (str(staged_interpreter),)
-    if sys.version_info[:2] == _target_minor(python_version) and is_final_release():
+    return find_interpreter(python_version)
+
+
+def find_interpreter(python_version: str) -> tuple[str, ...] | None:
+    """Find an interpreter on this host able to write ``.pyc`` for *python_version*.
+
+    kivyforge is installed under whatever Python the user happens to have, which
+    is usually *not* the version being shipped to the target, so this looks for
+    a matching one rather than insisting on being run under it. That is what
+    every backend's error message already promises ("kivyforge finds it
+    automatically"), and until this was shared it was only true on Android.
+
+    A ``.pyc`` is keyed to one exact CPython magic number, frozen at each
+    minor's first release candidate — so any *final* ``3.x.z`` will do, but a
+    different minor will not. A pre-release of the *right* minor is the trap it
+    has to exclude; see :func:`is_final_release`.
+
+    Returns ``()`` for "this interpreter", an argv prefix for another one, or
+    ``None`` when there is no match to be found.
+    """
+    target = target_minor(python_version)
+    if sys.version_info[:2] == target and is_final_release():
         return ()
+    tag = f"{target[0]}.{target[1]}"
+    candidates: list[tuple[str, ...]] = []
+    if os.name == "nt":
+        # The PEP 397 launcher is the reliable way to reach a specific version
+        # on Windows; versioned executables are usually not on PATH there.
+        candidates.append(("py", f"-{tag}"))
+    candidates += [(f"python{tag}",), (f"python{target[0]}",), ("python",)]
+    for candidate in candidates:
+        if _reports_version(candidate, tag):
+            return candidate
     return None
+
+
+def _reports_version(argv: tuple[str, ...], tag: str) -> bool:
+    """Whether *argv* is a **final** release of CPython minor *tag*.
+
+    The releaselevel half is load-bearing, not belt-and-braces: an alpha of the
+    right minor passes a bare version check and then writes ``.pyc`` the
+    shipped runtime cannot import (see :func:`find_interpreter`).
+    """
+    try:
+        proc = subprocess.run(
+            [
+                *argv,
+                "-c",
+                "import sys;print('%d.%d %s' % (sys.version_info[0],"
+                " sys.version_info[1], sys.version_info.releaselevel))",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if proc.returncode != 0:
+        return False
+    parts = proc.stdout.split()
+    return len(parts) == 2 and parts[0] == tag and parts[1] == "final"
 
 
 def is_final_release() -> bool:
@@ -79,7 +138,8 @@ def is_final_release() -> bool:
     return sys.version_info.releaselevel == "final"
 
 
-def _target_minor(python_version: str) -> tuple[int, int]:
+def target_minor(python_version: str) -> tuple[int, int]:
+    """The ``(major, minor)`` a ``.pyc``'s magic number is keyed to."""
     parts = python_version.split(".")[:2]
     return (int(parts[0].split("rc")[0]), int(parts[1].split("rc")[0]))
 
