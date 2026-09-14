@@ -361,14 +361,37 @@ locks in the repo are `examples/mobile/hello-android/pylock.android.toml`,
 
 That changes the planning conclusion, not just a detail. A **Windows** build job
 has the same blocker as Linux and macOS, so "Linux is cheapest" was resting on a
-Windows lock that does not exist. Every desktop target needs the same decision
-first:
+Windows lock that does not exist.
 
-- **commit one desktop lock** for a hello-scale example, copying exactly what
-  `hello-android` does and what its `.gitignore` comment explains — the model is
-  already in the repo and it works; or
-- **adopt lock-at-CI-time explicitly** and accept resolver drift as a documented
-  new failure mode, rather than arriving at it by default.
+**And this is less open than it looks — there is already a policy, and it is not
+here.** [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md)
+§"Example-repo lock policy" owns this: `examples/**/pylock.*.toml` is gitignored
+*deliberately*, because `pyproject_sha256` covers the whole `pyproject.toml`, so
+any overlay edit churns a lock that pinned nothing new, and a lock kept for
+reference value goes stale silently. The carve-out is **on-device gate
+examples** — `hello-android`, `hello-sdl3`, `hello-kivy` — whose locks are
+committed because they are *evidence*, recording the exact wheel hashes that
+passed a specific validated run.
+
+So "the examples must gain committed locks" was the wrong framing twice over: the
+desktop examples' gitignore is a decision, not an oversight, and flipping it
+would contravene a documented policy this file failed to cite. What actually
+remains is narrower:
+
+- **give Linux a gate example** whose committed lock backs a real validated run,
+  which is exactly the exemption the three mobile gates hold; or
+- **lock at CI time** for desktop jobs, accepting a resolver run and drift as a
+  named failure mode.
+
+**The second looks stronger for desktop, which reverses this file's earlier
+lean.** The mobile gates earn committed locks because their wheels come from a
+bridge index that is rebuilt and not bit-reproducible — the lock is the only
+thing tying a result to the binaries that produced it. Desktop wheels come from
+PyPI, which is immutable, so a committed desktop lock buys much less evidence
+while taking on the churn and staleness the policy objects to. A committed Linux
+lock becomes worth revisiting when item 4 gives Linux a real on-device Pi gate,
+because then it *is* evidence and qualifies on the documented grounds. Recorded
+as a recommendation, not a decision.
 
 With that settled, `ubuntu-latest` is still the cheapest *CI* desktop job — no
 signing identity, no Mac, and it fills the emptiest column. But from this dev

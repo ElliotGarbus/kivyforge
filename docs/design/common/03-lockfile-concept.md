@@ -105,9 +105,10 @@ exception: the **on-device gate examples**, whose locks stay committed.
 | Example | Lock | Gate it backs |
 |---|---|---|
 | `examples/mobile/hello-android` | `pylock.android.toml` | x86_64 emulator + Pixel 8a contract smoke test |
+| `examples/mobile/hello-sdl3` | `pylock.android.toml` | SDL3 contract smoke test; Kivy 3.0 start on the emulator |
 | `examples/mobile/hello-kivy` | `pylock.ios.toml` | iOS simulator build/launch/render |
 
-These two are exempt because their locks are **evidence, not just build input**.
+These three are exempt because their locks are **evidence, not just build input**.
 Each records the exact wheel hashes that passed a specific on-device run, so
 the validation result stays attached to the binaries it was obtained from. If
 the lock regenerates, the next run silently validates a different artifact —
@@ -118,7 +119,7 @@ That also keeps `kivyforge lock --check` meaningful for them: it compares a
 committed lock against `pyproject.toml`, so against a gitignored lock it can
 only ever report "out of date". `examples/verify-android.ps1` runs that check
 and falls back to re-locking, so it stays correct either way — but only the
-gate example actually exercises it.
+gate examples actually exercise it.
 
 Every other example's README documents `kivyforge lock` / `kivyforge lock
 --update` as the first step of running it, so regenerating a gitignored lock is

@@ -455,19 +455,28 @@ same failure as an unlogged test. `requires_device` also marks no test yet.
    *Since closed for Android, later the same day; see item 5. Linux and macOS
    remain open, though only their pytest drivers are blocked — the check
    functions are not.*
-4. **Item 5 has a concrete blocker to solve first, and it is bigger than it
-   first looked.** No `examples/desktop/*` project commits a lock at all: all
-   four gitignore `pylock.*.toml`, and the only committed locks in the repo are
-   `hello-android` and `hello-sdl3` (Android) plus `hello-kivy` (iOS). So a
-   desktop build job must either lock at CI time (network, resolver, lock drift
-   as a new failure mode) or the examples need committed locks. `android_gradle`
-   avoids this by consuming a committed lock, and that is the model to copy.
+4. **Item 5 has a lock question to settle first — but most of it is already
+   settled elsewhere.** No `examples/desktop/*` project commits a lock: all four
+   gitignore `pylock.*.toml`, and the only committed locks in the repo are
+   `hello-android` and `hello-sdl3` (Android) plus `hello-kivy` (iOS).
    **Corrected 2026-09-13 after review:** this said the desktop examples commit
    `pylock.windows.toml`. They do not, which means a *Windows* build job is
-   blocked on the same decision — "Linux is the cheapest first target" was
-   resting on a Windows lock that was never there. `ubuntu-latest` is still the
-   cheapest CI job; a Windows build is the cheapest thing this dev box can prove
-   without another OS.
+   blocked on the same question — "Linux is the cheapest first target" was
+   resting on a Windows lock that was never there.
+   **Corrected again the same day:** it also framed this as an open choice
+   between committed locks and lock-at-CI-time, when
+   [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md)
+   §"Example-repo lock policy" already decides it. Example locks are gitignored
+   deliberately (whole-`pyproject.toml` hashing churns them; reference-only locks
+   go stale silently), with one exemption for **on-device gate examples**, whose
+   locks are evidence tied to a validated run. So the real options are a Linux
+   *gate* example or lock-at-CI-time — not flipping the four demo apps, which
+   would contravene stated policy. Lock-at-CI-time looks better for desktop,
+   since PyPI wheels are immutable and a committed desktop lock therefore buys
+   little evidence for the churn it costs; a committed Linux lock earns its place
+   once item 4 supplies a real Pi gate. `ubuntu-latest` is still the cheapest CI
+   job; a Windows build is the cheapest thing this dev box can prove without
+   another OS.
 
 **One correction to the plan this item started from:** the draft capability
 table, written from memory rather than from the code, counted five platforms.
@@ -700,13 +709,15 @@ are in [`test-matrix.md`](test-matrix.md) §5.1.
   wait on item 4.** Linux is the emptiest column in the matrix (unit tests only;
   `appimagetool` has never executed outside a mock) and the cheapest to fill:
   `ubuntu-latest`, no signing identity, no Mac.
-- **Clear the lock blocker first.** No `examples/desktop/*` project commits a
-  lock — all four gitignore `pylock.*.toml` — so any desktop build job, **Windows
-  included**, must either lock at CI time (network, a resolver run, and lock
-  drift as a new failure mode) or the fixture apps must ship committed locks.
-  `android_gradle` builds from a committed lock and needs no resolver; copy that.
-  This decides the shape of the "small fixture-app set" above, so it is the first
-  thing to settle.
+- **Settle how the desktop job gets its lock first.** No `examples/desktop/*`
+  project commits a lock — all four gitignore `pylock.*.toml` — so any desktop
+  build job, **Windows included**, needs an answer. But
+  [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md)
+  §"Example-repo lock policy" already supplies most of it: example locks are
+  gitignored on purpose, exempting only on-device gate examples whose locks are
+  evidence. So the choice is a Linux gate example or lock-at-CI-time, and the
+  latter looks right for desktop until item 4 gives Linux a Pi gate. This decides
+  the shape of the "small fixture-app set" above, so settle it first.
 
 - **`kivyforge run` needs a release path before anything can test one.**
   `android_run()` calls `android_build(..., debug=True)` unconditionally and then

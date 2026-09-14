@@ -8,6 +8,14 @@
 > comment explaining why their lock is tracked, so it does not read as an
 > oversight.
 >
+> **Addendum (noted 2026-09-13):** there are now **three** exempt gate
+> examples, not two — `hello-sdl3` joined when it became the SDL3 on-device
+> gate, carrying the same `.gitignore` comment and the same justification. The
+> table in `common/03-lockfile-concept.md` had listed two until this was
+> spotted while re-checking the policy for a desktop CI build job. The
+> resolution above is unchanged; only its scope grew, exactly as the "wider"
+> option anticipated ("whichever examples serve as on-device gates").
+>
 > **Correction (2026-07-27):** this note originally claimed "every mobile
 > example now resolves from the index" and that `examples/wheels/ios/*.whl`
 > were unused-but-undeleted. Neither was true at the time — Phase 6 as
