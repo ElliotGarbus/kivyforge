@@ -506,13 +506,43 @@ a JSON renderer consume them. `ToolchainError` grows structured fields.
 progress, and it means `--json` never has to suppress progress to stay
 parseable. Everything else in this item is easier once that is fixed.
 
-**`rich` has one real conflict to respect.** Commit 219a8148 pinned
-user-facing strings to a cp1252-safe set because the legacy Windows console
-cannot encode arbitrary Unicode. `rich`'s default boxes, rules and spinners are
-Unicode. So: pick ASCII box styles, no emoji, and let `rich` detect the console
-rather than assuming UTF-8. Also honour `NO_COLOR` / `FORCE_COLOR`, drop colour
-when stdout is not a TTY, and add `--no-color`. `rich` becomes a hard
-dependency — acceptable, it is pure Python with no transitive weight.
+**`rich` has one real conflict to respect, and it is narrower than it looked.**
+Commit 219a8148 pinned user-facing strings to a cp1252-safe set because a
+redirected Windows stream falls back to the locale encoding and any character
+outside it raises `UnicodeEncodeError` from inside the print. **Measured against
+a real cp1252 stream, 2026-09-14** (rather than assumed), `rich` splits cleanly
+into what it handles and what stays ours:
+
+- **Its own boxes and rules are automatic — do *not* hardcode ASCII styles.**
+  `Console.options.ascii_only` is derived from `file.encoding`, so a `Table`
+  renders `+-----+` on a cp1252 stream and `┌─────┐` on a UTF-8 one, with
+  `legacy_windows` and `safe_box` identical in both cases. Forcing ASCII box
+  styles would only make UTF-8 terminals worse. An earlier version of this
+  paragraph said to do exactly that.
+- **Our message strings are still entirely our problem.** `rich` does not
+  transliterate content: `→`, `├──`, `≥` and `✓` each raise from
+  `console.print` exactly as from `click.echo`. Its only contribution is
+  appending *"You may need to add PYTHONIOENCODING=utf-8 to your environment"*
+  to the exception before re-raising, and a friendlier crash is still a crashed
+  build. So the cp1252-safe set stays, and `tests/test_message_encoding.py`
+  keeps its full value. House typography (`—`, `§`, `…`) encodes fine and stays
+  allowed.
+- **Spinners are the actual hazard, not emoji.** `Spinner("dots")` is braille
+  (`\u280b`) and is *not* covered by the box substitution, so it raises. Any
+  spinner needs an explicitly ASCII frame set or a gate on
+  `console.options.ascii_only` — and a spinner is what someone will reach for on
+  a long Gradle step, whereas nobody is about to type an emoji into a build
+  message.
+
+**One thing to fix while moving the call sites:** `test_message_encoding.py`
+matches `echo`/`secho` calls and Click help text by AST. Once output goes
+through the renderer those names change, and the guard would keep passing while
+matching nothing — the silent-skip shape this repo keeps rediscovering. Teach it
+the new call sites in the same commit that introduces them.
+
+Also honour `NO_COLOR` / `FORCE_COLOR`, drop colour when stdout is not a TTY,
+and add `--no-color`. `rich` becomes a hard dependency — acceptable, it is pure
+Python with no transitive weight.
 
 **Order within the item.** `doctor` first: `CheckResult` is already a frozen
 dataclass with `name`/`status`/`detail`/`hint`, so it is a near-free
