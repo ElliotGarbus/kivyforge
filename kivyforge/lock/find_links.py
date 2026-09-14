@@ -86,17 +86,17 @@ def find_links_resolution_hint(
         path = (root / entry).resolve()
         rel = _display_path(root, path, entry)
         if not path.exists():
-            lines.append(f"  • {entry!r} → missing ({rel})")
+            lines.append(f"  • {entry!r} : missing ({rel})")
         elif not path.is_dir():
-            lines.append(f"  • {entry!r} → not a directory ({rel})")
+            lines.append(f"  • {entry!r} : not a directory ({rel})")
         elif not any(path.glob("*.whl")):
             lines.append(
-                f"  • {entry!r} → directory exists but has no .whl files ({rel})"
+                f"  • {entry!r} : directory exists but has no .whl files ({rel})"
             )
         else:
             count = len(list(path.glob("*.whl")))
             lines.append(
-                f"  • {entry!r} → {count} wheel(s) present ({rel}); "
+                f"  • {entry!r} : {count} wheel(s) present ({rel}); "
                 "none matched this target's platform tags or a dependency."
             )
 
