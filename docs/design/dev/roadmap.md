@@ -27,6 +27,13 @@ unvalidated, and needs a Mac.
   tier markers make it selectable. It found that **only Android has real
   toolchain coverage** — no CI job runs `kivyforge build` for any desktop target
   — and closed a second silent-skip hole of item 1's exact shape.
+- **[`test-matrix.md`](test-matrix.md) was reviewed and corrected (2026-09-13).**
+  Every claim in the review checked out against the code. The corrections that
+  change *this* file are folded in below: the desktop lock blocker also blocks
+  Windows, the markers do not describe what CI runs, and two new gaps came out of
+  it — Android T3 has never run from a Windows host (item 1's own code path), and
+  `kivyforge run` cannot produce a release build at all, so it can never exercise
+  `strip_source`. The latter is a product hole, not a test gap.
 - **Item 5's Android T3 slice is done (2026-09-13)**, pulled ahead of item 3
   because `android_gradle` was already building the stripped release APK that
   item 1's bug would have corrupted and never inspecting it. Item 1's failure mode
@@ -410,8 +417,17 @@ tables that used to live here moved there rather than being copied, because two
 copies drifting is the failure this item exists to prevent.
 
 **Also landed:** the `integration`, `requires_toolchain`, and `requires_device`
-markers, so "which tier does CI run" is now `pytest -m "not integration"` (2515
-of 2530 tests) rather than a question about which job invokes which paths.
+markers, so selecting the hermetic suite is now `pytest -m "not integration"`
+rather than a question about which job invokes which paths.
+
+**Corrected 2026-09-13 after review:** an earlier version of this paragraph
+claimed the markers answer "which tier does CI run", with an exact test count.
+Both were wrong. No CI job filters on a marker — `unit_tests`, `windows_tests`,
+and `macos_integration` all run unfiltered `pytest`, and T2/T3 are *jobs* that
+build and then point pytest at the artifact path. The markers separate hermetic
+from opt-in, nothing more. The counts are gone for good; see
+[`test-matrix.md`](test-matrix.md) rule 3 on why a number in a document is the
+same failure as an unlogged test. `requires_device` also marks no test yet.
 
 **What the inventory found — four things that change later items:**
 
@@ -429,20 +445,29 @@ of 2530 tests) rather than a question about which job invokes which paths.
    (skip, correctly) and a toolchain gate that fails under
    `KIVYFORGE_REQUIRE_TOOLCHAIN`, now set on the three jobs that exist for their
    toolchain. Same reasoning as the existing `KIVYFORGE_REQUIRE_SYMLINKS`.
-3. **T3 artifact assertions are the cheapest real win, and barely exist.**
-   `android_gradle`'s are three `unzip -l | grep` presence checks. Nothing
-   asserts `.pyc`-only under `strip_source`, nothing checks a `.pyc` magic
-   number against the shipped runtime, nothing asserts ELF/Mach-O arch — even
-   though `android/elf.py`, `linux/elftools.py`, and `macos/machotools.py`
+3. **T3 artifact assertions are the cheapest real win, and barely exist.** As
+   found, `android_gradle`'s were three `unzip -l | grep` presence checks:
+   nothing asserted `.pyc`-only under `strip_source`, nothing checked a `.pyc`
+   magic number against the shipped runtime, nothing asserted ELF/Mach-O arch —
+   even though `android/elf.py`, `linux/elftools.py`, and `macos/machotools.py`
    already parse all of it. **A T3 pass would have caught item 1 on day one**,
    which is the argument for item 5 leading with T3 rather than with a device.
-4. **Item 5 has a concrete blocker to solve first.** The four
-   `examples/desktop/*` projects commit `pylock.windows.toml` and nothing else —
-   no `pylock.linux.toml` or `pylock.macos.toml` exists in the repo. So a desktop
-   build job must either lock at CI time (network, resolver, lock drift as a new
-   failure mode) or the examples need committed locks. `android_gradle` avoids
-   this by consuming a committed lock, and that is the model to copy. Linux is
-   the cheapest first target: `ubuntu-latest`, no signing identity, no Mac.
+   *Since closed for Android, later the same day; see item 5. Linux and macOS
+   remain open, though only their pytest drivers are blocked — the check
+   functions are not.*
+4. **Item 5 has a concrete blocker to solve first, and it is bigger than it
+   first looked.** No `examples/desktop/*` project commits a lock at all: all
+   four gitignore `pylock.*.toml`, and the only committed locks in the repo are
+   `hello-android` and `hello-sdl3` (Android) plus `hello-kivy` (iOS). So a
+   desktop build job must either lock at CI time (network, resolver, lock drift
+   as a new failure mode) or the examples need committed locks. `android_gradle`
+   avoids this by consuming a committed lock, and that is the model to copy.
+   **Corrected 2026-09-13 after review:** this said the desktop examples commit
+   `pylock.windows.toml`. They do not, which means a *Windows* build job is
+   blocked on the same decision — "Linux is the cheapest first target" was
+   resting on a Windows lock that was never there. `ubuntu-latest` is still the
+   cheapest CI job; a Windows build is the cheapest thing this dev box can prove
+   without another OS.
 
 **One correction to the plan this item started from:** the draft capability
 table, written from memory rather than from the code, counted five platforms.
@@ -675,12 +700,28 @@ are in [`test-matrix.md`](test-matrix.md) §5.1.
   wait on item 4.** Linux is the emptiest column in the matrix (unit tests only;
   `appimagetool` has never executed outside a mock) and the cheapest to fill:
   `ubuntu-latest`, no signing identity, no Mac.
-- **Clear the lock blocker first.** The four `examples/desktop/*` projects commit
-  `pylock.windows.toml` and nothing else, so any desktop build job must either
-  lock at CI time — network, a resolver run, and lock drift as a new failure mode
-  — or the fixture apps must ship committed locks. `android_gradle` builds from a
-  committed lock and needs no resolver; copy that. This decides the shape of the
-  "small fixture-app set" above, so it is the first thing to settle.
+- **Clear the lock blocker first.** No `examples/desktop/*` project commits a
+  lock — all four gitignore `pylock.*.toml` — so any desktop build job, **Windows
+  included**, must either lock at CI time (network, a resolver run, and lock
+  drift as a new failure mode) or the fixture apps must ship committed locks.
+  `android_gradle` builds from a committed lock and needs no resolver; copy that.
+  This decides the shape of the "small fixture-app set" above, so it is the first
+  thing to settle.
+
+- **`kivyforge run` needs a release path before anything can test one.**
+  `android_run()` calls `android_build(..., debug=True)` unconditionally and then
+  looks for the debug output, so no flag makes `run` produce a release build.
+  Android applies `byte_compile`/`strip_source` in release only, so the command
+  developers use most cannot reach the stripping path at all. Fix the command,
+  then cover it — a test written against `run` today would exercise the branch
+  that was already fine. Small, and it belongs to this item because it is the
+  reason the gap persisted.
+- **Android T3 has never run from a Windows host**, which is where item 1's bug
+  actually lived: `android_gradle` runs on ubuntu, so `find_interpreter()`'s
+  Windows behaviour (the `py` launcher, versioned executables, pre-release
+  rejection) is covered by unit tests and by one hand-run on 2026-09-13, and by
+  nothing that repeats. A `windows-latest` job building one ABI and running the
+  existing assertions is wiring plus Gradle time.
 
 See [`test-matrix.md`](test-matrix.md) §5 for the full gap list in priority
 order; it is the work queue for this item.
