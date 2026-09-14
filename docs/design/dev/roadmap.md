@@ -26,9 +26,12 @@ unvalidated, and needs a Mac.
   "which host × target × tier has actually been exercised, and when", and the
   tier markers make it selectable. It found that **only Android has real
   toolchain coverage** — no CI job runs `kivyforge build` for any desktop target
-  — and closed a second silent-skip hole of item 1's exact shape. **Item 3 is
-  next**, and item 5 now has a concrete first move (T3 assertions, then a Linux
-  build job) plus the blocker it has to clear.
+  — and closed a second silent-skip hole of item 1's exact shape.
+- **Item 5's Android T3 slice is done (2026-09-13)**, pulled ahead of item 3
+  because `android_gradle` was already building the stripped release APK that
+  item 1's bug would have corrupted and never inspecting it. Item 1's failure mode
+  is now a CI gate. **Item 3 is next**; item 5's remaining first move is a Linux
+  build job, once the committed-lock blocker is cleared.
 - iOS remains unvalidated end-to-end, and no amount of Windows-side work
   changes that: it needs a macOS host.
 
@@ -40,7 +43,7 @@ unvalidated, and needs a Mac.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | 3 | Output layer: `rich` rendering + `--json` | M | none |
 | 4 | Linux aarch64 → Raspberry Pi target *(was P3)* | L | Linux host; Pi hardware to finish |
-| 5 | E2E automation against the matrix | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *Android T3 slice done 2026-09-13* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -651,6 +654,20 @@ item 3's JSON output to assert against.
   exact commands for a manual pass and records the results into the matrix
   doc's log, so a hardware session produces a dated artifact instead of a
   memory.
+
+**Started early, 2026-09-13: the Android T3 slice is done.** Taken out of order,
+ahead of item 3, because item 2's inventory showed `android_gradle` was *already*
+building a stripped, byte-compiled release APK on every push — `byte_compile` and
+`strip_source` both default to `"release"` — and discarding it after three
+`unzip -l | grep` presence checks. Item 1's bug was live in a code path CI was
+running the whole time and never looking at.
+
+It jumped the queue on three grounds: artifact assertions read files rather than
+CLI output, so unlike the rest of this item they carry no rework risk from item
+3's `--json`; the build and the ELF helpers both already existed, so it was small;
+and it makes item 3 safer to land, since a 119-call-site output refactor is a poor
+time to have artifact correctness unverified. Details and the remaining T3 boxes
+are in [`test-matrix.md`](test-matrix.md) §5.1.
 
 **Sharpened by item 2's inventory (2026-09-13)** — two changes to the above:
 

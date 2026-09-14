@@ -72,7 +72,7 @@ need hardware and do not.
 | T5 hardware | real device behaviour | a device, a human |
 
 T0 and T1 blur in practice and the matrix below does not try to separate them;
-both are "the hermetic suite", 2515 of 2530 tests.
+both are "the hermetic suite", 2536 of 2552 tests.
 
 ### Selecting a tier
 
@@ -80,8 +80,8 @@ The markers in `tests/conftest.py` make this a `-m` expression rather than a
 question about which CI job happens to invoke which code path:
 
 ```
-pytest -m "not integration"    # T0+T1, the hermetic suite (2515 tests)
-pytest -m integration          # T2+ (15 tests today)
+pytest -m "not integration"    # T0+T1, the hermetic suite (2536 tests)
+pytest -m integration          # T2+ (16 tests today)
 pytest -m requires_device      # T5, and see KIVYFORGE_DEVICE_TESTS below
 ```
 
@@ -115,7 +115,7 @@ to no target cell: `lint` (ruff), `package` (build + `twine check`),
 | Linux `x86_64` | `unit_tests` | **none** | **none** | **none** | n/a |
 | Linux `aarch64` | — | — | — | — | — (item 4) |
 | Android `arm64_v8a` | `unit_tests` | via `x86_64` below | **none** | none | **manual** — 2026-09-13 |
-| Android `x86_64` | `unit_tests` | `android_gradle` (real AGP, NDK, CMake, javac) | **partial** — 3 APK entries | none (no emulator) | n/a |
+| Android `x86_64` | `unit_tests` | `android_gradle` (real AGP, NDK, CMake, javac) | `android_gradle` — debug **and** stripped release | none (no emulator) | n/a |
 | iOS device `arm64` | `unit_tests` | **none** | **none** | **none** | **manual** — never |
 | iOS simulator `arm64` | `unit_tests` | **none** | **none** | **none** | n/a |
 
@@ -137,15 +137,19 @@ when `clang` is absent. **No CI job runs `kivyforge build -p macos`**, so
 **Linux is the emptiest column.** Unit tests only: `appimagetool` has never run
 in CI, so the AppDir → AppImage step is entirely untested outside mocks.
 
-**Android is the strongest, and still has no T3 worth the name.**
+**Android is the strongest, and now the only column with real T3.**
 `android_gradle` is the real thing — AGP, the pinned NDK, CMake, and `javac` all
 consume generated files, and the release path runs `lintRelease` plus the
-merged-manifest policy pass against a throwaway keystore. Its artifact
-assertions are three `unzip -l | grep` checks (`lib/<abi>/libmain.so`,
-`lib/<abi>/libpython3.14.so`, `assets/_python_bundle/`). Presence, not
-correctness. It also builds `x86_64` only, on the stated grounds that a second
-ABI doubles the CMake work for no new signal — true for T2, false for T3, since
-per-ABI arch assertions are exactly where a staging bug would show.
+merged-manifest policy pass against a throwaway keystore. As of 2026-09-13 both
+the debug APK and the **stripped release APK** go through
+`tests/artifact_checks.py` (see §5.1), which replaced three `unzip -l | grep`
+presence checks.
+
+It still builds `x86_64` only, on the stated grounds that a second ABI doubles
+the CMake work for no new signal — true for T2, and now *less* true for T3, since
+the arch assertions are exactly where a staging bug would show. The stray-ABI
+check partly compensates: it fails if anything other than the requested ABI
+appears, so a leak in either direction is caught even from one build.
 
 **iOS has no toolchain coverage at all.** `xcodebuild` and `simctl` command
 construction are unit-tested; neither has run. This is blocked on the iOS
@@ -187,22 +191,39 @@ Every one of these is a file read. No device, no human, no toolchain beyond the
 build itself. **A T3 pass would have caught item 1 on the day it shipped**,
 which is the whole argument.
 
-- **`.pyc`-only when `strip_source` is on**, and `app/main.pyc` in the legacy
-  sourceless layout. Assert against the *installed* payload where possible, not
-  just the staged tree — item 1 verified both and they can differ.
-- **`.pyc` magic number matches the shipped runtime.** The item-1 bug wrote
-  loadable-looking bytecode from the wrong interpreter; a header check is four
-  bytes.
-- **ELF class and machine per target arch** — `platforms/android/elf.py`
-  (`read_elf().machine`, `machine_name()`) and `platforms/linux/elftools.py`
-  (`elf_machine`, `describe`) already parse this. Assert no host-arch binary
-  leaked into a cross-build, which is the failure a single-ABI CI job cannot see.
-- **Mach-O arch** via `machotools.macho_arches`, and `codesign_verify`.
-- **Merged `AndroidManifest.xml` and `Info.plist` contain what config asked
-  for.** `android_gradle` already exports the merged manifest and only archives
-  it on failure.
-- **Signatures verify** — `apksigner verify`, `signtool verify /pa` (the latter
-  exists, on the vendored launcher rather than a built app).
+**Done for Android, 2026-09-13.** `tests/artifact_checks.py` holds the checks as
+pure functions returning problem lists (so one run reports every fault, and so
+they are unit-testable against synthetic zips without a build — 21 hermetic tests
+in `tests/test_artifact_checks.py`). `tests/platforms/android/test_apk_artifact.py`
+points them at a real file via `--android-apk`, and `android_gradle` runs it twice:
+once on the debug APK, once on the stripped release APK.
+
+- [x] **`.pyc`-only when `strip_source` is on**, `app/main.pyc` in the legacy
+      sourceless layout, and no `__pycache__` — the mixed case is the dangerous
+      one, since a `.pyc` beside its `.py` is silently ignored and the bundle
+      ships every source file the setting was meant to remove.
+- [x] **`.pyc` magic number matches the shipped runtime** — item 1's actual bug.
+      The expected magic comes from the running interpreter, and the *target*
+      minor is read out of the APK's own `libpython3.X.so`, so an APK can never
+      be checked against the wrong runtime and pass. When the runner's Python
+      does not match, the failure names the runner rather than the artifact.
+- [x] **ELF class and machine per ABI**, plus a stray-ABI check. Constants are
+      imported from `platforms/android/elf.py` so they cannot drift from the
+      build's.
+- [x] **No shared object stranded in the payload** — extension modules must be
+      hoisted to `lib/<abi>/`, since Android's loader will not open a `.so` from
+      the unpacked assets tree. A leftover is an on-device `ImportError`.
+- [x] **Exactly one CPython runtime** in the APK.
+- [ ] **Linux/macOS equivalents.** `platforms/linux/elftools.py` (`elf_machine`,
+      `describe`) and `macos/machotools.py` (`macho_arches`, `codesign_verify`)
+      already parse what is needed; the blocker is §5.2, that no CI job builds a
+      desktop artifact to inspect.
+- [ ] **Merged `AndroidManifest.xml` and `Info.plist` contain what config asked
+      for.** `android_gradle` already exports the merged manifest to
+      `app/build/kivyforge/AndroidManifest-merged-release.xml` and currently
+      archives it only on failure.
+- [ ] **Signatures verify** — `apksigner verify`, and `signtool verify /pa` on a
+      *built app* rather than on the vendored launcher.
 
 ### 5.2 A desktop build job for any of the three desktop targets
 
@@ -263,10 +284,15 @@ Append-only. Date, target, what ran, what it proved.
 | 2026-07-25 | iOS (marker retargeting) | T2 | macOS 26.5.2 / Xcode 26.6. Suite green on macOS; pip's iOS environment markers confirmed. See [`ios-validation-findings.md`](ios-validation-findings.md). |
 | 2026-09-13 | Android `arm64_v8a` (Pixel 8a) | T3 + T5 | `strip_source` release build verified end to end. Installed payload: 0 `.py`, 1036 `.pyc`, 0 `__pycache__`, `app/main.pyc` sourceless. Header magic 3627 (3.14 final). Kivy imports from `.pyc`, GL comes up (Mali-G715, ES 3.2), app renders. |
 | 2026-09-13 | Android `arm64_v8a` (Pixel 8a) | T5 | Device-state gotchas worth not rediscovering: a locked screen or a raised notification shade both hold focus and SDL never gets a surface, so the app looks hung at `Window: Provider: sdl3`. `wm dismiss-keyguard`, `cmd statusbar collapse`, `svc power stayon true`. |
+| 2026-09-13 | Android `x86_64` (CI) | T3 | Artifact assertions added to `android_gradle` for the debug and stripped release APKs. Validated locally against the two real `arm64-v8a` APKs from item 1 first: the stripped one passes under CPython 3.14 and is correctly rejected under 3.13 (magic 3627 vs 3571), and claiming the wrong ABI is caught across all 120 shared objects. |
+| 2026-09-13 | Windows `amd64` (CI) | T2 | `windows_launcher` went red: byte mismatch at the same size with the pinned toolset (MSVC 14.51.36231 + SDK 10.0.26100.0) reported as *used*, i.e. a serviced compiler inside an unchanged version string — the drift `/EMITTOOLVERSIONINFO:NO` cannot cover. Last green was 2026-08-12; the hosted image rolled. Fixed by `revendor_launcher`, which changed the binary and `SHA256SUMS` but **not** `TOOLSET.txt`. Third occurrence. |
 
 ### Known-unverified, stated plainly
 
 - iOS `strip_source`: never run. No macOS host available.
 - Any `kivyforge build` for Linux or macOS: never run in CI.
 - `appimagetool`: never run.
-- Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only).
+- Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only), so
+  its T3 coverage is inherited from `x86_64` plus the stray-ABI check, not direct.
+- The full T3 path under the target's own CPython: proven only in CI, since no
+  local environment here has both pytest and CPython 3.14 installed.
