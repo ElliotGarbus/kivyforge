@@ -39,8 +39,12 @@ unvalidated, and needs a Mac.
   item 1's bug would have corrupted and never inspecting it. Item 1's failure mode
   is now a CI gate. **Item 3 is next**; item 5's remaining first move is a Linux
   build job, once the committed-lock blocker is cleared.
-- iOS remains unvalidated end-to-end, and no amount of Windows-side work
-  changes that: it needs a macOS host.
+- **iOS is validated on the simulator and nowhere else** — corrected 2026-09-14,
+  because both this file and the matrix had drifted into implying nothing iOS had
+  ever run. `build`/`run -p ios --simulator` are green and all six iOS examples
+  render, as first-party local runs in July. What is unproven is `strip_source`,
+  any physical device, signing/provisioning, and any T3 on the built `.app` — and
+  no amount of Windows-side work changes that: it needs the Mac.
 
 ## Execution order
 
@@ -402,8 +406,12 @@ non-zero.
   removed that. The WARN/FAIL paths now need a deliberately unavailable version
   (3.15.0 was used), which is a better test anyway but no longer free.
 
-**iOS remains unvalidated** end-to-end — it needs a macOS host. The doctor check
-covers it; `strip_source` on iOS has still never produced a real artifact.
+**iOS `strip_source` remains unvalidated** — it needs a macOS host. The doctor
+check covers it, but `strip_source` on iOS has still never produced a real
+artifact, on simulator or device. Note this is narrower than "iOS is
+unvalidated": the simulator path *is* proven (`build`/`run -p ios --simulator`
+green, six examples rendering — see [`test-matrix.md`](test-matrix.md) §7). What
+is missing is `strip_source`, any device, and any T3 on the built `.app`.
 
 ---
 

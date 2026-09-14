@@ -181,7 +181,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
 | Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
 | iOS device `arm64` | `unit_tests` | **none** | **none** | **none** | **never** | never |
-| iOS simulator `arm64` | `unit_tests` | **none** | **none** | **none** | n/a | never |
+| iOS simulator `arm64` | `unit_tests` | **local** — `xcodebuild` via `build -p ios --simulator`, 6 examples | **none** | **local** — `simctl` launch, all 6 render | n/a | 2026-07-27 |
 
 Legend for how a cell was proven, because "covered" hides the difference:
 **CI** = re-proven every push; **local** = a first-party run on a maintainer's
@@ -225,9 +225,28 @@ appears — but the arch assertions are precisely the ABI-specific ones, so
 claiming `x86_64`'s T3 covers `arm64_v8a` is an argument, not a run. Rule 1 says
 label it as such.
 
-**iOS has no toolchain coverage at all.** `xcodebuild` and `simctl` command
-construction are unit-tested; neither has run. Blocked on the iOS
-`Python.xcframework` and wheels being published, not on effort.
+**iOS's simulator coverage is real, local, and was missing from this file until
+2026-09-14** — the same fault as §3.3's Android T4, found the same way. The
+2026-07-25 and 2026-07-27 runs did not merely go green on a macOS host: they ran
+`kivyforge build -p ios --simulator` and `run -p ios --simulator` for real, and
+all six iOS examples build, launch and render on an iPhone Air simulator with
+screenshots to prove it. So `xcodebuild` and `simctl` **have** executed, and the
+claim that "no iOS toolchain has ever run" — which this file asserted, and which
+its 2026-09-13 revision *introduced* while relabelling the log row from a summary
+line instead of reading the findings — was wrong.
+
+What remains genuinely unproven for iOS is narrower and worth stating exactly:
+**no device** (simulator only), **no `strip_source`**, **no T3** (nothing
+inspects the built `.app`), and **nothing in CI**, so none of the above is
+re-proven and a regression would surface only when someone next runs it by hand.
+The old claim that iOS was blocked on the `Python.xcframework` and wheels being
+published is also stale: all six examples now resolve from the
+`kivy-mobile-wheels` index.
+
+**macOS as a *target* is the genuinely empty half.** No `kivyforge build -p
+macos` has run anywhere, in CI or locally, so `codesign`, `lipo`, and `hdiutil`
+are still mock-only — `macos_integration` proves two `clang` tests and nothing
+about a `.app`.
 
 ### 3.3 Relationship to the Android compatibility matrix
 
@@ -491,7 +510,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 | Date | Target | Tier | Host | Result |
 |---|---|---|---|---|
 | 2026-07-24 | Android `x86_64` | T4 (local) | — | `kivyforge run --smoke` green on an x86_64 API-31 emulator under first-party kivyforge `build`/`run` (not p4a), promoting CPython 3.14 / Kivy 2.3.1 / SDL2 to Validated. Backfilled into this log 2026-09-13 from [`08-compatibility-matrix.md`](../platforms/android/08-compatibility-matrix.md); see §3.3 for why it was missing. |
-| 2026-07-25 | iOS (pip marker retargeting) | T0/T1 on a macOS host — **not** `xcodebuild` | macOS 26.5.2 / Xcode 26.6 | Suite green on macOS; pip's iOS environment markers confirmed. Relabelled 2026-09-13: this was logged as "T2", which collided with §3.2's `none` for iOS toolchain coverage. No iOS toolchain has ever run. See [`ios-validation-findings.md`](ios-validation-findings.md). |
+| 2026-07-25 | iOS simulator `arm64` | T2 + T4 (local) | macOS 26.5.2 / Xcode 26.6, Swift 6.3.3, pip 26.1.2 | `doctor -p ios` exit 0; the pip `default_environment` shim proven against a real resolve (`sys_platform = ios`) and its guardrail proven to refuse rather than fall back; `lock -p ios --update` including `swift package resolve` for `keychain-spm`; **`build -p ios --simulator` and `run -p ios --simulator` both exit 0**, `hello-kivy` rendering on an iPhone Air / iOS 26.5 simulator with a screenshot. Full detail in [`ios-validation-findings.md`](ios-validation-findings.md). **Twice-corrected:** logged as bare "T2", then on 2026-09-13 wrongly *demoted* to "T0/T1 — not `xcodebuild`" on the strength of its summary line, which is how this file came to assert that no iOS toolchain had ever run. Step 6 of the findings says otherwise. Read the evidence, not the abstract. |
+| 2026-07-27 | iOS simulator `arm64` | T2 + T4 (local) | macOS / Xcode 26.6 | **All six** iOS examples — `hello-kivy`, `pyobjus-ball`, `pyobjus-deviceinfo`, `keychain-spm`, `mobile-geometry`, `svg-explorer` — build, launch and render on an iPhone Air / iOS 26.5 simulator, resolving from the `kivy-mobile-wheels` index after `examples/wheels/ios/` was deleted. `keychain-spm` also exercises `swift package resolve`. See [`mobile-wheels-phase6-ios-findings.md`](mobile-wheels-phase6-ios-findings.md). Backfilled here 2026-09-14. |
 | 2026-07-27 | Android `x86_64` | T4 (local) | — | Same `run --smoke` gate green for Kivy 3.0.0.dev0 / SDL3 via the `hello-sdl3` example, on the emulator and a Pixel 8a. Backfilled 2026-09-13. |
 | 2026-09-13 | Android `arm64_v8a` (Pixel 8a) | T3 + T5 | Windows | `strip_source` release build verified end to end. Installed payload: 0 `.py`, 1036 `.pyc`, 0 `__pycache__`, `app/main.pyc` sourceless. Header magic 3627 (3.14 final). Kivy imports from `.pyc`, GL comes up (Mali-G715, ES 3.2), app renders. **This is also the only run of the Windows-host byte-compile path** (§5.2) — done by hand, not re-proven. |
 | 2026-09-13 | Android `arm64_v8a` (Pixel 8a) | T5 | Windows | Device-state gotchas worth not rediscovering: a locked screen or a raised notification shade both hold focus and SDL never gets a surface, so the app looks hung at `Window: Provider: sdl3`. `wm dismiss-keyguard`, `cmd statusbar collapse`, `svc power stayon true`. |
@@ -501,8 +521,16 @@ Linux say whether it was WSL2 or bare metal (§4).
 
 ### Known-unverified, stated plainly
 
-- iOS `strip_source`: never run. No macOS host available.
+- iOS `strip_source`: never run, on simulator or device.
+- iOS on a **device**: never. Simulator only, and simulator builds skip signing
+  and provisioning entirely, so the whole device path is unexercised.
+- Nothing iOS in CI: the simulator coverage above is local and unrepeated, so it
+  proves July's tree rather than today's.
+- No T3 for iOS or macOS: nothing inspects a built `.app` — not its `Info.plist`,
+  not its Mach-O arch, not whether `strip_source` did anything.
 - Any `kivyforge build` for Linux, macOS, **or Windows**: never run in CI.
+- `kivyforge build -p macos`: never run **anywhere**, so `codesign`, `lipo`, and
+  `hdiutil` have never executed outside a mock.
 - `appimagetool`: never run, anywhere.
 - Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only), so
   its T2/T3 is inherited from `x86_64` plus the stray-ABI check, not direct.
