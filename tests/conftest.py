@@ -62,6 +62,29 @@ def skip_missing_toolchain(tool: str, detail: str = "") -> None:
     pytest.skip(message)
 
 
+def pytest_addoption(parser):
+    # T3 artifact assertions run against a build that already happened, so the
+    # artifact arrives by path rather than being produced by the suite. Absent
+    # these, the tests skip: only a CI job that just built something can supply
+    # them (docs/design/dev/test-matrix.md §3).
+    group = parser.getgroup("kivyforge artifacts")
+    group.addoption(
+        "--android-apk",
+        default=None,
+        help="Path to a built APK to run the T3 artifact assertions against.",
+    )
+    group.addoption(
+        "--android-abi",
+        default="x86_64",
+        help="Dashed Android ABI the APK was built for (default: x86_64).",
+    )
+    group.addoption(
+        "--android-stripped",
+        action="store_true",
+        help="Assert the payload is bytecode-only (strip_source applied).",
+    )
+
+
 def pytest_configure(config):
     # CI sets KIVYFORGE_REQUIRE_SYMLINKS to assert the requires_symlinks tests
     # actually run (they self-skip on a host without the privilege, which would

@@ -360,19 +360,17 @@ jobs:
     - name: Build the debug APK (assembleDebug)
       working-directory: ${{ env.APP_DIR }}
       run: kivyforge build -p android --debug --abi "$ABI"
-    - name: Assert the APK carries the runtime, the launcher, and the bundle
-      working-directory: ${{ env.APP_DIR }}
+    - name: Assert the debug APK is the artifact the build promised (T3)
+      # Replaces three `unzip -l | grep` presence checks with the full T3 pass
+      # (tests/artifact_checks.py): required entries, single-ABI ELF machine
+      # match, no shared object stranded in the payload, and — for the release
+      # step below — .pyc-only with a magic the shipped runtime can import.
+      # Debug does not strip, so --android-stripped is deliberately absent here;
+      # this run asserts the *source* payload shape instead.
       run: |
-        apk="$(ls hello-android-android/app/build/outputs/apk/debug/*.apk)"
-        echo "Inspecting ${apk}"
-        unzip -l "$apk" > entries.txt
-        for want in \
-            "lib/${ABI}/libmain.so" \
-            "lib/${ABI}/libpython3.14.so" \
-            "assets/_python_bundle/"; do
-          grep -q -- "$want" entries.txt || {
-            echo "::error::${want} missing from the APK"; cat entries.txt; exit 1; }
-        done
+        apk="$(ls "$APP_DIR"/hello-android-android/app/build/outputs/apk/debug/*.apk)"
+        pytest tests/platforms/android/test_apk_artifact.py -q --no-cov \
+          --android-apk "$apk" --android-abi "$ABI"
     - name: Exercise the release policy path (lintRelease + merged manifest)
       # `package` is the only path that runs the curated lintRelease subset and
       # the merged-manifest policy pass, and both live in generated Groovy — so
@@ -387,6 +385,17 @@ jobs:
           -keyalg RSA -keysize 2048 -validity 30 -dname "CN=kivyforge CI"
         kivyforge package -p android --abi "$ABI" \
           --keystore ci.keystore --key-alias ci
+    - name: Assert the release APK is stripped and byte-compiled (T3)
+      # The gate roadmap item 1 needed and did not have. byte_compile and
+      # strip_source both default to "release", so this APK has been stripped and
+      # byte-compiled all along — CI simply never looked. It asserts .pyc-only, an
+      # `app/main.pyc` in the legacy sourceless layout, no __pycache__, and every
+      # .pyc carrying the magic this job's pinned CPython writes (which is why the
+      # setup-python pin above is load-bearing, not incidental).
+      run: |
+        apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
+        pytest tests/platforms/android/test_apk_artifact.py -q --no-cov \
+          --android-apk "$apk" --android-abi "$ABI" --android-stripped
     - name: Upload the generated project on failure (for triage)
       if: failure()
       uses: actions/upload-artifact@v6
