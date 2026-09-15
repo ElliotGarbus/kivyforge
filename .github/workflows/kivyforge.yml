@@ -337,7 +337,13 @@ jobs:
         distribution: temurin
         java-version: '17'
     - name: Set up the Android SDK
+      # The action's default `packages` is "tools platform-tools", but the
+      # legacy `tools` package is gone from Google's SDK repository, so
+      # `sdkmanager tools` exits 1 and fails the step. Nothing here uses it;
+      # cmdline-tools (installed by the action) is its replacement.
       uses: android-actions/setup-android@v4
+      with:
+        packages: platform-tools
     - name: Install kivyforge (with the Android extra)
       run: |
         python -m pip install --upgrade pip
