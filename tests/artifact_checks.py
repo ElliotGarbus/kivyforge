@@ -25,10 +25,16 @@ directly buildable via ``kivyforge package -f folder``. Checks that can only be
 made on the single file — that it is an AppImage at all, and for which arch —
 live in :func:`linux_appimage_file_problems` so the container itself is covered
 rather than assumed.
+
+Paths *inside* an artifact are always rendered with ``as_posix()``, never by
+interpolating a ``Path``. The artifact is a Linux or Apple bundle whatever host
+is reading it, so ``usr/app/main.py`` is the only correct spelling — inspecting
+an extracted AppDir from Windows must not start reporting ``usr\\app\\main.py``.
 """
 
 from __future__ import annotations
 
+import os
 import plistlib
 import posixpath
 import re
@@ -407,7 +413,7 @@ def _macos_arch_problems(app: Path, *, arch: str) -> list[str]:
         except MachoError:
             continue  # not a Mach-O (or a 32-bit/fat one we don't parse) — skip
         if cpu_type != expected:
-            rel = path.relative_to(app)
+            rel = path.relative_to(app).as_posix()
             problems.append(
                 f"{rel} is {cpu_type_name(cpu_type)} but this build is {arch} — "
                 "a host or cross-arch binary leaked into the bundle"
@@ -432,7 +438,7 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
 
         if stripped:
             if sources:
-                rels = [str(p.relative_to(app)) for p in sources[:3]]
+                rels = [p.relative_to(app).as_posix() for p in sources[:3]]
                 problems.append(
                     f"strip_source was applied but {len(sources)} .py file(s) "
                     f"remain under {scope}, e.g. {rels}"
@@ -443,7 +449,7 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
                     "all — the build degraded to shipping source"
                 )
             if cached:
-                rels = [str(p.relative_to(app)) for p in cached[:3]]
+                rels = [p.relative_to(app).as_posix() for p in cached[:3]]
                 problems.append(
                     f"{scope} has {len(cached)} __pycache__ dir(s), e.g. "
                     f"{rels} — sourceless imports need .pyc in the legacy "
@@ -473,7 +479,7 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
             seen.setdefault(magic, []).append(pyc)
         for magic, members in sorted(seen.items()):
             if magic != expected_magic:
-                rels = [str(p.relative_to(app)) for p in members[:3]]
+                rels = [p.relative_to(app).as_posix() for p in members[:3]]
                 problems.append(
                     f"{len(members)} .pyc file(s) under {scope} carry magic "
                     f"{_magic_int(magic)} but the bundle's own runtime imports "
@@ -570,7 +576,13 @@ def _linux_required_problems(appdir: Path) -> list[str]:
     apprun = appdir / "AppRun"
     if not apprun.is_file():
         problems.append("AppRun is missing; AppImage requires it at the AppDir root")
-    elif not apprun.stat().st_mode & 0o111:
+    elif os.name == "posix" and not apprun.stat().st_mode & 0o111:
+        # Only asked where it can be answered. NTFS records no execute bit, so
+        # ``st_mode`` is 0o100666 for every file on Windows however it was
+        # written -- the honest answer there is "unknown", and reporting "not
+        # executable" would be a false positive on every AppDir inspected from
+        # a Windows host, synthetic or real. The assertion still runs on every
+        # host that can actually build an AppImage.
         problems.append("AppRun is not executable; appimagetool will refuse the AppDir")
 
     if not list(appdir.glob("*.desktop")):
@@ -638,8 +650,8 @@ def _apprun_target_problems(appdir: Path) -> list[str]:
             and not (appdir / rel.with_suffix(".pyc")).is_file()
         ):
             return [
-                f"AppRun runs `-m {module}`, but neither {rel}.py nor {rel}.pyc "
-                "exists in the payload"
+                f"AppRun runs `-m {module}`, but neither {rel.as_posix()}.py nor "
+                f"{rel.as_posix()}.pyc exists in the payload"
             ]
         return []
 
@@ -675,7 +687,7 @@ def _linux_payload_problems(appdir: Path, *, stripped: bool) -> list[str]:
         return ["usr/app and usr/lib are both empty — the AppDir has no payload"]
 
     def rel(paths):
-        return [str(p.relative_to(appdir)) for p in paths[:3]]
+        return [p.relative_to(appdir).as_posix() for p in paths[:3]]
 
     sources = [p for p in payload if p.suffix == ".py"]
     compiled = [p for p in payload if p.suffix == ".pyc"]
@@ -759,12 +771,12 @@ def _linux_elf_problems(appdir: Path, *, arch: str) -> list[str]:
         try:
             found = elf_machine(path)
         except ElfError as exc:
-            problems.append(f"{path.relative_to(appdir)}: {exc}")
+            problems.append(f"{path.relative_to(appdir).as_posix()}: {exc}")
             continue
         if found != expected:
             problems.append(
-                f"{path.relative_to(appdir)} is {describe(*found)} but {arch} "
-                f"requires {describe(*expected)}"
+                f"{path.relative_to(appdir).as_posix()} is {describe(*found)} but "
+                f"{arch} requires {describe(*expected)}"
             )
     return problems
 

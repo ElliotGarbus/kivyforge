@@ -16,10 +16,13 @@ AppDir compiling its payload with its own staged 3.13 while pytest runs under
 
 from __future__ import annotations
 
+import os
 import plistlib
 import struct
 import zipfile
 from pathlib import Path
+
+import pytest
 
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64
 from kivyforge.platforms.linux.elftools import ELFCLASS32
@@ -606,6 +609,13 @@ class TestAppRunEntryPoint:
         (root / "AppRun").write_text("#!/bin/sh\necho nothing\n")
         assert any("no exec line" in p for p in _lcheck(root))
 
+    @pytest.mark.skipif(
+        os.name != "posix",
+        reason=(
+            "NTFS stores no execute bit, so chmod(0o644) is indistinguishable "
+            "from chmod(0o755) here and the check deliberately does not ask"
+        ),
+    )
     def test_a_non_executable_apprun_is_reported(self, tmp_path):
         root = _appdir(tmp_path)
         (root / "AppRun").chmod(0o644)
