@@ -58,6 +58,7 @@ unvalidated, and needs a Mac.
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
+| 9 | Byte-compile the embedded stdlib at build time (desktop) | S | none; wants a macOS host to confirm the signing side |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -89,6 +90,11 @@ Item 8 is last by its own stated condition — "after all platforms are working
 and tested" — and because it is the largest thing on this list by a wide
 margin. It has one cheap early move that is worth taking out of order; see the
 item.
+
+Item 9 is last by size rather than by dependency — it is small and blocks
+nothing — but it is on the list at all because it is *measured*, not suspected:
+170 ms of every desktop launch, established on 2026-09-15 and written down in
+[`test-matrix.md`](test-matrix.md) §5.10 and §7.
 
 `build-for` vs `build-on` architecture (previously tracked as its own deferred
 item) is **not** listed separately: Linux aarch64 is precisely the case that
@@ -1092,3 +1098,41 @@ settings, and the conformance corpus passes for both profiles.
 **Prerequisite that is not ours:** `native-integration` is not on PyPI. Either
 it publishes, or kivyforge vendors the reader — decide before the release that
 ships this, not after.
+
+---
+
+### 9. Byte-compile the embedded stdlib at build time
+
+Desktop bundles ship the embedded stdlib as pure `.py`, so every launch parses
+it from source. Measured on 2026-09-15 (`test-matrix.md` §7): `import kivy`
+costs **0.21 s** that way against **0.04 s** with a compiled stdlib — ~5×, or
+~170 ms on every single launch, attributed by `-X importtime` to parsing
+`typing`, `inspect`, `enum`, `logging` and `shutil`.
+
+This is on the list because it is measured. It was invisible until macOS and
+Linux both fixed their launchers: a `.AppImage` could never cache the stdlib
+(read-only squashfs) and had been paying full cost since the beginning, while
+the folder form and the `.app` were quietly buying the fast number by writing
+`__pycache__` back into themselves — which on macOS invalidated the bundle's own
+code signature. Both launchers now set `PYTHONDONTWRITEBYTECODE`, which is the
+right fix and makes the cost permanent and explicit. Shipping real bytecode is
+what removes it.
+
+**Work**
+
+- Run `compileall` over the staged runtime's stdlib during staging, on every
+  desktop target (Linux, macOS, Windows). Use the same interpreter selection
+  `byte_compile` already resolves, so cross-arch builds stay correct.
+- Pass `PYTHONDONTWRITEBYTECODE=1` to the `byte_compile` subprocess. Its own
+  imports currently deposit an arbitrary 41 stdlib `.pyc` into the artifact,
+  which makes that subtree non-reproducible. Safe: `compileall` writes through
+  `py_compile` and ignores the variable (verified 2026-09-15).
+- Order matters on macOS — this must happen before `codesign`, like the existing
+  payload compile, or it invalidates the signature it just sealed.
+- Revisit both launcher comments once it lands; the environment variable becomes
+  belt-and-braces rather than the whole defence.
+- Re-measure and record, so the §5.10 number is retired rather than left stale.
+
+**Done when** a freshly built desktop artifact contains no `.py`-only stdlib,
+launching it writes nothing, and the measured `import kivy` cost is at parity
+with the warm number above on all three desktop targets.

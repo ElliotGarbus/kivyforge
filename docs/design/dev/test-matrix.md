@@ -558,6 +558,39 @@ wheel. Narrow it to the known FAIL (allow-list that diagnostic, gate on the
 rest) rather than waiving the whole step, and the waiver disappears on its own
 when the wheel is fixed.
 
+### 5.10 Byte-compile the embedded stdlib at build time
+
+Measured, not suspected (§7, 2026-09-15): shipping the stdlib as pure source
+costs **~170 ms on every launch** — `import kivy` takes 0.21 s against 0.04 s
+with a compiled stdlib, a ~5× difference that `-X importtime` attributes to
+parsing `typing`, `inspect`, `enum`, `logging` and `shutil`.
+
+Nothing was buying the fast number honestly. A `.AppImage` never could, because
+its squashfs is read-only, so it has paid full parse cost on every launch since
+the beginning. The folder form *did*, by writing `__pycache__` back into itself
+on first run — which is exactly the self-mutation `PYTHONDONTWRITEBYTECODE` now
+prevents, so as of that fix both shapes pay it permanently. The launcher change
+was right, and it made this gap the load-bearing one.
+
+Two pieces, both cross-platform, neither belonging to a single host:
+
+1. **Compile the runtime's stdlib during staging**, so the artifact ships
+   usable bytecode. macOS wants this as much as Linux — its launcher comment
+   should be revisited at the same time, since the environment variable becomes
+   belt-and-braces rather than the whole defence.
+2. **Stop the compile step polluting its own output.** `byte_compile` shells out
+   to the staged interpreter, whose own imports currently deposit 41 stdlib
+   `.pyc` into `usr/python` — an arbitrary subset determined by what
+   `compileall` happened to import, so the artifact is not reproducible in that
+   subtree. Passing `PYTHONDONTWRITEBYTECODE=1` in the subprocess environment
+   fixes it without affecting the intended output, because `compileall` writes
+   through `py_compile` explicitly and ignores the variable (verified). Held
+   back only because `bundle/pycompile.py` is shared with macOS, where those
+   caches are sealed into the code signature today.
+
+Do (1) and (2) together: (1) alone leaves the incidental caches, and (2) alone
+makes every launch permanently slow with nothing to show for it.
+
 ---
 
 ## 6. Manual checklist
@@ -622,6 +655,11 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-14 | macOS `arm64` (`dice-roller`) | defect repro | macOS 26.6.2 | Confirmed [`macos-launcher-strip-source-prompt.md`](macos-launcher-strip-source-prompt.md)'s inference: ran the notarized `.app`'s `Contents/MacOS/*` directly (not via Finder/`open`, which swallow stderr) — exit 2, `.../Contents/Resources/python/bin/python3: can't open file '.../Contents/Resources/app/main.py': [Errno 2] No such file or directory`. Verbatim match to the Linux `AppRun` defect fixed 2026-09-13, same root cause: `strip_source` deletes `main.py`, the launcher still named it by path. **Every prior macOS T2/T3 pass (§7, 2026-09-14 above) had been against an artifact that could not start** — signing and notarization say nothing about launchability. |
 | 2026-09-14 | macOS `arm64` (`dice-roller`) | launcher fix | macOS 26.6.2 | `kivyforge/platforms/macos/launcher.py`: `execv`s `python3 -P -m <entry>` instead of a `.py` path — same fix as the Linux `AppRun`, mirrored in C. Also set `PYTHONDONTWRITEBYTECODE=1`, a second, previously-unreachable defect the *first successful launch* immediately surfaced: importing the embedded stdlib (shipped as `.py` — stripping is scoped to `app`/`site-packages` only, by design) wrote `__pycache__` into the signed bundle, and `codesign --verify` then reported "a sealed resource is missing or invalid" — a notarized `.app` invalidating its own signature on first launch, on every launch, for every macOS app in the repo, discovered only because nothing had ever launched one before. Two regression tests added (`test_the_launcher_never_names_a_source_file`, `test_never_writes_bytecode_into_the_signed_bundle`) plus two real-clang argv/env tests. `clang -Wall` clean. Full hermetic suite + lint green. |
 | 2026-09-14 | macOS `arm64` (`dice-roller`) | T2 + T3 + T4 (local) | macOS 26.6.2 | **macOS's first successful app launch, ever, in this repo.** Repackaged (re-signed, re-notarized, re-stapled) with both fixes; `Contents/Resources/app/` still `.pyc`-only. Ran `Contents/MacOS/*` directly: Kivy/SDL2 initialized, GL came up (Apple M5 Pro, OpenGL ES 2), "Start application main loop" — **rendered, visually confirmed**. `codesign --verify --deep --strict` on the bundle *after* the real launch: still "valid on disk" — the `PYTHONDONTWRITEBYTECODE` fix holds. T3 driver (`test_app_artifact.py --macos-app ... --macos-stripped`) re-run against this exact bundle: both tests pass. |
+
+| 2026-09-15 | Linux `x86_64` (`dice-roller`) | bytecode-write measurement | **WSL2** (Ubuntu, Python 3.14.4) | Both claims in [`linux-launcher-bytecode-prompt.md`](linux-launcher-bytecode-prompt.md) confirmed from evidence. **Stripped folder AppDir** (`package -f folder`): 377 `.pyc` before, launch wrote **75 new**, every one under `usr/python` — the payload is sourceless, so nothing landed there. **Unstripped** (`build`): 3 before, launch wrote **209**, of which **100 landed in the payload itself** (`usr/app/__pycache__/main.cpython-313.pyc` plus 99 under `usr/lib`). **`.AppImage`**: immune, and proven rather than assumed — `/proc/<pid>/mounts` reports the squashfs `ro,nosuid,nodev`, and after a minute of running the live mount still held exactly the 41 stdlib `.pyc` it was built with, against the 75 the folder form gained from the same imports. The folder form is also the tree the T3 driver inspects, so **launching an artifact under test had been mutating it**. Also corrects a standing assumption: WSL2 *does* have `/dev/fuse` here, so the `.AppImage` mounted and ran directly rather than needing `--appimage-extract`. Full detail: [`linux-launcher-bytecode-findings.md`](linux-launcher-bytecode-findings.md). |
+| 2026-09-15 | Linux `x86_64` (`dice-roller`) | unpredicted finding | **WSL2** (Ubuntu, Python 3.14.4) | **The build pollutes its own output before any launch.** A stripped AppDir ships 41 stdlib `.pyc` in 6 `__pycache__` dirs that no user action created: `byte_compile` shells out to the *staged* interpreter to compile the payload, and that subprocess's own imports write caches into `usr/python`. An unstripped `build`, which never invokes it, ships 3. `AppRun`'s `PYTHONDONTWRITEBYTECODE` cannot reach this — the compile subprocess needs it in its own env. The one-line fix is safe in principle (confirmed: the variable does not suppress an explicit `compileall`, which writes through `py_compile`) but is **not applied here**: `bundle/pycompile.py` is shared with macOS, where these caches are currently sealed into the code signature, and that is not a change to make from a host that cannot verify it. See §5.10. |
+| 2026-09-15 | Linux `x86_64` (`dice-roller`) | launcher fix | **WSL2** (Ubuntu, Python 3.14.4) | `AppRun` now exports `PYTHONDONTWRITEBYTECODE=1`. Re-measured both shapes after the fix: stripped 377 → **377**, unstripped 3 → **3**, zero new files either way, payload `__pycache__` count **0 against 100** before — and both still reach "Start application main loop". `_linux_payload_problems` gained the unstripped-`__pycache__` case, phrased to accuse the launch rather than the build: a freshly staged AppDir has none (measured: 336 `.py`, 0 `.pyc`), so its presence means the artifact was written to afterwards. 3 tests added; full suite 2707 passed, 52 skipped, ruff clean. |
+| 2026-09-15 | Linux `x86_64` (`dice-roller`) | startup cost | **WSL2** (Ubuntu, Python 3.14.4) | **The number that decides whether build-time stdlib compilation gets scheduled.** `import kivy` under the bundled 3.13.14 with `AppRun`'s environment, 5 runs each: **cold 0.20–0.22 s** (no stdlib cache and writes suppressed — which is the `.AppImage`'s permanent state, and now the folder form's too), **warm 0.04–0.05 s** after `compileall` over the stdlib. Roughly **5×, ~170 ms on every launch**. `-X importtime` attributes it to source parsing: `typing` 28 ms self, `inspect` 17 ms, `enum` 12 ms, `logging` 9.4 ms, `shutil` 8.8 ms. The fix above makes the slow number permanent for the folder form, which used to buy the fast one by mutating itself — an honest trade, but it raises the value of §5.10. Measured on a `compileall`-warmed copy in `/tmp`, discarded after. |
 
 ### Known-unverified, stated plainly
 
