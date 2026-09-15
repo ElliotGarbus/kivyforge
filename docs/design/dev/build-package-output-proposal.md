@@ -84,7 +84,9 @@ verbose or Android unreadable.
    reactions (fix the repo, fix the image, look at the log).
 4. **Live output, on stderr, always.** Including under `--json`. Both for the
    no-output timeout above and because the log is the only artifact of a failure.
-5. **Not to have to parse anything on stdout.** Which is exactly what §1.2 breaks.
+5. **Not to have to parse anything on stdout.** Android breaks this today: Gradle
+   inherits our stdout (§1.2), so `--json` there does not currently yield a
+   parseable document at all.
 
 ## 3. What an agent needs, beyond the above
 
