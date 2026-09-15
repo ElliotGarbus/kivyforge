@@ -675,9 +675,18 @@ Linux say whether it was WSL2 or bare metal (§4).
   macOS app in this repo until the same session. Fixed by setting
   `PYTHONDONTWRITEBYTECODE=1` in the launcher; a repeat launch afterward left
   `codesign --verify` passing. Windows is unaffected (Authenticode signs the
-  executable, not a bundle-wide resource seal); Linux AppImages are typically
-  read-only-mounted at runtime, so a write wouldn't persist to the shipped
-  artifact even if it occurred.
+  executable, not a bundle-wide resource seal).
+- The same question **on Linux**: unverified, and queued as
+  [`linux-launcher-bytecode-prompt.md`](linux-launcher-bytecode-prompt.md). The
+  Linux `AppRun` does not set `PYTHONDONTWRITEBYTECODE` (read out of
+  `linux/launcher.py`), and the reasoning that Linux is therefore safe — an
+  AppImage mounts read-only, so the write cannot persist — is a hypothesis
+  nobody has tested. It also does not cover `package -f folder`, which leaves a
+  *writable* AppDir that is simultaneously the tree the T3 driver inspects. Per
+  this file's own first rule, that makes Linux uncovered here, not fine. The
+  same prompt asks for the startup cost of shipping an uncompiled stdlib to be
+  measured, since the macOS write is evidence that no usable `.pyc` ships and
+  every launch on every platform re-parses the stdlib from source.
 - Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only), so
   its T2/T3 is inherited from `x86_64` plus the stray-ABI check, not direct.
 - Android T3 from a Windows host: once, by hand, 2026-09-13 (§5.2).
