@@ -19,11 +19,32 @@ class TestRenderApprun:
         assert "PYTHONNOUSERSITE=1" in src
         assert 'SDL_VIDEO_X11_WMCLASS="org.example.app"' in src
         assert 'SDL_VIDEO_WAYLAND_WMCLASS="org.example.app"' in src
-        assert 'exec "$HERE/usr/python/bin/python3" "$HERE/usr/app/main.py" "$@"' in src
+        assert 'exec "$HERE/usr/python/bin/python3" -P -m main "$@"' in src
 
-    def test_dotted_entry_point_maps_to_nested_path(self):
+    def test_dotted_entry_point_stays_a_dotted_module(self):
         src = launcher.render_apprun(entry_point="pkg.start", app_id="a")
-        assert '"$HERE/usr/app/pkg/start.py"' in src
+        assert "-m pkg.start " in src
+
+    def test_the_launcher_never_names_a_source_file(self):
+        """A path-based exec cannot survive strip_source; -m does.
+
+        The regression this guards shipped: AppRun exec'd ``usr/app/main.py``
+        while ``package`` had just byte-compiled and deleted it, so every
+        default AppImage exited 2 before Python started.
+        """
+        src = launcher.render_apprun(entry_point="main", app_id="a")
+        assert "usr/app/main.py" not in src
+        assert ".py" not in src.split("exec ", 1)[1]
+
+    def test_the_cwd_is_kept_off_sys_path(self):
+        """``-m`` alone would put the launch directory on sys.path; ``-P`` must not.
+
+        Exec'ing a script put the *script's* directory on ``sys.path``, never
+        the caller's, so dropping ``-P`` here would silently let any directory a
+        user launches from shadow an app or stdlib module.
+        """
+        src = launcher.render_apprun(entry_point="main", app_id="a")
+        assert " -P -m " in src
 
     def test_rejects_bad_entry_point(self):
         with pytest.raises(AppDirError, match="not a valid module name"):
