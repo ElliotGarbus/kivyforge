@@ -497,6 +497,57 @@ the host gate is arch-agnostic by design, but `VALID_WINDOWS_ARCHS` is
 
 ### 3. Output layer: `rich` rendering and `--json`
 
+**Status: the seam and `doctor --json` landed 2026-09-14.** `kivyforge/report/`
+now exists with the four pieces this item needs — `console.py` (the `Report`
+seam and the stdout/stderr rule), `envelope.py` (the versioned envelope),
+`diagnostics.py` (`Diagnostic` plus the code vocabulary), and `exit_codes.py`
+(the reserved taxonomy) — and `doctor` is wired through it end to end with
+`--json` and `--no-color`, verified against all five backends. `rich` is a hard
+dependency. The seam is the part that had to be built once; each remaining verb
+is now independent work.
+
+Against the agent-friendliness list below: **point 1 (versioned envelope) is
+done**; **points 3, 4 and 5** (diagnostic IDs, exit-code taxonomy, remediation
+as a field) have their mechanism built but reach only as far as `doctor` —
+`ToolchainError.exit_code` is still `1` everywhere, and most doctor checks are
+still uncoded and report the generic `KF-DOCTOR-CHECK`; **points 2 and 6–8**
+(artifact paths, `capabilities`, `--no-input`, `AGENTS.md`) are untouched.
+`status`, `lock`, `build` and `package` have not been converted.
+
+Four things worth knowing before the next verb goes through it:
+
+- **Rich markup is off, and it had to be.** Rich's default `markup=True` parses
+  `[PASS]` as a style tag and raises `MissingStyle`, because `PASS` is not a
+  style — so simply routing doctor's existing lines through a Rich console
+  crashes it. Styling is applied via explicit `style=` arguments instead. This
+  also means content cannot influence rendering, which matters beyond doctor: a
+  dependency named `foo[bar]` is ordinary PEP 508 and appears in resolver
+  errors.
+- **`--no-color` needs `force_terminal=False`, not just `no_color=True`.**
+  Rich's `no_color` strips colour but keeps other SGR attributes, so a `bold
+  red` style still emits `\x1b[1m` on a terminal. Since the reason to pass
+  `--no-color` is normally a log file or CI transcript, where a stray bold code
+  is as unwelcome as a colour, terminal detection is disabled too. Slightly
+  broader than no-color.org's wording, and the broader reading is what callers
+  want. Losing Rich's width detection costs nothing while `soft_wrap` is on.
+- **The JSON path serialises with `ensure_ascii=True`.** That escapes every
+  non-ASCII character, so machine output cannot raise `UnicodeEncodeError` on
+  any stream encoding — including the redirected cp1252 stdout this item's
+  third bullet below is about. `--json > out.json` therefore does not depend on
+  the message-content guard holding forever, which is the right trade for the
+  one output path that must never crash.
+- **The stdout/stderr rule needed one refinement.** "Machine output to stdout,
+  human to stderr" is right for *progress*, but doctor's report is the product,
+  not progress, and `kivyforge doctor > report.txt` has always worked. So: the
+  product goes to stdout (the envelope under `--json`, the report otherwise),
+  progress and log lines go to stderr *always* including under `--json`, and the
+  human report is suppressed under `--json` because the envelope supersedes it.
+
+One behaviour change to note: **a doctor `FAIL` now exits `2`**
+(`ENVIRONMENT_ERROR`) rather than `1`, since it means the machine or project is
+not ready — a different reaction from "you passed a bad flag". Nothing in the
+suite depended on the old value.
+
 **New 2026-09-12. These are deliberately one item.** User output today is ~119
 `click.echo` calls plus `CheckResult.render()`, with no central console —
 counted across `platforms/*/cli.py` (Android 37, iOS 20, macOS 10, Linux 9,

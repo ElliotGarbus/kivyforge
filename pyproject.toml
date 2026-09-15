@@ -27,6 +27,11 @@ classifiers = [
 dependencies = [
     # CLI verbs
     "click>=8.1",
+    # Human-facing rendering (kivyforge/report). Pure Python, no transitive
+    # weight. Chosen partly because it derives ASCII box/rule substitution from
+    # the stream's own encoding, which is what a redirected cp1252 Windows
+    # stream needs -- see docs/design/dev/roadmap.md item 3.
+    "rich>=13",
     # PEP 508 / 621 / 503 marker evaluation and version parsing
     "packaging>=24",
     # Xcode project file generation (spec 06)
