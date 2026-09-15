@@ -166,6 +166,34 @@ class TestStreamRoutingJsonMode:
         assert json.loads(out.getvalue())["command"] == "doctor"
 
 
+class TestRecordedData:
+    """``record`` exists for the failure path: a verb that raises never reaches
+    its own ``emit``, so anything it learned first would otherwise be dropped."""
+
+    def test_recorded_fields_reach_the_envelope(self, streams):
+        out, _ = streams
+        report = _report(streams, json_mode=True)
+        report.record(lockfile="pylock.linux.toml")
+        report.emit(ok=False)
+        assert json.loads(out.getvalue())["data"] == {"lockfile": "pylock.linux.toml"}
+
+    def test_emit_data_merges_over_recorded_fields(self, streams):
+        out, _ = streams
+        report = _report(streams, json_mode=True)
+        report.record(action="pending", lockfile="pylock.linux.toml")
+        report.emit(ok=True, data={"action": "wrote"})
+        assert json.loads(out.getvalue())["data"] == {
+            "action": "wrote",
+            "lockfile": "pylock.linux.toml",
+        }
+
+    def test_recording_nothing_leaves_data_empty(self, streams):
+        out, _ = streams
+        report = _report(streams, json_mode=True)
+        report.emit(ok=True)
+        assert json.loads(out.getvalue())["data"] == {}
+
+
 class TestRenderingHazards:
     """Two ways passing existing text through Rich could go wrong."""
 

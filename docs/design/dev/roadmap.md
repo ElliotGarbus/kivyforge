@@ -517,7 +517,7 @@ the host gate is arch-agnostic by design, but `VALID_WINDOWS_ARCHS` is
 
 ### 3. Output layer: `rich` rendering and `--json`
 
-**Status: the seam, `doctor --json` and `status --json` landed 2026-09-14.**
+**Status: the seam, `doctor`, `status` and `lock --json` landed 2026-09-14/15.**
 `kivyforge/report/` now exists with the four pieces this item needs —
 `console.py` (the `Report` seam and the stdout/stderr rule), `envelope.py` (the
 versioned envelope), `diagnostics.py` (`Diagnostic` plus the code vocabulary),
@@ -527,12 +527,34 @@ independent work.
 
 Against the agent-friendliness list below: **points 1, 2 and 5 (versioned
 envelope, artifact paths, remediation as a field) are done**; **points 3 and 4**
-(diagnostic IDs, exit-code taxonomy) have their mechanism and vocabulary built
-and every failure now carries *a* code, but most are still the generic
-`KF-ERROR` / `KF-DOCTOR-CHECK` and almost every raise site still exits `1`, so
-the narrowing is the remaining work; **points 6–8** (`capabilities`,
-`--no-input`, `AGENTS.md`) are untouched. `lock`, `build` and `package` have not
-been converted.
+(diagnostic IDs, exit-code taxonomy) have their mechanism and vocabulary built,
+and `lock` is the first verb where the *narrowing* actually happened — see below;
+**points 6–8** (`capabilities`, `--no-input`, `AGENTS.md`) are untouched. `build`
+and `package` have not been converted.
+
+**`lock` is where the taxonomy stopped being theoretical (2026-09-15).** Its
+three `--check` failures now exit `LOCK_DRIFT` (`4`) rather than `1` and differ
+only in code — `KF-LOCK-DRIFT`, `KF-LOCK-MISSING`, `KF-LOCK-UNREADABLE` — which
+is the split the two audiences want: a CI job that only needs "re-lock and retry"
+branches on the number, and anything that cares whether the lock is *corrupt*
+rather than merely stale reads the code. `lock` on a host that cannot resolve
+(iOS off macOS) exits `ENVIRONMENT_ERROR` with `KF-HOST-INCAPABLE`. Nothing
+depended on the old `1`, because the existing tests asserted `!= 0` — which is
+the argument for narrowing early, while that is still true.
+
+Resolver warnings became diagnostics rather than stderr-only prose
+(`KF-LOCK-WARNING`, always `WARNING`, run stays `ok`). The macOS and Linux
+backends emit these for real judgement calls — accepting a vendored plain
+`linux_*` wheel, say — and a machine previously could not see that had happened.
+
+**`Report.record()` came out of this and is the generally useful piece.** A verb
+that raises never reaches its own `emit`, so `reporting()`'s failure envelope had
+nothing to put in `data` and emitted `"data": {}` — meaning the single run a CI
+job most wants to read machine-side said *that* drift happened but not *what*
+drifted, while the human on stderr got the diff. Fields recorded as they become
+known now survive into the failure envelope, and `emit`'s own `data` merges over
+them. `build` and `package` want this more than `lock` does: a build that fails
+half way has usually still produced artifacts worth naming.
 
 **The failure path is now covered too — `reporting()` in `cli/_output.py`.** A
 verb that raised `ToolchainError` used to emit **no envelope at all**, so
@@ -661,6 +683,16 @@ whether a build is even possible before attempting it. `status` next, which
 needs actual refactoring — `linux_status()` and its peers `click.echo` computed
 strings like `"out of date (run `kivyforge lock -p linux`)"`, so the state has
 to be returned rather than printed. Then `lock`, `build`, `package`.
+
+**`lock` needed no refactoring, which is worth knowing before `build`.** Its
+outcomes were already computed as data and only *described* by `click.echo`, so
+the conversion was mechanical and the whole cost was deciding the payload
+vocabulary (`action` ∈ wrote/unchanged/checked, `in_sync`, `packages`,
+`lockfile`) and the codes. `build` and `package` will not be this easy: their
+output is genuinely progress — subprocess pass-through from Gradle, Xcode and
+`appimagetool` — so the interesting question there is not how to render it but
+which of it is *product* (artifact paths, sizes, signing identity) versus noise
+to forward to stderr unchanged.
 
 **`status` turned out to pay a debt as well as add a feature.** The backends now
 return a `StatusReport` (`kivyforge/status.py`) that `cli/status.py` renders.

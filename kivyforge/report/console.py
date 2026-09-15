@@ -115,6 +115,7 @@ class Report:
         self.platform = platform
         self.json_mode = json_mode
         self._diagnostics: list[Diagnostic] = []
+        self._data: dict[str, object] = {}
 
         out = sys.stdout if stdout is None else stdout
         err = sys.stderr if stderr is None else stderr
@@ -148,13 +149,28 @@ class Report:
 
     # --- machine output ----------------------------------------------------
 
+    def record(self, **fields: object) -> None:
+        """Add fields to the envelope's ``data`` as they become known.
+
+        The point is the *failure* path. ``reporting()`` emits an envelope when a
+        verb raises, and it has nothing to put in ``data`` -- so a run that
+        resolved a lock, wrote nothing and then reported drift produced
+        ``"data": {}``, discarding the very facts the consumer needs. Anything
+        recorded here survives into that envelope.
+
+        A verb that succeeds can pass its payload to :meth:`emit` as before;
+        recorded fields merge underneath it, so the two styles mix freely and the
+        final value wins.
+        """
+        self._data.update(fields)
+
     def envelope(self, *, ok: bool, data: dict[str, object] | None = None) -> Envelope:
         return Envelope(
             command=self.command,
             kivyforge=self.kivyforge_version,
             platform=self.platform,
             ok=ok,
-            data=data or {},
+            data={**self._data, **(data or {})},
             diagnostics=self.diagnostics,
         )
 

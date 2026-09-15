@@ -46,6 +46,11 @@ LOCK_MISSING = "KF-LOCK-MISSING"
 #: treating as stale -- it usually means a bad merge or a truncated write.
 LOCK_UNREADABLE = "KF-LOCK-UNREADABLE"
 
+#: Resolution succeeded but made a judgement call worth surfacing (e.g. the
+#: macOS/Linux backends accepting a vendored plain ``linux_*`` wheel). Always
+#: WARNING: the lock written is usable, and the run is ``ok``.
+LOCK_WARNING = "KF-LOCK-WARNING"
+
 #: ``byte_compile`` is on but no compatible host interpreter was found. The bug
 #: roadmap item 1 fixed; the check that now catches it lives in
 #: ``doctor/checks_common.py``.

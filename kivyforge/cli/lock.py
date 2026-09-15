@@ -27,7 +27,9 @@ from ..platforms.ios.lock import (
     load,
     semantic_equal,
 )
+from ..report import Diagnostic, Report, diagnostics, exit_codes
 from ._common import ToolchainError, lockfile_path_for
+from ._output import output_options, reporting
 from ._platform import platform_option, resolve_target
 
 
@@ -141,7 +143,11 @@ def _require_host_toolchain(backend) -> None:
     try:
         backend.check_host_capability()
     except HostCapabilityError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(
+            str(exc),
+            code=diagnostics.HOST_INCAPABLE,
+            exit_code=exit_codes.ENVIRONMENT_ERROR,
+        ) from exc
 
 
 @click.command()
@@ -153,49 +159,84 @@ def _require_host_toolchain(backend) -> None:
     is_flag=True,
     help="CI pre-flight: exit non-zero if the lock is stale; write nothing.",
 )
-def lock(cli_platform: str | None, update: bool, offline: bool, check: bool) -> None:
+@output_options
+def lock(
+    cli_platform: str | None,
+    update: bool,
+    offline: bool,
+    check: bool,
+    json_out: bool,
+    no_color: bool,
+) -> None:
     """Generate pylock.<platform>.toml from pyproject.toml."""
-    backend, project_root = resolve_target(cli_platform, verb="lock")
-    ops = _lock_ops(backend.name)
-    if ops.requires_host_toolchain:
-        _require_host_toolchain(backend)
+    with reporting("lock", json_out=json_out, no_color=no_color) as report:
+        backend, project_root = resolve_target(cli_platform, verb="lock")
+        report.platform = backend.name
+        ops = _lock_ops(backend.name)
+        if ops.requires_host_toolchain:
+            _require_host_toolchain(backend)
 
-    pyproject = project_root / "pyproject.toml"
-    pyproject_text = pyproject.read_text(encoding="utf-8")
-    out_path = lockfile_path_for(backend.name, project_root)
+        pyproject = project_root / "pyproject.toml"
+        pyproject_text = pyproject.read_text(encoding="utf-8")
+        out_path = lockfile_path_for(backend.name, project_root)
+        # Recorded before anything can fail, so even a drift or resolution
+        # failure names the file it was talking about (agent-friendliness point
+        # 2: never make a consumer reconstruct a path from docs).
+        report.record(lockfile=out_path.name)
 
-    try:
-        config = load_config(
-            pyproject,
-            require_ios=ops.require_ios,
-            require_macos=ops.require_macos,
-            require_linux=ops.require_linux,
-            require_windows=ops.require_windows,
-            require_android=ops.require_android,
-        )
-    except ConfigError as exc:
-        raise ToolchainError(exc.format()) from exc
-
-    if check:
-        _run_check(ops, config, pyproject_text, out_path, project_root, offline)
-        return
-
-    if out_path.is_file() and not update:
         try:
-            existing = ops.load(out_path)
-        except LockError:
-            existing = None
-        if existing is not None and is_in_sync(existing, pyproject_text):
-            click.echo(f"{out_path.name} is already in sync with pyproject.toml.")
-            click.echo("  (use --update to force re-resolution)")
+            config = load_config(
+                pyproject,
+                require_ios=ops.require_ios,
+                require_macos=ops.require_macos,
+                require_linux=ops.require_linux,
+                require_windows=ops.require_windows,
+                require_android=ops.require_android,
+            )
+        except ConfigError as exc:
+            raise ToolchainError(exc.format()) from exc
+
+        if check:
+            _run_check(
+                report, ops, config, pyproject_text, out_path, project_root, offline
+            )
             return
 
-    new_lock = _build(ops, config, pyproject_text, project_root, offline)
-    _atomic_write(out_path, ops.dumps(new_lock))
-    click.echo(f"Wrote {out_path.name} ({len(new_lock.packages)} packages pinned).")
+        if out_path.is_file() and not update:
+            try:
+                existing = ops.load(out_path)
+            except LockError:
+                existing = None
+            if existing is not None and is_in_sync(existing, pyproject_text):
+                report.line(f"{out_path.name} is already in sync with pyproject.toml.")
+                report.line("  (use --update to force re-resolution)")
+                report.emit(
+                    ok=True,
+                    data={
+                        "action": "unchanged",
+                        "in_sync": True,
+                        "packages": len(existing.packages),
+                    },
+                )
+                return
+
+        new_lock = _build(report, ops, config, pyproject_text, project_root, offline)
+        _atomic_write(out_path, ops.dumps(new_lock))
+        report.line(
+            f"Wrote {out_path.name} ({len(new_lock.packages)} packages pinned)."
+        )
+        report.emit(
+            ok=True,
+            data={
+                "action": "wrote",
+                "in_sync": True,
+                "packages": len(new_lock.packages),
+            },
+        )
 
 
 def _run_check(
+    report: Report,
     ops: _LockOps,
     config,
     pyproject_text: str,
@@ -203,31 +244,75 @@ def _run_check(
     project_root: Path,
     offline: bool,
 ) -> None:
+    """The CI pre-flight: report drift, write nothing.
+
+    All three failures here mean "your lock is not the lock this
+    ``pyproject.toml`` implies", so all three exit ``LOCK_DRIFT`` and differ only
+    in code -- a consumer that just wants "re-lock and retry" can branch on the
+    number, while one that wants to distinguish a corrupt lock from a stale one
+    reads the code.
+    """
+    relock = f"kivyforge lock -p {report.platform}"
     if not out_path.is_file():
         raise ToolchainError(
-            f"{out_path.name} does not exist. Run `kivyforge lock` first."
+            f"{out_path.name} does not exist. Run `kivyforge lock` first.",
+            code=diagnostics.LOCK_MISSING,
+            exit_code=exit_codes.LOCK_DRIFT,
+            remediation=relock,
         )
     try:
         existing = ops.load(out_path)
     except LockError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(
+            str(exc),
+            code=diagnostics.LOCK_UNREADABLE,
+            exit_code=exit_codes.LOCK_DRIFT,
+            remediation=relock,
+        ) from exc
 
-    candidate = _build(ops, config, pyproject_text, project_root, offline)
+    candidate = _build(report, ops, config, pyproject_text, project_root, offline)
     if ops.semantic_equal(existing, candidate):
-        click.echo(f"{out_path.name} is up to date.")
+        report.line(f"{out_path.name} is up to date.")
+        report.emit(
+            ok=True,
+            data={
+                "action": "checked",
+                "in_sync": True,
+                "packages": len(existing.packages),
+            },
+        )
         return
-    click.echo(f"{out_path.name} is out of date:", err=True)
-    for line in ops.diff_summary(existing, candidate):
-        click.echo(line, err=True)
-    raise ToolchainError("lock is stale; run `kivyforge lock`.")
+
+    # The diff is progress-shaped (it goes to stderr, and it always did), but it
+    # is also the *answer* under --check, so it is recorded for the envelope that
+    # ``reporting()`` will emit when the raise below propagates.
+    diff = list(ops.diff_summary(existing, candidate))
+    report.progress(f"{out_path.name} is out of date:")
+    for line in diff:
+        report.progress(line)
+    report.record(action="checked", in_sync=False, diff=diff)
+    raise ToolchainError(
+        "lock is stale; run `kivyforge lock`.",
+        code=diagnostics.LOCK_DRIFT,
+        exit_code=exit_codes.LOCK_DRIFT,
+        remediation=relock,
+    )
 
 
 def _build(
-    ops: _LockOps, config, pyproject_text: str, project_root: Path, offline: bool
+    report: Report,
+    ops: _LockOps,
+    config,
+    pyproject_text: str,
+    project_root: Path,
+    offline: bool,
 ):
     kwargs = {}
     if ops.emits_warnings:
-        kwargs["on_warning"] = lambda msg: click.echo(msg, err=True)
+        # Shown *and* recorded. These used to go to stderr only, so a --json
+        # consumer could not see that (say) a vendored plain linux_* wheel had
+        # been accepted -- a decision worth knowing about from a machine.
+        kwargs["on_warning"] = lambda msg: _warn(report, msg)
     try:
         return ops.build(
             config,
@@ -238,6 +323,17 @@ def _build(
         )
     except ops.build_error as exc:
         raise ToolchainError(str(exc)) from exc
+
+
+def _warn(report: Report, message: str) -> None:
+    report.progress(message)
+    report.diagnose(
+        Diagnostic(
+            code=diagnostics.LOCK_WARNING,
+            severity=diagnostics.WARNING,
+            message=message,
+        )
+    )
 
 
 def _atomic_write(path: Path, text: str) -> None:
