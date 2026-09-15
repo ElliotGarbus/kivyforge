@@ -177,7 +177,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 |---|---|---|---|---|---|---|
 | Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare only | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
 | macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | none | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3) |
-| Linux `x86_64` | `unit_tests` | **none** | **none** | **none** | see §6 | every push |
+| Linux `x86_64` | `unit_tests` | **local only** — `appimagetool`, one run | **local only** — assertions exist and are hermetically tested every push; pointed at a real artifact once | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1); 2026-09-13 (T2/T3/T4) |
 | Linux `aarch64` | — | — | — | — | — | never (item 4) |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
 | Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
@@ -216,8 +216,13 @@ notarized `.app` — both passed. So `codesign`, `lipo`, and `hdiutil` are no
 longer mock-only; they are local-only, which is a real but different gap (see
 below).
 
-**Linux is the emptiest column.** Unit tests only: `appimagetool` has never run
-in CI, so the AppDir → AppImage step is entirely untested outside mocks.
+**Linux is still the emptiest CI column, but it is no longer unproven.** No CI
+job runs `kivyforge build -p linux`, so the AppDir → AppImage step remains
+untested *in CI*. It has now run once locally (§7, 2026-09-13), and that single
+run is the argument for §5.3: it found a defect that made every default
+`kivyforge package -p linux` produce an AppImage that could not start. The T3
+assertions it exposed that with are hermetic and do run every push; what does
+not re-run is anything pointing them at a real artifact.
 
 **Android is the strongest column, and the only one with real T3.**
 `android_gradle` is the real thing — AGP, the pinned NDK, CMake, and `javac` all
@@ -376,13 +381,34 @@ twice: once on the debug APK, once on the stripped release APK.
       `tests/test_artifact_checks.py`, and wired to a real bundle via
       `tests/platforms/macos/test_app_artifact.py --macos-app`. Ran against the
       real notarized `dice-roller.app` — passed. Not yet in CI (§3.2).
-- [ ] **Linux check *functions*, which are not blocked on §5.3.**
-      Same split as Android/macOS: pure checks, hermetically unit-tested, don't
-      need a build job — only the driver does. `platforms/linux/elftools.py`
-      (`elf_machine`, `describe`) already parses what is needed, so the checks
-      and their hermetic tests can land **now** and sit ready behind
-      `--linux-appimage` / `--windows-onedir`, exactly as `--android-apk` and
-      `--macos-app` did.
+- [x] **Linux check functions — done 2026-09-13, and they caught a shipped bug.**
+      `linux_appdir_problems` / `linux_appimage_file_problems` in
+      `tests/artifact_checks.py`, 36 hermetic tests on synthetic AppDirs, driver
+      behind `--linux-appimage` / `--linux-appdir`. Three things worth carrying
+      to the Windows equivalent: the payload is `usr/app` + `usr/lib` **only**
+      (the build byte-compiles nothing else, so a stripped AppImage legitimately
+      ships ~1000 stdlib `.py` and a tree-wide sweep would report every one as a
+      fault — the same stdlib-exclusion the macOS check scopes around); the
+      expected `.pyc` magic is asked of the artifact's *own* staged interpreter,
+      which a desktop bundle can answer and an APK cannot; and the ELF sweep
+      covers the whole tree, because `doctor.check_linux_native_binaries` looks
+      only under `usr/bin` and SKIPs unless native binaries are declared.
+- [ ] **A launcher-entry check on macOS, which neither desktop checker has.**
+      The Linux checker asserts that whatever `AppRun` promises to execute
+      actually exists, and that is the check that caught the shipped
+      `strip_source` launch failure in §7. `macos_app_problems` has no
+      equivalent, and `macos/launcher.py` builds the same `"%s/%s.py"` exec path
+      Linux's did — so the macOS T3 pass against the notarized `dice-roller.app`
+      does **not** clear it, and macOS T4 is `none`, so nothing has launched a
+      stripped `.app` either. Cheap to add; see §7 for what it found. Queued for
+      the Mac as
+      [`macos-launcher-strip-source-prompt.md`](macos-launcher-strip-source-prompt.md),
+      which also specifies the launcher fix itself.
+- [ ] **Windows check functions.** Same split, not blocked on §5.3, and the
+      option can sit ready behind `--windows-onedir` exactly as `--android-apk`,
+      `--macos-app`, and `--linux-appimage` did. Windows is the one desktop
+      target immune to the launcher defect above: its bootstrap uses
+      `runpy.run_module`, which resolves through the import system.
 - [ ] **Merged `AndroidManifest.xml` and `Info.plist` contain what config asked
       for.** `android_gradle` already exports the merged manifest to
       `app/build/kivyforge/AndroidManifest-merged-release.xml` and currently
@@ -480,6 +506,14 @@ most can never exercise stripping — and any test written against `run` today
 would be testing the branch that was already fine. Fix the command first, then
 cover it.
 
+**This is not Android-only, and on 2026-09-13 it stopped being hypothetical.**
+`linux_run()` calls `linux_build(...)`, which hardcodes `release=False`, so
+`package` is the only Linux verb that reaches `strip_source` — and `package`
+emits a distributable nobody launches while iterating. That gap is exactly where
+the `AppRun` defect in §7 lived: shipped, reproducible in one command, and
+invisible to every path a developer actually uses. The cost of this hole is now
+measured, not argued.
+
 ### 5.6 Host-dependent cases with no test at all
 
 From §4, the ones with no producer of any kind: Windows path-length /
@@ -568,6 +602,10 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-13 | Android `x86_64` (CI) | T3 | ubuntu | Artifact assertions added to `android_gradle` for the debug and stripped release APKs. Validated locally against the two real `arm64-v8a` APKs from item 1 first: the stripped one passes under CPython 3.14 and is correctly rejected under 3.13 (magic 3627 vs 3571), and claiming the wrong ABI is caught across all 120 shared objects. |
 | 2026-09-13 | Windows `amd64` (CI) | T2 | windows | `windows_launcher` went red: byte mismatch at the same size with the pinned toolset (MSVC 14.51.36231 + SDK 10.0.26100.0) reported as *used*, i.e. a serviced compiler inside an unchanged version string — the drift `/EMITTOOLVERSIONINFO:NO` cannot cover. Last green was 2026-08-12; the hosted image rolled. Fixed by `revendor_launcher`, which changed the binary and `SHA256SUMS` but **not** `TOOLSET.txt`. Third occurrence. |
 | 2026-09-13 | Linux `x86_64` | T0/T1 | **WSL2** (Ubuntu, Python 3.14.4) | Editable install plus `doctor -p linux` green on the `dice-roller` example, including the new byte-compile check reporting the native path ("the staged runtime compiles its own payload"). WSLg provides `wayland, x11`, so Linux T4 is locally reachable. No build or AppImage yet — this is environment readiness, not target coverage. |
+| 2026-09-13 | Linux `x86_64` | T2 | **WSL2** (Ubuntu, Python 3.14.4) | **First execution of `appimagetool` in this project's history.** `kivyforge package -p linux` on `dice-roller` built the AppDir and wrapped it (appimagetool 1.9.1, fetched not installed — no sudo) into a 118 MB type-2 AppImage in ~21 s. The lock was generated locally per the §5.3 policy, not committed. |
+| 2026-09-13 | Linux `x86_64` | T3 | **WSL2** (Ubuntu, Python 3.14.4) | Linux artifact assertions landed (`linux_appdir_problems`, `linux_appimage_file_problems`; 36 hermetic tests, driver behind `--linux-appimage`). Pointed at the real stripped release AppImage they **failed, correctly**, on a bug that had shipped: see the T2→T4 row below. Re-run green after the fix, and clean against the unstripped `build` AppDir. **Caveat that limits this row:** a Linux `x86_64` build on a Linux host is *native*, so `select_compiler()` took the staged-interpreter path and **never called `find_interpreter()`** — the search path where item 1's bug actually lived (§5.2) remains uncovered by this run. |
+| 2026-09-13 | Linux `x86_64` | T3 → product fix | **WSL2** (Ubuntu, Python 3.14.4) | **Every default `kivyforge package -p linux` produced an AppImage that could not start.** `strip_source` defaults to release-only, `package` is the only verb that sets `release=True`, and `AppRun` was rendered from a template hardcoding `exec .../usr/app/<entry>.py` — the file the same build had just byte-compiled and deleted. Exit 2 before Python started; reproduced on the real artifact, not inferred. Invisible because `build` and `run` both hardcode `release=False` (the Linux instance of §5.5), so no path a developer uses while iterating ever reaches stripping. Fixed by running the entry point as a module: `-P -m <entry>`. `-P` is load-bearing — bare `-m` would put the launch directory on `sys.path`, which exec'ing a script never did. |
+| 2026-09-13 | Linux `x86_64` | T4 (local) | **WSL2** (Ubuntu, Python 3.14.4) | Post-fix stripped release AppImage launches: SDL2 window, Kivy reaches `Start application main loop`, rendering a payload of 0 `.py` / 336 `.pyc` / 0 `__pycache__` with `usr/app/main.pyc` sourceless. `.pyc` magic 3571 — the AppDir's own staged CPython 3.13.14, *not* the 3.14.4 running pytest, which is why the checks derive expected magic from the shipped runtime rather than the runner. GL is **llvmpipe software rendering under WSLg**, so this proves the payload imports and the app reaches first frame; it is not evidence about a real GPU driver. |
 | 2026-09-14 | macOS `arm64` (`dice-roller`) | T2 + T3 (local) | macOS 26.6.2, Xcode 26.6 | Real Developer-ID-signed, notarized, stapled `.app` inspected directly: `codesign --verify --deep --strict` valid, `stapler validate` and `spctl -a -t exec` both accept it (source=Notarized Developer ID), `lipo` confirms `arm64`-only. `notarytool history` (once a keychain profile existed) showed **five `Accepted` submissions since 2026-07-07** — corrects §6's "Notarization" item, which had been marked open on the strength of nobody having checked. `strip_source` confirmed correctly scoped: `app/`+`lib/` fully `.pyc`-only, embedded stdlib deliberately untouched, all 336 shipped `.pyc` files match the *bundled* interpreter's magic (3.13.14), not the host's (3.14.7). Full detail: [`macos-ios-validation-findings.md`](macos-ios-validation-findings.md). |
 | 2026-09-14 | macOS `arm64` | T3 infra | macOS 26.6.2 | Added `machotools.read_macho_cpu_type`/`cpu_type_name` (pure-Python, no `lipo` subprocess), `artifact_checks.macos_app_problems`, hermetic tests, and `tests/platforms/macos/test_app_artifact.py` (`--macos-app`, plus a `codesign_verify` check) — the macOS half of §5.1, mirroring `test_apk_artifact.py`. Run against the real `dice-roller.app` above: both tests pass. Full hermetic suite: exit 0, coverage 91.96%. |
 | 2026-09-14 | iOS simulator `arm64` | T2 + T4 (local) | macOS 26.6.2, Xcode 26.6 | Regression re-check, no drift since 2026-07-27: `doctor -p ios` (2 expected `WARN`s only), `build -p ios --simulator`, `run -p ios --simulator` all exit 0; `hello-kivy` renders correctly on iPhone Air / iOS 26.5. `pylock.ios.toml` unchanged. |
@@ -591,6 +629,8 @@ Linux say whether it was WSL2 or bare metal (§4).
   not its Mach-O arch, not whether `strip_source` did anything. (macOS gained a
   T3 driver 2026-09-14 — see below — but nothing analogous exists for iOS yet.)
 - Any `kivyforge build` for Linux, macOS, **or Windows**: never run in CI.
+  Linux and macOS have each been built **locally** (§7, 2026-09-13 and
+  2026-09-14); nothing re-runs either.
 - `kivyforge build -p macos`: never run in CI, but run **locally by hand
   repeatedly since 2026-07-07** (five notarized `dice-roller` builds, §7) —
   `codesign`, `lipo`, and (as of 2026-09-14) file-level Mach-O/`.pyc`/`Info.plist`
@@ -599,7 +639,25 @@ Linux say whether it was WSL2 or bare metal (§4).
   every push.
 - Notarization: **verified** — five `notarytool Accepted` submissions since
   2026-07-07 (§7). Previously listed as unverified in §6; that was stale.
-- `appimagetool`: never run, anywhere.
+- `appimagetool`: run once, locally, 2026-09-13 (§7). Never in CI.
+- Linux `strip_source`: proven end to end **once, locally**, and only after
+  the `AppRun` fix in the same session. The *native* byte-compile path is
+  what ran; `find_interpreter()` has still never been exercised by a Linux
+  build.
+- Whether a stripped macOS `.app` can actually **launch**: unknown, and there
+  is now specific reason to doubt it. `macos/launcher.py` still builds
+  `snprintf(script, ..., "%s/%s.py", app, ENTRY)` and `execv`s that path —
+  the exact construction that made every Linux AppImage exit before Python
+  started (§7, 2026-09-13). The 2026-09-14 `.app` satisfies the precondition:
+  its `Contents/Resources/app` was confirmed `.pyc`-only, so the `main.py`
+  its launcher names is not there. Nothing contradicts that yet, because
+  macOS T4 is `none` (§3.2) and `macos_app_problems` checks only that
+  `Contents/MacOS/` holds *an* executable, never that the launcher's target
+  exists. **A signed, notarized, T3-passing artifact is not evidence it
+  starts** — which is the sharpest available argument for the
+  launcher-entry check in §5.1 and for a desktop T4 in §6. Written up for the
+  Mac, with the reproduction and the fix, as
+  [`macos-launcher-strip-source-prompt.md`](macos-launcher-strip-source-prompt.md).
 - Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only), so
   its T2/T3 is inherited from `x86_64` plus the stray-ABI check, not direct.
 - Android T3 from a Windows host: once, by hand, 2026-09-13 (§5.2).
