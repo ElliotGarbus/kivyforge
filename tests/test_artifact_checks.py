@@ -644,6 +644,24 @@ class TestLinuxPayloadStripping:
         _write(root / "usr/lib/kivy/__pycache__/m.cpython-313.pyc", MAGIC_313 + b"body")
         assert any("__pycache__" in p for p in _lcheck(root))
 
+    def test_pycache_in_an_unstripped_payload_accuses_the_launch(self, tmp_path):
+        """A build never writes payload ``__pycache__``; running the AppDir does.
+
+        Measured on dice-roller: ``kivyforge build -p linux`` staged 336 ``.py``
+        and zero ``.pyc``, then launching that same AppDir left 100 ``.pyc`` in
+        ``usr/app``/``usr/lib``. So this is normal in a working tree and never
+        in a freshly staged artifact, which is what makes it worth reporting
+        even though the payload is *meant* to be source here.
+        """
+        root = _appdir(tmp_path, stripped=False)
+        _write(root / "usr/lib/kivy/__pycache__/m.cpython-313.pyc", MAGIC_313 + b"body")
+        problems = _lcheck(root, stripped=False)
+        assert any("written to after the build" in p for p in problems)
+        assert not any("strip_source" in p for p in problems)
+
+    def test_an_unstripped_payload_without_pycache_is_clean(self, tmp_path):
+        assert _lcheck(_appdir(tmp_path, stripped=False), stripped=False) == []
+
     def test_an_empty_payload_is_reported(self, tmp_path):
         root = _appdir(tmp_path)
         for path in [root / "usr/app", root / "usr/lib"]:

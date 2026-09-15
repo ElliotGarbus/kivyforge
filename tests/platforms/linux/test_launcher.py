@@ -46,6 +46,18 @@ class TestRenderApprun:
         src = launcher.render_apprun(entry_point="main", app_id="a")
         assert " -P -m " in src
 
+    def test_a_launch_never_writes_back_into_the_appdir(self):
+        """An AppDir is a writable directory, and also the tree T3 inspects.
+
+        Measured on dice-roller: launching a ``package -f folder`` AppDir wrote
+        75 ``.pyc`` under ``usr/python``, and launching an unstripped ``build``
+        wrote 209, 100 of them into the payload itself. Nothing lands inside a
+        ``.AppImage`` — its squashfs mounts ``ro`` — so this guards the folder
+        form, which is the one a checker can be pointed at.
+        """
+        src = launcher.render_apprun(entry_point="main", app_id="a")
+        assert "PYTHONDONTWRITEBYTECODE=1" in src
+
     def test_rejects_bad_entry_point(self):
         with pytest.raises(AppDirError, match="not a valid module name"):
             launcher.render_apprun(entry_point="not-an-ident", app_id="a")

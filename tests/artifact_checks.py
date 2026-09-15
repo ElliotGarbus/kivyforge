@@ -691,6 +691,7 @@ def _linux_payload_problems(appdir: Path, *, stripped: bool) -> list[str]:
 
     sources = [p for p in payload if p.suffix == ".py"]
     compiled = [p for p in payload if p.suffix == ".pyc"]
+    cached = [p for p in payload if "__pycache__" in p.parts]
     problems = []
 
     if stripped:
@@ -704,17 +705,30 @@ def _linux_payload_problems(appdir: Path, *, stripped: bool) -> list[str]:
                 "strip_source was applied but the payload contains no .pyc at "
                 "all — the build degraded to shipping source"
             )
-        cached = [p for p in payload if "__pycache__" in p.parts]
         if cached:
             problems.append(
                 f"payload has {len(cached)} __pycache__ entrie(s), e.g. "
                 f"{rel(cached)} — sourceless imports need .pyc in the legacy "
                 "location, not beside a source file that is no longer there"
             )
-    elif not sources:
-        problems.append(
-            "strip_source was not applied but the payload contains no .py at all"
-        )
+    else:
+        if not sources:
+            problems.append(
+                "strip_source was not applied but the payload contains no .py at all"
+            )
+        if cached:
+            # Normal in a working tree, never in a freshly staged AppDir: the
+            # build writes the payload with compileall or not at all, so a
+            # __pycache__ here means something *ran* from this artifact
+            # afterwards and wrote into it. That is what the launcher's
+            # PYTHONDONTWRITEBYTECODE exists to prevent, and it matters because
+            # the folder form of an AppDir is also what these checks inspect.
+            problems.append(
+                f"payload has {len(cached)} __pycache__ entrie(s), e.g. "
+                f"{rel(cached)} — a freshly built AppDir has none, so this "
+                "artifact was written to after the build, most likely by "
+                "launching it"
+            )
 
     return problems
 
