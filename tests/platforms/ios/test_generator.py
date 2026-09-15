@@ -195,6 +195,30 @@ class TestPbxprojGeneration:
         assert debug["CODE_SIGN_STYLE"] == "Automatic"
         assert debug["DEVELOPMENT_TEAM"] == "ABCDE12345"
 
+    def test_signing_settings_team_id_override(self, config, project_root):
+        """--team-id / KIVYFORGE_TEAM_ID must reach the generated project.
+
+        Before this, ``materialize_project``'s ``team_id`` had no effect at
+        all: ``signing_settings`` read only ``config.ios.signing.team_id``,
+        so the resolved CLI-flag/env override satisfied the upfront
+        ``preflight_signing`` check but never reached the ``.xcodeproj`` —
+        found running a real device build with ``KIVYFORGE_TEAM_ID`` set,
+        which still failed with "requires a development team" (2026-09-14
+        macOS/iOS validation).
+        """
+        layout = materialize_project(config, project_root, team_id="OVERRIDE99")
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        debug = _settings_for(project, "touchtracer", "Debug")
+        assert debug["DEVELOPMENT_TEAM"] == "OVERRIDE99"
+
+    def test_signing_settings_no_override_keeps_pyproject_value(
+        self, config, project_root
+    ):
+        layout = materialize_project(config, project_root, team_id=None)
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        debug = _settings_for(project, "touchtracer", "Debug")
+        assert debug["DEVELOPMENT_TEAM"] == "ABCDE12345"
+
     def test_last_upgrade_check_current(self, config, project_root):
         # Xcode prompts "Update to recommended settings" when LastUpgradeCheck
         # is stale; the generator keeps it current on every build.

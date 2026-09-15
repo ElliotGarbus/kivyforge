@@ -88,9 +88,10 @@ def ios_build(
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
     config = _load_config(project_root / "pyproject.toml")
+    resolved_team_id: str | None = None
     if target is not None:
         try:
-            preflight_signing(config, target, team_id_flag=team_id)
+            resolved_team_id = preflight_signing(config, target, team_id_flag=team_id)
             ungranted = preflight_entitlements(config, project_root, target)
         except SigningError as exc:
             raise ToolchainError(str(exc)) from exc
@@ -104,6 +105,7 @@ def ios_build(
         arch=arch,
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
+        team_id=resolved_team_id,
     )
 
     if target is None:
@@ -136,6 +138,7 @@ def prepare_build(
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
+    team_id: str | None = None,
 ) -> BuildSlice:
     """Run build steps 1-6 (drift, artifact collection, project generation).
 
@@ -187,6 +190,7 @@ def prepare_build(
             last_upgrade_check=_xcode_last_upgrade_check(),
             swift_packages=lock.swift_packages,
             xcframeworks=lock.xcframeworks,
+            team_id=team_id,
         )
     except CollectError as exc:
         raise ToolchainError(str(exc)) from exc
@@ -384,8 +388,9 @@ def ios_run(
 
     try:
         if not no_build:
+            resolved_team_id: str | None = None
             if target == "device":
-                preflight_signing(config, "device")
+                resolved_team_id = preflight_signing(config, "device")
                 # run signs via its own xcodebuild invocation rather than going
                 # through ios_build, so the entitlements check must repeat here.
                 # --no-build installs an already-signed .app: nothing to pre-empt.
@@ -399,6 +404,7 @@ def ios_run(
                 arch=None,
                 no_verify_lock=False,
                 no_cache=False,
+                team_id=resolved_team_id,
             )
             click.echo(f"xcodebuild build ({target}) ...")
             run_command(build_command(xb, target, derived_data_path=derived_data))
@@ -463,6 +469,11 @@ def ios_package(
     _require_macos_host()
     config = _load_config(project_root / "pyproject.toml")
     try:
+        # Resolve before prepare_build so the generated .xcodeproj carries the
+        # right DEVELOPMENT_TEAM the first time — _xcodebuild_step7 resolves
+        # again for the export step, which is harmless (same three sources,
+        # same answer) but the project must already have it before archiving.
+        resolved_team_id = preflight_signing(config, "release", team_id_flag=team_id)
         prepare_build(
             config,
             project_root,
@@ -470,6 +481,7 @@ def ios_package(
             arch=None,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
+            team_id=resolved_team_id,
         )
         xb = XcodeBuild.from_config(config, project_root)
         _xcodebuild_step7(

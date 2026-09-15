@@ -104,16 +104,28 @@ def _header_search_paths(layout: StagingLayout | None) -> str:
     return " ".join(f'"{path}"' for path in paths)
 
 
-def signing_settings(config: Config) -> dict[str, str]:
-    """Map [tool.kivy.ios.signing] to CODE_SIGN_* build settings (spec 06)."""
+def signing_settings(config: Config, *, team_id: str | None = None) -> dict[str, str]:
+    """Map [tool.kivy.ios.signing] to CODE_SIGN_* build settings (spec 06).
+
+    *team_id*, if given, overrides ``[tool.kivy.ios.signing].team_id`` — pass
+    the value already resolved by ``xcode/commands.py::resolve_team_id``
+    (``--team-id`` flag → ``KIVYFORGE_TEAM_ID`` env → pyproject), so those two
+    documented overrides actually reach the generated ``.xcodeproj`` instead of
+    only satisfying the upfront preflight check. Before this, ``build
+    --device``/``run --device``/``package`` always wrote ``DEVELOPMENT_TEAM``
+    from pyproject alone — silently ignoring both overrides — because
+    ``preflight_signing`` (which resolves all three sources) validates that a
+    team_id exists somewhere but the resolved value never reached here.
+    """
     ios = config.ios
     assert ios is not None
     signing = ios.signing
     settings: dict[str, str] = {
         "CODE_SIGN_STYLE": "Automatic" if signing.auto_signing else "Manual",
     }
-    if signing.team_id:
-        settings["DEVELOPMENT_TEAM"] = signing.team_id
+    effective_team_id = team_id if team_id is not None else signing.team_id
+    if effective_team_id:
+        settings["DEVELOPMENT_TEAM"] = effective_team_id
     if signing.identity:
         settings["CODE_SIGN_IDENTITY"] = signing.identity
     if signing.provisioning_profile:

@@ -162,7 +162,8 @@ Local scripts are producers too, and rule 1 means they count only when a run is
 logged in §7: `examples/verify-windows-examples.ps1` (a real Windows
 build/run/package loop), `examples/verify-desktop-examples.sh`,
 `examples/verify-android.ps1`, `examples/verify-ios-device.sh`, and
-`examples/run-examples.sh`. **None of them has a logged run.** They are the
+`examples/run-examples.sh`. **`examples/verify-ios-device.sh` got its first
+logged run 2026-09-14** (§7) — the other four still have none. They remain the
 cheapest untapped coverage in the repo — `verify-windows-examples.ps1` in
 particular covers the Windows column that no CI job reaches (§5.3).
 
@@ -175,13 +176,13 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Target | T0/T1 | T2 toolchain | T3 artifact | T4 launch | T5 hardware | Last proven |
 |---|---|---|---|---|---|---|
 | Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare only | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
-| macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** | none | none | see §6 | every push |
+| macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | none | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3) |
 | Linux `x86_64` | `unit_tests` | **none** | **none** | **none** | see §6 | every push |
 | Linux `aarch64` | — | — | — | — | — | never (item 4) |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
 | Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
-| iOS device `arm64` | `unit_tests` | **none** | **none** | **none** | **never** | never |
-| iOS simulator `arm64` | `unit_tests` | **local** — `xcodebuild` via `build -p ios --simulator`, 6 examples | **none** | **local** — `simctl` launch, all 6 render | n/a | 2026-07-27 |
+| iOS device `arm64` | `unit_tests` | **local** — `build -p ios --device`, `package -p ios --export-method development`, real iPhone14,3 | **none** | **local** — installed, launched, `hello-kivy` rendered on device | **manual** — first physical run, 2026-09-14 | 2026-09-14 |
+| iOS simulator `arm64` | `unit_tests` | **local** — `xcodebuild` via `build -p ios --simulator`, 6 examples | **none** | **local** — `simctl` launch, all 6 render | n/a | 2026-09-14 (regression re-check; no drift since 2026-07-27) |
 
 Legend for how a cell was proven, because "covered" hides the difference:
 **CI** = re-proven every push; **local** = a first-party run on a maintainer's
@@ -201,12 +202,19 @@ against a compiled stub `python.exe`, proving spawn/argv/exit-code/env and
 process-tree teardown; a genuine T4 for the launcher that says nothing about a
 Kivy app. **No CI job runs `kivyforge build -p windows`.**
 
-**macOS is two tests, and the table says so rather than "partial".**
-`macos_integration` runs `pytest -q` and nothing else; its entire marginal value
-over `unit_tests` is the two `TestLauncherCompile` tests that `clang` makes
-runnable — which is why that class now fails rather than skips when `clang` is
-absent. **No CI job runs `kivyforge build -p macos`**, so `codesign`, `lipo`,
-and `hdiutil` are exercised only through mocks.
+**macOS's CI job is still two tests** — `macos_integration` runs `pytest -q`
+and nothing else; its entire marginal value over `unit_tests` is the two
+`TestLauncherCompile` tests that `clang` makes runnable, which is why that
+class now fails rather than skips when `clang` is absent. **No CI job runs
+`kivyforge build -p macos`.** But outside CI the maintainer has been building,
+Developer-ID-signing, and notarizing `dice-roller` by hand since July 2026 (five
+`notarytool` submissions, all `Accepted` — §7), and 2026-09-14 turned that
+existing habit into logged evidence plus a T3 driver
+(`tests/platforms/macos/test_app_artifact.py`, §5.1) that ran `codesign
+--verify` and file-level Mach-O/`.pyc`/`Info.plist` assertions against that real
+notarized `.app` — both passed. So `codesign`, `lipo`, and `hdiutil` are no
+longer mock-only; they are local-only, which is a real but different gap (see
+below).
 
 **Linux is the emptiest column.** Unit tests only: `appimagetool` has never run
 in CI, so the AppDir → AppImage step is entirely untested outside mocks.
@@ -235,18 +243,40 @@ claim that "no iOS toolchain has ever run" — which this file asserted, and whi
 its 2026-09-13 revision *introduced* while relabelling the log row from a summary
 line instead of reading the findings — was wrong.
 
-What remains genuinely unproven for iOS is narrower and worth stating exactly:
-**no device** (simulator only), **no `strip_source`**, **no T3** (nothing
-inspects the built `.app`), and **nothing in CI**, so none of the above is
-re-proven and a regression would surface only when someone next runs it by hand.
 The old claim that iOS was blocked on the `Python.xcframework` and wheels being
 published is also stale: all six examples now resolve from the
 `kivy-mobile-wheels` index.
 
-**macOS as a *target* is the genuinely empty half.** No `kivyforge build -p
-macos` has run anywhere, in CI or locally, so `codesign`, `lipo`, and `hdiutil`
-are still mock-only — `macos_integration` proves two `clang` tests and nothing
-about a `.app`.
+**iOS got its first physical-device run 2026-09-14.** `build -p ios --device`,
+`run -p ios --device`, and `package -p ios --export-method development` all
+succeeded against a real iPhone14,3, and `hello-kivy` rendered on-screen —
+detail in [`macos-ios-validation-findings.md`](macos-ios-validation-findings.md)
+Step 6. That run also found and fixed a real bug: `--team-id` /
+`KIVYFORGE_TEAM_ID` was resolved and validated by `preflight_signing()` but
+never reached the generated Xcode project's `DEVELOPMENT_TEAM` setting, so an
+override could pass the CLI's own check and still fail to build — the
+simulator path never signs at all, so this was unreachable from any coverage
+this file previously counted. Fixed in `buildsettings.py` /`generator.py` /
+`materialize.py` / `cli.py`, with two new regression tests.
+
+What remains genuinely unproven for iOS, restated after that run: **no CI**
+(the device and simulator runs above are local and unrepeated — a regression
+surfaces only when someone next runs it by hand), **no T3** (nothing inspects
+the built `.app` or `.ipa` the way `--macos-app` now inspects a macOS bundle),
+and **`strip_source`**, which is not merely unrun but currently *unrunnable*:
+`package -p ios` degrades to shipping source because there is no final CPython
+3.15 yet, and **every iOS example in this repo pins `3.15.0b4`** — so this is a
+structural gap general to the whole platform, not a gap in any one example or
+test.
+
+**macOS as a *target* is no longer the empty half.** No CI job runs
+`kivyforge build -p macos`, but the maintainer has been building,
+signing, and notarizing `dice-roller` by hand since July 2026, and 2026-09-14
+turned that into logged evidence (§7) plus an automated T3 check (§5.1) that
+passed against the real artifact. What's left is making that CI-shaped: a
+`macos_integration`-adjacent job that actually runs `kivyforge build -p macos`
+and points `--macos-app` at the result, rather than relying on a human
+remembering to notarize.
 
 ### 3.3 Relationship to the Android compatibility matrix
 
@@ -338,22 +368,34 @@ twice: once on the debug APK, once on the stripped release APK.
       hoisted to `lib/<abi>/`, since Android's loader will not open a `.so` from
       the unpacked assets tree. A leftover is an on-device `ImportError`.
 - [x] **Exactly one CPython runtime** in the APK.
-- [ ] **Linux and macOS check *functions*, which are not blocked on §5.3.**
-      Worth separating: the Android work split cleanly into pure checks (unit-
-      tested on synthetic zips, no build needed) and a thin pytest driver that
-      needs a real artifact. Only the driver waits on a build job.
-      `platforms/linux/elftools.py` (`elf_machine`, `describe`) and
-      `macos/machotools.py` (`macho_arches`, `codesign_verify`) already parse
-      what is needed, so the checks and their hermetic tests can land **now**
-      and sit ready behind `--linux-appimage` / `--macos-app` /
-      `--windows-onedir`, exactly as `--android-apk` did.
+- [x] **macOS check *functions* and driver — done 2026-09-14.**
+      `tests/artifact_checks.py::macos_app_problems` (required entries, Mach-O
+      arch via a new pure-Python `machotools.read_macho_cpu_type`, payload
+      stripping scoped to `app/`+`lib/` only per the settled stdlib-exclusion
+      design, `.pyc` magic, `Info.plist`), hermetic-tested in
+      `tests/test_artifact_checks.py`, and wired to a real bundle via
+      `tests/platforms/macos/test_app_artifact.py --macos-app`. Ran against the
+      real notarized `dice-roller.app` — passed. Not yet in CI (§3.2).
+- [ ] **Linux check *functions*, which are not blocked on §5.3.**
+      Same split as Android/macOS: pure checks, hermetically unit-tested, don't
+      need a build job — only the driver does. `platforms/linux/elftools.py`
+      (`elf_machine`, `describe`) already parses what is needed, so the checks
+      and their hermetic tests can land **now** and sit ready behind
+      `--linux-appimage` / `--windows-onedir`, exactly as `--android-apk` and
+      `--macos-app` did.
 - [ ] **Merged `AndroidManifest.xml` and `Info.plist` contain what config asked
       for.** `android_gradle` already exports the merged manifest to
       `app/build/kivyforge/AndroidManifest-merged-release.xml` and currently
       archives it **only on failure** — so the artifact needed to assert this is
-      produced on every run and thrown away on success.
-- [ ] **Signatures verify** — `apksigner verify`, and `signtool verify /pa` on a
-      *built app* rather than on the vendored launcher.
+      produced on every run and thrown away on success. (The macOS check above
+      does assert `Info.plist` structure/optional-exact-match; the Android
+      manifest side of this item is still open.)
+- [x] **macOS code signature verifies** — `codesign --verify`, via
+      `machotools.codesign_verify`, exercised in
+      `test_app_artifact.py::test_the_app_is_codesigned` against the real
+      notarized `dice-roller.app`.
+- [ ] **Signatures verify** — `apksigner verify` (Android), and `signtool verify
+      /pa` on a *built app* rather than on the vendored launcher (Windows).
 
 ### 5.2 Android T3 from a Windows host — the item-1 code path
 
@@ -481,12 +523,20 @@ when the wheel is fixed.
 These need a human, credentials, or hardware CI cannot have. Every one of them
 should produce a dated line in §7 — an unlogged manual test did not happen.
 
-- [ ] **iOS device install + launch** on real hardware (needs a Mac, a device, a
-      provisioning profile).
-- [ ] **iOS `strip_source`** — still unverified on any target. Item 1 proved the
-      Android half; this is the other half, and it is host-blocked, not
-      effort-blocked.
-- [ ] **Notarization** — needs an Apple ID, app-specific password, and network.
+- [x] **iOS device install + launch** on real hardware — 2026-09-14, iPhone14,3,
+      `build`/`run`/`package --device`, `hello-kivy` rendered on-screen. Found
+      and fixed a `--team-id` propagation bug along the way (§3.2, §7). Not
+      re-proven anywhere, so treat as a point-in-time result, not standing
+      coverage.
+- [ ] **iOS `strip_source`** — still unverified, and now known to be
+      structurally unrunnable rather than merely untried: every iOS example
+      pins `3.15.0b4`, and `package -p ios` requires a *final* CPython to
+      byte-compile. Item 1 proved the Android half; the iOS half stays open
+      until either 3.15 ships or some example is pinned to an already-final
+      minor.
+- [x] **Notarization** — five `notarytool` submissions since 2026-07-07, all
+      `Accepted` (`dice-roller`, §7). This item was wrongly marked open; nobody
+      had run `notarytool history` before 2026-09-14.
 - [ ] **Authenticode with a real certificate.** `windows_signing`'s self-signed
       loop proves the `SigntoolSigner` plumbing, not timestamping against a real
       CA chain or SmartScreen behaviour.
@@ -518,23 +568,42 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-13 | Android `x86_64` (CI) | T3 | ubuntu | Artifact assertions added to `android_gradle` for the debug and stripped release APKs. Validated locally against the two real `arm64-v8a` APKs from item 1 first: the stripped one passes under CPython 3.14 and is correctly rejected under 3.13 (magic 3627 vs 3571), and claiming the wrong ABI is caught across all 120 shared objects. |
 | 2026-09-13 | Windows `amd64` (CI) | T2 | windows | `windows_launcher` went red: byte mismatch at the same size with the pinned toolset (MSVC 14.51.36231 + SDK 10.0.26100.0) reported as *used*, i.e. a serviced compiler inside an unchanged version string — the drift `/EMITTOOLVERSIONINFO:NO` cannot cover. Last green was 2026-08-12; the hosted image rolled. Fixed by `revendor_launcher`, which changed the binary and `SHA256SUMS` but **not** `TOOLSET.txt`. Third occurrence. |
 | 2026-09-13 | Linux `x86_64` | T0/T1 | **WSL2** (Ubuntu, Python 3.14.4) | Editable install plus `doctor -p linux` green on the `dice-roller` example, including the new byte-compile check reporting the native path ("the staged runtime compiles its own payload"). WSLg provides `wayland, x11`, so Linux T4 is locally reachable. No build or AppImage yet — this is environment readiness, not target coverage. |
+| 2026-09-14 | macOS `arm64` (`dice-roller`) | T2 + T3 (local) | macOS 26.6.2, Xcode 26.6 | Real Developer-ID-signed, notarized, stapled `.app` inspected directly: `codesign --verify --deep --strict` valid, `stapler validate` and `spctl -a -t exec` both accept it (source=Notarized Developer ID), `lipo` confirms `arm64`-only. `notarytool history` (once a keychain profile existed) showed **five `Accepted` submissions since 2026-07-07** — corrects §6's "Notarization" item, which had been marked open on the strength of nobody having checked. `strip_source` confirmed correctly scoped: `app/`+`lib/` fully `.pyc`-only, embedded stdlib deliberately untouched, all 336 shipped `.pyc` files match the *bundled* interpreter's magic (3.13.14), not the host's (3.14.7). Full detail: [`macos-ios-validation-findings.md`](macos-ios-validation-findings.md). |
+| 2026-09-14 | macOS `arm64` | T3 infra | macOS 26.6.2 | Added `machotools.read_macho_cpu_type`/`cpu_type_name` (pure-Python, no `lipo` subprocess), `artifact_checks.macos_app_problems`, hermetic tests, and `tests/platforms/macos/test_app_artifact.py` (`--macos-app`, plus a `codesign_verify` check) — the macOS half of §5.1, mirroring `test_apk_artifact.py`. Run against the real `dice-roller.app` above: both tests pass. Full hermetic suite: exit 0, coverage 91.96%. |
+| 2026-09-14 | iOS simulator `arm64` | T2 + T4 (local) | macOS 26.6.2, Xcode 26.6 | Regression re-check, no drift since 2026-07-27: `doctor -p ios` (2 expected `WARN`s only), `build -p ios --simulator`, `run -p ios --simulator` all exit 0; `hello-kivy` renders correctly on iPhone Air / iOS 26.5. `pylock.ios.toml` unchanged. |
+| 2026-09-14 | iOS simulator `arm64` (`hello-kivy`) | `strip_source` attempt | macOS 26.6.2 | `package -p ios` degrades to shipping source: "no final CPython 3.15 found (this project ships 3.15.0b4)". Confirmed **every** iOS example in the repo pins `3.15.0b4`, so this is currently unrunnable anywhere in-repo, not just untried. Data-safety check passed: the materialized `app/` is a real copy (not a symlink), and the real working-tree `main.py` was untouched. |
+| 2026-09-14 | iOS device `arm64` (iPhone14,3) | T2 + T4 + T5 | macOS 26.6.2, Xcode 26.6 | **First physical-device run in this repo.** `build -p ios --device`, `run -p ios --device` (after unlocking the phone — same failure mode `verify-ios-device.sh` documents), and `package -p ios --export-method development` all succeeded; `hello-kivy` rendered on-screen. Found and fixed a real bug: `--team-id`/`KIVYFORGE_TEAM_ID` was resolved by `preflight_signing()` but never reached the generated Xcode project's `DEVELOPMENT_TEAM`, so a correct override still failed to build. Fixed across `buildsettings.py`/`generator.py`/`materialize.py`/`cli.py`; two regression tests added; full iOS suite (494 tests) + lint green after. `hello-kivy/pylock.ios.toml` re-locked to the Kivy build (`dev202607301604`) that passed this run, per the on-device-gate lock policy (§5.3). `pyproject.toml`'s `team_id` deliberately left blank — signing used `KIVYFORGE_TEAM_ID` for this session, not a hardcoded personal team ID in a shared example. |
 
 ### Known-unverified, stated plainly
 
-- iOS `strip_source`: never run, on simulator or device.
-- iOS on a **device**: never. Simulator only, and simulator builds skip signing
-  and provisioning entirely, so the whole device path is unexercised.
-- Nothing iOS in CI: the simulator coverage above is local and unrepeated, so it
-  proves July's tree rather than today's.
-- No T3 for iOS or macOS: nothing inspects a built `.app` — not its `Info.plist`,
-  not its Mach-O arch, not whether `strip_source` did anything.
+- iOS `strip_source`: never run, on simulator or device — and, as of 2026-09-14,
+  known to be currently *unrunnable* on any in-repo example, since all of them
+  pin the pre-release `3.15.0b4` and `package -p ios` requires a final CPython
+  to byte-compile.
+- iOS on a **device**: verified once, by hand, 2026-09-14 (§7) — `build`, `run`,
+  and `package --export-method development` all succeeded on a real iPhone.
+  Not re-proven anywhere, so this is a point-in-time result, not standing
+  coverage, and it found+fixed a real `--team-id` propagation bug along the way.
+- Nothing iOS in CI: both the simulator and device coverage above are local and
+  unrepeated, so together they prove 2026-09-14's tree rather than a
+  continuously-checked one.
+- No T3 for iOS: nothing inspects a built `.app`/`.ipa` — not its `Info.plist`,
+  not its Mach-O arch, not whether `strip_source` did anything. (macOS gained a
+  T3 driver 2026-09-14 — see below — but nothing analogous exists for iOS yet.)
 - Any `kivyforge build` for Linux, macOS, **or Windows**: never run in CI.
-- `kivyforge build -p macos`: never run **anywhere**, so `codesign`, `lipo`, and
-  `hdiutil` have never executed outside a mock.
+- `kivyforge build -p macos`: never run in CI, but run **locally by hand
+  repeatedly since 2026-07-07** (five notarized `dice-roller` builds, §7) —
+  `codesign`, `lipo`, and (as of 2026-09-14) file-level Mach-O/`.pyc`/`Info.plist`
+  assertions via `--macos-app` have all executed against a real signed,
+  notarized artifact. What's still missing is CI: nothing re-proves this on
+  every push.
+- Notarization: **verified** — five `notarytool Accepted` submissions since
+  2026-07-07 (§7). Previously listed as unverified in §6; that was stale.
 - `appimagetool`: never run, anywhere.
 - Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only), so
   its T2/T3 is inherited from `x86_64` plus the stray-ABI check, not direct.
 - Android T3 from a Windows host: once, by hand, 2026-09-13 (§5.2).
 - Android T4 in CI: never; the emulator runs above are local and unrepeated.
-- Every `examples/verify-*` script: no logged run.
+- Every `examples/verify-*` script except `verify-ios-device.sh`: no logged run.
+  `verify-ios-device.sh` got its first logged run 2026-09-14 (§7).
 - `requires_device` / `KIVYFORGE_DEVICE_TESTS`: enable nothing today.

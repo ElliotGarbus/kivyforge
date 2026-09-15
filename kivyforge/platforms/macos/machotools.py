@@ -41,6 +41,60 @@ _MACHO_MAGICS = frozenset(
     }
 )
 
+# The two thin-Mach-O magics we can parse a cpu_type out of directly (64-bit
+# only — Phase A of macos-x86-removal-and-desktop-stripping.md dropped 32-bit
+# and universal support, so kivyforge itself never produces anything else).
+_MH_MAGIC_64 = 0xFEEDFACF
+_MH_CIGAM_64 = 0xCFFAEDFE
+
+# mach/machine.h cpu_type_t values for the two archs kivyforge cares about.
+# CPU_ARCH_ABI64 (0x01000000) OR'd with the 32-bit CPU_TYPE_{ARM,X86}.
+CPU_TYPE_ARM64 = 0x0100000C
+CPU_TYPE_X86_64 = 0x01000007
+_CPU_TYPE_NAMES = {CPU_TYPE_ARM64: "arm64", CPU_TYPE_X86_64: "x86_64"}
+
+
+class MachoError(Exception):
+    pass
+
+
+def cpu_type_name(cpu_type: int) -> str:
+    return _CPU_TYPE_NAMES.get(cpu_type, f"cpu_type 0x{cpu_type:x}")
+
+
+def read_macho_cpu_type(data: bytes) -> int:
+    """Parse the ``cpu_type`` out of a thin 64-bit Mach-O header's raw bytes.
+
+    Pure — no ``lipo`` subprocess — so it works against a real binary's bytes
+    *or* a synthetic one built for a hermetic test, the same reason
+    ``platforms/android/elf.py`` parses ELF headers directly instead of
+    shelling out to ``readelf``.
+
+    The magic tells you the byte order the rest of the header was written in,
+    not (directly) which order to read it back in: ``MH_MAGIC_64`` means "this
+    file's byte order already matches whatever order you used to read the
+    magic", so a big-endian read landing on it implies a big-endian file, and
+    landing on ``MH_CIGAM_64`` (the byte-swapped twin) implies the opposite —
+    which for every arch kivyforge builds (arm64, x86_64) is little-endian, so
+    a real macOS binary always resolves to ``MH_CIGAM_64`` here.
+
+    Raises :class:`MachoError` for anything that is not a thin 64-bit Mach-O —
+    32-bit and fat/universal binaries are out of scope; see above.
+    """
+    if len(data) < 8:
+        raise MachoError("too short to be a Mach-O header")
+    magic = struct.unpack(">I", data[:4])[0]
+    if magic == _MH_MAGIC_64:
+        order = ">"
+    elif magic == _MH_CIGAM_64:
+        order = "<"
+    else:
+        raise MachoError(
+            f"not a thin 64-bit Mach-O (magic 0x{magic:08x}); 32-bit and "
+            "fat/universal binaries are not supported"
+        )
+    return struct.unpack(order + "I", data[4:8])[0]
+
 
 def is_macho(path: Path) -> bool:
     """True if *path* is a regular file whose first 4 bytes are a Mach-O magic.

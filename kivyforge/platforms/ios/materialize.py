@@ -36,6 +36,7 @@ def materialize_project(
     last_upgrade_check: str | None = None,
     swift_packages: tuple[LockedSwiftPackage, ...] = (),
     xcframeworks: tuple[LockedXcframework, ...] = (),
+    team_id: str | None = None,
 ) -> StagingLayout:
     project_root = Path(project_root)
     layout = layout or create_staging(config, project_root)
@@ -55,5 +56,6 @@ def materialize_project(
         last_upgrade_check=last_upgrade_check,
         swift_packages=swift_packages,
         xcframeworks=xcframeworks,
+        team_id=team_id,
     ).generate()
     return layout

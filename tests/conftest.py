@@ -83,6 +83,21 @@ def pytest_addoption(parser):
         action="store_true",
         help="Assert the payload is bytecode-only (strip_source applied).",
     )
+    group.addoption(
+        "--macos-app",
+        default=None,
+        help="Path to a built .app to run the T3 artifact assertions against.",
+    )
+    group.addoption(
+        "--macos-arch",
+        default="arm64",
+        help="Mach-O arch the .app was built for (default: arm64).",
+    )
+    group.addoption(
+        "--macos-stripped",
+        action="store_true",
+        help="Assert app+lib are bytecode-only (strip_source applied).",
+    )
 
 
 def pytest_configure(config):

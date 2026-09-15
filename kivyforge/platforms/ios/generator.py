@@ -53,6 +53,7 @@ class XcodeProjectGenerator:
         last_upgrade_check: str | None = None,
         swift_packages: tuple[LockedSwiftPackage, ...] = (),
         xcframeworks: tuple[LockedXcframework, ...] = (),
+        team_id: str | None = None,
     ) -> None:
         self.config = config
         self.layout = layout
@@ -60,6 +61,10 @@ class XcodeProjectGenerator:
         self.last_upgrade_check = last_upgrade_check or RECOMMENDED_LAST_UPGRADE_CHECK
         self.swift_packages = swift_packages
         self.xcframeworks = xcframeworks
+        # The already-resolved --team-id / KIVYFORGE_TEAM_ID / pyproject value
+        # (see buildsettings.signing_settings for why this must be resolved
+        # upstream rather than re-read from config here).
+        self.team_id = team_id
 
     @property
     def pbxproj_path(self) -> Path:
@@ -122,7 +127,7 @@ class XcodeProjectGenerator:
 
     # -- build settings ----------------------------------------------------- #
     def _apply_build_settings(self, project: XcodeProject) -> None:
-        signing = signing_settings(self.config)
+        signing = signing_settings(self.config, team_id=self.team_id)
         user = user_build_settings(self.config)
         for configuration in CONFIGURATIONS:
             project.set_flags(

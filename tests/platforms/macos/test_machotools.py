@@ -41,6 +41,58 @@ class TestIsMacho:
         assert not machotools.is_macho(link)
 
 
+def _thin_macho_64(cpu_type: int, *, little_endian: bool = True) -> bytes:
+    """The first 8 bytes of a thin 64-bit Mach-O: magic + cpu_type.
+
+    Both fields of a real mach_header_64 are written in the *same* byte
+    order, so this packs ``MH_MAGIC_64`` (0xfeedfacf) and *cpu_type* with the
+    same ``order`` — for a little-endian file (every real arm64/x86_64 Mach-O)
+    that magic serializes to the bytes ``read_macho_cpu_type`` recognizes as
+    ``MH_CIGAM_64``, exactly like a real binary on disk.
+    """
+    order = "<" if little_endian else ">"
+    return struct.pack(order + "II", machotools._MH_MAGIC_64, cpu_type)
+
+
+class TestReadMachoCpuType:
+    def test_reads_arm64_little_endian(self):
+        # A real macOS binary: little-endian on disk, which reads as
+        # MH_CIGAM_64 under the big-endian magic check.
+        data = _thin_macho_64(machotools.CPU_TYPE_ARM64, little_endian=True)
+        assert machotools.read_macho_cpu_type(data) == machotools.CPU_TYPE_ARM64
+
+    def test_reads_x86_64_little_endian(self):
+        data = _thin_macho_64(machotools.CPU_TYPE_X86_64, little_endian=True)
+        assert machotools.read_macho_cpu_type(data) == machotools.CPU_TYPE_X86_64
+
+    def test_reads_big_endian_too(self):
+        data = _thin_macho_64(machotools.CPU_TYPE_ARM64, little_endian=False)
+        assert machotools.read_macho_cpu_type(data) == machotools.CPU_TYPE_ARM64
+
+    def test_rejects_non_macho(self):
+        with pytest.raises(machotools.MachoError, match="not a thin 64-bit"):
+            machotools.read_macho_cpu_type(b"not a macho at all!!")
+
+    def test_rejects_too_short(self):
+        with pytest.raises(machotools.MachoError, match="too short"):
+            machotools.read_macho_cpu_type(b"\x00\x00\x00")
+
+    def test_rejects_32_bit_magic(self):
+        # MH_MAGIC (32-bit) is deliberately unsupported.
+        data = struct.pack(">II", 0xFEEDFACE, machotools.CPU_TYPE_ARM64)
+        with pytest.raises(machotools.MachoError, match="not a thin 64-bit"):
+            machotools.read_macho_cpu_type(data)
+
+
+class TestCpuTypeName:
+    def test_known_types(self):
+        assert machotools.cpu_type_name(machotools.CPU_TYPE_ARM64) == "arm64"
+        assert machotools.cpu_type_name(machotools.CPU_TYPE_X86_64) == "x86_64"
+
+    def test_unknown_type_is_labelled(self):
+        assert machotools.cpu_type_name(0x99) == "cpu_type 0x99"
+
+
 class TestToolWrappers:
     def test_run_missing_tool_is_actionable(self, monkeypatch):
         def boom(*a, **k):

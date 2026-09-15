@@ -16,7 +16,7 @@ hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1
 
 [[packages]]
 name = "Kivy"
-version = "3.0.0.dev202606221936"
+version = "3.0.0.dev202607301604"
 requires-python = ">=3.11"
 dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }]
 
@@ -24,19 +24,14 @@ dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygme
 direct_requirement = true
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev202606221936-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202606221936/kivy-3.0.0.dev202606221936-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-hashes = { sha256 = "d5e3822e6879b4cefdbb9d27b973d1edbdceea77c13ee5477122094cd5c84398" }
+name = "kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202607301604/kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+hashes = { sha256 = "85f6d59d5649cdefb5729d1b09a7031657810e0a072d952e2391470acfae6941" }
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev202606221936-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202606221936/kivy-3.0.0.dev202606221936-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-hashes = { sha256 = "b6e7c7bd1d051032b6eebc760de5a6314fd71df56e1a6a19a9ef0560309030b0" }
-
-[[packages.wheels]]
-name = "kivy-3.0.0.dev202606221936-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202606221936/kivy-3.0.0.dev202606221936-cp315-cp315-ios_13_0_x86_64_iphonesimulator.whl"
-hashes = { sha256 = "312559baf5d2cfa741b5d6852f5dfb8b3839431cdd87ce948828d581af7c17a4" }
+name = "kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202607301604/kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+hashes = { sha256 = "2a4dd30d04fb21a63bd4fbeee07ef4e7aef5f0c31c542dc4af6f051faf9955c0" }
 
 [[packages]]
 name = "more-itertools"
@@ -54,7 +49,7 @@ hashes = { sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd54212
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-07-28T04:03:19Z"
+generated_at = "2026-09-15T00:37:21Z"
 pyproject_sha256 = "fc8dbced07c9fe739de7149481eff073d50466d51f91c2a50c57b42a040def88"
 tool_kivyforge_schema_version = 1
 

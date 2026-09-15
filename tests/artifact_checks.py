@@ -20,6 +20,7 @@ machine codes asserted here cannot drift from the ones the build uses.
 
 from __future__ import annotations
 
+import plistlib
 import posixpath
 import re
 import struct
@@ -27,6 +28,13 @@ import zipfile
 from pathlib import Path
 
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64, machine_name
+from kivyforge.platforms.macos.machotools import (
+    CPU_TYPE_ARM64,
+    CPU_TYPE_X86_64,
+    MachoError,
+    cpu_type_name,
+    read_macho_cpu_type,
+)
 
 BUNDLE_ROOT = "assets/_python_bundle/"
 
@@ -238,4 +246,221 @@ def _native_lib_problems(
                 f"{machine_name(expected)} — a host binary leaked into a "
                 "cross-build"
             )
+    return problems
+
+
+# --- macOS ------------------------------------------------------------------
+#
+# The macOS ``.app`` is a real directory tree, not a zip, so these walk the
+# filesystem directly rather than a ``zipfile.ZipFile``. Payload-stripping scope
+# is narrower than Android's: per the settled decision in
+# docs/design/dev/macos-x86-removal-and-desktop-stripping.md ("Strip scope: app
+# + site-packages only. stdlib is not stripped."), only ``Contents/Resources/app``
+# (the developer's own sources) and ``Contents/Resources/lib`` (third-party
+# deps — the macos-spec analogue of "site-packages") are ever byte-compiled;
+# ``Contents/Resources/python`` (the embedded CPython framework's own stdlib,
+# which ships pip) is deliberately left as source and must not be checked as
+# if it were part of the same policy.
+
+MACOS_ARCH_MACHINES = {"arm64": CPU_TYPE_ARM64, "x86_64": CPU_TYPE_X86_64}
+
+_MACOS_STRIP_SCOPE = ("Contents/Resources/app", "Contents/Resources/lib")
+
+
+def macos_app_problems(
+    app: Path,
+    *,
+    arch: str,
+    stripped: bool,
+    expected_magic: bytes,
+    bundle_id: str | None = None,
+    executable: str | None = None,
+) -> list[str]:
+    """Every way *app* fails to be the artifact the build promised.
+
+    ``arch`` is the Mach-O arch name (``"arm64"``, the only one macOS builds
+    produce post-Phase-A), ``stripped`` whether ``strip_source`` applied to
+    this build, and ``expected_magic`` the first four bytes a ``.pyc`` the
+    bundle's own shipped runtime can import must carry (see Android's
+    ``shipped_python_tags`` for the reasoning; on macOS the equivalent is
+    running the bundle's own ``Contents/Resources/python/bin/python3``).
+
+    ``bundle_id``/``executable``, if given, are checked against
+    ``Info.plist``; omitted, only the plist's internal shape (present, parses,
+    required keys non-empty) is checked. Exact match against the project's
+    full resolved config is left for a follow-up, same as Android's own open
+    "merged manifest matches config" item in test-matrix.md §5.1.
+    """
+    if arch not in MACOS_ARCH_MACHINES:
+        return [f"unknown arch {arch!r}; expected one of {sorted(MACOS_ARCH_MACHINES)}"]
+
+    problems = _macos_required_entry_problems(app)
+    if problems:
+        # Nothing else below can be trusted to mean anything on a bundle
+        # that is missing its basic shape.
+        return problems
+
+    problems += _macos_plist_problems(
+        app, bundle_id=bundle_id, executable=executable
+    )
+    problems += _macos_arch_problems(app, arch=arch)
+    problems += _macos_payload_problems(app, stripped=stripped)
+    if stripped:
+        problems += _macos_pyc_magic_problems(app, expected_magic=expected_magic)
+    return problems
+
+
+def _macos_required_entry_problems(app: Path) -> list[str]:
+    """The handful of things without which this is not a launchable ``.app``."""
+    problems = []
+    if not (app / "Contents" / "Info.plist").is_file():
+        problems.append("Contents/Info.plist is missing")
+    macos_dir = app / "Contents" / "MacOS"
+    if not macos_dir.is_dir() or not any(
+        p.is_file() for p in macos_dir.iterdir() if not p.name.startswith(".")
+    ):
+        problems.append("Contents/MacOS/ has no executable")
+    if not (app / "Contents" / "Resources" / "python").is_dir():
+        problems.append("Contents/Resources/python (the embedded runtime) is missing")
+    if not (app / "Contents" / "Resources" / "app").is_dir():
+        problems.append("Contents/Resources/app (the app payload) is missing")
+    return problems
+
+
+def _macos_plist_problems(
+    app: Path, *, bundle_id: str | None, executable: str | None
+) -> list[str]:
+    plist_path = app / "Contents" / "Info.plist"
+    try:
+        with plist_path.open("rb") as fh:
+            plist = plistlib.load(fh)
+    except Exception as exc:  # noqa: BLE001 - report, don't crash the check
+        return [f"Contents/Info.plist does not parse: {exc}"]
+
+    problems = []
+    required_keys = (
+        "CFBundleIdentifier",
+        "CFBundleExecutable",
+        "CFBundleShortVersionString",
+        "CFBundleVersion",
+    )
+    for key in required_keys:
+        if not plist.get(key):
+            problems.append(f"Info.plist is missing (or has an empty) {key}")
+
+    if bundle_id is not None and plist.get("CFBundleIdentifier") != bundle_id:
+        problems.append(
+            f"Info.plist CFBundleIdentifier is {plist.get('CFBundleIdentifier')!r}, "
+            f"expected {bundle_id!r}"
+        )
+    if executable is not None and plist.get("CFBundleExecutable") != executable:
+        problems.append(
+            f"Info.plist CFBundleExecutable is {plist.get('CFBundleExecutable')!r}, "
+            f"expected {executable!r}"
+        )
+    elif executable is None and "CFBundleExecutable" in plist:
+        exe = plist["CFBundleExecutable"]
+        if not (app / "Contents" / "MacOS" / exe).is_file():
+            problems.append(
+                f"Info.plist CFBundleExecutable {exe!r} does not name a file "
+                "in Contents/MacOS/"
+            )
+    return problems
+
+
+def _macos_arch_problems(app: Path, *, arch: str) -> list[str]:
+    """Every Mach-O under the bundle must be *arch*, and only *arch*.
+
+    Walks ``Contents/MacOS`` (the launcher) and ``Contents/Resources`` (the
+    embedded runtime + every staged wheel's compiled extensions) — a
+    host-arch binary leaking into a cross-build is exactly the item-1-shaped
+    bug this exists to catch, on the one platform where it would otherwise
+    surface only as a Gatekeeper/Rosetta failure on a real Mac.
+    """
+    expected = MACOS_ARCH_MACHINES[arch]
+    problems: list[str] = []
+    for path in sorted(app.rglob("*")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            head = path.read_bytes()[:8]
+        except OSError:
+            continue
+        try:
+            cpu_type = read_macho_cpu_type(head)
+        except MachoError:
+            continue  # not a Mach-O (or a 32-bit/fat one we don't parse) — skip
+        if cpu_type != expected:
+            rel = path.relative_to(app)
+            problems.append(
+                f"{rel} is {cpu_type_name(cpu_type)} but this build is {arch} — "
+                "a host or cross-arch binary leaked into the bundle"
+            )
+    return problems
+
+
+def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
+    """Whether the app + third-party payload is source or bytecode.
+
+    Scoped to ``Contents/Resources/{app,lib}`` only — see the module-level
+    note on why the embedded stdlib is excluded by design, not by omission.
+    """
+    problems: list[str] = []
+    for scope in _MACOS_STRIP_SCOPE:
+        base = app / scope
+        if not base.is_dir():
+            continue
+        sources = sorted(p for p in base.rglob("*.py"))
+        compiled = sorted(p for p in base.rglob("*.pyc"))
+        cached = sorted(p for p in base.rglob("__pycache__") if p.is_dir())
+
+        if stripped:
+            if sources:
+                rels = [str(p.relative_to(app)) for p in sources[:3]]
+                problems.append(
+                    f"strip_source was applied but {len(sources)} .py file(s) "
+                    f"remain under {scope}, e.g. {rels}"
+                )
+            if not compiled:
+                problems.append(
+                    f"strip_source was applied but {scope} contains no .pyc at "
+                    "all — the build degraded to shipping source"
+                )
+            if cached:
+                rels = [str(p.relative_to(app)) for p in cached[:3]]
+                problems.append(
+                    f"{scope} has {len(cached)} __pycache__ dir(s), e.g. "
+                    f"{rels} — sourceless imports need .pyc in the legacy "
+                    "location, not beside a source file that is no longer there"
+                )
+        elif scope == "Contents/Resources/app" and not sources and not compiled:
+            problems.append(f"{scope} has neither .py nor .pyc — the app has no entry point")
+    return problems
+
+
+def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
+    """Every ``.pyc`` under the stripped scope must carry the shipped magic.
+
+    Mirrors Android's ``_pyc_magic_problems`` / roadmap item 1's bug, adapted
+    to a directory tree: read straight from disk rather than a zip member.
+    """
+    problems: list[str] = []
+    for scope in _MACOS_STRIP_SCOPE:
+        base = app / scope
+        if not base.is_dir():
+            continue
+        seen: dict[bytes, list[Path]] = {}
+        for pyc in sorted(base.rglob("*.pyc")):
+            magic = pyc.read_bytes()[:4]
+            seen.setdefault(magic, []).append(pyc)
+        for magic, members in sorted(seen.items()):
+            if magic != expected_magic:
+                rels = [str(p.relative_to(app)) for p in members[:3]]
+                problems.append(
+                    f"{len(members)} .pyc file(s) under {scope} carry magic "
+                    f"{_magic_int(magic)} but the bundle's own runtime imports "
+                    f"{_magic_int(expected_magic)}, e.g. {rels} — these were "
+                    "written by an interpreter of a different CPython build "
+                    "and cannot be imported"
+                )
     return problems
