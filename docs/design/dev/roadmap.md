@@ -321,7 +321,9 @@ bundle that boots on the Pixel 8a, **and** `kivyforge doctor` reports the
 misconfiguration on every platform that has the setting. iOS gets the same
 treatment when a macOS host is available; it does not block this item.
 **— done 2026-09-13.** Both deliverables landed; iOS is covered by the check but
-its artifact remains unvalidated, which needs a macOS host and does not block.
+its artifact remains unvalidated. That was attributed to needing a macOS host;
+the host arrived 2026-09-14 and the real blocker turned out to be upstream — see
+the note at the end of this item.
 
 ### What the work turned up — 2026-09-12/13
 
@@ -406,12 +408,30 @@ non-zero.
   removed that. The WARN/FAIL paths now need a deliberately unavailable version
   (3.15.0 was used), which is a better test anyway but no longer free.
 
-**iOS `strip_source` remains unvalidated** — it needs a macOS host. The doctor
-check covers it, but `strip_source` on iOS has still never produced a real
-artifact, on simulator or device. Note this is narrower than "iOS is
-unvalidated": the simulator path *is* proven (`build`/`run -p ios --simulator`
-green, six examples rendering — see [`test-matrix.md`](test-matrix.md) §7). What
-is missing is `strip_source`, any device, and any T3 on the built `.app`.
+**iOS `strip_source` remains unvalidated, and the blocker is not the one this
+paragraph used to name.** It said "it needs a macOS host". A macOS host arrived
+on 2026-09-14 and the attempt still could not run: `package -p ios` degraded to
+shipping source with *"no final CPython 3.15 found (this project ships
+3.15.0b4)"*, and **every iOS example in the repo pins `3.15.0b4`** — all seven
+were checked. Byte-compilation needs a *final* interpreter, so iOS
+`strip_source` is not merely unexercised but **currently unexercisable here**
+until CPython 3.15 ships (~Oct 2026) or an example is deliberately pinned to an
+already-final minor. See
+[`macos-ios-validation-findings.md`](macos-ios-validation-findings.md) §4.
+
+The one thing that mattered most in that attempt did pass: `<app>-ios/app` was
+materialised as a **real directory copy, not a symlink**, and the working tree
+was untouched — so the data-loss hazard
+[`ios-source-stripping.md`](ios-source-stripping.md) was written to prevent does
+not occur.
+
+Note the remaining gap is narrower than "iOS is unvalidated". The simulator path
+is proven, and as of 2026-09-14 so is the **device** path: `build`/`run -p ios
+--device` and a signed `.ipa` export, on a physical iPhone, which found and
+fixed a real bug no simulator run could reach (`--team-id` /
+`KIVYFORGE_TEAM_ID` never reached the generated Xcode project, so it satisfied
+the pre-flight check while having no effect on the build). What is still missing
+for iOS is `strip_source` and any T3 on the built `.app`.
 
 ---
 
