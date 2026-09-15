@@ -18,6 +18,7 @@ from kivyforge.cli._common import ToolchainError
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from . import AndroidBuildError
 from .bootstrap.contract import (
@@ -843,19 +844,17 @@ def _verify_include_file(
 
 
 @user_facing
-def android_status(project_root: Path) -> None:
+def android_status(project_root: Path) -> StatusReport:
     """Read-only project snapshot (android/06 §status)."""
     from kivyforge.lock.model import canonical_name
     from kivyforge.lock.reader import LockError, is_in_sync
 
     config, _ = _load_config_only(project_root)
     android = config.android_required
-    click.echo(f"App:        {config.project.name}  ({android.package})")
-    click.echo(f"Python:     {android.python_required.version}")
 
     lock_path = project_root / "pylock.android.toml"
     kivy_ver = "?"
-    lock_state = "missing"
+    state = LockState.MISSING
     if lock_path.is_file():
         try:
             lock = lock_reader.load(lock_path)
@@ -863,35 +862,38 @@ def android_status(project_root: Path) -> None:
                 (p for p in lock.packages if canonical_name(p.name) == "kivy"), None
             )
             kivy_ver = kivy.version if kivy else "—"
-            lock_state = (
-                "in sync"
+            state = (
+                LockState.IN_SYNC
                 if is_in_sync(
                     lock, (project_root / "pyproject.toml").read_text("utf-8")
                 )
-                else "out of date"
+                else LockState.OUT_OF_DATE
             )
         except LockError:
-            lock_state = "unreadable"
-    click.echo(
-        f"Kivy/SDL:   kivy {kivy_ver}  (kivy_generation {android.kivy_generation})"
-    )
-    click.echo(f"ABIs:       {', '.join(android.abis)}")
-    click.echo(f"Lock:       {lock_state}")
+            state = LockState.UNREADABLE
 
     dest = project_dir_for(project_root, config)
-    click.echo("Build:")
-    for label, path in (
-        ("apk (debug)", _debug_output(dest, "apk")),
-        ("apk (release)", _release_output(dest, "apk")),
-        ("aab (release)", _release_output(dest, "aab")),
-    ):
-        if path.is_file():
-            import datetime
-
-            mtime = datetime.datetime.fromtimestamp(path.stat().st_mtime)
-            click.echo(f"  {label:<16} built {mtime:%Y-%m-%d %H:%M}")
-        else:
-            click.echo(f"  {label:<16} not built")
+    return StatusReport(
+        platform="android",
+        app_name=config.project.name,
+        app_id=android.package,
+        python_version=android.python_required.version,
+        # Android is the only backend with rows of its own: the Kivy generation
+        # and the ABI list both change what a build produces.
+        extra=(
+            (
+                "Kivy/SDL",
+                f"kivy {kivy_ver}  (kivy_generation {android.kivy_generation})",
+            ),
+            ("ABIs", ", ".join(android.abis)),
+        ),
+        lock=LockStatus(state, relock_command="kivyforge lock -p android"),
+        artifacts=(
+            BuildArtifact.probe(_debug_output(dest, "apk"), "apk (debug)"),
+            BuildArtifact.probe(_release_output(dest, "apk"), "apk (release)"),
+            BuildArtifact.probe(_release_output(dest, "aab"), "aab (release)"),
+        ),
+    )
 
 
 @user_facing

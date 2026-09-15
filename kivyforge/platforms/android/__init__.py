@@ -22,6 +22,7 @@ from ..base import Platform
 
 if TYPE_CHECKING:
     from kivyforge.doctor.result import CheckResult
+    from kivyforge.status import StatusReport
 
 
 class AndroidBuildError(Exception):
@@ -122,10 +123,10 @@ class AndroidPlatform(Platform):
             no_cache=no_cache,
         )
 
-    def status(self, project_root: Path) -> None:
+    def status(self, project_root: Path) -> StatusReport:
         from .cli import android_status
 
-        android_status(project_root)
+        return android_status(project_root)
 
     def open_project(self, project_root: Path) -> None:
         from .cli import android_open

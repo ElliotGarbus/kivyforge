@@ -40,6 +40,7 @@ from kivyforge.platforms.android.lock.model import (
 from kivyforge.platforms.android.stage.bundle import BundleError
 from kivyforge.platforms.android.stage.runtime import RuntimeStageError
 from kivyforge.platforms.android.stage.wheels import WheelStageError
+from kivyforge.status import LockState
 
 PYPROJECT = """\
 [project]
@@ -1302,30 +1303,41 @@ class TestWriteLocalProperties:
 
 
 class TestAndroidStatusLockStates:
-    def test_in_sync(self, project, capsys):
+    def test_in_sync(self, project):
         _write_lock(project, in_sync=True)
-        cli.android_status(project)
-        assert "in sync" in capsys.readouterr().out
+        assert cli.android_status(project).lock.state is LockState.IN_SYNC
 
-    def test_out_of_date(self, project, capsys):
+    def test_out_of_date(self, project):
         _write_lock(project, in_sync=False)
-        cli.android_status(project)
-        assert "out of date" in capsys.readouterr().out
+        assert cli.android_status(project).lock.state is LockState.OUT_OF_DATE
 
-    def test_unreadable(self, project, capsys):
+    def test_unreadable(self, project):
         (project / "pylock.android.toml").write_text("{{ not toml", encoding="utf-8")
-        cli.android_status(project)
-        assert "unreadable" in capsys.readouterr().out
+        assert cli.android_status(project).lock.state is LockState.UNREADABLE
 
-    def test_reports_built_artifacts(self, project, capsys):
+    def test_missing(self, project):
+        assert cli.android_status(project).lock.state is LockState.MISSING
+
+    def test_reports_built_artifacts(self, project):
+        """Three artifacts always reported, built or not, so a consumer sees the
+        debug APK is present *and* that neither release artifact is."""
         _write_lock(project, in_sync=True)
         dest = project / "demoapp-android"
         apk = dest / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
         apk.parent.mkdir(parents=True)
         apk.write_bytes(b"x")
-        cli.android_status(project)
-        out = capsys.readouterr().out
-        assert "apk (debug)" in out and "built" in out
+        artifacts = {a.label: a for a in cli.android_status(project).artifacts}
+        assert artifacts["apk (debug)"].built is True
+        assert artifacts["apk (release)"].built is False
+        assert artifacts["aab (release)"].built is False
+
+    def test_extra_rows_carry_kivy_generation_and_abis(self, project):
+        """Android is the only backend with rows of its own; they must survive
+        the shared report shape rather than being flattened away."""
+        _write_lock(project, in_sync=True)
+        extra = dict(cli.android_status(project).extra)
+        assert "kivy_generation" in extra["Kivy/SDL"]
+        assert extra["ABIs"]
 
 
 class TestErrorsRenderCleanly:

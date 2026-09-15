@@ -38,6 +38,14 @@ INFO = "info"
 #: A committed lock no longer matches ``pyproject.toml``.
 LOCK_DRIFT = "KF-LOCK-DRIFT"
 
+#: No ``pylock.<platform>.toml`` at all.
+LOCK_MISSING = "KF-LOCK-MISSING"
+
+#: A lock exists but could not be parsed. Same remediation as the two above,
+#: kept distinct because a corrupt lock is worth noticing rather than quietly
+#: treating as stale -- it usually means a bad merge or a truncated write.
+LOCK_UNREADABLE = "KF-LOCK-UNREADABLE"
+
 #: ``byte_compile`` is on but no compatible host interpreter was found. The bug
 #: roadmap item 1 fixed; the check that now catches it lives in
 #: ``doctor/checks_common.py``.

@@ -42,6 +42,7 @@ from kivyforge.lock.wheelruntime.model import (
 )
 from kivyforge.platforms import get_platform
 from kivyforge.platforms.ios.lock import Lockfile, PythonXcframework
+from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 MINIMAL_PYPROJECT = '[project]\nname = "myapp"\nversion = "1.0.0"\n'
 
@@ -119,6 +120,22 @@ PYPROJECT_LINUX = (
 )
 
 
+def _stub_report(platform: str) -> StatusReport:
+    """The smallest report the shared renderer will accept.
+
+    ``status`` returns a value now rather than printing, so a fake backend has to
+    hand one back; this test only cares which backend was selected.
+    """
+    return StatusReport(
+        platform=platform,
+        app_name="myapp",
+        app_id="org.example.myapp",
+        python_version="3.13",
+        lock=LockStatus(LockState.MISSING, f"kivyforge lock -p {platform}"),
+        artifacts=(BuildArtifact(path=Path("build") / platform / "app"),),
+    )
+
+
 @pytest.fixture
 def runner():
     return CliRunner()
@@ -146,9 +163,12 @@ class TestSharedDispatchViaEnvVar:
     def test_status(self, runner, project, monkeypatch, target_platform):
         monkeypatch.setenv("KIVYFORGE_PLATFORM", target_platform)
         calls = []
-        monkeypatch.setattr(
-            get_platform(target_platform), "status", lambda root: calls.append(root)
-        )
+
+        def fake_status(root):
+            calls.append(root)
+            return _stub_report(target_platform)
+
+        monkeypatch.setattr(get_platform(target_platform), "status", fake_status)
         result = runner.invoke(status, [])
         assert result.exit_code == 0, result.output
         assert calls == [project]

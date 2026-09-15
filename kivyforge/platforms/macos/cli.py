@@ -9,7 +9,6 @@ macOS config + ``pylock.macos.toml``, runs the drift check, and drives the
 from __future__ import annotations
 
 import subprocess
-import time
 from pathlib import Path
 
 import click
@@ -17,6 +16,7 @@ import click
 from kivyforge.cli._common import ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .. import HostCapabilityError, get_platform
 from . import AppBundleError
@@ -184,51 +184,33 @@ def macos_package(
     return app
 
 
-def macos_status(project_root: Path) -> None:
-    """Show app identity, Python version, lock sync, and build state."""
+def macos_status(project_root: Path) -> StatusReport:
+    """Gather app identity, Python version, lock sync, and build state."""
     config = _load_config(project_root)
     macos = config.macos_required
-    click.echo(f"App:        {config.display_name}  ({macos.bundle_id})")
-    click.echo(f"Python:     {macos.python_version or '(unset)'}")
-    click.echo(f"Lock:       {_lock_state(project_root)}")
-
     app = project_root / "build" / "macos" / f"{config.display_name}.app"
-    click.echo(f"Build:      {_build_state(app)}")
+    return StatusReport(
+        platform="macos",
+        app_name=config.display_name,
+        app_id=macos.bundle_id,
+        python_version=macos.python_version or "(unset)",
+        lock=_lock_status(project_root),
+        artifacts=(BuildArtifact.probe(app),),
+    )
 
 
-def _lock_state(project_root: Path) -> str:
+def _lock_status(project_root: Path) -> LockStatus:
+    relock = "kivyforge lock -p macos"
     path = lockfile_path_for("macos", project_root)
     if not path.is_file():
-        return "missing (run `kivyforge lock -p macos`)"
+        return LockStatus(LockState.MISSING, relock)
     try:
         lock = load_macos_lock(path)
     except LockError:
-        return "unreadable (run `kivyforge lock -p macos`)"
+        return LockStatus(LockState.UNREADABLE, relock)
     pyproject = project_root / "pyproject.toml"
-    if is_in_sync(lock, pyproject.read_text("utf-8")):
-        return "in sync"
-    return "out of date (run `kivyforge lock -p macos`)"
-
-
-def _build_state(app: Path) -> str:
-    if not app.exists():
-        return "not built"
-    age = time.time() - app.stat().st_mtime
-    return f"last built {_humanize(age)}"
-
-
-def _humanize(seconds: float) -> str:
-    seconds = int(seconds)
-    if seconds < 60:
-        return "just now"
-    if seconds < 3600:
-        m = seconds // 60
-        return f"{m} minute{'s' if m != 1 else ''} ago"
-    if seconds < 86400:
-        h = seconds // 3600
-        return f"{h} hour{'s' if h != 1 else ''} ago"
-    d = seconds // 86400
-    return f"{d} day{'s' if d != 1 else ''} ago"
+    in_sync = is_in_sync(lock, pyproject.read_text("utf-8"))
+    return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
 
 
 def _executable_name(app: Path) -> str:

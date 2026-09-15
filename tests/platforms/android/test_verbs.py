@@ -5,6 +5,7 @@ from __future__ import annotations
 from click.testing import CliRunner
 
 from kivyforge.cli.clean import clean
+from kivyforge.cli.status import render
 from kivyforge.platforms.android.cli import android_status
 
 PYPROJECT = """\
@@ -26,11 +27,17 @@ version = "3.14.6"
 
 
 class TestStatus:
-    def test_snapshot(self, tmp_path, capsys):
+    def test_snapshot(self, tmp_path):
+        """Android's rendered report, end to end through the shared renderer.
+
+        Kept as a rendering test rather than converted to structural assertions:
+        Android had the most idiosyncratic output of the five backends, so it is
+        the one where sharing a renderer was most likely to change what a user
+        sees.
+        """
         (tmp_path / "src").mkdir()
         (tmp_path / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
-        android_status(tmp_path)
-        out = capsys.readouterr().out
+        out = "\n".join(render(android_status(tmp_path)))
         assert "verbapp  (org.example.verbapp)" in out
         assert "Python:     3.14.6" in out
         assert "kivy_generation 2" in out

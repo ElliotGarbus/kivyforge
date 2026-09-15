@@ -497,22 +497,29 @@ the host gate is arch-agnostic by design, but `VALID_WINDOWS_ARCHS` is
 
 ### 3. Output layer: `rich` rendering and `--json`
 
-**Status: the seam and `doctor --json` landed 2026-09-14.** `kivyforge/report/`
-now exists with the four pieces this item needs — `console.py` (the `Report`
-seam and the stdout/stderr rule), `envelope.py` (the versioned envelope),
-`diagnostics.py` (`Diagnostic` plus the code vocabulary), and `exit_codes.py`
-(the reserved taxonomy) — and `doctor` is wired through it end to end with
-`--json` and `--no-color`, verified against all five backends. `rich` is a hard
-dependency. The seam is the part that had to be built once; each remaining verb
-is now independent work.
+**Status: the seam, `doctor --json` and `status --json` landed 2026-09-14.**
+`kivyforge/report/` now exists with the four pieces this item needs —
+`console.py` (the `Report` seam and the stdout/stderr rule), `envelope.py` (the
+versioned envelope), `diagnostics.py` (`Diagnostic` plus the code vocabulary),
+and `exit_codes.py` (the reserved taxonomy). `rich` is a hard dependency. The
+seam is the part that had to be built once; each remaining verb is now
+independent work.
 
-Against the agent-friendliness list below: **point 1 (versioned envelope) is
-done**; **points 3, 4 and 5** (diagnostic IDs, exit-code taxonomy, remediation
-as a field) have their mechanism built but reach only as far as `doctor` —
-`ToolchainError.exit_code` is still `1` everywhere, and most doctor checks are
-still uncoded and report the generic `KF-DOCTOR-CHECK`; **points 2 and 6–8**
-(artifact paths, `capabilities`, `--no-input`, `AGENTS.md`) are untouched.
-`status`, `lock`, `build` and `package` have not been converted.
+Against the agent-friendliness list below: **points 1 and 2 (versioned envelope,
+artifact paths) are done**; **points 3, 4 and 5** (diagnostic IDs, exit-code
+taxonomy, remediation as a field) have their mechanism built but reach only as
+far as `doctor` and `status` — `ToolchainError.exit_code` is still `1`
+everywhere, and most doctor checks are still uncoded and report the generic
+`KF-DOCTOR-CHECK`; **points 6–8** (`capabilities`, `--no-input`, `AGENTS.md`)
+are untouched. `lock`, `build` and `package` have not been converted.
+
+**One hole worth naming before the next verb.** A verb that raises
+`ToolchainError` — bad config, missing pyproject — emits **no envelope at all**,
+so `--json` produces empty stdout on exactly the failure an agent most needs to
+read. Doctor's own `FAIL` path is covered, but a config error is not. The fix is
+a shared wrapper rather than per-verb handling, which is why it was not
+half-done here; it should land before `build`, whose failure modes are the ones
+that matter most.
 
 Four things worth knowing before the next verb goes through it:
 
@@ -612,6 +619,20 @@ whether a build is even possible before attempting it. `status` next, which
 needs actual refactoring — `linux_status()` and its peers `click.echo` computed
 strings like `"out of date (run `kivyforge lock -p linux`)"`, so the state has
 to be returned rather than printed. Then `lock`, `build`, `package`.
+
+**`status` turned out to pay a debt as well as add a feature.** The backends now
+return a `StatusReport` (`kivyforge/status.py`) that `cli/status.py` renders.
+That closed
+[`abstraction-leak-retro.md`](../common/abstraction-leak-retro.md) §1.6a, where
+`_humanize`, `_build_state` and `_lock_state` were duplicated once per desktop
+backend — quadruplicated by then, since Windows landed after that retro and
+copied all three. The duplication had survived four backends precisely because
+the helpers returned *display strings*: each copy differed only in a platform
+name embedded mid-sentence, and there was no shared type that could hold "which
+state" apart from "how to say it". Deduplicating was blocked on wanting the state
+as data, which is what `--json` forced. Android also stops being the odd one out
+— it alone reported bare lock states with no relock hint, and used absolute
+build timestamps where the other four used relative ages.
 
 **Making kivyforge agent-friendly — beyond `--json`.** In rough value order:
 

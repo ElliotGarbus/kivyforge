@@ -16,6 +16,7 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.doctor.result import CheckResult
+    from kivyforge.status import StatusReport
 
 
 class AppBundleError(Exception):
@@ -108,10 +109,10 @@ class MacosPlatform(Platform):
             notary_profile=notary_profile,
         )
 
-    def status(self, project_root: Path) -> None:
+    def status(self, project_root: Path) -> StatusReport:
         from .cli import macos_status
 
-        macos_status(project_root)
+        return macos_status(project_root)
 
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool

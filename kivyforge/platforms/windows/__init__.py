@@ -18,6 +18,7 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.doctor.result import CheckResult
+    from kivyforge.status import StatusReport
 
 
 class WindowsBundleError(Exception):
@@ -120,10 +121,10 @@ class WindowsPlatform(Platform):
             no_cache=no_cache,
         )
 
-    def status(self, project_root: Path) -> None:
+    def status(self, project_root: Path) -> StatusReport:
         from .cli import windows_status
 
-        windows_status(project_root)
+        return windows_status(project_root)
 
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool

@@ -16,6 +16,7 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.doctor.result import CheckResult
+    from kivyforge.status import StatusReport
 
 
 class AppDirError(Exception):
@@ -107,10 +108,10 @@ class LinuxPlatform(Platform):
             no_cache=no_cache,
         )
 
-    def status(self, project_root: Path) -> None:
+    def status(self, project_root: Path) -> StatusReport:
         from .cli import linux_status
 
-        linux_status(project_root)
+        return linux_status(project_root)
 
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool

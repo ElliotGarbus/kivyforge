@@ -15,6 +15,7 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.doctor.result import CheckResult
+    from kivyforge.status import StatusReport
 
 
 class IosPlatform(Platform):
@@ -116,10 +117,10 @@ class IosPlatform(Platform):
 
         ios_open(project_root)
 
-    def status(self, project_root: Path) -> None:
+    def status(self, project_root: Path) -> StatusReport:
         from .cli import ios_status
 
-        ios_status(project_root)
+        return ios_status(project_root)
 
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool

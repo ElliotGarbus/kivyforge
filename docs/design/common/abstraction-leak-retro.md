@@ -161,6 +161,20 @@ shared verb module and imports the iOS loader at module top
 
 ### 1.6a Duplication — the `status` helpers are triplicated across backends
 
+> **Resolved 2026-09-14** by roadmap item 3. It had grown to *quadruplicated* by
+> then — Windows landed after this retro was written and copied the same three
+> helpers. `_humanize`, `_build_state` and `_lock_state` are now
+> `humanize_age`, `BuildArtifact` and `LockStatus` in `kivyforge/status.py`, and
+> the five backends return a `StatusReport` that `cli/status.py` renders. The
+> finding below is left as written, since it is the record of what the code was.
+>
+> Worth noting *why* the duplication persisted through four backends: the
+> helpers returned display strings, so each backend's copy differed only in a
+> platform name embedded mid-sentence, and no shared type existed that could
+> hold "which state" separately from "how to say it". Deduplication was
+> therefore blocked on wanting the state as data — which is exactly what
+> `--json` needed.
+
 The `status` implementations each re-declare identical `_build_state` and
 `_humanize` helpers: `platforms/ios/cli.py:493-513`,
 `platforms/macos/cli.py:209-227`, `platforms/linux/cli.py:180-198`. The three

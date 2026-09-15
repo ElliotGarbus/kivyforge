@@ -22,13 +22,13 @@ from kivyforge.lock.wheelruntime.model import (
     WheelRuntimeLock,
 )
 from kivyforge.platforms.ios import doctor as doctor_mod
-from kivyforge.platforms.ios.cli import _humanize
 from kivyforge.platforms.ios.lock import (
     LockedXcframework,
     Lockfile,
     PythonXcframework,
     dumps,
 )
+from kivyforge.status import humanize_age
 
 PYPROJECT = (
     textwrap.dedent(
@@ -110,23 +110,26 @@ def runner():
 
 
 class TestHumanize:
+    """Was four identical copies, one per desktop backend; now one shared
+    function in ``kivyforge/status.py`` (see abstraction-leak-retro §1.6a)."""
+
     def test_just_now(self):
-        assert _humanize(0) == "just now"
-        assert _humanize(59) == "just now"
+        assert humanize_age(0) == "just now"
+        assert humanize_age(59) == "just now"
 
     def test_minutes(self):
-        assert _humanize(60) == "1 minute ago"
-        assert _humanize(120) == "2 minutes ago"
-        assert _humanize(3599) == "59 minutes ago"
+        assert humanize_age(60) == "1 minute ago"
+        assert humanize_age(120) == "2 minutes ago"
+        assert humanize_age(3599) == "59 minutes ago"
 
     def test_hours(self):
-        assert _humanize(3600) == "1 hour ago"
-        assert _humanize(7200) == "2 hours ago"
-        assert _humanize(86399) == "23 hours ago"
+        assert humanize_age(3600) == "1 hour ago"
+        assert humanize_age(7200) == "2 hours ago"
+        assert humanize_age(86399) == "23 hours ago"
 
     def test_days(self):
-        assert _humanize(86400) == "1 day ago"
-        assert _humanize(172800) == "2 days ago"
+        assert humanize_age(86400) == "1 day ago"
+        assert humanize_age(172800) == "2 days ago"
 
 
 class TestStatus:

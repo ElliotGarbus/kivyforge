@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from kivyforge.doctor.result import CheckResult
+    from kivyforge.status import StatusReport
 
 
 class HostCapabilityError(Exception):
@@ -131,7 +132,7 @@ class Platform(ABC):
             f"`open` is an iOS/Xcode command; {self.name} has no project to open."
         )
 
-    def status(self, project_root: Path) -> None:
+    def status(self, project_root: Path) -> StatusReport:
         raise NotImplementedError(f"status is not supported for {self.name!r}.")
 
     def doctor(

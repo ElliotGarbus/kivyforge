@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import time
 from pathlib import Path
 
 import click
@@ -19,6 +18,7 @@ import click
 from kivyforge.cli._common import ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .. import HostCapabilityError, get_platform
 from . import WindowsBundleError
@@ -163,14 +163,18 @@ def windows_run(
         raise ToolchainError(f"{bundle.name} exited with status {proc.returncode}.")
 
 
-def windows_status(project_root: Path) -> None:
-    """Show app identity, Python version, lock sync, and build state."""
+def windows_status(project_root: Path) -> StatusReport:
+    """Gather app identity, Python version, lock sync, and build state."""
     config = _load_config(project_root)
     windows = config.windows_required
-    click.echo(f"App:        {config.display_name}  ({windows.app_id})")
-    click.echo(f"Python:     {windows.python_version or '(unset)'}")
-    click.echo(f"Lock:       {_lock_state(project_root)}")
-    click.echo(f"Build:      {_build_state(onedir_path(config, project_root))}")
+    return StatusReport(
+        platform="windows",
+        app_name=config.display_name,
+        app_id=windows.app_id,
+        python_version=windows.python_version or "(unset)",
+        lock=_lock_status(project_root),
+        artifacts=(BuildArtifact.probe(onedir_path(config, project_root)),),
+    )
 
 
 def _assemble(config, lock, project_root, *, arch, no_cache, release) -> Path:
@@ -251,39 +255,18 @@ def _load_and_verify(
     return config, lock
 
 
-def _lock_state(project_root: Path) -> str:
+def _lock_status(project_root: Path) -> LockStatus:
+    relock = "kivyforge lock -p windows"
     path = lockfile_path_for("windows", project_root)
     if not path.is_file():
-        return "missing (run `kivyforge lock -p windows`)"
+        return LockStatus(LockState.MISSING, relock)
     try:
         lock = load_windows_lock(path)
     except LockError:
-        return "unreadable (run `kivyforge lock -p windows`)"
+        return LockStatus(LockState.UNREADABLE, relock)
     pyproject = project_root / "pyproject.toml"
-    if is_in_sync(lock, pyproject.read_text("utf-8")):
-        return "in sync"
-    return "out of date (run `kivyforge lock -p windows`)"
-
-
-def _build_state(bundle: Path) -> str:
-    if not bundle.exists():
-        return "not built"
-    age = time.time() - bundle.stat().st_mtime
-    return f"last built {_humanize(age)}"
-
-
-def _humanize(seconds: float) -> str:
-    seconds = int(seconds)
-    if seconds < 60:
-        return "just now"
-    if seconds < 3600:
-        m = seconds // 60
-        return f"{m} minute{'s' if m != 1 else ''} ago"
-    if seconds < 86400:
-        h = seconds // 3600
-        return f"{h} hour{'s' if h != 1 else ''} ago"
-    d = seconds // 86400
-    return f"{d} day{'s' if d != 1 else ''} ago"
+    in_sync = is_in_sync(lock, pyproject.read_text("utf-8"))
+    return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
 
 
 def _require_windows_host() -> None:

@@ -6,6 +6,7 @@ import pytest
 
 from kivyforge.cli._common import ToolchainError
 from kivyforge.platforms.windows import cli
+from kivyforge.status import LockState
 
 pytestmark = pytest.mark.requires_windows
 
@@ -37,14 +38,14 @@ def project(tmp_path):
 
 
 class TestStatus:
-    def test_reports_identity_and_state(self, project, capsys):
-        cli.windows_status(project)
-        out = capsys.readouterr().out
-        assert "My App" in out
-        assert "Acme.MyApp" in out
-        assert "3.13" in out
-        assert "missing" in out  # no lock yet
-        assert "not built" in out
+    def test_reports_identity_and_state(self, project):
+        report = cli.windows_status(project)
+        assert report.platform == "windows"
+        assert report.app_name == "My App"
+        assert report.app_id == "Acme.MyApp"
+        assert report.python_version == "3.13"
+        assert report.lock.state is LockState.MISSING  # no lock yet
+        assert [a.built for a in report.artifacts] == [False]
 
 
 class TestBuild:
@@ -301,35 +302,29 @@ def _write_windows_lock(project, *, in_sync=True):
 
 
 class TestLockState:
-    """status' lock-sync string covers each state (missing already in TestStatus)."""
+    """status' lock state covers each case (missing already in TestStatus).
+
+    Asserts on the enum rather than a rendered string: the state and its
+    presentation were the same value before roadmap item 3, which is why nothing
+    but a terminal could consume ``status``.
+    """
 
     def test_in_sync(self, project):
         _write_windows_lock(project, in_sync=True)
-        assert cli._lock_state(project) == "in sync"
+        assert cli._lock_status(project).state is LockState.IN_SYNC
 
     def test_out_of_date(self, project):
         _write_windows_lock(project, in_sync=False)
-        assert "out of date" in cli._lock_state(project)
+        assert cli._lock_status(project).state is LockState.OUT_OF_DATE
 
     def test_unreadable(self, project):
         (project / "pylock.windows.toml").write_text("{{ not toml", encoding="utf-8")
-        assert "unreadable" in cli._lock_state(project)
+        assert cli._lock_status(project).state is LockState.UNREADABLE
 
-
-class TestBuildStateAndHumanize:
-    def test_not_built(self, tmp_path):
-        assert cli._build_state(tmp_path / "nope") == "not built"
-
-    def test_built_reports_age(self, tmp_path):
-        d = tmp_path / "b"
-        d.mkdir()
-        assert "last built" in cli._build_state(d)
-
-    def test_humanize_scales(self):
-        assert cli._humanize(5) == "just now"
-        assert cli._humanize(120) == "2 minutes ago"
-        assert cli._humanize(3600) == "1 hour ago"
-        assert cli._humanize(86400 * 2) == "2 days ago"
+    def test_remediation_names_the_windows_target(self, project):
+        """The relock command is now a field, so it cannot be misread out of the
+        middle of a sentence."""
+        assert cli._lock_status(project).relock_command == "kivyforge lock -p windows"
 
 
 class TestHostAndLoaderErrors:
