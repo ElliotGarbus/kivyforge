@@ -505,21 +505,43 @@ and `exit_codes.py` (the reserved taxonomy). `rich` is a hard dependency. The
 seam is the part that had to be built once; each remaining verb is now
 independent work.
 
-Against the agent-friendliness list below: **points 1 and 2 (versioned envelope,
-artifact paths) are done**; **points 3, 4 and 5** (diagnostic IDs, exit-code
-taxonomy, remediation as a field) have their mechanism built but reach only as
-far as `doctor` and `status` — `ToolchainError.exit_code` is still `1`
-everywhere, and most doctor checks are still uncoded and report the generic
-`KF-DOCTOR-CHECK`; **points 6–8** (`capabilities`, `--no-input`, `AGENTS.md`)
-are untouched. `lock`, `build` and `package` have not been converted.
+Against the agent-friendliness list below: **points 1, 2 and 5 (versioned
+envelope, artifact paths, remediation as a field) are done**; **points 3 and 4**
+(diagnostic IDs, exit-code taxonomy) have their mechanism and vocabulary built
+and every failure now carries *a* code, but most are still the generic
+`KF-ERROR` / `KF-DOCTOR-CHECK` and almost every raise site still exits `1`, so
+the narrowing is the remaining work; **points 6–8** (`capabilities`,
+`--no-input`, `AGENTS.md`) are untouched. `lock`, `build` and `package` have not
+been converted.
 
-**One hole worth naming before the next verb.** A verb that raises
-`ToolchainError` — bad config, missing pyproject — emits **no envelope at all**,
-so `--json` produces empty stdout on exactly the failure an agent most needs to
-read. Doctor's own `FAIL` path is covered, but a config error is not. The fix is
-a shared wrapper rather than per-verb handling, which is why it was not
-half-done here; it should land before `build`, whose failure modes are the ones
-that matter most.
+**The failure path is now covered too — `reporting()` in `cli/_output.py`.** A
+verb that raised `ToolchainError` used to emit **no envelope at all**, so
+`--json` gave empty stdout on exactly the run an agent most needs to read, and a
+consumer could not tell that from a crash or from a verb that legitimately said
+nothing. The failure is now reported in both registers rather than moved between
+them: the envelope goes to stdout, and the exception is re-raised untouched so
+click still prints `Error: ...` to stderr and still chooses the exit code.
+`ToolchainError` grew `code`, `remediation` and a per-raise `exit_code`, all
+optional, so an untriaged raise site keeps its old behaviour and is merely
+*unspecific* rather than wrong. It also honours the `Fix:` line convention from
+item 1, which gives every existing raise site a populated
+`diagnostics[].remediation` without editing any of them — parsing prose once, at
+the producer, is how a convention becomes a field instead of staying prose for
+every consumer.
+
+**Correction to the exit-code taxonomy, from measuring instead of assuming.**
+The numbering drafted below gave `2` to "environment missing". But `2` is
+`click.UsageError.exit_code` — the convention `argparse` follows too — so
+`kivyforge doctor --bogus-flag` already exited `2` before any of this existed.
+Keeping `2` would have made "you typed the command wrong" indistinguishable from
+"this machine lacks a toolchain", which is the exact confusion the taxonomy
+exists to remove. So `2` is ceded to click and never assigned by us, and the rest
+shift up: **1** config/user, **2** usage (click's), **3** environment, **4** lock
+drift, **5** build failure. `1` keeps its historical meaning, so the narrowing
+stays additive. `tests/report/test_exit_codes.py` pins the literal integers,
+which looks tautological and is the point — every other test refers to them by
+name, so a renumber would otherwise pass the whole suite while breaking any
+caller that had learned a number.
 
 Four things worth knowing before the next verb goes through it:
 

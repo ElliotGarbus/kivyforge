@@ -10,6 +10,8 @@ from pathlib import Path
 
 import click
 
+from ..report import diagnostics, exit_codes
+
 PYPROJECT_NAME = "pyproject.toml"
 # iOS lockfile name, kept for the iOS verbs' backward-compatible call sites.
 # New/platform-aware code uses ``lockfile_name``/``lockfile_path_for``.
@@ -27,9 +29,56 @@ class ToolchainError(click.ClickException):
     Unlike a bare exception, ``click`` renders this as ``Error: <message>``
     without a traceback, which is what we want for expected failure modes
     (missing pyproject, validation errors, drift, etc.).
+
+    Roadmap item 3 gave it structure as well as a message, so a ``--json`` run
+    reports the failure as a diagnostic instead of producing empty stdout. Every
+    field is optional: an untriaged raise site keeps exactly its old behaviour
+    (generic code, exit ``1``) and is merely unspecific, never wrong.
     """
 
-    exit_code = 1
+    exit_code = exit_codes.CONFIG_ERROR
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = diagnostics.UNSPECIFIED,
+        exit_code: int | None = None,
+        remediation: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.remediation = _extract_fix(message) if remediation is None else remediation
+        if exit_code is not None:
+            self.exit_code = exit_code
+
+    def as_diagnostic(self) -> diagnostics.Diagnostic:
+        return diagnostics.Diagnostic(
+            code=self.code,
+            severity=diagnostics.ERROR,
+            message=self.format_message(),
+            remediation=self.remediation,
+        )
+
+
+def _extract_fix(message: str) -> str:
+    """Pull the trailing ``Fix:`` line out of a message, if it has one.
+
+    The backends already end user-facing failures with an explicit ``Fix:`` line
+    (a convention established in roadmap item 1), so honouring it here gives
+    every existing raise site a populated ``remediation`` without touching any of
+    them. A raise site that wants to be exact passes ``remediation=``.
+
+    Parsing prose is normally the thing to avoid -- the point of structured
+    diagnostics is that consumers should not have to. Doing it *once, at the
+    producer*, is the opposite: it is how the convention becomes a field instead
+    of staying prose for everyone downstream.
+    """
+    for line in reversed(message.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("Fix:"):
+            return stripped.removeprefix("Fix:").strip()
+    return ""
 
 
 def find_pyproject(start: Path | None = None) -> Path:

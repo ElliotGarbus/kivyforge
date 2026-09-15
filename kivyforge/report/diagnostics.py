@@ -54,6 +54,12 @@ BYTECOMPILE_NO_INTERP = "KF-BYTECOMPILE-NO-INTERP"
 #: This host cannot build this target at all (e.g. iOS from Windows).
 HOST_INCAPABLE = "KF-HOST-INCAPABLE"
 
+#: An expected failure (``ToolchainError``) with no specific code assigned yet.
+#: Branchable rather than null: it tells a consumer "this is a clean, expected
+#: failure -- read ``message`` and ``remediation``", as distinct from a crash.
+#: Narrowing a raise site to a real code is additive and never breaks anyone.
+UNSPECIFIED = "KF-ERROR"
+
 #: A doctor check reported WARN or FAIL and has not been assigned a specific
 #: code yet. Branchable on purpose -- it tells a consumer "the detail is in
 #: ``data.checks``, keyed by name" rather than leaving a null in the payload.

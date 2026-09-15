@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import click
 
-from .. import __version__
-from ..report import Diagnostic, Report, diagnostics
+from ..report import Diagnostic, diagnostics
 from ..status import ARTIFACT_LABEL_WIDTH, LABEL_WIDTH, LockState, StatusReport
-from ._output import output_options
+from ._output import output_options, reporting
 from ._platform import platform_option, resolve_target
 
 # Lock states worth telling a consumer about, with the code that names each.
@@ -34,35 +33,32 @@ _LOCK_CODES = {
 @output_options
 def status(cli_platform: str | None, json_out: bool, no_color: bool) -> None:
     """Show app identity, Python version, lock sync, and build state."""
-    backend, project_root = resolve_target(cli_platform, verb="status")
-    report = Report(
-        command="status",
-        kivyforge_version=__version__,
-        platform=backend.name,
-        json_mode=json_out,
-        no_color=no_color,
-    )
+    with reporting("status", json_out=json_out, no_color=no_color) as report:
+        # Inside the block: resolving the target reads pyproject.toml, so it is
+        # one of the things that can fail, and that failure needs an envelope.
+        backend, project_root = resolve_target(cli_platform, verb="status")
+        report.platform = backend.name
 
-    snapshot = backend.status(project_root)
+        snapshot = backend.status(project_root)
 
-    for line in render(snapshot):
-        report.line(line)
+        for line in render(snapshot):
+            report.line(line)
 
-    code = _LOCK_CODES.get(snapshot.lock.state)
-    if code is not None:
-        report.diagnose(
-            Diagnostic(
-                code=code,
-                severity=diagnostics.WARNING,
-                message=f"lock is {snapshot.lock.state.value}",
-                remediation=snapshot.lock.relock_command,
+        code = _LOCK_CODES.get(snapshot.lock.state)
+        if code is not None:
+            report.diagnose(
+                Diagnostic(
+                    code=code,
+                    severity=diagnostics.WARNING,
+                    message=f"lock is {snapshot.lock.state.value}",
+                    remediation=snapshot.lock.relock_command,
+                )
             )
-        )
 
-    # Always ``ok``: status is read-only and reports whatever it finds. A stale
-    # lock is news about the project, not a failure of the command, and it has
-    # never affected the exit code.
-    report.emit(ok=True, data=snapshot.as_dict())
+        # Always ``ok``: status is read-only and reports whatever it finds. A
+        # stale lock is news about the project, not a failure of the command,
+        # and it has never affected the exit code.
+        report.emit(ok=True, data=snapshot.as_dict())
 
 
 def render(snapshot: StatusReport) -> list[str]:

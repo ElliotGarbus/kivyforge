@@ -21,9 +21,9 @@ from .. import __version__
 from ..doctor import CheckResult, Status, worst_status
 from ..platforms import Platform, PlatformResolutionError, get_platform
 from ..platforms import resolve_target as _resolve_platform
-from ..report import Diagnostic, Report, diagnostics, exit_codes
+from ..report import Diagnostic, diagnostics, exit_codes
 from ._common import PYPROJECT_NAME
-from ._output import output_options
+from ._output import output_options, reporting
 from ._platform import configured_platforms, platform_option
 
 # Status to diagnostic severity. PASS and SKIP produce no diagnostic: a list
@@ -46,42 +46,38 @@ def doctor(
 ) -> None:
     """Run environment and project health checks."""
     cwd = Path.cwd()
-    backend = _resolve_doctor_backend(cli_platform, cwd)
-    report = Report(
-        command="doctor",
-        kivyforge_version=__version__,
-        platform=backend.name,
-        json_mode=json_out,
-        no_color=no_color,
-    )
+    with reporting("doctor", json_out=json_out, no_color=no_color) as report:
+        backend = _resolve_doctor_backend(cli_platform, cwd)
+        report.platform = backend.name
 
-    results = backend.doctor(cwd, kivyforge_version=__version__, offline=offline)
-    mode = "project" if _has_config(cwd) else "environment"
+        results = backend.doctor(cwd, kivyforge_version=__version__, offline=offline)
+        mode = "project" if _has_config(cwd) else "environment"
 
-    report.line(f"kivyforge doctor ({backend.name}, {mode} mode)")
-    report.line()
-    for result in results:
-        report.status_line(result.render(), result.status.value)
+        report.line(f"kivyforge doctor ({backend.name}, {mode} mode)")
+        report.line()
+        for result in results:
+            report.status_line(result.render(), result.status.value)
 
-    for result in results:
-        severity = _SEVERITY.get(result.status)
-        if severity is not None:
-            report.diagnose(_as_diagnostic(result, severity))
+        for result in results:
+            severity = _SEVERITY.get(result.status)
+            if severity is not None:
+                report.diagnose(_as_diagnostic(result, severity))
 
-    ok = worst_status(results) is not Status.FAIL
-    report.emit(
-        ok=ok,
-        data={
-            "mode": mode,
-            "checks": [r.as_dict() for r in results],
-            "summary": _summary(results),
-        },
-    )
+        ok = worst_status(results) is not Status.FAIL
+        report.emit(
+            ok=ok,
+            data={
+                "mode": mode,
+                "checks": [r.as_dict() for r in results],
+                "summary": _summary(results),
+            },
+        )
 
     if not ok:
         # ENVIRONMENT_ERROR rather than the historical 1: a doctor FAIL means
         # something about this machine or project is not ready, which is a
-        # different reaction from "you passed a bad flag".
+        # different reaction from "you passed a bad flag". Raised outside the
+        # reporting block so it is never mistaken for a ToolchainError.
         raise SystemExit(exit_codes.ENVIRONMENT_ERROR)
 
 
