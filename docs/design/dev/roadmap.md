@@ -542,11 +542,13 @@ into what it handles and what stays ours:
   a long Gradle step, whereas nobody is about to type an emoji into a build
   message.
 
-**One thing to fix while moving the call sites:** `test_message_encoding.py`
-matches `echo`/`secho` calls and Click help text by AST. Once output goes
-through the renderer those names change, and the guard would keep passing while
-matching nothing — the silent-skip shape this repo keeps rediscovering. Teach it
-the new call sites in the same commit that introduces them.
+**The guard already survives this item — handled 2026-09-14 in c5efff82.** It
+used to match `echo`/`secho` calls and Click help text by AST, which would have
+kept passing while matching nothing the moment output moved to a renderer with
+different call-site names. It now checks **every string literal** in `kivyforge/`
+except docstrings (Click command and group docstrings still count, being
+`--help` text). So item 3 can rename every print in the codebase without
+quietly retiring the check, and there is nothing to remember to update.
 
 Also honour `NO_COLOR` / `FORCE_COLOR`, drop colour when stdout is not a TTY,
 and add `--no-color`. `rich` becomes a hard dependency — acceptable, it is pure
