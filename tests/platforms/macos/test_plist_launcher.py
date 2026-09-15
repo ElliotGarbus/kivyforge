@@ -79,9 +79,45 @@ class TestLauncherSource:
         assert 'getenv("PATH")' in src
         assert 'setenv("PATH", newpath, 1)' in src
 
+    def test_never_writes_bytecode_into_the_signed_bundle(self):
+        """A running app must never write into its own signed bundle.
+
+        The regression this guards: the app's first-ever real launch (once the
+        ``-m`` fix above made a launch possible at all) wrote ``__pycache__``
+        into the unstripped embedded stdlib and invalidated the bundle's code
+        signature (``codesign --verify`` then reports "a sealed resource is
+        missing or invalid").
+        """
+        src = render_launcher_source("main")
+        assert 'setenv("PYTHONDONTWRITEBYTECODE", "1", 1)' in src
+
     def test_rejects_non_identifier_entry(self):
         with pytest.raises(AppBundleError, match="not a valid module name"):
             render_launcher_source("main.py")
+
+    def test_the_launcher_never_names_a_source_file(self):
+        """A path-based exec cannot survive strip_source; -m does.
+
+        The regression this guards shipped: the launcher execv'd
+        ``Resources/app/main.py`` while ``package`` had just byte-compiled and
+        deleted it, so every default ``.app`` exited 2 before Python started.
+        Mirrors ``platforms/linux/test_launcher.py``'s identical guard.
+        """
+        src = render_launcher_source("main")
+        assert '"main.py"' not in src
+        assert '"-P"' in src
+        assert '"-m"' in src
+        assert "(char *)ENTRY" in src
+
+    def test_the_cwd_is_kept_off_sys_path(self):
+        """``-m`` alone would put the launch directory on sys.path; ``-P`` must not.
+
+        Weaker-stakes here than on Linux (this launcher already ``chdir``s into
+        ``app`` first), but kept for symmetry — see the module docstring.
+        """
+        src = render_launcher_source("main")
+        assert 'child[1] = "-P";' in src
+        assert 'child[2] = "-m";' in src
 
 
 class TestLauncherCompileHermetic:
@@ -182,3 +218,53 @@ class TestLauncherCompile:
         ).stdout
         first = out.split(":", 1)[0]
         assert first.endswith("/Resources/bin")
+
+    def test_child_is_invoked_with_dash_m_not_a_source_path(self, tmp_path):
+        """End-to-end proof the launcher execs ``-P -m main``, not a ``.py`` path.
+
+        The closest thing to a real regression test for the exit-2-before-
+        Python-starts defect: a real compiled launcher, a fake interpreter that
+        echoes its own argv, and no ``main.py`` on disk at all — only the
+        argv-based ``-m`` invocation can possibly work here.
+        """
+        host = "arm64" if platform.machine() == "arm64" else "x86_64"
+        contents = tmp_path / "My.app" / "Contents"
+        launcher = contents / "MacOS" / "myapp"
+        build_launcher(launcher, entry_point="main", arch=host)
+
+        # A fake "python3" that prints its own argv, standing in for the
+        # interpreter the launcher execs.
+        py = contents / "Resources" / "python" / "bin" / "python3"
+        py.parent.mkdir(parents=True)
+        py.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+        py.chmod(0o755)
+        (contents / "Resources" / "app").mkdir(parents=True)
+        # Deliberately no main.py/main.pyc here: only an argv-based `-m`
+        # invocation could ever find the entry point in a stripped bundle, so
+        # this is checking the launcher's own argv, not whether main resolves.
+        (contents / "Resources" / "bin").mkdir(parents=True)
+
+        out = subprocess.run(
+            [str(launcher), "--extra"], capture_output=True, text=True, check=True
+        ).stdout
+        argv = out.splitlines()
+        assert argv == ["-P", "-m", "main", "--extra"]
+
+    def test_child_never_writes_bytecode(self, tmp_path):
+        """End-to-end proof the child actually receives ``PYTHONDONTWRITEBYTECODE=1``."""
+        host = "arm64" if platform.machine() == "arm64" else "x86_64"
+        contents = tmp_path / "My.app" / "Contents"
+        launcher = contents / "MacOS" / "myapp"
+        build_launcher(launcher, entry_point="main", arch=host)
+
+        py = contents / "Resources" / "python" / "bin" / "python3"
+        py.parent.mkdir(parents=True)
+        py.write_text('#!/bin/sh\nprintf "%s" "$PYTHONDONTWRITEBYTECODE"\n')
+        py.chmod(0o755)
+        (contents / "Resources" / "app").mkdir(parents=True)
+        (contents / "Resources" / "bin").mkdir(parents=True)
+
+        out = subprocess.run(
+            [str(launcher)], capture_output=True, text=True, check=True
+        ).stdout
+        assert out == "1"

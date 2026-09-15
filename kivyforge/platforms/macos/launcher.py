@@ -8,6 +8,30 @@ ad-hoc-signed as the app's main image. So kivyforge compiles a tiny C launcher
 ``codesign``). At runtime it locates the bundle relative to itself — so the
 ``.app`` stays fully relocatable — points the bundled CPython at its own home +
 the app's ``lib``/``app`` directories, and ``execv``s the entry-point module.
+
+The entry point is run with ``-m`` rather than by path — the same fix applied
+to the Linux ``AppRun`` (``platforms/linux/launcher.py``) for the identical
+defect. Exec'ing ``Resources/app/{entry}.py`` shipped a release ``.app`` that
+could not start at all: ``package`` applies ``strip_source`` by default, which
+leaves ``main.pyc`` and deletes the ``main.py`` this launcher was still naming,
+so the interpreter exited 2 (``can't open file '.../app/main.py'``) before
+Python came up. ``-m`` goes through the import system, which loads a
+sourceless ``.pyc`` in the legacy layout exactly as happily as a ``.py`` — so
+the payload can change shape without the launcher having to be told.
+
+``-P`` is included for symmetry with the Linux launcher and to keep
+``sys.path`` deriving from ``PYTHONPATH`` alone, but it is not load-bearing
+here the way it is on Linux: this launcher already ``chdir``s into ``app``
+before exec, so the directory plain ``-m`` would add to ``sys.path`` is the one
+we want anyway. Needs CPython >= 3.11; the bundled runtime satisfies it.
+
+``PYTHONDONTWRITEBYTECODE`` is set for a reason specific to macOS: the very
+first real launch this launcher ever had wrote ``__pycache__`` into the
+bundle's embedded stdlib (shipped as ``.py`` — stripping is deliberately
+scoped to ``app``/``site-packages`` only) and invalidated the bundle's own
+code signature. A macOS ``.app`` is signed once, at build time, and never
+touched again; a running app writing into itself breaks that invariant on the
+very first launch, which nothing had ever exercised until now.
 """
 
 from __future__ import annotations
@@ -20,7 +44,8 @@ from . import AppBundleError
 
 # The launcher is intentionally minimal: resolve its own path, derive the bundle
 # layout, set the Python environment, and exec the interpreter on the entry
-# script. ``{entry}`` is filled with the (identifier-only) entry-point name.
+# module via ``-m`` (see the module docstring for why not by path).
+# ``{entry}`` is filled with the (identifier-only) entry-point name.
 _SOURCE = r"""
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,19 +72,26 @@ int main(int argc, char *argv[]) {{
     char *contents = dirname(b);                  /* .../Contents */
 
     char home[PATH_MAX], app[PATH_MAX], lib[PATH_MAX], bin[PATH_MAX];
-    char py[PATH_MAX], script[PATH_MAX], pypath[2 * PATH_MAX];
+    char py[PATH_MAX], pypath[2 * PATH_MAX];
     snprintf(home, sizeof(home), "%s/Resources/python", contents);
     snprintf(app, sizeof(app), "%s/Resources/app", contents);
     snprintf(lib, sizeof(lib), "%s/Resources/lib", contents);
     snprintf(bin, sizeof(bin), "%s/Resources/bin", contents);
     snprintf(py, sizeof(py), "%s/bin/python3", home);
-    snprintf(script, sizeof(script), "%s/%s.py", app, ENTRY);
     snprintf(pypath, sizeof(pypath), "%s:%s", app, lib);
 
     setenv("PYTHONHOME", home, 1);
     setenv("PYTHONPATH", pypath, 1);
     /* Isolate from ~/.local and user site config; the bundle is self-contained. */
     setenv("PYTHONNOUSERSITE", "1", 1);
+    /* The embedded stdlib ships as .py source (strip_source is scoped to
+       app+site-packages only), so importing it would otherwise write
+       __pycache__ into the signed bundle on first launch -- silently
+       invalidating its own code signature (codesign reports "a sealed
+       resource is missing or invalid" on the very next `--verify`). Never
+       write bytecode caches into a bundle that is signed once, at build
+       time, and never rewritten after. */
+    setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
     /* Prepend Resources/bin so user-declared native helper executables resolve by
        name (subprocess/PATH lookups). Harmless when the directory is absent. */
     const char *old_path = getenv("PATH");
@@ -72,12 +104,14 @@ int main(int argc, char *argv[]) {{
     setenv("PATH", newpath, 1);
     chdir(app);
 
-    char **child = (char **)malloc(sizeof(char *) * (argc + 2));
+    char **child = (char **)malloc(sizeof(char *) * (argc + 4));
     if (child == NULL) return 71;
     child[0] = py;
-    child[1] = script;
-    for (int i = 1; i < argc; i++) child[i + 1] = argv[i];
-    child[argc + 1] = NULL;
+    child[1] = "-P";
+    child[2] = "-m";
+    child[3] = (char *)ENTRY;
+    for (int i = 1; i < argc; i++) child[i + 3] = argv[i];
+    child[argc + 3] = NULL;
     execv(py, child);
     perror("kivyforge launcher: execv");
     return 71;
@@ -86,7 +120,7 @@ int main(int argc, char *argv[]) {{
 
 
 def render_launcher_source(entry_point: str) -> str:
-    """The C source for a launcher that execs *entry_point*.py (pure/testable)."""
+    """The C source for a launcher that execs ``-m`` *entry_point* (pure/testable)."""
     if not entry_point.isidentifier():
         raise AppBundleError(f"entry_point {entry_point!r} is not a valid module name.")
     return _SOURCE.format(entry=entry_point)

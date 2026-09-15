@@ -239,7 +239,25 @@ suppress.
 2. **Notarization has succeeded five times since July**, not zero — §6 and
    this prompt's Background were both stale on this point specifically because
    nobody had run `notarytool history` before.
-3. **macOS `strip_source` is real and correctly scoped**; iOS `strip_source` is
+3. **macOS `strip_source` is real and correctly scoped** — accurate about
+   *scope*, and not retracted. What this run's static checks (`codesign`,
+   `stapler`, `spctl`, `lipo`, `macos_app_problems`) could not answer, and
+   didn't claim to, was whether the correctly stripped bundle actually
+   *starts*. It didn't: a Linux (WSL2) agent inferred from this file's own
+   Step 2 table that the macOS launcher execs an absolute `main.py` path
+   `strip_source` had just deleted — the identical defect independently found
+   and fixed on Linux's `AppRun` on 2026-09-13 — and queued the fix as
+   [`macos-launcher-strip-source-prompt.md`](macos-launcher-strip-source-prompt.md).
+   Run on 2026-09-14: confirmed verbatim (exit 2, `can't open file
+   '.../app/main.py'`), fixed (`execv`s `python3 -P -m <entry>`), and this time
+   actually launched — rendering, visually confirmed, for the first time in
+   this repo's history. That launch immediately surfaced a second, previously
+   unreachable defect: importing the deliberately-unstripped embedded stdlib
+   wrote `__pycache__` into the signed bundle, invalidating its own code
+   signature. Fixed with `PYTHONDONTWRITEBYTECODE=1` in the same launcher.
+   **The corollary from `test-matrix.md`'s Known-unverified list stands as the
+   sharpest lesson of this whole exercise: a signed, notarized, T3-passing
+   artifact was not, in fact, evidence it could start.** iOS `strip_source` is
    not just unproven but currently *unprovable* on any example in this repo
    until a final CPython 3.15 exists.
 4. **The materialize-a-real-copy safety mechanism for iOS release builds works

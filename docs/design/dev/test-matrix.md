@@ -176,7 +176,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Target | T0/T1 | T2 toolchain | T3 artifact | T4 launch | T5 hardware | Last proven |
 |---|---|---|---|---|---|---|
 | Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare only | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
-| macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | none | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3) |
+| macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | **local** — a stripped, re-notarized `dice-roller.app` launched and rendered for the first time, after fixing the launcher (§7, 2026-09-14) | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3, T4) |
 | Linux `x86_64` | `unit_tests` | **local only** — `appimagetool`, one run | **local only** — assertions exist and are hermetically tested every push; pointed at a real artifact once | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1); 2026-09-13 (T2/T3/T4) |
 | Linux `aarch64` | — | — | — | — | — | never (item 4) |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
@@ -393,17 +393,25 @@ twice: once on the debug APK, once on the stripped release APK.
       which a desktop bundle can answer and an APK cannot; and the ELF sweep
       covers the whole tree, because `doctor.check_linux_native_binaries` looks
       only under `usr/bin` and SKIPs unless native binaries are declared.
-- [ ] **A launcher-entry check on macOS, which neither desktop checker has.**
-      The Linux checker asserts that whatever `AppRun` promises to execute
-      actually exists, and that is the check that caught the shipped
-      `strip_source` launch failure in §7. `macos_app_problems` has no
-      equivalent, and `macos/launcher.py` builds the same `"%s/%s.py"` exec path
-      Linux's did — so the macOS T3 pass against the notarized `dice-roller.app`
-      does **not** clear it, and macOS T4 is `none`, so nothing has launched a
-      stripped `.app` either. Cheap to add; see §7 for what it found. Queued for
-      the Mac as
-      [`macos-launcher-strip-source-prompt.md`](macos-launcher-strip-source-prompt.md),
-      which also specifies the launcher fix itself.
+- [x] **A launcher-entry check on macOS — the defect it predicted was real,
+      fixed 2026-09-14.** The Linux checker asserts that whatever `AppRun`
+      promises to execute actually exists, and that is the check that caught
+      the shipped `strip_source` launch failure in §7. `macos_app_problems` had
+      no equivalent, and `macos/launcher.py` built the same `"%s/%s.py"` exec
+      path Linux's did, naming a `main.py` that `strip_source` had already
+      deleted — confirmed by actually running the notarized `dice-roller.app`
+      directly (not via Finder/`open`, which swallow stderr): exit 2, `can't
+      open file '.../Resources/app/main.py'`. Fixed the same way as Linux: the
+      launcher now `execv`s `python3 -P -m <entry>`, which loads a sourceless
+      `.pyc` exactly as happily as a `.py`. **Decision on the static check
+      itself: skipped, deliberately.** A Mach-O launcher is opaque in a way a
+      shell `AppRun` is not, so a static macOS equivalent (§5's original
+      wording) would only assert an entry module exists — a weaker check,
+      post-fix, than the regression test that pins the launcher's own argv
+      (`test_the_launcher_never_names_a_source_file` in
+      `test_plist_launcher.py`). The real-clang argv test plus the actual
+      launch in §7 hold the line; a static conftest-driven check would be
+      ceremony on top of them.
 - [ ] **Windows check functions.** Same split, not blocked on §5.3, and the
       option can sit ready behind `--windows-onedir` exactly as `--android-apk`,
       `--macos-app`, and `--linux-appimage` did. Windows is the one desktop
@@ -611,6 +619,9 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-14 | iOS simulator `arm64` | T2 + T4 (local) | macOS 26.6.2, Xcode 26.6 | Regression re-check, no drift since 2026-07-27: `doctor -p ios` (2 expected `WARN`s only), `build -p ios --simulator`, `run -p ios --simulator` all exit 0; `hello-kivy` renders correctly on iPhone Air / iOS 26.5. `pylock.ios.toml` unchanged. |
 | 2026-09-14 | iOS simulator `arm64` (`hello-kivy`) | `strip_source` attempt | macOS 26.6.2 | `package -p ios` degrades to shipping source: "no final CPython 3.15 found (this project ships 3.15.0b4)". Confirmed **every** iOS example in the repo pins `3.15.0b4`, so this is currently unrunnable anywhere in-repo, not just untried. Data-safety check passed: the materialized `app/` is a real copy (not a symlink), and the real working-tree `main.py` was untouched. |
 | 2026-09-14 | iOS device `arm64` (iPhone14,3) | T2 + T4 + T5 | macOS 26.6.2, Xcode 26.6 | **First physical-device run in this repo.** `build -p ios --device`, `run -p ios --device` (after unlocking the phone — same failure mode `verify-ios-device.sh` documents), and `package -p ios --export-method development` all succeeded; `hello-kivy` rendered on-screen. Found and fixed a real bug: `--team-id`/`KIVYFORGE_TEAM_ID` was resolved by `preflight_signing()` but never reached the generated Xcode project's `DEVELOPMENT_TEAM`, so a correct override still failed to build. Fixed across `buildsettings.py`/`generator.py`/`materialize.py`/`cli.py`; two regression tests added; full iOS suite (494 tests) + lint green after. `hello-kivy/pylock.ios.toml` re-locked to the Kivy build (`dev202607301604`) that passed this run, per the on-device-gate lock policy (§5.3). `pyproject.toml`'s `team_id` deliberately left blank — signing used `KIVYFORGE_TEAM_ID` for this session, not a hardcoded personal team ID in a shared example. |
+| 2026-09-14 | macOS `arm64` (`dice-roller`) | defect repro | macOS 26.6.2 | Confirmed [`macos-launcher-strip-source-prompt.md`](macos-launcher-strip-source-prompt.md)'s inference: ran the notarized `.app`'s `Contents/MacOS/*` directly (not via Finder/`open`, which swallow stderr) — exit 2, `.../Contents/Resources/python/bin/python3: can't open file '.../Contents/Resources/app/main.py': [Errno 2] No such file or directory`. Verbatim match to the Linux `AppRun` defect fixed 2026-09-13, same root cause: `strip_source` deletes `main.py`, the launcher still named it by path. **Every prior macOS T2/T3 pass (§7, 2026-09-14 above) had been against an artifact that could not start** — signing and notarization say nothing about launchability. |
+| 2026-09-14 | macOS `arm64` (`dice-roller`) | launcher fix | macOS 26.6.2 | `kivyforge/platforms/macos/launcher.py`: `execv`s `python3 -P -m <entry>` instead of a `.py` path — same fix as the Linux `AppRun`, mirrored in C. Also set `PYTHONDONTWRITEBYTECODE=1`, a second, previously-unreachable defect the *first successful launch* immediately surfaced: importing the embedded stdlib (shipped as `.py` — stripping is scoped to `app`/`site-packages` only, by design) wrote `__pycache__` into the signed bundle, and `codesign --verify` then reported "a sealed resource is missing or invalid" — a notarized `.app` invalidating its own signature on first launch, on every launch, for every macOS app in the repo, discovered only because nothing had ever launched one before. Two regression tests added (`test_the_launcher_never_names_a_source_file`, `test_never_writes_bytecode_into_the_signed_bundle`) plus two real-clang argv/env tests. `clang -Wall` clean. Full hermetic suite + lint green. |
+| 2026-09-14 | macOS `arm64` (`dice-roller`) | T2 + T3 + T4 (local) | macOS 26.6.2 | **macOS's first successful app launch, ever, in this repo.** Repackaged (re-signed, re-notarized, re-stapled) with both fixes; `Contents/Resources/app/` still `.pyc`-only. Ran `Contents/MacOS/*` directly: Kivy/SDL2 initialized, GL came up (Apple M5 Pro, OpenGL ES 2), "Start application main loop" — **rendered, visually confirmed**. `codesign --verify --deep --strict` on the bundle *after* the real launch: still "valid on disk" — the `PYTHONDONTWRITEBYTECODE` fix holds. T3 driver (`test_app_artifact.py --macos-app ... --macos-stripped`) re-run against this exact bundle: both tests pass. |
 
 ### Known-unverified, stated plainly
 
@@ -644,20 +655,29 @@ Linux say whether it was WSL2 or bare metal (§4).
   the `AppRun` fix in the same session. The *native* byte-compile path is
   what ran; `find_interpreter()` has still never been exercised by a Linux
   build.
-- Whether a stripped macOS `.app` can actually **launch**: unknown, and there
-  is now specific reason to doubt it. `macos/launcher.py` still builds
-  `snprintf(script, ..., "%s/%s.py", app, ENTRY)` and `execv`s that path —
-  the exact construction that made every Linux AppImage exit before Python
-  started (§7, 2026-09-13). The 2026-09-14 `.app` satisfies the precondition:
-  its `Contents/Resources/app` was confirmed `.pyc`-only, so the `main.py`
-  its launcher names is not there. Nothing contradicts that yet, because
-  macOS T4 is `none` (§3.2) and `macos_app_problems` checks only that
-  `Contents/MacOS/` holds *an* executable, never that the launcher's target
-  exists. **A signed, notarized, T3-passing artifact is not evidence it
-  starts** — which is the sharpest available argument for the
-  launcher-entry check in §5.1 and for a desktop T4 in §6. Written up for the
-  Mac, with the reproduction and the fix, as
-  [`macos-launcher-strip-source-prompt.md`](macos-launcher-strip-source-prompt.md).
+- Whether a stripped macOS `.app` can actually **launch**: **resolved,
+  2026-09-14 — it could not, and now it can.** The doubt raised from the Linux
+  host (`macos-launcher-strip-source-prompt.md`) was correct: `macos/launcher.py`
+  built the same `"%s/%s.py"` exec path Linux's did, and every notarized
+  `dice-roller.app` built before 2026-09-14 (five prior `Accepted` submissions,
+  §7) was, in fact, unlaunchable — a signed, notarized, T3-passing artifact was
+  not evidence it starts. Confirmed by running it directly (exit 2, `can't open
+  file '.../app/main.py'`), fixed the same way as Linux (`execv` `-m` instead of
+  a path), and proved by an actual launch: rendered, visually confirmed, with
+  `codesign --verify` still passing afterward. That last part needed its own
+  fix — see the next bullet.
+- Running a macOS app writes into its own signed bundle: **resolved,
+  2026-09-14.** The embedded stdlib ships as `.py` (stripping is scoped to
+  `app`/`site-packages` only, by design), so the *first* successful launch
+  above immediately wrote `__pycache__` into it and invalidated the bundle's
+  code signature (`codesign --verify` afterward: "a sealed resource is missing
+  or invalid"). This had never been seen before because nothing had launched a
+  macOS app in this repo until the same session. Fixed by setting
+  `PYTHONDONTWRITEBYTECODE=1` in the launcher; a repeat launch afterward left
+  `codesign --verify` passing. Windows is unaffected (Authenticode signs the
+  executable, not a bundle-wide resource seal); Linux AppImages are typically
+  read-only-mounted at runtime, so a write wouldn't persist to the shipped
+  artifact even if it occurred.
 - Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only), so
   its T2/T3 is inherited from `x86_64` plus the stray-ABI check, not direct.
 - Android T3 from a Windows host: once, by hand, 2026-09-13 (§5.2).

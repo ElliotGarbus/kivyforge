@@ -51,7 +51,11 @@ def _expected_magic(app: Path) -> bytes:
     if not python3.is_file():
         pytest.fail(f"{python3} is missing; cannot determine the shipped .pyc magic")
     proc = subprocess.run(
-        [str(python3), "-c", "import importlib.util; print(importlib.util.MAGIC_NUMBER.hex())"],
+        [
+            str(python3),
+            "-c",
+            "import importlib.util; print(importlib.util.MAGIC_NUMBER.hex())",
+        ],
         capture_output=True,
         text=True,
     )
