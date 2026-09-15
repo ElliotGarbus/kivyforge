@@ -98,6 +98,27 @@ def pytest_addoption(parser):
         action="store_true",
         help="Assert app+lib are bytecode-only (strip_source applied).",
     )
+    group.addoption(
+        "--linux-appimage",
+        default=None,
+        help="Path to a built .AppImage to run the T3 artifact assertions against.",
+    )
+    group.addoption(
+        "--linux-appdir",
+        default=None,
+        help="Path to a built AppDir directory (as `kivyforge package -f folder` "
+        "emits) to check instead of extracting an .AppImage.",
+    )
+    group.addoption(
+        "--linux-arch",
+        default="x86_64",
+        help="kivyforge arch the Linux artifact was built for (default: x86_64).",
+    )
+    group.addoption(
+        "--linux-stripped",
+        action="store_true",
+        help="Assert the Linux payload is bytecode-only (strip_source applied).",
+    )
 
 
 def pytest_configure(config):

@@ -16,6 +16,15 @@ than via ``platforms/android/elf.py``'s :func:`read_elf`, which takes a
 ``Path``: extracting 120 shared objects to disk to look at six bytes of each is
 not worth it. The *constants* are imported from that module even so, so the
 machine codes asserted here cannot drift from the ones the build uses.
+
+The Linux half works on a **directory**, not an archive: a type-2 AppImage is an
+ELF with a squashfs filesystem appended, so ``zipfile`` cannot read it and there
+is no stdlib squashfs reader. The driver extracts it (``--appimage-extract``,
+which needs no FUSE) and points these at the resulting tree; the AppDir is also
+directly buildable via ``kivyforge package -f folder``. Checks that can only be
+made on the single file — that it is an AppImage at all, and for which arch —
+live in :func:`linux_appimage_file_problems` so the container itself is covered
+rather than assumed.
 """
 
 from __future__ import annotations
@@ -23,11 +32,20 @@ from __future__ import annotations
 import plistlib
 import posixpath
 import re
+import shlex
 import struct
 import zipfile
 from pathlib import Path
 
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64, machine_name
+from kivyforge.platforms.linux.elftools import (
+    ARCH_ELF,
+    ELF_MAGIC,
+    ElfError,
+    describe,
+    elf_machine,
+    is_elf,
+)
 from kivyforge.platforms.macos.machotools import (
     CPU_TYPE_ARM64,
     CPU_TYPE_X86_64,
@@ -300,9 +318,7 @@ def macos_app_problems(
         # that is missing its basic shape.
         return problems
 
-    problems += _macos_plist_problems(
-        app, bundle_id=bundle_id, executable=executable
-    )
+    problems += _macos_plist_problems(app, bundle_id=bundle_id, executable=executable)
     problems += _macos_arch_problems(app, arch=arch)
     problems += _macos_payload_problems(app, stripped=stripped)
     if stripped:
@@ -434,7 +450,9 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
                     "location, not beside a source file that is no longer there"
                 )
         elif scope == "Contents/Resources/app" and not sources and not compiled:
-            problems.append(f"{scope} has neither .py nor .pyc — the app has no entry point")
+            problems.append(
+                f"{scope} has neither .py nor .pyc — the app has no entry point"
+            )
     return problems
 
 
@@ -463,4 +481,327 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
                     "written by an interpreter of a different CPython build "
                     "and cannot be imported"
                 )
+    return problems
+
+
+# --------------------------------------------------------------------------
+# Linux: AppDir / AppImage
+# --------------------------------------------------------------------------
+
+# The Python payload, and *only* it. ``bundle.build_appdir`` byte-compiles
+# exactly ``usr/app`` and ``usr/lib``, so the interpreter's own stdlib under
+# ``usr/python`` keeps its source in a stripped build — 1037 ``.py`` and six
+# ``__pycache__`` in a real dice-roller release. That is correct (strip_source
+# is about the app's code, and the stdlib is public CPython), but a check that
+# swept the whole tree would report every one of them as a fault.
+PAYLOAD_DIRS = ("usr/app", "usr/lib")
+RUNTIME_DIR = "usr/python"
+
+# ``libpython3.13.so``, ``libpython3.13.so.1.0`` — but not ``libpython3.so``,
+# which carries no minor and is the ABI-stable stub.
+_LIBPYTHON_SO = re.compile(r"^libpython(\d+\.\d+)\.so(\.\d+\.\d+)?$")
+
+# Offset 8 of a type-2 AppImage: ELF e_ident padding repurposed as the format
+# marker (``AI`` + version 2). Type 1 is ``AI\x01`` and ISO9660-based.
+APPIMAGE_TYPE2_MAGIC = b"AI\x02"
+
+
+def shipped_python_tags_appdir(appdir: Path) -> list[str]:
+    """The CPython minor(s) whose runtime *appdir* ships, e.g. ``["3.13"]``.
+
+    The AppDir analog of :func:`shipped_python_tags`, and it exists for the same
+    reason: the expected ``.pyc`` magic has to be anchored to the runtime that
+    will do the importing, read out of the artifact. Taking the version from
+    config instead would let a build be checked against a runtime it does not
+    ship and pass.
+    """
+    lib = appdir / RUNTIME_DIR / "lib"
+    if not lib.is_dir():
+        return []
+    found = {
+        m.group(1)
+        for m in map(_LIBPYTHON_SO.match, (p.name for p in lib.iterdir()))
+        if m
+    }
+    return sorted(found)
+
+
+def linux_appdir_problems(
+    appdir: Path,
+    *,
+    arch: str,
+    stripped: bool,
+    expected_magic: bytes,
+) -> list[str]:
+    """Every way the AppDir at *appdir* fails to be the artifact the build promised.
+
+    ``arch`` is a kivyforge arch name (``x86_64``), ``stripped`` whether
+    ``strip_source`` applied to this build, and ``expected_magic`` the first four
+    bytes a ``.pyc`` the shipped runtime can import must carry — see
+    :func:`shipped_python_tags_appdir` for choosing it.
+    """
+    if arch not in ARCH_ELF:
+        return [f"unknown arch {arch!r}; expected one of {sorted(ARCH_ELF)}"]
+    if not appdir.is_dir():
+        return [f"{appdir} is not a directory"]
+
+    problems = _linux_required_problems(appdir)
+    problems += _apprun_target_problems(appdir)
+    problems += _linux_payload_problems(appdir, stripped=stripped)
+    problems += _linux_elf_problems(appdir, arch=arch)
+    if stripped:
+        problems += _linux_pyc_magic_problems(appdir, expected_magic=expected_magic)
+    return problems
+
+
+def _payload_files(appdir: Path) -> list[Path]:
+    files: list[Path] = []
+    for rel in PAYLOAD_DIRS:
+        root = appdir / rel
+        if root.is_dir():
+            files += [p for p in root.rglob("*") if p.is_file() and not p.is_symlink()]
+    return files
+
+
+def _linux_required_problems(appdir: Path) -> list[str]:
+    """The pieces without which it is not an AppDir, or cannot start."""
+    problems = []
+
+    apprun = appdir / "AppRun"
+    if not apprun.is_file():
+        problems.append("AppRun is missing; AppImage requires it at the AppDir root")
+    elif not apprun.stat().st_mode & 0o111:
+        problems.append("AppRun is not executable; appimagetool will refuse the AppDir")
+
+    if not list(appdir.glob("*.desktop")):
+        problems.append("no .desktop entry at the AppDir root")
+
+    runtimes = sorted(shipped_python_tags_appdir(appdir))
+    if not runtimes:
+        problems.append(
+            f"no libpython3.X.so under {RUNTIME_DIR}/lib — the AppDir ships no runtime"
+        )
+    elif len(runtimes) > 1:
+        problems.append(
+            f"AppDir ships {len(runtimes)} CPython runtimes ({runtimes}); AppRun "
+            "starts exactly one and the rest are dead weight"
+        )
+
+    if not (appdir / "usr" / "app").is_dir():
+        problems.append("usr/app is missing from the AppDir")
+    return problems
+
+
+def _apprun_target_problems(appdir: Path) -> list[str]:
+    """Whatever ``AppRun`` promises to execute has to exist in the AppDir.
+
+    This is the Linux shape of roadmap item 1, and it is a real shipped bug
+    rather than a hypothetical: ``AppRun`` is rendered from a template that
+    hardcodes ``usr/app/<entry>.py`` and is never told whether the payload was
+    stripped, so ``kivyforge package`` (which applies ``strip_source`` by
+    default) emits an AppImage whose first act is to open a file the same build
+    deleted. It exits 2 before Python starts.
+
+    The target is parsed out of the artifact rather than rebuilt from config, so
+    this asserts the promise the AppDir actually makes. Both launcher shapes are
+    understood — a script path, and ``-m <module>`` — so the check stays correct
+    once the launcher is fixed rather than starting to fail in the other
+    direction.
+    """
+    apprun = appdir / "AppRun"
+    if not apprun.is_file():
+        return []  # already reported
+
+    exec_line = next(
+        (
+            line
+            for line in apprun.read_text("utf-8", errors="replace").splitlines()
+            if line.strip().startswith("exec ")
+        ),
+        None,
+    )
+    if exec_line is None:
+        return ["AppRun contains no exec line; nothing starts the interpreter"]
+
+    try:
+        argv = shlex.split(exec_line)
+    except ValueError as exc:
+        return [f"AppRun exec line does not parse as shell: {exc}"]
+
+    if "-m" in argv:
+        module = argv[argv.index("-m") + 1] if argv.index("-m") + 1 < len(argv) else ""
+        if not module:
+            return ["AppRun passes -m with no module name"]
+        rel = Path("usr/app") / Path(*module.split("."))
+        if (
+            not (appdir / rel.with_suffix(".py")).is_file()
+            and not (appdir / rel.with_suffix(".pyc")).is_file()
+        ):
+            return [
+                f"AppRun runs `-m {module}`, but neither {rel}.py nor {rel}.pyc "
+                "exists in the payload"
+            ]
+        return []
+
+    # Positional form: the second "$HERE/..." token is the script, the first
+    # being the interpreter.
+    here = [a for a in argv if a.startswith("$HERE/")]
+    if len(here) < 2:
+        return [f"AppRun exec line names no script to run: {exec_line.strip()!r}"]
+    rel = here[1].removeprefix("$HERE/")
+    if not (appdir / rel).is_file():
+        sibling = ""
+        if rel.endswith(".py") and (appdir / (rel + "c")).is_file():
+            sibling = (
+                f" — {rel}c is there, so the payload was byte-compiled and "
+                "stripped while AppRun kept pointing at the source"
+            )
+        return [
+            f"AppRun execs {rel}, which does not exist in the AppDir{sibling}; "
+            "the app cannot start"
+        ]
+    return []
+
+
+def _linux_payload_problems(appdir: Path, *, stripped: bool) -> list[str]:
+    """Whether the Python payload is source or bytecode, and nothing in between.
+
+    Same reasoning as the Android version — a ``.pyc`` beside its ``.py`` is
+    silently ignored, so a half-stripped payload looks fine while shipping every
+    source file the setting existed to remove.
+    """
+    payload = _payload_files(appdir)
+    if not payload:
+        return ["usr/app and usr/lib are both empty — the AppDir has no payload"]
+
+    def rel(paths):
+        return [str(p.relative_to(appdir)) for p in paths[:3]]
+
+    sources = [p for p in payload if p.suffix == ".py"]
+    compiled = [p for p in payload if p.suffix == ".pyc"]
+    problems = []
+
+    if stripped:
+        if sources:
+            problems.append(
+                f"strip_source was applied but {len(sources)} .py file(s) remain "
+                f"in the payload, e.g. {rel(sources)}"
+            )
+        if not compiled:
+            problems.append(
+                "strip_source was applied but the payload contains no .pyc at "
+                "all — the build degraded to shipping source"
+            )
+        cached = [p for p in payload if "__pycache__" in p.parts]
+        if cached:
+            problems.append(
+                f"payload has {len(cached)} __pycache__ entrie(s), e.g. "
+                f"{rel(cached)} — sourceless imports need .pyc in the legacy "
+                "location, not beside a source file that is no longer there"
+            )
+    elif not sources:
+        problems.append(
+            "strip_source was not applied but the payload contains no .py at all"
+        )
+
+    return problems
+
+
+def _linux_pyc_magic_problems(appdir: Path, *, expected_magic: bytes) -> list[str]:
+    """Every payload ``.pyc`` must carry the magic the shipped runtime imports.
+
+    Roadmap item 1's actual bug. Note the Linux build reaches it down a
+    different road than Android: a Linux x86_64 build on a Linux host is
+    *native*, so ``select_compiler()`` hands the payload to the **staged**
+    interpreter and never calls ``find_interpreter()``. The magic here is
+    therefore the AppDir's own runtime's, which is why the driver reads it from
+    that runtime rather than from the interpreter running pytest.
+    """
+    seen: dict[bytes, list[Path]] = {}
+    for path in _payload_files(appdir):
+        if path.suffix != ".pyc":
+            continue
+        with path.open("rb") as fh:
+            seen.setdefault(fh.read(4), []).append(path)
+
+    problems = []
+    for magic, members in sorted(seen.items()):
+        if magic != expected_magic:
+            problems.append(
+                f"{len(members)} .pyc file(s) carry magic {_magic_int(magic)} but "
+                f"the shipped runtime imports {_magic_int(expected_magic)}, e.g. "
+                f"{[p.name for p in members[:3]]} — these were written by an "
+                "interpreter of a different CPython build and cannot be imported"
+            )
+    return problems
+
+
+def _linux_elf_problems(appdir: Path, *, arch: str) -> list[str]:
+    """Every ELF in the AppDir must be the target's class + machine.
+
+    Deliberately the **whole tree**, which is the coverage that does not exist
+    today: ``doctor.check_linux_native_binaries`` looks only under ``usr/bin``
+    and SKIPs entirely unless ``[tool.kivy.linux.native.binaries]`` is declared,
+    so the staged CPython, its ``lib-dynload`` extension modules, and every
+    compiled wheel in site-packages are currently unchecked. A foreign-arch
+    object there fails at ``dlopen`` with a message naming the file but not the
+    reason.
+
+    Unlike Android there is no hoisting rule to enforce: the Linux loader is
+    happy to open a ``.so`` from anywhere the rpath reaches, so a shared object
+    living in site-packages is correct rather than stranded.
+    """
+    expected = ARCH_ELF[arch]
+    problems = []
+    for path in sorted(appdir.rglob("*")):
+        if not is_elf(path):
+            continue
+        try:
+            found = elf_machine(path)
+        except ElfError as exc:
+            problems.append(f"{path.relative_to(appdir)}: {exc}")
+            continue
+        if found != expected:
+            problems.append(
+                f"{path.relative_to(appdir)} is {describe(*found)} but {arch} "
+                f"requires {describe(*expected)}"
+            )
+    return problems
+
+
+def linux_appimage_file_problems(appimage: Path, *, arch: str) -> list[str]:
+    """The checks that can only be made on the ``.AppImage`` file itself.
+
+    Extracting and inspecting the tree says nothing about the container
+    ``appimagetool`` wrapped it in, and that tool had never run in this project
+    before this artifact existed. A type-2 AppImage is an ELF whose e_ident
+    padding carries ``AI\\x02`` at offset 8, with a squashfs filesystem appended
+    — so this reads the header and nothing more.
+    """
+    if arch not in ARCH_ELF:
+        return [f"unknown arch {arch!r}; expected one of {sorted(ARCH_ELF)}"]
+    if not appimage.is_file():
+        return [f"{appimage} is not a file"]
+
+    with appimage.open("rb") as fh:
+        header = fh.read(12)
+    if header[:4] != ELF_MAGIC:
+        return [f"{appimage.name} is not an ELF file; AppImage runtimes are ELF"]
+
+    problems = []
+    if header[8:11] != APPIMAGE_TYPE2_MAGIC:
+        problems.append(
+            f"{appimage.name} carries {header[8:11]!r} at offset 8, not the "
+            f"type-2 AppImage marker {APPIMAGE_TYPE2_MAGIC!r} — appimagetool "
+            "did not produce this, or produced a type-1 image"
+        )
+    try:
+        found = elf_machine(appimage)
+    except ElfError as exc:
+        return [*problems, str(exc)]
+    if found != ARCH_ELF[arch]:
+        problems.append(
+            f"{appimage.name} runtime is {describe(*found)} but {arch} requires "
+            f"{describe(*ARCH_ELF[arch])} — the wrong type2-runtime was fetched"
+        )
     return problems
