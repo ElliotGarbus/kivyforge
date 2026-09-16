@@ -77,7 +77,21 @@ verbose or Android unreadable.
    (`Packaged dist/linux/app-1.0-x86_64.AppImage.`) and every pipeline re-derives
    it from the naming convention, which makes the convention load-bearing for
    people who never read the spec.
-2. **A hash and a size.** For upload deduplication, cache keys, and attestation.
+2. **A size.** A `stat` call, so effectively free, and artifact size is the
+   cheapest early warning for the failure this project keeps hitting: a payload
+   that is not the shape the build thought it was. A stripped and an unstripped
+   build differ measurably, and the macOS bundle that wrote `__pycache__` into
+   itself grew while doing it. Mobile stores also enforce size ceilings, so it is
+   a number that gets watched regardless.
+
+   A **hash** is a weaker case than it first looks, and is left to §7 rather than
+   asserted here. The obvious justifications mostly dissolve on inspection: CI
+   artifact-upload steps take a path and want no digest; cache keys are computed
+   from *inputs* (the lock), not from build outputs; and provenance tooling
+   (`actions/attest-build-provenance`, `cosign`) derives the digest itself from
+   the file. What is left is real but narrow — comparing one run against another
+   for reproducibility, and letting the envelope stand as a record that
+   identifies the artifact it describes rather than merely locating it.
 3. **An exit code that distinguishes causes.** Right now everything is `1`, so
    "your `pyproject.toml` is wrong", "this runner has no NDK", and "the compile
    genuinely failed" are indistinguishable — and they want three different
@@ -215,7 +229,8 @@ it to *our* stderr regardless.
 }
 ```
 
-`signing.tier` is a closed vocabulary — `unsigned`, `ad-hoc`, `debug-keystore`,
+`sha256` is shown populated, but per §7 it is expected to be absent unless asked
+for; `bytes` is always present. `signing.tier` is a closed vocabulary — `unsigned`, `ad-hoc`, `debug-keystore`,
 `developer-id`, `authenticode`, `apple-distribution` — with tier-specific extras
 alongside it (`identity`, `timestamped`, `notarized`, `stapled`,
 `notary_submission_id`, `keystore_alias`). A closed set is what makes "is this
@@ -295,11 +310,24 @@ was", closing that gap is worth more than the `--json` flag itself.
    is about inspecting a project, this is about the result of an action, and
    `Artifact` here overlaps confusingly with `status.BuildArtifact` (which answers
    "is it built and how old", not "what did we just produce").
-2. **Always hash the packaged artifact?** *Recommend yes for single-file outputs*
-   (`.AppImage`, `.apk`, `.aab`, `.ipa`) since CI wants it and a few seconds on a
-   multi-minute build is nothing, and *no for directory outputs* (`.app`, onedir
-   folder, AppDir) where a tree hash is both expensive and ill-defined — report
-   `bytes` only. An opt-out flag if hashing ever bites.
+2. **Hash the packaged artifact — and does anything actually need it?** The first
+   draft of this proposal recommended hashing every single-file output "since CI
+   wants it", which did not survive being asked why (see §2 item 2): the
+   pipelines that look like they want a digest either take a path instead or
+   compute the digest themselves.
+
+   *Recommend `bytes` always* (free, and justified on its own terms) and
+   **`sha256` on request only**, via a flag or by leaving the field absent until
+   something asks for it. Directory outputs (`.app`, onedir folder, AppDir) get
+   `bytes` only regardless, since a tree hash is both expensive and ill-defined —
+   it needs a canonical walk order and a decision about metadata before it means
+   anything.
+
+   The argument for hashing unconditionally is that an absent field is one an
+   agent cannot rely on, so an optional digest is close to no digest. That is a
+   fair point and it is why this is still a question: it trades a few seconds on
+   every package for a guarantee, and nothing concrete is asking for the
+   guarantee yet.
 3. **Stream third-party output always, or only under `--json`?**
    *Recommend always*, so there is one behaviour to reason about and test. The
    alternative keeps Gradle's live inherited stdout for humans and only redirects
