@@ -702,10 +702,10 @@ worked out in
 [`build-package-output-proposal.md`](build-package-output-proposal.md), scope
 agreed 2026-09-16.
 
-**The `build`/`package` payload came out far smaller than drafted, and that is
-the reusable lesson.** The first draft proposed eleven fields, each justified by a
-sentence of the form "CI wants X". Held to a stricter test — name the thing in a
-pipeline or agent loop that reads this field and behaves differently — only
+**The `build`/`package` payload ended up far smaller than it started, and that is
+the reusable lesson.** It began at eleven fields, each justified by a sentence of
+the form "CI wants X". Held to a stricter test — name the thing in a pipeline or
+agent loop that reads this field and behaves differently — only
 `artifacts[].path` and `artifacts[].kind` survived. Size and hash were cut once it
 turned out the pipelines that look like they want a digest either take a path
 instead, key off *inputs* rather than outputs, or compute the digest themselves.
@@ -723,7 +723,7 @@ emitted before anything reads it is a guess that has to be honoured forever.
 
 **Third-party output changes only where `--json` forces it, and then by file
 descriptor rather than pumped through us.**
-The draft proposed a line pump so each Gradle line could be re-emitted through
+The natural-looking design is a line pump, re-emitting each Gradle line through
 `report.progress`. Measurement killed it: a child writing raw UTF-8 bytes, read
 through a text-mode pump and re-written to a cp1252 console, arrives mangled,
 and the build log is the entire artifact of a failure. Handing a tool our stderr
@@ -743,8 +743,8 @@ gains a fix under the second rule: it raises with `proc.stderr or proc.stdout`, 
 whenever stderr has content the stdout half of the evidence is lost — the exact
 trap `ios/xcode/runner.py` carries a comment about.
 
-**A review pass against the code found the hole that mattered: artifacts had no way
-home on the failure path.** `Report` lives in `cli/_output.py`, the work that
+**Reading the code closely found the hole that mattered: artifacts had no way home
+on the failure path.** `Report` lives in `cli/_output.py`, the work that
 produces artifacts is three frames down in `platforms/*/cli.py`, and a verb that
 raises never reaches its own `emit`. So a `BuildOutcome` returned only on success
 would leave an Android package that failed *after* writing `app-release.apk`
@@ -754,8 +754,8 @@ hole `Report.record()` was added to close. The fix keeps the `status` seam intac
 `ToolchainError` grows an optional `data=` that `reporting()` merges with anything
 already recorded, and a backend attaches what it has produced to the raise.
 
-**A second pass found the more dangerous version of the same question: an artifact
-path on a failed run can name a file the run did not produce.** None of the three
+**There is a more dangerous version of the same question: an artifact path on a
+failed run can name a file the run did not produce.** None of the three
 packaging backends leave a clean slate on failure, and two do so *deliberately* —
 Linux builds to a tempfile and swaps on success so a failure "leaves any previous
 .AppImage intact", and Windows reserves the prior package and calls
