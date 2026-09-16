@@ -694,11 +694,114 @@ to be returned rather than printed. Then `lock`, `build`, `package`.
 outcomes were already computed as data and only *described* by `click.echo`, so
 the conversion was mechanical and the whole cost was deciding the payload
 vocabulary (`action` ∈ wrote/unchanged/checked, `in_sync`, `packages`,
-`lockfile`) and the codes. `build` and `package` will not be this easy: their
-output is genuinely progress — subprocess pass-through from Gradle, Xcode and
+`lockfile`) and the codes. `build` and `package` were not this easy: their output
+is genuinely progress — subprocess pass-through from Gradle, Xcode and
 `appimagetool` — so the interesting question there is not how to render it but
-which of it is *product* (artifact paths, sizes, signing identity) versus noise
-to forward to stderr unchanged.
+which of it is *product* versus noise to forward to stderr unchanged. That is
+worked out in
+[`build-package-output-proposal.md`](build-package-output-proposal.md), scope
+agreed 2026-09-16.
+
+**The `build`/`package` payload came out far smaller than drafted, and that is
+the reusable lesson.** The first draft proposed eleven fields, each justified by a
+sentence of the form "CI wants X". Held to a stricter test — name the thing in a
+pipeline or agent loop that reads this field and behaves differently — only
+`artifacts[].path` and `artifacts[].kind` survived. Size and hash were cut once it
+turned out the pipelines that look like they want a digest either take a path
+instead, key off *inputs* rather than outputs, or compute the digest themselves.
+`signing.tier` was cut for having a clear role and no consumer: nothing here
+publishes built apps. The sharpest of the cuts generalises past this item —
+**a field whose only plausible consumer is a check verifying the same build that
+emitted it does not belong in the envelope**, because feeding a T3 assertion the
+build's own claim about `strip_source` would weaken the assertion rather than
+automate it. The working rule now: *the envelope states as data what kivyforge's
+own human-mode lines already state as prose, and only where a consumer can act on
+the difference.* The qualifier matters — the toolchain's own human-readable output
+(Gradle, `xcodebuild`) is explicitly not a candidate pool for payload fields; it is
+progress, forwarded verbatim and never parsed. Fields are additive later; one
+emitted before anything reads it is a guess that has to be honoured forever.
+
+**Third-party output changes only where `--json` forces it, and then by file
+descriptor rather than pumped through us.**
+The draft proposed a line pump so each Gradle line could be re-emitted through
+`report.progress`. Measurement killed it: a child writing raw UTF-8 bytes, read
+through a text-mode pump and re-written to a cp1252 console, arrives mangled,
+and the build log is the entire artifact of a failure. Handing a tool our stderr
+descriptor delivers its bytes as sent, cannot deadlock, and — once the payload
+decision above established that no tool output becomes a field — there was never
+a reason to read the lines at all.
+
+**Two scoping rules shrank that from three toolchains to one.** *On success,
+preserve existing platform behaviour unless stdout contamination has to be fixed
+for `--json`; on failure, preserve all available diagnostic output.* Only Gradle
+contaminates stdout — it inherits ours and would write thousands of lines into the
+middle of the JSON document — so only Android's invocation changes. iOS stays
+buffered even though a multi-minute `xcodebuild archive` prints nothing, because
+nobody here has hit the no-output timeout that would make it a problem; that is the
+same call the artifact hash got. Linux keeps discarding `appimagetool`'s output but
+gains a fix under the second rule: it raises with `proc.stderr or proc.stdout`, so
+whenever stderr has content the stdout half of the evidence is lost — the exact
+trap `ios/xcode/runner.py` carries a comment about.
+
+**A review pass against the code found the hole that mattered: artifacts had no way
+home on the failure path.** `Report` lives in `cli/_output.py`, the work that
+produces artifacts is three frames down in `platforms/*/cli.py`, and a verb that
+raises never reaches its own `emit`. So a `BuildOutcome` returned only on success
+would leave an Android package that failed *after* writing `app-release.apk`
+emitting `"data": {}` — reintroducing, for the verbs that need it most, exactly the
+hole `Report.record()` was added to close. The fix keeps the `status` seam intact
+(backends return data, the verb renders; no `Report` passed into platforms):
+`ToolchainError` grows an optional `data=` that `reporting()` merges with anything
+already recorded, and a backend attaches what it has produced to the raise.
+
+**A second pass found the more dangerous version of the same question: an artifact
+path on a failed run can name a file the run did not produce.** None of the three
+packaging backends leave a clean slate on failure, and two do so *deliberately* —
+Linux builds to a tempfile and swaps on success so a failure "leaves any previous
+.AppImage intact", and Windows reserves the prior package and calls
+`restore_previous` when signing fails, which is a rollback feature. Android simply
+writes to fixed paths that nothing clears. So the obvious reading of "report what
+you produced" would hand an agent a stale artifact indistinguishable from a fresh
+one, and it would ship it. The rule that survives: **`artifacts` lists only products
+this invocation finalised and verified**, which makes `[]` the correct answer for
+most failures. `_require_artifact` was already doing this on the success path and is
+the model to extend.
+
+**The channel for progress and diagnostics is the `lock` pattern, not a new one.**
+Withholding `Report` from the platforms while also requiring `[stage]` lines to
+become `report.progress` and success-path INFO/WARNING diagnostics to reach the
+envelope is a contradiction, and `lock` had already resolved it: it passes
+`on_warning=lambda msg: _warn(report, msg)` and `_warn`, on the CLI side, does both
+`report.progress` and `report.diagnose`. The backend calls a plain callable and
+knows nothing about reports, codes or severities. Generalised, that is
+`on_progress(message)` plus `on_note(code, message)` — and because a diagnostic
+raised that way is accumulated on `Report` immediately, success-path warnings
+survive into a failure envelope with no extra plumbing.
+
+**Failure paths were quietly putting third-party output on stdout.** The tools we
+capture embed their output in the exception message, backends wrap that with
+`ToolchainError(str(exc))`, and `as_diagnostic()` copies the message into
+`diagnostics[].message` — so a failing `xcodebuild` could put megabytes of build
+transcript inside the JSON document, contradicting "all third-party output is
+stderr" on the one path that matters most. The split: the diagnostic message is a
+summary worth branching on, and the captured log goes to `report.progress` before
+the raise.
+
+Three narrower findings worth carrying because they outlive this item. **Android
+prints absolute paths where the other four backends print relative ones**
+(`android/cli.py:449,532` versus `{path.relative_to(project_root)}` everywhere
+else), so "publish the paths" cannot mean "publish what we print" until that is
+normalised. **`byte_compile` needs one code with two severities**, since `= true` is
+an explicit demand that must keep failing while the default `= "release"` degrades
+with a warning — the code carries the meaning, the severity carries the consequence.
+And **exit `3` can only mean "wrong OS" for now**: `check_host_capability` compares
+`platform.system()` and nothing more on every backend, Android's is a deliberate
+no-op, and `_require_macos_host` never checks that Xcode exists. So a runner missing
+a JDK or an NDK or Xcode fails inside a subprocess and honestly reports "read the
+log" at `5` when the useful answer is "fix the image" at `3`. `KF-TOOLCHAIN-MISSING`
+was dropped rather than reserved, since nothing can raise it until the build paths
+get preflights — which doctor already knows how to answer, and which would pay for
+itself by failing a bad runner in seconds instead of after a Gradle download.
 
 **`status` turned out to pay a debt as well as add a feature.** The backends now
 return a `StatusReport` (`kivyforge/status.py`) that `cli/status.py` renders.

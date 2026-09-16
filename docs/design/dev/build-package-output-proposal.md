@@ -1,9 +1,16 @@
 # Proposal — `build` and `package` output
 
-> Status: **proposal, awaiting decisions.** Written 2026-09-15 for roadmap item 3,
-> after `doctor`, `status` and `lock` went through `kivyforge/report/`. Baseline
-> read out of the code rather than recalled; the open questions in §7 are the ones
-> worth answering before any of it is written.
+> Status: **payload and stream decisions settled; two rounds of code review
+> applied.** Written for roadmap item 3 after `doctor`, `status` and `lock` went
+> through `kivyforge/report/`. The first draft proposed a much larger payload and a
+> much larger change to subprocess handling; §2 and §4.2 record what survived being
+> asked what consumes it.
+>
+> Everything the second review found is now folded in — the channel backends use to
+> reach the report (§4.1a), the safety rule for artifacts on a failed run (§4.1b),
+> the log-versus-diagnostic split (§4.2a), and `KF-TOOLCHAIN-MISSING` being
+> unreachable today (§4.4). Two of those add prerequisites to step 1 rather than
+> just wording, so treat §5 as the authority on order.
 
 `build` and `package` are the last two verbs in item 3 and the only ones where the
 conversion is a design question rather than a mechanical edit. The first three
@@ -12,6 +19,9 @@ work was choosing a payload vocabulary. These two are different in kind: their
 output is mostly a third party talking — Gradle, `xcodebuild`, `appimagetool` —
 and the interesting question is not how to render our own lines but which of
 someone else's belong in which stream.
+
+The conclusion is that the stream problem is the whole job, and the payload is
+almost nothing.
 
 ## 1. Three structural facts, before any opinion
 
@@ -22,7 +32,7 @@ Every backend's build and package function already returns the thing it produced
 `android_package` returns the `.apk`/`.aab`. That value is then discarded at *both*
 layers above it — `platforms/windows/__init__.py:77` calls `windows_build(...)`
 and ignores the result, and `Platform.build`/`Platform.package` are declared
-`-> None` in `platforms/base.py`. `cli/build.py` therefore cannot report an
+`-> None` in `platforms/base.py:81,109`. `cli/build.py` therefore cannot report an
 artifact path even though the path exists three frames down.
 
 This is the same debt shape `status` paid off: the information existed as data and
@@ -30,7 +40,9 @@ was destroyed at the seam because nothing above needed it *yet*. It also explain
 a finding already recorded elsewhere —
 [`abstraction-leak-retro.md`](../common/abstraction-leak-retro.md) §1.9, where
 `cli/clean.py` hard-codes every backend's output paths in shared code. It has to,
-because no backend publishes them. One structured result fixes both.
+because no backend publishes them. Both leaks have the same root, though they do
+*not* have the same fix — see the note at the end of §5, since `clean` needs those
+paths without running a build and so cannot be served by a build's return value.
 
 ### 1.2 Three toolchains, three different stream behaviours
 
@@ -41,7 +53,18 @@ This is the fact that decides the design, and it is invisible if you only read t
 |---|---|---|
 | Gradle (Android) | `subprocess.run(cmd, cwd=..., text=True)` — no capture, no redirect (`android/gradlew.py:30`) | Inherits kivyforge's stdout. Streams live, which is good, but writes **thousands of lines onto our stdout**, which nothing can intercept. |
 | `xcodebuild` (iOS) | `runner(argv, capture_output=True, text=True)` (`ios/xcode/runner.py:31`) | Fully buffered. Stdout stays clean, but a multi-minute build prints **nothing at all**, and the output only ever surfaces on failure. |
-| `appimagetool` (Linux) | `capture_output=True`, then forwarded through an injected `echo=` callback (`linux/appimage.py:126`, `linux/cli.py:83`) | Already structurally correct: captured, then re-emitted through a callback we control. |
+| `appimagetool` (Linux) | `capture_output=True`, output **discarded on success** (`linux/appimage.py:126`) | Stdout stays clean, but nothing the tool says is ever shown on a successful package. On failure only `proc.stderr or proc.stdout` is folded into the raised message — one stream, not both. |
+
+**A misreading worth heading off, because the first draft of this document made
+it.** `build_appimage` takes an injected `echo=` callback (`appimage.py:80`,
+wired to `click.echo` at `linux/cli.py:83`), which looks like the tool's output
+being forwarded through a seam we control. It is not. That callback emits exactly
+one line of *kivyforge's own* prose — `Packaging <name> with appimagetool
+<version> ...` — and `appimagetool`'s actual stdout and stderr go into
+`capture_output` and are dropped. The same `echo=` convention appears in
+`linux/bundle.py:125` for staging progress. It is dependency injection so these
+modules need not import `click`, and it is orthogonal to where third-party output
+goes.
 
 **The Gradle row is a hard blocker for `--json`.** `kivyforge package -p android
 --json > out.json` would today write all of Gradle's output into `out.json` ahead
@@ -61,7 +84,7 @@ Counted across the five backends (60 `click.echo` sites in `platforms/*/cli.py`)
 |---|---|---|
 | Windows | 2 lines | `Built <path>`, then a 3-line `Packaged ...` note |
 | macOS | 3–4 lines | plus `Developer ID signing with ...`, `signed N Mach-O binaries` |
-| Linux | 2 lines + `appimagetool` forwarding | 4-line `Packaged ...` note |
+| Linux | 2 lines (+1 `Packaging ... with appimagetool` progress line) | 4-line `Packaged ...` note |
 | iOS | 4–5 lines | `Collecting artifacts`, `Generated`, `xcodebuild archive`, `Exported` |
 | Android | ~20 lines **+ all of Gradle** | `[collect]`/`[stage]`/`[generate]`/`[gradle]`/`[policy]` prefixes |
 
@@ -70,278 +93,642 @@ Android already has a prefix convention that is effectively a register marker
 they have almost nothing to say. Any rule has to fit both without making Windows
 verbose or Android unreadable.
 
-## 2. What a CI job needs
+## 2. The payload, decided by asking what consumes each field
 
-1. **A path to the artifact, machine-readable.** The single most common CI step
-   after a build is "upload this file". Today the path is announced in prose
-   (`Packaged dist/linux/app-1.0-x86_64.AppImage.`) and every pipeline re-derives
-   it from the naming convention, which makes the convention load-bearing for
-   people who never read the spec.
-2. **A size.** A `stat` call, so effectively free, and artifact size is the
-   cheapest early warning for the failure this project keeps hitting: a payload
-   that is not the shape the build thought it was. A stripped and an unstripped
-   build differ measurably, and the macOS bundle that wrote `__pycache__` into
-   itself grew while doing it. Mobile stores also enforce size ceilings, so it is
-   a number that gets watched regardless.
+The first draft of this document proposed eleven payload fields, justified by
+sentences of the form "CI wants X". Held to the stricter test — *name the thing in
+a pipeline or an agent loop that reads this field and does something different
+because of it* — two survived.
 
-   A **hash** is a weaker case than it first looks, and is left to §7 rather than
-   asserted here. The obvious justifications mostly dissolve on inspection: CI
-   artifact-upload steps take a path and want no digest; cache keys are computed
-   from *inputs* (the lock), not from build outputs; and provenance tooling
-   (`actions/attest-build-provenance`, `cosign`) derives the digest itself from
-   the file. What is left is real but narrow — comparing one run against another
-   for reproducibility, and letting the envelope stand as a record that
-   identifies the artifact it describes rather than merely locating it.
-3. **An exit code that distinguishes causes.** Right now everything is `1`, so
-   "your `pyproject.toml` is wrong", "this runner has no NDK", and "the compile
-   genuinely failed" are indistinguishable — and they want three different
-   reactions (fix the repo, fix the image, look at the log).
-4. **Live output, on stderr, always.** Including under `--json`. Both for the
-   no-output timeout above and because the log is the only artifact of a failure.
-5. **Not to have to parse anything on stdout.** Android breaks this today: Gradle
-   inherits our stdout (§1.2), so `--json` there does not currently yield a
-   parseable document at all.
+### 2.1 In: `artifacts[].path`
 
-## 3. What an agent needs, beyond the above
+**CI role.** The step after a build is upload or publish, and today the pipeline
+must know the naming convention to find the file:
+`dist/linux/{app_slug}-{version}-{arch}.AppImage`,
+`dist/windows/{bundle_dir_name}-{version}-{arch}`, or Android's AGP output layout.
+When a convention changes, a glob matches nothing and the job either fails
+obscurely or silently uploads zero files.
 
-6. **Whether stripping actually happened.** This is not hypothetical: the two
-   real launcher bugs found on 2026-09-13 and 2026-09-14 both turned on whether
-   `strip_source` had run, and *no artifact reported it*. The T3 drivers are told
-   by hand today — `--macos-stripped`, `--linux-stripped` — which means the
-   assertion trusts the person who typed the flag. If `package --json` reported
-   `byte_compile.strip_source`, item 5's automation could read it from the build
-   that produced the artifact instead of being told.
-7. **The signing tier as a field, not an adjective.** Today it is prose inside a
-   sentence: `(ad-hoc signed)`, `(Developer ID notarized + stapled)`,
-   `(onedir folder, unsigned (configure [tool.kivy.windows.signing] to sign))`.
-   An agent deciding whether an artifact is distributable has to match strings.
-8. **A command that launches the artifact.** The human notes currently explain
-   how to run each shape in prose ("Run it with `./AppRun`", "double-clicking
-   `MyApp.exe`", "chmod +x, then run"). Prose is the one thing an agent cannot
-   use. The same knowledge as an argv is directly actionable.
-9. **Warnings as diagnostics.** Android's `[policy] INFO:` lines and the
-   "not byte-compiling: ..." line are decisions the build made, currently
-   indistinguishable from progress chatter.
+That these paths drift is not a hypothesis, and the evidence is in this repo.
+`cli/clean.py` hard-codes every backend's output paths (retro §1.9) — our *own*
+code re-derives them because nothing publishes them. And `android/cli.py`'s
+`_require_artifact` guard exists precisely for the case where "AGP's output layout
+moved under a new plugin version". We already expect the layout to move, which is
+the argument against consumers deriving it.
 
-## 4. Proposal
+**Agent role.** An agent that has just built something needs to act on it: run it,
+inspect it, install it. The only source today is prose, and the sentence differs
+per platform and per format.
 
-### 4.1 Apply the existing register rule literally
+This is the one load-bearing field.
 
-The rule from `report/console.py` already answers most of this; it has just never
-met a verb with a subprocess in it.
+### 2.2 In: `artifacts[].kind`
 
-- **Product → stdout.** For `build`/`package` the product is small: what was
-  produced, where, and what state it is in. In `--json` mode this is the envelope.
+**Agent role.** A path alone does not reliably say what shape a thing is, because
+several of ours have no extension. `dist/windows/MyApp-1.0.0-arm64` is a runnable
+onedir folder; `myapp-android` and `myapp-ios` are project directories that cannot
+be run at all; `My App.app` and `My App.AppDir` are directories that *are*
+runnable. An agent deciding "execute this, or open it in Xcode" cannot get that
+from the path, and guessing wrong costs a whole cycle.
+
+**CI role.** Weaker — a pipeline usually knows what it asked for. `kind` earns its
+place on the agent side.
+
+Closed vocabulary: `appimage`, `apk`, `aab`, `app`, `ipa`, `folder`, `project`,
+carried as an `Enum` rather than a `str` (§4.1).
+
+### 2.3 Out, and why
+
+Each of these was proposed and cut. Recorded so they are not re-litigated:
+
+- **`action`** (`generated`/`built`/`packaged`) — determined by the command and
+  flags the caller already passed, so it reports back an input. The one case that
+  looked interesting, `build -p ios` generating a project versus `--simulator`
+  producing a binary, is fully covered by `kind` being `project`.
+- **`fmt`** — same: the caller passed `-f`, and when it defaulted, what it
+  actually wants is the resulting file, which `path` and `kind` now give it.
+- **`signing.tier`** — the role is clear (a release pipeline refusing to publish
+  something unsigned or un-notarized) but that consumer does not exist here;
+  nothing in `.github/workflows` publishes built apps. Costing nothing to emit is
+  not the same as being worth a schema promise, and a closed tier vocabulary is a
+  large promise to make on a consumer's behalf before it shows up. The unsigned
+  case stays visible through the `KF-SIGNING-UNCONFIGURED` warning (§4.4).
+- **`bytes` and `sha256`** — the pipelines that look like they want a digest
+  either take a path instead (`upload-artifact`), key off *inputs* rather than
+  outputs (caches key off the lock), or compute it themselves
+  (`attest-build-provenance`, `cosign`). Size was defended as an early warning for
+  payload regressions, which is real but is a job for the T3 assertions, not for
+  every consumer of every build.
+- **`byte_compile.strip_source`** — cut for the reason that generalises best:
+  the only candidate consumer was item 5's T3 driver, which currently gets
+  `--macos-stripped` by hand. Feeding it the build's own claim would let the build
+  grade its own homework, so it would weaken the assertion rather than automate
+  it. **Any field whose only plausible consumer is a check verifying the same
+  build that emitted it does not belong in the envelope.**
+- **`launch` argv** — `kivyforge run` already is the actionable form of that
+  knowledge; a field would be a second, weaker copy of an existing verb.
+- **`duration_s`** — CI already times every step.
+- **`arch`, `python`, `lock_verified`** — all derivable from inputs the caller
+  holds (flags, config, the lock), and a successful build already implies the lock
+  verified unless `--no-verify-lock` was passed.
+
+### 2.4 The rule this settles on
+
+> The envelope states as data what **kivyforge's own human-mode lines** already
+> state as prose — and only where a consumer can act on the difference.
+
+"kivyforge's own" is the load-bearing qualifier, because there are two kinds of
+human-readable output in a build and the rule applies to exactly one of them:
+
+- **Ours**, written by kivyforge through `report.line` — `Packaged
+  dist/linux/dice-roller-1.0.0-x86_64.AppImage.` and its peers. This is the
+  candidate pool for payload fields.
+- **The toolchain's**, written by Gradle, `xcodebuild` and `appimagetool` for a
+  human reading a build log. This is **never** a candidate. It is progress, it is
+  forwarded verbatim (§4.2), and no part of it is parsed into a field. Mining it
+  for payload data is the specific thing §4.2 rejects, since anything that reads
+  those lines in order to reshape them is also in a position to corrupt them.
+
+Everything cut in §2.3 failed the second half of the rule rather than the first.
+Fields are additive later; a field emitted before anything reads it is a guess that
+has to be honoured forever.
+
+## 3. Apply the existing register rule literally
+
+The rule from `report/console.py` already answers the stream question; it has just
+never met a verb with a subprocess in it.
+
+- **Product → stdout.** For these verbs the product is: what was produced and
+  where. Under `--json` it is the envelope.
 - **Progress → stderr, always, including under `--json`.** *All* third-party
   output is progress. So is every `[stage]`/`[collect]`/`[generate]`/`[gradle]`
   line, and iOS's `xcodebuild archive ...`.
-- **The envelope supersedes the human product**, never the progress.
+- **`--json` does not introduce a second tool-output path.** Third-party output
+  uses the same stderr path in human and JSON modes. The flag changes stdout only,
+  swapping our own product lines for the envelope. So `kivyforge package -p android
+  --json > out.json` puts nothing but JSON in the file while Gradle's log still
+  scrolls past on the terminal, exactly as it does without the flag.
 
 One consequence deserves stating because the naive conversion gets it backwards:
 Android's `[stage]` lines must become `report.progress`, **not** `report.line`.
 `report.line` is suppressed under `--json`, so a mechanical echo→line edit would
-make the longest builds in the project go completely silent in exactly the mode a
-CI job uses. Progress is the default for these two verbs; product is the exception.
+make the longest builds in the project go silent in exactly the mode a CI job
+uses. Progress is the default for these two verbs; product is the exception.
 
-### 4.2 Give the backends a result type
+## 4. Proposal
 
-Mirror what `status` did. A frozen `BuildOutcome` in a new `kivyforge/outcome.py`
-(or alongside `StatusReport` in `kivyforge/status.py` — see §7), returned by
-`Platform.build` and `Platform.package` instead of `None`:
+### 4.1 Give the backends a result type
+
+Mirror what `status` did. Frozen, in a new `kivyforge/build_outcome.py`, returned
+by `Platform.build` and `Platform.package` instead of `None`. A module of its own
+rather than sharing `kivyforge/status.py`: `status.py` is about inspecting a
+project, this is about the result of an action, and `Artifact` here would sit
+confusingly next to `status.BuildArtifact`, which answers "is it built and how
+old" rather than "what did we just produce".
 
 ```python
+class ArtifactKind(Enum):
+    """What shape a produced path is. Closed, for the reason ``LockState`` is."""
+
+    APPIMAGE = "appimage"
+    APK = "apk"
+    AAB = "aab"
+    APP = "app"          # .app bundle: macOS, and iOS simulator/device builds
+    IPA = "ipa"
+    FOLDER = "folder"    # Windows onedir, Linux AppDir
+    PROJECT = "project"  # generated Xcode/Gradle project, not runnable
+
+
 @dataclass(frozen=True)
 class Artifact:
-    path: Path
-    kind: str            # "appimage" | "apk" | "aab" | "app" | "ipa" | "folder" | "project"
-    bytes: int | None = None
-    sha256: str | None = None
+    path: Path                  # relative to project root, posix-rendered
+    kind: ArtifactKind
+
 
 @dataclass(frozen=True)
 class BuildOutcome:
-    action: str                       # "generated" | "built" | "packaged"
     artifacts: tuple[Artifact, ...]
-    arch: tuple[str, ...] = ()        # or ABIs on Android
-    python_version: str = ""
-    fmt: str = ""                     # package only
-    signing: SigningState | None = None
-    byte_compile: ByteCompileState | None = None
-    lock_verified: bool = True
-    launch: tuple[str, ...] = ()      # argv that runs the artifact, if runnable
-    notes: tuple[str, ...] = ()       # human-only prose; never in the envelope
+    notes: tuple[str, ...] = ()  # human-only prose; never in the envelope
 ```
 
-`notes` is the escape hatch that keeps the human experience intact without
-polluting the payload: the distribution paragraphs go there, are rendered in human
-mode, and are excluded from JSON by construction rather than by remembering to.
+`kind` is an `Enum` rather than a `str` for the same reason `status.LockState` is
+one: a typo in a backend would otherwise be a schema violation that only a
+consumer ever notices, and the vocabulary is small and closed by design. It
+serialises to its `value`.
 
-This also lets `clean` ask each backend what it produces, retiring retro §1.9.
-
-### 4.3 Route every subprocess through the seam
-
-Adopt the Linux pattern everywhere, but **streaming rather than buffering**:
-
-- `run_gradle` takes an `on_line` callback (defaulting to nothing) and is invoked
-  with `stdout=PIPE, stderr=STDOUT`, pumped line by line to `report.progress`.
-- `run_command` for `xcodebuild` gains the same, so a long archive is finally
-  visible while it runs, and its failure output arrives in place.
-- `appimagetool` keeps its `echo=` callback, now pointed at `report.progress`.
-
-Streaming, not capturing, is the point: capture-then-forward would fix `--json`
-correctness while making the iOS silence problem universal. The cost is a line
-pump; there is no need for a reader thread if `stderr` is merged into `stdout`
-(`stderr=STDOUT`), which is the right merge here because for a build tool the
-distinction between its own two streams is noise to us — we are re-routing all of
-it to *our* stderr regardless.
-
-### 4.4 The payload
-
-`build`:
-
-```json
-{
-  "action": "generated",
-  "artifacts": [{"path": "myapp-android", "kind": "project", "bytes": 41230}],
-  "arch": ["arm64_v8a"],
-  "python": "3.13.14",
-  "lock": {"verified": true},
-  "byte_compile": {"applied": false, "strip_source": false, "reason": "debug build"},
-  "duration_s": 38.4
-}
-```
-
-`package` adds `fmt`, `signing`, and `launch`:
-
-```json
-{
-  "action": "packaged",
-  "fmt": "appimage",
-  "artifacts": [{
-    "path": "dist/linux/dice-roller-1.0.0-x86_64.AppImage",
-    "kind": "appimage", "bytes": 74183456, "sha256": "9f2c..."
-  }],
-  "arch": ["x86_64"],
-  "python": "3.13.14",
-  "byte_compile": {"applied": true, "strip_source": true, "interpreter": "python3.13"},
-  "signing": {"tier": "unsigned"},
-  "launch": ["./dist/linux/dice-roller-1.0.0-x86_64.AppImage"],
-  "duration_s": 96.1
-}
-```
-
-`sha256` is shown populated, but per §7 it is expected to be absent unless asked
-for; `bytes` is always present. `signing.tier` is a closed vocabulary — `unsigned`, `ad-hoc`, `debug-keystore`,
-`developer-id`, `authenticode`, `apple-distribution` — with tier-specific extras
-alongside it (`identity`, `timestamped`, `notarized`, `stapled`,
-`notary_submission_id`, `keystore_alias`). A closed set is what makes "is this
-distributable?" a lookup instead of a judgement.
+With the payload cut to two fields, `BuildOutcome` is barely more than
+`tuple[Artifact, ...]`. It is still worth the name for `notes`: the distribution
+advice paragraphs (§4.5) go there, get rendered in human mode, and are excluded
+from JSON by construction rather than by remembering to.
 
 Paths stay **relative to the project root** and posix-separated, matching what the
-human lines already print and what `status --json` does.
+human lines already print, what `status --json` does, and the rule the T3 checks
+adopted on 2026-09-15 for in-artifact paths. Android is the exception that has to
+be fixed rather than accommodated — see step 1 in §5.
 
-### 4.5 Diagnostics and exit codes to narrow
+### 4.1a How backends reach the report
 
-`BUILD_FAILURE` (`5`) exists and has never been raised. These two verbs are its
-entire reason for existing:
+Three things have to travel from a backend to the report, and they do not all
+travel the same way. The first draft specified only the first and left a
+contradiction: it withheld `Report` from the platforms while §3 required
+`[stage]` lines to become `report.progress` and §4.4 put INFO and WARNING
+diagnostics on the *success* path, both of which are produced deep inside the
+backends. Under that draft neither could arrive.
+
+`lock` already solved this and the answer is to copy it rather than invent
+anything.
+
+**1. Artifacts, on success — a return value.** `Platform.build`/`package` return
+`BuildOutcome`; the verb records and emits it.
+
+**2. Artifacts, on failure — attached to the raise.** `Report` lives in
+`cli/_output.py` and a verb that raises never reaches its own `emit`, so
+`ToolchainError` grows an optional `data=` that `reporting()` merges with anything
+already recorded. Subject to the safety rule below, which turns out to matter more
+than the channel does.
+
+**3. Progress and diagnostics — narrow callbacks, resolved verb-side.** This is
+the `lock` pattern verbatim. `cli/lock.py` does not hand `Report` to a backend; it
+passes `on_warning=lambda msg: _warn(report, msg)`, and `_warn` — on the CLI side —
+does both `report.progress(msg)` and `report.diagnose(Diagnostic(...))`. The
+backend calls a plain callable and knows nothing about reports, codes or
+severities. The `echo=` callbacks in `linux/appimage.py` and `linux/bundle.py` are
+already the progress half of the same shape.
+
+Generalised to five backends with more than one diagnostic kind, that is
+`on_progress(message)` for pass-through chatter and `on_note(code, message)` for
+the three success-path diagnostics in §4.4. `code` is a constant from
+`report/diagnostics.py`, which is a pure constants-and-dataclass module a backend
+can import without touching `Report`. The verb-side closure decides severity and
+whether the note also prints.
+
+Two consequences worth stating. **`Report` still never enters the platforms**, so
+`status`'s "backends return data, the verb renders" survives intact. And **a
+diagnostic raised through the callback is already accumulated on `Report` before
+any later failure**, so success-path warnings survive into a failure envelope with
+no extra channel — which is exactly how `lock`'s stale-check diff reaches
+`"data"` today.
+
+### 4.1b Artifacts on a failed run: only what this invocation finalised
+
+The first draft's motivating example — "a failed Android package that already
+wrote `app-release.apk` still names it" — is unsafe as stated, and the reason
+generalises past Android.
+
+None of the three backends leave a clean slate on failure:
+
+- **Android** writes to fixed paths (`_release_output`:
+  `app/build/outputs/apk/release/app-release.apk`) and nothing clears them, so an
+  APK sitting there may be from a previous run.
+- **Linux** builds to `.{name}.tmp-{pid}` and swaps on success precisely so a
+  failure "leaves any previous .AppImage intact" (`appimage.py:104-137`). After a
+  failed package the path holds the *old* artifact.
+- **Windows** goes further and deliberately restores it: `_stage_dist_copy`
+  reserves the prior package and `except BaseException: restore_previous(trash,
+  dest)` puts it back when signing fails (`windows/cli.py:106-119`), so that
+  rollback is a feature.
+
+An `ok: false` envelope naming any of those paths would be telling a consumer
+"here is what I produced" about a file that predates the run — worse than saying
+nothing, because it is indistinguishable from success output and an agent would
+ship it.
+
+**The rule: `artifacts` lists only products this invocation finalised, and a
+backend must have verified existence at the moment it reports them.** On most
+failures that means an empty list, and an empty list is the correct answer. The
+`--debug` case still works — if `assembleDebug` succeeded and a later step failed,
+that APK was finalised by this run — but it works because the backend knows it
+wrote the file, not because the path happens to exist.
+
+This is the same discipline `_require_artifact` already applies on the success
+path, and it is why that guard is the right model to extend rather than a special
+case to work around.
+
+### 4.2 Third-party output: change only what `--json` forces
+
+Two principles govern this, and together they keep the change far smaller than
+the first draft assumed:
+
+1. **On success, preserve existing platform behaviour** unless stdout
+   contamination has to be fixed for `--json`.
+2. **On failure, preserve all available diagnostic output.**
+
+Only Android fails the first test, because Gradle inherits our *stdout* (§1.2).
+Where output does have to move, it moves by pointing the tool's stdout *and* stderr
+at kivyforge's stderr file descriptor — not captured, not pumped, not prefixed, not
+parsed.
+
+That last part is a deliberate reversal of the first draft, which proposed a line
+pump so each line could be re-emitted through `report.progress`. Two reasons it
+lost:
+
+1. **A pump degrades the log, which is the artifact of a failure.** Measured on
+   2026-09-16: a child writing raw UTF-8 bytes, read through a text-mode pump and
+   re-written to a cp1252 console, arrives mangled — box-drawing and em dashes
+   silently replaced. Passing the descriptor through delivers the bytes as sent. A
+   byte-mode pump would also preserve them, but fd redirection removes the entire
+   class of encoding bug instead of avoiding one instance of it, and it cannot
+   deadlock or interleave wrongly with our own writes.
+2. **We have nothing to add.** Once §2 established that no tool output becomes a
+   payload field, there is no reason to read the lines at all. The pump existed to
+   enable transformations we then decided against.
+
+It also preserves whatever the tool does when it detects a terminal, which a pipe
+would flatten. Gradle is a partial exception, since `run_gradle` already passes
+`--console=plain`; the gain there is fidelity and simplicity rather than colour.
+
+Concretely, and the shortness of this list is the point:
+
+- **Android changes.** `run_gradle` (`android/gradlew.py:30`) redirects instead of
+  inheriting. This is the one change that makes `--json` produce a parseable
+  document. Principle 2 is satisfied for free — the output still reaches the
+  terminal, so the existing failure message's "See the Gradle output above" stays
+  true.
+- **iOS does not change**, which is a reversal of the first draft's streaming
+  variant. `xcodebuild` is already captured, so there is no contamination for
+  principle 1 to license fixing, and its failure path already joins both streams
+  (`ios/xcode/runner.py:33-38`) so principle 2 already holds. The cost is the
+  silence noted in §1.2: a multi-minute archive prints nothing. That is a real
+  risk on runners that enforce a no-output timeout and not a problem anyone here
+  has hit, which puts it in the same category as the artifact hash — left alone
+  until something asks. If it ever bites, the descriptor helper below makes it
+  small.
+- **The Linux success path does not change** either: `appimagetool`'s output stays
+  captured and discarded. There is no contamination to fix, so principle 1 licenses
+  nothing, and the argument for showing it is symmetry rather than a reported
+  problem — even though compressing a ~70 MB squashfs is a real pause with no
+  output. Redirecting it later is a two-line change once the descriptor helper
+  below exists. The `echo=` callbacks in `linux/appimage.py` and `linux/bundle.py`
+  stay too, repointed from `click.echo` at `report.progress`, since they carry our
+  own lines rather than the tool's.
+- **The Linux failure path changes**, under principle 2. `appimage.py:134` raises
+  with `proc.stderr or proc.stdout`, so whenever stderr holds anything the stdout
+  half of the evidence is thrown away. That is precisely the trap
+  `ios/xcode/runner.py:33-38` carries a comment about: it joins both streams
+  *because* picking one can hide the real failure behind a harmless warning. Linux
+  should join both the same way.
+- **Everything else that captures** (`codesign`, `otool`, `hdiutil`, `adb`, the
+  resolvers) is *queried* for its output and must not change.
+
+**One implementation note that will bite in tests.** `subprocess` needs a real
+`fileno()`, and `sys.stderr` does not always have one — Click's `CliRunner` and
+pytest's capture both replace it. This needs a small helper on the report seam
+that hands back the descriptor when there is one and falls back to a pump when
+there is not, rather than each call site guessing.
+
+### 4.2a The failure path already puts tool output on stdout, and that has to stop
+
+There is a second route for third-party output that §§2–4 did not account for, and
+it goes straight to stdout in JSON mode.
+
+The tools we capture embed their output in the exception message —
+`CommandError` joins xcodebuild's stdout and stderr into its message
+(`ios/xcode/runner.py:20-27`), `AppDirError` interpolates `appimagetool`'s output —
+and the backends then wrap those with `raise ToolchainError(str(exc))`.
+`ToolchainError.as_diagnostic()` sets `message=self.format_message()`, so the
+whole captured log lands in `diagnostics[].message` **on stdout**, inside the JSON
+document. "All third-party output is progress, and progress is stderr" is
+contradicted by the one path that matters most.
+
+It is also a payload problem independent of the rule: a failing `xcodebuild` can
+emit megabytes, and a diagnostic message is the wrong place for it. A consumer
+reading `diagnostics[0].message` to decide what went wrong does not want a build
+transcript, and JSON-escaping one is pure cost.
+
+**The split: the diagnostic message is a summary; the log goes to stderr only.**
+Where a backend has captured output it writes that output to `report.progress`
+before raising, and raises with a summary — which tool, which task, which exit
+code, plus the `Fix:` line the convention already provides. Both registers keep
+their meaning: the envelope says *what* failed in a form worth branching on, and
+stderr carries the evidence, in the same place and format as it would have on a
+successful run.
+
+Two notes on scope. This is not extra work so much as relocated work: those
+messages are being touched in step 4 anyway to carry `code`, `exit_code` and
+`context`. And it removes the last asymmetry between the redirected tool (Gradle,
+whose output was never in our hands) and the captured ones, so all three failure
+paths end up reading the same way.
+
+### 4.3 The payload
+
+`build -p android` with no `--debug`:
+
+```json
+{
+  "schema": 1,
+  "kivyforge": "3.0.0.dev0",
+  "command": "build",
+  "platform": "android",
+  "ok": true,
+  "data": {"artifacts": [{"path": "dice-roller-android", "kind": "project"}]},
+  "diagnostics": []
+}
+```
+
+`package -p linux`:
+
+```json
+{
+  "schema": 1,
+  "kivyforge": "3.0.0.dev0",
+  "command": "package",
+  "platform": "linux",
+  "ok": true,
+  "data": {
+    "artifacts": [
+      {"path": "dist/linux/dice-roller-1.0.0-x86_64.AppImage", "kind": "appimage"}
+    ]
+  },
+  "diagnostics": []
+}
+```
+
+`schema` leads and is an integer, `kivyforge` is `__version__`; both come from
+`report/envelope.py` along with `command`, `platform`, `ok` and `diagnostics`.
+`artifacts` inside `data` is the entire addition.
+
+**Why a list, stated correctly this time.** The first draft justified it with
+"Android with multiple ABIs and iOS (`.xcarchive` plus `.ipa`)". Both halves are
+false: Android puts every ABI in *one* fat APK via `ndk.abiFilters` (`--abi`
+narrows that single file, it does not split it), and iOS `package` announces only
+the `.ipa` — the `.xcarchive` is an intermediate under
+`<slug>-ios/build/<scheme>.xcarchive` and there is no `xcarchive` kind. The real
+justification is narrower:
+
+- **`build -p android --debug` produces two products**: the generated project
+  *and* the debug APK or AAB. `android_build` echoes `Built {out}` for the APK and
+  then `return dest` for the project, so the APK path is discarded at the seam
+  exactly as the desktop paths are (§1.1).
+- **`package -p linux` produces one product whose `kind` varies**: `folder` for the
+  AppDir under `-f folder`, `appimage` otherwise. One element, two vocabularies.
+
+Neither case needs a list of *many*, but a field that is sometimes a scalar and
+sometimes a list is worse to consume than a list that is usually one element, so a
+list it is.
+
+**iOS `package` emits only the `.ipa`.** That matches the single `Exported ...`
+product line today and the §2.4 rule. The alternative — adding an `xcarchive` kind
+and a second human line — would be claiming an artifact the human output never
+mentions, for a consumer that has not asked for the intermediate.
+
+**iOS `build --simulator`/`--device` gains a product line and an `app` artifact —
+but only after step 1 pins where the `.app` is written.** This is the one place
+where §2.4 has to be applied forwards rather than backwards, and the first draft
+also got a fact wrong that makes it more than a wording change.
+
+Today `_xcodebuild_step7` prints `xcodebuild build (simulator) ...` — progress —
+and no product line at all. The first draft then claimed the `.app` sits under
+`<slug>-ios/build/DerivedData/...`, which is **false for this path**:
+`_xcodebuild_step7` calls `build_command(...)` *without* `derived_data_path`
+(`ios/cli.py:224-233`), so Xcode writes to its own global DerivedData under
+`~/Library/Developer/Xcode/DerivedData/<project>-<hash>/`. Only `ios_run` pins
+`<slug>-ios/build/DerivedData` (`ios/cli.py:387,410`). So there is no
+project-relative path to report, and `relative_to(project_root)` would raise.
+
+That makes this a three-part change, all in step 1:
+
+1. Pass `derived_data_path=xb.build_dir / "DerivedData"` from `_xcodebuild_step7`,
+   as `ios_run` already does. This is also a latent inconsistency worth closing on
+   its own — `build --simulator` and `run` currently write the same product to two
+   different places.
+2. Verify the `.app` exists before announcing it, the way `_require_artifact` does
+   on Android, rather than trusting `product_app_path`'s construction.
+3. Then print `Built <relative .app>` and report the `app` artifact beside the
+   `project` one.
+
+Without step 1's first part the other two cannot be written honestly, which is why
+this is sequenced rather than described as a payload detail.
+
+Note the direction of the fix: the payload requirement exposed a genuine gap in the
+*human* output, which had no product line either. The rule is about not inventing
+data, not about freezing today's prose.
+
+**iOS `build --release` produces the project *and* an `.ipa`.** Easy to miss,
+because `--release` reads like a modifier on "build the project" while
+`_xcodebuild_step7` in fact archives and exports, ending in
+`Exported {xb.ipa_path...}` (`ios/cli.py:236-272`). So `build -p ios --release`
+reports `project` plus `ipa` — the same pair `package` produces, reached by a
+different verb — and it belongs in the step 3 matrix explicitly rather than being
+inferred from `package`.
+
+### 4.4 Diagnostics and exit codes
+
+`BUILD_FAILURE` (`5`) is reserved in `report/exit_codes.py` and has never been
+raised. These two verbs are its entire reason for existing.
 
 | Situation | Code | Exit |
 |---|---|---|
 | Gradle / `xcodebuild` / `appimagetool` returned non-zero | `KF-BUILD-TOOL-FAILED`, `context={"tool","task"}` | `5` |
-| Host cannot build this target | `KF-HOST-INCAPABLE` | `3` |
-| Required toolchain absent (no JDK/NDK/clang) | `KF-TOOLCHAIN-MISSING` | `3` |
-| Lock drift blocks the build | `KF-LOCK-DRIFT` | `4` |
-| Bad config / bad flag combination | existing prose codes | `1` |
-| Gradle said success but produced no artifact (`_require_artifact`) | `KF-ARTIFACT-MISSING` | `5` |
-| `strip_source` requested but no interpreter found | `KF-BYTECOMPILE-NO-INTERP` (exists) as **WARNING** | `0` |
+| Host cannot build this target (wrong OS) | `KF-HOST-INCAPABLE` (exists) | `3` |
+| Lock drift blocks the build | `KF-LOCK-DRIFT` (exists) | `4` |
+| Bad config or flag combination | untriaged raises keep `KF-ERROR` | `1` |
+| Tool said success but produced no artifact (`_require_artifact`) | `KF-ARTIFACT-MISSING` | `5` |
+| `byte_compile = true` and no compatible interpreter | `KF-BYTECOMPILE-NO-INTERP` (exists), ERROR | `1` |
+| `byte_compile = "release"` (the default) and no compatible interpreter | `KF-BYTECOMPILE-NO-INTERP` (exists), WARNING | `0` |
 | Manifest policy notes (Android `[policy] INFO:`) | `KF-MANIFEST-POLICY`, INFO | `0` |
-| Packaging unsigned when signing is configurable | `KF-SIGNING-UNCONFIGURED`, WARNING | `0` |
+| Packaging unsigned or ad-hoc signed when real signing is configurable | `KF-SIGNING-UNCONFIGURED`, WARNING | `0` |
+
+The distinction that matters is `3` versus `5`: "this runner is missing something,
+fix the image" against "the toolchain ran and said no, read the log". Those want
+different reactions from a human and different branches from an agent, and today
+both are `1`.
 
 One code per *tool* is deliberately avoided in favour of one code with a `tool`
 context field; the alternative invents vocabulary that grows with every toolchain.
+Note that `ToolchainError` cannot express that yet: `as_diagnostic()` builds a
+`Diagnostic` from `code`, `severity`, `message` and `remediation` and never passes
+`context`, so step 4 has to add a `context=` constructor argument. Doctor populates
+`context` itself and so did not need one.
 
-Partial results should be recorded via `Report.record()` before the raise, so a
-failed Android package still names the project directory and the Gradle task that
-failed. That is what `record` was added for.
+**One code, two severities, on byte-compile.** The first draft had a single
+WARNING row here, which conflates two configurations that behave differently and
+must keep behaving differently. `byte_compile = true` is an explicit demand and
+`bundle.py:104` raises when it cannot be met; that is a config-or-environment
+failure and must stay a failure. `byte_compile = "release"` is the *default*, and
+it degrades to shipping source with a `[stage] not byte-compiling: ...` line
+rather than breaking a build nobody configured. Same code, different severity and
+exit — which is the intended use of a code, since the *meaning* is identical and
+only the consequence differs.
 
-### 4.6 What to remove or demote
+Those `[stage] not byte-compiling` lines on Linux, macOS and Windows are already
+progress-shaped and must become `report.progress`, not `report.line`. This is §3's
+trap again, and byte-compile is where it is easiest to get wrong, because the line
+reads like a conclusion.
+
+**`KF-TOOLCHAIN-MISSING` is dropped from this item, because nothing can raise it
+yet.** The first draft listed it at exit `3` for "required toolchain absent (no
+JDK/NDK/clang)", and then hedged that Android was the exception. Checked properly,
+Android is the rule:
+
+- `check_host_capability` compares `platform.system()` and nothing else on every
+  backend. It answers "is this the right OS", not "is the toolchain installed".
+- `AndroidPlatform.check_host_capability` is deliberately a no-op, with a comment
+  saying host *adequacy* is doctor's job.
+- `_require_macos_host` gates the Xcode verbs on being on macOS; it does not check
+  that Xcode, the command-line tools or a signing identity exist.
+
+So a runner missing a JDK, an NDK or Xcode does not fail a gate on any platform. It
+fails inside a subprocess, and the honest report for that is
+`KF-BUILD-TOOL-FAILED` at exit `5` — "read the log" — where the useful answer would
+have been "fix the image" at `3`.
+
+That leaves exit `3` meaning exactly one thing after this item: wrong OS, via
+`KF-HOST-INCAPABLE`. The `3`-versus-`5` distinction is still worth the narrowing —
+it is a real improvement over today's undifferentiated `1` — but it does not yet
+separate "missing tool" from "build broke", and the table no longer claims it does.
+
+Closing that properly needs preflights on the build paths, which `doctor` already
+knows how to answer. That is a separate change with its own value (it would let a
+CI job fail in seconds instead of after a Gradle download), and inventing
+`KF-TOOLCHAIN-MISSING` here without a raise site would be reserving vocabulary for
+work not yet done.
+
+### 4.5 What moves, and what stays exactly as it is
 
 - **The distribution advice paragraphs** (Windows 3 lines, Linux 4, macOS 3) move
   to `BuildOutcome.notes`: still printed for humans, absent from the envelope.
   They are documentation that happens to be delivered at the end of a build.
 - **Android's `[collect]`/`[stage]`/`[generate]`/`[gradle]` lines** stay exactly as
-  they are, on stderr. The bracket prefixes are already a good convention and
-  should not be redesigned as part of this.
-- **`click.echo(proc.stdout)`** (`ios/cli.py:435`) — a raw subprocess dump onto
-  stdout — becomes streamed progress.
-- **`Launching ...` lines** belong to `run`, which is out of scope here.
-- **Nothing else should be deleted.** The human output is well judged; the problem
-  is that it is the *only* output.
+  they read today, on stderr. The bracket prefixes are already a good convention
+  and redesigning them is not part of this.
+- **`click.echo(proc.stdout)`** (`ios/cli.py:435`) stays as it is. The first draft
+  listed this as a raw subprocess dump to clean up; it is in `ios_list_devices`,
+  which belongs to a different verb, and there the device list *is* the product, so
+  stdout is the right stream for it.
+- **`run` is out of scope.** It inherits stdout on purpose, so the app's own output
+  passes through untouched, and that is correct behaviour a `--json` conversion
+  should not disturb. Worth a separate, smaller decision later.
+- **Nothing else is deleted.** The human output is well judged; the problem is
+  that it is the *only* output.
 
-### 4.7 What this leaves for `run`
-
-`run` is deliberately excluded. It inherits stdout on purpose — the app's own
-output should pass through untouched — and that is correct behaviour that a
-`--json` conversion should not disturb. Worth a separate, smaller decision later.
+There is no `--quiet` or `-v` in this proposal. Verbosity control is orthogonal to
+structured product output and should be added only if a concrete use case requires it.
 
 ## 5. Staging
 
-1. `BuildOutcome`/`Artifact` types plus `Platform.build`/`package` returning them;
-   backends fill them in; human output byte-identical. No `--json` yet.
-2. The subprocess streaming change (`run_gradle`, `run_command`), still no `--json`
-   — this is the risky one and it is worth landing alone.
-3. `--json` for both verbs, envelopes pinned by golden tests.
-4. Exit-code and diagnostic narrowing per §4.5.
-5. Retire retro §1.9 by having `clean` ask the backends.
+1. `ArtifactKind`/`Artifact`/`BuildOutcome`, `Platform.build`/`package` returning
+   them, backends filling them in. No `--json` yet.
 
-Steps 1 and 2 are independent and either can go first; 3 depends on both.
+   Human output is **byte-identical except for three deliberate changes**, none of
+   which can be papered over in the payload:
 
-## 6. What this unblocks
+   - **Android's product lines become relative.** `android/cli.py:449,532` print
+     `Built {out}` / `Packaged {out}` on a resolved absolute `Path`, while all four
+     other backends print `{path.relative_to(project_root)}`. Left alone, step 1
+     would freeze absolute host paths into the schema and contradict §4.1's
+     posix-relative rule. Normalising Android is the smaller change and it makes
+     the five backends agree.
+   - **iOS `_xcodebuild_step7` starts passing `derived_data_path`**, matching
+     `ios_run`, so the simulator/device `.app` lands under
+     `<slug>-ios/build/DerivedData` instead of Xcode's global cache. This is a
+     prerequisite, not a nicety: without it there is no project-relative path to
+     report (§4.3).
+   - **iOS `build --simulator`/`--device` gains a `Built <.app>` line**, after
+     verifying the product exists. This one adds output rather than changing it.
 
-Item 5's E2E automation is the direct beneficiary. Today a T3 driver is *told*
-whether an artifact was stripped and which arch it is; with §4.4 it can read both
-out of the build that produced the artifact. Given that the two most serious bugs
-found this month were both "the artifact was not the shape the build thought it
-was", closing that gap is worth more than the `--json` flag itself.
+   Also in step 1, because they are the same edit: the `echo=`/`on_progress` and
+   `on_note` callbacks of §4.1a, and the `artifacts`-only-if-finalised rule of
+   §4.1b. Backends can be given the callbacks while the CLI still passes
+   `click.echo`, which keeps step 1 behaviour-preserving and leaves the rerouting
+   to step 3.
 
-## 7. Open questions — these need a decision
+2. The Gradle redirection, joining both streams in `appimage.py`'s failure message,
+   and the §4.2a split that moves captured tool logs out of exception messages onto
+   stderr. Still no `--json`. Worth landing alone, since it changes what a human
+   sees on every Android build.
 
-1. **Where does `BuildOutcome` live?** A new `kivyforge/outcome.py`, or alongside
-   `StatusReport` in `kivyforge/status.py`? *Recommend a new module*: `status.py`
-   is about inspecting a project, this is about the result of an action, and
-   `Artifact` here overlaps confusingly with `status.BuildArtifact` (which answers
-   "is it built and how old", not "what did we just produce").
-2. **Hash the packaged artifact — and does anything actually need it?** The first
-   draft of this proposal recommended hashing every single-file output "since CI
-   wants it", which did not survive being asked why (see §2 item 2): the
-   pipelines that look like they want a digest either take a path instead or
-   compute the digest themselves.
+   **This is a behaviour break for anyone capturing only stdout**, and it should be
+   announced as one rather than discovered. `kivyforge package -p android >
+   build.log` captures Gradle today and will not afterwards; such a job needs
+   `2>&1` or must capture both streams. The change is still right — inheriting
+   stdout is what makes `--json` impossible — but "we moved your build log" is a
+   release note, not an implementation detail.
 
-   *Recommend `bytes` always* (free, and justified on its own terms) and
-   **`sha256` on request only**, via a flag or by leaving the field absent until
-   something asks for it. Directory outputs (`.app`, onedir folder, AppDir) get
-   `bytes` only regardless, since a tree hash is both expensive and ill-defined —
-   it needs a canonical walk order and a decision about metadata before it means
-   anything.
+3. `--json` for both verbs, pinned by tests that **assert fields, not the
+   serialised envelope**. `kivyforge` carries `__version__`, so a golden blob would
+   fail on every version bump; `tests/cli/test_lock_json.py` and the `status` tests
+   already assert per-field for exactly this reason and are the pattern to copy.
+4. Exit-code and diagnostic narrowing per §4.4. This includes the `context=`
+   argument on `ToolchainError`, and narrowing the host gates: `_require_linux_host`,
+   `_require_windows_host` and `_require_macos_host` all currently
+   `raise ToolchainError(str(exc))` from `HostCapabilityError`, landing on
+   `KF-ERROR` and exit `1`. `lock` already solved this — `KF-HOST-INCAPABLE`, exit
+   `3` — and these four sites should copy that, not invent a second pattern.
 
-   The argument for hashing unconditionally is that an absent field is one an
-   agent cannot rely on, so an optional digest is close to no digest. That is a
-   fair point and it is why this is still a question: it trades a few seconds on
-   every package for a guarantee, and nothing concrete is asking for the
-   guarantee yet.
-3. **Stream third-party output always, or only under `--json`?**
-   *Recommend always*, so there is one behaviour to reason about and test. The
-   alternative keeps Gradle's live inherited stdout for humans and only redirects
-   under `--json`, which is less work but means the mode a CI job uses is the mode
-   that gets the least testing.
-4. **Do we add `--quiet` / `-v` now?** There is no verbosity control today. It is
-   arguably in scope, since this is the moment every output site is being
-   touched. *Recommend deferring* — the stdout/stderr split gives `2>/dev/null`
-   as a usable quiet mode, and inventing levels before there is a complaint tends
-   to produce the wrong levels.
-5. **`duration_s` in the payload?** *Recommend yes.* It is free, CI dashboards
-   want it, and it makes a regression in build time visible without instrumenting
-   anything.
-6. **Should `build` with no target on iOS still say "Project ready"?** It is the
-   one place a verb's product is advice rather than an artifact. *Recommend*
-   `action: "generated"` with the project directory as the artifact, and the
-   sentence moving to `notes`.
+Steps 1 and 2 are independent and either can go first; 3 depends on both. Step 2
+now carries §4.2a, which makes it the step that changes failure output as well as
+success output — worth its own commit for that reason alone.
+
+**Test shape for step 3: a per-verb `(command, flags) → artifacts[]` matrix.** One
+golden envelope per verb is too coarse for five backends times two verbs times the
+format and target flags, and the cases most likely to be wrong are the ones a
+single example hides. The matrix has to pin at least:
+
+| Invocation | `artifacts` |
+|---|---|
+| `build -p windows` / `-p macos` / `-p linux` | one: `folder`, `app`, `folder` |
+| `build -p android` | one: `project` |
+| `build -p android --debug` | **two**: `project` + `apk` (or `aab` with `-f aab`) |
+| `build -p ios` (no target) | one: `project` |
+| `build -p ios --simulator` / `--device` | **two**: `project` + `app` |
+| `build -p ios --release` | **two**: `project` + `ipa` |
+| `package -p linux -f appimage` / `-f folder` | one, `kind` differing: `appimage` / `folder` |
+| `package -p android -f apk` / `-f aab` | one: `apk` / `aab` |
+| `package -p ios` | one: `ipa` (never the `.xcarchive`) |
+| any failure after a finalised product | only that product, per §4.1b |
+| any failure before one | `[]` — and specifically *not* Linux's or Windows's preserved previous artifact |
+
+The three `--release`/`--debug`/`--simulator` rows are the ones a single golden
+example would have missed, and the last two rows are the ones most likely to
+regress silently, since a stale path looks exactly like a fresh one. Pin them in the
+style of `tests/cli/test_lock_json.py`.
+
+**Retiring retro §1.9 is *not* a step here, contrary to the first draft.** That
+draft claimed the result type would let `clean` stop hard-coding output paths.
+It will not: `clean` needs the paths *without* running anything, and
+`BuildOutcome` only exists as the return value of a build that ran. Fixing §1.9
+needs a separate declarative query on `Platform` — something like
+`clean_targets(project_root, config) -> tuple[Path, ...]` — which shares no code
+with this item and serves neither CI nor agents. It is a real debt and it belongs
+in its own change. §1.1's observation that nothing publishes these paths still
+stands as the diagnosis; the claim that one structured result cures it does not.
