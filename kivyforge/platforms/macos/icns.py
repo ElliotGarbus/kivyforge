@@ -7,12 +7,12 @@ the iOS icon discipline.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from kivyforge.config.icons import IconSourceError, validate_icon_source
+from kivyforge.report.failures import spawn_failure
 
 from . import AppBundleError
 
@@ -63,11 +63,18 @@ def _iconutil(iconset: Path, dest: Path) -> None:
 
 
 def _run(cmd: list[str]) -> None:
-    if shutil.which(cmd[0]) is None:
-        raise AppBundleError(
-            f"required macOS tool {cmd[0]!r} not found (ships with macOS)."
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+    except OSError as exc:
+        reason = (
+            "not found (ships with macOS)"
+            if isinstance(exc, FileNotFoundError)
+            else f"unusable ({exc})"
         )
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+        raise AppBundleError(
+            f"required macOS tool {cmd[0]!r} {reason}.",
+            **spawn_failure(cmd[0], exc),
+        ) from exc
     if proc.returncode != 0:
         raise AppBundleError(f"{cmd[0]} failed: {(proc.stderr or proc.stdout).strip()}")
 
