@@ -831,14 +831,41 @@ that needs an Android preflight, which doctor already knows how to answer and wh
 would pay for itself by failing a bad runner in seconds instead of after a Gradle
 download.
 
-**One gap found by the review is worse than any misclassification: a missing
-`xcodebuild` produces no envelope at all.** `run_command` (`ios/xcode/runner.py`) is
-the single funnel for every Xcode invocation and catches neither `FileNotFoundError`
+**Two gaps found by the review are worse than any misclassification: neither primary
+build tool produces an envelope when it cannot be spawned.** `run_command`
+(`ios/xcode/runner.py`) and `run_gradle` (`android/gradlew.py:30`) are the single
+funnels for every Xcode and Gradle invocation and catch neither `FileNotFoundError`
 nor `OSError`, while `reporting()` only catches `ToolchainError` — so the result is a
 traceback on a stream a JSON consumer is not parsing. Not a wrong answer, an
 unparseable one. Worth generalising into a rule for the `--json` work: **every
 uncaught exception type is a hole in the envelope contract**, so the audit is of what
 can escape a verb, not only of what each verb reports.
+
+**The accumulator has to live in the backend, and the reason is a useful test for
+where state belongs.** An earlier draft put it verb-side, which cannot work:
+`Platform.build`/`package` *return* `BuildOutcome`, so a backend given only a
+notify-callback would keep its own private list anyway — two collections updated by
+hand at every product site. The no-op recorder used when a package flow calls a build
+function is the proof, since the inner call must still return a populated outcome with
+nobody listening. So a small `OutcomeBuilder(on_artifact)` with `add()` and
+`finish(notes)` sits in the backend: `add()` stores *and* notifies, making it
+impossible to update one and forget the other. **Whoever owns the return value owns
+the accumulator.**
+
+**`on_note` must never print, which turned a per-code rendering policy into no policy
+at all.** Every success-path note already has human text, and two of the four are not
+lines of their own: the signing warning is embedded in `Packaged … (onedir folder,
+unsigned …)`, and the byte-compile degradation is already its own `[stage]` line. A
+generic echoing adapter would therefore duplicate prose in one case and add lines in
+another. Making the callback machine-only means the human text for a note stays
+wherever the backend already puts it, and there is nothing per-code left to specify.
+The review also found a fourth note we emit and drop entirely — iOS's `Warning:
+entitlements not granted by the pinned provisioning profile` under `auto_signing`,
+which succeeds and has no code — so `KF-ENTITLEMENTS-UNGRANTED` joins the set. And
+`build`/`package` should reuse all three of `lock`'s lock codes rather than only
+drift: the same missing or unparseable lockfile is branchable under `lock --check
+--json` today and opaque under `build --json`, which is how consumers learn to stop
+trusting codes.
 
 **Two scoping corrections worth carrying.** The stderr-only rule for tool output
 applies to *bulk* producers, not to every subprocess: `(proc.stderr or proc.stdout)`

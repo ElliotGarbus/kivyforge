@@ -331,16 +331,32 @@ print exactly where they do today while nothing is recorded; each then calls
 asymmetry becomes one argument at three call sites instead of a condition threaded
 through the backends.
 
-**3. `on_progress(message)` and `on_note(code, message)` — the `lock` pattern
-verbatim.** `cli/lock.py` does not hand `Report` to a backend; it passes
+**3. `on_progress(message)` and `on_note(code, message)` — close to the `lock`
+pattern.** `cli/lock.py` does not hand `Report` to a backend; it passes
 `on_warning=lambda msg: _warn(report, msg)`, and `_warn` — on the CLI side — does
 both `report.progress(msg)` and `report.diagnose(Diagnostic(...))`. The backend
 calls a plain callable and knows nothing about reports, codes or severities. The
 `echo=` callbacks in `linux/appimage.py` and `linux/bundle.py` are already the
 progress half of this shape. `code` is a constant from `report/diagnostics.py`, a
-pure constants-and-dataclass module a backend can import without touching
-`Report`; the closure decides severity and whether the note also prints.
-`on_note` carries the three success-path diagnostics in §4.4.
+pure constants-and-dataclass module a backend can import without touching `Report`.
+
+**`on_note` never prints, and that is the whole rule.** It differs from `lock`'s
+`_warn` here deliberately. Every success-path note in these two verbs *already* has
+human text, and in two of the three cases that text is not a line of its own:
+
+| Code | Text today | So `on_note` |
+|---|---|---|
+| `KF-SIGNING-UNCONFIGURED` | inside the product line — Windows prints `Packaged … (onedir folder, unsigned (configure [tool.kivy.windows.signing] to sign)).` (`windows/cli.py:122-129`), macOS the ad-hoc equivalent | diagnoses only; a printed note would say the same thing twice |
+| byte-compile degraded | already its own line: `[stage] not byte-compiling: no final CPython 3.14 found …` (`linux/bundle.py:109`, and the macOS/Windows/Android twins) | diagnoses only; the line keeps printing where it does now |
+| Android release-manifest policy | already its own `[policy]` line | diagnoses only |
+| `KF-ENTITLEMENTS-UNGRANTED` (new, §4.4) | already its own line, on stderr (`ios/cli.py:99`) | diagnoses only |
+
+Making `on_note` print would either duplicate prose or add lines, and "human output
+is unchanged" is a promise this proposal makes four separate times. Keeping it
+machine-only means **the human text for a note is wherever the backend already puts
+it**, and no per-code rendering policy is needed. It also makes step 1's adapter a
+no-op rather than an echo, so step 1 is byte-identical by construction instead of by
+review.
 
 **4. `BuildOutcome` as the return value** — the same artifacts plus `notes`. It is
 the summary, not the channel: the verb emits from it on success, and it keeps the
@@ -348,12 +364,12 @@ backends unit-testable by assertion rather than by spy. §1.1's discarded return
 value is paid off here.
 
 **None of these four can be wired with a bare `click.echo`, and step 1 has to
-define the adapters explicitly.** `click.echo(artifact)` prints a dataclass
-`repr`; `click.echo(code, message)` binds `message` to Click's `file` parameter and
-raises on the first note. Step 1's human-only wiring is therefore four small
-module-level adapters — `_echo_line(text)`, `_echo_note(code, message)` printing
-just the message, a `_discard(artifact)` no-op, and `click.echo` for progress —
-and step 3 replaces them with report-backed closures.
+define the adapters explicitly.** `click.echo(artifact)` prints a dataclass `repr`;
+`click.echo(code, message)` binds `message` to Click's `file` parameter and raises on
+the first note. Step 1's human-only wiring is therefore four small module-level
+adapters — `_echo_line(text)`, `click.echo` for progress, and two no-ops,
+`_discard_artifact(artifact)` and `_discard_note(code, message)` — and step 3
+replaces them with report-backed closures.
 
 Those closures also cannot be method references, because `Report` has no matching
 surface: there is no `report.product`, and `report.diagnose` takes a `Diagnostic`
@@ -362,21 +378,43 @@ instance, not `(code, message)` (`report/console.py:127-185`). The mapping is
 that builds the Diagnostic and calls report.diagnose`, exactly as `lock`'s `_warn`
 does.
 
-**One accumulator owns the artifact list, because there are two consumers of it and
-they must not drift.** Every product has to reach both the live `Report` (so a later
-failure still reports it) and the returned `BuildOutcome` (so success emits from the
-summary), and `Report.record()` *replaces* rather than appends — `record(artifacts=…)`
-is `self._data.update(fields)` (`report/console.py:152-165`), so calling it per
-artifact would leave only the last one. Rather than ask every call site to remember
-both updates and to re-serialise the whole list each time, `on_artifact` is backed by
-a small verb-side accumulator that appends, re-records the complete list, and hands
-back the `BuildOutcome` at the end. One place to get right, and the failure and
-success payloads cannot disagree by construction.
+**The accumulator belongs in the backend, not the verb, because the backend is what
+has to return `BuildOutcome`.** Every product has to reach two places that must not
+drift: the live `Report`, so a later failure still reports what was finished, and the
+returned `BuildOutcome`, so success emits from the summary. Putting the accumulator on
+the verb side cannot work — `Platform.build`/`package` return the outcome, so a
+backend handed only a notify-callback would still need its own private list to build
+that return value, which is two collections updated by hand at every product site.
+Step 1's `_discard` no-op adapter is the proof: with nothing listening, the backend
+must still come back with a populated `BuildOutcome`.
+
+So a single small object, constructed by the backend, is the one place artifacts are
+recorded:
+
+```python
+class OutcomeBuilder:
+    """Backend-side: stores each product and notifies the caller."""
+    def __init__(self, on_artifact: Callable[[Artifact], None]) -> None: ...
+    def add(self, artifact: Artifact) -> Artifact:  # stores, then notifies
+    def finish(self, *, notes: tuple[str, ...] = ()) -> BuildOutcome:
+```
+
+`add()` is the only call site a backend author has to remember, and it cannot update
+one collection without the other. `finish()` produces the return value. The verb's
+`on_artifact` closure appends to its own list and re-records the whole thing, which
+is necessary because `Report.record()` *replaces* rather than appends —
+`record(artifacts=…)` is `self._data.update(fields)` (`report/console.py:152-165`),
+so a per-artifact call would leave only the last one.
+
+The nested flows compose without a special case: `macos_package` constructs its own
+builder and passes `macos_build` a builder whose notify is a no-op, then ignores the
+inner `BuildOutcome` entirely. The inner call still returns a valid outcome — it just
+is not this verb's outcome.
 
 `BuildOutcome` needs an explicit `as_dict()`, like `StatusReport` has. `Path` and
 `Enum` are not JSON-serialisable, so relying on `json.dumps` to walk the dataclass
 would fail at the first artifact; `as_dict()` is where `path.as_posix()` and
-`kind.value` happen, and it is what the accumulator re-records.
+`kind.value` happen, and `Artifact.as_dict()` is what the verb re-records per event.
 
 Two more mechanics that are easy to miss:
 
@@ -670,12 +708,31 @@ raised. These two verbs are its entire reason for existing.
 | Host cannot build this target (wrong OS) | `KF-HOST-INCAPABLE` (exists) | `3` |
 | A tool could not be spawned at all (`FileNotFoundError`: `clang`, `codesign`, `otool`) | `KF-TOOLCHAIN-MISSING` | `3` |
 | Lock drift blocks the build | `KF-LOCK-DRIFT` (exists) | `4` |
+| No lockfile for this platform | `KF-LOCK-MISSING` (exists) | `4` |
+| Lockfile present but unparseable | `KF-LOCK-UNREADABLE` (exists) | `4` |
 | Bad config or flag combination | untriaged raises keep `KF-ERROR` | `1` |
 | Tool said success but produced no artifact (`_require_artifact`) | `KF-ARTIFACT-MISSING` | `5` |
 | `byte_compile = true` and no compatible interpreter | `KF-BYTECOMPILE-NO-INTERP` (exists), ERROR | `1` |
 | `byte_compile = "release"` (the default) and no compatible interpreter | `KF-BYTECOMPILE-NO-INTERP` (exists), WARNING | `0` |
 | Manifest policy notes (Android `[policy] INFO:`) | `KF-MANIFEST-POLICY`, INFO | `0` |
 | Packaging unsigned or ad-hoc signed when real signing is configurable | `KF-SIGNING-UNCONFIGURED`, WARNING | `0` |
+| iOS auto-signing: entitlements the pinned profile does not grant | `KF-ENTITLEMENTS-UNGRANTED` (new), WARNING | `0` |
+
+**All three lock codes, not just drift.** `lock --check` already distinguishes
+missing, unreadable and stale (`KF-LOCK-MISSING`, `KF-LOCK-UNREADABLE`,
+`KF-LOCK-DRIFT`), and the build paths hit the same three conditions through
+`_load_lock`/`_load_and_verify` while reporting all of them as a generic
+`ToolchainError`. Leaving that would mean the identical situation is branchable under
+`lock --check --json` and opaque under `build --json`, which is the kind of
+inconsistency that makes a consumer stop trusting the codes. All three take exit `4`:
+the remedy is the same — run `kivyforge lock`.
+
+**`KF-ENTITLEMENTS-UNGRANTED` is a real warning we currently emit and drop.**
+`ios/cli.py:61-99` prints `Warning: entitlements not granted by the pinned
+provisioning profile: …` to stderr under `auto_signing`, then builds successfully —
+the exact shape of the other three success-path notes, and the only one with no code.
+Per §4.1a's rule the line keeps printing where it does; the code is what makes it
+visible to a consumer that is reading the envelope rather than the terminal.
 
 What the narrowing buys is that four situations which are all `1` today become four
 different answers: fix the file (`1`), fix the environment (`3`), re-lock (`4`), read
@@ -721,14 +778,22 @@ conclusively when we try to spawn it, and two backends already catch exactly tha
 Those are already toolchain-missing determinations in prose, needing nothing but a
 code and an exit status to become branchable. No preflight required.
 
-**But spawn-failure coverage is uneven, and one gap is worse than a wrong code.**
-`run_command` in `ios/xcode/runner.py:30-38` catches neither `FileNotFoundError` nor
-`OSError`, so a host without `xcodebuild` raises straight through `ios_build` and
-`ios_package` — and `reporting()` only catches `ToolchainError`
-(`cli/_output.py:61`), so the result is a traceback with **no envelope at all**. For
-a JSON consumer that is the worst available outcome: not a misclassified failure but
-an unparseable one. Fixing it is a `try`/`except FileNotFoundError` in the one
-funnel that every Xcode invocation already goes through.
+**But spawn-failure coverage is uneven, and the gaps are worse than a wrong code.**
+Both primary build tools can escape the envelope entirely:
+
+- `run_command` (`ios/xcode/runner.py:30-38`) catches neither `FileNotFoundError`
+  nor `OSError`, so a host without `xcodebuild` raises straight through `ios_build`
+  and `ios_package`.
+- `run_gradle` (`android/gradlew.py:30`) is the same. It does pre-check that the
+  wrapper file exists, which turns the common case into a clean `GradleError`, but
+  the spawn itself is unguarded — a wrapper without its executable bit, a `noexec`
+  mount, no shell — and `android_build` catches only `GradleError`.
+
+In both cases `reporting()` only catches `ToolchainError` (`cli/_output.py:61`), so
+the result is a traceback with **no envelope at all**. For a JSON consumer that is
+the worst available outcome: not a misclassified failure but an unparseable one. Both
+fixes are a `try`/`except OSError` in a funnel every invocation already passes
+through, which is why this is cheap enough that there is no reason to defer it.
 
 A third group catches the parent `OSError` and so cannot distinguish "tool absent"
 from any other spawn problem: `windows/signing.py:141` (`signtool`),
@@ -780,8 +845,9 @@ structured product output and should be added only if a concrete use case requir
 1. `ArtifactKind`/`Artifact`/`BuildOutcome`, `Platform.build`/`package` returning
    them, backends filling them in. No `--json` yet.
 
-   Human output is **byte-identical except for two deliberate changes**, neither of
-   which can be papered over in the payload:
+   Human output is **unchanged in text, order and stream except for two deliberate
+   changes** (§5's test note defines the term), neither of which can be papered over
+   in the payload:
 
    - **Android's product lines become relative.** `android/cli.py:449,532` print
      `Built {out}` / `Packaged {out}` on a resolved absolute `Path`, while all four
@@ -799,7 +865,7 @@ structured product output and should be added only if a concrete use case requir
    prerequisite rather than a nicety — without it there is no project-relative path
    to report at all (§4.3).
 
-   Four more pieces belong here because they are the same edit:
+   Five more pieces belong here because they are the same edit: `OutcomeBuilder` and
    `BuildOutcome.as_dict()` (§4.1a), the distribution advice paragraphs moving to
    `BuildOutcome.notes` (§4.5, rendered at the same point so the bytes do not move),
    the `on_line`/`on_artifact`/`on_progress`/`on_note` callbacks of §4.1a, and the
@@ -809,8 +875,10 @@ structured product output and should be added only if a concrete use case requir
    The CLI's step-1 wiring is human-only, but it cannot be `click.echo` four times:
    `on_note` would bind its message to Click's `file` parameter and `on_artifact`
    would print a dataclass `repr` (§4.1a). So step 1 defines four small adapters —
-   `_echo_line`, `_echo_note` (prints the message, drops the code), `_discard`, and
-   `click.echo` for progress — which step 3 swaps for report-backed closures.
+   `_echo_line`, `click.echo` for progress, and the two no-ops `_discard_artifact`
+   and `_discard_note` — which step 3 swaps for report-backed closures. The notes
+   being dropped rather than echoed in step 1 is what makes this step add no lines;
+   they start reaching the envelope in step 3, where they belong.
 
 2. **The Gradle redirection**, and nothing else. Worth landing alone, since it
    changes what a human sees on every Android build.
@@ -854,18 +922,21 @@ structured product output and should be added only if a concrete use case requir
      `{"tool", "task"}` today.
    - `KF-BUILD-TOOL-FAILED`/`5` at the three bulk-tool failure sites, carrying
      `context={"tool", "task"}`; `KF-ARTIFACT-MISSING`/`5` at `_require_artifact`
-     and its per-platform equivalents; `KF-LOCK-DRIFT`/`4` at the lock-verification
-     failures in all five backends.
-   - The three success-path note codes of §4.4 wired through `on_note`:
-     `KF-SIGNING-UNCONFIGURED`, and the byte-compile and staging notes.
+     and its per-platform equivalents; `KF-LOCK-DRIFT`, `KF-LOCK-MISSING` and
+     `KF-LOCK-UNREADABLE`, all `4`, at the lock-loading and verification failures in
+     all five backends.
+   - The success-path note codes of §4.4 wired through `on_note`:
+     `KF-SIGNING-UNCONFIGURED`, `KF-BYTECOMPILE-NO-INTERP`, `KF-MANIFEST-POLICY`,
+     and the new `KF-ENTITLEMENTS-UNGRANTED` — none of which print, per §4.1a.
    - The host gates: `_require_linux_host` (`linux/cli.py:190`),
      `_require_windows_host` (`windows/cli.py:272`) and the two `_require_macos_host`
      definitions (`macos/cli.py:226`, `ios/cli.py:337`) all
      `raise ToolchainError(str(exc))` from `HostCapabilityError`, landing on
      `KF-ERROR` and exit `1`. `lock` already solved this — `KF-HOST-INCAPABLE`, exit
      `3` — and these four sites should copy it rather than invent a second pattern.
-   - `KF-TOOLCHAIN-MISSING`/`3` at the spawn-failure sites, including the
-     `run_command` gap that currently emits no envelope at all (§4.4).
+   - `KF-TOOLCHAIN-MISSING`/`3` at the spawn-failure sites, starting with the
+     `run_command` and `run_gradle` gaps that currently emit no envelope at all
+     (§4.4).
 
    **Android needs a design decision before any of this reaches it.** Saying
    `@user_facing` should "forward" `code` and `exit_code` presumes
@@ -899,6 +970,8 @@ single example hides. The matrix has to pin at least:
 | `build -p ios --simulator` / `--device` | **two**: `project` + `app` |
 | `build -p ios --release` | **two**: `project` + `ipa` |
 | `package -p linux -f appimage` / `-f folder` | one, `kind` differing: `appimage` / `folder` |
+| `package -p windows` | one: `folder`, under `dist/windows/` — not the build tree |
+| `package -p macos` | one: `app`, and the *signed* one, not the `sign=False` bundle its inner `macos_build` produced |
 | `package -p android -f apk` / `-f aab` | one: `apk` / `aab` |
 | `package -p ios` | one: `ipa` (never the `.xcarchive`) |
 | `build -p android`/`-p ios` failing after generation | one: the fresh `project` |
@@ -924,7 +997,20 @@ nested calls — so the suite needs assertions aimed at those directly:
 | Gradle redirection works both with a real `fileno()` and through the no-`fileno` fallback | §4.2's descriptor problem. `CliRunner` and pytest capture both replace stdout, so the fallback path is what tests exercise by default and production almost never uses — the reverse of the usual risk. |
 | A failing `xcodebuild` and a failing `appimagetool` put their transcript on stderr and *only* a summary in `diagnostics[].message` | §4.2a. Regressing this reintroduces megabytes of JSON-escaped log. |
 | `package -p macos`/`-p ios`/`-p android` still print their intermediate `Built`/`Generated` lines while recording no intermediate artifact | §4.1a's nesting rule — the one place where the human and machine registers deliberately disagree, and the easiest to wire wrong. |
-| Human-mode output is byte-identical to the pre-change baseline, except the changes §5 names | Every step claims this; only a test enforces it. Capture a baseline before step 1. |
+| `ok: true` with a non-empty `diagnostics` and exit `0`, for each success-path note | The success-with-warnings shape is easy to break by treating any diagnostic as failure — and easy to leave untested, since the happy path has an empty list. |
+| No success-path note adds or duplicates a human line | The direct consequence of "`on_note` never prints" (§4.1a). Pair each note test with its human-mode counterpart. |
+| Each §4.4 row maps to its code, its exit status, and its `context` keys | The table is a contract, and nothing but a test keeps a raise site from drifting to `KF-ERROR`/`1`. |
+| Human-mode output matches the pre-change baseline in text and order, modulo the stream migrations §5 names | Every step claims this; only a test enforces it. Capture a baseline before step 1. |
+
+**"Byte-identical" has to be defined per assertion, because step 2 and step 3
+deliberately move lines between streams.** A literal per-stream baseline cannot pass
+both that promise and the Gradle redirection. The workable definition, and the one
+these assertions use: **the interleaved text and its order are unchanged; only the
+stream a line arrives on may change, and only where §5 names it** — Gradle's
+transcript and Android's bracketed lines, both stdout to stderr. So compare the
+merged capture for equality, and compare the per-stream captures against the
+migration list. Everywhere else, per-stream equality still holds and should be
+asserted.
 
 The ordering assertion matters most for iOS, where `Generated` sits minutes before
 `Exported` with a `xcodebuild` run between them: that gap is the reason product is
