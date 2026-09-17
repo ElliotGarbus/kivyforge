@@ -11,6 +11,8 @@ import platform as _platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.config.model import VALID_SIMULATOR_ARCHS
+
 from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
@@ -27,6 +29,9 @@ class IosPlatform(Platform):
     # The distributable is the Xcode-built app / .ipa (App Store submission is
     # external). Only one shape today, so `-f` defaults to it.
     package_formats = ("ipa",)
+    # Device is arm64-only; the simulator set is what ``--arch`` selects from,
+    # and both are arm64 since the x86_64 simulator slice was removed.
+    archs = tuple(sorted(VALID_SIMULATOR_ARCHS))
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
         host = host_system if host_system is not None else _platform.system()

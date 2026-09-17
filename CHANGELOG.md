@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### New: `kivyforge capabilities`
+
+- **A verb that answers what this kivyforge can do**, with no project, lock or
+  network needed — so an agent can ask before it has anything to point at.
+  `--json` publishes:
+  - `platforms[]`: each target's `archs`, `package_formats`,
+    `default_package_format`, aliases, the host it is the default target for,
+    and **`hosts`: which of macOS/Linux/Windows can build it at all**. That last
+    one is the fact that stops an agent attempting iOS on Windows, and nothing
+    in `--help` states it.
+  - `verbs[]`: every registered verb and whether it accepts `--json`.
+  - `exit_codes` and `diagnostic_codes`: the reserved exit taxonomy and the
+    published `KF-*` vocabulary.
+- Everything is derived rather than restated: the host matrix comes from asking
+  each backend's own `check_host_capability`, the verb list from the click
+  group, the codes from the modules that define them. A hand-kept copy would
+  pass its tests right up until it went stale.
+
 ### `--json` on `clean`, `init`, `upgrade` and `open`
 
 - **Every verb but `run` now takes `--json` and `--no-color`.** Each reports what

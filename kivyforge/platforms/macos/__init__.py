@@ -12,6 +12,7 @@ import platform as _platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.config.model import VALID_MACOS_ARCHS
 from kivyforge.report.failures import ClassifiedError
 
 from ..base import HostCapabilityError, Platform
@@ -33,6 +34,8 @@ class MacosPlatform(Platform):
     host_system = "Darwin"
     # The distributable is the .app bundle; .dmg/installer is external.
     package_formats = ("app",)
+
+    archs = tuple(sorted(VALID_MACOS_ARCHS))
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
         host = host_system if host_system is not None else _platform.system()

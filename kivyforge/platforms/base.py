@@ -50,6 +50,12 @@ class Platform(ABC):
     #: Distributable artifact shapes for ``package -f`` (first = default).
     package_formats: tuple[str, ...] = ()
 
+    #: Build target architectures this platform accepts, in the spelling its
+    #: config and ``--arch``/``--abi`` use. Sourced from the same constants the
+    #: config validator rejects against, so the published set cannot drift from
+    #: the accepted one.
+    archs: tuple[str, ...] = ()
+
     @property
     def default_package_format(self) -> str | None:
         return self.package_formats[0] if self.package_formats else None

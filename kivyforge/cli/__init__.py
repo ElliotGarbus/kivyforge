@@ -11,6 +11,7 @@ import click
 from .. import __version__
 from . import (
     build,
+    capabilities,
     clean,
     doctor,
     init,
@@ -46,6 +47,7 @@ main.add_command(upgrade.upgrade)
 main.add_command(clean.clean)
 main.add_command(status.status)
 main.add_command(doctor.doctor)
+main.add_command(capabilities.capabilities)
 
 
 if __name__ == "__main__":

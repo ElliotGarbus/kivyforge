@@ -540,8 +540,18 @@ Against the agent-friendliness list below: **points 1, 2 and 5 (versioned
 envelope, artifact paths, remediation as a field) are done**; **points 3 and 4**
 (diagnostic IDs, exit-code taxonomy) are built and applied — `lock` was the first
 verb where the *narrowing* happened, `build`/`package` the first with a full
-failure table; **points 6–8** (`capabilities`, `--no-input`, `AGENTS.md`) are
-untouched.
+failure table; **point 6 (`capabilities`) landed 2026-09-17**; **points 7 and 8**
+(`--no-input`, `AGENTS.md`) are untouched.
+
+**`capabilities` is worth more than its size because everything in it is
+derived.** The host matrix — which of macOS/Linux/Windows can build which target —
+is computed by calling each backend's own `check_host_capability` with each host,
+so it is the same gate the verbs enforce rather than a table restating it; the
+verb list and its `--json` column are read off the click group; the exit and
+diagnostic vocabularies come from the modules that define them. That is the
+difference between publishing a fact and publishing a copy of one, and it is why
+this closes item 2's matrix question for machines: a hand-kept table would pass
+its own tests on the day it went stale.
 
 **`run` is the one verb `--json` should not simply be bolted onto, and that is a
 decision rather than an omission.** It hands the child process kivyforge's own

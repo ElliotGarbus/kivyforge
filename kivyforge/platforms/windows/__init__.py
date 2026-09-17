@@ -14,6 +14,7 @@ import platform as _platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.config.model import VALID_WINDOWS_ARCHS
 from kivyforge.report.failures import ClassifiedError
 
 from ..base import HostCapabilityError, Platform
@@ -38,6 +39,8 @@ class WindowsPlatform(Platform):
     # installers stay permanently external (windows-spec). Folder is the only
     # package format.
     package_formats = ("folder",)
+
+    archs = tuple(sorted(VALID_WINDOWS_ARCHS))
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
         # arm64: keep gating on the OS only, never the host CPU. Building an

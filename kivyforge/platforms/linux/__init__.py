@@ -12,6 +12,7 @@ import platform as _platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.config.model import VALID_LINUX_ARCHS
 from kivyforge.report.failures import ClassifiedError
 
 from ..base import HostCapabilityError, Platform
@@ -33,6 +34,8 @@ class LinuxPlatform(Platform):
     host_system = "Linux"
     # AppImage is the primary distributable; the AppDir folder is the substrate.
     package_formats = ("appimage", "folder")
+
+    archs = tuple(sorted(VALID_LINUX_ARCHS))
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
         host = host_system if host_system is not None else _platform.system()

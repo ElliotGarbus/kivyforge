@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.config.model import VALID_ANDROID_ABIS
 from kivyforge.report import diagnostics, exit_codes
 from kivyforge.report.failures import ClassifiedError
 
@@ -77,6 +78,8 @@ class AndroidPlatform(Platform):
     host_system = None
     # apk = sideload/CI unit (default); aab = Play upload unit.
     package_formats = ("apk", "aab")
+    # Android spells its architectures as ABIs, and ``--abi`` takes these.
+    archs = tuple(sorted(VALID_ANDROID_ABIS))
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
         # Windows, macOS, and Linux hosts can all build for Android: kivyforge
