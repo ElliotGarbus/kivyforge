@@ -1328,9 +1328,7 @@ def _parse_android_version_code(
                 line=line,
                 hint="express the extra increment via the `build` counter.",
             )
-        major = release[0]
-        minor = release[1] if len(release) > 1 else 0
-        patch = release[2] if len(release) > 2 else 0
+        major, minor, patch = (*release, 0, 0)[:3]
         if minor > 99 or patch > 99:
             raise ConfigError(
                 f"MINOR and PATCH must each be <= 99 for "

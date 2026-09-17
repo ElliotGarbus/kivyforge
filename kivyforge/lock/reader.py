@@ -18,7 +18,9 @@ class LockError(Exception):
 
 
 class _HasPyprojectSha(Protocol):
-    pyproject_sha256: str
+    # Read-only, so frozen dataclass locks satisfy it.
+    @property
+    def pyproject_sha256(self) -> str: ...
 
 
 def compute_pyproject_sha256(text: str) -> str:

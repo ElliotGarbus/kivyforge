@@ -7,6 +7,7 @@ which notes it attaches -- by driving each backend with recording callbacks.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,7 @@ class Recorder:
         self.lines: list[str] = []
         self.progress: list[str] = []
         self.artifacts: list[Artifact] = []
-        self.notes: list[tuple[str, str, dict | None]] = []
+        self.notes: list[tuple[str, str, Mapping[str, str] | None]] = []
         self.events = BuildEvents(
             on_line=self.lines.append,
             on_progress=self.progress.append,

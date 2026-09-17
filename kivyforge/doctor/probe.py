@@ -93,7 +93,8 @@ class RealProbe:
         return bool(_capture(["xcrun", "--find", "notarytool"]))
 
     def is_root(self) -> bool:
-        return hasattr(os, "geteuid") and os.geteuid() == 0
+        geteuid = getattr(os, "geteuid", None)  # absent on Windows
+        return geteuid is not None and geteuid() == 0
 
     def xcode_version(self) -> str | None:
         out = _capture(["xcodebuild", "-version"])

@@ -76,6 +76,7 @@ def dumps(lock: WheelRuntimeLock) -> str:
         if nb.url is not None:
             lines.append(f"url = {_s(nb.url)}")
         else:
+            assert nb.path is not None  # the model requires url or path
             lines.append(f"path = {_s(nb.path)}")
         lines.append(f"sha256 = {_s(nb.sha256)}")
 

@@ -114,7 +114,7 @@ def _open(src: Path):
 def _resize(image, size: int):
     from PIL import Image
 
-    return image.resize((size, size), Image.LANCZOS)
+    return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def _pillow():

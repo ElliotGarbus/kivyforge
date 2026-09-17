@@ -193,7 +193,7 @@ def _open(path: Path):
 def _fit(image, size: int):
     from PIL import Image
 
-    return image.resize((size, size), Image.LANCZOS)
+    return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def _safe_zone_layer(image, size: int):

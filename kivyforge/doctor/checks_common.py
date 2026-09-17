@@ -8,11 +8,21 @@ Platform-specific checks live in ``platforms/<os>/doctor.py``.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol
 
 from ..config.model import Config
 from ..lock.resolver import MIN_PIP_VERSION, version_str
 from .probe import Probe
 from .result import CheckResult, Status
+
+
+class ByteCompileProbe(Protocol):
+    """The one probe method the byte-compile check needs, so Android's probe fits."""
+
+    def byte_compile_interpreter(
+        self, python_version: str
+    ) -> tuple[str, ...] | None: ...
+
 
 SKIP_NOTE = "no pyproject.toml found in current directory"
 
@@ -91,7 +101,7 @@ def builds_natively(probe: Probe, archs: tuple[str, ...]) -> bool:
 
 
 def check_byte_compile(
-    probe: Probe,
+    probe: ByteCompileProbe,
     *,
     byte_compile: bool | str,
     python_version: str | None,

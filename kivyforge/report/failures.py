@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import errno as errno_mod
 from collections.abc import Mapping
+from typing import TypedDict
 
 from . import diagnostics, exit_codes
 
@@ -43,7 +44,15 @@ class ClassifiedError(Exception):
         self.context: dict[str, str] = dict(context or {})
 
 
-def spawn_failure(tool: str, exc: OSError) -> dict[str, object]:
+class Classification(TypedDict, total=False):
+    """Keyword arguments that classify a failure, for ``**`` at a raise site."""
+
+    code: str
+    exit_code: int
+    context: dict[str, str]
+
+
+def spawn_failure(tool: str, exc: OSError) -> Classification:
     """``code``/``exit_code``/``context`` for a tool that could not be started.
 
     Only ``FileNotFoundError`` means "missing". Anything else -- a wrapper
@@ -70,7 +79,7 @@ def spawn_failure(tool: str, exc: OSError) -> dict[str, object]:
     }
 
 
-def build_tool_failed(tool: str, task: str) -> dict[str, object]:
+def build_tool_failed(tool: str, task: str) -> Classification:
     """``code``/``exit_code``/``context`` for a build tool that exited non-zero."""
     return {
         "code": diagnostics.BUILD_TOOL_FAILED,
@@ -80,17 +89,23 @@ def build_tool_failed(tool: str, task: str) -> dict[str, object]:
 
 
 #: The three lock conditions, all fixed the same way: re-run ``kivyforge lock``.
-LOCK_MISSING = {"code": diagnostics.LOCK_MISSING, "exit_code": exit_codes.LOCK_DRIFT}
-LOCK_UNREADABLE = {
+LOCK_MISSING: Classification = {
+    "code": diagnostics.LOCK_MISSING,
+    "exit_code": exit_codes.LOCK_DRIFT,
+}
+LOCK_UNREADABLE: Classification = {
     "code": diagnostics.LOCK_UNREADABLE,
     "exit_code": exit_codes.LOCK_DRIFT,
 }
-LOCK_DRIFT = {"code": diagnostics.LOCK_DRIFT, "exit_code": exit_codes.LOCK_DRIFT}
-HOST_INCAPABLE = {
+LOCK_DRIFT: Classification = {
+    "code": diagnostics.LOCK_DRIFT,
+    "exit_code": exit_codes.LOCK_DRIFT,
+}
+HOST_INCAPABLE: Classification = {
     "code": diagnostics.HOST_INCAPABLE,
     "exit_code": exit_codes.ENVIRONMENT_ERROR,
 }
-ARTIFACT_MISSING = {
+ARTIFACT_MISSING: Classification = {
     "code": diagnostics.ARTIFACT_MISSING,
     "exit_code": exit_codes.BUILD_FAILURE,
 }

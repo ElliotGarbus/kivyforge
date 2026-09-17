@@ -4,5 +4,8 @@
   "pythonVersion": "3.13",
   "typeCheckingMode": "standard",
   "include": ["kivyforge", "tests"],
-  "exclude": ["kivyforge/project/templates"]
+  "exclude": [
+    "kivyforge/project/templates",
+    "kivyforge/platforms/android/bootstrap/templates"
+  ]
 }

@@ -24,7 +24,7 @@ class PlatformLockProfile(ABC):
     platform: str
 
     @abstractmethod
-    def overlay(self, config: Config):
+    def overlay(self, config: Config) -> object | None:
         """The platform overlay object (e.g. ``config.macos``), or ``None``."""
 
     @abstractmethod

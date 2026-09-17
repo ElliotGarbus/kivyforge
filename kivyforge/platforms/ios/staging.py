@@ -100,6 +100,7 @@ def create_staging(
         d.mkdir(parents=True, exist_ok=True)
 
     if release:
+        assert python_version is not None  # checked before any directory exists
         _materialize_app_copy(
             layout, project_root, config, python_version, echo, note=note
         )

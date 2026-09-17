@@ -49,7 +49,7 @@ IMPLIED_FEATURES: dict[str, tuple[str, ...]] = {
 # [tool.kivy].orientation -> android:screenOrientation. A single value maps
 # directly; the portrait pair / landscape pair map to their sensor variants;
 # any wider mix means "let the sensor decide".
-_ORIENTATION_MAP = {
+_ORIENTATION_MAP: dict[tuple[str, ...], str] = {
     ("portrait",): "portrait",
     ("portrait-upside-down",): "reversePortrait",
     ("landscape-left",): "reverseLandscape",

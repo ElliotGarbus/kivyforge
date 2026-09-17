@@ -264,7 +264,7 @@ def _contain(image, max_w: int, max_h: int):
 
     scale = min(max_w / image.width, max_h / image.height)
     size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-    return image.resize(size, Image.LANCZOS)
+    return image.resize(size, Image.Resampling.LANCZOS)
 
 
 def _open(path: Path):

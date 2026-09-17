@@ -21,6 +21,7 @@ from kivyforge.build_outcome import (
 )
 from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
+from kivyforge.config.model import Config
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -155,7 +156,7 @@ def _resolve_arch(lock: LinuxLockfile, arch: str | None) -> str:
 
 def _load_and_verify(
     project_root: Path, no_verify_lock: bool
-) -> tuple[object, LinuxLockfile]:
+) -> tuple[Config, LinuxLockfile]:
     config = _load_config(project_root)
     lock = _load_lock(project_root)
     pyproject = project_root / "pyproject.toml"

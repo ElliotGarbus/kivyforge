@@ -55,7 +55,9 @@ class ToolchainError(click.ClickException):
         self.remediation = _extract_fix(message) if remediation is None else remediation
         self.context: dict[str, str] = dict(context or {})
         if exit_code is not None:
-            self.exit_code = exit_code
+            # click's stubs declare exit_code a ClassVar, but click reads it from
+            # the instance, and a per-raise exit status is the point here.
+            self.exit_code = exit_code  # pyright: ignore[reportAttributeAccessIssue]
 
     @classmethod
     def wrap(cls, exc: Exception, message: str | None = None) -> ToolchainError:
