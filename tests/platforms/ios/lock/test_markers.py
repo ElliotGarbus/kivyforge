@@ -86,18 +86,23 @@ class TestDarwinIsNotIos:
     """The specific confusions a macOS host would introduce."""
 
     def test_macos_only_dependency_is_excluded(self):
-        requirement = Requirement('pyobjc-core; sys_platform == "darwin"')
-        assert not requirement.marker.evaluate(_env())
+        marker = Requirement('pyobjc-core; sys_platform == "darwin"').marker
+        assert marker is not None
+        assert not marker.evaluate(_env())
 
     def test_ios_only_dependency_is_included(self):
         """The silent case: on a macOS host this marker is False, so the
         dependency vanishes from the lock with no error at all."""
-        requirement = Requirement('rubicon-objc; sys_platform == "ios"')
-        assert requirement.marker.evaluate(_env())
+        marker = Requirement('rubicon-objc; sys_platform == "ios"').marker
+        assert marker is not None
+        assert marker.evaluate(_env())
 
     def test_platform_system_gate(self):
-        assert Requirement('x; platform_system == "iOS"').marker.evaluate(_env())
-        assert not Requirement('x; platform_system == "Darwin"').marker.evaluate(_env())
+        ios = Requirement('x; platform_system == "iOS"').marker
+        darwin = Requirement('x; platform_system == "Darwin"').marker
+        assert ios is not None and darwin is not None
+        assert ios.evaluate(_env())
+        assert not darwin.evaluate(_env())
 
     def test_recorded_edges_are_filtered_for_ios(self):
         requires_dist = [

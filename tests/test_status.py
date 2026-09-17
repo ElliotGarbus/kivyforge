@@ -124,7 +124,9 @@ class TestStatusReport:
         report = self._report(
             extra=(("Kivy/SDL", "kivy 2.3.1"), ("ABIs", "arm64-v8a, x86_64"))
         )
-        assert list(report.as_dict()["extra"]) == ["Kivy/SDL", "ABIs"]
+        extra = report.as_dict()["extra"]
+        assert isinstance(extra, dict)
+        assert list(extra) == ["Kivy/SDL", "ABIs"]
 
     def test_artifacts_serialise_in_order(self):
         report = self._report(
@@ -133,5 +135,7 @@ class TestStatusReport:
                 BuildArtifact(path=Path("b"), label="aab (release)"),
             )
         )
-        labels = [a["label"] for a in report.as_dict()["artifacts"]]
+        artifacts = report.as_dict()["artifacts"]
+        assert isinstance(artifacts, list)
+        labels = [a["label"] for a in artifacts]
         assert labels == ["apk (debug)", "aab (release)"]

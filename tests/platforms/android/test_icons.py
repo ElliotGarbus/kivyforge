@@ -161,6 +161,7 @@ class TestGeneratedProject:
             res = dest / "app" / "src" / "main" / "res"
             manifest = generate_manifest(android, orientation=("portrait",))
             app = ET.fromstring(manifest).find("application")
+            assert app is not None
             ns = "{http://schemas.android.com/apk/res/android}"
             for attr in ("icon", "roundIcon"):
                 value = app.get(f"{ns}{attr}")

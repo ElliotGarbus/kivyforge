@@ -20,10 +20,12 @@ class FakeFetcher:
     def __init__(self):
         self.calls: list[tuple[str, str]] = []
 
-    def fetch(self, version, arch_triple, *, offline=False):
-        self.calls.append((version, arch_triple))
+    def fetch(
+        self, version: str, target_triple: str, *, offline: bool = False
+    ) -> ReleaseAsset:
+        self.calls.append((version, target_triple))
         return ReleaseAsset(
-            url=f"https://example.com/{version}-{arch_triple}.tar.gz",
+            url=f"https://example.com/{version}-{target_triple}.tar.gz",
             sha256="d" * 64,
         )
 
@@ -45,7 +47,9 @@ class TestProvider:
         assert rt.version == "3.15.0"
         assert rt.floor == "11.0"
         assert {a.arch for a in rt.artifacts} == {"arm64", "x86_64"}
-        assert rt.artifact_for("arm64").sha256 == "d" * 64
+        arm64 = rt.artifact_for("arm64")
+        assert arm64 is not None
+        assert arm64.sha256 == "d" * 64
         # Correct triples were requested.
         assert ("3.15.0", "aarch64-apple-darwin") in fetcher.calls
         assert ("3.15.0", "x86_64-apple-darwin") in fetcher.calls

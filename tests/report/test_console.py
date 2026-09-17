@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+from typing import IO, cast
 
 import pytest
 
@@ -71,7 +72,9 @@ class TestWantColor:
 
     def test_flag_beats_everything(self):
         assert not want_color(
-            no_color=True, stream=FakeStream(tty=True), env={"FORCE_COLOR": "1"}
+            no_color=True,
+            stream=cast(IO[str], FakeStream(tty=True)),
+            env={"FORCE_COLOR": "1"},
         )
 
     def test_no_color_beats_force_color(self):
@@ -79,26 +82,34 @@ class TestWantColor:
         Unwanted escape codes corrupt a log; absent colour merely disappoints."""
         assert not want_color(
             no_color=False,
-            stream=FakeStream(tty=True),
+            stream=cast(IO[str], FakeStream(tty=True)),
             env={"NO_COLOR": "1", "FORCE_COLOR": "1"},
         )
 
     def test_no_color_set_to_zero_still_disables(self):
         """Presence is what counts, per no-color.org. Surprising, but standard."""
         assert not want_color(
-            no_color=False, stream=FakeStream(tty=True), env={"NO_COLOR": "0"}
+            no_color=False,
+            stream=cast(IO[str], FakeStream(tty=True)),
+            env={"NO_COLOR": "0"},
         )
 
     def test_force_color_wins_over_a_pipe(self):
         assert want_color(
-            no_color=False, stream=FakeStream(tty=False), env={"FORCE_COLOR": "1"}
+            no_color=False,
+            stream=cast(IO[str], FakeStream(tty=False)),
+            env={"FORCE_COLOR": "1"},
         )
 
     def test_a_pipe_is_not_coloured(self):
-        assert not want_color(no_color=False, stream=FakeStream(tty=False), env={})
+        assert not want_color(
+            no_color=False, stream=cast(IO[str], FakeStream(tty=False)), env={}
+        )
 
     def test_a_terminal_is_coloured(self):
-        assert want_color(no_color=False, stream=FakeStream(tty=True), env={})
+        assert want_color(
+            no_color=False, stream=cast(IO[str], FakeStream(tty=True)), env={}
+        )
 
     def test_a_stream_without_isatty_is_not_a_terminal(self):
         """Test doubles and capture objects have been known to lack it, and a
@@ -107,12 +118,12 @@ class TestWantColor:
         class Bare:
             encoding = "utf-8"
 
-        assert not want_color(no_color=False, stream=Bare(), env={})
+        assert not want_color(no_color=False, stream=cast(IO[str], Bare()), env={})
 
     def test_a_closed_stream_is_not_a_terminal(self):
         stream = FakeStream()
         stream.close()
-        assert not want_color(no_color=False, stream=stream, env={})
+        assert not want_color(no_color=False, stream=cast(IO[str], stream), env={})
 
 
 class TestStreamRoutingHumanMode:
@@ -236,7 +247,7 @@ class TestRenderingHazards:
             kivyforge_version="3.0.0.dev0",
             json_mode=True,
             stdout=out,
-            stderr=FakeStream(),
+            stderr=cast(IO[str], FakeStream()),
             env={},
         )
         report.diagnose(
@@ -306,5 +317,7 @@ class TestDiagnosticsCollection:
             report.diagnose(
                 Diagnostic(code=code, severity=diagnostics.WARNING, message="m")
             )
-        codes = [d["code"] for d in report.envelope(ok=True).as_dict()["diagnostics"]]
+        payload = report.envelope(ok=True).as_dict()["diagnostics"]
+        assert isinstance(payload, list)
+        codes = [d["code"] for d in payload]
         assert codes == ["KF-A", "KF-B"]

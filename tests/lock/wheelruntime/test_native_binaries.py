@@ -99,7 +99,7 @@ def _base_lock(**kw) -> WheelRuntimeLock:
         version="3.15.0",
         artifacts=(RuntimeArtifact(arch="arm64", url="https://e/a", sha256="c" * 64),),
     )
-    defaults = dict(
+    lock = WheelRuntimeLock(
         platform="macos",
         requires_python=">=3.15",
         packages=(),
@@ -110,8 +110,7 @@ def _base_lock(**kw) -> WheelRuntimeLock:
         pyproject_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
     )
-    defaults.update(kw)
-    return WheelRuntimeLock(**defaults)
+    return dataclasses.replace(lock, **kw)
 
 
 class TestSerialize:

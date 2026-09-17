@@ -18,10 +18,12 @@ class FakeFetcher:
     def __init__(self):
         self.calls: list[tuple[str, str]] = []
 
-    def fetch(self, version, arch_triple, *, offline=False):
-        self.calls.append((version, arch_triple))
+    def fetch(
+        self, version: str, target_triple: str, *, offline: bool = False
+    ) -> ReleaseAsset:
+        self.calls.append((version, target_triple))
         return ReleaseAsset(
-            url=f"https://example.com/{version}-{arch_triple}.tar.gz",
+            url=f"https://example.com/{version}-{target_triple}.tar.gz",
             sha256="d" * 64,
         )
 

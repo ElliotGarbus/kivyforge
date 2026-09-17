@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from pbxproj import XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import TreeType
+from pbxproj.pbxsections.PBXGroup import PBXGroup
 
 from kivyforge.platforms.ios import xcframeworks as xcframeworks_mod
 from kivyforge.platforms.ios.generator import XcodeProjectGenerator
@@ -291,6 +292,8 @@ class TestPhaseHelpersDirect:
         )[0]
         stray_group = project.get_or_create_group("Stray", "Stray")
         frameworks_group = project.get_or_create_group("Frameworks", "Frameworks")
+        assert isinstance(stray_group, PBXGroup)
+        assert isinstance(frameworks_group, PBXGroup)
         frameworks_group.remove_child(ref)
         stray_group.add_child(ref)
         assert stray_group.has_child(ref)

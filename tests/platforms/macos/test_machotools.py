@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -100,7 +101,7 @@ class TestToolWrappers:
 
         monkeypatch.setattr(subprocess, "run", boom)
         with pytest.raises(AppBundleError, match="not found"):
-            machotools.codesign_adhoc("/tmp/x")
+            machotools.codesign_adhoc(Path("/tmp/x"))
 
     def test_run_nonzero_raises(self, monkeypatch):
         def fail(*a, **k):
@@ -108,14 +109,14 @@ class TestToolWrappers:
 
         monkeypatch.setattr(subprocess, "run", fail)
         with pytest.raises(AppBundleError, match="boom"):
-            machotools.codesign_adhoc("/bin/x")
+            machotools.codesign_adhoc(Path("/bin/x"))
 
     def test_macho_arches_parses_lipo(self, monkeypatch):
         def ok(*a, **k):
             return subprocess.CompletedProcess(a[0], 0, "x86_64 arm64\n", "")
 
         monkeypatch.setattr(subprocess, "run", ok)
-        assert machotools.macho_arches("/bin/x") == ("x86_64", "arm64")
+        assert machotools.macho_arches(Path("/bin/x")) == ("x86_64", "arm64")
 
     def test_macho_arches_empty_on_error(self, monkeypatch):
         monkeypatch.setattr(
@@ -123,7 +124,7 @@ class TestToolWrappers:
             "run",
             lambda *a, **k: subprocess.CompletedProcess(a[0], 1, "", "e"),
         )
-        assert machotools.macho_arches("/bin/x") == ()
+        assert machotools.macho_arches(Path("/bin/x")) == ()
 
     def test_codesign_verify_bool(self, monkeypatch):
         monkeypatch.setattr(
@@ -131,7 +132,7 @@ class TestToolWrappers:
             "run",
             lambda *a, **k: subprocess.CompletedProcess(a[0], 0, "", ""),
         )
-        assert machotools.codesign_verify("/app") is True
+        assert machotools.codesign_verify(Path("/app")) is True
 
 
 class TestCodesignIdentityRetry:
@@ -151,7 +152,7 @@ class TestCodesignIdentityRetry:
         monkeypatch.setattr(subprocess, "run", flaky)
         monkeypatch.setattr(machotools.time, "sleep", lambda s: None)
 
-        machotools.codesign_identity("/bin/x", "Developer ID Application: Me")
+        machotools.codesign_identity(Path("/bin/x"), "Developer ID Application: Me")
 
         assert len(calls) == 3
 
@@ -166,7 +167,7 @@ class TestCodesignIdentityRetry:
         monkeypatch.setattr(machotools.time, "sleep", lambda s: None)
 
         with pytest.raises(AppBundleError, match="errSecInternalComponent"):
-            machotools.codesign_identity("/bin/x", "Developer ID Application: Me")
+            machotools.codesign_identity(Path("/bin/x"), "Developer ID Application: Me")
 
         assert len(calls) == machotools._CODESIGN_MAX_ATTEMPTS
 
@@ -181,6 +182,6 @@ class TestCodesignIdentityRetry:
         monkeypatch.setattr(machotools.time, "sleep", lambda s: None)
 
         with pytest.raises(AppBundleError, match="no identity found"):
-            machotools.codesign_identity("/bin/x", "Developer ID Application: Me")
+            machotools.codesign_identity(Path("/bin/x"), "Developer ID Application: Me")
 
         assert len(calls) == 1

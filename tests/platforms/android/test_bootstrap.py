@@ -131,7 +131,9 @@ class TestRender:
         assert '"SDL3", "SDL3_image", "SDL3_mixer", "SDL3_ttf",' in activity
         # Scoped to getLibraries(): the class docstring legitimately names both
         # generations when explaining that the family is substituted.
-        libraries = re.search(r"return new String\[\] \{[^}]*\}", activity).group(0)
+        match = re.search(r"return new String\[\] \{[^}]*\}", activity)
+        assert match is not None
+        libraries = match.group(0)
         assert "SDL2" not in libraries
 
     def test_generations_do_not_leak_into_each_other(self):

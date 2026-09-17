@@ -9,10 +9,7 @@ escaping, url/path exclusivity, optional fields, dependency markers, the
 
 from __future__ import annotations
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
-    import tomli as tomllib
+import tomllib
 
 import pytest
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
 
 import pytest
@@ -47,8 +48,7 @@ class TestByteCompile:
         _write(tree / "greet.py", "def hi():\n    return 'hi'\n")
         byte_compile([tree], strip_source=True, stripdir=tmp_path)
         monkeypatch.syspath_prepend(str(tree))
-        import greet
-
+        greet = importlib.import_module("greet")
         assert greet.hi() == "hi"
         sys.modules.pop("greet", None)
 

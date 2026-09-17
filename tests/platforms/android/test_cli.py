@@ -1013,7 +1013,9 @@ class TestMergedManifestPolicy:
             cli.android_package(project)
 
 
-def _fake_device(monkeypatch, *, serial="emulator-5554", abi="arm64_v8a"):
+def _fake_device(
+    monkeypatch, *, serial: str = "emulator-5554", abi: str | None = "arm64_v8a"
+):
     """Stand in for an attached target: `run`/`--smoke` resolve one, then ask it
     which ABI to build for."""
     seen: dict = {}

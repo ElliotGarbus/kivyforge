@@ -71,7 +71,9 @@ def _exempt_docstrings(tree: ast.Module) -> set[int]:
             {"command", "group"} & _decorator_names(node)
         ):
             continue
-        exempt.add(id(node.body[0].value))
+        first = node.body[0]
+        assert isinstance(first, ast.Expr)  # get_docstring found one
+        exempt.add(id(first.value))
     return exempt
 
 

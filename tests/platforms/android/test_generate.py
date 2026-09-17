@@ -88,6 +88,7 @@ class TestReservedApplicationAttrs:
         )
         _, tree = _manifest_tree(android)
         app = tree.find("application")
+        assert app is not None
         assert app.get(NS + "allowBackup") == "false"
         # The bootstrap keeps the name slot unset rather than ceding it.
         assert app.get(NS + "name") is None
@@ -146,6 +147,7 @@ class TestManifest:
         assert "android.permission.FOREGROUND_SERVICE" in permissions
         assert "android.permission.FOREGROUND_SERVICE_DATA_SYNC" in permissions
         service = tree.find("application/service")
+        assert service is not None
         assert service.get(f"{NS}name") == "org.kivy.android.ServiceDownloader"
         assert service.get(f"{NS}foregroundServiceType") == "dataSync"
 
@@ -164,6 +166,7 @@ class TestManifest:
         text, tree = _manifest_tree(android)
         assert "org.example.genapp.fp" in text
         activity = tree.find("application/activity")
+        assert activity is not None
         actions = [a.get(f"{NS}name") for a in activity.findall("intent-filter/action")]
         assert "android.intent.action.MAIN" in actions
         assert "android.intent.action.VIEW" in actions
@@ -175,6 +178,7 @@ class TestManifest:
         )
         _, tree = _manifest_tree(android)
         app = tree.find("application")
+        assert app is not None
         assert app.get(f"{NS}largeHeap") == "true"
 
     def test_orientation_mapping(self):
@@ -244,13 +248,15 @@ class TestProjectFiles:
 
     def test_determinism(self, tmp_path):
         config, android = _android()
-        kwargs = dict(
-            python_version="3.14.6",
-            runtime_root=tmp_path / "rt",
-            staged_libs=[],
-        )
-        write_app_build_gradle(tmp_path / "a", config, android, **kwargs)
-        write_app_build_gradle(tmp_path / "b", config, android, **kwargs)
+        for out in ("a", "b"):
+            write_app_build_gradle(
+                tmp_path / out,
+                config,
+                android,
+                python_version="3.14.6",
+                runtime_root=tmp_path / "rt",
+                staged_libs=[],
+            )
         assert (tmp_path / "a" / "app" / "build.gradle").read_bytes() == (
             tmp_path / "b" / "app" / "build.gradle"
         ).read_bytes()

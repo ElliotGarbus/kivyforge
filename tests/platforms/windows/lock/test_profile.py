@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
+from kivyforge.config.model import Config
 from kivyforge.platforms.windows.lock import (
     WindowsResolverError,
     get_windows_resolver,
@@ -75,7 +78,7 @@ class TestPythonVersion:
         cfg = SimpleNamespace(
             windows_required=SimpleNamespace(python_version="3.13.14")
         )
-        assert WindowsProfile().python_version(cfg) == "3.13.14"
+        assert WindowsProfile().python_version(cast(Config, cfg)) == "3.13.14"
 
     def test_missing_version_raises_not_silent_default(self):
         # No hidden 3.15.0 fallback: an unset version surfaces as a clear error
@@ -86,7 +89,7 @@ class TestPythonVersion:
 
         cfg = SimpleNamespace(windows_required=SimpleNamespace(python_version=None))
         with pytest.raises(ConfigError, match="python.*version"):
-            WindowsProfile().python_version(cfg)
+            WindowsProfile().python_version(cast(Config, cfg))
 
 
 class TestFactory:

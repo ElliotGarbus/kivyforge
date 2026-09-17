@@ -10,7 +10,11 @@ import zipfile
 import pytest
 
 from kivyforge.artifacts import native_stage_util as util
-from kivyforge.lock.wheelruntime.model import LockedNativeBinary, WheelRuntimeLock
+from kivyforge.lock.wheelruntime.model import (
+    LockedNativeBinary,
+    PythonRuntime,
+    WheelRuntimeLock,
+)
 from kivyforge.platforms.windows import WindowsBundleError, native_stage, petools
 
 
@@ -32,7 +36,9 @@ def _lock(binaries):
         platform="windows",
         requires_python=">=3.13",
         packages=(),
-        python_runtime=None,  # unused by staging
+        python_runtime=PythonRuntime(  # unused by staging
+            provider="python-build-standalone", version="3.13.14", artifacts=()
+        ),
         archs=("amd64",),
         kivyforge_version="0",
         generated_at="t",

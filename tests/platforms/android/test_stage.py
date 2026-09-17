@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 
@@ -24,6 +25,18 @@ from kivyforge.platforms.android.stage.wheels import (
     install_wheels,
     select_wheel,
 )
+
+
+class _BundleKwargs(TypedDict):
+    """The ``assemble_bundle`` arguments every bundle test shares."""
+
+    stdlib_src: Path
+    site_packages_by_abi: dict[str, Path]
+    canonical_abi: str
+    app_src: Path
+    finder_source: str
+    kivy_bootstrap_source: str
+    ext_manifest_json: str
 
 
 def _write(path: Path, content: bytes = b"x") -> Path:
@@ -242,7 +255,7 @@ class TestBundle:
         _write(stdlib / "lib-dynload" / "_ssl.so")  # excluded
         _write(stdlib / "__pycache__" / "os.pyc")  # excluded
         _write(stdlib / "data.gz")  # excluded (AGP decompression trap)
-        sp = {}
+        sp: dict[str, Path] = {}
         for abi in ("arm64_v8a", "x86_64"):
             root = tmp_path / f"sp-{abi}"
             _write(root / "jnius" / "__init__.py", b"# jnius")
@@ -284,9 +297,9 @@ class TestBundle:
         ).read_text() == "# kivy contract"
         assert (bundle / "VERSION").read_text() == stamp
 
-    def _kwargs(self, tmp_path):
+    def _kwargs(self, tmp_path) -> _BundleKwargs:
         stdlib, sp, app = self._stage(tmp_path)
-        return dict(
+        return _BundleKwargs(
             stdlib_src=stdlib,
             site_packages_by_abi=sp,
             canonical_abi="arm64_v8a",
@@ -381,7 +394,7 @@ class TestBundle:
         stdlib, sp, app = self._stage(tmp_path)
         _write(app / "pkg" / "__init__.py")
         _write(app / "pkg" / "start.py", b"# start")
-        kwargs = dict(
+        kwargs = _BundleKwargs(
             stdlib_src=stdlib,
             site_packages_by_abi=sp,
             canonical_abi="arm64_v8a",
@@ -429,7 +442,7 @@ class TestBundle:
 
     def test_stamp_tracks_content(self, tmp_path):
         stdlib, sp, app = self._stage(tmp_path)
-        kwargs = dict(
+        kwargs = _BundleKwargs(
             stdlib_src=stdlib,
             site_packages_by_abi=sp,
             canonical_abi="arm64_v8a",

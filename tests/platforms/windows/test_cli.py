@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from kivyforge.build_outcome import Artifact, ArtifactKind, BuildOutcome
 from kivyforge.cli._common import ToolchainError
 from kivyforge.platforms.windows import cli
+from kivyforge.platforms.windows.lock import WindowsLockfile
 from kivyforge.status import LockState
 
 pytestmark = pytest.mark.requires_windows
@@ -413,7 +415,7 @@ class TestAssembleAndArch:
             archs = ("amd64",)
 
         with pytest.raises(ToolchainError, match="not in the lock"):
-            cli._resolve_arch(_Lock(), "arm64")
+            cli._resolve_arch(cast(WindowsLockfile, _Lock()), "arm64")
 
 
 class TestStageDistCopy:

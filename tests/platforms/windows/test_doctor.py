@@ -119,7 +119,7 @@ class TestAppId:
         # The loader enforces the hard constraints, so force an invalid id onto a
         # loaded config to exercise the doctor's defensive FAIL branch.
         cfg = _config()
-        bad_windows = dataclasses.replace(cfg.windows, app_id="Has Spaces")
+        bad_windows = dataclasses.replace(cfg.windows_required, app_id="Has Spaces")
         cfg = dataclasses.replace(cfg, windows=bad_windows)
         assert W.check_windows_app_id(cfg).status is Status.FAIL
 
