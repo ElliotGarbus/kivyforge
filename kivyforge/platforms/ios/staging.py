@@ -12,11 +12,12 @@ from kivyforge.build_outcome import discard_note
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
+from kivyforge.report.failures import ClassifiedError, reclassify
 
 _APP_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 
 
-class StagingError(Exception):
+class StagingError(ClassifiedError):
     """Staging tree cannot be created (e.g. ``app_dir`` does not exist)."""
 
 
@@ -240,5 +241,6 @@ def _compile_app_copy(
     except PycompileError as exc:
         raise StagingError(
             f"{exc}\n  Fix it, or set "
-            "[tool.kivy.ios.python.build_settings].byte_compile = false."
+            "[tool.kivy.ios.python.build_settings].byte_compile = false.",
+            **reclassify(exc),
         ) from exc

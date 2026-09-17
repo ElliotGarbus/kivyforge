@@ -15,12 +15,14 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kivyforge.bundle.pycompile import PycompileError
 from kivyforge.cli._common import ToolchainError
 from kivyforge.cli.build import build
 from kivyforge.cli.package import package
 from kivyforge.platforms.ios import cli as ios_cli
+from kivyforge.platforms.linux import AppDirError
 from kivyforge.report import diagnostics, exit_codes
-from kivyforge.report.failures import ClassifiedError
+from kivyforge.report.failures import ClassifiedError, reclassify, spawn_failure
 
 # Bound at import, before the suite-wide autouse fixture replaces it.
 _REAL_IOS_GATE = ios_cli._require_macos_host
@@ -45,6 +47,37 @@ class TestWrap:
         wrapped = ToolchainError.wrap(ValueError("plain"))
         assert wrapped.code == diagnostics.UNSPECIFIED
         assert wrapped.exit_code == exit_codes.CONFIG_ERROR
+
+
+class TestReclassify:
+    """A re-raise one layer down must not be where the classification stops.
+
+    ``ToolchainError.wrap`` only sees the outermost exception. A backend that
+    catches ``PycompileError`` and re-raises it as its own type with advice
+    appended -- which all four desktop bundlers and both iOS staging paths do --
+    silently downgraded a classified spawn failure to ``KF-ERROR``/exit ``1``
+    until these forwarded.
+    """
+
+    def test_forwards_every_field(self):
+        inner = ClassifiedError(
+            "inner", code="KF-X", exit_code=3, context={"tool": "t"}
+        )
+        outer = ClassifiedError("outer, plus advice", **reclassify(inner))
+        assert (outer.code, outer.exit_code) == ("KF-X", 3)
+        assert outer.context == {"tool": "t"}
+
+    def test_survives_the_whole_chain_to_the_cli_boundary(self):
+        # PycompileError -> AppDirError -> ToolchainError, the Linux byte-compile
+        # path, asserted end to end because each hop is a separate raise site.
+        inner = PycompileError(
+            "no interpreter", **spawn_failure("python3.13", OSError())
+        )
+        middle = AppDirError("byte-compiling failed, or set ...", **reclassify(inner))
+        wrapped = ToolchainError.wrap(middle)
+        assert wrapped.code == diagnostics.TOOLCHAIN_UNUSABLE
+        assert wrapped.exit_code == exit_codes.ENVIRONMENT_ERROR
+        assert wrapped.as_diagnostic().context["tool"] == "python3.13"
 
 
 class TestBuildToolFailed:

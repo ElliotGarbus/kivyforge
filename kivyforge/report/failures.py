@@ -52,6 +52,18 @@ class Classification(TypedDict, total=False):
     context: dict[str, str]
 
 
+def reclassify(exc: ClassifiedError) -> Classification:
+    """Carry *exc*'s classification into the family re-raising it.
+
+    A lower layer's failure is often re-raised as the surrounding backend's own
+    type with advice appended -- ``PycompileError`` becomes ``AppDirError`` plus
+    "or set byte_compile = false". Without this the re-raise keeps the message and
+    drops the code, which is the same loss ``ToolchainError.wrap`` exists to
+    prevent, one layer down.
+    """
+    return {"code": exc.code, "exit_code": exc.exit_code, "context": dict(exc.context)}
+
+
 def spawn_failure(tool: str, exc: OSError) -> Classification:
     """``code``/``exit_code``/``context`` for a tool that could not be started.
 

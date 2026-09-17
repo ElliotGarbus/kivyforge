@@ -22,6 +22,7 @@ from ..config.model import DesktopBuildSettings
 from ..lock.model import LockedWheel
 from ..platforms.ios.lock.model import Lockfile
 from ..report.diagnostics import BYTECOMPILE_NO_INTERP
+from ..report.failures import ClassifiedError, reclassify
 from .cache import ArtifactCache
 from .download import Downloader, fetch_artifact
 from .frameworks import (
@@ -32,7 +33,7 @@ from .frameworks import (
 from .wheels import BuildSlice, select_wheel
 
 
-class CollectError(Exception):
+class CollectError(ClassifiedError):
     pass
 
 
@@ -221,7 +222,8 @@ def _compile_pip_deps(
     except PycompileError as exc:
         raise CollectError(
             f"{exc}\n  Fix it, or set "
-            "[tool.kivy.ios.python.build_settings].byte_compile = false."
+            "[tool.kivy.ios.python.build_settings].byte_compile = false.",
+            **reclassify(exc),
         ) from exc
 
 

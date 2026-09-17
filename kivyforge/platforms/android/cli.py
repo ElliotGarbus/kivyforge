@@ -26,6 +26,7 @@ from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics
+from kivyforge.report.failures import reclassify
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from . import (
@@ -540,7 +541,7 @@ def android_package(
             key_alias_override=key_alias,
         )
     except SigningError as exc:
-        raise AndroidBuildError(str(exc)) from exc
+        raise AndroidBuildError(str(exc), **reclassify(exc)) from exc
 
     # Stage + generate (steps 1-7), injecting the release signing config.
     signing_block = signing_config_gradle(signing)

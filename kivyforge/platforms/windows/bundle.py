@@ -39,6 +39,7 @@ from kivyforge.build_outcome import discard_note
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
+from kivyforge.report.failures import reclassify
 
 from . import WindowsBundleError
 from .fsswap import discard_reserved, reserve_previous, restore_previous
@@ -229,7 +230,8 @@ def build_onedir(
             except PycompileError as exc:
                 raise WindowsBundleError(
                     f"{exc}\n  Fix it, or set "
-                    "[tool.kivy.windows.build_settings].byte_compile = false."
+                    "[tool.kivy.windows.build_settings].byte_compile = false.",
+                    **reclassify(exc),
                 ) from exc
 
         write_bootstrap(

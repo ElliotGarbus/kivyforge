@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kivyforge.config.model import Config
+from kivyforge.report.failures import ClassifiedError
 
 
 def default_simulator_arch() -> str:
@@ -49,7 +50,7 @@ EXPORT_METHOD = {
 }
 
 
-class SigningError(Exception):
+class SigningError(ClassifiedError):
     """Code signing is required but no team_id could be resolved."""
 
 

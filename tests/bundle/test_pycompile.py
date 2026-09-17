@@ -16,6 +16,7 @@ from kivyforge.bundle.pycompile import (
     strip_sources,
     target_minor,
 )
+from kivyforge.report import diagnostics, exit_codes
 
 
 def _write(path, text="x = 1\n"):
@@ -70,13 +71,18 @@ class TestByteCompile:
         with pytest.raises(PycompileError, match="byte-compiling"):
             byte_compile([tree], stripdir=tmp_path)
 
-    def test_unknown_compiler_raises_pycompile_error(self, tmp_path):
+    def test_unknown_compiler_is_classified_toolchain_missing(self, tmp_path):
+        # The compiler is a spawned tool like any other, so a build that cannot
+        # start it must say "fix the environment" (exit 3), not "fix the file".
         tree = tmp_path / "app"
         _write(tree / "main.py")
-        with pytest.raises(PycompileError, match="could not run"):
+        with pytest.raises(PycompileError, match="could not run") as excinfo:
             byte_compile(
                 [tree], compiler=("no-such-interpreter-xyz",), stripdir=tmp_path
             )
+        assert excinfo.value.code == diagnostics.TOOLCHAIN_MISSING
+        assert excinfo.value.exit_code == exit_codes.ENVIRONMENT_ERROR
+        assert excinfo.value.context == {"tool": "no-such-interpreter-xyz"}
 
     def test_pyc_records_stripdir_relative_path(self, tmp_path):
         # A .pyc embeds the source path it was compiled from; stripdir keeps

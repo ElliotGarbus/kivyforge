@@ -17,9 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kivyforge.config.model import AndroidSigningConfig
+from kivyforge.report.failures import ClassifiedError, spawn_failure
 
 
-class SigningError(Exception):
+class SigningError(ClassifiedError):
     pass
 
 
@@ -100,20 +101,28 @@ def _verify_alias(keystore: Path, alias: str, store_password: str) -> None:
         # Non-fatal: a JDK is a doctor prerequisite; Gradle will surface a
         # clear error if the alias is truly wrong. Don't block on tool absence.
         return
-    proc = subprocess.run(
-        [
-            keytool,
-            "-list",
-            "-keystore",
-            str(keystore),
-            "-alias",
-            alias,
-            "-storepass",
-            store_password,
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            [
+                keytool,
+                "-list",
+                "-keystore",
+                str(keystore),
+                "-alias",
+                alias,
+                "-storepass",
+                store_password,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        # `which` found it, so this is not absence: no exec bit, or the wrong
+        # binary format. Left unguarded it escaped as a traceback.
+        raise SigningError(
+            f"could not run keytool to verify the {alias!r} key alias: {exc}",
+            **spawn_failure("keytool", exc),
+        ) from exc
     if proc.returncode != 0:
         raise SigningError(
             f"key alias {alias!r} not found in {keystore.name} (or the keystore "

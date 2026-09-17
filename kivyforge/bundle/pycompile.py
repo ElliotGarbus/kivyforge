@@ -37,10 +37,11 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from kivyforge.report.failures import ClassifiedError, spawn_failure
 from kivyforge.report.streams import stderr_for_child
 
 
-class PycompileError(Exception):
+class PycompileError(ClassifiedError):
     """Byte-compilation failed, or the compiler could not be run."""
 
 
@@ -243,5 +244,6 @@ def compile_tree(
             )
     except OSError as exc:
         raise PycompileError(
-            f"could not run {' '.join(compiler)} to byte-compile {target.name}: {exc}"
+            f"could not run {' '.join(compiler)} to byte-compile {target.name}: {exc}",
+            **spawn_failure(compiler[0], exc),
         ) from exc

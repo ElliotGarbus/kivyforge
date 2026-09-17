@@ -24,6 +24,7 @@ from kivyforge.build_outcome import discard_note
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
+from kivyforge.report.failures import reclassify
 
 from . import AppBundleError
 from .icns import generate_icns
@@ -219,7 +220,8 @@ def build_app_bundle(
             except PycompileError as exc:
                 raise AppBundleError(
                     f"{exc}\n  Fix it, or set "
-                    "[tool.kivy.macos.build_settings].byte_compile = false."
+                    "[tool.kivy.macos.build_settings].byte_compile = false.",
+                    **reclassify(exc),
                 ) from exc
 
         # Sign the temp bundle before the swap: codesign embeds signatures in the

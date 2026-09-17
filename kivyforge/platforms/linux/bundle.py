@@ -25,6 +25,7 @@ from kivyforge.build_outcome import discard_note
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
+from kivyforge.report.failures import reclassify
 
 from . import AppDirError
 from .desktop import validate_desktop_file, write_desktop_entry
@@ -203,7 +204,8 @@ def build_appdir(
             except PycompileError as exc:
                 raise AppDirError(
                     f"{exc}\n  Fix it, or set "
-                    "[tool.kivy.linux.build_settings].byte_compile = false."
+                    "[tool.kivy.linux.build_settings].byte_compile = false.",
+                    **reclassify(exc),
                 ) from exc
 
         stage_icons(config, project_root, work)
