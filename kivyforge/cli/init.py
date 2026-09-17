@@ -37,7 +37,9 @@ from ..config.model import (
     WindowsSigningConfig,
 )
 from ..platforms import PLATFORM_ENV_VAR, available_platform_names, get_platform
+from ..report import Diagnostic, Report, diagnostics
 from ._common import PYPROJECT_NAME, ToolchainError
+from ._output import output_options, reporting
 from ._platform import configured_platforms, platform_option
 from .init_writer import (
     append_block,
@@ -144,8 +146,14 @@ _REQUIREMENTS_MSG = (
 @click.option(
     "--force", is_flag=True, help="Regenerate [tool.kivy*] (preserves signing)."
 )
-def init(cli_platform: str | None, force: bool) -> None:
+@output_options
+def init(cli_platform: str | None, force: bool, json_out: bool, no_color: bool) -> None:
     """Seed [tool.kivy] + the target platform's overlay into pyproject.toml."""
+    with reporting("init", json_out=json_out, no_color=no_color) as report:
+        _init(report, cli_platform, force=force)
+
+
+def _init(report: Report, cli_platform: str | None, *, force: bool) -> None:
     cwd = Path.cwd()
     pyproject = cwd / PYPROJECT_NAME
     requirements = cwd / REQUIREMENTS_NAME
@@ -153,7 +161,8 @@ def init(cli_platform: str | None, force: bool) -> None:
 
     if pyproject.is_file():
         platform_name = _resolve_init_platform(cli_platform, pyproject)
-        _run_update_path(pyproject, force=force, platform_name=platform_name)
+        report.platform = platform_name
+        _run_update_path(report, pyproject, force=force, platform_name=platform_name)
     elif buildozer_spec.is_file():
         raise ToolchainError(_buildozer_migration_message(buildozer_spec))
     elif requirements.is_file():
@@ -286,7 +295,9 @@ def _resolve_init_platform(
     )
 
 
-def _run_update_path(pyproject: Path, *, force: bool, platform_name: str) -> None:
+def _run_update_path(
+    report: Report, pyproject: Path, *, force: bool, platform_name: str
+) -> None:
     text = pyproject.read_text(encoding="utf-8")
     raw = _safe_parse(text, pyproject)
 
@@ -323,7 +334,9 @@ def _run_update_path(pyproject: Path, *, force: bool, platform_name: str) -> Non
         )
         new_text = append_block(stripped, block)
         pyproject.write_text(new_text, encoding="utf-8")
-        click.echo(
+        action = "regenerated"
+        tables = [table_key]
+        report.line(
             f"Regenerated [{table_key}] (signing/python/icon settings preserved)."
         )
     else:
@@ -340,11 +353,17 @@ def _run_update_path(pyproject: Path, *, force: bool, platform_name: str) -> Non
         added = (
             f"[{table_key}]" if not include_shared else f"[tool.kivy] + [{table_key}]"
         )
-        click.echo(f"Added {added} to pyproject.toml.")
+        action = "added"
+        tables = [table_key] if not include_shared else ["tool.kivy", table_key]
+        report.line(f"Added {added} to pyproject.toml.")
 
-    _maybe_warn_drift(raw)
-    click.echo(
+    _maybe_warn_drift(report, raw)
+    report.line(
         f"Next: fill in the TODOs in [{table_key}], then `kivyforge lock -p {platform_name}`."
+    )
+    report.emit(
+        ok=True,
+        data={"action": action, "tables": tables, "pyproject": PYPROJECT_NAME},
     )
 
 
@@ -583,7 +602,7 @@ def _read_categories(table: dict) -> list[str] | None:
     return _read_str_list(desktop, "categories")
 
 
-def _maybe_warn_drift(raw: dict) -> None:
+def _maybe_warn_drift(report: Report, raw: dict) -> None:
     """If a venv is active, warn when an installed dep drifts from its specifier."""
     if not _venv_active():
         return
@@ -605,8 +624,18 @@ def _maybe_warn_drift(raw: dict) -> None:
             and str(req.specifier)
             and not req.specifier.contains(Version(version), prereleases=True)
         ):
-            click.echo(
-                f"warning: installed {req.name} {version} is outside declared "
-                f"'{req.specifier}'. (Not modified.)",
-                err=True,
+            message = (
+                f"installed {req.name} {version} is outside declared "
+                f"'{req.specifier}'. (Not modified.)"
+            )
+            # Stays on stderr, worded as before; the diagnostic is what makes it
+            # visible to a consumer reading the envelope rather than the terminal.
+            report.progress(f"warning: {message}")
+            report.diagnose(
+                Diagnostic(
+                    code=diagnostics.DEPENDENCY_DRIFT,
+                    severity=diagnostics.WARNING,
+                    message=message,
+                    context={"package": req.name, "installed": version},
+                )
             )

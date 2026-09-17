@@ -217,7 +217,9 @@ class TestSharedDispatchViaEnvVar:
         monkeypatch.setenv("KIVYFORGE_PLATFORM", "ios")
         calls = []
         monkeypatch.setattr(
-            get_platform("ios"), "open_project", lambda root: calls.append(root)
+            get_platform("ios"),
+            "open_project",
+            lambda root, **kw: calls.append(root) or root / "myapp-ios",
         )
         result = runner.invoke(open_, [])
         assert result.exit_code == 0, result.output

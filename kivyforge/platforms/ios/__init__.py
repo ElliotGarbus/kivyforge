@@ -117,10 +117,10 @@ class IosPlatform(Platform):
             no_cache=no_cache,
         )
 
-    def open_project(self, project_root: Path) -> None:
+    def open_project(self, project_root: Path, *, events: BuildEvents) -> Path:
         from .cli import ios_open
 
-        ios_open(project_root)
+        return ios_open(project_root, events=events)
 
     def status(self, project_root: Path) -> StatusReport:
         from .cli import ios_status

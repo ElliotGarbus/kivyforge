@@ -82,6 +82,14 @@ TOOLCHAIN_MISSING = "KF-TOOLCHAIN-MISSING"
 #: ``context`` carries ``tool`` and ``errno``.
 TOOLCHAIN_UNUSABLE = "KF-TOOLCHAIN-UNUSABLE"
 
+#: An installed dependency sits outside the specifier ``pyproject.toml``
+#: declares. ``init`` reports it; nothing is modified, so the run stays ``ok``.
+DEPENDENCY_DRIFT = "KF-DEPENDENCY-DRIFT"
+
+#: ``open`` found no IDE launcher on PATH. The project exists and can be opened
+#: by hand, so the run stays ``ok``; this is what says it was not launched.
+IDE_NOT_FOUND = "KF-IDE-NOT-FOUND"
+
 #: This host cannot build this target at all (e.g. iOS from Windows).
 HOST_INCAPABLE = "KF-HOST-INCAPABLE"
 

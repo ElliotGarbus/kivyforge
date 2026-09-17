@@ -962,7 +962,7 @@ def android_status(project_root: Path) -> StatusReport:
 
 
 @user_facing
-def android_open(project_root: Path) -> None:
+def android_open(project_root: Path, *, events: BuildEvents = ECHO_EVENTS) -> Path:
     """Open the generated project in Android Studio (android/06 §open)."""
     config, _ = _load_config_only(project_root)
     dest = project_dir_for(project_root, config)
@@ -975,12 +975,20 @@ def android_open(project_root: Path) -> None:
         import subprocess
 
         subprocess.Popen([studio, str(dest)])
-        click.echo(f"Opening {dest.name}/ in Android Studio...")
-        return
-    click.echo(
+        events.on_line(f"Opening {dest.name}/ in Android Studio...")
+        return dest
+    # Not a failure: the project is generated and openable by hand. The note is
+    # what tells a consumer the IDE was never actually launched.
+    events.on_line(
         f"Android Studio launcher not found on PATH.\n"
         f"  Open this project manually: {dest}"
     )
+    events.note(
+        diagnostics.IDE_NOT_FOUND,
+        "no Android Studio launcher on PATH; the project was not opened.",
+        {"ide": "android-studio"},
+    )
+    return dest
 
 
 def _load_config_only(project_root: Path):

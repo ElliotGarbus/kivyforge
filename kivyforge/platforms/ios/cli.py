@@ -589,8 +589,8 @@ def ios_package(
 # ---- open ---------------------------------------------------------------- #
 
 
-def ios_open(project_root: Path) -> None:
-    """Open ``<app>-ios/<app>.xcodeproj`` in Xcode."""
+def ios_open(project_root: Path, *, events: BuildEvents = ECHO_EVENTS) -> Path:
+    """Open ``<app>-ios/<app>.xcodeproj`` in Xcode; return the project opened."""
     _require_macos_host()
     try:
         config = load_config(project_root / "pyproject.toml")
@@ -608,6 +608,8 @@ def ios_open(project_root: Path) -> None:
         run_command(open_command(xcodeproj))
     except CommandError as exc:
         raise ToolchainError.wrap(exc) from exc
+    events.on_line(f"Opening {xcodeproj.relative_to(project_root)} in Xcode ...")
+    return xcodeproj
 
 
 # ---- status -------------------------------------------------------------- #

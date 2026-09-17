@@ -131,7 +131,13 @@ class Platform(ABC):
     ) -> BuildOutcome:
         raise NotImplementedError(f"package is not supported for {self.name!r}.")
 
-    def open_project(self, project_root: Path) -> None:
+    def open_project(self, project_root: Path, *, events: BuildEvents) -> Path:
+        """Open the generated project in its IDE; return what was opened.
+
+        Reports through the same ``events`` seam ``build``/``package`` use: what
+        an IDE launch says is prose the verb has to route, and whether a launcher
+        was even found is a note worth branching on.
+        """
         from kivyforge.cli._common import ToolchainError
 
         raise ToolchainError(

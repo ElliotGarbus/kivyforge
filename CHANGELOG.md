@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### `--json` on `clean`, `init`, `upgrade` and `open`
+
+- **Every verb but `run` now takes `--json` and `--no-color`.** Each reports what
+  it did rather than that it did something:
+  - `clean`: `data.removed` lists the generated trees actually deleted (relative,
+    posix), plus `cache_flushed` and `gradle_caches`. Recorded as they go, so a
+    removal that fails part way still names what it had removed.
+  - `init`: `data.action` (`added` / `regenerated`), `data.tables` — the
+    `[tool.kivy*]` tables written — and `data.pyproject`.
+  - `upgrade`: `data.refreshed` names each re-fetched artifact and `data.skipped`
+    counts vendored (path-pinned) entries. A hash mismatch half way through still
+    reports the artifacts already refreshed.
+  - `open`: `data.project` is the project that was opened.
+- **Two new diagnostic codes**, both warnings on an `ok: true` run:
+  `KF-IDE-NOT-FOUND` when `open` finds no Android Studio launcher on PATH (the
+  project is still generated, just not launched), and `KF-DEPENDENCY-DRIFT` when
+  `init` sees an installed dependency outside its declared specifier.
+- **`open -p ios` now prints the project it opened**, matching what Android has
+  always printed. It used to succeed silently.
+- As with `build`/`package`, progress moves to stderr on these verbs: `clean`'s
+  "Stopped the project's Gradle daemon(s)." and `upgrade`'s per-artifact
+  "Refreshing …" lines. What each verb *produced* stays on stdout.
+
 ### Breaking: `build` and `package` progress moves to stderr
 
 - **For `build` and `package`, everything except the product lines now goes to

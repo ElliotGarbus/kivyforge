@@ -531,12 +531,39 @@ and `exit_codes.py` (the reserved taxonomy). `rich` is a hard dependency. The
 seam is the part that had to be built once; each remaining verb is now
 independent work.
 
+**`build`/`package` landed 2026-09-16 and were validated on macOS, iOS and Linux
+2026-09-16/17** (see below). **`clean`, `init`, `upgrade` and `open` landed
+2026-09-17**, which leaves `run` as the only unconverted verb — deliberately, per
+the note below.
+
 Against the agent-friendliness list below: **points 1, 2 and 5 (versioned
 envelope, artifact paths, remediation as a field) are done**; **points 3 and 4**
-(diagnostic IDs, exit-code taxonomy) have their mechanism and vocabulary built,
-and `lock` is the first verb where the *narrowing* actually happened — see below;
-**points 6–8** (`capabilities`, `--no-input`, `AGENTS.md`) are untouched. `build`
-and `package` have not been converted.
+(diagnostic IDs, exit-code taxonomy) are built and applied — `lock` was the first
+verb where the *narrowing* happened, `build`/`package` the first with a full
+failure table; **points 6–8** (`capabilities`, `--no-input`, `AGENTS.md`) are
+untouched.
+
+**`run` is the one verb `--json` should not simply be bolted onto, and that is a
+decision rather than an omission.** It hands the child process kivyforge's own
+stdout so the app's output passes through untouched, which is the whole point of
+the verb; an envelope on that stream would interleave with whatever the app
+prints. The options are a `--json` that emits only after the app exits (with the
+app's output still on stdout, so stdout has two shapes), routing the app to
+stderr (breaking the thing `run` exists for), or leaving `run` human-only and
+saying so in the contract. Unresolved; nothing else in item 3 depends on it.
+
+**The four smaller verbs each report what they did, not that they did it.**
+`clean` lists the trees actually removed — the target list is fixed but which of
+them existed is the answer, and a consumer deciding whether to rebuild cannot
+derive it from the flags. `upgrade` names each refreshed artifact, recorded as it
+lands, so a hash mismatch half way through still reports the ones that really
+were re-fetched. `init` reports the tables it wrote and turns its dependency-drift
+warning into `KF-DEPENDENCY-DRIFT`. `open` returns the path it opened, which meant
+`Platform.open_project` returning a `Path` rather than `None` — the same "the
+information exists three frames down and is thrown away at the seam" shape that
+`BuildOutcome` fixed for `build`. A missing Android Studio launcher became
+`KF-IDE-NOT-FOUND`: the project is generated and openable by hand, so it is a note
+on an `ok` run rather than a failure.
 
 **`lock` is where the taxonomy stopped being theoretical (2026-09-15).** Its
 three `--check` failures now exit `LOCK_DRIFT` (`4`) rather than `1` and differ

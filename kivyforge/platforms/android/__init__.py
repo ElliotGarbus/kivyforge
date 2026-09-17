@@ -173,10 +173,10 @@ class AndroidPlatform(Platform):
 
         return android_status(project_root)
 
-    def open_project(self, project_root: Path) -> None:
+    def open_project(self, project_root: Path, *, events: BuildEvents) -> Path:
         from .cli import android_open
 
-        android_open(project_root)
+        return android_open(project_root, events=events)
 
     def doctor(
         self, cwd: Path, *, kivyforge_version: str, offline: bool

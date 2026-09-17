@@ -21,7 +21,9 @@ from ..artifacts.download import DownloadError, fetch_artifact
 from ..artifacts.verify import HashMismatch
 from ..lock import LockError
 from ..platforms.ios.lock import load as load_ios_lock
+from ..report import Report
 from ._common import ToolchainError, lockfile_path_for
+from ._output import output_options, reporting
 from ._platform import platform_option, resolve_target
 
 
@@ -55,56 +57,83 @@ from ._platform import platform_option, resolve_target
     "or 'Python.xcframework'; Android: an .aar/.jar name or an ABI; "
     "macOS/Linux: a locked arch, e.g. 'arm64').",
 )
+@output_options
 def upgrade(
     cli_platform: str | None,
     python_only: bool,
     xcframeworks_only: bool,
     libs_only: bool,
     name: str | None,
+    json_out: bool,
+    no_color: bool,
 ) -> None:
     """Re-fetch pinned runtime/native artifacts for the resolved platform's lock."""
-    backend, project_root = resolve_target(cli_platform, verb="upgrade")
+    with reporting("upgrade", json_out=json_out, no_color=no_color) as report:
+        backend, project_root = resolve_target(cli_platform, verb="upgrade")
+        report.platform = backend.name
+        # A hash mismatch or a dead URL half way through leaves the earlier
+        # artifacts genuinely refreshed; recording as they land keeps that in
+        # the failure envelope.
+        report.record(refreshed=[], skipped=0)
 
-    if libs_only and backend.name != "android":
-        raise ToolchainError(
-            f"--libs is Android-only; {backend.name} locks have no .aar/.jar "
-            + (
-                "artifacts. Use --xcframeworks for the iOS equivalent."
-                if backend.name == "ios"
-                else "artifacts."
+        if libs_only and backend.name != "android":
+            raise ToolchainError(
+                f"--libs is Android-only; {backend.name} locks have no .aar/.jar "
+                + (
+                    "artifacts. Use --xcframeworks for the iOS equivalent."
+                    if backend.name == "ios"
+                    else "artifacts."
+                )
             )
-        )
-    if python_only and libs_only:
-        raise ToolchainError(
-            "--python and --libs select disjoint halves of the lock; pass one, "
-            "or neither to refresh everything."
-        )
+        if python_only and libs_only:
+            raise ToolchainError(
+                "--python and --libs select disjoint halves of the lock; pass one, "
+                "or neither to refresh everything."
+            )
 
-    if backend.name == "ios":
-        _upgrade_ios(project_root, python_only, xcframeworks_only, name)
-    elif backend.name == "android":
-        if xcframeworks_only:
-            raise ToolchainError(
-                "--xcframeworks is iOS-only; Android uses --libs for .aar/.jar."
+        if backend.name == "ios":
+            refreshed, skipped = _upgrade_ios(
+                report, project_root, python_only, xcframeworks_only, name
             )
-        _upgrade_android(project_root, python_only, libs_only, name)
-    elif backend.name in ("macos", "linux", "windows"):
-        if xcframeworks_only:
-            raise ToolchainError(
-                f"--xcframeworks is iOS-only; {backend.name} locks have no "
-                "xcframework artifacts. Use --python (or no flag) to refresh "
-                "the bundled runtime."
+        elif backend.name == "android":
+            if xcframeworks_only:
+                raise ToolchainError(
+                    "--xcframeworks is iOS-only; Android uses --libs for .aar/.jar."
+                )
+            refreshed, skipped = _upgrade_android(
+                report, project_root, python_only, libs_only, name
             )
-        _upgrade_wheelruntime(backend.name, project_root, name)
-    else:
-        raise ToolchainError(
-            f"`kivyforge upgrade` does not support platform {backend.name!r} yet."
-        )
+        elif backend.name in ("macos", "linux", "windows"):
+            if xcframeworks_only:
+                raise ToolchainError(
+                    f"--xcframeworks is iOS-only; {backend.name} locks have no "
+                    "xcframework artifacts. Use --python (or no flag) to refresh "
+                    "the bundled runtime."
+                )
+            refreshed, skipped = _upgrade_wheelruntime(
+                report, backend.name, project_root, name
+            )
+        else:
+            raise ToolchainError(
+                f"`kivyforge upgrade` does not support platform {backend.name!r} yet."
+            )
+
+        report.emit(ok=True, data={"refreshed": refreshed, "skipped": skipped})
+
+
+def _refreshed(report: Report, refreshed: list[str], name: str) -> None:
+    """Record one artifact as re-fetched, as it happens."""
+    refreshed.append(name)
+    report.record(refreshed=list(refreshed))
 
 
 def _upgrade_android(
-    project_root: Path, python_only: bool, libs_only: bool, name: str | None
-) -> None:
+    report: Report,
+    project_root: Path,
+    python_only: bool,
+    libs_only: bool,
+    name: str | None,
+) -> tuple[list[str], int]:
     """Re-fetch the pinned python.org runtime + .aar/.jar per the existing lock.
 
     Does not reinstall wheels, regenerate the project, or invoke Gradle
@@ -125,14 +154,15 @@ def _upgrade_android(
 
     do_python = not libs_only
     do_libs = not python_only
-    refreshed = skipped = 0
+    refreshed: list[str] = []
+    skipped = 0
     for runtime in lock.python_android if do_python else ():
         if name and name not in (runtime.abi, "python"):
             continue
         if runtime.path:
             skipped += 1
             continue
-        click.echo(
+        report.progress(
             f"Refreshing python.org runtime {runtime.version} ({runtime.abi}) ..."
         )
         fetch_artifact(
@@ -143,7 +173,7 @@ def _upgrade_android(
             project_root=project_root,
             no_cache=True,
         )
-        refreshed += 1
+        _refreshed(report, refreshed, f"python-android-{runtime.abi}")
     if do_libs:
         for lib in lock.android_libs:
             if name and name != lib.name:
@@ -151,7 +181,7 @@ def _upgrade_android(
             if lib.path:
                 skipped += 1
                 continue
-            click.echo(f"Refreshing {lib.kind} {lib.name} {lib.version} ...")
+            report.progress(f"Refreshing {lib.kind} {lib.name} {lib.version} ...")
             fetch_artifact(
                 name=lib.name,
                 sha256=lib.sha256,
@@ -160,8 +190,8 @@ def _upgrade_android(
                 project_root=project_root,
                 no_cache=True,
             )
-            refreshed += 1
-    if name and refreshed == 0 and skipped == 0:
+            _refreshed(report, refreshed, lib.name)
+    if name and not refreshed and skipped == 0:
         known = sorted(
             {r.abi for r in lock.python_android}
             | {lib.name for lib in lock.android_libs}
@@ -171,21 +201,24 @@ def _upgrade_android(
             f"Known name(s): {', '.join(known) or 'none'} (or 'python' for "
             "every runtime)."
         )
-    click.echo(
-        f"Refreshed {refreshed} artifact(s)"
+    report.record(skipped=skipped)
+    report.line(
+        f"Refreshed {len(refreshed)} artifact(s)"
         + (f"; {skipped} vendored (path) entry(ies) skipped." if skipped else ".")
     )
+    return refreshed, skipped
 
 
 # --------------------------------------------------------------------------- #
 # iOS — Python.xcframework + [[xcframeworks]]
 # --------------------------------------------------------------------------- #
 def _upgrade_ios(
+    report: Report,
     project_root: Path,
     python_only: bool,
     xcframeworks_only: bool,
     name: str | None,
-) -> None:
+) -> tuple[list[str], int]:
     lock = _load_ios_lock(project_root)
 
     # No selector flag => refresh everything.
@@ -195,12 +228,12 @@ def _upgrade_ios(
         do_python = name == "Python.xcframework"
         do_xc = True
 
-    refreshed = 0
+    refreshed: list[str] = []
     skipped_vendored = 0
     try:
         if do_python and (not name or name == "Python.xcframework"):
             px = lock.python_xcframework
-            click.echo(f"Refreshing Python.xcframework {px.version} ...")
+            report.progress(f"Refreshing Python.xcframework {px.version} ...")
             fetch_artifact(
                 name="Python.xcframework",
                 sha256=px.sha256,
@@ -208,7 +241,7 @@ def _upgrade_ios(
                 url=px.url,
                 no_cache=True,
             )
-            refreshed += 1
+            _refreshed(report, refreshed, "Python.xcframework")
 
         if do_xc:
             for xc in lock.xcframeworks:
@@ -220,7 +253,7 @@ def _upgrade_ios(
                 url = xc.url
                 if url is None:
                     continue
-                click.echo(f"Refreshing {xc.name} {xc.version} ...")
+                report.progress(f"Refreshing {xc.name} {xc.version} ...")
                 fetch_artifact(
                     name=xc.name,
                     sha256=xc.sha256,
@@ -229,20 +262,22 @@ def _upgrade_ios(
                     project_root=project_root,
                     no_cache=True,
                 )
-                refreshed += 1
+                _refreshed(report, refreshed, xc.name)
     except HashMismatch as exc:
         raise ToolchainError(str(exc)) from exc
     except DownloadError as exc:
         raise ToolchainError(str(exc)) from exc
 
-    if name and refreshed == 0 and skipped_vendored == 0:
+    if name and not refreshed and skipped_vendored == 0:
         raise ToolchainError(
             f"no artifact named {name!r} found in {lockfile_path_for('ios').name}."
         )
-    msg = f"Refreshed {refreshed} artifact(s)."
+    msg = f"Refreshed {len(refreshed)} artifact(s)."
     if skipped_vendored:
         msg += f" Skipped {skipped_vendored} vendored (path-based) entry/entries."
-    click.echo(msg)
+    report.record(skipped=skipped_vendored)
+    report.line(msg)
+    return refreshed, skipped_vendored
 
 
 def _load_ios_lock(project_root: Path):
@@ -259,18 +294,18 @@ def _load_ios_lock(project_root: Path):
 # macOS / Linux — bundled python-build-standalone runtime archive(s)
 # --------------------------------------------------------------------------- #
 def _upgrade_wheelruntime(
-    platform_name: str, project_root: Path, name: str | None
-) -> None:
+    report: Report, platform_name: str, project_root: Path, name: str | None
+) -> tuple[list[str], int]:
     lock = _load_wheelruntime_lock(platform_name, project_root)
     runtime = lock.python_runtime
     artifacts = runtime.artifacts
     if name:
         artifacts = [art for art in artifacts if art.arch == name]
 
-    refreshed = 0
+    refreshed: list[str] = []
     try:
         for art in artifacts:
-            click.echo(
+            report.progress(
                 f"Refreshing the {platform_name} Python runtime "
                 f"({art.arch}) {runtime.version} ..."
             )
@@ -282,20 +317,21 @@ def _upgrade_wheelruntime(
                 project_root=project_root,
                 no_cache=True,
             )
-            refreshed += 1
+            _refreshed(report, refreshed, f"python-runtime-{art.arch}")
     except HashMismatch as exc:
         raise ToolchainError(str(exc)) from exc
     except DownloadError as exc:
         raise ToolchainError(str(exc)) from exc
 
-    if name and refreshed == 0:
+    if name and not refreshed:
         locked = ", ".join(sorted(art.arch for art in runtime.artifacts))
         path = lockfile_path_for(platform_name, project_root)
         raise ToolchainError(
             f"no runtime artifact for arch {name!r} in {path.name}. "
             f"Locked arch(s): {locked}."
         )
-    click.echo(f"Refreshed {refreshed} artifact(s).")
+    report.line(f"Refreshed {len(refreshed)} artifact(s).")
+    return refreshed, 0
 
 
 def _load_wheelruntime_lock(platform_name: str, project_root: Path):
