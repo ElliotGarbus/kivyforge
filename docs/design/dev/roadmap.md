@@ -867,6 +867,39 @@ drift: the same missing or unparseable lockfile is branchable under `lock --chec
 --json` today and opaque under `build --json`, which is how consumers learn to stop
 trusting codes.
 
+**The stream migration is much wider than it first looked, and pretending otherwise
+was the last real inconsistency in the spec.** "Progress goes to stderr" plus "only
+Gradle and Android's brackets change streams" cannot both hold: counting the
+`build`/`package` paths, roughly 25 lines are on stdout today that the rule moves —
+macOS's `Developer ID signing with …` and `signed N Mach-O binaries`, iOS's
+`Collecting artifacts` and three `xcodebuild …` lines, Linux's `Packaging … with
+appimagetool`, the byte-compile note on all four desktop backends, and ~16 bracketed
+Android lines. Narrowing the rule to Android was rejected: it would make the stream a
+per-backend accident, and the entire value of the rule is that a consumer can rely on
+stdout being product everywhere. The release note is therefore one sentence — **for
+`build` and `package`, everything except the product lines moves to stderr** — and
+"byte-identical human output" is redefined as *merged* text and order being unchanged,
+since a per-stream baseline cannot survive a deliberate migration.
+
+**One backend would have ended up with an empty stdout and a non-empty envelope.**
+Plain `build -p android` announces its only product as `[generate]
+dice-roller-android/ regenerated` — progress by the rule — so after the migration the
+command would print nothing while the envelope claimed a `project` artifact. It gains
+a `Generated <project>` line matching iOS's wording. A good reminder that a
+stream-classification rule needs a pass over what is *left* on the other stream, not
+only over what moves.
+
+**Two decisions taken rather than offered.** Android's failure classification goes to
+typed subclasses of `AndroidBuildError` (`GradleFailed`, `ArtifactMissing`,
+`LockDrift`, `ToolchainMissing`, `ContractViolation`) rather than optional fields on
+the base: the raise sites already group that way, the funnel becomes a dispatch table
+instead of a convention, and a missed site degrades to today's behaviour instead of
+raising on an unexpected keyword. And spawn failures split by errno — catch `OSError`
+so the envelope always survives, but map only `FileNotFoundError` to
+`KF-TOOLCHAIN-MISSING` and everything else to a new `KF-TOOLCHAIN-UNUSABLE` with
+`errno` in context. `EACCES` on a wrapper means "fix the file mode", not "install the
+tool", and one code cannot say both.
+
 **Two scoping corrections worth carrying.** The stderr-only rule for tool output
 applies to *bulk* producers, not to every subprocess: `(proc.stderr or proc.stdout)`
 embedded in an error message is a house convention with sixteen sites — `signtool`,
