@@ -2,19 +2,40 @@
 
 ## [Unreleased]
 
-### Breaking: Android build output moves to stderr
+### Breaking: `build` and `package` progress moves to stderr
 
-- **Gradle's output now goes to stderr** for every Android `build`, `package`,
-  `run` and `--smoke`, instead of being inherited onto stdout. It still scrolls
-  past on the terminal exactly as before; only the stream changed. This is what
-  lets stdout carry just the command's result, and is the prerequisite for a
-  parseable `--json`.
+- **For `build` and `package`, everything except the product lines now goes to
+  stderr**, on all five platforms: staging and signing progress, Android's
+  `[collect]`/`[stage]`/`[gradle]`/`[policy]` lines, and Gradle's own output
+  (also for Android `run` and `--smoke`). stdout keeps only what was produced
+  (`Built …`, `Generated …`, `Packaged …`, `Exported …`) and the distribution
+  advice. On a terminal nothing looks different: the text and its order are
+  unchanged.
   - **Migration:** a job that captures only stdout
-    (`kivyforge package -p android > build.log`) no longer gets the Gradle log.
+    (`kivyforge package -p android > build.log`) no longer gets the build log.
     Capture both streams (`> build.log 2>&1`).
-  - This is the first half of one change: for `build` and `package`, everything
-    kivyforge prints except the product lines (`Built …`, `Packaged …`) will
-    move to stderr on all five platforms when `--json` lands.
+- **When `xcodebuild` or `appimagetool` fails**, its output is printed as
+  progress and the error is a one-line summary (`xcodebuild archive failed
+  (exit 65); its output is above.`) instead of embedding the whole log.
+  `appimagetool` failures now show both of its streams; stdout used to be
+  dropped whenever stderr had anything in it.
+
+### `build --json` and `package --json`
+
+- Both verbs take `--json` and `--no-color`, like the other verbs. The envelope's
+  `data.artifacts` lists what this run produced, as `{"path", "kind"}` with the
+  path relative to the project root and `kind` one of `appimage`, `apk`, `aab`,
+  `app`, `ipa`, `folder`, `project`.
+  - Only products this invocation finalised are listed, including on failure: a
+    `build` that fails after generating the project still names the project; a
+    `package` that fails names nothing, never a previous run's artifact.
+  - Success-path warnings arrive as diagnostics on an `ok: true` envelope:
+    `KF-SIGNING-UNCONFIGURED`, `KF-BYTECOMPILE-NO-INTERP`, `KF-MANIFEST-POLICY`
+    and `KF-ENTITLEMENTS-UNGRANTED`.
+- Android now prints `Generated <app>-android` and relative artifact paths, like
+  the other platforms. iOS `build --simulator`/`--device` builds into the
+  project's own `build/DerivedData` (as `run` already did) and prints the
+  `.app` it produced.
 
 ### Breaking: Apple targets are Apple Silicon only
 

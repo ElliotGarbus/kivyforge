@@ -37,6 +37,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from kivyforge.report.streams import stderr_for_child
+
 
 class PycompileError(Exception):
     """Byte-compilation failed, or the compiler could not be run."""
@@ -199,21 +201,25 @@ def compile_tree(
     out to the named interpreter so the ``.pyc`` carries the target runtime's
     magic number.
     """
+    # compileall reports errors on stdout, which is the command's product; they
+    # are build log, so they go to stderr in both branches.
     if not compiler:
         import compileall
+        import contextlib
         import py_compile
 
-        return bool(
-            compileall.compile_dir(
-                target,
-                quiet=1,
-                legacy=legacy,
-                optimize=0,
-                invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
-                force=True,
-                stripdir=str(stripdir),
+        with contextlib.redirect_stdout(sys.stderr):
+            return bool(
+                compileall.compile_dir(
+                    target,
+                    quiet=1,
+                    legacy=legacy,
+                    optimize=0,
+                    invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+                    force=True,
+                    stripdir=str(stripdir),
+                )
             )
-        )
 
     argv = [
         *compiler,
@@ -230,7 +236,11 @@ def compile_tree(
         argv.append("-b")
     argv.append(str(target))
     try:
-        return subprocess.run(argv, check=False).returncode == 0
+        with stderr_for_child() as err:
+            return (
+                subprocess.run(argv, check=False, stdout=err, stderr=err).returncode
+                == 0
+            )
     except OSError as exc:
         raise PycompileError(
             f"could not run {' '.join(compiler)} to byte-compile {target.name}: {exc}"

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import click
 
-from ._common import ECHO_EVENTS, ToolchainError
+from ._common import ToolchainError
+from ._output import output_options, report_events, reporting
 from ._platform import platform_option, reject_android_only, resolve_target
 
 
@@ -77,6 +78,7 @@ from ._platform import platform_option, reject_android_only, resolve_target
     default=None,
     help="Android: override [tool.kivy.android.signing].key_alias.",
 )
+@output_options
 def package(
     cli_platform: str | None,
     fmt: str | None,
@@ -91,34 +93,39 @@ def package(
     abi: str | None,
     keystore: str | None,
     key_alias: str | None,
+    json_out: bool,
+    no_color: bool,
 ) -> None:
     """Build the signed, distributable artifact for the resolved platform."""
-    backend, project_root = resolve_target(cli_platform, verb="package")
-    reject_android_only(
-        backend,
-        {"--abi": abi, "--keystore": keystore, "--key-alias": key_alias},
-    )
-    fmt = _resolve_format(backend, fmt)
+    with reporting("package", json_out=json_out, no_color=no_color) as report:
+        report.record(artifacts=[])
+        backend, project_root = resolve_target(cli_platform, verb="package")
+        report.platform = backend.name
+        reject_android_only(
+            backend,
+            {"--abi": abi, "--keystore": keystore, "--key-alias": key_alias},
+        )
+        fmt = _resolve_format(backend, fmt)
 
-    events = ECHO_EVENTS
-    outcome = backend.package(
-        project_root,
-        events=events,
-        fmt=fmt,
-        arch=arch,
-        team_id=team_id,
-        signing_identity=signing_identity,
-        export_method=export_method,
-        notarize=notarize,
-        notary_profile=notary_profile,
-        no_verify_lock=no_verify_lock,
-        no_cache=no_cache,
-        abi=abi,
-        keystore=keystore,
-        key_alias=key_alias,
-    )
-    for note in outcome.notes:
-        events.on_line(note)
+        outcome = backend.package(
+            project_root,
+            events=report_events(report),
+            fmt=fmt,
+            arch=arch,
+            team_id=team_id,
+            signing_identity=signing_identity,
+            export_method=export_method,
+            notarize=notarize,
+            notary_profile=notary_profile,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+            abi=abi,
+            keystore=keystore,
+            key_alias=key_alias,
+        )
+        for note in outcome.notes:
+            report.line(note)
+        report.emit(ok=True, data=outcome.as_dict())
 
 
 def _resolve_format(backend, fmt: str | None) -> str:

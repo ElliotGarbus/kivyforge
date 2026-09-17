@@ -14,7 +14,8 @@ from contextlib import contextmanager
 import click
 
 from .. import __version__
-from ..report import Report
+from ..build_outcome import Artifact, BuildEvents
+from ..report import Diagnostic, Report, diagnostics
 from ._common import ToolchainError
 
 
@@ -62,6 +63,42 @@ def reporting(
         report.diagnose(exc.as_diagnostic())
         report.emit(ok=False)
         raise
+
+
+#: Severity of each success-path note a build or package can attach. A note is
+#: never an error -- anything fatal raises instead -- so unknown codes are warnings.
+_NOTE_SEVERITY = {diagnostics.MANIFEST_POLICY: diagnostics.INFO}
+
+
+def report_events(report: Report) -> BuildEvents:
+    """The ``build``/``package`` callbacks, backed by *report*.
+
+    Artifacts are re-recorded as a whole list on every product, because
+    ``Report.record`` replaces a field rather than appending to it; recording as
+    they happen is what lets a failure envelope still name what was finished.
+    """
+    artifacts: list[dict[str, str]] = []
+
+    def on_artifact(artifact: Artifact) -> None:
+        artifacts.append(artifact.as_dict())
+        report.record(artifacts=list(artifacts))
+
+    def on_note(code: str, message: str, context=None) -> None:
+        report.diagnose(
+            Diagnostic(
+                code=code,
+                severity=_NOTE_SEVERITY.get(code, diagnostics.WARNING),
+                message=message,
+                context=dict(context or {}),
+            )
+        )
+
+    return BuildEvents(
+        on_line=report.line,
+        on_progress=report.progress,
+        on_artifact=on_artifact,
+        on_note=on_note,
+    )
 
 
 def output_options[F: Callable[..., object]](fn: F) -> F:

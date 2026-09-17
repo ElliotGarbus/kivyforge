@@ -129,9 +129,14 @@ def build_appimage(
         raise AppDirError(f"failed to run appimagetool: {exc}") from exc
     if proc.returncode != 0:
         tmp_out.unlink(missing_ok=True)
+        # The transcript is build log: both streams go to progress, and the
+        # error stays a summary a --json consumer can read without a log in it.
+        for stream in (proc.stdout, proc.stderr):
+            if stream and stream.strip():
+                echo(stream.rstrip())
         raise AppDirError(
-            "appimagetool failed to build the AppImage.\n"
-            f"  {(proc.stderr or proc.stdout).strip()}"
+            f"appimagetool failed to build the AppImage (exit {proc.returncode}); "
+            "its output is above."
         )
     tmp_out.chmod(0o755)
     os.replace(tmp_out, output)

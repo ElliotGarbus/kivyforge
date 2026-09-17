@@ -1,10 +1,14 @@
 """Human-mode output of ``build`` and ``package``, pinned per backend.
 
-These pin text, order and stream for every backend through the real Click verbs,
-with each toolchain collaborator stubbed (fixtures in ``conftest.py``). They exist
-so that routing output through structured callbacks
-(build-package-output-proposal §5) is provably a no-op for a human reader, except
-where the proposal names a deliberate change -- each marked "Deliberate" below.
+These go through the real Click verbs with each toolchain collaborator stubbed
+(fixtures in ``conftest.py``), and pin two things separately, because the
+proposal changes one and not the other (build-package-output-proposal §5):
+
+* **The interleaved text and its order** (``result.output``) -- what a person
+  at a terminal reads. Unchanged, except where a comment says "Deliberate".
+* **Which lines are on stdout** (``result.stdout``) -- only the product lines
+  and the distribution advice. Everything else is progress and moved to stderr
+  (§3.1).
 """
 
 from __future__ import annotations
@@ -29,57 +33,61 @@ def _invoke(command, args):
     return result
 
 
+def _assert_streams(result, *, merged: str, stdout: str) -> None:
+    assert result.output == merged
+    assert result.stdout == stdout
+
+
 class TestWindows:
     def test_build(self, windows):
         result = _invoke(build, ["-p", "windows"])
-        assert result.stdout == f"Built {_p('build', 'windows', 'My App')}\n"
-        assert result.stderr == ""
+        text = f"Built {_p('build', 'windows', 'My App')}\n"
+        _assert_streams(result, merged=text, stdout=text)
 
     def test_package_unsigned(self, windows, monkeypatch):
         monkeypatch.setattr(
             windows, "select_signer", lambda s: SimpleNamespace(configured=False)
         )
         result = _invoke(package, ["-p", "windows"])
-        assert result.stdout == (
+        text = (
             f"Packaged {_p('dist', 'windows', 'My App-1.2.3-amd64')} (onedir folder, "
             "unsigned (configure [tool.kivy.windows.signing] to sign)).\n"
             "  Run it by double-clicking My App.exe, or zip the folder to "
             "distribute. An installer is an external step.\n"
         )
-        assert result.stderr == ""
+        _assert_streams(result, merged=text, stdout=text)
 
     def test_package_signed(self, windows, monkeypatch):
         signer = SimpleNamespace(configured=True, sign=lambda paths: None)
         monkeypatch.setattr(windows, "select_signer", lambda s: signer)
         result = _invoke(package, ["-p", "windows"])
-        assert result.stdout == (
+        text = (
             f"Packaged {_p('dist', 'windows', 'My App-1.2.3-amd64')} (onedir folder, "
             "signed + timestamped).\n"
             "  Run it by double-clicking My App.exe, or zip the folder to "
             "distribute. An installer is an external step.\n"
         )
-        assert result.stderr == ""
+        _assert_streams(result, merged=text, stdout=text)
 
 
 class TestLinux:
     def test_build(self, linux):
         result = _invoke(build, ["-p", "linux"])
-        assert result.stdout == f"Built {_p('build', 'linux', 'Demo App.AppDir')}\n"
-        assert result.stderr == ""
+        text = f"Built {_p('build', 'linux', 'Demo App.AppDir')}\n"
+        _assert_streams(result, merged=text, stdout=text)
 
     def test_package_folder(self, linux):
         result = _invoke(package, ["-p", "linux", "-f", "folder"])
-        assert result.stdout == (
+        text = (
             f"Packaged {_p('build', 'linux', 'Demo App.AppDir')} (AppDir folder).\n"
             "  Run it with ./AppRun, or `kivyforge package -f appimage` for a "
             "single-file distributable.\n"
         )
-        assert result.stderr == ""
+        _assert_streams(result, merged=text, stdout=text)
 
     def test_package_appimage(self, linux):
         result = _invoke(package, ["-p", "linux"])
-        assert result.stdout == (
-            "Packaging demo-app-1.2.3-x86_64.AppImage with appimagetool 1.9.0 ...\n"
+        product = (
             f"Packaged {_p('dist', 'linux', 'demo-app-1.2.3-x86_64.AppImage')}.\n"
             "  Distribute the .AppImage directly (chmod +x, then run). The host "
             "needs glibc >= the effective floor, libGL/libEGL, and an X11/Wayland "
@@ -89,26 +97,31 @@ class TestLinux:
             "run it with --appimage-extract-and-run (or APPIMAGE_EXTRACT_AND_RUN=1)."
             "\n"
         )
-        assert result.stderr == ""
+        _assert_streams(
+            result,
+            merged="Packaging demo-app-1.2.3-x86_64.AppImage with appimagetool "
+            "1.9.0 ...\n" + product,
+            stdout=product,
+        )
 
 
 class TestMacos:
     def test_build(self, macos):
         result = _invoke(build, ["-p", "macos"])
-        assert result.stdout == f"Built {_p('build', 'macos', 'Demo App.app')}\n"
-        assert result.stderr == ""
+        text = f"Built {_p('build', 'macos', 'Demo App.app')}\n"
+        _assert_streams(result, merged=text, stdout=text)
 
     def test_package_adhoc(self, macos):
         result = _invoke(package, ["-p", "macos"])
         app = _p("build", "macos", "Demo App.app")
-        assert result.stdout == (
+        text = (
             f"Built {app}\n"
             f"Packaged {app} (ad-hoc signed).\n"
             "  Distribute the .app directly, or wrap it in a .dmg with an external "
             "tool (see docs). For Gatekeeper-trusted distribution, configure "
             "[tool.kivy.macos.signing].\n"
         )
-        assert result.stderr == ""
+        _assert_streams(result, merged=text, stdout=text)
 
     def test_package_developer_id_notarized(self, macos):
         result = _invoke(
@@ -123,77 +136,100 @@ class TestMacos:
             ],
         )
         app = _p("build", "macos", "Demo App.app")
-        assert result.stdout == (
-            f"Built {app}\n"
-            "Developer ID signing with 'Developer ID Application: Acme' ...\n"
-            "  signed 12 Mach-O binaries + the bundle\n"
+        packaged = (
             f"Packaged {app} (Developer ID notarized + stapled).\n"
             "  Distribute the .app directly, or wrap it in a .dmg with an external "
             "tool (see docs).\n"
         )
-        assert result.stderr == ""
+        _assert_streams(
+            result,
+            merged=f"Built {app}\n"
+            "Developer ID signing with 'Developer ID Application: Acme' ...\n"
+            "  signed 12 Mach-O binaries + the bundle\n" + packaged,
+            stdout=f"Built {app}\n" + packaged,
+        )
 
 
-_IOS_PREPARE = "[stage] app sources\nCollecting artifacts for {tags} ...\n" + (
-    "[collect] Python.xcframework\nGenerated demo-ios\n"
-)
 _IOS_DEVICE_TAGS = "ios_13_0_arm64_iphoneos"
 _IOS_SIM_TAGS = "ios_13_0_arm64_iphonesimulator"
 _IOS_PRODUCTS = _p("demo-ios", "build", "DerivedData", "Build", "Products")
 
 
+def _ios_prepare(tags: str) -> str:
+    return (
+        "[stage] app sources\n"
+        f"Collecting artifacts for {tags} ...\n"
+        "[collect] Python.xcframework\n"
+        "Generated demo-ios\n"
+    )
+
+
 class TestIos:
     def test_build_project_only(self, ios):
         result = _invoke(build, ["-p", "ios"])
-        tags = f"{_IOS_DEVICE_TAGS}, {_IOS_SIM_TAGS}"
-        assert result.stdout == _IOS_PREPARE.format(tags=tags) + (
+        ready = (
             "Project ready. Open it with `kivyforge open` or build with "
             "`kivyforge build --simulator`.\n"
         )
-        assert result.stderr == ""
+        _assert_streams(
+            result,
+            merged=_ios_prepare(f"{_IOS_DEVICE_TAGS}, {_IOS_SIM_TAGS}") + ready,
+            stdout="Generated demo-ios\n" + ready,
+        )
 
     def test_build_simulator(self, ios):
         result = _invoke(build, ["-p", "ios", "--simulator"])
         # Deliberate (proposal §5 step 1): the .app is announced, from the pinned
         # project-local DerivedData, where before there was no product line.
-        assert result.stdout == _IOS_PREPARE.format(tags=_IOS_SIM_TAGS) + (
-            "xcodebuild build (simulator) ...\n"
-            f"Built {_IOS_PRODUCTS}{os.sep}Debug-iphonesimulator{os.sep}demo.app\n"
+        built = f"Built {_IOS_PRODUCTS}{os.sep}Debug-iphonesimulator{os.sep}demo.app\n"
+        _assert_streams(
+            result,
+            merged=_ios_prepare(_IOS_SIM_TAGS)
+            + "xcodebuild build (simulator) ...\n"
+            + built,
+            stdout="Generated demo-ios\n" + built,
         )
-        assert result.stderr == ""
 
     def test_build_device_warns_on_ungranted_entitlements(self, ios, monkeypatch):
         monkeypatch.setattr(
             ios, "preflight_entitlements", lambda *a: ["com.apple.developer.healthkit"]
         )
         result = _invoke(build, ["-p", "ios", "--device"])
-        assert result.stdout == _IOS_PREPARE.format(tags=_IOS_DEVICE_TAGS) + (
-            "xcodebuild build (device) ...\n"
-            f"Built {_IOS_PRODUCTS}{os.sep}Debug-iphoneos{os.sep}demo.app\n"
-        )
-        assert result.stderr == (
-            "Warning: entitlements not granted by the pinned provisioning profile: "
-            "com.apple.developer.healthkit\n"
+        built = f"Built {_IOS_PRODUCTS}{os.sep}Debug-iphoneos{os.sep}demo.app\n"
+        _assert_streams(
+            result,
+            merged="Warning: entitlements not granted by the pinned provisioning "
+            "profile: com.apple.developer.healthkit\n"
             "  auto_signing is on, so Xcode may register them at build time.\n"
+            + _ios_prepare(_IOS_DEVICE_TAGS)
+            + "xcodebuild build (device) ...\n"
+            + built,
+            stdout="Generated demo-ios\n" + built,
         )
 
     def test_build_release(self, ios):
         result = _invoke(build, ["-p", "ios", "--release"])
-        assert result.stdout == _IOS_PREPARE.format(tags=_IOS_DEVICE_TAGS) + (
-            "xcodebuild archive ...\n"
-            "xcodebuild -exportArchive ...\n"
-            f"Exported {_p('demo-ios', 'build', 'demo.ipa')}\n"
+        exported = f"Exported {_p('demo-ios', 'build', 'demo.ipa')}\n"
+        _assert_streams(
+            result,
+            merged=_ios_prepare(_IOS_DEVICE_TAGS)
+            + "xcodebuild archive ...\n"
+            + "xcodebuild -exportArchive ...\n"
+            + exported,
+            stdout="Generated demo-ios\n" + exported,
         )
-        assert result.stderr == ""
 
     def test_package(self, ios):
         result = _invoke(package, ["-p", "ios"])
-        assert result.stdout == _IOS_PREPARE.format(tags=_IOS_DEVICE_TAGS) + (
-            "xcodebuild archive ...\n"
-            "xcodebuild -exportArchive ...\n"
-            f"Exported {_p('demo-ios', 'build', 'demo.ipa')}\n"
+        exported = f"Exported {_p('demo-ios', 'build', 'demo.ipa')}\n"
+        _assert_streams(
+            result,
+            merged=_ios_prepare(_IOS_DEVICE_TAGS)
+            + "xcodebuild archive ...\n"
+            + "xcodebuild -exportArchive ...\n"
+            + exported,
+            stdout="Generated demo-ios\n" + exported,
         )
-        assert result.stderr == ""
 
 
 _ANDROID_NO_BYTECOMPILE = (
@@ -206,6 +242,10 @@ _ANDROID_NO_BYTECOMPILE = (
     "set byte_compile = false in [tool.kivy.android.build_settings].\n"
 )
 
+# Deliberate (proposal §5 step 1): the project gets a product line, so a plain
+# `build` still has something on stdout.
+_ANDROID_GENERATED = "Generated demoapp-android\n"
+
 
 def _android_generate(*, byte_compile_note: bool) -> str:
     return (
@@ -214,10 +254,7 @@ def _android_generate(*, byte_compile_note: bool) -> str:
         "[stage] jniLibs/arm64-v8a: 0 extensions flattened\n"
         + (_ANDROID_NO_BYTECOMPILE if byte_compile_note else "")
         + "[stage] asset bundle assembled (stamp deadbeef)\n"
-        "[generate] demoapp-android/ regenerated\n"
-        # Deliberate (proposal §5 step 1): the project gets a product line, so
-        # a plain `build` has one once progress moves to stderr.
-        "Generated demoapp-android\n"
+        "[generate] demoapp-android/ regenerated\n" + _ANDROID_GENERATED
     )
 
 
@@ -229,31 +266,41 @@ _ANDROID_OUTPUTS = Path("demoapp-android", "app", "build", "outputs")
 class TestAndroid:
     def test_build(self, android):
         result = _invoke(build, ["-p", "android"])
-        assert result.stdout == _android_generate(byte_compile_note=True)
-        assert result.stderr == ""
+        _assert_streams(
+            result,
+            merged=_android_generate(byte_compile_note=True),
+            stdout=_ANDROID_GENERATED,
+        )
 
     def test_build_debug(self, android):
         result = _invoke(build, ["-p", "android", "--debug"])
-        apk = _ANDROID_OUTPUTS / "apk"
-        assert result.stdout == _android_generate(byte_compile_note=False) + (
-            f"[gradle] assembleDebug\nBuilt {apk / 'debug' / 'app-debug.apk'}\n"
+        built = f"Built {_ANDROID_OUTPUTS / 'apk' / 'debug' / 'app-debug.apk'}\n"
+        _assert_streams(
+            result,
+            merged=_android_generate(byte_compile_note=False)
+            + "[gradle] assembleDebug\n"
+            + built,
+            stdout=_ANDROID_GENERATED + built,
         )
-        assert result.stderr == ""
 
     def test_package(self, android):
         from kivyforge.platforms.android.policy import LINT_CHECKS
 
         result = _invoke(package, ["-p", "android"])
-        apk = _ANDROID_OUTPUTS / "apk"
-        assert result.stdout == _android_generate(byte_compile_note=True) + (
-            "[policy] INFO: org.example.Receiver is exported\n"
-            f"[gradle] lintRelease ({len(LINT_CHECKS)} curated checks)\n"
-            "[policy] merged release manifest\n"
-            "[policy] INFO (merged): org.example.Receiver is exported\n"
-            "[gradle] assembleRelease\n"
-            f"Packaged {apk / 'release' / 'app-release.apk'}\n"
+        packaged = (
+            f"Packaged {_ANDROID_OUTPUTS / 'apk' / 'release' / 'app-release.apk'}\n"
         )
-        assert result.stderr == ""
+        _assert_streams(
+            result,
+            merged=_android_generate(byte_compile_note=True)
+            + "[policy] INFO: org.example.Receiver is exported\n"
+            + f"[gradle] lintRelease ({len(LINT_CHECKS)} curated checks)\n"
+            + "[policy] merged release manifest\n"
+            + "[policy] INFO (merged): org.example.Receiver is exported\n"
+            + "[gradle] assembleRelease\n"
+            + packaged,
+            stdout=_ANDROID_GENERATED + packaged,
+        )
 
 
 def test_expected_separator_matches_host():

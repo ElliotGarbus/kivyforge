@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import click
 
-from ._common import ECHO_EVENTS
+from ._output import output_options, report_events, reporting
 from ._platform import platform_option, reject_android_only, resolve_target
 
 
@@ -78,6 +78,7 @@ from ._platform import platform_option, reject_android_only, resolve_target
     default=None,
     help="Android: restrict this build to one ABI.",
 )
+@output_options
 def build(
     cli_platform: str | None,
     target: str | None,
@@ -90,27 +91,35 @@ def build(
     debug: bool,
     fmt: str | None,
     abi: str | None,
+    json_out: bool,
+    no_color: bool,
 ) -> None:
     """Download artifacts, generate the platform project, and optionally build it."""
-    # Resolve the target platform before any work so an unresolved target fails
-    # fast with an actionable message (common design doc 02).
-    backend, project_root = resolve_target(cli_platform, verb="build")
-    reject_android_only(backend, {"--debug": debug, "-f/--format": fmt, "--abi": abi})
+    with reporting("build", json_out=json_out, no_color=no_color) as report:
+        # Before anything can fail, so every envelope carries the key.
+        report.record(artifacts=[])
+        # Resolve the target platform before any work so an unresolved target
+        # fails fast with an actionable message (common design doc 02).
+        backend, project_root = resolve_target(cli_platform, verb="build")
+        report.platform = backend.name
+        reject_android_only(
+            backend, {"--debug": debug, "-f/--format": fmt, "--abi": abi}
+        )
 
-    events = ECHO_EVENTS
-    outcome = backend.build(
-        project_root,
-        events=events,
-        target=target,
-        arch=arch,
-        no_verify_lock=no_verify_lock,
-        no_cache=no_cache,
-        team_id=team_id,
-        signing_identity=signing_identity,
-        export_method=export_method,
-        debug=debug,
-        fmt=fmt,
-        abi=abi,
-    )
-    for note in outcome.notes:
-        events.on_line(note)
+        outcome = backend.build(
+            project_root,
+            events=report_events(report),
+            target=target,
+            arch=arch,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+            team_id=team_id,
+            signing_identity=signing_identity,
+            export_method=export_method,
+            debug=debug,
+            fmt=fmt,
+            abi=abi,
+        )
+        for note in outcome.notes:
+            report.line(note)
+        report.emit(ok=True, data=outcome.as_dict())

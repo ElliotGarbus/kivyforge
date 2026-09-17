@@ -145,9 +145,28 @@ def ios_build(
             events=events,
             outcome=outcome,
         )
-    except (CommandError, SigningError) as exc:
+    except CommandError as exc:
+        raise _tool_failure(exc, events) from exc
+    except SigningError as exc:
         raise ToolchainError(str(exc)) from exc
     return outcome.finish()
+
+
+def _tool_failure(exc: CommandError, events: BuildEvents) -> ToolchainError:
+    """Split a failed build tool into its log (progress) and a summary (the error).
+
+    xcodebuild's transcript can run to megabytes. It is build log, so it goes to
+    stderr with the rest of the progress; the error a --json consumer reads says
+    what failed, not everything it printed on the way.
+    """
+    if exc.output:
+        events.on_progress(exc.output.rstrip())
+    tool = Path(exc.argv[0]).name if exc.argv else "command"
+    actions = [a for a in ("build", "archive", "-exportArchive") if a in exc.argv]
+    task = f" {actions[0]}" if tool == "xcodebuild" and actions else ""
+    return ToolchainError(
+        f"{tool}{task} failed (exit {exc.returncode}); its output is above."
+    )
 
 
 def prepare_build(
@@ -553,7 +572,9 @@ def ios_package(
             events=events,
             outcome=outcome,
         )
-    except (CommandError, SigningError) as exc:
+    except CommandError as exc:
+        raise _tool_failure(exc, events) from exc
+    except SigningError as exc:
         raise ToolchainError(str(exc)) from exc
     return outcome.finish()
 

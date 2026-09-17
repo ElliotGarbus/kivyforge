@@ -88,6 +88,34 @@ class TestBuildAppimage:
                 cache=cache,
             )
 
+    def test_failure_sends_both_streams_to_progress_not_the_error(
+        self, tmp_path, monkeypatch, fake_tools
+    ):
+        def fake_run(cmd, **k):
+            return subprocess.CompletedProcess(
+                cmd, 1, "Creating squashfs...\n", "mksquashfs: out of space\n"
+            )
+
+        monkeypatch.setattr(appimage.subprocess, "run", fake_run)
+        appdir = tmp_path / "app.AppDir"
+        appdir.mkdir()
+        cache = ArtifactCache(root=tmp_path / "cache" / "artifacts")
+        progress: list[str] = []
+        with pytest.raises(AppDirError) as info:
+            appimage.build_appimage(
+                appdir,
+                tmp_path / "out.AppImage",
+                "x86_64",
+                project_root=tmp_path,
+                cache=cache,
+                echo=progress.append,
+            )
+        # stdout used to be dropped whenever stderr had anything in it.
+        assert "Creating squashfs..." in progress
+        assert "mksquashfs: out of space" in progress
+        assert "exit 1" in str(info.value)
+        assert "squashfs" not in str(info.value)
+
     def test_failure_preserves_previous_output(self, tmp_path, monkeypatch, fake_tools):
         # A tool failure must not destroy the previous good .AppImage: we emit to
         # a temp file and only swap it in on success, and clean the temp up.
