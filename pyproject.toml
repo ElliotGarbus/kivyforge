@@ -54,6 +54,10 @@ dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "ruff>=0.9",
+    # Type checking; configured in pyrightconfig.json. The pip package downloads
+    # a Node runtime on first run, which is why it is a dev extra rather than a
+    # runtime one.
+    "pyright>=1.1.400",
     "Pillow>=10",
 ]
 # Linux backend icon resizing (hicolor size set + AppImage root icon). Pillow is

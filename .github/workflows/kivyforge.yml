@@ -9,7 +9,7 @@ on:
 
 jobs:
   lint:
-    name: Lint (ruff)
+    name: Lint (ruff + pyright)
     runs-on: ubuntu-latest
     steps:
     - name: Checkout kivyforge
@@ -26,6 +26,11 @@ jobs:
       run: ruff check kivyforge tests
     - name: ruff format --check
       run: ruff format --check kivyforge tests
+    # Scope and settings live in pyrightconfig.json, including
+    # pythonPlatform: All -- without it this ubuntu job would fail on the
+    # Windows-only registry probe that Windows hosts analyse cleanly.
+    - name: pyright
+      run: pyright
 
   # The Android bootstrap vendors SDL's Java glue paired with the libSDL*.so
   # the kivy-mobile-wheels repo ships (android/05 §matched pair;

@@ -912,6 +912,44 @@ path and `as_dict()` only calls `as_posix()`, changing separators without
 relativising. The relative-path rule is scoped to `build`/`package`; normalising
 `status` is a small independent change.
 
+**Validated on macOS and Linux (2026-09-16/17), one defect between them.** Recorded
+in [`build-package-output-mac-findings.md`](build-package-output-mac-findings.md) and
+[`build-package-output-linux-findings.md`](build-package-output-linux-findings.md).
+The highest-risk change — pinning iOS DerivedData so the simulator `.app` has a
+project-relative path — works, with `build`, `run` and `status` all agreeing on where
+it lands. Linux found no defects against a real `appimagetool`, and confirmed two
+things only a live tool can: `artifacts == []` on failure *while a previous AppImage
+sat in `dist/linux`* (§4.1b in the wild rather than in theory), and both of the
+tool's streams reaching stderr, which is exactly what the old `stderr or stdout`
+idiom dropped.
+
+The defect is a good example of how a rule spreads more slowly than it is written.
+Missing `sips`/`iconutil` classified as `KF-ERROR`/exit `1` instead of
+`KF-TOOLCHAIN-MISSING`/`3`, because `macos/icns.py` pre-checks `shutil.which` and
+raises a bare `AppBundleError`, so it never reaches `spawn_failure()`. The audit that
+produced the spawn-failure inventory looked at `subprocess` call sites; this one
+guards its spawn with a `which` check instead, and so read as already handled. Fixed
+by attempting the spawn and catching `OSError`, like `machotools`/`notarize`/
+`launcher`. macOS is the only backend with the gap — Linux and Windows generate icons
+with Pillow in-process, so they have no spawn site to misclassify.
+
+**Linux also asked a fair question about `--json`: the distribution advice vanishes
+rather than moving to stderr.** Answered in the proposal as intended behaviour, since
+notes are product prose — they say what was produced and what to do with it, which is
+the register the envelope replaces. Sending them to stderr would make `--json` change
+where advice goes rather than whether it applies.
+
+**Pyright is now a CI gate, at zero errors.** Adopted over `ty`, which is still
+`0.0.x` and so a poor thing to gate on, and it paid for itself immediately: its first
+run found that `spawn_failure()` returned `dict[str, object]`, which cannot be
+`**`-unpacked into `ToolchainError`'s typed parameters — 30 of 64 errors from one
+day-old helper. The cross-host lesson is worth keeping, and came from the Mac run:
+pyright infers `pythonPlatform` from the *host* and narrows the stdlib stubs to
+match, so the Windows-only registry probe in `doctor/probe.py` is clean on Windows
+and three errors on macOS and Linux. `"pythonPlatform": "All"` makes the answer
+host-independent, which a five-target build tool linting on ubuntu and authored on
+Windows cannot do without.
+
 **`status` turned out to pay a debt as well as add a feature.** The backends now
 return a `StatusReport` (`kivyforge/status.py`) that `cli/status.py` renders.
 That closed

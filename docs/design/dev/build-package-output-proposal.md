@@ -294,6 +294,17 @@ With the payload cut to two fields, `BuildOutcome` is barely more than
 advice paragraphs (§4.5) go there, get rendered in human mode, and are excluded
 from JSON by construction rather than by remembering to.
 
+**Under `--json` the notes disappear entirely — not to stderr.** They render through
+`report.line`, which is suppressed in JSON mode, so `package -p linux --json` shows
+neither the `chmod +x` advice nor the glibc caveat on either stream. The Linux
+validation flagged this as ambiguous, and it is worth stating outright: it is the
+intended behaviour, because notes are *product* prose. They describe what was
+produced and what to do with it, which is the register the envelope replaces.
+Routing them to stderr would make `--json` change where advice goes rather than
+whether it applies, and stderr is defined as progress — advice is not progress. The
+machine-facing equivalent would be a payload field, and §2.3 declined that for want
+of a consumer.
+
 Paths stay **relative to the project root** and posix-separated, matching what four
 of the five backends' human lines already print and the rule the T3 checks adopted
 on 2026-09-15 for in-artifact paths. Android is the exception that has to be fixed

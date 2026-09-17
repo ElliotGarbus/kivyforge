@@ -3,7 +3,22 @@
   "venv": ".venv",
   "pythonVersion": "3.13",
   "typeCheckingMode": "standard",
-  "include": ["kivyforge", "tests"],
+
+  // Analyse every platform's code on every host. Without this, pyright infers
+  // the platform from the host and narrows the stdlib stubs to match, so the
+  // Windows-only registry probe in doctor/probe.py reports three "not a known
+  // attribute of module winreg" errors on macOS and Linux and none on Windows.
+  // A tool that builds for five targets from three hosts cannot have a gate
+  // whose result depends on which host ran it -- least of all when CI lints on
+  // ubuntu and the code is authored on Windows.
+  "pythonPlatform": "All",
+
+  "include": [
+    "kivyforge",
+    "tests"
+  ],
+  // Generated-project and Android bootstrap templates: they import jnius and
+  // other on-device modules that do not exist in any host environment.
   "exclude": [
     "kivyforge/project/templates",
     "kivyforge/platforms/android/bootstrap/templates"
