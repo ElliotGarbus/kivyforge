@@ -1,9 +1,14 @@
 # Proposal — `build` and `package` output
 
-> Status: **decided, reviewed against the code, ready to implement per §5.**
+> Status: **implemented 2026-09-16 (all four steps of §5), verified on Windows
+> only.** The macOS and iOS paths ran against stubs; the real-Xcode run is
+> [`build-package-output-mac-prompt.md`](build-package-output-mac-prompt.md).
+> Where the implementation differs from the text below, §6 says so, and §6 wins.
+>
 > Written for roadmap item 3 after `doctor`, `status` and `lock` went through
 > `kivyforge/report/`. Every code claim here was read out of the source rather than
-> recalled, and the line references are current as of 2026-09-16.
+> recalled, and the line references are as of 2026-09-16 *before* implementation;
+> the files they point into have since moved.
 
 `build` and `package` are the last two verbs in item 3 and the only ones where the
 conversion is a design question rather than a mechanical edit. The first three
@@ -1148,3 +1153,104 @@ needs a separate declarative query on `Platform` — something like
 with this item and serves neither CI nor agents. It is a real debt and it belongs
 in its own change. §1.1's observation that nothing publishes these paths still
 stands as the diagnosis; the claim that one structured result cures it does not.
+
+## 6. Implementation record
+
+Implemented on `modernization-rfc` on 2026-09-16, one commit per §5 step:
+
+| Commit | Step |
+|---|---|
+| `1930abe2` | 1 — `BuildOutcome`, callbacks, the three deliberate human-output changes |
+| `07fb1b7f` | 2 — Gradle to stderr |
+| `e0a42ed9` | 3 — `--json`, the §3.1 migration, the §4.2a log split |
+| `89798096` | 4 — §4.4 codes and exit statuses |
+
+A human-output baseline was written *before* step 1
+(`tests/cli/test_build_package_human_output.py`) and passed against the unchanged
+code, so each later step's diff against it is exactly the change that step claims.
+It pins the merged text and order, plus stdout separately, per the definition at
+the end of §5.
+
+**Verified on Windows only.** The hermetic suite reaches every backend through
+stubs, and the iOS CLI tests that use real staging are `requires_symlinks`, so
+they skip on the Windows host. The real-toolchain run is
+[`build-package-output-mac-prompt.md`](build-package-output-mac-prompt.md); until
+its findings exist, the iOS `.app`/`.ipa` existence checks in particular are
+unproven against real Xcode.
+
+### Where the code differs from the text above
+
+- **The four callbacks travel as one object.** `BuildEvents` (in
+  `kivyforge/build_outcome.py`) carries `on_line`, `on_progress`, `on_artifact`
+  and `on_note`; `events.without_artifacts()` is §4.1a's no-op recorder for the
+  nested calls. `OutcomeBuilder.add` takes `(path, kind)` rather than a built
+  `Artifact`.
+- **`on_note` takes an optional `context`**, which carries §4.4's
+  `{"payload": "app-sources" | "pip-deps"}` for iOS and a
+  `{"manifest": "generated" | "merged"}` for Android's two policy passes.
+- **The step-1 echo adapters did not go away in step 3.** They survive as
+  `ECHO_EVENTS` in `cli/_common.py`, the default for backend functions called
+  outside the two verbs (`run`, `--smoke`, direct test calls). The verbs use
+  report-backed callbacks from `cli/_output.py:report_events`.
+- **Android `package`, `run` and `--smoke` print `Generated <app>-android` too**,
+  and `run` prints relative paths, because all of them call `android_build`. §5
+  step 1 names only `build`; `run` is nominally out of scope and changed anyway.
+- **The iOS `.ipa` is existence-checked**, not only the simulator/device `.app`
+  (§4.1b's rule applied to `Exported`). A successful `-exportArchive` with no
+  `.ipa` now fails with `KF-ARTIFACT-MISSING`, where it used to print `Exported`
+  for a file that was not there.
+- **`compileall` output moved to stderr as well**, in both the in-process and
+  subprocess branches of `bundle/pycompile.py`. It printed compile errors to
+  stdout, which §3.1's table did not list and which would have broken a `--json`
+  document on exactly the failure it describes.
+- **Classification crosses the CLI boundary through a base class, not per-site
+  arguments.** Backend errors derive from `ClassifiedError`
+  (`kivyforge/report/failures.py`), and every `raise ToolchainError(str(exc))`
+  became `ToolchainError.wrap(exc)`, which copies `code`, `exit_code` and
+  `context` when present and falls back to `KF-ERROR` / `1` when not. The
+  descriptor helper §4.2 asks for is `report/streams.py:stderr_for_child`.
+- **Android's families are `GradleFailed`, `ArtifactMissing`, `LockMissing`,
+  `LockUnreadable` and `LockDrift`.** `ContractViolation` and `ToolchainMissing`
+  were not added: the first would carry the default code and change nothing, and
+  nothing would raise the second, because an unstartable Gradle is caught in
+  `run_gradle` and reported as `KF-TOOLCHAIN-MISSING`/`UNUSABLE` directly.
+  `include_files` hash drift is `LockDrift` (exit `4`), since its fix is re-locking.
+- **A Gradle that never ran is not a build failure.** `GradleError` gained a
+  `returncode`; only a Gradle that exited non-zero becomes `KF-BUILD-TOOL-FAILED`,
+  and a missing wrapper stays `KF-ERROR` / `1`.
+- **The macOS `codesign`/`otool`/`clang`/`notarytool` handlers widened** from
+  `FileNotFoundError` to `OSError`, splitting into `KF-TOOLCHAIN-MISSING` and
+  `KF-TOOLCHAIN-UNUSABLE` as §4.4 describes for the other tools. Before, any other
+  `OSError` there escaped as a traceback.
+
+### Tests added
+
+| File | Pins |
+|---|---|
+| `tests/cli/test_build_package_human_output.py` | merged human text and order, and stdout content, per backend |
+| `tests/cli/test_build_package_outcome.py` | what each backend records, including the nesting rule and failure cases |
+| `tests/cli/test_build_package_json.py` | one parseable document on success and failure; the §5 artifacts matrix; notes on `ok: true`; the xcodebuild log split |
+| `tests/cli/test_build_package_failures.py` | each §4.4 row to its code, exit status and `context` |
+| `tests/report/test_streams.py` | `stderr_for_child` through a real descriptor and both pump fallbacks, UTF-8 through a cp1252 stream |
+
+The per-backend stubs these share live in `tests/cli/conftest.py`.
+
+### Type checking
+
+`pyright kivyforge` is clean: 0 errors. Getting there fixed the 34 errors this
+item introduced (33 from loosely typed classification dicts, 1 in a new test) and
+the package's 31 pre-existing ones, and excluded the Android on-device bootstrap templates (they
+import `jnius`, which exists only on a device), as `kivyforge/project/templates`
+already was. `pyright tests` still reports 242 errors that predate this
+item — mostly test fakes that do not satisfy the protocols they stand in for —
+and are left for a separate change.
+
+### Still open from this proposal
+
+- The Mac run above.
+- §4.4's Android preflight for a missing JDK/SDK/NDK, which still surfaces as
+  `KF-BUILD-TOOL-FAILED`.
+- `package -p ios` does not check entitlements (§4.4); the pre-existing
+  asymmetry is unchanged.
+- `status --json` still emits absolute paths (§4.1).
+- Retro §1.9's `clean_targets` query (end of §5).
