@@ -76,7 +76,7 @@ Counted across the five backends (60 `click.echo` sites in `platforms/*/cli.py`)
 
 | Backend | Own output on a successful `package` | Shape |
 |---|---|---|
-| Windows | 2 lines | `Built <path>`, then a 3-line `Packaged ...` note |
+| Windows | 1 line | a 3-line `Packaged ...` note; `windows_package` assembles directly rather than calling `windows_build`, so no `Built` line |
 | macOS | 3–4 lines | plus `Developer ID signing with ...`, `signed N Mach-O binaries` |
 | Linux | 2 lines (+1 `Packaging ... with appimagetool` progress line) | 4-line `Packaged ...` note |
 | iOS | 4–5 lines | `Collecting artifacts`, `Generated`, `xcodebuild archive`, `Exported` |
@@ -195,16 +195,21 @@ never met a verb with a subprocess in it.
 
 - **Product → stdout.** For these verbs the product is: what was produced and
   where. Under `--json` it is the envelope.
-- **Progress → stderr, always, including under `--json`.** *All* third-party output
-  is progress, whenever we show it at all — §4.2 leaves `appimagetool`'s discarded
-  and `xcodebuild`'s buffered, and neither becomes product by being withheld. So is
-  every `[stage]`/`[collect]`/`[generate]`/`[gradle]` line, and iOS's
-  `xcodebuild archive ...`.
-- **`--json` does not introduce a second tool-output path.** Third-party output
-  uses the same stderr path in human and JSON modes. The flag changes stdout only,
-  swapping our own product lines for the envelope. So `kivyforge package -p android
-  --json > out.json` puts nothing but JSON in the file while Gradle's log still
-  scrolls past on the terminal, exactly as it does without the flag.
+- **Progress → stderr, always, including under `--json`.** A third-party build
+  *transcript* is progress, whenever we show it at all — §4.2 leaves
+  `appimagetool`'s discarded and `xcodebuild`'s buffered, and neither becomes
+  product by being withheld. So is every `[stage]`/`[collect]`/`[generate]`/
+  `[gradle]` line, and iOS's `xcodebuild archive ...`.
+- **`--json` does not introduce a second path for build transcripts.** They use the
+  same stderr path in human and JSON modes. The flag changes stdout only, swapping
+  our own product lines for the envelope. So `kivyforge package -p android --json >
+  out.json` puts nothing but JSON in the file while Gradle's log still scrolls past
+  on the terminal, exactly as it does without the flag.
+
+  "Bulk transcript" rather than "all third-party output" is the deliberate wording,
+  and §4.2a explains why: a one-line `signtool` or `clang` error stays quoted inside
+  the diagnostic message, and therefore inside JSON stdout, because for those tools
+  the quoted line *is* the diagnosis. The rule is about volume, not provenance.
 
 One consequence deserves stating because the naive conversion gets it backwards:
 Android's `[stage]` lines must become `report.progress`, **not** `report.line`.
@@ -288,17 +293,45 @@ their order is meaningful**:
 
 Rendering product only after `BuildOutcome` comes back would move iOS's `Generated`
 from the middle of the run to the end, which is a worse build log for the sake of a
-tidier seam. So product is an event too, and the routes are:
+tidier seam. So product is an event too.
 
-**1. `on_product(artifact)` — each artifact, at the moment it is finalised.** The
-verb-side closure prints the human line *and* records the artifact. This one
-callback does four jobs at once: it preserves ordering, it satisfies §4.1b's
-finalised-and-verified rule by construction (a backend can only call it after the
-thing exists), it puts artifacts on `Report` before any later failure, and it means
-**`ToolchainError` needs no `data=` argument** — the failure envelope already has
-whatever was finalised, exactly as it already has diagnostics.
+**Printing a product line and recording an artifact are two different decisions,
+and they must be two callbacks.** Bundling them into one `on_product(artifact)` is
+wrong twice over. An `Artifact` cannot reproduce the prose — `Generated`, `Built`,
+`Exported`, and macOS's `Packaged <app> (Developer ID notarized + stapled).` plus
+its two-line distribution advice are not derivable from a path and a kind. And more
+seriously, **three package flows call a build function that prints, in a situation
+where nothing should be recorded**:
 
-**2. `on_progress(message)` and `on_note(code, message)` — the `lock` pattern
+| Flow | The inner line | Why recording it would be wrong |
+|---|---|---|
+| `macos_package` → `macos_build` (`macos/cli.py:66,155-163`) | `Built <app>` | It fires with `sign=False`; the bundle is *unsigned* at that moment. `package`'s product is the signed one, same path, minutes later. |
+| `ios_package` → `prepare_build` (`ios/cli.py:203,477-485`) | `Generated <slug>-ios` | The project is `package`'s intermediate, not its product (§4.1b). |
+| `android_package` → `android_build` (`android/cli.py:438-449,495`) | `[generate]`, and `Built <apk>` under `--debug` | Same: the project is an intermediate here. |
+
+So:
+
+**1. `on_line(message)` — product prose, in order.** Maps to `report.line`: stdout,
+suppressed under `--json` per §3. Backends keep composing their own sentences,
+which is what keeps the human output byte-identical.
+
+**2. `on_artifact(artifact)` — recording only, no output.** Called at the moment a
+product is finalised and verified. It satisfies §4.1b's rule by construction (a
+backend cannot report a path it has not just written and checked), it puts
+artifacts on `Report` before any later failure, and it means **`ToolchainError`
+needs no `data=` argument** — the failure envelope already has whatever was
+finalised, exactly as it already has diagnostics.
+
+The nesting problem then solves itself in the wiring rather than with a flag:
+**`on_artifact` is passed down only when the inner function's products are also the
+invoked verb's products.** `macos_package`, `ios_package` and `android_package` pass
+the inner call a no-op recorder and keep `on_line`, so the intermediate lines still
+print exactly where they do today while nothing is recorded; each then calls
+`on_artifact` itself once the real product exists. §4.1b's build-versus-package
+asymmetry becomes one argument at three call sites instead of a condition threaded
+through the backends.
+
+**3. `on_progress(message)` and `on_note(code, message)` — the `lock` pattern
 verbatim.** `cli/lock.py` does not hand `Report` to a backend; it passes
 `on_warning=lambda msg: _warn(report, msg)`, and `_warn` — on the CLI side — does
 both `report.progress(msg)` and `report.diagnose(Diagnostic(...))`. The backend
@@ -309,15 +342,41 @@ pure constants-and-dataclass module a backend can import without touching
 `Report`; the closure decides severity and whether the note also prints.
 `on_note` carries the three success-path diagnostics in §4.4.
 
-**3. `BuildOutcome` as the return value** — the same artifacts plus `notes`. It is
+**4. `BuildOutcome` as the return value** — the same artifacts plus `notes`. It is
 the summary, not the channel: the verb emits from it on success, and it keeps the
 backends unit-testable by assertion rather than by spy. §1.1's discarded return
 value is paid off here.
 
+**None of these four can be wired with a bare `click.echo`, and step 1 has to
+define the adapters explicitly.** `click.echo(artifact)` prints a dataclass
+`repr`; `click.echo(code, message)` binds `message` to Click's `file` parameter and
+raises on the first note. Step 1's human-only wiring is therefore four small
+module-level adapters — `_echo_line(text)`, `_echo_note(code, message)` printing
+just the message, a `_discard(artifact)` no-op, and `click.echo` for progress —
+and step 3 replaces them with report-backed closures.
+
+Those closures also cannot be method references, because `Report` has no matching
+surface: there is no `report.product`, and `report.diagnose` takes a `Diagnostic`
+instance, not `(code, message)` (`report/console.py:127-185`). The mapping is
+`on_line → report.line`, `on_progress → report.progress`, and `on_note → a closure
+that builds the Diagnostic and calls report.diagnose`, exactly as `lock`'s `_warn`
+does.
+
+**One accumulator owns the artifact list, because there are two consumers of it and
+they must not drift.** Every product has to reach both the live `Report` (so a later
+failure still reports it) and the returned `BuildOutcome` (so success emits from the
+summary), and `Report.record()` *replaces* rather than appends — `record(artifacts=…)`
+is `self._data.update(fields)` (`report/console.py:152-165`), so calling it per
+artifact would leave only the last one. Rather than ask every call site to remember
+both updates and to re-serialise the whole list each time, `on_artifact` is backed by
+a small verb-side accumulator that appends, re-records the complete list, and hands
+back the `BuildOutcome` at the end. One place to get right, and the failure and
+success payloads cannot disagree by construction.
+
 `BuildOutcome` needs an explicit `as_dict()`, like `StatusReport` has. `Path` and
 `Enum` are not JSON-serialisable, so relying on `json.dumps` to walk the dataclass
 would fail at the first artifact; `as_dict()` is where `path.as_posix()` and
-`kind.value` happen.
+`kind.value` happen, and it is what the accumulator re-records.
 
 Two more mechanics that are easy to miss:
 
@@ -359,7 +418,7 @@ ship it.
 
 **The rule: `artifacts` lists only products this invocation finalised, and a
 backend must have verified existence at the moment it reports them.** Calling
-`on_product` at the point of finalisation (§4.1a) is what enforces this — a
+`on_artifact` at the point of finalisation (§4.1a) is what enforces this — a
 backend cannot report a path it has not just written and checked.
 
 That makes the partial-failure cases decidable rather than a judgement call:
@@ -454,7 +513,7 @@ there is not, rather than each call site guessing.
 
 ### 4.2a The failure path already puts tool output on stdout, and that has to stop
 
-§3's rule has a second route for third-party output that it does not account for,
+§3's rule has a second route for build transcripts that it does not account for,
 and that route goes straight to stdout in JSON mode.
 
 The tools we capture embed their output in the exception message —
@@ -463,8 +522,8 @@ The tools we capture embed their output in the exception message —
 and the backends then wrap those with `raise ToolchainError(str(exc))`.
 `ToolchainError.as_diagnostic()` sets `message=self.format_message()`, so the
 whole captured log lands in `diagnostics[].message` **on stdout**, inside the JSON
-document. "All third-party output is progress, and progress is stderr" is
-contradicted by the one path that matters most.
+document. "A build transcript is progress, and progress is stderr" is contradicted
+by the one path that matters most.
 
 It is also a payload problem independent of the rule: a failing `xcodebuild` can
 emit megabytes, and a diagnostic message is the wrong place for it. A consumer
@@ -662,6 +721,24 @@ conclusively when we try to spawn it, and two backends already catch exactly tha
 Those are already toolchain-missing determinations in prose, needing nothing but a
 code and an exit status to become branchable. No preflight required.
 
+**But spawn-failure coverage is uneven, and one gap is worse than a wrong code.**
+`run_command` in `ios/xcode/runner.py:30-38` catches neither `FileNotFoundError` nor
+`OSError`, so a host without `xcodebuild` raises straight through `ios_build` and
+`ios_package` — and `reporting()` only catches `ToolchainError`
+(`cli/_output.py:61`), so the result is a traceback with **no envelope at all**. For
+a JSON consumer that is the worst available outcome: not a misclassified failure but
+an unparseable one. Fixing it is a `try`/`except FileNotFoundError` in the one
+funnel that every Xcode invocation already goes through.
+
+A third group catches the parent `OSError` and so cannot distinguish "tool absent"
+from any other spawn problem: `windows/signing.py:141` (`signtool`),
+`windows/rcedit.py:108`, `linux/appimage.py:127` (`appimagetool`), and
+`macos/notarize.py:133` — which does catch `FileNotFoundError` for `notarytool`.
+Step 4 either narrows these to `except FileNotFoundError` ahead of the general
+handler or records them as intentional exclusions. Either is fine; leaving it
+unstated is not, because the difference is invisible until a CI image is missing a
+tool.
+
 **What stays out of reach is the Gradle-mediated case.** A missing JDK, SDK or NDK
 is discovered *by Gradle*, inside a build that then fails as a build, so it arrives
 as `KF-BUILD-TOOL-FAILED` at exit `5` — "read the log" — when the useful answer is
@@ -722,13 +799,18 @@ structured product output and should be added only if a concrete use case requir
    prerequisite rather than a nicety — without it there is no project-relative path
    to report at all (§4.3).
 
-   Four more pieces belong here because they are the same edit: `BuildOutcome.as_dict()`
-   (§4.1a), the distribution advice paragraphs moving to `BuildOutcome.notes` (§4.5,
-   rendered at the same point so the bytes do not move), the
-   `on_product`/`on_progress`/`on_note` callbacks of §4.1a, and the
-   artifacts-only-if-finalised rule of §4.1b. Backends take the callbacks while the
-   CLI still passes `click.echo` into all three, which keeps step 1
-   behaviour-preserving and leaves the rerouting to step 3.
+   Four more pieces belong here because they are the same edit:
+   `BuildOutcome.as_dict()` (§4.1a), the distribution advice paragraphs moving to
+   `BuildOutcome.notes` (§4.5, rendered at the same point so the bytes do not move),
+   the `on_line`/`on_artifact`/`on_progress`/`on_note` callbacks of §4.1a, and the
+   artifacts-only-if-finalised rule of §4.1b — including passing a no-op recorder
+   into the three nested build calls, since that is where the rule actually lives.
+
+   The CLI's step-1 wiring is human-only, but it cannot be `click.echo` four times:
+   `on_note` would bind its message to Click's `file` parameter and `on_artifact`
+   would print a dataclass `repr` (§4.1a). So step 1 defines four small adapters —
+   `_echo_line`, `_echo_note` (prints the message, drops the code), `_discard`, and
+   `click.echo` for progress — which step 3 swaps for report-backed closures.
 
 2. **The Gradle redirection**, and nothing else. Worth landing alone, since it
    changes what a human sees on every Android build.
@@ -748,32 +830,55 @@ structured product output and should be added only if a concrete use case requir
    megabyte of `xcodebuild` output through them would contaminate stdout to fix a
    contamination. It moves to step 3.
 
-3. `--json` for both verbs. This is where the callbacks stop pointing at
-   `click.echo` and start pointing at `report.product`/`progress`/`diagnose`, where
-   the bracketed Android lines land on stderr, and — because there is finally
-   somewhere to put a transcript — where §4.2a's log split happens. Also
-   `report.record(artifacts=[])` at the top of each verb (§4.1a).
+3. `--json` for both verbs. This is where step 1's adapters are replaced by
+   report-backed closures — `on_line → report.line`, `on_progress →
+   report.progress`, `on_note →` a closure building the `Diagnostic`, and
+   `on_artifact →` the accumulator of §4.1a — where the bracketed Android lines land
+   on stderr, and, because there is finally somewhere to put a transcript, where
+   §4.2a's log split happens. Also `report.record(artifacts=[])` at the top of each
+   verb (§4.1a).
+
+   Note that `report.product` and `report.diagnose(code, message)` do not exist;
+   `Report`'s surface is `line`/`progress`/`diagnose(Diagnostic)`
+   (`report/console.py:127-185`), which is what the closures adapt to.
 
    Pinned by tests that **assert fields, not the serialised envelope**. `kivyforge`
    carries `__version__`, so a golden blob would fail on every version bump;
    `tests/cli/test_lock_json.py` and the `status` tests already assert per-field for
-   exactly this reason and are the pattern to copy.
-4. Exit-code and diagnostic narrowing per §4.4. Three parts:
+   exactly this reason and are the pattern to copy — plus the plumbing assertions in
+   the table below, which are where the real risk sits.
+4. Exit-code and diagnostic narrowing per §4.4 — **the whole table, not just the
+   host gates**:
 
    - `ToolchainError` gains `context=`, since `as_diagnostic()` cannot express
      `{"tool", "task"}` today.
-   - **Android's `@user_facing` learns to forward.** It wraps every backend failure
-     with a bare `raise ToolchainError(str(exc))` (`android/cli.py:85-89`), so it is
-     a funnel that discards `code`, `exit_code`, `remediation` and `context`. Until
-     it forwards them, no Android raise site can reach the envelope with structure,
-     which makes this the first edit of the step rather than a detail of it.
+   - `KF-BUILD-TOOL-FAILED`/`5` at the three bulk-tool failure sites, carrying
+     `context={"tool", "task"}`; `KF-ARTIFACT-MISSING`/`5` at `_require_artifact`
+     and its per-platform equivalents; `KF-LOCK-DRIFT`/`4` at the lock-verification
+     failures in all five backends.
+   - The three success-path note codes of §4.4 wired through `on_note`:
+     `KF-SIGNING-UNCONFIGURED`, and the byte-compile and staging notes.
    - The host gates: `_require_linux_host` (`linux/cli.py:190`),
      `_require_windows_host` (`windows/cli.py:272`) and the two `_require_macos_host`
      definitions (`macos/cli.py:226`, `ios/cli.py:337`) all
      `raise ToolchainError(str(exc))` from `HostCapabilityError`, landing on
      `KF-ERROR` and exit `1`. `lock` already solved this — `KF-HOST-INCAPABLE`, exit
      `3` — and these four sites should copy it rather than invent a second pattern.
-     The `FileNotFoundError` sites in §4.4 get `KF-TOOLCHAIN-MISSING`/`3` here too.
+   - `KF-TOOLCHAIN-MISSING`/`3` at the spawn-failure sites, including the
+     `run_command` gap that currently emits no envelope at all (§4.4).
+
+   **Android needs a design decision before any of this reaches it.** Saying
+   `@user_facing` should "forward" `code` and `exit_code` presumes
+   `AndroidBuildError` has them, and it does not — it is a plain `Exception`
+   carrying only a message, which is exactly why the decorator can do no better
+   than `str(exc)` today. So the work is: give `AndroidBuildError` optional
+   structured fields, or split it into typed subclasses per failure family
+   (`GradleFailed`, `ArtifactMissing`, `LockDrift`, `ContractViolation`), and only
+   then teach the decorator to map them. Subclasses are probably the better fit,
+   since the raise sites already group that way and the funnel becomes a small
+   dispatch table rather than an argument-passing convention nobody can forget to
+   follow. Either way it is a change to the backend's error vocabulary, not a
+   two-line edit to a decorator, and it is the largest single piece of step 4.
 
 Steps 1 and 2 are independent and either can go first; 3 depends on both. Step 3 is
 the largest, because it is where every callback is repointed at once — and that is
@@ -806,6 +911,25 @@ would have missed. The four failure rows are the ones most likely to regress
 silently, since a stale path looks exactly like a fresh one and the
 `build`-versus-`package` asymmetry on the same directory is easy to get backwards.
 Pin them in the style of `tests/cli/test_lock_json.py`.
+
+**But the payload is not where this proposal is most likely to break.** The matrix
+above checks the part that is easy to reason about. The risks are in the plumbing —
+stream routing, descriptor handling, and the ordering of output produced from inside
+nested calls — so the suite needs assertions aimed at those directly:
+
+| Assertion | The failure it catches |
+|---|---|
+| `--json` stdout parses as exactly one JSON document, on success *and* on every failure class | The whole point of the flag. One stray `click.echo`, or a second `emit`, and every consumer breaks. |
+| No product line appears on stderr and no progress line on stdout, per verb per platform | The §3 split is enforced at ~60 call sites by hand; nothing else notices a mistake. |
+| Gradle redirection works both with a real `fileno()` and through the no-`fileno` fallback | §4.2's descriptor problem. `CliRunner` and pytest capture both replace stdout, so the fallback path is what tests exercise by default and production almost never uses — the reverse of the usual risk. |
+| A failing `xcodebuild` and a failing `appimagetool` put their transcript on stderr and *only* a summary in `diagnostics[].message` | §4.2a. Regressing this reintroduces megabytes of JSON-escaped log. |
+| `package -p macos`/`-p ios`/`-p android` still print their intermediate `Built`/`Generated` lines while recording no intermediate artifact | §4.1a's nesting rule — the one place where the human and machine registers deliberately disagree, and the easiest to wire wrong. |
+| Human-mode output is byte-identical to the pre-change baseline, except the changes §5 names | Every step claims this; only a test enforces it. Capture a baseline before step 1. |
+
+The ordering assertion matters most for iOS, where `Generated` sits minutes before
+`Exported` with a `xcodebuild` run between them: that gap is the reason product is
+an event at all (§4.1a), and a refactor that quietly moves the line to the end would
+pass every payload test in the matrix above.
 
 **Retiring retro §1.9 is *not* a step here**, tempting though it looks. The result
 type does not let `clean` stop hard-coding output paths: `clean` needs those paths

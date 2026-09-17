@@ -751,17 +751,30 @@ Android package that failed *after* writing `app-release.apk` emitting `"data": 
 reintroducing, for the verbs that need it most, exactly the hole `Report.record()`
 was added to close.
 
-**One callback closed that hole and three others.** Product lines are interleaved
-with progress and their order carries meaning — iOS prints `Generated <slug>-ios`
-minutes before `Exported <ipa>`, macOS prints `Built`, then two signing lines, then
-`Packaged` — so rendering product only from a returned value would reorder real build
-logs to tidy a seam. Making each artifact an event instead, `on_product(artifact)`
-called at the moment of finalisation, preserves ordering, enforces the
-finalised-and-verified rule by construction, puts artifacts on `Report` before any
-later failure, and therefore needs no new `data=` argument on `ToolchainError` at
-all. The lesson worth keeping: **when a value has to be both ordered and durable, an
-event beats a return value, and the return value becomes a summary rather than a
-channel.**
+**Making artifacts an event closed that hole and three others.** Product lines are
+interleaved with progress and their order carries meaning — iOS prints `Generated
+<slug>-ios` minutes before `Exported <ipa>`, macOS prints `Built`, then two signing
+lines, then `Packaged` — so rendering product only from a returned value would
+reorder real build logs to tidy a seam. Reporting each artifact at the moment of
+finalisation instead preserves ordering, enforces the finalised-and-verified rule by
+construction, puts artifacts on `Report` before any later failure, and therefore
+needs no new `data=` argument on `ToolchainError` at all. The lesson worth keeping:
+**when a value has to be both ordered and durable, an event beats a return value,
+and the return value becomes a summary rather than a channel.**
+
+**Printing and recording then had to be split into two events, and the reason is
+the most interesting finding of the review.** A single `on_product(artifact)` cannot
+work, because three package flows call a build function that legitimately *prints*
+in a situation where nothing should be *recorded*: `macos_package` calls
+`macos_build`, whose `Built <app>` line fires while the bundle is still unsigned;
+`ios_package` calls `prepare_build`, whose `Generated` line names an intermediate;
+`android_package` calls `android_build` for the same reason. Splitting into
+`on_line(message)` and `on_artifact(artifact)` also disposes of the nesting problem
+without a flag — a caller passes `on_artifact` down only when the inner function's
+products are the verb's products — so **the build-versus-package artifact asymmetry
+becomes one argument at three call sites instead of a condition threaded through the
+backends.** Generalises to: when two registers disagree about the same moment, the
+disagreement belongs in the wiring, not in a conditional.
 
 **There is a more dangerous version of the same question: an artifact path on a
 failed run can name a file the run did not produce.** None of the three
@@ -817,6 +830,15 @@ a build failure, and no exit status can recover the distinction afterwards. Clos
 that needs an Android preflight, which doctor already knows how to answer and which
 would pay for itself by failing a bad runner in seconds instead of after a Gradle
 download.
+
+**One gap found by the review is worse than any misclassification: a missing
+`xcodebuild` produces no envelope at all.** `run_command` (`ios/xcode/runner.py`) is
+the single funnel for every Xcode invocation and catches neither `FileNotFoundError`
+nor `OSError`, while `reporting()` only catches `ToolchainError` — so the result is a
+traceback on a stream a JSON consumer is not parsing. Not a wrong answer, an
+unparseable one. Worth generalising into a rule for the `--json` work: **every
+uncaught exception type is a hole in the envelope contract**, so the audit is of what
+can escape a verb, not only of what each verb reports.
 
 **Two scoping corrections worth carrying.** The stderr-only rule for tool output
 applies to *bulk* producers, not to every subprocess: `(proc.stderr or proc.stdout)`
