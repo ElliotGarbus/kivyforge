@@ -21,6 +21,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from kivyforge.report.failures import spawn_failure
+
 from . import WindowsBundleError
 
 
@@ -107,7 +109,8 @@ def patch_resources(
         proc = subprocess.run(args, capture_output=True, text=True)
     except OSError as exc:
         raise WindowsBundleError(
-            f"failed to run rcedit ({rcedit}): {exc}. rcedit is Windows-only."
+            f"failed to run rcedit ({rcedit}): {exc}. rcedit is Windows-only.",
+            **spawn_failure("rcedit", exc),
         ) from exc
     if proc.returncode != 0:
         raise WindowsBundleError(

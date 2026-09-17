@@ -28,7 +28,22 @@ class CommandError(Exception):
 
 
 def run_command(argv: list[str], *, runner=subprocess.run, check: bool = True):
-    proc = runner(argv, capture_output=True, text=True)
+    try:
+        proc = runner(argv, capture_output=True, text=True)
+    except OSError as exc:
+        # Not a CommandError: the tool never ran, so there is no build to blame.
+        # Raised as the CLI error directly, because an OSError escaping here
+        # used to surface as a traceback with no --json envelope at all.
+        from kivyforge.cli._common import ToolchainError
+        from kivyforge.report.failures import spawn_failure
+
+        tool = Path(argv[0]).name
+        raise ToolchainError(
+            f"could not run {tool}: {exc}.\n"
+            "  Fix: install Xcode and select it with `xcode-select -s`; "
+            "`kivyforge doctor -p ios` checks the setup.",
+            **spawn_failure(tool, exc),
+        ) from exc
     if check and proc.returncode != 0:
         # xcodebuild routes destination-matching notes/warnings to stderr but
         # the actual `error:` diagnostics (signing, compile failures, ...) to

@@ -28,7 +28,14 @@ from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
-from . import AndroidBuildError
+from . import (
+    AndroidBuildError,
+    ArtifactMissing,
+    GradleFailed,
+    LockDrift,
+    LockMissing,
+    LockUnreadable,
+)
 from .bootstrap.contract import (
     ContractError,
     check_pyjnius_contract,
@@ -94,7 +101,7 @@ def user_facing(fn):
         try:
             return fn(*args, **kwargs)
         except AndroidBuildError as exc:
-            raise ToolchainError(str(exc)) from exc
+            raise ToolchainError.wrap(exc) from exc
 
     return wrapper
 
@@ -471,7 +478,7 @@ def android_build(
         try:
             run_gradle(dest, [task])
         except GradleError as exc:
-            raise AndroidBuildError(str(exc)) from exc
+            raise _gradle_failure(exc, task) from exc
         out = _require_artifact(_debug_output(dest, fmt), task)
         rel = out.relative_to(project_root)
         events.on_line(f"Built {rel}")
@@ -479,10 +486,20 @@ def android_build(
     return outcome.finish()
 
 
+def _gradle_failure(
+    exc: GradleError, task: str, message: str | None = None
+) -> AndroidBuildError:
+    """A Gradle that ran and failed is a build failure; one that never ran is not."""
+    text = str(exc) if message is None else message
+    if exc.returncode is None:
+        return AndroidBuildError(text)
+    return GradleFailed(text, context={"tool": "gradle", "task": task})
+
+
 def _require_artifact(path: Path, task: str) -> Path:
     """Confirm Gradle actually produced the artifact we are about to announce."""
     if not path.is_file():
-        raise AndroidBuildError(
+        raise ArtifactMissing(
             f"Gradle reported success for {task} but no artifact is at {path}.\n"
             "  This usually means AGP's output layout moved under a new plugin "
             "version; check app/build/outputs/ and file a kivyforge issue."
@@ -567,7 +584,7 @@ def android_package(
     try:
         run_gradle(dest, [task])
     except GradleError as exc:
-        raise AndroidBuildError(str(exc)) from exc
+        raise _gradle_failure(exc, task) from exc
     out = _require_artifact(_release_output(dest, fmt), task)
     rel = out.relative_to(project_root)
     events.on_line(f"Packaged {rel}")
@@ -586,17 +603,19 @@ def _enforce_merged_manifest(
     try:
         run_gradle(dest, ["lintRelease", MERGED_MANIFEST_TASK])
     except GradleError as exc:
-        raise AndroidBuildError(
+        raise _gradle_failure(
+            exc,
+            "lintRelease",
             f"{exc}\n"
             "  A lintRelease finding blocks the release (android/06 §package). "
             "The curated subset is "
             f"{', '.join(LINT_CHECKS)}; see the report under "
-            "app/build/reports/lint-results-release.html."
+            "app/build/reports/lint-results-release.html.",
         ) from exc
 
     merged = dest / MERGED_MANIFEST_RELPATH
     if not merged.is_file():
-        raise AndroidBuildError(
+        raise ArtifactMissing(
             f"{MERGED_MANIFEST_TASK} produced no manifest at {merged}; the "
             "release policy cannot check what would actually be packaged."
         )
@@ -857,7 +876,7 @@ def _copy_include_files(
         missing = sorted(pins.keys() - staged)
         if missing:
             names = ", ".join(source for _dest, source in missing)
-            raise AndroidBuildError(
+            raise LockDrift(
                 f"include_files drift: the lock records {names}, which no longer "
                 "exists.\n"
                 "  Re-run `kivyforge lock -p android` to re-record what the "
@@ -872,14 +891,14 @@ def _verify_include_file(
 
     recorded = pins.get((dest, rel_source))
     if recorded is None:
-        raise AndroidBuildError(
+        raise LockDrift(
             f"include_files drift: {rel_source} would be staged into {dest} but "
             "the lock records no hash for it.\n"
             "  Re-run `kivyforge lock -p android` to record it."
         )
     actual = sha256_file(file_src)
     if actual != recorded:
-        raise AndroidBuildError(
+        raise LockDrift(
             f"include_files drift: {rel_source} has changed since the lock was "
             "written.\n"
             f"  locked:  {recorded}\n"
@@ -1037,17 +1056,17 @@ def _load(project_root: Path, *, no_verify_lock: bool):
         raise AndroidBuildError(exc.format()) from exc
     lock_path = project_root / "pylock.android.toml"
     if not lock_path.is_file():
-        raise AndroidBuildError(
+        raise LockMissing(
             "pylock.android.toml not found. Run `kivyforge lock -p android` first."
         )
     try:
         lock = lock_reader.load(lock_path)
     except LockError as exc:
-        raise AndroidBuildError(str(exc)) from exc
+        raise LockUnreadable(str(exc)) from exc
     if not no_verify_lock and not is_in_sync(
         lock, pyproject.read_text(encoding="utf-8")
     ):
-        raise AndroidBuildError(
+        raise LockDrift(
             "pyproject.toml has changed since pylock.android.toml was "
             "generated.\n  Run: kivyforge lock -p android\n"
             "  Or:  kivyforge build --no-verify-lock   (not recommended)"

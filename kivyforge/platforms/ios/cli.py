@@ -32,7 +32,7 @@ from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import IconSourceError
 from kivyforge.lock import LockError, is_in_sync
 from kivyforge.platforms.base import HostCapabilityError
-from kivyforge.report import diagnostics
+from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .entitlements import preflight_entitlements
@@ -104,7 +104,7 @@ def ios_build(
             resolved_team_id = preflight_signing(config, target, team_id_flag=team_id)
             ungranted = preflight_entitlements(config, project_root, target)
         except SigningError as exc:
-            raise ToolchainError(str(exc)) from exc
+            raise ToolchainError.wrap(exc) from exc
         if ungranted:
             click.echo(_ungranted_warning(ungranted), err=True)
             events.note(
@@ -148,7 +148,7 @@ def ios_build(
     except CommandError as exc:
         raise _tool_failure(exc, events) from exc
     except SigningError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
     return outcome.finish()
 
 
@@ -163,9 +163,11 @@ def _tool_failure(exc: CommandError, events: BuildEvents) -> ToolchainError:
         events.on_progress(exc.output.rstrip())
     tool = Path(exc.argv[0]).name if exc.argv else "command"
     actions = [a for a in ("build", "archive", "-exportArchive") if a in exc.argv]
-    task = f" {actions[0]}" if tool == "xcodebuild" and actions else ""
+    task = actions[0].lstrip("-") if actions else ""
     return ToolchainError(
-        f"{tool}{task} failed (exit {exc.returncode}); its output is above."
+        f"{tool}{' ' + actions[0] if actions else ''} failed "
+        f"(exit {exc.returncode}); its output is above.",
+        **failures.build_tool_failed(tool, task),
     )
 
 
@@ -197,7 +199,8 @@ def prepare_build(
         raise ToolchainError(
             f"{LOCKFILE_NAME} is out of date with pyproject.toml.\n"
             "  Run `kivyforge lock` to regenerate it (or pass --no-verify-lock "
-            "to build against the stale lock anyway)."
+            "to build against the stale lock anyway).",
+            **failures.LOCK_DRIFT,
         )
 
     build_slices = _resolve_slices(target, arch, config.ios.deployment_target)
@@ -238,11 +241,11 @@ def prepare_build(
             team_id=team_id,
         )
     except CollectError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
     except IconSourceError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
     except StagingError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
     staging = project_root / f"{config.app_slug}-ios"
     events.on_line(f"Generated {staging.relative_to(project_root)}")
@@ -337,7 +340,8 @@ def _require_product(path: Path, xb: XcodeBuild) -> Path:
             "xcodebuild reported success but no product is at "
             f"{path.relative_to(xb.project_root)}.\n"
             "  Check the scheme's build settings (PRODUCT_NAME, the export "
-            "method) and file a kivyforge issue if they are the generated defaults."
+            "method) and file a kivyforge issue if they are the generated defaults.",
+            **failures.ARTIFACT_MISSING,
         )
     return path
 
@@ -416,7 +420,7 @@ def _require_macos_host() -> None:
     try:
         get_platform("ios").check_host_capability()
     except HostCapabilityError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(pyproject: Path):
@@ -429,11 +433,14 @@ def _load_config(pyproject: Path):
 def _load_lock(project_root: Path):
     path = lockfile_path(project_root)
     if not path.is_file():
-        raise ToolchainError(f"no {LOCKFILE_NAME} found. Run `kivyforge lock` first.")
+        raise ToolchainError(
+            f"no {LOCKFILE_NAME} found. Run `kivyforge lock` first.",
+            **failures.LOCK_MISSING,
+        )
     try:
         return load(path)
     except LockError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.LOCK_UNREADABLE) from exc
 
 
 # ---- run ----------------------------------------------------------------- #
@@ -493,9 +500,9 @@ def ios_run(
         else:
             _run_device(destination, app, bundle_id)
     except SigningError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
     except CommandError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
 
 def ios_list_devices() -> None:
@@ -575,7 +582,7 @@ def ios_package(
     except CommandError as exc:
         raise _tool_failure(exc, events) from exc
     except SigningError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
     return outcome.finish()
 
 
@@ -600,7 +607,7 @@ def ios_open(project_root: Path) -> None:
     try:
         run_command(open_command(xcodeproj))
     except CommandError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
 
 # ---- status -------------------------------------------------------------- #

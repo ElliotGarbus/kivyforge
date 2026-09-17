@@ -14,6 +14,8 @@ import platform as _platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.report.failures import ClassifiedError
+
 from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
     from kivyforge.status import StatusReport
 
 
-class WindowsBundleError(Exception):
+class WindowsBundleError(ClassifiedError):
     """A Windows onedir bundling failure surfaced with an actionable message."""
 
 

@@ -67,6 +67,21 @@ MANIFEST_POLICY = "KF-MANIFEST-POLICY"
 #: declares. WARNING, because Xcode may register them during the build.
 ENTITLEMENTS_UNGRANTED = "KF-ENTITLEMENTS-UNGRANTED"
 
+#: A build tool (Gradle, xcodebuild, appimagetool) ran and exited non-zero.
+#: One code for every tool; ``context`` names the ``tool`` and ``task``.
+BUILD_TOOL_FAILED = "KF-BUILD-TOOL-FAILED"
+
+#: A build tool reported success but the product is not where it should be.
+ARTIFACT_MISSING = "KF-ARTIFACT-MISSING"
+
+#: A required tool is not installed: spawning it raised ``FileNotFoundError``.
+TOOLCHAIN_MISSING = "KF-TOOLCHAIN-MISSING"
+
+#: A tool is present but could not be executed (``EACCES``, ``ENOEXEC``, ...).
+#: Kept apart from MISSING because the fix is the file, not an install;
+#: ``context`` carries ``tool`` and ``errno``.
+TOOLCHAIN_UNUSABLE = "KF-TOOLCHAIN-UNUSABLE"
+
 #: This host cannot build this target at all (e.g. iOS from Windows).
 HOST_INCAPABLE = "KF-HOST-INCAPABLE"
 

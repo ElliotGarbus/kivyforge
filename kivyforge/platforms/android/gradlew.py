@@ -6,11 +6,17 @@ import os
 import subprocess
 from pathlib import Path
 
+from kivyforge.cli._common import ToolchainError
+from kivyforge.report.failures import spawn_failure
 from kivyforge.report.streams import stderr_for_child
 
 
 class GradleError(Exception):
-    pass
+    """Gradle could not do the job. ``returncode`` is set only if Gradle ran."""
+
+    def __init__(self, message: str, *, returncode: int | None = None) -> None:
+        super().__init__(message)
+        self.returncode = returncode
 
 
 def run_gradle(
@@ -31,13 +37,24 @@ def run_gradle(
     cmd = [str(script), "--console=plain", *tasks]
     # Gradle's transcript is progress: it goes to our stderr, so stdout stays
     # the command's product (and a --json document stays parseable).
-    with stderr_for_child() as err:
-        proc = subprocess.run(cmd, cwd=project_dir, env=env, stdout=err, stderr=err)
+    try:
+        with stderr_for_child() as err:
+            proc = subprocess.run(cmd, cwd=project_dir, env=env, stdout=err, stderr=err)
+    except OSError as exc:
+        # The wrapper exists (checked above) but could not be started: no exec
+        # bit, a noexec mount, no shell. Otherwise a traceback with no envelope.
+        raise ToolchainError(
+            f"could not run the Gradle wrapper {script.name}: {exc}.\n"
+            "  Fix: make it executable, or re-run `kivyforge build -p android` "
+            "to regenerate it.",
+            **spawn_failure(script.name, exc),
+        ) from exc
     if proc.returncode != 0:
         raise GradleError(
             f"Gradle failed (exit {proc.returncode}) running: {' '.join(tasks)}\n"
             f"  See the Gradle output above; `kivyforge doctor -p android` "
-            f"checks the JDK/SDK/NDK prerequisites."
+            f"checks the JDK/SDK/NDK prerequisites.",
+            returncode=proc.returncode,
         )
 
 

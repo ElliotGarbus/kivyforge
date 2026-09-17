@@ -22,6 +22,7 @@ from kivyforge.build_outcome import (
 from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .. import HostCapabilityError, get_platform
@@ -110,7 +111,7 @@ def linux_package(
             echo=events.on_progress,
         )
     except AppDirError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
     rel = result.relative_to(project_root)
     events.on_line(f"Packaged {rel}.")
@@ -142,14 +143,14 @@ def _assemble(
             note=events.note,
         )
     except AppDirError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
 
 def _resolve_arch(lock: LinuxLockfile, arch: str | None) -> str:
     try:
         return resolve_assembly_arch(lock.archs, arch)
     except AppDirError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
 
 def _load_and_verify(
@@ -163,7 +164,8 @@ def _load_and_verify(
             f"{lockfile_path_for('linux').name} is out of date with "
             "pyproject.toml.\n"
             "  Run `kivyforge lock -p linux` to regenerate it (or pass "
-            "--no-verify-lock to build against the stale lock anyway)."
+            "--no-verify-lock to build against the stale lock anyway).",
+            **failures.LOCK_DRIFT,
         )
     return config, lock
 
@@ -231,7 +233,7 @@ def _require_linux_host() -> None:
     try:
         get_platform("linux").check_host_capability()
     except HostCapabilityError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path):
@@ -247,9 +249,10 @@ def _load_lock(project_root: Path) -> LinuxLockfile:
     path = lockfile_path_for("linux", project_root)
     if not path.is_file():
         raise ToolchainError(
-            f"no {path.name} found. Run `kivyforge lock -p linux` first."
+            f"no {path.name} found. Run `kivyforge lock -p linux` first.",
+            **failures.LOCK_MISSING,
         )
     try:
         return load_linux_lock(path)
     except LockError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.LOCK_UNREADABLE) from exc

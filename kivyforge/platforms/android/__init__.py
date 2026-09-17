@@ -18,6 +18,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.report import diagnostics, exit_codes
+from kivyforge.report.failures import ClassifiedError
+
 from ..base import Platform
 
 if TYPE_CHECKING:
@@ -26,8 +29,45 @@ if TYPE_CHECKING:
     from kivyforge.status import StatusReport
 
 
-class AndroidBuildError(Exception):
-    """An Android build/stage failure surfaced with an actionable message."""
+class AndroidBuildError(ClassifiedError):
+    """An Android build/stage failure surfaced with an actionable message.
+
+    The base is the unclassified case (``KF-ERROR``, exit 1). Each failure family
+    below is a subclass that fixes its own code and exit status, so a raise site
+    classifies a failure by choosing the class -- and one that picks the base
+    degrades to the old behaviour rather than to a wrong code.
+    """
+
+
+class GradleFailed(AndroidBuildError):
+    """Gradle ran and exited non-zero; its output is already on stderr."""
+
+    code = diagnostics.BUILD_TOOL_FAILED
+    exit_code = exit_codes.BUILD_FAILURE
+
+
+class ArtifactMissing(AndroidBuildError):
+    """Gradle reported success but did not leave the file we expected."""
+
+    code = diagnostics.ARTIFACT_MISSING
+    exit_code = exit_codes.BUILD_FAILURE
+
+
+class LockMissing(AndroidBuildError):
+    code = diagnostics.LOCK_MISSING
+    exit_code = exit_codes.LOCK_DRIFT
+
+
+class LockUnreadable(AndroidBuildError):
+    code = diagnostics.LOCK_UNREADABLE
+    exit_code = exit_codes.LOCK_DRIFT
+
+
+class LockDrift(AndroidBuildError):
+    """``pyproject.toml`` or a pinned ``include_files`` entry moved since locking."""
+
+    code = diagnostics.LOCK_DRIFT
+    exit_code = exit_codes.LOCK_DRIFT
 
 
 class AndroidPlatform(Platform):

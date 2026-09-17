@@ -12,6 +12,8 @@ import platform as _platform
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kivyforge.report.failures import ClassifiedError
+
 from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
     from kivyforge.status import StatusReport
 
 
-class AppBundleError(Exception):
+class AppBundleError(ClassifiedError):
     """A macOS ``.app`` bundling failure surfaced with an actionable message."""
 
 

@@ -6,12 +6,14 @@ only** — no parent-directory traversal (per spec 05).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 import click
 
 from ..build_outcome import BuildEvents, discard_artifact, discard_note
 from ..report import diagnostics, exit_codes
+from ..report.failures import ClassifiedError
 
 PYPROJECT_NAME = "pyproject.toml"
 # iOS lockfile name, kept for the iOS verbs' backward-compatible call sites.
@@ -46,12 +48,24 @@ class ToolchainError(click.ClickException):
         code: str = diagnostics.UNSPECIFIED,
         exit_code: int | None = None,
         remediation: str | None = None,
+        context: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.remediation = _extract_fix(message) if remediation is None else remediation
+        self.context: dict[str, str] = dict(context or {})
         if exit_code is not None:
             self.exit_code = exit_code
+
+    @classmethod
+    def wrap(cls, exc: Exception, message: str | None = None) -> ToolchainError:
+        """Translate a backend error, keeping its classification if it has one."""
+        text = str(exc) if message is None else message
+        if isinstance(exc, ClassifiedError):
+            return cls(
+                text, code=exc.code, exit_code=exc.exit_code, context=exc.context
+            )
+        return cls(text)
 
     def as_diagnostic(self) -> diagnostics.Diagnostic:
         return diagnostics.Diagnostic(
@@ -59,6 +73,7 @@ class ToolchainError(click.ClickException):
             severity=diagnostics.ERROR,
             message=self.format_message(),
             remediation=self.remediation,
+            context=dict(self.context),
         )
 
 

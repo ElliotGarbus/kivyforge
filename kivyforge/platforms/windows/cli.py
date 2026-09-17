@@ -24,7 +24,7 @@ from kivyforge.build_outcome import (
 from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
-from kivyforge.report import diagnostics
+from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .. import HostCapabilityError, get_platform
@@ -226,14 +226,14 @@ def _assemble(
             note=events.note,
         )
     except WindowsBundleError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
 
 def _resolve_arch(lock: WindowsLockfile, arch: str | None) -> str:
     try:
         return resolve_assembly_arch(lock.archs, arch)
     except WindowsBundleError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
 
 def _sign_launcher(config, dest: Path) -> bool:
@@ -249,7 +249,7 @@ def _sign_launcher(config, dest: Path) -> bool:
     try:
         signer.sign([exe])
     except WindowsBundleError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
     return True
 
 
@@ -271,7 +271,7 @@ def _stage_dist_copy(bundle: Path, dest: Path) -> Path | None:
     try:
         trash = reserve_previous(dest)
     except WindowsBundleError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
     try:
         # copytree needs a non-existent target; the reserve moved any prior away.
         shutil.copytree(bundle, dest, ignore=_PACKAGE_IGNORE)
@@ -293,7 +293,8 @@ def _load_and_verify(
             f"{lockfile_path_for('windows').name} is out of date with "
             "pyproject.toml.\n"
             "  Run `kivyforge lock -p windows` to regenerate it (or pass "
-            "--no-verify-lock to build against the stale lock anyway)."
+            "--no-verify-lock to build against the stale lock anyway).",
+            **failures.LOCK_DRIFT,
         )
     return config, lock
 
@@ -316,7 +317,7 @@ def _require_windows_host() -> None:
     try:
         get_platform("windows").check_host_capability()
     except HostCapabilityError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path):
@@ -332,9 +333,10 @@ def _load_lock(project_root: Path) -> WindowsLockfile:
     path = lockfile_path_for("windows", project_root)
     if not path.is_file():
         raise ToolchainError(
-            f"no {path.name} found. Run `kivyforge lock -p windows` first."
+            f"no {path.name} found. Run `kivyforge lock -p windows` first.",
+            **failures.LOCK_MISSING,
         )
     try:
         return load_windows_lock(path)
     except LockError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.LOCK_UNREADABLE) from exc

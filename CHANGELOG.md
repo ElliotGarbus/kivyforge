@@ -32,6 +32,22 @@
   - Success-path warnings arrive as diagnostics on an `ok: true` envelope:
     `KF-SIGNING-UNCONFIGURED`, `KF-BYTECOMPILE-NO-INTERP`, `KF-MANIFEST-POLICY`
     and `KF-ENTITLEMENTS-UNGRANTED`.
+- **Failures now say what kind of failure they are.** `build` and `package` used
+  to exit `1` for everything; they now use the reserved exit codes, with a
+  matching diagnostic code:
+
+  | Exit | Code | When |
+  |---|---|---|
+  | `3` | `KF-HOST-INCAPABLE` | wrong host OS for the target |
+  | `3` | `KF-TOOLCHAIN-MISSING` | a tool is not installed (`xcodebuild`, the Gradle wrapper, `clang`, `codesign`, `signtool`, `appimagetool`, …) |
+  | `3` | `KF-TOOLCHAIN-UNUSABLE` | a tool is present but cannot be executed; `context.errno` says why |
+  | `4` | `KF-LOCK-MISSING` / `KF-LOCK-UNREADABLE` / `KF-LOCK-DRIFT` | re-run `kivyforge lock` |
+  | `5` | `KF-BUILD-TOOL-FAILED` | Gradle, `xcodebuild` or `appimagetool` exited non-zero; `context` has `tool` and `task` |
+  | `5` | `KF-ARTIFACT-MISSING` | the tool reported success but the product is not there |
+
+  Anything not listed keeps `KF-ERROR` and exit `1`. A tool that cannot be
+  started at all used to crash with a traceback on iOS and Android; it now
+  fails cleanly with an envelope.
 - Android now prints `Generated <app>-android` and relative artifact paths, like
   the other platforms. iOS `build --simulator`/`--device` builds into the
   project's own `build/DerivedData` (as `run` already did) and prints the

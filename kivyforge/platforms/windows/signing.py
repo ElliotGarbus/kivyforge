@@ -30,6 +30,8 @@ from typing import Protocol, runtime_checkable
 
 from packaging.version import InvalidVersion, Version
 
+from kivyforge.report.failures import spawn_failure
+
 from . import WindowsBundleError
 
 # Windows version resources are four unsigned 16-bit integers.
@@ -141,7 +143,8 @@ class SigntoolSigner:
         except OSError as exc:
             raise WindowsBundleError(
                 f"failed to run signtool ({self.signtool}): {exc}. signtool ships "
-                "with the Windows SDK and is Windows-only."
+                "with the Windows SDK and is Windows-only.",
+                **spawn_failure("signtool", exc),
             ) from exc
         if proc.returncode != 0:
             raise WindowsBundleError(

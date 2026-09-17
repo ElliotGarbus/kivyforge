@@ -22,7 +22,7 @@ from kivyforge.build_outcome import (
 from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
-from kivyforge.report import diagnostics
+from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .. import HostCapabilityError, get_platform
@@ -56,7 +56,8 @@ def macos_build(
             f"{lockfile_path_for('macos').name} is out of date with "
             "pyproject.toml.\n"
             "  Run `kivyforge lock -p macos` to regenerate it (or pass "
-            "--no-verify-lock to build against the stale lock anyway)."
+            "--no-verify-lock to build against the stale lock anyway).",
+            **failures.LOCK_DRIFT,
         )
 
     try:
@@ -72,7 +73,7 @@ def macos_build(
             note=events.note,
         )
     except AppBundleError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
     rel = app.relative_to(project_root)
     events.on_line(f"Built {rel}")
@@ -207,7 +208,7 @@ def macos_package(
         if do_notarize:
             notarize_and_staple(app, profile=profile, echo=events.on_progress)
     except AppBundleError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
     trust = "notarized + stapled" if do_notarize else "signed (not notarized)"
     events.on_line(f"Packaged {rel} (Developer ID {trust}).")
@@ -263,7 +264,7 @@ def _require_macos_host() -> None:
     try:
         get_platform("macos").check_host_capability()
     except HostCapabilityError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path):
@@ -279,9 +280,10 @@ def _load_lock(project_root: Path) -> MacosLockfile:
     path = lockfile_path_for("macos", project_root)
     if not path.is_file():
         raise ToolchainError(
-            f"no {path.name} found. Run `kivyforge lock -p macos` first."
+            f"no {path.name} found. Run `kivyforge lock -p macos` first.",
+            **failures.LOCK_MISSING,
         )
     try:
         return load_macos_lock(path)
     except LockError as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError(str(exc), **failures.LOCK_UNREADABLE) from exc

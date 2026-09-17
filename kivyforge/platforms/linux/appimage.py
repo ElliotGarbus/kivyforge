@@ -22,6 +22,7 @@ from pathlib import Path
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.download import DownloadError, fetch_artifact
+from kivyforge.report.failures import build_tool_failed, spawn_failure
 
 from . import AppDirError
 
@@ -126,7 +127,9 @@ def build_appimage(
         proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     except OSError as exc:
         tmp_out.unlink(missing_ok=True)
-        raise AppDirError(f"failed to run appimagetool: {exc}") from exc
+        raise AppDirError(
+            f"failed to run appimagetool: {exc}", **spawn_failure("appimagetool", exc)
+        ) from exc
     if proc.returncode != 0:
         tmp_out.unlink(missing_ok=True)
         # The transcript is build log: both streams go to progress, and the
@@ -136,7 +139,8 @@ def build_appimage(
                 echo(stream.rstrip())
         raise AppDirError(
             f"appimagetool failed to build the AppImage (exit {proc.returncode}); "
-            "its output is above."
+            "its output is above.",
+            **build_tool_failed("appimagetool", "package"),
         )
     tmp_out.chmod(0o755)
     os.replace(tmp_out, output)

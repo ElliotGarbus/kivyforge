@@ -40,6 +40,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from kivyforge.report.failures import spawn_failure
+
 from . import AppBundleError
 
 # The launcher is intentionally minimal: resolve its own path, derive the bundle
@@ -140,10 +142,14 @@ def build_launcher(dest: Path, *, entry_point: str, arch: str) -> None:
 def _compile(cmd: list[str]) -> None:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True)
-    except FileNotFoundError as exc:
+    except OSError as exc:
+        reason = (
+            "not found" if isinstance(exc, FileNotFoundError) else f"unusable ({exc})"
+        )
         raise AppBundleError(
-            "clang not found; the launcher needs the Xcode command-line tools.\n"
-            "  Install them with: xcode-select --install"
+            f"clang {reason}; the launcher needs the Xcode command-line tools.\n"
+            "  Install them with: xcode-select --install",
+            **spawn_failure("clang", exc),
         ) from exc
     if proc.returncode != 0:
         raise AppBundleError(

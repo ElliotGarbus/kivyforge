@@ -25,6 +25,8 @@ from pathlib import Path
 
 import click
 
+from kivyforge.report.failures import spawn_failure
+
 from . import AppBundleError
 
 
@@ -130,10 +132,14 @@ def _notary_log(submission_id: str, profile: str) -> str:
 def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True)
-    except FileNotFoundError as exc:
+    except OSError as exc:
+        reason = (
+            "not found" if isinstance(exc, FileNotFoundError) else f"unusable ({exc})"
+        )
         raise AppBundleError(
-            f"required macOS tool {cmd[0]!r} not found.\n"
-            "  Install the Xcode command-line tools: xcode-select --install"
+            f"required macOS tool {cmd[0]!r} {reason}.\n"
+            "  Install the Xcode command-line tools: xcode-select --install",
+            **spawn_failure(cmd[0], exc),
         ) from exc
     if check and proc.returncode != 0:
         raise AppBundleError(
