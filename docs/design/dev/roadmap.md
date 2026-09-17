@@ -744,15 +744,24 @@ whenever stderr has content the stdout half of the evidence is lost — the exac
 trap `ios/xcode/runner.py` carries a comment about.
 
 **Reading the code closely found the hole that mattered: artifacts had no way home
-on the failure path.** `Report` lives in `cli/_output.py`, the work that
-produces artifacts is three frames down in `platforms/*/cli.py`, and a verb that
-raises never reaches its own `emit`. So a `BuildOutcome` returned only on success
-would leave an Android package that failed *after* writing `app-release.apk`
-emitting `"data": {}` — reintroducing, for the verbs that need it most, exactly the
-hole `Report.record()` was added to close. The fix keeps the `status` seam intact
-(backends return data, the verb renders; no `Report` passed into platforms):
-`ToolchainError` grows an optional `data=` that `reporting()` merges with anything
-already recorded, and a backend attaches what it has produced to the raise.
+on the failure path.** `Report` lives in `cli/_output.py`, the work that produces
+artifacts is three frames down in `platforms/*/cli.py`, and a verb that raises never
+reaches its own `emit`. So a `BuildOutcome` returned only on success would leave an
+Android package that failed *after* writing `app-release.apk` emitting `"data": {}` —
+reintroducing, for the verbs that need it most, exactly the hole `Report.record()`
+was added to close.
+
+**One callback closed that hole and three others.** Product lines are interleaved
+with progress and their order carries meaning — iOS prints `Generated <slug>-ios`
+minutes before `Exported <ipa>`, macOS prints `Built`, then two signing lines, then
+`Packaged` — so rendering product only from a returned value would reorder real build
+logs to tidy a seam. Making each artifact an event instead, `on_product(artifact)`
+called at the moment of finalisation, preserves ordering, enforces the
+finalised-and-verified rule by construction, puts artifacts on `Report` before any
+later failure, and therefore needs no new `data=` argument on `ToolchainError` at
+all. The lesson worth keeping: **when a value has to be both ordered and durable, an
+event beats a return value, and the return value becomes a summary rather than a
+channel.**
 
 **There is a more dangerous version of the same question: an artifact path on a
 failed run can name a file the run did not produce.** None of the three
@@ -794,14 +803,32 @@ else), so "publish the paths" cannot mean "publish what we print" until that is
 normalised. **`byte_compile` needs one code with two severities**, since `= true` is
 an explicit demand that must keep failing while the default `= "release"` degrades
 with a warning — the code carries the meaning, the severity carries the consequence.
-And **exit `3` can only mean "wrong OS" for now**: `check_host_capability` compares
+And **"no gate checks it" is not the same as "we never learn it"** — a distinction
+worth remembering, because getting it wrong nearly cost a usable exit code. No
+up-front gate answers "is the toolchain installed": `check_host_capability` compares
 `platform.system()` and nothing more on every backend, Android's is a deliberate
-no-op, and `_require_macos_host` never checks that Xcode exists. So a runner missing
-a JDK or an NDK or Xcode fails inside a subprocess and honestly reports "read the
-log" at `5` when the useful answer is "fix the image" at `3`. `KF-TOOLCHAIN-MISSING`
-was dropped rather than reserved, since nothing can raise it until the build paths
-get preflights — which doctor already knows how to answer, and which would pay for
-itself by failing a bad runner in seconds instead of after a Gradle download.
+no-op, and `_require_macos_host` never checks that Xcode exists. But an absent tool
+announces itself when we try to spawn it, and `macos/machotools.py` and
+`macos/launcher.py` already catch `FileNotFoundError` and say "required macOS tool
+not found" in prose. Those are toolchain-missing determinations needing only a code,
+so `KF-TOOLCHAIN-MISSING` at exit `3` is reachable there. What stays out of reach is
+the Gradle-mediated case: a missing JDK or NDK is discovered *by Gradle*, arrives as
+a build failure, and no exit status can recover the distinction afterwards. Closing
+that needs an Android preflight, which doctor already knows how to answer and which
+would pay for itself by failing a bad runner in seconds instead of after a Gradle
+download.
+
+**Two scoping corrections worth carrying.** The stderr-only rule for tool output
+applies to *bulk* producers, not to every subprocess: `(proc.stderr or proc.stdout)`
+embedded in an error message is a house convention with sixteen sites — `signtool`,
+`codesign`, `clang`, `rcedit`, `keytool`, `notarytool`, `adb`, the pip and Swift
+resolvers — and for those the quoted line *is* the diagnosis. The rule is about
+volume: a diagnostic message may quote a tool, it may not contain a build log.
+Separately, `status --json` does **not** emit project-relative paths today, contrary
+to what is easy to assume: every backend hands `BuildArtifact.probe()` an absolute
+path and `as_dict()` only calls `as_posix()`, changing separators without
+relativising. The relative-path rule is scoped to `build`/`package`; normalising
+`status` is a small independent change.
 
 **`status` turned out to pay a debt as well as add a feature.** The backends now
 return a `StatusReport` (`kivyforge/status.py`) that `cli/status.py` renders.
