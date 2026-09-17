@@ -24,11 +24,11 @@ class TestRunGradle:
         (tmp_path / _wrapper_name()).write_text("#!/bin/sh", encoding="utf-8")
         captured = {}
 
-        def fake_run(cmd, cwd, env, text):
+        def fake_run(cmd, cwd, env, stdout, stderr):
             captured["cmd"] = cmd
             captured["cwd"] = cwd
             captured["env"] = env
-            captured["text"] = text
+            captured["streams"] = (stdout, stderr)
             return subprocess.CompletedProcess(cmd, 0)
 
         monkeypatch.setattr(gradlew_mod.subprocess, "run", fake_run)
@@ -41,12 +41,31 @@ class TestRunGradle:
             "bundleRelease",
         ]
         assert captured["cwd"] == tmp_path
-        assert captured["text"] is True
+        # Both of Gradle's streams go to one stderr target, never inherited stdout.
+        out, err = captured["streams"]
+        assert out is not None and out == err
+
+    def test_gradle_output_reaches_stderr_not_stdout(self, tmp_path, capfd):
+        """A real child through a real descriptor: the production path."""
+        if os.name == "nt":
+            script = "@echo gradle says hi\r\n@echo gradle warns 1>&2\r\n"
+        else:
+            script = "#!/bin/sh\necho gradle says hi\necho gradle warns >&2\n"
+        wrapper = tmp_path / _wrapper_name()
+        wrapper.write_text(script, encoding="utf-8", newline="")
+        wrapper.chmod(0o755)
+
+        run_gradle(tmp_path, ["assembleDebug"])
+
+        out, err = capfd.readouterr()
+        assert out == ""
+        assert "gradle says hi" in err
+        assert "gradle warns" in err
 
     def test_nonzero_exit_raises_gradle_error(self, tmp_path, monkeypatch):
         (tmp_path / _wrapper_name()).write_text("#!/bin/sh", encoding="utf-8")
 
-        def fake_run(cmd, cwd, env, text):
+        def fake_run(cmd, cwd, env, stdout, stderr):
             return subprocess.CompletedProcess(cmd, 1)
 
         monkeypatch.setattr(gradlew_mod.subprocess, "run", fake_run)
@@ -58,7 +77,7 @@ class TestRunGradle:
         monkeypatch.setenv("EXISTING_VAR", "1")
         captured = {}
 
-        def fake_run(cmd, cwd, env, text):
+        def fake_run(cmd, cwd, env, stdout, stderr):
             captured["env"] = env
             return subprocess.CompletedProcess(cmd, 0)
 

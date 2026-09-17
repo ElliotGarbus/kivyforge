@@ -6,6 +6,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from kivyforge.report.streams import stderr_for_child
+
 
 class GradleError(Exception):
     pass
@@ -27,7 +29,10 @@ def run_gradle(
     if env_overrides:
         env.update(env_overrides)
     cmd = [str(script), "--console=plain", *tasks]
-    proc = subprocess.run(cmd, cwd=project_dir, env=env, text=True)
+    # Gradle's transcript is progress: it goes to our stderr, so stdout stays
+    # the command's product (and a --json document stays parseable).
+    with stderr_for_child() as err:
+        proc = subprocess.run(cmd, cwd=project_dir, env=env, stdout=err, stderr=err)
     if proc.returncode != 0:
         raise GradleError(
             f"Gradle failed (exit {proc.returncode}) running: {' '.join(tasks)}\n"

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Breaking: Android build output moves to stderr
+
+- **Gradle's output now goes to stderr** for every Android `build`, `package`,
+  `run` and `--smoke`, instead of being inherited onto stdout. It still scrolls
+  past on the terminal exactly as before; only the stream changed. This is what
+  lets stdout carry just the command's result, and is the prerequisite for a
+  parseable `--json`.
+  - **Migration:** a job that captures only stdout
+    (`kivyforge package -p android > build.log`) no longer gets the Gradle log.
+    Capture both streams (`> build.log 2>&1`).
+  - This is the first half of one change: for `build` and `package`, everything
+    kivyforge prints except the product lines (`Built …`, `Packaged …`) will
+    move to stderr on all five platforms when `--json` lands.
+
 ### Breaking: Apple targets are Apple Silicon only
 
 - **`x86_64` removed from macOS and the iOS Simulator**, as a host *and* as a
