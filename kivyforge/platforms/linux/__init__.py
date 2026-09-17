@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
+    from kivyforge.build_outcome import BuildEvents, BuildOutcome
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -47,6 +48,7 @@ class LinuxPlatform(Platform):
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -57,12 +59,13 @@ class LinuxPlatform(Platform):
         debug: bool = False,
         fmt: str | None = None,
         abi: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         self.reject_ios_only_target(target)
         from .cli import linux_build
 
-        linux_build(
+        return linux_build(
             project_root,
+            events=events,
             arch=arch,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
@@ -85,6 +88,7 @@ class LinuxPlatform(Platform):
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         fmt: str,
         arch: str | None,
         team_id: str | None,
@@ -97,11 +101,12 @@ class LinuxPlatform(Platform):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         from .cli import linux_package
 
-        linux_package(
+        return linux_package(
             project_root,
+            events=events,
             fmt=fmt,
             arch=arch,
             no_verify_lock=no_verify_lock,

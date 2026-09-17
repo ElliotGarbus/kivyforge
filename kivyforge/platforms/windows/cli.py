@@ -15,9 +15,16 @@ from pathlib import Path
 
 import click
 
-from kivyforge.cli._common import ToolchainError, lockfile_path_for
+from kivyforge.build_outcome import (
+    ArtifactKind,
+    BuildEvents,
+    BuildOutcome,
+    OutcomeBuilder,
+)
+from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.report import diagnostics
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .. import HostCapabilityError, get_platform
@@ -65,15 +72,25 @@ def windows_build(
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
-) -> Path:
-    """Assemble the Windows onedir bundle; return its path."""
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
+    """Assemble the Windows onedir bundle."""
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
     bundle = _assemble(
-        config, lock, project_root, arch=arch, no_cache=no_cache, release=False
+        config,
+        lock,
+        project_root,
+        arch=arch,
+        no_cache=no_cache,
+        release=False,
+        events=events,
     )
-    click.echo(f"Built {bundle.relative_to(project_root)}")
-    return bundle
+    rel = bundle.relative_to(project_root)
+    events.on_line(f"Built {rel}")
+    outcome.add(rel, ArtifactKind.FOLDER)
+    return outcome.finish()
 
 
 def windows_package(
@@ -83,17 +100,25 @@ def windows_package(
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
-) -> Path:
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
     """Produce the distributable: the onedir folder copied to ``dist/windows``.
 
     ``folder`` is the only Windows package format (installers stay external). The
     copied tree is the portable, run-from-folder distributable.
     """
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
     target_arch = _resolve_arch(lock, arch)
     bundle = _assemble(
-        config, lock, project_root, arch=target_arch, no_cache=no_cache, release=True
+        config,
+        lock,
+        project_root,
+        arch=target_arch,
+        no_cache=no_cache,
+        release=True,
+        events=events,
     )
 
     # The dist folder name matches the build tree: the display_name run through
@@ -119,17 +144,25 @@ def windows_package(
         raise
     discard_reserved(trash)
 
-    note = (
+    trust = (
         "signed + timestamped"
         if signed
         else "unsigned (configure [tool.kivy.windows.signing] to sign)"
     )
-    click.echo(
-        f"Packaged {dest.relative_to(project_root)} (onedir folder, {note}).\n"
-        f"  Run it by double-clicking {launcher_name(config)}, or zip the folder "
-        "to distribute. An installer is an external step."
+    if not signed:
+        events.note(
+            diagnostics.SIGNING_UNCONFIGURED,
+            "packaged unsigned; configure [tool.kivy.windows.signing] to sign.",
+        )
+    rel = dest.relative_to(project_root)
+    events.on_line(f"Packaged {rel} (onedir folder, {trust}).")
+    outcome.add(rel, ArtifactKind.FOLDER)
+    return outcome.finish(
+        notes=(
+            f"  Run it by double-clicking {launcher_name(config)}, or zip the folder "
+            "to distribute. An installer is an external step.",
+        )
     )
-    return dest
 
 
 def windows_run(
@@ -150,9 +183,10 @@ def windows_run(
             )
     else:
         config = _load_config(project_root)
-        bundle = windows_build(
+        built = windows_build(
             project_root, arch=arch, no_verify_lock=False, no_cache=False
         )
+        bundle = project_root / built.artifacts[0].path
 
     exe = bundle / launcher_name(config)
     click.echo(f"Launching {bundle.name} ...")
@@ -177,10 +211,19 @@ def windows_status(project_root: Path) -> StatusReport:
     )
 
 
-def _assemble(config, lock, project_root, *, arch, no_cache, release) -> Path:
+def _assemble(
+    config, lock, project_root, *, arch, no_cache, release, events=ECHO_EVENTS
+) -> Path:
     try:
         return build_onedir(
-            config, lock, project_root, arch=arch, no_cache=no_cache, release=release
+            config,
+            lock,
+            project_root,
+            arch=arch,
+            no_cache=no_cache,
+            release=release,
+            echo=events.on_progress,
+            note=events.note,
         )
     except WindowsBundleError as exc:
         raise ToolchainError(str(exc)) from exc

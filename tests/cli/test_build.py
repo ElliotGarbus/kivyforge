@@ -16,6 +16,7 @@ from kivyforge.platforms.ios.lock import (
     compute_pyproject_sha256,
     dumps,
 )
+from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
 
 # These orchestrate an iOS build, which stages the symlinked <app>-ios/app tree;
 # skip on hosts without the symlink privilege (stock Windows), where iOS never
@@ -73,12 +74,6 @@ def runner():
     return CliRunner()
 
 
-class _Proc:
-    returncode = 0
-    stdout = ""
-    stderr = ""
-
-
 @pytest.fixture(autouse=True)
 def mock_collect(monkeypatch):
     calls = []
@@ -92,7 +87,7 @@ def mock_collect(monkeypatch):
     monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "arm64")
     # Step 7 invokes xcodebuild; stub it so these orchestration tests stay
     # hermetic (they assert on the resolved slice, not on a real build).
-    monkeypatch.setattr(ios_cli, "run_command", lambda *a, **k: _Proc())
+    monkeypatch.setattr(ios_cli, "run_command", fake_xcodebuild)
     return calls
 
 
@@ -197,7 +192,7 @@ class TestSigningIdentityWiring:
         monkeypatch.setattr(
             ios_cli,
             "run_command",
-            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+            lambda argv, *a, **k: captured.append(argv) or fake_xcodebuild(argv),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
@@ -222,7 +217,7 @@ class TestSigningIdentityWiring:
         monkeypatch.setattr(
             ios_cli,
             "run_command",
-            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+            lambda argv, *a, **k: captured.append(argv) or fake_xcodebuild(argv),
         )
         monkeypatch.setenv("KIVYFORGE_SIGNING_IDENTITY", "Apple Development: Env")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
@@ -240,7 +235,7 @@ class TestSigningIdentityWiring:
         monkeypatch.setattr(
             ios_cli,
             "run_command",
-            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+            lambda argv, *a, **k: captured.append(argv) or fake_xcodebuild(argv),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
@@ -273,7 +268,7 @@ class TestSigningIdentityWiring:
         monkeypatch.setattr(
             ios_cli,
             "run_command",
-            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+            lambda argv, *a, **k: captured.append(argv) or fake_xcodebuild(argv),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
@@ -290,7 +285,7 @@ class TestSigningIdentityWiring:
         monkeypatch.setattr(
             ios_cli,
             "run_command",
-            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+            lambda argv, *a, **k: captured.append(argv) or fake_xcodebuild(argv),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
@@ -307,7 +302,7 @@ class TestSigningIdentityWiring:
         monkeypatch.setattr(
             ios_cli,
             "run_command",
-            lambda argv, *a, **k: captured.append(argv) or _Proc(),
+            lambda argv, *a, **k: captured.append(argv) or fake_xcodebuild(argv),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)

@@ -21,8 +21,10 @@ from pathlib import Path
 import click
 
 from kivyforge.artifacts.cache import ArtifactCache
+from kivyforge.build_outcome import discard_note
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
+from kivyforge.report import diagnostics
 
 from . import AppDirError
 from .desktop import validate_desktop_file, write_desktop_entry
@@ -70,6 +72,8 @@ def _resolve_byte_compile(
     target_arch: str,
     python_version: str,
     release: bool,
+    echo=click.echo,
+    note=discard_note,
 ) -> tuple[tuple[str, ...] | None, bool]:
     """Decide whether to byte-compile, and with which interpreter.
 
@@ -106,7 +110,8 @@ def _resolve_byte_compile(
                 "[tool.kivy.linux.build_settings].byte_compile = true, but "
                 f"{headline}.\n{why_and_fix}"
             )
-        click.echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
+        echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
+        note(diagnostics.BYTECOMPILE_NO_INTERP, f"not byte-compiling: {headline}.")
         return None, False
     strip = _setting_applies(settings.strip_source, release=release)
     return compiler, strip
@@ -123,6 +128,7 @@ def build_appdir(
     cache: ArtifactCache | None = None,
     release: bool = False,
     echo=click.echo,
+    note=discard_note,
 ) -> Path:
     """Build the AppDir tree and return its path."""
     target_arch = resolve_assembly_arch(lock.archs, arch)
@@ -178,6 +184,8 @@ def build_appdir(
             target_arch=target_arch,
             python_version=lock.python_runtime.version,
             release=release,
+            echo=echo,
+            note=note,
         )
         if compiler is not None:
             with_what = " ".join(compiler) if compiler else "this interpreter"

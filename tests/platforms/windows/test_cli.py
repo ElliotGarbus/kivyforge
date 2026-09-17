@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from kivyforge.build_outcome import Artifact, ArtifactKind, BuildOutcome
 from kivyforge.cli._common import ToolchainError
 from kivyforge.platforms.windows import cli
 from kivyforge.status import LockState
@@ -59,8 +62,12 @@ class TestBuild:
         monkeypatch.setattr(cli, "build_onedir", _fake_build)
         monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: ("cfg", "lock"))
         monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
-        out = cli.windows_build(project, arch=None, no_verify_lock=True, no_cache=False)
-        assert out.name == "My App"
+        outcome = cli.windows_build(
+            project, arch=None, no_verify_lock=True, no_cache=False
+        )
+        assert [(a.path, a.kind) for a in outcome.artifacts] == [
+            (Path("build", "windows", "My App"), ArtifactKind.FOLDER)
+        ]
         assert seen["kw"]["arch"] is None
 
 
@@ -108,7 +115,10 @@ class TestRun:
         bundle = project / "build" / "windows" / "My App"
         bundle.mkdir(parents=True)
         (bundle / "My App.exe").write_bytes(b"MZ")
-        monkeypatch.setattr(cli, "windows_build", lambda *a, **k: bundle)
+        built = BuildOutcome(
+            (Artifact(bundle.relative_to(project), ArtifactKind.FOLDER),)
+        )
+        monkeypatch.setattr(cli, "windows_build", lambda *a, **k: built)
 
         launched = {}
 
@@ -134,9 +144,13 @@ class TestPackage:
             cli, "_load_and_verify", lambda root, nv: (_config(project), self._Lock())
         )
         monkeypatch.setattr(cli, "build_onedir", lambda *a, **k: built)
-        return cli.windows_package(
+        outcome = cli.windows_package(
             project, fmt="folder", arch=None, no_verify_lock=True, no_cache=False
         )
+        # The dist copy is the product, never the build tree it was copied from.
+        (artifact,) = outcome.artifacts
+        assert artifact.kind is ArtifactKind.FOLDER
+        return project / artifact.path
 
     def _canonical_bundle(self, project):
         built = project / "build" / "windows" / "My App"

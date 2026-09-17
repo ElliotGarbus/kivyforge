@@ -21,6 +21,7 @@ from kivyforge.platforms.ios.lock import (
 )
 from kivyforge.platforms.ios.xcode import runner as runner_mod
 from tests.platforms.ios.test_entitlements import write_profile
+from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
 
 # These orchestrate iOS build/run/open, which stage the symlinked <app>-ios/app
 # tree; skip on hosts without the symlink privilege (stock Windows).
@@ -74,12 +75,6 @@ def _write_project(fs: str) -> Path:
     return root
 
 
-class _Proc:
-    returncode = 0
-    stdout = ""
-    stderr = ""
-
-
 _SIMCTL_JSON = json.dumps(
     {
         "devices": {
@@ -114,7 +109,7 @@ def record_xcodebuild(monkeypatch):
 
     def fake(argv, *, runner=None, check=True):
         calls.append(argv)
-        proc = _Proc()
+        proc = fake_xcodebuild(argv)
         if (
             len(argv) >= 6
             and argv[:4] == ["xcrun", "simctl", "list", "devices"]

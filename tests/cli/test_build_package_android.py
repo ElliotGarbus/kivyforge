@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
+from kivyforge.build_outcome import BuildOutcome
 from kivyforge.cli.build import build as build_cmd
 from kivyforge.cli.package import package as package_cmd
 
@@ -27,9 +28,11 @@ class _FakeBackend:
 
     def build(self, project_root, **kwargs):
         self.build_calls.append({"project_root": project_root, **kwargs})
+        return BuildOutcome(())
 
     def package(self, project_root, **kwargs):
         self.package_calls.append({"project_root": project_root, **kwargs})
+        return BuildOutcome(())
 
 
 @pytest.fixture

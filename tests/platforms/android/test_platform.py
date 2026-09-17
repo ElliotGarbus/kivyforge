@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kivyforge.cli._common import ToolchainError
+from kivyforge.cli._common import ECHO_EVENTS, ToolchainError
 from kivyforge.platforms import get_platform, resolve_target
 from kivyforge.platforms.android import AndroidPlatform
 
@@ -65,6 +65,7 @@ class TestRegistration:
         with pytest.raises(ToolchainError, match="tool.kivy.android"):
             backend.build(
                 tmp_path,
+                events=ECHO_EVENTS,
                 target=None,
                 arch=None,
                 no_verify_lock=False,
@@ -100,6 +101,7 @@ class TestVerbForwarding:
         backend, calls = self._backend(monkeypatch)
         backend.build(
             tmp_path,
+            events=ECHO_EVENTS,
             target=None,
             arch=None,
             no_verify_lock=False,
@@ -119,6 +121,7 @@ class TestVerbForwarding:
         backend, calls = self._backend(monkeypatch)
         backend.build(
             tmp_path,
+            events=ECHO_EVENTS,
             target=None,
             arch="arm64_v8a",
             no_verify_lock=False,
@@ -134,6 +137,7 @@ class TestVerbForwarding:
         backend, calls = self._backend(monkeypatch)
         backend.package(
             tmp_path,
+            events=ECHO_EVENTS,
             fmt="aab",
             arch=None,
             team_id=None,
@@ -148,6 +152,7 @@ class TestVerbForwarding:
             key_alias="upload",
         )
         assert calls["package"] == {
+            "events": ECHO_EVENTS,
             "fmt": "aab",
             "abi": "arm64_v8a",
             "keystore": "release.keystore",

@@ -16,10 +16,12 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from ..build_outcome import discard_note
 from ..bundle.pycompile import PycompileError, byte_compile, select_compiler
 from ..config.model import DesktopBuildSettings
 from ..lock.model import LockedWheel
 from ..platforms.ios.lock.model import Lockfile
+from ..report.diagnostics import BYTECOMPILE_NO_INTERP
 from .cache import ArtifactCache
 from .download import Downloader, fetch_artifact
 from .frameworks import (
@@ -81,6 +83,7 @@ def collect_artifacts(
     release: bool = False,
     build_settings: DesktopBuildSettings | None = None,
     echo: Callable[[str], None] = lambda msg: None,
+    note=discard_note,
 ) -> None:
     cache = cache or ArtifactCache()
 
@@ -118,6 +121,7 @@ def collect_artifacts(
             release=release,
             build_settings=build_settings,
             echo=echo,
+            note=note,
         )
         _stamp_collected(slice_pip_deps)
         copy_wheel_frameworks(slice_pip_deps, layout.frameworks, existing=staged)
@@ -158,6 +162,7 @@ def _compile_pip_deps(
     release: bool,
     build_settings: DesktopBuildSettings | None,
     echo: Callable[[str], None],
+    note=discard_note,
 ) -> None:
     """Byte-compile/strip a collected pip-deps slice, per ``build_settings``.
 
@@ -194,6 +199,11 @@ def _compile_pip_deps(
                 f"{headline}.\n{why_and_fix}"
             )
         echo(f"[stage] not byte-compiling pip-deps: {headline}.\n{why_and_fix}")
+        note(
+            BYTECOMPILE_NO_INTERP,
+            f"not byte-compiling pip-deps: {headline}.",
+            {"payload": "pip-deps"},
+        )
         return
     strip_source = _setting_applies(settings.strip_source, release=release)
     with_what = " ".join(compiler) if compiler else "this interpreter"

@@ -13,11 +13,19 @@ from pathlib import Path
 import click
 
 from kivyforge.artifacts.download import fetch_artifact
+from kivyforge.build_outcome import (
+    ArtifactKind,
+    BuildEvents,
+    BuildOutcome,
+    OutcomeBuilder,
+    discard_note,
+)
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
-from kivyforge.cli._common import ToolchainError
+from kivyforge.cli._common import ECHO_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.report import diagnostics
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from . import AndroidBuildError
@@ -118,7 +126,12 @@ def _setting_applies(value: bool | str, *, release: bool) -> bool:
 
 
 def _resolve_byte_compile(
-    android: AndroidConfig, *, python_version: str, debug: bool
+    android: AndroidConfig,
+    *,
+    python_version: str,
+    debug: bool,
+    echo=click.echo,
+    note=discard_note,
 ) -> tuple[tuple[str, ...] | None, bool]:
     """Decide whether to byte-compile, and with which interpreter.
 
@@ -150,7 +163,8 @@ def _resolve_byte_compile(
                 "[tool.kivy.android.build_settings].byte_compile = true, but "
                 f"{headline}.\n{why_and_fix}"
             )
-        click.echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
+        echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
+        note(diagnostics.BYTECOMPILE_NO_INTERP, f"not byte-compiling: {headline}.")
         return None, False
     # Documented as "ignored when byte_compile is off": stripping sources with
     # no .pyc beside them would ship a bundle that imports nothing.
@@ -170,8 +184,9 @@ def android_build(
     signing_config_block: str = "",
     release_signing_config: str | None = None,
     test_build_type: str | None = None,
-) -> Path:
-    """Steps 1-7 (+8 with ``debug``); returns the generated project dir.
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
+    """Steps 1-7 (+8 with ``debug``): the generated project, and the debug artifact.
 
     ``debug`` also selects which side of the ``"release"`` build settings the
     staged bundle gets: the payload is baked into ``assets/`` at generate time,
@@ -179,6 +194,7 @@ def android_build(
     Generating without ``--debug`` stages the release payload, which is what
     ``kivyforge package`` then assembles.
     """
+    outcome = OutcomeBuilder(events.on_artifact)
     config, lock = _load(project_root, no_verify_lock=no_verify_lock)
     android = config.android_required
     abis = _select_abis(android, abi)
@@ -204,7 +220,9 @@ def android_build(
     for runtime in lock.python_android:
         if runtime.abi not in abis:
             continue
-        click.echo(f"[collect] python.org runtime {runtime.version} ({runtime.abi})")
+        events.on_progress(
+            f"[collect] python.org runtime {runtime.version} ({runtime.abi})"
+        )
         tarball = fetch_artifact(
             name=f"python-android-{runtime.abi}",
             sha256=runtime.sha256,
@@ -224,7 +242,7 @@ def android_build(
     libs_dir = dest / "app" / "libs"
     staged_libs: list[str] = []
     for lib in lock.android_libs:
-        click.echo(f"[collect] {lib.kind} {lib.name} {lib.version}")
+        events.on_progress(f"[collect] {lib.kind} {lib.name} {lib.version}")
         archive = fetch_artifact(
             name=lib.name,
             sha256=lib.sha256,
@@ -271,7 +289,7 @@ def android_build(
             else:
                 staged = fetched
             files.append(staged)
-        click.echo(f"[stage] installing {len(files)} wheels for {abi_name}")
+        events.on_progress(f"[stage] installing {len(files)} wheels for {abi_name}")
         _stage(
             lambda: install_wheels(files, target, python_version=python_version),
             WheelStageError,
@@ -303,7 +321,7 @@ def android_build(
         import json as _json
 
         ext_manifest_json = _json.dumps(manifest, indent=1, sort_keys=True) + "\n"
-        click.echo(
+        events.on_progress(
             f"[stage] jniLibs/{android_abi(abi_name)}: "
             f"{len(manifest)} extensions flattened"
         )
@@ -311,11 +329,15 @@ def android_build(
     # --- Step 6: the ABI-independent asset bundle ---
     canonical = abis[0]
     compiler, strip_source = _resolve_byte_compile(
-        android, python_version=python_version, debug=debug
+        android,
+        python_version=python_version,
+        debug=debug,
+        echo=events.on_progress,
+        note=events.note,
     )
     if compiler is not None:
         with_what = " ".join(compiler) if compiler else "this interpreter"
-        click.echo(
+        events.on_progress(
             f"[stage] byte-compiling the Python payload with {with_what}"
             + (" (.pyc only)" if strip_source else "")
         )
@@ -337,7 +359,7 @@ def android_build(
         ),
         BundleError,
     )
-    click.echo(f"[stage] asset bundle assembled (stamp {stamp})")
+    events.on_progress(f"[stage] asset bundle assembled (stamp {stamp})")
 
     # --- Step 7: (re)generate the Gradle project ---
     sdl_activity_java = ""
@@ -366,7 +388,7 @@ def android_build(
         keep={Path(r.relpath).name for r in service_classes},
     )
     if service_classes:
-        click.echo(f"[generate] {len(service_classes)} service class(es)")
+        events.on_progress(f"[generate] {len(service_classes)} service class(es)")
 
     # The SDL glue and the wheel's libSDL<N>.so are a matched pair: SDLActivity
     # aborts onCreate silently when their versions disagree, and dies in its
@@ -435,19 +457,26 @@ def android_build(
     write_gradle_pins(dest, lock)
     _write_local_properties(dest)
     _copy_include_files(project_root, dest, android, lock, verify=not no_verify_lock)
-    click.echo(f"[generate] {dest.name}/ regenerated")
+    events.on_progress(f"[generate] {dest.name}/ regenerated")
+    # The [generate] line is progress; without this product line a plain
+    # `build` would print nothing on stdout while claiming a project artifact.
+    project_rel = dest.relative_to(project_root)
+    events.on_line(f"Generated {project_rel}")
+    outcome.add(project_rel, ArtifactKind.PROJECT)
 
     # --- Step 8: assembleDebug (only with --debug) ---
     if debug:
         task = "assembleDebug" if fmt == "apk" else "bundleDebug"
-        click.echo(f"[gradle] {task}")
+        events.on_progress(f"[gradle] {task}")
         try:
             run_gradle(dest, [task])
         except GradleError as exc:
             raise AndroidBuildError(str(exc)) from exc
         out = _require_artifact(_debug_output(dest, fmt), task)
-        click.echo(f"Built {out}")
-    return dest
+        rel = out.relative_to(project_root)
+        events.on_line(f"Built {rel}")
+        outcome.add(rel, ArtifactKind.APK if fmt == "apk" else ArtifactKind.AAB)
+    return outcome.finish()
 
 
 def _require_artifact(path: Path, task: str) -> Path:
@@ -471,11 +500,17 @@ def android_package(
     key_alias: str | None = None,
     no_verify_lock: bool = False,
     no_cache: bool = False,
-) -> Path:
-    """Produce the signed release distributable (android/06 §package)."""
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
+    """Produce the signed release distributable (android/06 §package).
+
+    The inner ``android_build`` prints as usual but records nothing: the
+    generated project is this verb's intermediate, not its product.
+    """
     from .policy import ManifestPolicyError, enforce_release_manifest
     from .signing import SigningError, resolve_signing, signing_config_gradle
 
+    outcome = OutcomeBuilder(events.on_artifact)
     config, _lock = _load(project_root, no_verify_lock=no_verify_lock)
     android = config.android_required
 
@@ -492,14 +527,16 @@ def android_package(
 
     # Stage + generate (steps 1-7), injecting the release signing config.
     signing_block = signing_config_gradle(signing)
-    dest = android_build(
+    android_build(
         project_root,
         debug=False,
         abi=abi,
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
         signing_config_block=signing_block,
+        events=events.without_artifacts(),
     )
+    dest = project_dir_for(project_root, config)
 
     # Manifest policy, pass 1: the GENERATED manifest, so an own-goal (placeholder
     # applicationId, a passthrough that forces debuggable) costs no Gradle time.
@@ -515,30 +552,37 @@ def android_package(
     except ManifestPolicyError as exc:
         raise AndroidBuildError(str(exc)) from exc
     for info in infos:
-        click.echo(f"[policy] INFO: {info.message}")
+        events.on_progress(f"[policy] INFO: {info.message}")
+        events.note(
+            diagnostics.MANIFEST_POLICY, info.message, {"manifest": "generated"}
+        )
 
     # Manifest policy, pass 2: Lint's curated subset plus the same checks over
     # AGP's MERGED manifest — the one that is actually packaged, including what
     # library (.aar/Maven) manifests contribute. Still before signing.
-    _enforce_merged_manifest(dest, android)
+    _enforce_merged_manifest(dest, android, events)
 
     task = "assembleRelease" if fmt == "apk" else "bundleRelease"
-    click.echo(f"[gradle] {task}")
+    events.on_progress(f"[gradle] {task}")
     try:
         run_gradle(dest, [task])
     except GradleError as exc:
         raise AndroidBuildError(str(exc)) from exc
     out = _require_artifact(_release_output(dest, fmt), task)
-    click.echo(f"Packaged {out}")
-    return out
+    rel = out.relative_to(project_root)
+    events.on_line(f"Packaged {rel}")
+    outcome.add(rel, ArtifactKind.APK if fmt == "apk" else ArtifactKind.AAB)
+    return outcome.finish()
 
 
-def _enforce_merged_manifest(dest: Path, android: AndroidConfig) -> None:
+def _enforce_merged_manifest(
+    dest: Path, android: AndroidConfig, events: BuildEvents = ECHO_EVENTS
+) -> None:
     """Run lintRelease + the merged-manifest policy pass, before signing."""
     from .generate.project import MERGED_MANIFEST_RELPATH, MERGED_MANIFEST_TASK
     from .policy import LINT_CHECKS, ManifestPolicyError, enforce_release_manifest
 
-    click.echo(f"[gradle] lintRelease ({len(LINT_CHECKS)} curated checks)")
+    events.on_progress(f"[gradle] lintRelease ({len(LINT_CHECKS)} curated checks)")
     try:
         run_gradle(dest, ["lintRelease", MERGED_MANIFEST_TASK])
     except GradleError as exc:
@@ -556,7 +600,7 @@ def _enforce_merged_manifest(dest: Path, android: AndroidConfig) -> None:
             f"{MERGED_MANIFEST_TASK} produced no manifest at {merged}; the "
             "release policy cannot check what would actually be packaged."
         )
-    click.echo("[policy] merged release manifest")
+    events.on_progress("[policy] merged release manifest")
     try:
         infos = enforce_release_manifest(
             merged.read_text(encoding="utf-8"),
@@ -566,7 +610,8 @@ def _enforce_merged_manifest(dest: Path, android: AndroidConfig) -> None:
     except ManifestPolicyError as exc:
         raise AndroidBuildError(str(exc)) from exc
     for info in infos:
-        click.echo(f"[policy] INFO (merged): {info.message}")
+        events.on_progress(f"[policy] INFO (merged): {info.message}")
+        events.note(diagnostics.MANIFEST_POLICY, info.message, {"manifest": "merged"})
 
 
 def _release_output(dest: Path, fmt: str) -> Path:

@@ -13,7 +13,13 @@ from pathlib import Path
 
 import click
 
-from kivyforge.cli._common import ToolchainError, lockfile_path_for
+from kivyforge.build_outcome import (
+    ArtifactKind,
+    BuildEvents,
+    BuildOutcome,
+    OutcomeBuilder,
+)
+from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -32,15 +38,25 @@ def linux_build(
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
-) -> Path:
-    """Assemble the Linux AppDir; return its path."""
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
+    """Assemble the Linux AppDir."""
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_linux_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
     appdir = _assemble(
-        config, lock, project_root, arch=arch, no_cache=no_cache, release=False
+        config,
+        lock,
+        project_root,
+        arch=arch,
+        no_cache=no_cache,
+        release=False,
+        events=events,
     )
-    click.echo(f"Built {appdir.relative_to(project_root)}")
-    return appdir
+    rel = appdir.relative_to(project_root)
+    events.on_line(f"Built {rel}")
+    outcome.add(rel, ArtifactKind.FOLDER)
+    return outcome.finish()
 
 
 def linux_package(
@@ -50,22 +66,33 @@ def linux_package(
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
-) -> Path:
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
     """Produce the distributable artifact: an ``.AppImage`` (default) or the AppDir."""
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_linux_host()
     config, lock = _load_and_verify(project_root, no_verify_lock)
     target_arch = _resolve_arch(lock, arch)
     appdir = _assemble(
-        config, lock, project_root, arch=target_arch, no_cache=no_cache, release=True
+        config,
+        lock,
+        project_root,
+        arch=target_arch,
+        no_cache=no_cache,
+        release=True,
+        events=events,
     )
 
     if fmt == "folder":
-        click.echo(
-            f"Packaged {appdir.relative_to(project_root)} (AppDir folder).\n"
-            "  Run it with ./AppRun, or `kivyforge package -f appimage` for a "
-            "single-file distributable."
+        rel = appdir.relative_to(project_root)
+        events.on_line(f"Packaged {rel} (AppDir folder).")
+        outcome.add(rel, ArtifactKind.FOLDER)
+        return outcome.finish(
+            notes=(
+                "  Run it with ./AppRun, or `kivyforge package -f appimage` for a "
+                "single-file distributable.",
+            )
         )
-        return appdir
 
     output = (
         project_root
@@ -80,27 +107,39 @@ def linux_package(
             target_arch,
             project_root=project_root,
             no_cache=no_cache,
-            echo=click.echo,
+            echo=events.on_progress,
         )
     except AppDirError as exc:
         raise ToolchainError(str(exc)) from exc
 
-    click.echo(
-        f"Packaged {result.relative_to(project_root)}.\n"
-        "  Distribute the .AppImage directly (chmod +x, then run). The host needs "
-        "glibc >= the effective floor, libGL/libEGL, and an X11/Wayland "
-        "session.\n"
-        "  No libfuse2 package is required (static-FUSE runtime embedded). If the "
-        "host lacks kernel FUSE (/dev/fuse) — e.g. some containers/CI — run it "
-        "with --appimage-extract-and-run (or APPIMAGE_EXTRACT_AND_RUN=1)."
+    rel = result.relative_to(project_root)
+    events.on_line(f"Packaged {rel}.")
+    outcome.add(rel, ArtifactKind.APPIMAGE)
+    return outcome.finish(
+        notes=(
+            "  Distribute the .AppImage directly (chmod +x, then run). The host "
+            "needs glibc >= the effective floor, libGL/libEGL, and an X11/Wayland "
+            "session.\n"
+            "  No libfuse2 package is required (static-FUSE runtime embedded). If "
+            "the host lacks kernel FUSE (/dev/fuse) — e.g. some containers/CI — "
+            "run it with --appimage-extract-and-run (or APPIMAGE_EXTRACT_AND_RUN=1).",
+        )
     )
-    return result
 
 
-def _assemble(config, lock, project_root, *, arch, no_cache, release) -> Path:
+def _assemble(
+    config, lock, project_root, *, arch, no_cache, release, events=ECHO_EVENTS
+) -> Path:
     try:
         return build_appdir(
-            config, lock, project_root, arch=arch, no_cache=no_cache, release=release
+            config,
+            lock,
+            project_root,
+            arch=arch,
+            no_cache=no_cache,
+            release=release,
+            echo=events.on_progress,
+            note=events.note,
         )
     except AppDirError as exc:
         raise ToolchainError(str(exc)) from exc
@@ -146,9 +185,10 @@ def linux_run(
                 "without --no-build first."
             )
     else:
-        appdir = linux_build(
+        built = linux_build(
             project_root, arch=arch, no_verify_lock=False, no_cache=False
         )
+        appdir = project_root / built.artifacts[0].path
 
     apprun = appdir / "AppRun"
     click.echo(f"Launching {appdir.name} ...")

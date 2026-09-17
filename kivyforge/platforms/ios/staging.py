@@ -8,8 +8,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from kivyforge.build_outcome import discard_note
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
+from kivyforge.report import diagnostics
 
 _APP_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 
@@ -68,6 +70,7 @@ def create_staging(
     release: bool = False,
     python_version: str | None = None,
     echo: Callable[[str], None] = lambda msg: None,
+    note=discard_note,
 ) -> StagingLayout:
     """Create the ``<app>-ios/`` tree and the ``app/`` source.
 
@@ -97,7 +100,9 @@ def create_staging(
         d.mkdir(parents=True, exist_ok=True)
 
     if release:
-        _materialize_app_copy(layout, project_root, config, python_version, echo)
+        _materialize_app_copy(
+            layout, project_root, config, python_version, echo, note=note
+        )
     else:
         _refresh_app_symlink(layout, project_root, config.kivy.app_dir)
     return layout
@@ -139,6 +144,7 @@ def _materialize_app_copy(
     config: Config,
     python_version: str,
     echo: Callable[[str], None],
+    note=discard_note,
 ) -> None:
     source = project_root / config.kivy.app_dir
     if not source.is_dir():
@@ -162,7 +168,7 @@ def _materialize_app_copy(
             "it and re-run build."
         )
     shutil.copytree(source, link, ignore=_APP_COPY_IGNORE)
-    _compile_app_copy(link, config, python_version, echo)
+    _compile_app_copy(link, config, python_version, echo, note=note)
 
 
 def _setting_applies(value: bool | str, *, release: bool) -> bool:
@@ -177,6 +183,7 @@ def _compile_app_copy(
     config: Config,
     python_version: str,
     echo: Callable[[str], None],
+    note=discard_note,
 ) -> None:
     """Byte-compile/strip the materialized app copy, per ``build_settings``.
 
@@ -213,6 +220,11 @@ def _compile_app_copy(
                 f"{headline}.\n{why_and_fix}"
             )
         echo(f"[stage] not byte-compiling app sources: {headline}.\n{why_and_fix}")
+        note(
+            diagnostics.BYTECOMPILE_NO_INTERP,
+            f"not byte-compiling app sources: {headline}.",
+            {"payload": "app-sources"},
+        )
         return
     strip_source = _setting_applies(settings.strip_source, release=True)
     with_what = " ".join(compiler) if compiler else "this interpreter"

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from kivyforge.build_outcome import ArtifactKind
 from kivyforge.cli._common import ToolchainError
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.lock.reader import compute_pyproject_sha256
@@ -59,6 +60,11 @@ abis = ["arm64_v8a"]
 [tool.kivy.android.python]
 version = "3.14.6"
 """
+
+
+def _built_paths(outcome, project_root: Path) -> list[Path]:
+    """The absolute paths a build or package recorded, in order."""
+    return [project_root / a.path for a in outcome.artifacts]
 
 
 @pytest.fixture
@@ -274,8 +280,11 @@ def build_env(project, monkeypatch, tmp_path):
 class TestAndroidBuildHappyPath:
     def test_generates_project_without_debug(self, build_env):
         project, calls = build_env
-        dest = cli.android_build(project)
-        assert dest == project / "demoapp-android"
+        outcome = cli.android_build(project)
+        assert [(a.path, a.kind) for a in outcome.artifacts] == [
+            (Path("demoapp-android"), ArtifactKind.PROJECT)
+        ]
+        dest = project / "demoapp-android"
         assert dest.is_dir()
         assert (
             dest / "AndroidManifest.xml"
@@ -288,11 +297,16 @@ class TestAndroidBuildHappyPath:
 
     def test_debug_invokes_assembledebug(self, build_env, capsys):
         project, calls = build_env
-        dest = cli.android_build(project, debug=True, fmt="apk")
+        outcome = cli.android_build(project, debug=True, fmt="apk")
         assert calls["run_gradle"] == [("assembleDebug",)]
         out = capsys.readouterr().out
         assert "Built" in out
-        assert (dest / "app" / "build" / "outputs" / "apk" / "debug").is_dir()
+        apk = Path("demoapp-android", "app", "build", "outputs", "apk", "debug")
+        # Both are this build's products: the project, then the debug artifact.
+        assert [(a.path, a.kind) for a in outcome.artifacts] == [
+            (Path("demoapp-android"), ArtifactKind.PROJECT),
+            (apk / "app-debug.apk", ArtifactKind.APK),
+        ]
 
     def test_debug_bundle_invokes_bundledebug(self, build_env):
         project, calls = build_env
@@ -343,7 +357,7 @@ class TestGeneratedServices:
     def test_declared_service_gets_its_class_written(self, build_env):
         project, calls = build_env
         self._with_services(project)
-        dest = cli.android_build(project)
+        (dest,) = _built_paths(cli.android_build(project), project)
         main = dest / "app" / "src" / "main"
         source = main / "java" / "org" / "kivy" / "android" / "ServiceDownloader.java"
         assert source.is_file()
@@ -360,7 +374,7 @@ class TestGeneratedServices:
     def test_service_probe_is_generated_with_the_service(self, build_env):
         project, _ = build_env
         self._with_services(project)
-        dest = cli.android_build(project)
+        (dest,) = _built_paths(cli.android_build(project), project)
         probe = (
             dest
             / "app"
@@ -377,7 +391,7 @@ class TestGeneratedServices:
 
     def test_no_services_generates_no_class_or_probe(self, build_env):
         project, _ = build_env
-        dest = cli.android_build(project)
+        (dest,) = _built_paths(cli.android_build(project), project)
         android_pkg = (
             dest / "app" / "src" / "main" / "java" / "org" / "kivy" / "android"
         )
@@ -392,7 +406,7 @@ class TestGeneratedServices:
         would keep compiling in — and the probe would not compile at all."""
         project, _ = build_env
         self._with_services(project)
-        dest = cli.android_build(project)
+        (dest,) = _built_paths(cli.android_build(project), project)
         stale = (
             dest
             / "app"
@@ -628,7 +642,7 @@ class TestAndroidBuildIncludeFiles:
 
     def test_include_files_copied(self, project, monkeypatch, tmp_path):
         self._project_with_extra(project, monkeypatch, tmp_path)
-        dest = cli.android_build(project)
+        (dest,) = _built_paths(cli.android_build(project), project)
         copied = dest / "app" / "src" / "main" / "assets" / "extra" / "data.txt"
         assert copied.read_text(encoding="utf-8") == "hi"
 
@@ -663,7 +677,7 @@ class TestAndroidBuildIncludeFiles:
     def test_no_verify_lock_skips_the_drift_check(self, project, monkeypatch, tmp_path):
         """--no-verify-lock means the lock is not being enforced at all."""
         self._project_with_extra(project, monkeypatch, tmp_path, pins=False)
-        dest = cli.android_build(project, no_verify_lock=True)
+        (dest,) = _built_paths(cli.android_build(project, no_verify_lock=True), project)
         copied = dest / "app" / "src" / "main" / "assets" / "extra" / "data.txt"
         assert copied.is_file()
 
@@ -810,8 +824,11 @@ class TestAndroidPackage:
         project, calls = build_env
         self._fake_signing(monkeypatch)
         self._fake_manifest_ok(monkeypatch)
-        out = cli.android_package(project, fmt="apk")
-        assert out.name == "app-release.apk"
+        outcome = cli.android_package(project, fmt="apk")
+        # Only the release APK: the project is package's intermediate.
+        assert [(a.path.name, a.kind) for a in outcome.artifacts] == [
+            ("app-release.apk", ArtifactKind.APK)
+        ]
         assert calls["run_gradle"] == [
             ("lintRelease", MERGED_MANIFEST_TASK),
             ("assembleRelease",),
@@ -821,8 +838,10 @@ class TestAndroidPackage:
         project, calls = build_env
         self._fake_signing(monkeypatch)
         self._fake_manifest_ok(monkeypatch)
-        out = cli.android_package(project, fmt="aab")
-        assert out.name == "app-release.aab"
+        outcome = cli.android_package(project, fmt="aab")
+        assert [(a.path.name, a.kind) for a in outcome.artifacts] == [
+            ("app-release.aab", ArtifactKind.AAB)
+        ]
         assert calls["run_gradle"] == [
             ("lintRelease", MERGED_MANIFEST_TASK),
             ("bundleRelease",),
@@ -968,7 +987,7 @@ class TestMergedManifestPolicy:
             '<category android:name="android.intent.category.LAUNCHER"/>'
             "</intent-filter></activity>",
         )
-        out = cli.android_package(project)
+        (out,) = _built_paths(cli.android_package(project), project)
         assert out.name == "app-release.apk"
 
     def test_a_lint_finding_points_at_the_report(self, build_env, monkeypatch):

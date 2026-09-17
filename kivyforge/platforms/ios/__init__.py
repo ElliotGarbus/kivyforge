@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
+    from kivyforge.build_outcome import BuildEvents, BuildOutcome
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -42,6 +43,7 @@ class IosPlatform(Platform):
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -52,11 +54,12 @@ class IosPlatform(Platform):
         debug: bool = False,
         fmt: str | None = None,
         abi: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         from .cli import ios_build
 
-        ios_build(
+        return ios_build(
             project_root,
+            events=events,
             target=target,
             arch=arch,
             no_verify_lock=no_verify_lock,
@@ -88,6 +91,7 @@ class IosPlatform(Platform):
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         fmt: str,
         arch: str | None,
         team_id: str | None,
@@ -100,11 +104,12 @@ class IosPlatform(Platform):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         from .cli import ios_package
 
-        ios_package(
+        return ios_package(
             project_root,
+            events=events,
             team_id=team_id,
             signing_identity=signing_identity,
             export_method=export_method,

@@ -18,6 +18,7 @@ from kivyforge.platforms.ios.lock import (
     compute_pyproject_sha256,
     dumps,
 )
+from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
 
 PYPROJECT = (
     textwrap.dedent(
@@ -64,12 +65,6 @@ def _write_project(fs: str) -> Path:
     return root
 
 
-class _Proc:
-    returncode = 0
-    stdout = ""
-    stderr = ""
-
-
 @pytest.fixture
 def runner():
     return CliRunner()
@@ -79,7 +74,7 @@ def runner():
 def mock_build(monkeypatch):
     monkeypatch.setattr(ios_cli, "collect_artifacts", lambda *a, **k: None)
     monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "arm64")
-    monkeypatch.setattr(ios_cli, "run_command", lambda *a, **k: _Proc())
+    monkeypatch.setattr(ios_cli, "run_command", fake_xcodebuild)
 
 
 class TestFormatResolution:

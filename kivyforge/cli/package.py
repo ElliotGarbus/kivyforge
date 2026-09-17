@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import click
 
-from ._common import ToolchainError
+from ._common import ECHO_EVENTS, ToolchainError
 from ._platform import platform_option, reject_android_only, resolve_target
 
 
@@ -100,8 +100,10 @@ def package(
     )
     fmt = _resolve_format(backend, fmt)
 
-    backend.package(
+    events = ECHO_EVENTS
+    outcome = backend.package(
         project_root,
+        events=events,
         fmt=fmt,
         arch=arch,
         team_id=team_id,
@@ -115,6 +117,8 @@ def package(
         keystore=keystore,
         key_alias=key_alias,
     )
+    for note in outcome.notes:
+        events.on_line(note)
 
 
 def _resolve_format(backend, fmt: str | None) -> str:

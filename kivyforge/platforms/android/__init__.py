@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from ..base import Platform
 
 if TYPE_CHECKING:
+    from kivyforge.build_outcome import BuildEvents, BuildOutcome
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -49,6 +50,7 @@ class AndroidPlatform(Platform):
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -59,7 +61,7 @@ class AndroidPlatform(Platform):
         debug: bool = False,
         fmt: str | None = None,
         abi: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         # `target` carries the iOS-only selectors. Without --debug, build stops
         # after generating the project; with it, Gradle assembles the debug
         # artifact (android/06 step 8). `--abi` is the Android spelling of the
@@ -67,8 +69,9 @@ class AndroidPlatform(Platform):
         self.reject_ios_only_target(target)
         from .cli import android_build
 
-        android_build(
+        return android_build(
             project_root,
+            events=events,
             debug=debug,
             fmt=fmt or "apk",
             abi=abi or arch,
@@ -98,6 +101,7 @@ class AndroidPlatform(Platform):
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         fmt: str,
         arch: str | None,
         team_id: str | None,
@@ -110,11 +114,12 @@ class AndroidPlatform(Platform):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         from .cli import android_package
 
-        android_package(
+        return android_package(
             project_root,
+            events=events,
             fmt=fmt,
             abi=abi or arch,
             keystore=keystore,

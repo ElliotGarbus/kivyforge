@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kivyforge.build_outcome import BuildOutcome
 from kivyforge.cli import init as init_mod
 from kivyforge.cli import lock as lock_mod
 from kivyforge.cli import upgrade as upgrade_mod
@@ -180,7 +181,7 @@ class TestSharedDispatchViaEnvVar:
         monkeypatch.setattr(
             get_platform(target_platform),
             "build",
-            lambda root, **kw: calls.append(root),
+            lambda root, **kw: calls.append(root) or BuildOutcome(()),
         )
         result = runner.invoke(build, [])
         assert result.exit_code == 0, result.output
@@ -206,7 +207,7 @@ class TestSharedDispatchViaEnvVar:
         monkeypatch.setattr(
             get_platform(target_platform),
             "package",
-            lambda root, **kw: calls.append(root),
+            lambda root, **kw: calls.append(root) or BuildOutcome(()),
         )
         result = runner.invoke(package, [])
         assert result.exit_code == 0, result.output

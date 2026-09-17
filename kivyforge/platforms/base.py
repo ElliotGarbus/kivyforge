@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from kivyforge.build_outcome import BuildEvents, BuildOutcome
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -77,11 +78,15 @@ class Platform(ABC):
     # Android keystore overrides) are keyword-with-default: the CLI rejects them
     # for the platforms they do not apply to, so those backends accept and
     # ignore them rather than each verb growing a per-platform call shape.
+    #
+    # ``build``/``package`` report through ``events`` as they run and return what
+    # this invocation finalised; the verb renders both (build_outcome.py).
 
     def build(
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -92,7 +97,7 @@ class Platform(ABC):
         debug: bool = False,
         fmt: str | None = None,
         abi: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         raise NotImplementedError(f"build is not supported for {self.name!r}.")
 
     def run(
@@ -110,6 +115,7 @@ class Platform(ABC):
         self,
         project_root: Path,
         *,
+        events: BuildEvents,
         fmt: str,
         arch: str | None,
         team_id: str | None,
@@ -122,7 +128,7 @@ class Platform(ABC):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
-    ) -> None:
+    ) -> BuildOutcome:
         raise NotImplementedError(f"package is not supported for {self.name!r}.")
 
     def open_project(self, project_root: Path) -> None:

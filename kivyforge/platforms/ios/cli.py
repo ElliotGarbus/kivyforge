@@ -16,7 +16,14 @@ import click
 
 from kivyforge.artifacts.collect import CollectError, collect_artifacts
 from kivyforge.artifacts.wheels import BuildSlice
+from kivyforge.build_outcome import (
+    ArtifactKind,
+    BuildEvents,
+    BuildOutcome,
+    OutcomeBuilder,
+)
 from kivyforge.cli._common import (
+    ECHO_EVENTS,
     LOCKFILE_NAME,
     ToolchainError,
     lockfile_path,
@@ -25,6 +32,7 @@ from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import IconSourceError
 from kivyforge.lock import LockError, is_in_sync
 from kivyforge.platforms.base import HostCapabilityError
+from kivyforge.report import diagnostics
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .entitlements import preflight_entitlements
@@ -82,8 +90,10 @@ def ios_build(
     team_id: str | None,
     signing_identity: str | None,
     export_method: str,
-) -> None:
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
     """Download artifacts, generate the Xcode project, and optionally build it."""
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_macos_host()
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
@@ -97,6 +107,11 @@ def ios_build(
             raise ToolchainError(str(exc)) from exc
         if ungranted:
             click.echo(_ungranted_warning(ungranted), err=True)
+            events.note(
+                diagnostics.ENTITLEMENTS_UNGRANTED,
+                "entitlements not granted by the pinned provisioning profile: "
+                f"{', '.join(ungranted)}",
+            )
 
     prepare_build(
         config,
@@ -106,16 +121,18 @@ def ios_build(
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
         team_id=resolved_team_id,
+        events=events,
     )
+    xb = XcodeBuild.from_config(config, project_root)
+    outcome.add(xb.staging.relative_to(project_root), ArtifactKind.PROJECT)
 
     if target is None:
-        click.echo(
+        events.on_line(
             "Project ready. Open it with `kivyforge open` or build with "
             "`kivyforge build --simulator`."
         )
-        return
+        return outcome.finish()
 
-    xb = XcodeBuild.from_config(config, project_root)
     try:
         _xcodebuild_step7(
             xb,
@@ -125,9 +142,12 @@ def ios_build(
             team_id_flag=team_id,
             signing_identity_flag=signing_identity,
             export_method=export_method,
+            events=events,
+            outcome=outcome,
         )
     except (CommandError, SigningError) as exc:
         raise ToolchainError(str(exc)) from exc
+    return outcome.finish()
 
 
 def prepare_build(
@@ -139,6 +159,7 @@ def prepare_build(
     no_verify_lock: bool,
     no_cache: bool,
     team_id: str | None = None,
+    events: BuildEvents = ECHO_EVENTS,
 ) -> BuildSlice:
     """Run build steps 1-6 (drift, artifact collection, project generation).
 
@@ -147,6 +168,9 @@ def prepare_build(
     so the generated project builds either Xcode destination without re-running
     the toolchain; a targeted build collects only its slice. Returns the primary
     slice (the targeted one, or the device slice for a bare build).
+
+    Prints ``Generated`` but records nothing: whether the project is a product
+    depends on the verb, so the caller decides.
     """
     pyproject = project_root / "pyproject.toml"
     lock = _load_lock(project_root)
@@ -169,9 +193,10 @@ def prepare_build(
             project_root,
             release=release,
             python_version=lock.python_xcframework.version if release else None,
-            echo=click.echo,
+            echo=events.on_progress,
+            note=events.note,
         )
-        click.echo(f"Collecting artifacts for {tags} ...")
+        events.on_progress(f"Collecting artifacts for {tags} ...")
         collect_artifacts(
             lock,
             layout,
@@ -180,7 +205,8 @@ def prepare_build(
             no_cache=no_cache,
             release=release,
             build_settings=config.ios.python_build_settings,
-            echo=click.echo,
+            echo=events.on_progress,
+            note=events.note,
         )
         materialize_project(
             config,
@@ -200,7 +226,7 @@ def prepare_build(
         raise ToolchainError(str(exc)) from exc
 
     staging = project_root / f"{config.app_slug}-ios"
-    click.echo(f"Generated {staging.relative_to(project_root)}")
+    events.on_line(f"Generated {staging.relative_to(project_root)}")
     return build_slices[0]
 
 
@@ -213,6 +239,8 @@ def _xcodebuild_step7(
     team_id_flag: str | None,
     signing_identity_flag: str | None,
     export_method: str,
+    events: BuildEvents,
+    outcome: OutcomeBuilder,
 ) -> None:
     auto_signing = config.ios.signing.auto_signing
     if target in ("simulator", "device"):
@@ -221,16 +249,24 @@ def _xcodebuild_step7(
         # case — a device debug build.
         identity = resolve_signing_identity(config, identity_flag=signing_identity_flag)
         sim_arch = arch if target == "simulator" else None
-        click.echo(f"xcodebuild build ({target}) ...")
+        # Pinned to the project-local DerivedData, as `run` does, so the .app
+        # has a project-relative path instead of landing in Xcode's global cache.
+        derived_data = xb.build_dir / "DerivedData"
+        events.on_progress(f"xcodebuild build ({target}) ...")
         run_command(
             build_command(
                 xb,
                 target,
                 arch=sim_arch,
+                derived_data_path=derived_data,
                 signing_identity=identity,
                 allow_provisioning_updates=auto_signing and target == "device",
             )
         )
+        app = _require_product(product_app_path(derived_data, xb.scheme, target), xb)
+        rel = app.relative_to(xb.project_root)
+        events.on_line(f"Built {rel}")
+        outcome.add(rel, ArtifactKind.APP)
         return
 
     # --release: archive, then export a signed .ipa (spec 05 step 7).
@@ -246,7 +282,7 @@ def _xcodebuild_step7(
             "code signing required for --release, but no team_id is set."
         )
     xb.build_dir.mkdir(parents=True, exist_ok=True)
-    click.echo("xcodebuild archive ...")
+    events.on_progress("xcodebuild archive ...")
     run_command(
         archive_command(
             xb,
@@ -265,11 +301,26 @@ def _xcodebuild_step7(
     with open(options_path, "wb") as fh:
         plistlib.dump(options, fh)
 
-    click.echo("xcodebuild -exportArchive ...")
+    events.on_progress("xcodebuild -exportArchive ...")
     run_command(
         export_command(xb, options_path, allow_provisioning_updates=auto_signing)
     )
-    click.echo(f"Exported {xb.ipa_path.relative_to(xb.project_root)}")
+    ipa = _require_product(xb.ipa_path, xb)
+    rel = ipa.relative_to(xb.project_root)
+    events.on_line(f"Exported {rel}")
+    outcome.add(rel, ArtifactKind.IPA)
+
+
+def _require_product(path: Path, xb: XcodeBuild) -> Path:
+    """Confirm xcodebuild actually produced the product we are about to announce."""
+    if not path.exists():
+        raise ToolchainError(
+            "xcodebuild reported success but no product is at "
+            f"{path.relative_to(xb.project_root)}.\n"
+            "  Check the scheme's build settings (PRODUCT_NAME, the export "
+            "method) and file a kivyforge issue if they are the generated defaults."
+        )
+    return path
 
 
 def _resolve_slices(
@@ -464,8 +515,14 @@ def ios_package(
     export_method: str,
     no_verify_lock: bool,
     no_cache: bool,
-) -> None:
-    """Build the release archive and export a signed ``.ipa``."""
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
+    """Build the release archive and export a signed ``.ipa``.
+
+    Only the ``.ipa`` is recorded: the generated project and the ``.xcarchive``
+    are intermediates of ``package``, however visible the former's line is.
+    """
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_macos_host()
     config = _load_config(project_root / "pyproject.toml")
     try:
@@ -482,6 +539,7 @@ def ios_package(
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
             team_id=resolved_team_id,
+            events=events,
         )
         xb = XcodeBuild.from_config(config, project_root)
         _xcodebuild_step7(
@@ -492,9 +550,12 @@ def ios_package(
             team_id_flag=team_id,
             signing_identity_flag=signing_identity,
             export_method=export_method,
+            events=events,
+            outcome=outcome,
         )
     except (CommandError, SigningError) as exc:
         raise ToolchainError(str(exc)) from exc
+    return outcome.finish()
 
 
 # ---- open ---------------------------------------------------------------- #

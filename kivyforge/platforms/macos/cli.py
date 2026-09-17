@@ -13,9 +13,16 @@ from pathlib import Path
 
 import click
 
-from kivyforge.cli._common import ToolchainError, lockfile_path_for
+from kivyforge.build_outcome import (
+    ArtifactKind,
+    BuildEvents,
+    BuildOutcome,
+    OutcomeBuilder,
+)
+from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
 from kivyforge.config import ConfigError, load_config
 from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.report import diagnostics
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .. import HostCapabilityError, get_platform
@@ -35,8 +42,10 @@ def macos_build(
     no_cache: bool,
     sign: bool = True,
     release: bool = False,
-) -> Path:
-    """Assemble (and ad-hoc sign) the macOS ``.app``; return its path."""
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
+    """Assemble (and ad-hoc sign) the macOS ``.app``."""
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_macos_host()
     config = _load_config(project_root)
     lock = _load_lock(project_root)
@@ -59,12 +68,16 @@ def macos_build(
             sign=sign,
             no_cache=no_cache,
             release=release,
+            echo=events.on_progress,
+            note=events.note,
         )
     except AppBundleError as exc:
         raise ToolchainError(str(exc)) from exc
 
-    click.echo(f"Built {app.relative_to(project_root)}")
-    return app
+    rel = app.relative_to(project_root)
+    events.on_line(f"Built {rel}")
+    outcome.add(rel, ArtifactKind.APP)
+    return outcome.finish()
 
 
 def macos_run(
@@ -84,7 +97,10 @@ def macos_run(
                 "--no-build first."
             )
     else:
-        app = macos_build(project_root, arch=arch, no_verify_lock=False, no_cache=False)
+        built = macos_build(
+            project_root, arch=arch, no_verify_lock=False, no_cache=False
+        )
+        app = project_root / built.artifacts[0].path
 
     executable = app / "Contents" / "MacOS" / _executable_name(app)
     click.echo(f"Launching {app.name} ...")
@@ -104,14 +120,20 @@ def macos_package(
     signing_identity: str | None = None,
     notarize: bool | None = None,
     notary_profile: str | None = None,
-) -> Path:
+    events: BuildEvents = ECHO_EVENTS,
+) -> BuildOutcome:
     """Produce the finished, signed ``.app`` distributable.
 
     Signing tier is config-driven: with ``[tool.kivy.macos.signing].identity``
     set (or ``--signing-identity``), the bundle is Developer-ID deep-signed
     (Hardened Runtime + timestamp) and — when a notary profile is configured —
     notarized and stapled. Without an identity, the ad-hoc floor applies.
+
+    The inner ``macos_build`` still prints its ``Built`` line but records
+    nothing: that bundle is an intermediate, and on the Developer ID path it is
+    not even signed yet.
     """
+    outcome = OutcomeBuilder(events.on_artifact)
     _require_macos_host()
     config = _load_config(project_root)
     signing = config.macos_required.signing
@@ -128,21 +150,30 @@ def macos_package(
                 "  Set [tool.kivy.macos.signing].identity to your 'Developer ID "
                 "Application: ...' certificate (or pass --signing-identity)."
             )
-        app = macos_build(
+        built = macos_build(
             project_root,
             arch=arch,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
             sign=True,
             release=True,
+            events=events.without_artifacts(),
         )
-        click.echo(
-            f"Packaged {app.relative_to(project_root)} (ad-hoc signed).\n"
-            "  Distribute the .app directly, or wrap it in a .dmg with an "
-            "external tool (see docs). For Gatekeeper-trusted distribution, "
-            "configure [tool.kivy.macos.signing]."
+        rel = built.artifacts[0].path
+        events.note(
+            diagnostics.SIGNING_UNCONFIGURED,
+            "packaged ad-hoc signed; configure [tool.kivy.macos.signing] for "
+            "Gatekeeper-trusted distribution.",
         )
-        return app
+        events.on_line(f"Packaged {rel} (ad-hoc signed).")
+        outcome.add(rel, ArtifactKind.APP)
+        return outcome.finish(
+            notes=(
+                "  Distribute the .app directly, or wrap it in a .dmg with an "
+                "external tool (see docs). For Gatekeeper-trusted distribution, "
+                "configure [tool.kivy.macos.signing].",
+            )
+        )
 
     if do_notarize and not profile:
         raise ToolchainError(
@@ -154,34 +185,39 @@ def macos_package(
         )
 
     # Assemble unsigned; the Developer ID deep-sign below seals every Mach-O.
-    app = macos_build(
+    built = macos_build(
         project_root,
         arch=arch,
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
         sign=False,
         release=True,
+        events=events.without_artifacts(),
     )
+    rel = built.artifacts[0].path
+    app = project_root / rel
     try:
-        click.echo(f"Developer ID signing with {identity!r} ...")
+        events.on_progress(f"Developer ID signing with {identity!r} ...")
         count = sign_bundle_developer_id(
             app,
             identity,
             extra_entitlements=config.macos_required.entitlements,
         )
-        click.echo(f"  signed {count} Mach-O binaries + the bundle")
+        events.on_progress(f"  signed {count} Mach-O binaries + the bundle")
         if do_notarize:
-            notarize_and_staple(app, profile=profile)
+            notarize_and_staple(app, profile=profile, echo=events.on_progress)
     except AppBundleError as exc:
         raise ToolchainError(str(exc)) from exc
 
     trust = "notarized + stapled" if do_notarize else "signed (not notarized)"
-    click.echo(
-        f"Packaged {app.relative_to(project_root)} (Developer ID {trust}).\n"
-        "  Distribute the .app directly, or wrap it in a .dmg with an external "
-        "tool (see docs)."
+    events.on_line(f"Packaged {rel} (Developer ID {trust}).")
+    outcome.add(rel, ArtifactKind.APP)
+    return outcome.finish(
+        notes=(
+            "  Distribute the .app directly, or wrap it in a .dmg with an external "
+            "tool (see docs).",
+        )
     )
-    return app
 
 
 def macos_status(project_root: Path) -> StatusReport:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import click
 
+from ..build_outcome import BuildEvents, discard_artifact, discard_note
 from ..report import diagnostics, exit_codes
 
 PYPROJECT_NAME = "pyproject.toml"
@@ -59,6 +60,25 @@ class ToolchainError(click.ClickException):
             message=self.format_message(),
             remediation=self.remediation,
         )
+
+
+def _echo_line(text: str) -> None:
+    click.echo(text)
+
+
+def _echo_progress(text: str) -> None:
+    click.echo(text)
+
+
+#: Human-only wiring for ``build``/``package``, byte-identical to the output that
+#: predates the callbacks: product and progress both print to stdout, artifacts
+#: and notes are dropped. ``--json`` replaces this with report-backed closures.
+ECHO_EVENTS = BuildEvents(
+    on_line=_echo_line,
+    on_progress=_echo_progress,
+    on_artifact=discard_artifact,
+    on_note=discard_note,
+)
 
 
 def _extract_fix(message: str) -> str:

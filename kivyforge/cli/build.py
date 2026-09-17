@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import click
 
+from ._common import ECHO_EVENTS
 from ._platform import platform_option, reject_android_only, resolve_target
 
 
@@ -96,8 +97,10 @@ def build(
     backend, project_root = resolve_target(cli_platform, verb="build")
     reject_android_only(backend, {"--debug": debug, "-f/--format": fmt, "--abi": abi})
 
-    backend.build(
+    events = ECHO_EVENTS
+    outcome = backend.build(
         project_root,
+        events=events,
         target=target,
         arch=arch,
         no_verify_lock=no_verify_lock,
@@ -109,3 +112,5 @@ def build(
         fmt=fmt,
         abi=abi,
     )
+    for note in outcome.notes:
+        events.on_line(note)

@@ -56,6 +56,17 @@ LOCK_WARNING = "KF-LOCK-WARNING"
 #: ``doctor/checks_common.py``.
 BYTECOMPILE_NO_INTERP = "KF-BYTECOMPILE-NO-INTERP"
 
+#: A package shipped unsigned or ad-hoc signed where real signing is
+#: configurable. WARNING: the artifact is usable, just not trusted.
+SIGNING_UNCONFIGURED = "KF-SIGNING-UNCONFIGURED"
+
+#: The Android release-manifest policy passed with an informational finding.
+MANIFEST_POLICY = "KF-MANIFEST-POLICY"
+
+#: iOS auto-signing: the pinned profile does not grant entitlements the app
+#: declares. WARNING, because Xcode may register them during the build.
+ENTITLEMENTS_UNGRANTED = "KF-ENTITLEMENTS-UNGRANTED"
+
 #: This host cannot build this target at all (e.g. iOS from Windows).
 HOST_INCAPABLE = "KF-HOST-INCAPABLE"
 
