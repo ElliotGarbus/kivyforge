@@ -242,3 +242,62 @@ Host `macOS`).
 - Do **not** commit generated example locks, or example `pyproject.toml` edits
   from Step 3c.
 - Commit on `modernization-rfc`. **Do not push without asking.**
+
+---
+
+## Follow-up added 2026-09-17 — the compiled stdlib on macOS
+
+Independent of the steps above; needs `7aab358f` or later. Roadmap item 9 now
+byte-compiles the staged stdlib, and the Windows host measured it
+(`import kivy`: 66 ms compiled against 276 ms source-only). **macOS is
+unmeasured, and the signing interaction is macOS-only**, which is the part no
+other host can check: the compile is placed before `codesign` precisely because
+writing into a bundle afterwards invalidates what it sealed.
+
+```bash
+cd examples/desktop/dice-roller
+kivyforge package -p macos                       # your usual signing config
+APP=$(ls -d build/macos/*.app)
+```
+
+**1. The artifact ships compiled, with sources kept.** The stdlib keeps its
+`.py` *and* gains `.pyc` (tracebacks and `inspect` need the sources); the app
+payload stays `.pyc`-only:
+
+```bash
+PY="$APP/Contents/Resources/python"
+find "$PY/lib" -name '*.py'  -not -path '*site-packages*' | wc -l    # expect many
+find "$PY/lib" -name '*.pyc' -not -path '*site-packages*' | wc -l    # expect ~the same
+find "$APP/Contents/Resources/app" -name '*.py' | wc -l              # expect 0
+```
+
+**2. The signature survives it — the macOS-specific question.**
+
+```bash
+codesign --verify --deep --strict --verbose=2 "$APP"
+xcrun stapler validate "$APP"     # if this build was notarized
+```
+
+Then launch it (`"$APP/Contents/MacOS/"*` directly, not via `open`, so you see
+stderr), quit, and re-run `codesign --verify`. It must still be valid, and the
+`.pyc` count must be unchanged — the build's caches are sealed in, and
+`PYTHONDONTWRITEBYTECODE` stops the launch adding more.
+
+**3. Measure, min of 5, with the bundle's own interpreter:**
+
+```bash
+cd "$APP/Contents/Resources"
+for i in 1 2 3 4 5; do
+  PYTHONHOME="$PWD/python" PYTHONPATH="$PWD/app:$PWD/lib" \
+  PYTHONDONTWRITEBYTECODE=1 \
+  ./python/bin/python3 -X importtime -c 'import kivy' 2>&1 | tail -1
+done
+```
+
+Take the cumulative figure for `kivy`, then delete the stdlib `__pycache__`
+(`find "$PWD/python/lib" -name __pycache__ -not -path '*site-packages*' -exec rm -rf {} +`)
+and repeat for the source-only number. **Re-package afterwards** so the example
+is not left with a doctored, now-unsigned bundle.
+
+**4. Record** in [`test-matrix.md`](test-matrix.md) §7 (Host `macOS`), and
+replace §5.10's "not re-measured on macOS" line with the number.

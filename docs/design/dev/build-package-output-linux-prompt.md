@@ -163,3 +163,61 @@ or `WSL2` — that section requires saying which).
   reason.
 - Do **not** commit generated example locks or anything under `dist/`/`build/`.
 - Commit on `modernization-rfc`. **Do not push without asking.**
+
+---
+
+## Follow-up added 2026-09-17 — the compiled stdlib on Linux
+
+Independent of the steps above; needs `7aab358f` or later. Roadmap item 9 now
+byte-compiles the staged stdlib, and the Windows host measured it
+(`import kivy`: 66 ms compiled against 276 ms source-only). **Linux is
+unmeasured, and it is the host with the most to gain**: a `.AppImage` mounts
+read-only, so it could never cache the stdlib at runtime and has paid full parse
+cost on every launch since the beginning (§5.10).
+
+```bash
+cd examples/desktop/dice-roller
+kivyforge package -p linux -f folder     # the AppDir: inspectable and measurable
+APPDIR=$(ls -d build/linux/*.AppDir)
+```
+
+**1. The artifact ships compiled, with sources kept.**
+
+```bash
+find "$APPDIR/usr/python" -name '*.py'  -not -path '*site-packages*' | wc -l   # many
+find "$APPDIR/usr/python" -name '*.pyc' -not -path '*site-packages*' | wc -l   # ~same
+find "$APPDIR/usr/app" -name '*.py' | wc -l                                    # 0
+```
+
+The 2026-09-15 finding to re-check while you are here: a stripped AppDir used to
+ship 41 stdlib `.pyc` in 6 `__pycache__` dirs that nothing asked for — the
+compile subprocess's own imports. That subset should now be gone, replaced by
+the deliberate, complete set.
+
+**2. Measure, min of 5, with the AppDir's own interpreter:**
+
+```bash
+cd "$APPDIR"
+for i in 1 2 3 4 5; do
+  PYTHONHOME="$PWD/usr/python" PYTHONPATH="$PWD/usr/app:$PWD/usr/lib" \
+  PYTHONDONTWRITEBYTECODE=1 \
+  ./usr/python/bin/python3 -X importtime -c 'import kivy' 2>&1 | tail -1
+done
+```
+
+Take the cumulative figure for `kivy`, then delete the stdlib `__pycache__`
+(`find usr/python -name __pycache__ -not -path '*site-packages*' -exec rm -rf {} +`)
+and repeat for the source-only number. Re-run `package` afterwards to restore
+the tree.
+
+**3. Confirm the `.AppImage` carries it too** — that is the shape that could
+never cache at runtime:
+
+```bash
+kivyforge package -p linux
+./dist/linux/*.AppImage --appimage-extract >/dev/null
+find squashfs-root/usr/python -name '*.pyc' -not -path '*site-packages*' | wc -l
+```
+
+**4. Record** in [`test-matrix.md`](test-matrix.md) §7 (Host `Linux` or `WSL2` —
+say which), and replace §5.10's "not re-measured on Linux" line with the number.
