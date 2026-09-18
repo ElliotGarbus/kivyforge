@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import shutil
 import struct
 import zipfile
 from pathlib import Path
@@ -27,6 +28,10 @@ import pytest
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64
 from kivyforge.platforms.linux.elftools import ELFCLASS32
 from kivyforge.platforms.macos.machotools import CPU_TYPE_ARM64, CPU_TYPE_X86_64
+from kivyforge.platforms.windows.petools import (
+    IMAGE_FILE_MACHINE_AMD64,
+    IMAGE_FILE_MACHINE_ARM64,
+)
 from tests.artifact_checks import (
     BUNDLE_ROOT,
     ELFCLASS64,
@@ -36,6 +41,7 @@ from tests.artifact_checks import (
     macos_app_problems,
     shipped_python_tags,
     shipped_python_tags_appdir,
+    windows_onedir_problems,
 )
 
 MAGIC_314 = struct.pack("<H", 3627) + b"\r\n"
@@ -795,3 +801,237 @@ class TestAppImageContainer:
             "not an ELF" in p
             for p in linux_appimage_file_problems(image, arch="x86_64")
         )
+
+
+# --------------------------------------------------------------------------
+# Windows: onedir bundle
+# --------------------------------------------------------------------------
+
+# app/ (the developer's own sources) and python/Lib/site-packages (third-party
+# deps) are the strip-source candidates, mirroring the Linux/macOS scoping.
+# python/Lib's own stdlib keeps its source always (item 9), and
+# _kivyforge_bootstrap.py lives at the bundle root -- outside both scopes, so a
+# correctly scoped sweep never even walks it. TestWindowsPayloadStripping's
+# bootstrap test is the regression guard for that.
+_WINDOWS_STRIP_SCOPE = ("app", "python/Lib/site-packages")
+
+
+def _pe(machine: int) -> bytes:
+    """Minimal PE image: DOS stub + e_lfanew pointer + PE signature + machine."""
+    header = bytearray(0x40)
+    header[:2] = b"MZ"
+    struct.pack_into("<I", header, 0x3C, 0x40)
+    return bytes(header) + b"PE\x00\x00" + struct.pack("<H", machine)
+
+
+def _windows_bundle(
+    tmp_path: Path,
+    *,
+    stripped: bool = True,
+    machine: int = IMAGE_FILE_MACHINE_AMD64,
+    magic: bytes = MAGIC_314,
+    name: str = "Test",
+) -> Path:
+    """A well-formed onedir bundle: right arch, one exe, payload in one state.
+
+    Mirrors the real tree -- ``<Name>.exe`` + ``_kivyforge_bootstrap.py`` at
+    the root, app sources under ``app/``, third-party deps under
+    ``python/Lib/site-packages`` -- including a stdlib module elsewhere under
+    ``python/Lib`` that keeps its ``.py`` even when the payload is stripped,
+    because the build byte-compiles only ``app`` and ``site-packages``.
+    """
+    bundle = tmp_path / name
+    _write(bundle / f"{name}.exe", _pe(machine))
+    _write(bundle / "_kivyforge_bootstrap.py", b'"""Generated bootstrap."""\n')
+    _write(bundle / "python" / "python.exe", _pe(machine))
+    _write(bundle / "python" / "Lib" / "os.py", b"x = 1\n")
+
+    suffix, body = (".pyc", magic + b"body") if stripped else (".py", b"x = 1\n")
+    _write(bundle / f"app/main{suffix}", body)
+    _write(bundle / f"python/Lib/site-packages/kivy/__init__{suffix}", body)
+    return bundle
+
+
+def _wcheck(bundle: Path, *, arch="amd64", stripped=True, magic=MAGIC_314):
+    return windows_onedir_problems(
+        bundle, arch=arch, stripped=stripped, expected_magic=magic
+    )
+
+
+class TestWindowsCleanArtifacts:
+    def test_a_well_formed_stripped_bundle_has_no_problems(self, tmp_path):
+        assert _wcheck(_windows_bundle(tmp_path)) == []
+
+    def test_an_unstripped_bundle_wants_source(self, tmp_path):
+        bundle = _windows_bundle(tmp_path, stripped=False)
+        assert _wcheck(bundle, stripped=False) == []
+
+    def test_the_stdlib_keeping_its_source_is_not_a_fault(self, tmp_path):
+        """The strip scope is app/ + python/Lib/site-packages, not all of python/.
+
+        A real stripped build byte-compiles only those two, so python/Lib's own
+        stdlib modules keep their .py -- sweeping the whole python/ tree would
+        call every one of them a fault.
+        """
+        bundle = _windows_bundle(tmp_path)
+        for i in range(5):
+            _write(bundle / f"python/Lib/mod{i}.py", b"x = 1\n")
+        assert _wcheck(bundle) == []
+
+    def test_an_arm64_bundle_is_checked_against_its_own_machine(self, tmp_path):
+        bundle = _windows_bundle(tmp_path, machine=IMAGE_FILE_MACHINE_ARM64)
+        assert _wcheck(bundle, arch="arm64") == []
+
+    def test_an_unknown_arch_fails_fast(self, tmp_path):
+        assert _wcheck(_windows_bundle(tmp_path), arch="mips") == [
+            "unknown arch 'mips'; expected one of ['amd64', 'arm64']"
+        ]
+
+    def test_a_bundle_that_is_not_a_directory_is_reported(self, tmp_path):
+        missing = tmp_path / "Nope"
+        assert _wcheck(missing) == [f"{missing} is not a directory"]
+
+
+class TestWindowsPayloadStripping:
+    def test_the_bootstrap_module_staying_source_is_not_a_fault(self, tmp_path):
+        """Regression test for the sweep's scoping.
+
+        ``_kivyforge_bootstrap.py`` is generated at the bundle root, never
+        compiled by design -- it is written *after* byte-compilation runs --
+        and must never be walked by the strip-source sweep at all, not merely
+        excused from the "must be compiled" check. A future change to the
+        sweep's scope that starts reaching the bundle root should fail this.
+        """
+        bundle = _windows_bundle(tmp_path)
+        assert (bundle / "_kivyforge_bootstrap.py").is_file()
+        assert _wcheck(bundle) == []
+
+    def test_a_leftover_source_file_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        _write(bundle / "python/Lib/site-packages/kivy/leftover.py", b"x = 1\n")
+        assert any("1 .py file(s) remain" in p for p in _wcheck(bundle))
+
+    def test_a_payload_with_no_bytecode_is_reported_as_degraded(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        (bundle / "app/main.pyc").unlink()
+        (bundle / "python/Lib/site-packages/kivy/__init__.pyc").unlink()
+        problems = _wcheck(bundle)
+        assert sum("degraded to shipping source" in p for p in problems) == 2
+
+    def test_pycache_in_the_payload_defeats_sourceless_import(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        _write(
+            bundle / "python/Lib/site-packages/kivy/__pycache__/m.cpython-314.pyc",
+            MAGIC_314 + b"body",
+        )
+        assert any("__pycache__" in p for p in _wcheck(bundle))
+
+    def test_an_unstripped_app_with_no_entry_point_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path, stripped=False)
+        (bundle / "app/main.py").unlink()
+        assert any("no entry point" in p for p in _wcheck(bundle, stripped=False))
+
+
+class TestWindowsPycMagic:
+    def test_bytecode_from_the_wrong_interpreter_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        _write(bundle / "python/Lib/site-packages/kivy/stale.pyc", MAGIC_313 + b"body")
+        problems = _wcheck(bundle)
+        assert any("3627" in p and "3571" in p for p in problems)
+
+    def test_the_magic_check_is_skipped_when_source_ships_alongside(self, tmp_path):
+        bundle = _windows_bundle(tmp_path, stripped=False)
+        _write(bundle / "python/Lib/site-packages/kivy/stale.pyc", MAGIC_313 + b"body")
+        assert not any("3571" in p for p in _wcheck(bundle, stripped=False))
+
+    def test_the_stdlib_is_not_judged_for_magic(self, tmp_path):
+        """python/Lib outside site-packages is the shipped runtime's own business."""
+        bundle = _windows_bundle(tmp_path)
+        _write(
+            bundle / "python/Lib/__pycache__/os.cpython-314.pyc", MAGIC_313 + b"body"
+        )
+        assert not any("3571" in p for p in _wcheck(bundle))
+
+
+class TestWindowsPeArch:
+    def test_a_foreign_arch_extension_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        _write(
+            bundle / "python/Lib/site-packages/kivy/_speedup.pyd",
+            _pe(IMAGE_FILE_MACHINE_ARM64),
+        )
+        problems = _wcheck(bundle)
+        assert any("_speedup.pyd" in p and "arm64" in p for p in problems)
+
+    def test_a_foreign_arch_launcher_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        (bundle / "Test.exe").write_bytes(_pe(IMAGE_FILE_MACHINE_ARM64))
+        problems = _wcheck(bundle)
+        assert any("Test.exe" in p and "arm64" in p for p in problems)
+
+    def test_a_declared_native_binary_is_checked_too(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        _write(bundle / "bin/helper.dll", _pe(IMAGE_FILE_MACHINE_ARM64))
+        problems = _wcheck(bundle)
+        assert any("bin/helper.dll" in p for p in problems)
+
+    def test_a_non_pe_file_is_not_mistaken_for_one(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        _write(bundle / "app/data.json", b'{"x": 1}')
+        assert _wcheck(bundle) == []
+
+    def test_distlibs_own_launcher_templates_are_not_a_fault(self, tmp_path):
+        """Regression test found by a real build (dice-roller, 2026-09-17).
+
+        pip vendors distlib, which ships six prebuilt launcher *templates*
+        under ``distlib/`` — one per (bitness, console/windowed) combination —
+        that get patched into a real launcher only when something installs a
+        console-script entry point. Every pip install anywhere ships all six
+        regardless of host or target arch, so the amd64 bundle correctly ships
+        the arm64 and x86 variants too; that must never be reported as a
+        leaked cross-arch binary.
+        """
+        bundle = _windows_bundle(tmp_path)
+        stubs = bundle / "python/Lib/site-packages/pip/_vendor/distlib"
+        for name, machine in [
+            ("t32.exe", 0x014C),  # IMAGE_FILE_MACHINE_I386
+            ("t64-arm.exe", IMAGE_FILE_MACHINE_ARM64),
+            ("w32.exe", 0x014C),
+            ("w64-arm.exe", IMAGE_FILE_MACHINE_ARM64),
+        ]:
+            _write(stubs / name, _pe(machine))
+        assert _wcheck(bundle) == []
+
+
+class TestWindowsRequiredEntries:
+    def test_a_missing_exe_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        (bundle / "Test.exe").unlink()
+        assert any("no <Name>.exe launcher" in p for p in _wcheck(bundle))
+
+    def test_multiple_exes_are_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        _write(bundle / "Extra.exe", _pe(IMAGE_FILE_MACHINE_AMD64))
+        assert any("2 .exe files" in p for p in _wcheck(bundle))
+
+    def test_a_missing_bootstrap_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        (bundle / "_kivyforge_bootstrap.py").unlink()
+        assert any("_kivyforge_bootstrap.py is missing" in p for p in _wcheck(bundle))
+
+    def test_a_missing_app_dir_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        shutil.rmtree(bundle / "app")
+        assert any("app/ (the app payload) is missing" in p for p in _wcheck(bundle))
+
+    def test_a_missing_python_dir_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        shutil.rmtree(bundle / "python")
+        assert any(
+            "python/ (the embedded runtime) is missing" in p for p in _wcheck(bundle)
+        )
+
+    def test_an_absent_bin_dir_is_not_a_fault(self, tmp_path):
+        bundle = _windows_bundle(tmp_path)
+        assert not (bundle / "bin").exists()
+        assert _wcheck(bundle) == []

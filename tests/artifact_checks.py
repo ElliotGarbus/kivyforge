@@ -60,6 +60,13 @@ from kivyforge.platforms.macos.machotools import (
     cpu_type_name,
     read_macho_cpu_type,
 )
+from kivyforge.platforms.windows.launcher import BOOTSTRAP_NAME
+from kivyforge.platforms.windows.petools import (
+    IMAGE_FILE_MACHINE_AMD64,
+    IMAGE_FILE_MACHINE_ARM64,
+    read_pe_machine,
+)
+from kivyforge.platforms.windows.petools import machine_name as pe_machine_name
 
 BUNDLE_ROOT = "assets/_python_bundle/"
 
@@ -831,4 +838,203 @@ def linux_appimage_file_problems(appimage: Path, *, arch: str) -> list[str]:
             f"{appimage.name} runtime is {describe(*found)} but {arch} requires "
             f"{describe(*ARCH_ELF[arch])} — the wrong type2-runtime was fetched"
         )
+    return problems
+
+
+# --------------------------------------------------------------------------
+# Windows: onedir bundle
+# --------------------------------------------------------------------------
+#
+# A real directory tree, like macOS's ``.app`` — not an archive. Strip scope is
+# narrower than the whole bundle, same shape as macOS/Linux: only ``app`` (the
+# developer's own sources) and ``python/Lib/site-packages`` (third-party deps)
+# are ever byte-compiled (windows/bundle.py's ``byte_compile()`` call). The rest
+# of ``python/`` — the embedded PBS prefix's own stdlib — is deliberately left
+# as source (item 9) and must not be checked as if it were part of the same
+# policy. ``_kivyforge_bootstrap.py`` lives at the bundle root: it is generated
+# *after* byte-compilation runs (windows/bundle.py's ``write_bootstrap()`` call
+# comes last), so it was never a candidate for stripping and a correctly scoped
+# sweep does not even reach it.
+
+WINDOWS_ARCH_MACHINES = {
+    "amd64": IMAGE_FILE_MACHINE_AMD64,
+    "arm64": IMAGE_FILE_MACHINE_ARM64,
+}
+
+_WINDOWS_STRIP_SCOPE = ("app", "python/Lib/site-packages")
+
+
+def windows_onedir_problems(
+    bundle: Path,
+    *,
+    arch: str,
+    stripped: bool,
+    expected_magic: bytes,
+) -> list[str]:
+    """Every way the onedir bundle at *bundle* fails to be the artifact the
+    build promised.
+
+    ``arch`` is a kivyforge Windows arch name (``amd64``), ``stripped`` whether
+    ``strip_source`` applied to this build, and ``expected_magic`` the first
+    four bytes a ``.pyc`` the bundle's own shipped runtime can import must
+    carry — see the driver's ``_expected_magic()``, which asks the bundle's own
+    ``python\\python.exe`` directly (same reasoning as the macOS/Linux drivers).
+    """
+    if arch not in WINDOWS_ARCH_MACHINES:
+        return [
+            f"unknown arch {arch!r}; expected one of {sorted(WINDOWS_ARCH_MACHINES)}"
+        ]
+    if not bundle.is_dir():
+        return [f"{bundle} is not a directory"]
+
+    problems = _windows_required_problems(bundle)
+    problems += _windows_payload_problems(bundle, stripped=stripped)
+    problems += _windows_pe_problems(bundle, arch=arch)
+    if stripped:
+        problems += _windows_pyc_magic_problems(bundle, expected_magic=expected_magic)
+    return problems
+
+
+def _windows_required_problems(bundle: Path) -> list[str]:
+    """The handful of things without which this is not a launchable onedir bundle.
+
+    ``bin/`` is deliberately not checked here: ``windows/bundle.py`` only
+    creates it when ``lock.native_binaries`` is non-empty, so its absence is
+    normal and must not be a fault (mirrors how the Linux checker treats
+    optional native-binary staging).
+    """
+    problems = []
+    exes = sorted(p for p in bundle.glob("*.exe") if p.is_file())
+    if not exes:
+        problems.append("no <Name>.exe launcher at the bundle root")
+    elif len(exes) > 1:
+        problems.append(
+            f"{len(exes)} .exe files at the bundle root "
+            f"({[p.name for p in exes]}); expected exactly one launcher"
+        )
+    if not (bundle / BOOTSTRAP_NAME).is_file():
+        problems.append(f"{BOOTSTRAP_NAME} is missing from the bundle root")
+    if not (bundle / "app").is_dir():
+        problems.append("app/ (the app payload) is missing")
+    if not (bundle / "python").is_dir():
+        problems.append("python/ (the embedded runtime) is missing")
+    return problems
+
+
+def _windows_payload_problems(bundle: Path, *, stripped: bool) -> list[str]:
+    """Whether the app + third-party payload is source or bytecode.
+
+    Scoped to ``app``/``python/Lib/site-packages`` only — see the module-level
+    note on why the embedded stdlib and the bootstrap module are excluded by
+    design, not by omission.
+    """
+    problems: list[str] = []
+    for scope in _WINDOWS_STRIP_SCOPE:
+        base = bundle / scope
+        if not base.is_dir():
+            continue
+        sources = sorted(p for p in base.rglob("*.py"))
+        compiled = sorted(p for p in base.rglob("*.pyc"))
+        cached = sorted(p for p in base.rglob("__pycache__") if p.is_dir())
+
+        if stripped:
+            if sources:
+                rels = [p.relative_to(bundle).as_posix() for p in sources[:3]]
+                problems.append(
+                    f"strip_source was applied but {len(sources)} .py file(s) "
+                    f"remain under {scope}, e.g. {rels}"
+                )
+            if not compiled:
+                problems.append(
+                    f"strip_source was applied but {scope} contains no .pyc at "
+                    "all — the build degraded to shipping source"
+                )
+            if cached:
+                rels = [p.relative_to(bundle).as_posix() for p in cached[:3]]
+                problems.append(
+                    f"{scope} has {len(cached)} __pycache__ dir(s), e.g. "
+                    f"{rels} — sourceless imports need .pyc in the legacy "
+                    "location, not beside a source file that is no longer there"
+                )
+        elif scope == "app" and not sources and not compiled:
+            problems.append(f"{scope} has neither .py nor .pyc — no entry point")
+    return problems
+
+
+# distlib (vendored by pip, and in turn staged into every python-build-standalone
+# prefix) ships six prebuilt launcher *templates* under a ``distlib/`` directory —
+# one per (bitness, console/windowed) combination — that its own ScriptMaker
+# patches at entry-point-install time to produce a real launcher on whatever host
+# runs it. They are inert template payloads, never spawned or dlopen'd by the
+# shipped app, and every pip install anywhere ships all six regardless of host or
+# target arch — confirmed 2026-09-17 against this dev box's own venv pip, not
+# just the built artifact. Real arch mismatches everywhere else in the tree are
+# still caught; this is the one place "PE with a foreign machine type" does not
+# mean "wrong binary leaked in". TestWindowsPeArch's distlib test is the
+# regression guard for this exclusion.
+_DISTLIB_LAUNCHER_STUBS = frozenset(
+    {"t32.exe", "t64.exe", "t64-arm.exe", "w32.exe", "w64.exe", "w64-arm.exe"}
+)
+
+
+def _is_distlib_launcher_stub(path: Path) -> bool:
+    return path.parent.name == "distlib" and path.name in _DISTLIB_LAUNCHER_STUBS
+
+
+def _windows_pe_problems(bundle: Path, *, arch: str) -> list[str]:
+    """Every PE image under the bundle must be *arch*, and only *arch*.
+
+    Walks the whole tree — the launcher, the embedded runtime's own DLLs, every
+    compiled wheel's extension modules, and any declared native binaries under
+    ``bin/`` — same breadth as the macOS/Linux equivalents. A host-arch binary
+    leaking into a cross-build is exactly the item-1-shaped bug this exists to
+    catch, on the one platform where it would otherwise surface only as a
+    cryptic ``OSError: [WinError 193]`` at import/load time. Distlib's own
+    multi-arch launcher templates are excluded — see
+    :func:`_is_distlib_launcher_stub`.
+    """
+    expected = WINDOWS_ARCH_MACHINES[arch]
+    problems: list[str] = []
+    for path in sorted(bundle.rglob("*")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        if _is_distlib_launcher_stub(path):
+            continue
+        machine = read_pe_machine(path)
+        if machine is None:
+            continue  # not a PE image — skip
+        if machine != expected:
+            rel = path.relative_to(bundle).as_posix()
+            problems.append(
+                f"{rel} is {pe_machine_name(machine)} but this build is {arch} "
+                "— a host or cross-arch binary leaked into the bundle"
+            )
+    return problems
+
+
+def _windows_pyc_magic_problems(bundle: Path, *, expected_magic: bytes) -> list[str]:
+    """Every ``.pyc`` under the stripped scope must carry the shipped magic.
+
+    Mirrors Android's ``_pyc_magic_problems`` / macOS's
+    ``_macos_pyc_magic_problems`` / roadmap item 1's bug.
+    """
+    problems: list[str] = []
+    for scope in _WINDOWS_STRIP_SCOPE:
+        base = bundle / scope
+        if not base.is_dir():
+            continue
+        seen: dict[bytes, list[Path]] = {}
+        for pyc in sorted(base.rglob("*.pyc")):
+            magic = pyc.read_bytes()[:4]
+            seen.setdefault(magic, []).append(pyc)
+        for magic, members in sorted(seen.items()):
+            if magic != expected_magic:
+                rels = [p.relative_to(bundle).as_posix() for p in members[:3]]
+                problems.append(
+                    f"{len(members)} .pyc file(s) under {scope} carry magic "
+                    f"{_magic_int(magic)} but the bundle's own runtime imports "
+                    f"{_magic_int(expected_magic)}, e.g. {rels} — these were "
+                    "written by an interpreter of a different CPython build "
+                    "and cannot be imported"
+                )
     return problems

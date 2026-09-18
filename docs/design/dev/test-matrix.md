@@ -413,11 +413,26 @@ twice: once on the debug APK, once on the stripped release APK.
       `test_plist_launcher.py`). The real-clang argv test plus the actual
       launch in §7 hold the line; a static conftest-driven check would be
       ceremony on top of them.
-- [ ] **Windows check functions.** Same split, not blocked on §5.3, and the
-      option can sit ready behind `--windows-onedir` exactly as `--android-apk`,
-      `--macos-app`, and `--linux-appimage` did. Windows is the one desktop
-      target immune to the launcher defect above: its bootstrap uses
-      `runpy.run_module`, which resolves through the import system.
+- [x] **Windows check functions — done 2026-09-17.** `windows_onedir_problems`
+      in `tests/artifact_checks.py`, mirroring `linux_appdir_problems`'s shape
+      (required entries, payload stripping scoped to `app`/`python/Lib/
+      site-packages`, a PE-arch sweep of the whole tree via the new
+      `platforms/windows/petools.py` reader, `.pyc` magic), hermetic tests in
+      `tests/test_artifact_checks.py`, `--windows-onedir`/`--windows-arch`/
+      `--windows-stripped` in `conftest.py`, and
+      `tests/platforms/windows/test_onedir_artifact.py` (mirrors the macOS
+      driver). Windows is the one desktop target immune to the AppRun-shaped
+      launcher defect above: its bootstrap uses `runpy.run_module`, which
+      resolves through the import system. **Found a real false-positive on the
+      first real-bundle run** (see §7): pip's vendored `distlib` ships six
+      prebuilt multi-arch launcher *templates* (`t32.exe`, `t64-arm.exe`, etc.)
+      inside every installed pip, including the one staged into
+      `python/Lib/site-packages` — flagged by the PE-arch sweep as "leaked"
+      foreign-arch binaries. Fixed by excluding known distlib launcher-stub
+      filenames from the sweep, with a hermetic regression test
+      (`test_distlibs_own_launcher_templates_are_not_a_fault`) pinning the
+      exclusion so a future broadening of the sweep's scope cannot silently
+      reintroduce it.
 - [ ] **Merged `AndroidManifest.xml` and `Info.plist` contain what config asked
       for.** `android_gradle` already exports the merged manifest to
       `app/build/kivyforge/AndroidManifest-merged-release.xml` and currently
@@ -712,6 +727,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-17 | macOS `arm64` (`dice-roller`) | stdlib byte-compile measurement + signing interaction | macOS 26.6.2, Xcode 26.6 | **The macOS-specific half of item 9: does compiling the stdlib before `codesign` survive a real launch?** Yes. `package -p macos` (real Developer ID, notarized, stapled): stdlib ships 633 `.py` **and** 633 `.pyc`, app payload stays `.pyc`-only (0 `.py`). `codesign --verify --deep --strict` passes before launch, and — the question no other host can ask — still passes **after** running `Contents/MacOS/*` directly to "Start application main loop", with the `.pyc` count unchanged (969 → 969): `PYTHONDONTWRITEBYTECODE` in the launcher (2026-09-14 fix) holds under a pre-compiled stdlib exactly as it did under a source-only one. Timing, bundled interpreter, min of 5: `import kivy` **13.4 ms compiled vs 85.8 ms source-only** — **6.4×, ~72 ms per launch**, same shape as Windows (4.2×, ~210 ms) and Linux (6.3×, ~180 ms), larger ratio only because this Mac's absolute numbers are smaller (Apple M5 Pro). Deleting the stdlib `__pycache__` to get the source-only number did, as expected, break the signature (`a sealed resource is missing or invalid`); the example was re-packaged (re-signed, re-notarized, re-stapled) afterward, `git status` clean. All three desktop hosts now measured. §5.10 fully closed. |
 | 2026-09-17 | Linux `aarch64` (`dice-roller`) | T2 + T3 (cross, local) | **WSL2** (Ubuntu 26.04, Python 3.14.4 host / 3.13.14 on PATH) | **First aarch64 AppImage in this repo.** `archs = ["aarch64"]` (restored after; lock not committed). `lock` wrote PBS `cpython-3.13.14+20260805-aarch64-unknown-linux-gnu-install_only.tar.gz` and `Kivy-2.3.1` `manylinux_2_17_aarch64.manylinux2014_aarch64` (not a bare `linux_aarch64`). `package --json`: `dist/linux/dice-roller-0.1.0-aarch64.AppImage`, `ok: true`, `diagnostics: []`. Byte-compile used host `python3.13`, not the staged aarch64 interpreter — **this is the first Linux `find_interpreter()` path.** Doctor WARN `Native vs cross`. T3 `--linux-appimage --linux-arch aarch64 --linux-stripped` 3 passed after the driver learned to `unsquashfs` a foreign type2 ELF and to take `.pyc` magic from host CPython 3.13. Planting `libc.so.6` as `usr/lib/_host_leak.so` produced exactly one problem (`x86_64 … but aarch64 requires aarch64`); reverted. Payload 0 `.py` / 336 `.pyc`. Full detail: [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md). |
 | 2026-09-17 | Linux `aarch64` (Pi 5) | T4 + T5 | Raspberry Pi 5 Model B Rev 1.1, Debian 13.7 (trixie), labwc/Wayland, glibc 2.41 | **First on-device aarch64 AppImage run.** `scp` of the WSL2-built `dice-roller-0.1.0-aarch64.AppImage`; FUSE self-mount (`/tmp/.mount_dice-*`). SSH has no display, so `WAYLAND_DISPLAY=wayland-0` from the seat0 `rpd-labwc` session. SDL2 window, OpenGL 3.1 Mesa 26.2.2, vendor Broadcom, renderer **V3D 7.1.10.2** (not llvmpipe). Kivy 2.3.1 / bundled 3.13.14 reached "Start application main loop"; `timeout 25` then SIGTERM (exit 124). Human on the HDMI: Dice Roller rendered correctly. `Unable to connect to X server` printed and was ignored — Wayland is what served the window. Pi 4 not tested. Full detail: [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md). |
+| 2026-09-17 | Windows `amd64` (`dice-roller`) | T3 infra | Windows 11, Python 3.13.14 (bundled), CPython 3.13.1 (host, byte-compile) | Windows half of §5.1, mirroring the Android/macOS/Linux pattern: `windows_onedir_problems` (`tests/artifact_checks.py`), a new pure-Python `petools.py` PE-header reader (`read_pe_machine`, no `ctypes`/OS API), hermetic tests, `--windows-onedir`/`--windows-arch`/`--windows-stripped` in `conftest.py`, and `tests/platforms/windows/test_onedir_artifact.py`. Fresh `kivyforge package -p windows` on `dice-roller` (default `byte_compile = "release"`, host has a final CPython 3.13): staged with `.pyc only`. **First real-bundle run found a genuine false positive**, not a build defect: the PE-arch sweep flagged `python/Lib/site-packages/pip/_vendor/distlib/{t32,t64-arm,w32,w64-arm}.exe` as foreign-arch binaries leaked into the amd64 bundle — these are pip's own vendored distlib launcher *templates*, one per (bitness, console/windowed) combination, shipped by every pip install regardless of host or target arch (confirmed against this dev box's own `.venv` pip, not just the artifact). Excluded by filename from the sweep, with a hermetic regression test pinning it. Second run: `tests/platforms/windows/test_onedir_artifact.py -q --windows-onedir <dist> --windows-stripped` — 1 passed. Full suite (`python -m pytest -q`) exit 0, coverage 93.01%; `ruff check`/`format` clean; `pyright` 0 errors. §5.1's Windows box is now checked off. |
 
 ### Known-unverified, stated plainly
 

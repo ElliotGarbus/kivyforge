@@ -119,6 +119,22 @@ def pytest_addoption(parser):
         action="store_true",
         help="Assert the Linux payload is bytecode-only (strip_source applied).",
     )
+    group.addoption(
+        "--windows-onedir",
+        default=None,
+        help="Path to a built Windows onedir bundle (dist copy) to run the T3 "
+        "artifact assertions against.",
+    )
+    group.addoption(
+        "--windows-arch",
+        default="amd64",
+        help="kivyforge arch the Windows bundle was built for (default: amd64).",
+    )
+    group.addoption(
+        "--windows-stripped",
+        action="store_true",
+        help="Assert the Windows payload is bytecode-only (strip_source applied).",
+    )
 
 
 def pytest_configure(config):
