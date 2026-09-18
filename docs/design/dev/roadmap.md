@@ -45,11 +45,10 @@ unvalidated, and needs a Mac.
   render, as first-party local runs in July. What is unproven is `strip_source`,
   any physical device, signing/provisioning, and any T3 on the built `.app` — and
   no amount of Windows-side work changes that: it needs the Mac.
-- **Item 4's cross-build half is done (2026-09-17).** `archs = ["aarch64"]`
-  produces a type-2 AppImage on Linux x86_64; T3 asserts every ELF is
-  aarch64 and that a planted host `.so` is rejected. The Pi is on the LAN
-  but `sshd` is down, so the "done when it launches" gate is still open.
-  [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
+- **Item 4 is done (2026-09-17), on a Pi 5 only.** Cross-build T2+T3 on WSL2,
+  then the same AppImage launched on a Raspberry Pi 5 Model B Rev 1.1
+  (Debian 13 / labwc, Broadcom V3D, "Start application main loop"). A Pi 4
+  was not present. [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
 
 ## Execution order
 
@@ -58,7 +57,7 @@ unvalidated, and needs a Mac.
 | ~~1~~ | ~~Validate mobile `strip_source`, then the byte-compile doctor check~~ *(was P2)* | S | **done 2026-09-13** |
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | 3 | Output layer: `rich` rendering + `--json` | M | none |
-| 4 | Linux aarch64 → Raspberry Pi target *(was P3)* | L | **cross T2+T3 2026-09-17**; Pi hardware to finish |
+| ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
 | 5 | E2E automation against the matrix — *Android T3 slice done 2026-09-13* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
@@ -1162,16 +1161,19 @@ AppImage, assert every ELF is `ELFCLASS64` / `EM_AARCH64`, and assert no
 host-arch binary leaked into the AppDir. Actually *running* it waits on
 hardware.
 
-**Progress 2026-09-17.** Cross-build T2+T3 on WSL2 is done — see
-[`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md). Hardware
-launch is not: a Pi answers ping as `raspberrypi` / `10.168.168.202` but
-refuses TCP/22. Item 4 stays in the active queue until that launch is
-logged. No Pi model is claimed.
+**Progress 2026-09-17.** Cross-build T2+T3 on WSL2, then T4/T5 on a
+**Raspberry Pi 5 Model B Rev 1.1** (Debian 13.7 trixie, labwc/Wayland,
+glibc 2.41, Broadcom V3D 7.1.10.2). The AppImage self-mounted via FUSE,
+SDL2 created a window, Kivy reached "Start application main loop", and
+`timeout` killed it after 25 s (exit 124). A Pi 4 was not tested. See
+[`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
 
 **Deferred, unchanged:** win-arm64. Also deferred: aarch64 as a build host.
+Pi 4 remains a claimed support target without a logged run.
 
 **Done when** an aarch64 AppImage cross-built on Linux x86_64 launches and runs
-on a Raspberry Pi 4 or 5 under 64-bit Raspberry Pi OS.
+on a Raspberry Pi 4 or 5 under 64-bit Raspberry Pi OS. **Met 2026-09-17 for
+Pi 5.**
 
 ---
 

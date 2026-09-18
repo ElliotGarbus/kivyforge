@@ -72,9 +72,10 @@ Supported:
 **The Pi is a target, never a host.** kivyforge never executes on the Pi.
 Supported combination: Raspberry Pi 4 or 5 running 64-bit Raspberry Pi OS.
 A Windows machine cannot build this target at all (`check_host_capability`
-requires Linux; WSL2 counts). Cross-build T2+T3 is logged in
+requires Linux; WSL2 counts). Hardware confirmation so far is a **Pi 5**
+(Debian 13 / labwc, Broadcom V3D) in
 [`aarch64-pi-target-findings.md`](../../dev/aarch64-pi-target-findings.md);
-a Pi launch has not been recorded there yet.
+a Pi 4 has not been run.
 
 32-bit ARM and musl are out of scope, with the reasons in §Scope.
 

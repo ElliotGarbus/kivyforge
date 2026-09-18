@@ -35,6 +35,8 @@
 - **`[tool.kivy.linux].archs` accepts `"aarch64"`** (opt-in; the default stays
   `x86_64`). Cross-build on a Linux x86_64 host; run the AppImage on a 64-bit
   Raspberry Pi OS image (Pi 4 or 5). kivyforge never runs on the Pi.
+  **Verified 2026-09-17 on a Pi 5** (Debian 13, labwc/Wayland, Broadcom V3D);
+  a Pi 4 has not been run.
 - **`appimagetool` is the host-arch binary**; the aarch64 type2 runtime is
   embedded with `--runtime-file`. 32-bit ARM and musl stay out of scope.
 

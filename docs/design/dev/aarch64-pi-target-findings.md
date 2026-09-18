@@ -4,10 +4,10 @@ Run against `modernization-rfc` per
 [`aarch64-pi-target-prompt.md`](aarch64-pi-target-prompt.md), in WSL2. Date:
 2026-09-17.
 
-**Cross-build (Steps 1–6) is done.** An aarch64 AppImage was produced on this
-x86_64 host, T3 asserts every ELF is `ELFCLASS64`/`EM_AARCH64`, and planting a
-host `.so` in the AppDir is caught. **Step 7 did not run:** a Pi answers ping
-on the LAN, but `sshd` is not listening, so nothing was copied or launched.
+**Steps 1–7 are done on a Raspberry Pi 5.** An aarch64 AppImage was produced
+on this x86_64 host, T3 asserts every ELF is `ELFCLASS64`/`EM_AARCH64`, and
+the same file launched on a Pi 5 (labwc/Wayland, Broadcom V3D, "Start
+application main loop"). A Pi 4 was not present.
 
 The example `pyproject.toml` was pointed at `archs = ["aarch64"]` only for this
 run and restored to `["x86_64"]` afterwards. The generated `pylock.linux.toml`
@@ -31,10 +31,9 @@ was not committed.
 3. **`linux-spec.md` overlay table still said "only `x86_64` this phase"**
    after the Architectures section had already moved aarch64 in-scope. The
    toml example comment matched. Corrected.
-4. **Step 7 blocked on SSH.** `raspberrypi` resolves to `10.168.168.202`,
-   ICMP replies (ttl=63, 37 ms), TCP/22 is `Connection refused` for both `pi@`
-   and `elliot@`. No AppImage was copied; no launch was attempted. Enabling
-   `sshd` on that Pi is the next step, not a packaging question.
+4. **SSH was off on first contact.** `raspberrypi` / `10.168.168.202` pinged
+   with TCP/22 refused. Enabling SSH in Raspberry Pi Configuration fixed it.
+   The login user is `edgarbus`, not `pi`. Not a packaging issue.
 
 Not defects, recorded so they are not rediscovered:
 
@@ -65,7 +64,9 @@ Not defects, recorded so they are not rediscovered:
 | kivyforge | 3.0.0.dev0 (editable install) |
 | Branch | `modernization-rfc` @ `286fbcdc` (prompt commit) plus this work |
 | Example | `examples/desktop/dice-roller` (archs temporarily `["aarch64"]`) |
-| Pi | hostname `raspberrypi`, `10.168.168.202`, ICMP up, **sshd down** — model/OS unread |
+| Pi | **Raspberry Pi 5 Model B Rev 1.1**, hostname `raspberrypi`, `10.168.168.202`, user `edgarbus` |
+| Pi OS | Raspberry Pi reference 2026-06-18 (`pi-gen` stage5), Debian 13.7 (trixie), kernel `6.18.39+rpt-rpi-2712`, `aarch64`, glibc 2.41 |
+| Pi display | labwc Wayland (`rpd-labwc`), `wayland-0`, `/dev/fuse` present, DRM `card0`/`card1`/`renderD128` |
 
 `pyright` is not installed in `.venv`; ruff and the hermetic pytest run are
 the local gates that actually executed after the code changes.
@@ -172,19 +173,47 @@ Removed afterwards; the check returned `[]` again. The copy was never in the
 `linux-spec.md` §Scope lists aarch64 as an in-scope *target*. New
 Architectures section states: `x86_64` native, `aarch64` cross-only from
 x86_64 Linux, "Pi is a target, never a host", Pi 4/5 + 64-bit Raspberry Pi OS
-as the validated combination, 32-bit ARM and musl out of scope. Host
+as the supported combination, 32-bit ARM and musl out of scope. Host
 requirements: no extra toolchain or emulator. Overlay `archs` row no longer
 claims x86_64-only.
 
 ## Step 7 — the Pi
 
-Not run. `getent hosts raspberrypi` → `10.168.168.202`. Ping succeeds.
-`ssh -o BatchMode=yes -o ConnectTimeout=5 pi@10.168.168.202` (and
-`elliot@`) → `Connection refused` on port 22. Model and `/etc/os-release`
-were not read. This session can only claim the one host that built the
-image, not Pi 4 vs Pi 5.
+**Raspberry Pi 5 Model B Rev 1.1 only.** No Pi 4 was on the LAN.
 
-The 93 MB AppImage is still at
-`examples/desktop/dice-roller/dist/linux/dice-roller-0.1.0-aarch64.AppImage`
-for a follow-up once `sshd` is up. If `/dev/fuse` is missing on the Pi, the
-roadmap already names `--appimage-extract-and-run`.
+After SSH was enabled, `scp` of
+`dice-roller-0.1.0-aarch64.AppImage` (94 MB) to `edgarbus@10.168.168.202:~/`
+exit 0. `file` on the Pi: `ELF 64-bit LSB pie executable, ARM aarch64`.
+`/dev/fuse` exists, so the image self-mounted (`/tmp/.mount_dice-*`);
+`--appimage-extract-and-run` was not needed.
+
+An SSH login has no display (`XDG_SESSION_TYPE=tty`). The console session is
+Wayland (`loginctl` session 1, `Desktop=rpd-labwc`, `wayland-0` under
+`/run/user/1000`). Launch:
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 XDG_SESSION_TYPE=wayland
+timeout 25 ~/dice-roller-0.1.0-aarch64.AppImage
+```
+
+Exit 124 from `timeout` after 25 s — the app stayed in the main loop until
+killed. Log (stderr), abbreviated:
+
+```
+[INFO   ] [Kivy        ] v2.3.1
+[INFO   ] [Python      ] v3.13.14 ... Interpreter at "/tmp/.mount_dice-.../usr/python/bin/python3"
+[INFO   ] [Window      ] Provider: sdl2
+[INFO   ] [GL          ] OpenGL version <b'3.1 Mesa 26.2.2-1~bpo13+0~rpt1'>
+[INFO   ] [GL          ] OpenGL vendor <b'Broadcom'>
+[INFO   ] [GL          ] OpenGL renderer <b'V3D 7.1.10.2'>
+Unable to connect to X server
+[INFO   ] [Base        ] Start application main loop
+```
+
+That is the GPU/display path the roadmap said would fail first if anything
+would: SDL2 on labwc, real Broadcom V3D (not llvmpipe), main loop reached.
+`Unable to connect to X server` is noise from something probing X11 on a
+Wayland session; the SDL2 window still came up. glibc 2.41 clears the lock's
+2.17 floor.
+
+No screenshot. Evidence is the Kivy log, same bar as the WSL2 x86_64 T4 row.
