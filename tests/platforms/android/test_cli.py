@@ -1247,7 +1247,7 @@ class TestAndroidOpen:
         )
         popen_calls = []
         monkeypatch.setattr(
-            "subprocess.Popen", lambda cmd: popen_calls.append(cmd) or object()
+            "subprocess.Popen", lambda cmd, **kw: popen_calls.append(cmd) or object()
         )
         cli.android_open(project)
         assert popen_calls and popen_calls[0][0] == "/usr/bin/studio"

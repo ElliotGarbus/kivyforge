@@ -64,7 +64,9 @@ def _iconutil(iconset: Path, dest: Path) -> None:
 
 def _run(cmd: list[str]) -> None:
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
     except OSError as exc:
         reason = (
             "not found (ships with macOS)"

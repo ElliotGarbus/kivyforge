@@ -69,7 +69,7 @@ def adb(*args: str, serial: str | None = None, check: bool = True) -> str:
     if serial:
         cmd += ["-s", serial]
     cmd += list(args)
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if check and proc.returncode != 0:
         raise AdbError(f"adb {' '.join(args)} failed:\n{proc.stderr or proc.stdout}")
     return proc.stdout
@@ -87,7 +87,12 @@ def connected_devices() -> list[str]:
 
 def available_avds() -> list[str]:
     emulator = sdk_tool("emulator", subdir="emulator")
-    proc = subprocess.run([emulator, "-list-avds"], capture_output=True, text=True)
+    proc = subprocess.run(
+        [emulator, "-list-avds"],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
@@ -99,6 +104,7 @@ def boot_emulator(avd: str) -> str:
         [emulator, "-avd", avd, "-no-boot-anim", "-no-audio"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
     )
     deadline = time.monotonic() + BOOT_TIMEOUT_SEC
     serial: str | None = None

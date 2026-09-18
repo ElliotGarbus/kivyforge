@@ -180,7 +180,9 @@ def _run_with_retry(cmd: list[str]) -> None:
 
 def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
     except OSError as exc:
         reason = (
             "not found" if isinstance(exc, FileNotFoundError) else f"unusable ({exc})"

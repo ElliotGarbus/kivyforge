@@ -141,7 +141,9 @@ def build_launcher(dest: Path, *, entry_point: str, arch: str) -> None:
 
 def _compile(cmd: list[str]) -> None:
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
     except OSError as exc:
         reason = (
             "not found" if isinstance(exc, FileNotFoundError) else f"unusable ({exc})"

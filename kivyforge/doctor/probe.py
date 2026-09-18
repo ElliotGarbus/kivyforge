@@ -326,7 +326,9 @@ class RealProbe:
 
 def _capture(argv: list[str]) -> str:
     try:
-        proc = subprocess.run(argv, capture_output=True, text=True)
+        proc = subprocess.run(
+            argv, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
     except (OSError, ValueError):
         return ""
     return proc.stdout if proc.returncode == 0 else ""

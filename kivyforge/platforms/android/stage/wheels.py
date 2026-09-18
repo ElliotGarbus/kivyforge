@@ -77,6 +77,7 @@ def install_wheels(
         "-m",
         "pip",
         "install",
+        "--no-input",
         "--no-deps",
         "--no-index",
         "--only-binary=:all:",
@@ -94,7 +95,7 @@ def install_wheels(
         cmd += ["--abi", abi]
     cmd += [str(w) for w in wheel_files]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     if proc.returncode != 0:
         raise WheelStageError(
             "pip could not install the locked wheels into the staging "

@@ -1028,9 +1028,28 @@ build timestamps where the other four used relative ages.
    platforms, valid archs, package formats, and **which hosts can build which
    targets**. That last one is the matrix from item 2, and it is precisely the
    fact that stops an agent trying to build iOS on Windows.
-7. **Non-interactive guarantees.** No verb should ever prompt; add `--no-input`
-   so that is contractual rather than incidental, and keep progress rendering
-   off when not a TTY.
+7. ~~**Non-interactive guarantees.** No verb should ever prompt; add
+   `--no-input` so that is contractual rather than incidental, and keep progress
+   rendering off when not a TTY.~~ **Done 2026-09-17 — but not as a flag.**
+   Measured first: there is no `click.prompt`, `click.confirm`,
+   `confirmation_option`, `input()`, `getpass`, `click.pause` or `click.getchar`
+   anywhere in the package, so `--no-input` would have suppressed nothing on the
+   day it shipped and still had to be honoured forever. The TTY half was already
+   true: colour and terminal detection both come from `isatty` (plus
+   `NO_COLOR`/`FORCE_COLOR`), and `--no-color` covers the explicit case.
+
+   **The real hole was one layer down, in the children.** A spawned tool
+   inherits kivyforge's stdin, so an unexpectedly interactive one blocks
+   forever — and in CI it blocks until the job times out with nothing on either
+   stream saying why. Every tool spawn now passes `stdin=DEVNULL`, so such a
+   tool gets EOF and fails fast instead. **pip is the one genuine case**: an
+   index that wants credentials prompts for them, so it is also passed pip's own
+   `--no-input`, at the three resolvers and both staging installs.
+
+   Three spawns deliberately keep the user's stdin — `run`'s app launch on
+   Windows, Linux and macOS. That process *is* the user's program, and closing
+   its stdin would break a console app that reads input, which is the one thing
+   `run` exists to let you do.
 8. **`AGENTS.md`** at the repo root for agents working *on* kivyforge (how to
    run the suite, the coverage gate, the ruff config, the cp1252 rule), plus a
    short "driving kivyforge from an agent" page in item 6's docs.

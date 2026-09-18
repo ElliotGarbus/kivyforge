@@ -60,7 +60,9 @@ def validate_desktop_file(dest: Path) -> None:
     if tool is None:
         return
     try:
-        proc = subprocess.run([tool, str(dest)], capture_output=True, text=True)
+        proc = subprocess.run(
+            [tool, str(dest)], capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
     except (OSError, ValueError):
         return
     if proc.returncode != 0:

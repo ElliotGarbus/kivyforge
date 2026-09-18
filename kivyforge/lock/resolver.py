@@ -36,6 +36,7 @@ def pip_version(python_executable: str) -> tuple[int, ...] | None:
         proc = subprocess.run(
             [python_executable, "-m", "pip", "--version"],
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             text=True,
         )
     except (OSError, ValueError):

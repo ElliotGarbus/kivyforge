@@ -106,7 +106,9 @@ def patch_resources(
         rcedit = vendored_rcedit()
     args = build_rcedit_args(rcedit, exe, patch)
     try:
-        proc = subprocess.run(args, capture_output=True, text=True)
+        proc = subprocess.run(
+            args, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
     except OSError as exc:
         raise WindowsBundleError(
             f"failed to run rcedit ({rcedit}): {exc}. rcedit is Windows-only.",

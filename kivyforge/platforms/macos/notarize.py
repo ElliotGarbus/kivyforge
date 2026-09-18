@@ -131,7 +131,9 @@ def _notary_log(submission_id: str, profile: str) -> str:
 
 def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
     except OSError as exc:
         reason = (
             "not found" if isinstance(exc, FileNotFoundError) else f"unusable ({exc})"

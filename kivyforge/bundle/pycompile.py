@@ -114,6 +114,7 @@ def _reports_version(argv: tuple[str, ...], tag: str) -> bool:
                 " sys.version_info[1], sys.version_info.releaselevel))",
             ],
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             text=True,
             timeout=30,
         )
@@ -239,7 +240,13 @@ def compile_tree(
     try:
         with stderr_for_child() as err:
             return (
-                subprocess.run(argv, check=False, stdout=err, stderr=err).returncode
+                subprocess.run(
+                    argv,
+                    check=False,
+                    stdout=err,
+                    stderr=err,
+                    stdin=subprocess.DEVNULL,
+                ).returncode
                 == 0
             )
     except OSError as exc:

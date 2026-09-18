@@ -18,7 +18,7 @@ class FakeRuns:
         self.responses = responses
         self.calls: list[list[str]] = []
 
-    def __call__(self, cmd, capture_output=True, text=True):
+    def __call__(self, cmd, capture_output=True, text=True, stdin=None):
         self.calls.append(cmd)
         key = self._key(cmd)
         rc, out, err = self.responses.get(key, (0, "", ""))

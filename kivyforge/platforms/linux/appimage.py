@@ -124,7 +124,9 @@ def build_appimage(
         str(tmp_out),
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
+        )
     except OSError as exc:
         tmp_out.unlink(missing_ok=True)
         raise AppDirError(

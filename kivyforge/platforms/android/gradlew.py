@@ -39,7 +39,14 @@ def run_gradle(
     # the command's product (and a --json document stays parseable).
     try:
         with stderr_for_child() as err:
-            proc = subprocess.run(cmd, cwd=project_dir, env=env, stdout=err, stderr=err)
+            proc = subprocess.run(
+                cmd,
+                cwd=project_dir,
+                env=env,
+                stdout=err,
+                stderr=err,
+                stdin=subprocess.DEVNULL,
+            )
     except OSError as exc:
         # The wrapper exists (checked above) but could not be started: no exec
         # bit, a noexec mount, no shell. Otherwise a traceback with no envelope.
@@ -74,6 +81,7 @@ def stop_gradle_daemon(project_dir: Path) -> bool:
             [str(script), "--console=plain", "--stop"],
             cwd=project_dir,
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             text=True,
             timeout=120,
         )

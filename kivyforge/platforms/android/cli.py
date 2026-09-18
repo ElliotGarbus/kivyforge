@@ -974,7 +974,7 @@ def android_open(project_root: Path, *, events: BuildEvents = ECHO_EVENTS) -> Pa
     if studio:
         import subprocess
 
-        subprocess.Popen([studio, str(dest)])
+        subprocess.Popen([studio, str(dest)], stdin=subprocess.DEVNULL)
         events.on_line(f"Opening {dest.name}/ in Android Studio...")
         return dest
     # Not a failure: the project is generated and openable by hand. The note is

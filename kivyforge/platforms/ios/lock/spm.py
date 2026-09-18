@@ -81,7 +81,9 @@ class XcodeSpmResolver:
                 # Resolve from SPM's cache only; fail if it is incomplete.
                 cmd.append("--disable-automatic-resolution")
             try:
-                proc = subprocess.run(cmd, capture_output=True, text=True)
+                proc = subprocess.run(
+                    cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+                )
             except FileNotFoundError as exc:
                 raise SpmResolverError(
                     f"could not run {self._swift!r}; Xcode's Swift toolchain is "

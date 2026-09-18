@@ -191,6 +191,7 @@ class PipWheelResolver:
                 "-m",
                 "pip",
                 "install",
+                "--no-input",
                 "--dry-run",
                 "--ignore-installed",
                 "--only-binary=:all:",
@@ -220,6 +221,7 @@ class PipWheelResolver:
             proc = subprocess.run(
                 cmd,
                 capture_output=True,
+                stdin=subprocess.DEVNULL,
                 text=True,
                 encoding="utf-8",
                 errors="replace",

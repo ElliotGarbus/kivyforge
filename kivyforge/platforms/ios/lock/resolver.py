@@ -253,6 +253,7 @@ class PipResolver:
                 self._python,
                 str(_SHIM),
                 "install",
+                "--no-input",
                 "--dry-run",
                 "--ignore-installed",
                 "--only-binary=:all:",
@@ -279,7 +280,9 @@ class PipResolver:
 
             env = dict(os.environ)
             env[MARKER_ENV_VAR] = json.dumps(marker_environment)
-            proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
+            )
             if proc.returncode != 0:
                 raise ResolverError(
                     f"pip could not resolve the iOS slice {platform_tag!r}.\n"

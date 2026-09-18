@@ -199,8 +199,9 @@ class TestInstallWheels:
         pure.write_bytes(b"x")
         captured = {}
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             captured["cmd"] = cmd
+            captured["stdin"] = stdin
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         monkeypatch.setattr(wheels_mod.subprocess, "run", fake_run)
@@ -213,6 +214,9 @@ class TestInstallWheels:
         cmd = captured["cmd"]
         assert cmd[0] == "/usr/bin/python3.14"
         assert "--no-index" in cmd
+        # pip is the one tool that genuinely prompts (index credentials).
+        assert "--no-input" in cmd
+        assert captured["stdin"] == subprocess.DEVNULL
         assert "--target" in cmd
         assert str(target) in cmd
         assert "android_24_arm64_v8a" in cmd
@@ -225,7 +229,7 @@ class TestInstallWheels:
         wheel.write_bytes(b"x")
         captured = {}
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             captured["cmd"] = cmd
             return subprocess.CompletedProcess(cmd, 0)
 
@@ -237,7 +241,7 @@ class TestInstallWheels:
         wheel = tmp_path / "p-1.0-py3-none-any.whl"
         wheel.write_bytes(b"x")
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             return subprocess.CompletedProcess(
                 cmd, 1, stdout="", stderr="ERROR: no such wheel"
             )

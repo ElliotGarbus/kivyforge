@@ -114,6 +114,7 @@ def _verify_alias(keystore: Path, alias: str, store_password: str) -> None:
                 store_password,
             ],
             capture_output=True,
+            stdin=subprocess.DEVNULL,
             text=True,
         )
     except OSError as exc:

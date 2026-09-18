@@ -29,7 +29,7 @@ class CommandError(Exception):
 
 def run_command(argv: list[str], *, runner=subprocess.run, check: bool = True):
     try:
-        proc = runner(argv, capture_output=True, text=True)
+        proc = runner(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     except OSError as exc:
         # Not a CommandError: the tool never ran, so there is no build to blame.
         # Raised as the CLI error directly, because an OSError escaping here

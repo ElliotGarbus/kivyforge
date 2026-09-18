@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Spawned tools can no longer wait for input
+
+- **Every external tool kivyforge runs is given a closed stdin.** A child that
+  unexpectedly prompts now gets EOF and fails fast, instead of blocking until a
+  CI job times out with nothing explaining why.
+- **pip is passed `--no-input`** at the lock resolvers and the wheel staging
+  installs: an index that wants credentials is the one case here that genuinely
+  prompts.
+- `kivyforge run` is deliberately unchanged — the app it launches *is* your
+  program, and it keeps your stdin so a console app can still read input.
+
 ### New: `kivyforge capabilities`
 
 - **A verb that answers what this kivyforge can do**, with no project, lock or

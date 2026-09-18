@@ -213,7 +213,7 @@ class TestAdbFunction:
         self._stub_tool(monkeypatch)
         captured = {}
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             captured["cmd"] = cmd
             return subprocess.CompletedProcess(cmd, 0, stdout="ok\n", stderr="")
 
@@ -225,7 +225,7 @@ class TestAdbFunction:
         self._stub_tool(monkeypatch)
         captured = {}
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             captured["cmd"] = cmd
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
@@ -236,7 +236,7 @@ class TestAdbFunction:
     def test_nonzero_exit_raises_when_checked(self, monkeypatch):
         self._stub_tool(monkeypatch)
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no device")
 
         monkeypatch.setattr(adb_mod.subprocess, "run", fake_run)
@@ -246,7 +246,7 @@ class TestAdbFunction:
     def test_nonzero_exit_ignored_when_unchecked(self, monkeypatch):
         self._stub_tool(monkeypatch)
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             return subprocess.CompletedProcess(cmd, 1, stdout="partial", stderr="")
 
         monkeypatch.setattr(adb_mod.subprocess, "run", fake_run)
@@ -257,7 +257,7 @@ class TestAvailableAvds:
     def test_parses_and_strips_blank_lines(self, monkeypatch):
         monkeypatch.setattr(adb_mod, "sdk_tool", lambda name, *, subdir: "emulator")
 
-        def fake_run(cmd, capture_output, text):
+        def fake_run(cmd, capture_output, text, stdin=None):
             return subprocess.CompletedProcess(
                 cmd, 0, stdout="Pixel_API_35\n\nkivyforge_x86_64\n  \n", stderr=""
             )

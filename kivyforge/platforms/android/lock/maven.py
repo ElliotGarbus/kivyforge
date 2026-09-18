@@ -190,7 +190,9 @@ class ScratchProjectResolver:
             ]
             if offline:
                 cmd.append("--offline")
-            proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
+            proc = subprocess.run(
+                cmd, cwd=root, capture_output=True, text=True, stdin=subprocess.DEVNULL
+            )
             if proc.returncode != 0:
                 raise MavenResolverError(
                     "Gradle could not resolve the declared Maven coordinates.\n"

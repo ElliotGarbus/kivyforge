@@ -157,7 +157,7 @@ class TestScratchProjectResolverResolve:
     def test_success_writes_project_and_parses_metadata(self, tmp_path, monkeypatch):
         captured = {}
 
-        def fake_run(cmd, cwd, capture_output, text):
+        def fake_run(cmd, cwd, capture_output, text, stdin=None):
             captured["cmd"] = cmd
             captured["cwd"] = Path(cwd)
             settings = (Path(cwd) / "settings.gradle").read_text(encoding="utf-8")
@@ -182,7 +182,7 @@ class TestScratchProjectResolverResolve:
         assert "--offline" not in captured["cmd"]
 
     def test_offline_flag_appended(self, tmp_path, monkeypatch):
-        def fake_run(cmd, cwd, capture_output, text):
+        def fake_run(cmd, cwd, capture_output, text, stdin=None):
             metadata_dir = Path(cwd) / "gradle"
             metadata_dir.mkdir(parents=True, exist_ok=True)
             (metadata_dir / "verification-metadata.xml").write_text(
@@ -192,7 +192,7 @@ class TestScratchProjectResolverResolve:
 
         seen_cmds = []
 
-        def recording_run(cmd, cwd, capture_output, text):
+        def recording_run(cmd, cwd, capture_output, text, stdin=None):
             seen_cmds.append(cmd)
             return fake_run(cmd, cwd, capture_output, text)
 
@@ -202,7 +202,7 @@ class TestScratchProjectResolverResolve:
         assert "--offline" in seen_cmds[0]
 
     def test_nonzero_exit_raises_with_stderr(self, monkeypatch):
-        def fake_run(cmd, cwd, capture_output, text):
+        def fake_run(cmd, cwd, capture_output, text, stdin=None):
             return subprocess.CompletedProcess(
                 cmd, 1, stdout="", stderr="could not resolve dependency"
             )
@@ -213,7 +213,7 @@ class TestScratchProjectResolverResolve:
             resolver.resolve(self._config())
 
     def test_missing_metadata_file_raises(self, monkeypatch):
-        def fake_run(cmd, cwd, capture_output, text):
+        def fake_run(cmd, cwd, capture_output, text, stdin=None):
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         monkeypatch.setattr(maven_mod.subprocess, "run", fake_run)

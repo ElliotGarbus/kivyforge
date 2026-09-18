@@ -53,6 +53,9 @@ def pip_install_command(
         "-m",
         "pip",
         "install",
+        # pip is the one tool here that can genuinely prompt: an index needing
+        # auth asks for credentials, which in CI hangs until the job times out.
+        "--no-input",
         "--no-deps",
         "--only-binary=:all:",
         "--platform",

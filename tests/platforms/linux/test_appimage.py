@@ -49,7 +49,7 @@ class TestBuildAppimage:
     def test_invokes_appimagetool(self, tmp_path, monkeypatch, fake_tools):
         recorded = {}
 
-        def fake_run(cmd, *, capture_output, text, env):
+        def fake_run(cmd, *, capture_output, text, env, stdin=None):
             recorded["cmd"] = cmd
             recorded["env"] = env
             # appimagetool writes the output file (a temp path swapped in later).

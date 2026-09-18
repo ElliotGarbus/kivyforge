@@ -139,7 +139,9 @@ class SigntoolSigner:
         exe = shutil.which(self.signtool) or self.signtool
         argv[0] = exe
         try:
-            proc = subprocess.run(argv, capture_output=True, text=True)
+            proc = subprocess.run(
+                argv, capture_output=True, text=True, stdin=subprocess.DEVNULL
+            )
         except OSError as exc:
             raise WindowsBundleError(
                 f"failed to run signtool ({self.signtool}): {exc}. signtool ships "

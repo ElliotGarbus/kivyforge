@@ -153,7 +153,7 @@ class TestSimulatorSelection:
     def test_resolve_boots_default(self):
         calls: list[list[str]] = []
 
-        def fake(argv, capture_output=True, text=True):
+        def fake(argv, capture_output=True, text=True, stdin=None):
             calls.append(argv)
             if "-j" in argv:
                 import json
@@ -181,7 +181,7 @@ class TestSimulatorSelection:
         }
         calls: list[list[str]] = []
 
-        def fake(argv, capture_output=True, text=True):
+        def fake(argv, capture_output=True, text=True, stdin=None):
             calls.append(argv)
             if "-j" in argv:
                 import json
@@ -326,7 +326,7 @@ class TestDeviceSelection:
 
         calls: list[list[str]] = []
 
-        def fake(argv, capture_output=True, text=True):
+        def fake(argv, capture_output=True, text=True, stdin=None):
             calls.append(argv)
             assert argv[:4] == ["xcrun", "devicectl", "list", "devices"]
             output_path = argv[-1]
