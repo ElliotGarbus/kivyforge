@@ -11,14 +11,15 @@ source; unlike macOS there is no code-signing analog on Linux.
 
 > **Status: implemented.** The Linux backend ships: `[tool.kivy.linux]`
 > parsing, `pylock.linux.toml` resolution (python-build-standalone
-> `x86_64-unknown-linux-gnu` runtime + manylinux-tagged wheels), the AppDir
-> generator (`AppRun` shell launcher, generated `.desktop` + hicolor icons),
-> `build` / `run` / `package -f appimage|folder`, and Linux `doctor` checks.
-> Developed and verified on WSL2 Ubuntu (x86_64). A couple of details differ
-> from the original plan and are flagged inline (the resolver requests the full
-> manylinux tag ladder in one pip invocation rather than relying on pip's
-> `--platform` expansion, and the effective glibc floor is derived on demand
-> rather than stored as a distinct lock field).
+> `x86_64-unknown-linux-gnu` / `aarch64-unknown-linux-gnu` runtime +
+> manylinux-tagged wheels), the AppDir generator (`AppRun` shell launcher,
+> generated `.desktop` + hicolor icons), `build` / `run` / `package -f
+> appimage|folder`, and Linux `doctor` checks. Developed and verified on WSL2
+> Ubuntu (x86_64); aarch64 is a Raspberry Pi *target* (cross-build only). A
+> couple of details differ from the original plan and are flagged inline (the
+> resolver requests the full manylinux tag ladder in one pip invocation rather
+> than relying on pip's `--platform` expansion, and the effective glibc floor
+> is derived on demand rather than stored as a distinct lock field).
 
 ## Scope
 
@@ -34,6 +35,9 @@ In scope for the Linux backend:
 - `build` / `run` (launch `./AppRun`) and `package -f appimage` (default) /
   `-f folder`.
 - Linux `doctor` checks.
+- **aarch64 as a build *target*** — cross-built on Linux x86_64, run on a
+  Raspberry Pi 4 or 5 with 64-bit Raspberry Pi OS. See
+  [Architectures](#architectures).
 
 Out of scope for the Linux backend (deferred / external):
 
@@ -46,13 +50,39 @@ Out of scope for the Linux backend (deferred / external):
   into `~/.local/share/applications/` using `$APPIMAGE`/`$APPDIR`) — designed
   here as a fast-follow, not built this phase (see
   ["Desktop integration"](#desktop-integration)).
-- **aarch64** — the config stays list-shaped so it is purely additive later
-  (PBS ships `aarch64-unknown-linux-gnu`; Kivy has manylinux aarch64 wheels),
-  but there is no ARM verification host this phase.
+- **32-bit ARM** (`armv7l` / `armhf`) — a third arch, a different PBS triple,
+  and a manylinux tier with far worse wheel coverage. 64-bit Pi OS is the
+  default image.
+- **Native aarch64 *building*** (kivyforge running on the Pi) — untested and
+  unclaimed. The supported path is cross-build only.
 - **musl / Alpine** — static PBS musl builds can't `dlopen()` extensions, and
   Kivy publishes no musllinux wheels. Out of scope.
 - **AppImage update metadata / zsync**, and **signing** — no Linux signing
   analog is in scope.
+
+## Architectures
+
+Supported:
+
+- **`x86_64`** — native on a Linux x86_64 host (the default).
+- **`aarch64`** — **cross-only** from an x86_64 Linux host. Opt in with
+  `[tool.kivy.linux].archs = ["aarch64"]` (or both). `package --arch aarch64`
+  produces one AppImage; there is no fat binary.
+
+**The Pi is a target, never a host.** kivyforge never executes on the Pi.
+Supported combination: Raspberry Pi 4 or 5 running 64-bit Raspberry Pi OS.
+A Windows machine cannot build this target at all (`check_host_capability`
+requires Linux; WSL2 counts). Cross-build T2+T3 is logged in
+[`aarch64-pi-target-findings.md`](../../dev/aarch64-pi-target-findings.md);
+a Pi launch has not been recorded there yet.
+
+32-bit ARM and musl are out of scope, with the reasons in §Scope.
+
+The byte-compile ladder already handles a foreign target: the staged aarch64
+interpreter cannot run on x86_64, so compilation falls back to a final CPython
+of the same minor on the host. A `.pyc`'s magic number is keyed to the minor,
+not the architecture. `appimagetool` runs as a *host* binary and embeds the
+*target* type2 runtime with `--runtime-file`.
 
 ## `[tool.kivy.linux]` overlay
 
@@ -65,7 +95,7 @@ that differ from the cross-platform defaults or are Linux-specific appear here.
 schema_version = 1
 app_id = "org.example.myapp"     # reverse-DNS; .desktop basename, Icon=, StartupWMClass
 glibc_floor = "2.17"             # optional; drives the manylinux resolve tag (see below)
-archs = ["x86_64"]               # only x86_64 allowed this phase
+archs = ["x86_64"]               # x86_64 (default) and/or aarch64 (Pi target)
 
 [tool.kivy.linux.python]
 version = "3.15.0"               # bundled Python runtime version
@@ -88,7 +118,7 @@ strip_source = "release"   # "release" | true | false — drop .py once byte-com
 | `schema_version` | integer | yes | — | Linux overlay schema version; independent of other platforms'. |
 | `app_id` | string | yes | — | Reverse-DNS identifier. Names the `.desktop` file (`<app_id>.desktop`), the `Icon=` key, and the window `StartupWMClass` / Wayland app-id. Only letters, digits, hyphen, period allowed (a valid `.desktop` basename); an invalid `app_id` is a hard `ConfigError` (mirrors the macOS `bundle_id` fail-fast). |
 | `glibc_floor` | string | no | *(runtime floor, 2.17)* | The Linux analog of macOS `minimum_system_version`. `None` means the runtime's own glibc floor (2.17) applies. Setting it *higher* (e.g. `"2.28"`) admits newer-manylinux-only wheels at the cost of raising the artifact's host floor. A value *below* the runtime floor is the same config-time error macOS raises via `floor_error`. |
-| `archs` | list of string | no | `["x86_64"]` | Target architecture set. Only `x86_64` is allowed this phase. The field stays list-shaped so `aarch64` is purely additive later. Unlike macOS there is **no fat binary** — each arch would be a separate AppImage. |
+| `archs` | list of string | no | `["x86_64"]` | Target architecture set: `x86_64` (native) and/or `aarch64` (cross-only from an x86_64 Linux host; Raspberry Pi target). Unlike macOS there is **no fat binary** — each arch is a separate AppImage. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (manylinux tags), same semantics as iOS/macOS. |
 | `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
@@ -501,9 +531,11 @@ the macOS `bundle_id` fail-fast.
 ## Host requirements
 
 - A Linux host with glibc (the gnu PBS runtime; musl hosts are unsupported).
+  Cross-building aarch64 does not add a foreign toolchain or emulator.
 - For `run` / interactive testing: `libGL`/`libEGL` and an X11 or Wayland
   session (on WSL2 this is WSLg; `LIBGL_ALWAYS_SOFTWARE=1` is the software-GL
-  fallback and `xvfb-run` the headless path).
+  fallback and `xvfb-run` the headless path). `run` of an aarch64 AppDir on
+  x86_64 cannot work; copy the AppImage to the Pi.
 - No `libfuse2` **package** is required to *build* an AppImage
   (`APPIMAGE_EXTRACT_AND_RUN=1`) or to *run* the shipped one (the embedded
   static-FUSE runtime is statically linked). Kernel FUSE (`/dev/fuse`) is still

@@ -21,6 +21,7 @@ from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
 from kivyforge.doctor.probe import Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
+from kivyforge.host import host_runs_natively
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
 
@@ -356,6 +357,33 @@ def check_linux_hosts_reachable(
     )
 
 
+def check_linux_native_or_cross(probe: Probe, config: Config) -> CheckResult:
+    """Whether the configured Linux archs run natively on this host.
+
+    Cross-build is supported and expected (aarch64 AppImages are produced on
+    x86_64). What it loses is the ability to *launch* the result here:
+    ``kivyforge run`` execs the staged interpreter, which is aarch64. Byte
+    compilation already degrades to a matching-minor host interpreter; this
+    check does not repeat that.
+    """
+    host = probe.host_machine()
+    archs = config.linux_required.archs
+    native = [a for a in archs if host_runs_natively(a, host_machine=host)]
+    foreign = [a for a in archs if a not in native]
+    name = "Native vs cross"
+    if not foreign:
+        return CheckResult(name, Status.PASS, f"native {', '.join(native) or host}")
+    targets = ", ".join(foreign)
+    detail = (
+        f"cross-build: this host ({host}) cannot run {targets}. "
+        "package the AppImage and copy it to aarch64 hardware (Pi 4/5); "
+        "`kivyforge run` for those archs will fail here."
+    )
+    if native:
+        detail = f"mixed ({', '.join(native)} native). " + detail
+    return CheckResult(name, Status.WARN, detail)
+
+
 def _add_host(hosts: set[str], url: str) -> None:
     netloc = urlparse(url).hostname
     if netloc:
@@ -386,6 +414,7 @@ def run_linux_checks(
             C.BYTE_COMPILE_NAME,
             "glibc floor",
             "Architecture coverage",
+            "Native vs cross",
             "App icon",
             "Desktop entry valid",
             "find_links directories",
@@ -407,6 +436,7 @@ def run_linux_checks(
         ),
         check_linux_glibc_floor(config, lock),
         check_linux_arch_coverage(config, lock),
+        check_linux_native_or_cross(probe, config),
         check_linux_app_icon(config, project_root),
         check_linux_desktop_entry(probe, config),
         check_linux_find_links(config, project_root),

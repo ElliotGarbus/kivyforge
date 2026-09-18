@@ -27,8 +27,16 @@
 - **pip is passed `--no-input`** at the lock resolvers and the wheel staging
   installs: an index that wants credentials is the one case here that genuinely
   prompts.
-- `kivyforge run` is deliberately unchanged — the app it launches *is* your
-  program, and it keeps your stdin so a console app can still read input.
+- **`kivyforge run` is deliberately unchanged** — the app it launches *is* your
+  program and keeps the user's stdin.
+
+### Linux aarch64 is a Raspberry Pi *target*
+
+- **`[tool.kivy.linux].archs` accepts `"aarch64"`** (opt-in; the default stays
+  `x86_64`). Cross-build on a Linux x86_64 host; run the AppImage on a 64-bit
+  Raspberry Pi OS image (Pi 4 or 5). kivyforge never runs on the Pi.
+- **`appimagetool` is the host-arch binary**; the aarch64 type2 runtime is
+  embedded with `--runtime-file`. 32-bit ARM and musl stay out of scope.
 
 ### New: `kivyforge capabilities`
 

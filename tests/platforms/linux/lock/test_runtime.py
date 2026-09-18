@@ -32,6 +32,9 @@ class TestTriples:
     def test_x86_64_maps_to_gnu(self):
         assert LINUX_TRIPLES["x86_64"] == "x86_64-unknown-linux-gnu"
 
+    def test_aarch64_maps_to_gnu(self):
+        assert LINUX_TRIPLES["aarch64"] == "aarch64-unknown-linux-gnu"
+
 
 class TestPbsAssetName:
     def test_stem(self):
@@ -51,9 +54,15 @@ class TestProvider:
         assert {a.arch for a in rt.artifacts} == {"x86_64"}
         assert ("3.15.0", "x86_64-unknown-linux-gnu") in fetcher.calls
 
+    def test_resolves_aarch64(self):
+        fetcher = FakeFetcher()
+        rt = PythonBuildStandaloneProvider(fetcher).resolve("3.15.0", ("aarch64",))
+        assert {a.arch for a in rt.artifacts} == {"aarch64"}
+        assert ("3.15.0", "aarch64-unknown-linux-gnu") in fetcher.calls
+
     def test_unknown_arch(self):
         with pytest.raises(RuntimeProviderError, match="no build for arch"):
-            PythonBuildStandaloneProvider(FakeFetcher()).resolve("3.15.0", ("aarch64",))
+            PythonBuildStandaloneProvider(FakeFetcher()).resolve("3.15.0", ("riscv64",))
 
 
 class TestFactory:

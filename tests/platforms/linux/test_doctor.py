@@ -201,6 +201,30 @@ class TestArchCoverage:
         assert L.check_linux_arch_coverage(_linux_config(), None).status is Status.SKIP
 
 
+class TestNativeOrCross:
+    def test_native_x86_64_passes(self):
+        r = L.check_linux_native_or_cross(FakeProbe(machine="x86_64"), _linux_config())
+        assert r.status is Status.PASS
+        assert "native x86_64" in r.detail
+
+    def test_cross_aarch64_warns(self):
+        r = L.check_linux_native_or_cross(
+            FakeProbe(machine="x86_64"), _linux_config(archs="['aarch64']")
+        )
+        assert r.status is Status.WARN
+        assert "cannot run aarch64" in r.detail
+        assert "Pi 4/5" in r.detail
+
+    def test_mixed_warns(self):
+        r = L.check_linux_native_or_cross(
+            FakeProbe(machine="x86_64"),
+            _linux_config(archs="['x86_64', 'aarch64']"),
+        )
+        assert r.status is Status.WARN
+        assert "mixed" in r.detail
+        assert "x86_64 native" in r.detail
+
+
 class TestDesktopEntry:
     def test_skip_when_tool_absent(self):
         r = L.check_linux_desktop_entry(
@@ -386,6 +410,9 @@ class TestRunner:
         assert any(
             r.name == "Desktop entry valid" and r.status is Status.SKIP for r in results
         )
+        assert any(
+            r.name == "Native vs cross" and r.status is Status.SKIP for r in results
+        )
 
     def test_project_mode_runs_all(self, tmp_path):
         (tmp_path / "src").mkdir()
@@ -403,6 +430,7 @@ class TestRunner:
             "Display session",
             "glibc floor",
             "Architecture coverage",
+            "Native vs cross",
             "Desktop entry valid",
             "Native binaries",
             "Required hosts reachable",

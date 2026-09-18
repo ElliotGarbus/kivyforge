@@ -19,8 +19,9 @@ machine codes asserted here cannot drift from the ones the build uses.
 
 The Linux half works on a **directory**, not an archive: a type-2 AppImage is an
 ELF with a squashfs filesystem appended, so ``zipfile`` cannot read it and there
-is no stdlib squashfs reader. The driver extracts it (``--appimage-extract``,
-which needs no FUSE) and points these at the resulting tree; the AppDir is also
+is no stdlib squashfs reader. The driver extracts it (``--appimage-extract`` on
+a native-arch image, ``unsquashfs`` at the squashfs offset when the type2
+runtime is foreign) and points these at the resulting tree; the AppDir is also
 directly buildable via ``kivyforge package -f folder``. Checks that can only be
 made on the single file — that it is an AppImage at all, and for which arch —
 live in :func:`linux_appimage_file_problems` so the container itself is covered

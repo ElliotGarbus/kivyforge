@@ -16,6 +16,7 @@ tools, not app dependencies, so they never enter the app's lockfile.
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,7 +28,10 @@ from kivyforge.report.failures import build_tool_failed, spawn_failure
 from . import AppDirError
 
 # Pinned appimagetool (AppImage/appimagetool) and type2 static-FUSE runtime
-# (AppImage/type2-runtime). Per-arch so aarch64 is purely additive later.
+# (AppImage/type2-runtime). Per-arch; aarch64 is a Raspberry Pi *target*
+# (cross-built from x86_64). The *tool* that runs at package time is the
+# host-arch appimagetool; the *runtime* embedded with --runtime-file is the
+# target's. SHA-256s were hashed from the release assets on 2026-09-17.
 APPIMAGETOOL_VERSION = "1.9.1"
 TYPE2_RUNTIME_VERSION = "20251108"
 
@@ -37,6 +41,11 @@ _APPIMAGETOOL = {
         f"{APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage",
         "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
     ),
+    "aarch64": (
+        "https://github.com/AppImage/appimagetool/releases/download/"
+        f"{APPIMAGETOOL_VERSION}/appimagetool-aarch64.AppImage",
+        "f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158",
+    ),
 }
 
 _TYPE2_RUNTIME = {
@@ -44,6 +53,11 @@ _TYPE2_RUNTIME = {
         "https://github.com/AppImage/type2-runtime/releases/download/"
         f"{TYPE2_RUNTIME_VERSION}/runtime-x86_64",
         "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+    ),
+    "aarch64": (
+        "https://github.com/AppImage/type2-runtime/releases/download/"
+        f"{TYPE2_RUNTIME_VERSION}/runtime-aarch64",
+        "00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444",
     ),
 }
 
@@ -80,11 +94,17 @@ def build_appimage(
     no_cache: bool = False,
     echo=lambda *a: None,
 ) -> Path:
-    """Package *appdir* into an ``.AppImage`` at *output*; return *output*."""
+    """Package *appdir* into an ``.AppImage`` at *output*; return *output*.
+
+    ``appimagetool`` is a host binary: a cross-build from x86_64 onto aarch64
+    still runs the x86_64 tool and embeds the aarch64 type2 runtime via
+    ``--runtime-file``. Using the target-arch appimagetool would fail to exec.
+    """
     cache = cache or ArtifactCache()
+    host_arch = _host_appimagetool_arch()
     tool = _acquire(
-        appimagetool_asset(arch),
-        f"appimagetool-{APPIMAGETOOL_VERSION}-{arch}.AppImage",
+        appimagetool_asset(host_arch),
+        f"appimagetool-{APPIMAGETOOL_VERSION}-{host_arch}.AppImage",
         "appimagetool",
         project_root,
         cache,
@@ -170,6 +190,19 @@ def _acquire(
         )
     except DownloadError as exc:
         raise AppDirError(str(exc)) from exc
+
+
+def _host_appimagetool_arch() -> str:
+    """The arch of the appimagetool this host can actually exec."""
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "x86_64"
+    if machine in ("aarch64", "arm64"):
+        return "aarch64"
+    raise AppDirError(
+        f"no pinned appimagetool for this host arch ({machine}); "
+        "need x86_64 or aarch64."
+    )
 
 
 def _executable_copy(tool: Path, cache: ArtifactCache) -> Path:

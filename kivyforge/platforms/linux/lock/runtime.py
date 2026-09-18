@@ -47,6 +47,7 @@ DEFAULT_GLIBC_FLOOR = "2.17"
 # kivyforge arch name -> PBS/LLVM linux target triple (baseline microarch).
 LINUX_TRIPLES = {
     "x86_64": "x86_64-unknown-linux-gnu",
+    "aarch64": "aarch64-unknown-linux-gnu",
 }
 
 # Linux-facing alias for the generic PBS asset glob helper.

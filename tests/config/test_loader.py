@@ -1073,9 +1073,18 @@ class TestLinuxArchs:
         with pytest.raises(ConfigError, match="must not be empty"):
             _linux("archs=[]\n")
 
-    def test_aarch64_rejected_this_phase(self):
+    def test_aarch64_is_accepted(self):
+        assert _linux("archs=['aarch64']\n").linux_required.archs == ("aarch64",)
+
+    def test_both_archs(self):
+        assert _linux("archs=['x86_64', 'aarch64']\n").linux_required.archs == (
+            "x86_64",
+            "aarch64",
+        )
+
+    def test_unknown_arch_rejected(self):
         with pytest.raises(ConfigError, match="unsupported Linux arch"):
-            _linux("archs=['aarch64']\n")
+            _linux("archs=['riscv64']\n")
 
 
 class TestLinuxDesktop:

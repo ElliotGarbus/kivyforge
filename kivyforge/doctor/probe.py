@@ -81,10 +81,10 @@ class RealProbe:
         return find_interpreter(python_version)
 
     def host_machine(self) -> str:
-        """Lower-cased ``platform.machine()``, the spelling each backend's arch
-        vocabulary is chosen to match (``amd64`` on Windows, ``arm64`` on Apple
-        Silicon, ``x86_64`` on Linux) — so a target arch compares directly."""
-        return _platform.machine().lower()
+        """Lower-cased ``platform.machine()``; see :func:`kivyforge.host.host_machine`."""
+        from ..host import host_machine as _host_machine
+
+        return _host_machine()
 
     def has_codesign(self) -> bool:
         return shutil.which("codesign") is not None

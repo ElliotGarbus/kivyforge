@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..config.model import Config
+from ..host import host_runs_natively
 from ..lock.resolver import MIN_PIP_VERSION, version_str
 from .probe import Probe
 from .result import CheckResult, Status
@@ -97,7 +98,9 @@ def builds_natively(probe: Probe, archs: tuple[str, ...]) -> bool:
     matching arch would hide exactly the cross-build case worth reporting.
     """
     host = probe.host_machine()
-    return bool(archs) and all(arch == host for arch in archs)
+    return bool(archs) and all(
+        host_runs_natively(arch, host_machine=host) for arch in archs
+    )
 
 
 def check_byte_compile(

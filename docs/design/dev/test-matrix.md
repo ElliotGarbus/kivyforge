@@ -37,27 +37,29 @@ is doctor's problem rather than a capability error.
 | Windows `amd64` | native | ✗ | ✗ | `Windows` only |
 | macOS `arm64` | ✗ | native | ✗ | `Darwin` only |
 | Linux `x86_64` | ✗ (WSL2 is a Linux host) | ✗ | native | `Linux` only |
+| Linux `aarch64` | ✗ (WSL2 is a Linux host) | ✗ | cross | `Linux` only |
 | Android `arm64_v8a` | cross | cross | cross | none |
 | Android `x86_64` | cross | cross | cross | none |
 | iOS device `arm64` | ✗ | native-only | ✗ | `Darwin` only |
 | iOS simulator `arm64` | ✗ | native-only | ✗ | `Darwin` only |
 
-Seven target cells, not five platforms — Android and iOS each carry two, and
-they are genuinely different builds.
+Eight target cells, not five platforms — Android, iOS, and Linux each carry
+two, and they are genuinely different builds.
 
 **The arch sets are narrower than the gates.** `VALID_WINDOWS_ARCHS` is
-`{amd64}`, `VALID_MACOS_ARCHS` is `{arm64}`, `VALID_LINUX_ARCHS` is `{x86_64}`.
-So although the Windows host gate permits cross-arch builds by design, config
-rejects `arm64` today: win-arm64 and Linux `aarch64` (the Raspberry Pi target,
-roadmap item 4) are additive changes to those frozensets, and each adds a row
-here when it lands.
+`{amd64}`, `VALID_MACOS_ARCHS` is `{arm64}`, `VALID_LINUX_ARCHS` is
+`{x86_64, aarch64}`. So although the Windows host gate permits cross-arch
+builds by design, config rejects `arm64` today: win-arm64 is still an additive
+change to that frozenset. Linux `aarch64` landed 2026-09-17 as a Raspberry Pi
+*target* (cross-only from x86_64; item 4) — T2+T3 on WSL2, T4/T5 waiting on
+`sshd` on the Pi. See [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
 
 **The consequence for planning: from the Windows dev box, Windows and Android
 are reachable directly, and Linux is reachable through WSL2.** macOS and both
-iOS cells need a Mac. Of the six open roadmap items, two are partly
-host-blocked rather than effort-blocked — item 4 wants a Linux host and
-eventually Pi hardware, and item 8's iOS half wants a Mac — and everything iOS
-in §6 is Mac-blocked independently of which item it belongs to.
+iOS cells need a Mac. Of the open roadmap items, item 4's remaining gate is
+Pi hardware (the Linux host half is done), and item 8's iOS half wants a Mac —
+and everything iOS in §6 is Mac-blocked independently of which item it belongs
+to.
 
 ---
 
@@ -178,7 +180,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare only | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
 | macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | **local** — a stripped, re-notarized `dice-roller.app` launched and rendered for the first time, after fixing the launcher (§7, 2026-09-14) | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3, T4) |
 | Linux `x86_64` | `unit_tests` | **local only** — `appimagetool`, one run | **local only** — assertions exist and are hermetically tested every push; pointed at a real artifact once | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1); 2026-09-13 (T2/T3/T4) |
-| Linux `aarch64` | — | — | — | — | — | never (item 4) |
+| Linux `aarch64` | `unit_tests` | **local only** — cross `package` on x86_64 WSL2, host `appimagetool` + target type2 runtime | **local only** — T3 driver extracts via `unsquashfs` (the aarch64 type2 ELF cannot `--appimage-extract` here); ELF leak check caught a planted host `.so` | — | — | 2026-09-17 (T2/T3); T4/T5 wait on Pi `sshd` |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
 | Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
 | iOS device `arm64` | `unit_tests` | **local** — `build -p ios --device`, `package -p ios --export-method development`, real iPhone14,3 | **none** | **local** — installed, launched, `hello-kivy` rendered on device | **manual** — first physical run, 2026-09-14 | 2026-09-14 |
@@ -654,7 +656,9 @@ should produce a dated line in §7 — an unlogged manual test did not happen.
 - [ ] **Authenticode with a real certificate.** `windows_signing`'s self-signed
       loop proves the `SigntoolSigner` plumbing, not timestamping against a real
       CA chain or SmartScreen behaviour.
-- [ ] **Raspberry Pi**: build on a Linux host, run on the Pi (item 4).
+- [ ] **Raspberry Pi**: cross-build T2+T3 on WSL2 2026-09-17 (item 4); run
+      waits on `sshd` (`raspberrypi` / `10.168.168.202` pings, port 22 refused).
+      See [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
 - [ ] **Physical Android device**, both ABIs — CI can only reach `x86_64`.
 - [ ] **Windows interactive matrix** that `test_launcher_exe.py` documents as out
       of scope: >260-char paths, shortcut launches, Ctrl-C, no-console-flash.
@@ -707,6 +711,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-17 | Windows `amd64` (`dice-roller`) | T2 + stdlib byte-compile measurement | Windows 11, Python 3.13.14 (bundled) | **Roadmap item 9 landed and measured on the host that had never measured it.** `package -p windows` on a real bundle: the staged stdlib ships 633 `.py` **and** 633 `.pyc` (sources deliberately kept — tracebacks, `inspect`, `linecache`), while the payload stays `.pyc`-only (0 `.py`, 1185 `.pyc`), so the strip setting still applies to exactly what it applied to before. A/B on that same bundle, bundled interpreter, `PYTHONDONTWRITEBYTECODE=1`, min of 5: `import kivy` **66 ms compiled vs 276 ms after deleting the stdlib `__pycache__`** (wall 100 ms vs 317 ms) — 4.2×, ~210 ms per launch, matching the 5× the macOS/Linux measurements predicted. §5.10 closed. **Not re-measured on macOS or Linux**: same code path, but neither host has run it. |
 | 2026-09-17 | Linux `x86_64` (`dice-roller`) | stdlib byte-compile measurement | **WSL2** (Ubuntu 26.04, Python 3.14.4 host / 3.13.14 bundled) | Follow-up in [`build-package-output-linux-prompt.md`](build-package-output-linux-prompt.md). `package -p linux -f folder`: stdlib ships **633 `.py` and 633 `.pyc`** in 47 `__pycache__` dirs — the 2026-09-15 incidental subset (41 files / 6 dirs) is gone, replaced by the complete compile; payload still 0 `.py`. A/B on that AppDir, bundled interpreter, `PYTHONDONTWRITEBYTECODE=1`, min of 5: `import kivy` **34 ms compiled vs 214 ms after deleting the stdlib `__pycache__`** (wall 40 ms vs 260 ms) — 6.3×, ~180 ms per launch. Writes stayed suppressed (0 `.pyc` after the source-only runs). The `.AppImage` carries the same 633/633 pair (extracted and counted; tree discarded). AppDir restored afterwards. macOS remains the unmeasured desktop host as of this row — see the next one. |
 | 2026-09-17 | macOS `arm64` (`dice-roller`) | stdlib byte-compile measurement + signing interaction | macOS 26.6.2, Xcode 26.6 | **The macOS-specific half of item 9: does compiling the stdlib before `codesign` survive a real launch?** Yes. `package -p macos` (real Developer ID, notarized, stapled): stdlib ships 633 `.py` **and** 633 `.pyc`, app payload stays `.pyc`-only (0 `.py`). `codesign --verify --deep --strict` passes before launch, and — the question no other host can ask — still passes **after** running `Contents/MacOS/*` directly to "Start application main loop", with the `.pyc` count unchanged (969 → 969): `PYTHONDONTWRITEBYTECODE` in the launcher (2026-09-14 fix) holds under a pre-compiled stdlib exactly as it did under a source-only one. Timing, bundled interpreter, min of 5: `import kivy` **13.4 ms compiled vs 85.8 ms source-only** — **6.4×, ~72 ms per launch**, same shape as Windows (4.2×, ~210 ms) and Linux (6.3×, ~180 ms), larger ratio only because this Mac's absolute numbers are smaller (Apple M5 Pro). Deleting the stdlib `__pycache__` to get the source-only number did, as expected, break the signature (`a sealed resource is missing or invalid`); the example was re-packaged (re-signed, re-notarized, re-stapled) afterward, `git status` clean. All three desktop hosts now measured. §5.10 fully closed. |
+| 2026-09-17 | Linux `aarch64` (`dice-roller`) | T2 + T3 (cross, local) | **WSL2** (Ubuntu 26.04, Python 3.14.4 host / 3.13.14 on PATH) | **First aarch64 AppImage in this repo.** `archs = ["aarch64"]` (restored after; lock not committed). `lock` wrote PBS `cpython-3.13.14+20260805-aarch64-unknown-linux-gnu-install_only.tar.gz` and `Kivy-2.3.1` `manylinux_2_17_aarch64.manylinux2014_aarch64` (not a bare `linux_aarch64`). `package --json`: `dist/linux/dice-roller-0.1.0-aarch64.AppImage`, `ok: true`, `diagnostics: []`. Byte-compile used host `python3.13`, not the staged aarch64 interpreter — **this is the first Linux `find_interpreter()` path.** Doctor WARN `Native vs cross`. T3 `--linux-appimage --linux-arch aarch64 --linux-stripped` 3 passed after the driver learned to `unsquashfs` a foreign type2 ELF and to take `.pyc` magic from host CPython 3.13. Planting `libc.so.6` as `usr/lib/_host_leak.so` produced exactly one problem (`x86_64 … but aarch64 requires aarch64`); reverted. Payload 0 `.py` / 336 `.pyc`. Full detail: [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md). |
+| 2026-09-17 | Linux `aarch64` (Pi) | T4/T5 | Pi on LAN | **Not run.** `raspberrypi` is `10.168.168.202`, ICMP replies, TCP/22 `Connection refused` (`pi@` and `elliot@`). No scp, no launch, OS image unread. Item 4's "done when" still waits on this row. |
 
 ### Known-unverified, stated plainly
 
@@ -736,10 +742,10 @@ Linux say whether it was WSL2 or bare metal (§4).
 - Notarization: **verified** — five `notarytool Accepted` submissions since
   2026-07-07 (§7). Previously listed as unverified in §6; that was stale.
 - `appimagetool`: run once, locally, 2026-09-13 (§7). Never in CI.
-- Linux `strip_source`: proven end to end **once, locally**, and only after
-  the `AppRun` fix in the same session. The *native* byte-compile path is
-  what ran; `find_interpreter()` has still never been exercised by a Linux
-  build.
+- Linux `strip_source`: proven end to end **once natively**, 2026-09-13, and
+  only after the `AppRun` fix in the same session. The *cross* byte-compile
+  path (`find_interpreter()` → host `python3.13`) first ran on 2026-09-17
+  producing the aarch64 `dice-roller` AppImage — see §7 that date.
 - Whether a stripped macOS `.app` can actually **launch**: **resolved,
   2026-09-14 — it could not, and now it can.** The doubt raised from the Linux
   host (`macos-launcher-strip-source-prompt.md`) was correct: `macos/launcher.py`

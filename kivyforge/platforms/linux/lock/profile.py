@@ -1,6 +1,6 @@
 """Linux lock profile — the platform-specific inputs to the wheel+runtime core.
 
-Linux variants are CPU architectures (``x86_64`` only this phase). Wheels use
+Linux variants are CPU architectures (``x86_64``, and opt-in ``aarch64``). Wheels use
 manylinux platform tags; because pip does not expand the manylinux hierarchy
 from a single explicit ``--platform`` (linux-spec spike), each variant requests
 the full ladder of compatible tags at or below the glibc floor in one pip
@@ -21,7 +21,7 @@ from kivyforge.lock.wheelruntime.runtime import RuntimeProvider
 
 from .runtime import DEFAULT_GLIBC_FLOOR, PythonBuildStandaloneProvider
 
-VALID_WHEEL_ARCHS = frozenset({"x86_64"})
+VALID_WHEEL_ARCHS = frozenset({"x86_64", "aarch64"})
 
 # Legacy manylinux aliases and the perennial (PEP 600) glibc minor they map to.
 _LEGACY_ALIASES = {5: "manylinux1", 12: "manylinux2010", 17: "manylinux2014"}

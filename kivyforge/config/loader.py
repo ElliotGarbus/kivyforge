@@ -871,7 +871,7 @@ def _parse_linux_archs(linux: dict, finder: _LineFinder) -> tuple[str, ...]:
             "[tool.kivy.linux].archs must not be empty",
             key_path="tool.kivy.linux.archs",
             line=line,
-            hint='only "x86_64" is supported this phase.',
+            hint='supported: "x86_64", "aarch64".',
         )
     unknown = [a for a in raw if a not in VALID_LINUX_ARCHS]
     if unknown:
@@ -880,7 +880,7 @@ def _parse_linux_archs(linux: dict, finder: _LineFinder) -> tuple[str, ...]:
             f"unsupported Linux arch(es) {unknown} in [tool.kivy.linux].archs",
             key_path="tool.kivy.linux.archs",
             line=line,
-            hint=f"only {valid} is supported this phase (aarch64 is planned).",
+            hint=f"supported: {valid}.",
         )
     seen: set[str] = set()
     ordered: list[str] = []

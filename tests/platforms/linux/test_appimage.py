@@ -22,11 +22,21 @@ class TestPins:
         assert url.endswith("runtime-x86_64")
         assert len(sha) == 64
 
+    def test_appimagetool_asset_aarch64(self):
+        url, sha = appimage.appimagetool_asset("aarch64")
+        assert url.endswith("appimagetool-aarch64.AppImage")
+        assert sha == "f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158"
+
+    def test_runtime_asset_aarch64(self):
+        url, sha = appimage.type2_runtime_asset("aarch64")
+        assert url.endswith("runtime-aarch64")
+        assert sha == "00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444"
+
     def test_unknown_arch(self):
         with pytest.raises(AppDirError, match="no pinned appimagetool"):
-            appimage.appimagetool_asset("aarch64")
+            appimage.appimagetool_asset("riscv64")
         with pytest.raises(AppDirError, match="no pinned type2 runtime"):
-            appimage.type2_runtime_asset("aarch64")
+            appimage.type2_runtime_asset("riscv64")
 
 
 @pytest.fixture
@@ -70,6 +80,37 @@ class TestBuildAppimage:
         assert recorded["env"]["APPIMAGE_EXTRACT_AND_RUN"] == "1"
         assert "--runtime-file" in recorded["cmd"]
         assert str(appdir) in recorded["cmd"]
+
+    def test_cross_build_uses_host_appimagetool(
+        self, tmp_path, monkeypatch, fake_tools
+    ):
+        """aarch64 AppImages still exec the host-arch appimagetool."""
+        fetches: list[tuple[str, str]] = []
+        orig = appimage.fetch_artifact
+
+        def spy_fetch(*, name, filename, **k):
+            fetches.append((name, filename))
+            return orig(name=name, filename=filename, **k)
+
+        monkeypatch.setattr(appimage, "fetch_artifact", spy_fetch)
+
+        def fake_run(cmd, *, capture_output, text, env, stdin=None):
+            Path(cmd[-1]).write_text("APPIMAGE")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(appimage.subprocess, "run", fake_run)
+        monkeypatch.setattr(appimage.platform, "machine", lambda: "x86_64")
+        appdir = tmp_path / "App.AppDir"
+        appdir.mkdir()
+        output = tmp_path / "dist" / "app-aarch64.AppImage"
+        cache = ArtifactCache(root=tmp_path / "cache" / "artifacts")
+        appimage.build_appimage(
+            appdir, output, "aarch64", project_root=tmp_path, cache=cache
+        )
+        names = dict(fetches)
+        assert "x86_64" in names["appimagetool"]
+        assert "aarch64" in names["type2 runtime"]
+        assert "aarch64" not in names["appimagetool"]
 
     def test_failure_raises(self, tmp_path, monkeypatch, fake_tools):
         def fake_run(cmd, **k):

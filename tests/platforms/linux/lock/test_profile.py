@@ -56,6 +56,8 @@ class TestWheelArch:
             ("manylinux_2_17_x86_64", "x86_64"),
             ("manylinux_2_28_x86_64", "x86_64"),
             ("linux_x86_64", "x86_64"),
+            ("manylinux_2_17_aarch64", "aarch64"),
+            ("linux_aarch64", "aarch64"),
             ("musllinux_1_1_x86_64", None),
             ("macosx_11_0_x86_64", None),
             ("any", None),

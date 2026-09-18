@@ -30,10 +30,10 @@ SUPPORTED_LINUX_SCHEMA_VERSION = 1
 VALID_MACOS_ARCHS = frozenset({"arm64"})
 DEFAULT_MACOS_ARCHS = ("arm64",)
 
-# Linux build architectures. Only x86_64 is allowed this phase; the field stays
-# list-shaped so aarch64 is purely additive later (linux-spec). Unlike macOS
-# there is no fat binary — each arch would be a separate AppImage.
-VALID_LINUX_ARCHS = frozenset({"x86_64"})
+# Linux build architectures. Unlike macOS there is no fat binary — each arch
+# is a separate AppImage. aarch64 is opt-in via [tool.kivy.linux].archs;
+# DEFAULT stays x86_64 (cross-build from an x86_64 Linux host onto a Pi).
+VALID_LINUX_ARCHS = frozenset({"x86_64", "aarch64"})
 DEFAULT_LINUX_ARCHS = ("x86_64",)
 
 # The Windows overlay schema major version this build understands (windows-spec).

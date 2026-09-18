@@ -28,7 +28,6 @@ whether the folder *can* be distributed.
 
 from __future__ import annotations
 
-import platform
 import shutil
 from pathlib import Path
 
@@ -43,6 +42,7 @@ from kivyforge.bundle.pycompile import (
     select_compiler,
 )
 from kivyforge.config.model import Config
+from kivyforge.host import host_runs_natively
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import reclassify
 
@@ -111,7 +111,7 @@ def _resolve_byte_compile(
     settings = config.windows_required.build_settings
     if not _setting_applies(settings.byte_compile, release=release):
         return None, False
-    native = platform.machine().lower() == target_arch
+    native = host_runs_natively(target_arch)
     compiler = select_compiler(
         staged_interpreter=staged_interpreter,
         native=native,

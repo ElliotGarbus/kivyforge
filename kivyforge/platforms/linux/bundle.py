@@ -13,7 +13,6 @@ launcher + ``.desktop`` entry. Produces the layout documented in linux-spec:
 
 from __future__ import annotations
 
-import platform
 import shutil
 import tempfile
 from pathlib import Path
@@ -29,6 +28,7 @@ from kivyforge.bundle.pycompile import (
     select_compiler,
 )
 from kivyforge.config.model import Config
+from kivyforge.host import host_runs_natively
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import reclassify
 
@@ -48,8 +48,8 @@ def resolve_assembly_arch(locked: tuple[str, ...], arch: str | None) -> str:
     """The single arch to assemble for an ``--arch`` request.
 
     Linux ships one arch per AppImage, so this always resolves to exactly one.
-    ``None`` -> the lock's arch (there is exactly one this phase). An explicit
-    arch not covered by the lock is an error.
+    ``None`` -> the lock's first arch. An explicit arch not covered by the lock
+    is an error.
     """
     if not locked:
         raise AppDirError("the lock covers no architectures; re-run `kivyforge lock`.")
@@ -92,7 +92,7 @@ def _resolve_byte_compile(
     settings = config.linux_required.build_settings
     if not _setting_applies(settings.byte_compile, release=release):
         return None, False
-    native = platform.machine().lower() == target_arch
+    native = host_runs_natively(target_arch)
     compiler = select_compiler(
         staged_interpreter=staged_interpreter,
         native=native,
