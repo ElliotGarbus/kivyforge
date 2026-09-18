@@ -37,8 +37,7 @@ unvalidated, and needs a Mac.
 - **Item 5's Android T3 slice is done (2026-09-13)**, pulled ahead of item 3
   because `android_gradle` was already building the stripped release APK that
   item 1's bug would have corrupted and never inspecting it. Item 1's failure mode
-  is now a CI gate. **Item 3 is next**; item 5's remaining first move is a Linux
-  build job, once the committed-lock blocker is cleared.
+  is now a CI gate.
 - **iOS is validated on the simulator and nowhere else** — corrected 2026-09-14,
   because both this file and the matrix had drifted into implying nothing iOS had
   ever run. `build`/`run -p ios --simulator` are green and all six iOS examples
@@ -49,6 +48,23 @@ unvalidated, and needs a Mac.
   then the same AppImage launched on a Raspberry Pi 5 Model B Rev 1.1
   (Debian 13 / labwc, Broadcom V3D). HDMI: Dice Roller rendered. A Pi 4
   was not present. [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
+- **Item 5's T3 check-*functions* slice is now done for all four platforms**
+  (Android 2026-09-13, Linux 2026-09-13, macOS 2026-09-14, **Windows
+  2026-09-17**). Every platform's checker lives in `tests/artifact_checks.py`,
+  hermetic-tested against synthetic trees, and wired to a real build behind a
+  `--<platform>-*` pytest option — see [`test-matrix.md`](test-matrix.md) §5.1
+  for the per-platform detail and the 2026-09-17 results-log row. The Windows
+  pass found a genuine false positive worth knowing before touching the
+  Linux/macOS sweeps the same way: pip's vendored `distlib` ships six
+  prebuilt multi-arch launcher *templates* in every install, which a naive
+  PE-arch sweep flags as a leaked cross-arch binary; fixed by excluding the
+  known filenames, with a regression test pinning it.
+  **None of the four run in CI yet** — that, plus the two still-open T3
+  sub-checks (manifest/`Info.plist` *content* vs. config, and
+  `apksigner`/`signtool` signature verification), is what is actually next on
+  item 5. See the item for the fuller queue (a Linux `x86_64` CI job, the
+  desktop lock-for-CI decision it is gated on, and the `kivyforge run`
+  debug-only fix).
 
 ## Execution order
 
@@ -58,7 +74,7 @@ unvalidated, and needs a Mac.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *Android T3 slice done 2026-09-13* | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T3 check functions done for all four platforms (Android/Linux 2026-09-13, macOS 2026-09-14, Windows 2026-09-17); none in CI yet* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -494,7 +510,9 @@ same failure as an unlogged test. `requires_device` also marks no test yet.
    which is the argument for item 5 leading with T3 rather than with a device.
    *Since closed for Android, later the same day; see item 5. Linux and macOS
    remain open, though only their pytest drivers are blocked — the check
-   functions are not.*
+   functions are not.* **Fully closed 2026-09-17:** Linux, macOS, and Windows
+   all now have both check functions and a real-artifact driver; see item 5
+   and [`test-matrix.md`](test-matrix.md) §5.1.
 4. **Item 5 has a lock question to settle first — but most of it is already
    settled elsewhere.** No `examples/desktop/*` project commits a lock: all four
    gitignore `pylock.*.toml`, and the only committed locks in the repo are
@@ -1281,6 +1299,49 @@ are in [`test-matrix.md`](test-matrix.md) §5.1.
   rejection) is covered by unit tests and by one hand-run on 2026-09-13, and by
   nothing that repeats. A `windows-latest` job building one ABI and running the
   existing assertions is wiring plus Gradle time.
+
+**T3 check-*functions* are now done for all four platforms — Windows landed
+2026-09-17, closing the last box.** `windows_onedir_problems` in
+`tests/artifact_checks.py` mirrors `linux_appdir_problems`'s shape (required
+entries, payload stripping scoped to `app/` + `python/Lib/site-packages`,
+a whole-tree PE-arch sweep via a new pure-Python `platforms/windows/petools.py`
+reader, `.pyc` magic), hermetic-tested, and wired to a real bundle via
+`tests/platforms/windows/test_onedir_artifact.py --windows-onedir`. Ran clean
+against a real `dice-roller` release build — but not before the *first* run
+found a genuine false positive worth remembering: pip's vendored `distlib`
+ships six prebuilt multi-arch launcher *templates* (`t32.exe`, `t64-arm.exe`,
+etc.) in **every** pip install, regardless of host or target arch, which a
+naive PE-arch sweep reads as leaked cross-arch binaries. Fixed by excluding
+the known filenames, with a hermetic regression test pinning the exclusion.
+Worth checking for the same shape before tightening Linux's ELF sweep or
+macOS's Mach-O sweep any further — a vendored multi-arch resource is not
+unique to Windows. Full detail: [`test-matrix.md`](test-matrix.md) §5.1 and
+its 2026-09-17 results-log row.
+
+**What is actually next on this item, in order:**
+
+1. **Two T3 sub-checks are still open**, both listed as unchecked in
+   [`test-matrix.md`](test-matrix.md) §5.1: merged `AndroidManifest.xml`/
+   `Info.plist` *content* matching what config declared (structural checks
+   exist; content matching does not), and signature verification
+   (`apksigner verify` / `signtool verify`).
+2. **None of the four T3 checkers run in CI.** Every one of them today is a
+   local, by-hand `pytest --<platform>-* ...` run against a build nobody
+   automated. Wiring even one of them into an existing job is the highest-value
+   remaining move in this item, per its own "T3 first" ordering.
+3. **A plain Linux `x86_64` CI build job** (`ubuntu-latest`, no signing
+   identity, no Mac needed) is the cheapest *new* job to add — but settle the
+   desktop lock-for-CI policy first (next bullet), since it decides that job's
+   shape.
+4. **Settle the desktop lock-for-CI policy.** No `examples/desktop/*` project
+   commits a lock; per
+   [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md)
+   §"Example-repo lock policy" the choice is a Linux gate example (item 4
+   supplies a real Pi 5 gate as of 2026-09-17, so this option is now open) or
+   lock-at-CI-time. Undecided.
+5. **Fix `kivyforge run`'s debug-only path** (`android_run()` hardcodes
+   `debug=True`), so `strip_source`/`byte_compile` become testable through the
+   command developers actually use, not just `build`/`package`.
 
 See [`test-matrix.md`](test-matrix.md) §5 for the full gap list in priority
 order; it is the work queue for this item.
