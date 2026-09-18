@@ -216,4 +216,5 @@ would: SDL2 on labwc, real Broadcom V3D (not llvmpipe), main loop reached.
 Wayland session; the SDL2 window still came up. glibc 2.41 clears the lock's
 2.17 floor.
 
-No screenshot. Evidence is the Kivy log, same bar as the WSL2 x86_64 T4 row.
+No screenshot. Kivy log plus a human looking at the HDMI: the Dice Roller
+window rendered correctly on the Pi 5 display.
