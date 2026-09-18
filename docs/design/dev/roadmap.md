@@ -47,7 +47,7 @@ unvalidated, and needs a Mac.
   no amount of Windows-side work changes that: it needs the Mac.
 - **Item 4 is done (2026-09-17), on a Pi 5 only.** Cross-build T2+T3 on WSL2,
   then the same AppImage launched on a Raspberry Pi 5 Model B Rev 1.1
-  (Debian 13 / labwc, Broadcom V3D, "Start application main loop"). A Pi 4
+  (Debian 13 / labwc, Broadcom V3D). HDMI: Dice Roller rendered. A Pi 4
   was not present. [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
 
 ## Execution order
@@ -78,15 +78,17 @@ how the item-1 gap survived from July to September. It earned its place twice
 over: writing the coverage down turned up a second silent-skip hole (the macOS
 Mach-O tests) and gave item 5 an ordered gap list instead of a blank page.
 
-Items 3, 4 and 5 are ordered by *how much rework the other order costs*.
+Items 3, 4 and 5 were ordered by *how much rework the other order costs*.
 `rich` and `--json` are one item, not two, because both rewrite the same ~119
 `click.echo` call sites — done separately, every output site is edited twice.
-And that layer lands before aarch64 so the new Linux code is written against
-the final console API, and before E2E automation because asserting on a JSON
-envelope is far more durable than screen-scraping progress text.
+That layer was meant to land before aarch64 so the new Linux code was written
+against the final console API, and before E2E automation because asserting on
+a JSON envelope is far more durable than screen-scraping progress text.
+**Item 4 landed 2026-09-17** anyway, with item 3 still open; the new Linux
+code used the report seam that had already shipped. Item 3 remains next.
 
-Item 6 wants a settled CLI surface, which item 3 changes (it adds `--json`
-everywhere) and item 4 changes (it adds an arch). Item 7 is event-driven
+Item 6 wants a settled CLI surface, which item 3 still changes (it adds `--json`
+everywhere); item 4's arch is in as of 2026-09-17. Item 7 is event-driven
 rather than order-driven — nothing in it should start before the repo actually
 moves — but it wants docs to link to, so it sits after item 6.
 
@@ -512,7 +514,9 @@ same failure as an unlogged test. `requires_device` also marks no test yet.
    would contravene stated policy. Lock-at-CI-time looks better for desktop,
    since PyPI wheels are immutable and a committed desktop lock therefore buys
    little evidence for the churn it costs; a committed Linux lock earns its place
-   once item 4 supplies a real Pi gate. `ubuntu-latest` is still the cheapest CI
+   once item 4 supplies a real Pi gate. **Item 4 did, 2026-09-17, on a Pi 5** —
+   that option is now open for item 5; the four demo apps still gitignore
+   their locks. `ubuntu-latest` is still the cheapest CI
    job; a Windows build is the cheapest thing this dev box can prove without
    another OS.
 
@@ -521,7 +525,12 @@ table, written from memory rather than from the code, counted five platforms.
 There are **seven target cells** — Android and iOS each carry two arches, and
 they are genuinely different builds. It also implied win-arm64 was reachable:
 the host gate is arch-agnostic by design, but `VALID_WINDOWS_ARCHS` is
-`{amd64}`, so config rejects it today. Same for Linux `aarch64`, which is item 4.
+`{amd64}`, so config rejects it today. Same for Linux `aarch64`, which was
+item 4.
+
+**Updated 2026-09-17:** item 4 landed, so the matrix is **eight** target cells
+(Linux `x86_64` and Linux `aarch64`). win-arm64 is still the remaining
+arch-set gap.
 
 ---
 
@@ -1079,7 +1088,23 @@ envelope for each verb.
 
 ---
 
-### 4. Linux aarch64 — Raspberry Pi as a *target*, not a host
+### 4. Linux aarch64 — Raspberry Pi as a *target*, not a host — **done 2026-09-17**
+
+**Landed.** `VALID_LINUX_ARCHS` accepts `aarch64` (opt-in; default stays
+`x86_64`). Cross-build on Linux x86_64 uses the host-arch `appimagetool` and
+embeds the aarch64 type2 runtime with `--runtime-file`. `host_runs_natively`
+in `kivyforge/host.py` is the one native-vs-cross definition; linux/macos/
+windows `bundle.py` and doctor route through it. Linux doctor WARNs a
+cross-build. T3 extracts a foreign-arch AppImage with `unsquashfs` rather
+than exec'ing it.
+
+**Validated on a Pi 5, not a Pi 4.** Same AppImage, Raspberry Pi 5 Model B
+Rev 1.1, Debian 13.7 (Raspberry Pi OS 2026-06-18), labwc/Wayland, glibc 2.41,
+Broadcom V3D 7.1.10.2. FUSE self-mount, SDL2 window, Kivy main loop, and a
+human on the HDMI: Dice Roller rendered. Full log:
+[`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
+
+The original statement of the item:
 
 **Groundwork that already exists** — this is more additive than it looks:
 
@@ -1165,7 +1190,8 @@ hardware.
 **Raspberry Pi 5 Model B Rev 1.1** (Debian 13.7 trixie, labwc/Wayland,
 glibc 2.41, Broadcom V3D 7.1.10.2). The AppImage self-mounted via FUSE,
 SDL2 created a window, Kivy reached "Start application main loop", and
-`timeout` killed it after 25 s (exit 124). A Pi 4 was not tested. See
+`timeout` killed it after 25 s (exit 124). HDMI: Dice Roller rendered. A
+Pi 4 was not tested. See
 [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
 
 **Deferred, unchanged:** win-arm64. Also deferred: aarch64 as a build host.
@@ -1194,7 +1220,8 @@ item 3's JSON output to assert against.
   is the difference between a suite that survives a wording change and one
   that does not.
 - **Extend CI per matrix cell.** Add a Linux job that builds an aarch64
-  AppImage (cross, T2+T3) once item 4 lands. Add an Android emulator job for
+  AppImage (cross, T2+T3) — item 4 has landed, this job is unblocked, it is
+  still not in CI. Add an Android emulator job for
   T4 — CI deliberately skips the emulator today, and `run --smoke` already
   exists to be driven. Add an iOS simulator job on the macOS runner when the
   wheels it waits on are published.
@@ -1223,19 +1250,22 @@ are in [`test-matrix.md`](test-matrix.md) §5.1.
 
 **Sharpened by item 2's inventory (2026-09-13)** — two changes to the above:
 
-- **A plain Linux `x86_64` build job comes before the aarch64 one, and does not
-  wait on item 4.** Linux is the emptiest column in the matrix (unit tests only;
-  `appimagetool` has never executed outside a mock) and the cheapest to fill:
-  `ubuntu-latest`, no signing identity, no Mac.
+- **A plain Linux `x86_64` build job comes before the aarch64 one.** Item 4
+  landed 2026-09-17 with *local* T2–T5 (Pi 5); neither Linux arch has a CI
+  job yet. `ubuntu-latest` is still the cheapest to fill: no signing
+  identity, no Mac. The 2026-09-13 claim that `appimagetool` had never
+  executed outside a mock is stale — it has, locally, on this WSL2 host.
 - **Settle how the desktop job gets its lock first.** No `examples/desktop/*`
   project commits a lock — all four gitignore `pylock.*.toml` — so any desktop
   build job, **Windows included**, needs an answer. But
   [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md)
   §"Example-repo lock policy" already supplies most of it: example locks are
   gitignored on purpose, exempting only on-device gate examples whose locks are
-  evidence. So the choice is a Linux gate example or lock-at-CI-time, and the
-  latter looks right for desktop until item 4 gives Linux a Pi gate. This decides
-  the shape of the "small fixture-app set" above, so settle it first.
+  evidence. So the choice is a Linux gate example or lock-at-CI-time. Item 4
+  now supplies a real Pi 5 gate, which is what that policy said would make a
+  committed Linux lock earn its place; the four demo apps still should not
+  grow one. This decides the shape of the "small fixture-app set" above, so
+  settle it first.
 
 - **`kivyforge run` needs a release path before anything can test one.**
   `android_run()` calls `android_build(..., debug=True)` unconditionally and then
