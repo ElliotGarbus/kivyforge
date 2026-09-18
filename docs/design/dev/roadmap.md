@@ -62,7 +62,7 @@ unvalidated, and needs a Mac.
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
-| ~~9~~ | ~~Byte-compile the embedded stdlib at build time (desktop)~~ | S | **done 2026-09-17**; measured on Windows and Linux, unmeasured on macOS |
+| ~~9~~ | ~~Byte-compile the embedded stdlib at build time (desktop)~~ | S | **done 2026-09-17**; measured on Windows, Linux, and macOS |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -1474,15 +1474,26 @@ with `PYTHONDONTWRITEBYTECODE=1`, which was the second half of
 ~210 ms off every launch. **Measured on Linux** the same day (§7), on a real
 `package -f folder` AppDir and the matching `.AppImage`: **34 ms compiled
 against 214 ms source-only** — 6.3×, ~180 ms, and the AppImage carries the
-same 633/633 stdlib pair. Both launcher comments were revisited, as this item
-asked.
+same 633/633 stdlib pair. **Measured on macOS** the same day (§7), on a real
+Developer-ID-signed, notarized `dice-roller.app`: **13.4 ms compiled against
+85.8 ms source-only** — 6.4×, ~72 ms off every launch. Both launcher comments
+were revisited, as this item asked.
 
-**Two things it deliberately does not do.** It follows the existing
+macOS also answered the one question no other host could: whether compiling
+*before* `codesign` survives a real launch. It does — `codesign --verify
+--deep --strict` passes both before and after running the bundle directly to
+"Start application main loop", and the `.pyc` count is unchanged (969 → 969),
+so the existing `PYTHONDONTWRITEBYTECODE` launcher fix (§5.5) holds under a
+pre-compiled stdlib exactly as it did under a source-only one. All three
+desktop hosts are now measured, independently, the same day: 4.2× (Windows),
+6.3× (Linux), 6.4× (macOS) — a real, host-specific number in every case, not
+one host's result assumed for a shared code path.
+
+**One thing it deliberately does not do.** It follows the existing
 `byte_compile` tri-state rather than adding a knob, so it applies where that
 does — `package` by default, every build under `byte_compile = true`, never
 under `false`. A dev rebuild would otherwise pay the compile on every iteration
-for an artifact nobody ships. And **macOS is not re-measured**: the code path
-is shared, but a shared code path is not coverage.
+for an artifact nobody ships.
 
 The original statement of the item:
 
