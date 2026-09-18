@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Desktop apps start faster: the embedded stdlib ships compiled
+
+- **The staged Python stdlib is byte-compiled at build time** on Windows, Linux
+  and macOS. Measured on a packaged `dice-roller`: `import kivy` costs **66 ms
+  instead of 276 ms** — about 210 ms off every launch. Bundles previously
+  shipped the stdlib as source and re-parsed it on each start, which neither the
+  `.AppImage` (read-only) nor the signed `.app` (writing to itself invalidated
+  its signature) could ever cache away.
+- **Stdlib sources are kept**, unlike the app payload: they are what tracebacks,
+  `inspect` and `linecache` read. `strip_source` still applies only to your app
+  and its site-packages.
+- Follows the existing `[tool.kivy.<platform>.build_settings].byte_compile`
+  setting, so it applies to `package` by default and to every build when that is
+  `true`. No new option.
+- The byte-compile subprocess no longer seeds the artifact with an arbitrary
+  handful of its own import caches, so that subtree is reproducible.
+
 ### Spawned tools can no longer wait for input
 
 - **Every external tool kivyforge runs is given a closed stdin.** A child that

@@ -32,6 +32,11 @@ scoped to ``app``/``site-packages`` only) and invalidated the bundle's own
 code signature. A macOS ``.app`` is signed once, at build time, and never
 touched again; a running app writing into itself breaks that invariant on the
 very first launch, which nothing had ever exercised until now.
+
+Since roadmap item 9 the build byte-compiles the staged stdlib *before*
+signing, so the bundle ships with its ``__pycache__`` sealed in and a launch
+has nothing it wants to write. This variable is now the guarantee rather than
+the trade-off it used to be: it no longer costs a slow start.
 """
 
 from __future__ import annotations

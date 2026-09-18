@@ -11,8 +11,10 @@ from kivyforge.bundle.pycompile import (
     PycompileError,
     _reports_version,
     byte_compile,
+    compile_stdlib,
     find_interpreter,
     select_compiler,
+    stdlib_dir,
     strip_sources,
     target_minor,
 )
@@ -92,6 +94,59 @@ class TestByteCompile:
         byte_compile([tree], stripdir=tmp_path)
         pyc = next((tree / "__pycache__").glob("*.pyc"))
         assert str(tmp_path) not in pyc.read_bytes().decode("latin-1")
+
+
+class TestStdlibDir:
+    """Located by looking for ``os.py``, so a runtime bump cannot no-op this."""
+
+    def test_windows_layout(self, tmp_path):
+        _write(tmp_path / "Lib" / "os.py")
+        assert stdlib_dir(tmp_path) == tmp_path / "Lib"
+
+    def test_posix_layout(self, tmp_path):
+        _write(tmp_path / "lib" / "python3.13" / "os.py")
+        assert stdlib_dir(tmp_path) == tmp_path / "lib" / "python3.13"
+
+    def test_a_lib_dir_without_a_stdlib_is_not_one(self, tmp_path):
+        # The AppDir's usr/lib holds site-packages, not a stdlib.
+        _write(tmp_path / "lib" / "python3.13" / "somewheel" / "__init__.py")
+        assert stdlib_dir(tmp_path) is None
+
+    def test_absent_runtime(self, tmp_path):
+        assert stdlib_dir(tmp_path) is None
+
+
+class TestCompileStdlib:
+    def _home(self, tmp_path):
+        home = tmp_path / "python"
+        _write(home / "Lib" / "os.py")
+        _write(home / "Lib" / "json" / "decoder.py")
+        _write(home / "Lib" / "site-packages" / "kivy" / "__init__.py")
+        return home
+
+    def test_compiles_the_stdlib_and_keeps_the_sources(self, tmp_path):
+        home = self._home(tmp_path)
+        compile_stdlib(home, stripdir=tmp_path)
+        # Sources stay: they are what tracebacks, inspect and linecache read.
+        assert (home / "Lib" / "os.py").is_file()
+        assert (home / "Lib" / "__pycache__").glob("os.*.pyc")
+        assert list((home / "Lib" / "json" / "__pycache__").glob("decoder.*.pyc"))
+
+    def test_site_packages_is_left_to_the_payload_compile(self, tmp_path):
+        home = self._home(tmp_path)
+        compile_stdlib(home, stripdir=tmp_path)
+        # The caller compiles it under its own strip setting; doing it here too
+        # would compile it twice and, worse, without that setting.
+        assert not list((home / "Lib" / "site-packages").rglob("*.pyc"))
+
+    def test_absent_stdlib_is_a_no_op(self, tmp_path):
+        compile_stdlib(tmp_path / "python", stripdir=tmp_path)  # no raise
+
+    def test_announces_itself(self, tmp_path):
+        home = self._home(tmp_path)
+        said: list[str] = []
+        compile_stdlib(home, stripdir=tmp_path, echo=said.append)
+        assert said == ["[stage] byte-compiling the embedded stdlib"]
 
 
 class TestTargetMinor:

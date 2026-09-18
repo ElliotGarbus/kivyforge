@@ -290,6 +290,22 @@ class TestByteCompileResolution:
         assert root / "build" / "windows" / "My App" / "app" in trees
         assert kw["strip_source"] is True
 
+    def test_the_staged_stdlib_is_compiled_too(self, project, fake_stages, monkeypatch):
+        """The ~170 ms every launch pays for parsing the stdlib (roadmap item 9)."""
+        root, config = project
+        monkeypatch.setattr(bundle, "select_compiler", lambda **kw: ())
+        compiled = []
+        monkeypatch.setattr(
+            bundle, "compile_stdlib", lambda home, **kw: compiled.append((home, kw))
+        )
+        monkeypatch.setattr(bundle, "byte_compile", lambda trees, **kw: None)
+        bundle.build_onedir(
+            config, _lock(), root, release=True, echo=lambda *a, **k: None
+        )
+        (home, kw) = compiled[0]
+        assert home == root / "build" / "windows" / "My App" / "python"
+        assert kw["compiler"] == ()
+
 
 class TestResolveAssemblyArch:
     def test_default_first(self):

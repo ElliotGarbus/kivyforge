@@ -225,6 +225,36 @@ class TestByteCompileResolution:
         assert kw["strip_source"] is True
         assert faked["order"].index("byte_compile") < faked["order"].index("sign")
 
+    def test_the_staged_stdlib_is_compiled_before_signing(
+        self, tmp_path, faked, monkeypatch
+    ):
+        """Writing into the bundle after codesign invalidates what it sealed."""
+        root = _project(tmp_path)
+        monkeypatch.setattr(bundle, "select_compiler", lambda **kw: ())
+        monkeypatch.setattr(bundle, "byte_compile", lambda trees, **kw: None)
+        compiled = []
+
+        def fake_compile_stdlib(home, **kw):
+            faked["order"].append("compile_stdlib")
+            compiled.append(home)
+
+        def fake_sign(app):
+            faked["order"].append("sign")
+            return 1
+
+        monkeypatch.setattr(bundle, "compile_stdlib", fake_compile_stdlib)
+        monkeypatch.setattr(bundle, "sign_bundle_adhoc", fake_sign)
+        bundle.build_app_bundle(
+            _config(),
+            _lock(),
+            root,
+            staging_dir=tmp_path / "out",
+            release=True,
+            echo=lambda *a: None,
+        )
+        assert [h.parts[-1] for h in compiled] == ["python"]
+        assert faked["order"].index("compile_stdlib") < faked["order"].index("sign")
+
 
 class TestBuildAppBundle:
     def test_assembles_layout_and_plist(self, tmp_path, faked):

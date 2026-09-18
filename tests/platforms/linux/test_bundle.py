@@ -202,6 +202,25 @@ class TestByteCompileResolution:
         assert [t.parts[-2:] for t in trees] == [("usr", "app"), ("usr", "lib")]
         assert kw["strip_source"] is True
 
+    def test_the_staged_stdlib_is_compiled_too(self, tmp_path, faked, monkeypatch):
+        """An AppImage can never cache it at runtime: read-only squashfs."""
+        root = _project(tmp_path)
+        monkeypatch.setattr(bundle, "select_compiler", lambda **kw: ())
+        monkeypatch.setattr(bundle, "byte_compile", lambda trees, **kw: None)
+        compiled = []
+        monkeypatch.setattr(
+            bundle, "compile_stdlib", lambda home, **kw: compiled.append(home)
+        )
+        bundle.build_appdir(
+            _config(),
+            _lock(),
+            root,
+            staging_dir=tmp_path / "out",
+            release=True,
+            echo=lambda *a: None,
+        )
+        assert [h.parts[-2:] for h in compiled] == [("usr", "python")]
+
 
 class TestBuildAppdir:
     def test_assembles_layout(self, tmp_path, faked):

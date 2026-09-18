@@ -558,7 +558,23 @@ wheel. Narrow it to the known FAIL (allow-list that diagnostic, gate on the
 rest) rather than waiving the whole step, and the waiver disappears on its own
 when the wheel is fixed.
 
-### 5.10 Byte-compile the embedded stdlib at build time
+### 5.10 Byte-compile the embedded stdlib at build time — **closed 2026-09-17**
+
+Both pieces landed together, as this section required. The staged stdlib is
+byte-compiled during staging on all three desktop targets (sources kept —
+`site-packages` is left to the payload compile under its own strip setting), and
+the compile subprocess now runs with `PYTHONDONTWRITEBYTECODE=1` so its own
+imports stop seeding the artifact with an arbitrary subset of caches.
+
+**Re-measured on Windows** (§7, 2026-09-17), which is what retires the number
+below rather than leaving it stale: `import kivy` in a real packaged
+`dice-roller` bundle costs **66 ms compiled against 276 ms source-only** — 4.2×,
+~210 ms off every launch, the same shape as the macOS measurement that opened
+this section. **Linux and macOS are not re-measured**: the code path is shared
+and the Windows number confirms it, but neither host has run it, and this file
+does not count a shared code path as coverage.
+
+The original finding, kept because it is why the work exists:
 
 Measured, not suspected (§7, 2026-09-15): shipping the stdlib as pure source
 costs **~170 ms on every launch** — `import kivy` takes 0.21 s against 0.04 s
@@ -589,7 +605,8 @@ Two pieces, both cross-platform, neither belonging to a single host:
    caches are sealed into the code signature today.
 
 Do (1) and (2) together: (1) alone leaves the incidental caches, and (2) alone
-makes every launch permanently slow with nothing to show for it.
+makes every launch permanently slow with nothing to show for it. *(Done
+2026-09-17 — both, in one change, per this paragraph.)*
 
 ---
 
@@ -665,6 +682,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-16 | iOS simulator `arm64` (`hello-kivy`) | build/package output, local | macOS 26.6.2, Xcode 26.6 | **The highest-risk change in the set (iOS `build`/`run` now target `DerivedData` and assert the `.app` exists) works exactly as designed.** With `DerivedData` removed first, `build -p ios --simulator` produced and asserted `hello-kivy-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/hello-kivy.app`; `--json` artifacts are `project` then `app`; `run --no-build` found and launched the same `.app`; `status --json` agrees (`"built": true` at that exact path). No `KF-ARTIFACT-MISSING` anywhere in this run. All four iOS failure-classification cases (§3d table: tool failed, tool missing, lock drift, `--release`/`package` artifact lists) matched spec exactly, using `--export-method development` for the release/package half — no distribution cert on this Mac. Full detail: [`build-package-output-mac-findings.md`](build-package-output-mac-findings.md). |
 | 2026-09-16 | macOS `arm64` (`dice-roller`) | product fix | macOS 26.6.2 | **One real defect** found by the Step 4 "missing tool" repro (`PATH` stripped to the venv only): a missing `sips`/`iconutil` was reported as `KF-ERROR`/exit `1` instead of `KF-TOOLCHAIN-MISSING`/exit `3` — no traceback, but the wrong classification. Cause: `platforms/macos/icns.py` predates the four `build`/`package`-output commits and pre-checks `shutil.which()` instead of catching the real spawn's `OSError` through `spawn_failure()`, the pattern `machotools.py`/`notarize.py`/`launcher.py` already use. Fixed the same way; re-ran the repro: `KF-TOOLCHAIN-MISSING`, exit `3`, `context: {"tool": "sips"}`. Linux/Windows icon generation has no equivalent gap — both use Pillow in-process, no external tool to spawn. 2 new/updated tests in `tests/platforms/macos/test_icns.py`; full suite (92.70%) + `ruff check`/`format` clean. |
 | 2026-09-16 | Linux `x86_64` (`dice-roller`) | `build`/`package` output contract (local) | **WSL2** (Ubuntu 26.04, Python 3.14.4) | Verified the output contract on the one path no CI job builds — a real `appimagetool` 1.9.1. **No defects.** Success: `build` puts only `Built build/linux/<Name>.AppDir` on stdout with staging on stderr; `package --json` emits 278 bytes of stdout that strict-parse as one document, `ok: true`, exactly one `{"path": "dist/linux/dice-roller-0.1.0-x86_64.AppImage", "kind": "appimage"}` (relative, posix, exists), `diagnostics: []`, advice off stdout, `Packaging … with appimagetool 1.9.1 …` on stderr; `-f folder --json` gives one `folder` artifact whose path contains a space and stays relative/posix. The packaged `.AppImage` launches and reaches "Start application main loop". **Failure (unwritable `dist/`, as uid 1000):** exit `5`, `KF-BUILD-TOOL-FAILED`, `context == {"tool": "appimagetool", "task": "package"}`, one-line 72-char message, and `artifacts == []` **even though Step 1's `.AppImage` was still sitting in `dist/`** — proposal §4.1b checked against the real case rather than assumed. Both of `appimagetool`'s streams reached stderr (its stdout *and* its `Permission denied`), which is precisely what the old `stderr or stdout` handling dropped, and none of it is embedded in the diagnostic. **Unusable toolchain:** exit `3`, `KF-TOOLCHAIN-UNUSABLE`, `context.errno == "EACCES"`, reached only after a full re-download, staging and byte-compile succeeded — the staged CPython lives outside `XDG_CACHE_HOME`, as predicted. Used the pre-existing `noexec` `tmpfs` at `/run/lock` instead of a `sudo` mount, which keeps the real uid rather than mapping to root. Full detail: [`build-package-output-linux-findings.md`](build-package-output-linux-findings.md). |
+| 2026-09-17 | Windows `amd64` (`dice-roller`) | T2 + stdlib byte-compile measurement | Windows 11, Python 3.13.14 (bundled) | **Roadmap item 9 landed and measured on the host that had never measured it.** `package -p windows` on a real bundle: the staged stdlib ships 633 `.py` **and** 633 `.pyc` (sources deliberately kept — tracebacks, `inspect`, `linecache`), while the payload stays `.pyc`-only (0 `.py`, 1185 `.pyc`), so the strip setting still applies to exactly what it applied to before. A/B on that same bundle, bundled interpreter, `PYTHONDONTWRITEBYTECODE=1`, min of 5: `import kivy` **66 ms compiled vs 276 ms after deleting the stdlib `__pycache__`** (wall 100 ms vs 317 ms) — 4.2×, ~210 ms per launch, matching the 5× the macOS/Linux measurements predicted. §5.10 closed. **Not re-measured on macOS or Linux**: same code path, but neither host has run it. |
 
 ### Known-unverified, stated plainly
 

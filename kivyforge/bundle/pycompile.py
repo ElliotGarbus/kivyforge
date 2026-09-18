@@ -31,10 +31,11 @@ that wrote it.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from kivyforge.report.failures import ClassifiedError, spawn_failure
@@ -148,23 +149,47 @@ def target_minor(python_version: str) -> tuple[int, int]:
     return (int(parts[0].split("rc")[0]), int(parts[1].split("rc")[0]))
 
 
+def stdlib_dir(python_home: Path) -> Path | None:
+    """The staged runtime's stdlib directory, or ``None`` if it is not there.
+
+    Two layouts, both shipped by python-build-standalone: ``Lib/`` on Windows and
+    ``lib/python3.x/`` elsewhere. Located by looking for ``os.py`` rather than by
+    building a path from a version string, so a runtime bump cannot silently make
+    this a no-op.
+    """
+    windows = python_home / "Lib"
+    if (windows / "os.py").is_file():
+        return windows
+    for candidate in sorted((python_home / "lib").glob("python3.*")):
+        if (candidate / "os.py").is_file():
+            return candidate
+    return None
+
+
 def byte_compile(
     trees: Sequence[Path],
     *,
     compiler: Sequence[str] = (),
     strip_source: bool = False,
     stripdir: Path,
+    exclude: str | None = None,
 ) -> None:
     """Compile every tree in *trees* in place; strip ``.py`` when asked.
 
     Missing trees are skipped (a backend may stage some payload areas only
     conditionally). Raises :class:`PycompileError` naming the tree that failed.
+    *exclude* is a regex of paths to leave alone, for a subtree a different call
+    has already handled.
     """
     for tree in trees:
         if not tree.is_dir():
             continue
         if not compile_tree(
-            tree, compiler=compiler, legacy=strip_source, stripdir=stripdir
+            tree,
+            compiler=compiler,
+            legacy=strip_source,
+            stripdir=stripdir,
+            exclude=exclude,
         ):
             raise PycompileError(
                 f"byte-compiling {tree.name}/ failed; the output above names the "
@@ -173,6 +198,37 @@ def byte_compile(
             )
         if strip_source:
             strip_sources(tree)
+
+
+def compile_stdlib(
+    python_home: Path,
+    *,
+    compiler: Sequence[str] = (),
+    stripdir: Path,
+    echo: Callable[[str], None] = lambda msg: None,
+) -> None:
+    """Byte-compile the staged runtime's stdlib in place.
+
+    Desktop bundles ship the stdlib as source, so every launch re-parses it --
+    measured at ~170 ms on `import kivy` alone, and permanent since both
+    launchers stopped letting the app write ``__pycache__`` back into itself.
+
+    Sources are **never** stripped here, unlike the app payload: the stdlib's
+    ``.py`` files are what make tracebacks, ``inspect`` and ``linecache`` work,
+    and they cost disk rather than launch time. ``site-packages`` is excluded
+    because the caller compiles it as payload, under its own strip setting.
+    """
+    tree = stdlib_dir(python_home)
+    if tree is None:
+        return
+    echo("[stage] byte-compiling the embedded stdlib")
+    byte_compile(
+        [tree],
+        compiler=compiler,
+        strip_source=False,
+        stripdir=stripdir,
+        exclude="site-packages",
+    )
 
 
 def strip_sources(tree: Path) -> None:
@@ -196,6 +252,7 @@ def compile_tree(
     compiler: Sequence[str] = (),
     legacy: bool = False,
     stripdir: Path,
+    exclude: str | None = None,
 ) -> bool:
     """Byte-compile *target*; return whether it succeeded.
 
@@ -220,6 +277,7 @@ def compile_tree(
                     invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
                     force=True,
                     stripdir=str(stripdir),
+                    rx=re.compile(exclude) if exclude else None,
                 )
             )
 
@@ -236,7 +294,15 @@ def compile_tree(
     ]
     if legacy:
         argv.append("-b")
+    if exclude:
+        argv += ["-x", exclude]
     argv.append(str(target))
+    # The compiler's *own* imports would otherwise deposit timestamp-invalidated
+    # .pyc into whatever stdlib it is running from -- including the staged one it
+    # is compiling, making that subtree depend on which interpreter ran the
+    # build. compileall writes through py_compile and ignores this variable, so
+    # only the incidental caching is suppressed (verified 2026-09-15).
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     try:
         with stderr_for_child() as err:
             return (
@@ -246,6 +312,7 @@ def compile_tree(
                     stdout=err,
                     stderr=err,
                     stdin=subprocess.DEVNULL,
+                    env=env,
                 ).returncode
                 == 0
             )

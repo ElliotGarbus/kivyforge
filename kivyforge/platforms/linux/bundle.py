@@ -22,7 +22,12 @@ import click
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
-from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
+from kivyforge.bundle.pycompile import (
+    PycompileError,
+    byte_compile,
+    compile_stdlib,
+    select_compiler,
+)
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import reclassify
@@ -200,6 +205,12 @@ def build_appdir(
                     compiler=compiler,
                     strip_source=strip_source,
                     stripdir=work,
+                )
+                compile_stdlib(
+                    work / "usr" / "python",
+                    compiler=compiler,
+                    stripdir=work,
+                    echo=echo,
                 )
             except PycompileError as exc:
                 raise AppDirError(
