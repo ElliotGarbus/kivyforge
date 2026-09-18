@@ -58,7 +58,7 @@ unvalidated, and needs a Mac.
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
-| ~~9~~ | ~~Byte-compile the embedded stdlib at build time (desktop)~~ | S | **done 2026-09-17**; measured on Windows, unmeasured on macOS/Linux |
+| ~~9~~ | ~~Byte-compile the embedded stdlib at build time (desktop)~~ | S | **done 2026-09-17**; measured on Windows and Linux, unmeasured on macOS |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -1428,16 +1428,18 @@ with `PYTHONDONTWRITEBYTECODE=1`, which was the second half of
 
 **Measured on Windows** (§7, 2026-09-17), on a real packaged `dice-roller`:
 `import kivy` **66 ms with the compiled stdlib against 276 ms without** — 4.2×,
-~210 ms off every launch, retiring §5.10's macOS-measured number rather than
-leaving it stale. Both launcher comments were revisited, as this item asked.
+~210 ms off every launch. **Measured on Linux** the same day (§7), on a real
+`package -f folder` AppDir and the matching `.AppImage`: **34 ms compiled
+against 214 ms source-only** — 6.3×, ~180 ms, and the AppImage carries the
+same 633/633 stdlib pair. Both launcher comments were revisited, as this item
+asked.
 
 **Two things it deliberately does not do.** It follows the existing
 `byte_compile` tri-state rather than adding a knob, so it applies where that
 does — `package` by default, every build under `byte_compile = true`, never
 under `false`. A dev rebuild would otherwise pay the compile on every iteration
-for an artifact nobody ships. And **macOS and Linux are not re-measured**: the
-code path is shared and Windows confirms it, but neither host has run it, and a
-shared code path is not coverage.
+for an artifact nobody ships. And **macOS is not re-measured**: the code path
+is shared, but a shared code path is not coverage.
 
 The original statement of the item:
 

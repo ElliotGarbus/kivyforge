@@ -566,13 +566,16 @@ byte-compiled during staging on all three desktop targets (sources kept —
 the compile subprocess now runs with `PYTHONDONTWRITEBYTECODE=1` so its own
 imports stop seeding the artifact with an arbitrary subset of caches.
 
-**Re-measured on Windows** (§7, 2026-09-17), which is what retires the number
-below rather than leaving it stale: `import kivy` in a real packaged
+**Re-measured on Windows** (§7, 2026-09-17): `import kivy` in a real packaged
 `dice-roller` bundle costs **66 ms compiled against 276 ms source-only** — 4.2×,
-~210 ms off every launch, the same shape as the macOS measurement that opened
-this section.
+~210 ms off every launch.
 
-**Re-measured on macOS** (§7, 2026-09-17), which also owns the question no
+**Re-measured on Linux** the same day (§7): **34 ms compiled against 214 ms
+source-only** — 6.3×, ~180 ms off every launch, on the host that had the most
+to gain because an AppImage can never cache at runtime. The AppImage itself
+carries the same 633/633 stdlib pair.
+
+**Re-measured on macOS** the same day (§7), which also owns the question no
 other host can answer — the compile runs before `codesign`, so a bundle that
 writes into itself afterward would invalidate its own signature. It doesn't:
 `codesign --verify --deep --strict` passes both before and after a real launch
@@ -585,11 +588,13 @@ bundled interpreter, `PYTHONDONTWRITEBYTECODE=1`, min of 5: `import kivy`
 **13.4 ms compiled vs 85.8 ms source-only** (deleting the stdlib
 `__pycache__`, which — expectedly — also breaks the signature, so the example
 was re-packaged afterward) — **6.4×, ~72 ms off every launch**. Same shape as
-Windows and the original Linux finding; the ratio is larger here because this
-Mac's absolute numbers are smaller across the board (Apple M5 Pro), not
-because the fix behaves differently. **Linux is still not re-measured**: the
-code path is shared and both other hosts now confirm it, but this file does
-not count a shared code path as coverage on a host that hasn't run it.
+Windows and Linux; the ratio is largest here because this Mac's absolute
+numbers are smaller across the board (Apple M5 Pro), not because the fix
+behaves differently.
+
+All three desktop hosts are now measured, independently, the same day: **4.2×
+(Windows), 6.3× (Linux), 6.4× (macOS)** — a real, host-specific number in every
+case, not one host's result assumed for a shared code path.
 
 The original finding, kept because it is why the work exists:
 
@@ -700,7 +705,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-16 | macOS `arm64` (`dice-roller`) | product fix | macOS 26.6.2 | **One real defect** found by the Step 4 "missing tool" repro (`PATH` stripped to the venv only): a missing `sips`/`iconutil` was reported as `KF-ERROR`/exit `1` instead of `KF-TOOLCHAIN-MISSING`/exit `3` — no traceback, but the wrong classification. Cause: `platforms/macos/icns.py` predates the four `build`/`package`-output commits and pre-checks `shutil.which()` instead of catching the real spawn's `OSError` through `spawn_failure()`, the pattern `machotools.py`/`notarize.py`/`launcher.py` already use. Fixed the same way; re-ran the repro: `KF-TOOLCHAIN-MISSING`, exit `3`, `context: {"tool": "sips"}`. Linux/Windows icon generation has no equivalent gap — both use Pillow in-process, no external tool to spawn. 2 new/updated tests in `tests/platforms/macos/test_icns.py`; full suite (92.70%) + `ruff check`/`format` clean. |
 | 2026-09-16 | Linux `x86_64` (`dice-roller`) | `build`/`package` output contract (local) | **WSL2** (Ubuntu 26.04, Python 3.14.4) | Verified the output contract on the one path no CI job builds — a real `appimagetool` 1.9.1. **No defects.** Success: `build` puts only `Built build/linux/<Name>.AppDir` on stdout with staging on stderr; `package --json` emits 278 bytes of stdout that strict-parse as one document, `ok: true`, exactly one `{"path": "dist/linux/dice-roller-0.1.0-x86_64.AppImage", "kind": "appimage"}` (relative, posix, exists), `diagnostics: []`, advice off stdout, `Packaging … with appimagetool 1.9.1 …` on stderr; `-f folder --json` gives one `folder` artifact whose path contains a space and stays relative/posix. The packaged `.AppImage` launches and reaches "Start application main loop". **Failure (unwritable `dist/`, as uid 1000):** exit `5`, `KF-BUILD-TOOL-FAILED`, `context == {"tool": "appimagetool", "task": "package"}`, one-line 72-char message, and `artifacts == []` **even though Step 1's `.AppImage` was still sitting in `dist/`** — proposal §4.1b checked against the real case rather than assumed. Both of `appimagetool`'s streams reached stderr (its stdout *and* its `Permission denied`), which is precisely what the old `stderr or stdout` handling dropped, and none of it is embedded in the diagnostic. **Unusable toolchain:** exit `3`, `KF-TOOLCHAIN-UNUSABLE`, `context.errno == "EACCES"`, reached only after a full re-download, staging and byte-compile succeeded — the staged CPython lives outside `XDG_CACHE_HOME`, as predicted. Used the pre-existing `noexec` `tmpfs` at `/run/lock` instead of a `sudo` mount, which keeps the real uid rather than mapping to root. Full detail: [`build-package-output-linux-findings.md`](build-package-output-linux-findings.md). |
 | 2026-09-17 | Windows `amd64` (`dice-roller`) | T2 + stdlib byte-compile measurement | Windows 11, Python 3.13.14 (bundled) | **Roadmap item 9 landed and measured on the host that had never measured it.** `package -p windows` on a real bundle: the staged stdlib ships 633 `.py` **and** 633 `.pyc` (sources deliberately kept — tracebacks, `inspect`, `linecache`), while the payload stays `.pyc`-only (0 `.py`, 1185 `.pyc`), so the strip setting still applies to exactly what it applied to before. A/B on that same bundle, bundled interpreter, `PYTHONDONTWRITEBYTECODE=1`, min of 5: `import kivy` **66 ms compiled vs 276 ms after deleting the stdlib `__pycache__`** (wall 100 ms vs 317 ms) — 4.2×, ~210 ms per launch, matching the 5× the macOS/Linux measurements predicted. §5.10 closed. **Not re-measured on macOS or Linux**: same code path, but neither host has run it. |
-| 2026-09-17 | macOS `arm64` (`dice-roller`) | stdlib byte-compile measurement + signing interaction | macOS 26.6.2, Xcode 26.6 | **The macOS-specific half of item 9: does compiling the stdlib before `codesign` survive a real launch?** Yes. `package -p macos` (real Developer ID, notarized, stapled): stdlib ships 633 `.py` **and** 633 `.pyc`, app payload stays `.pyc`-only (0 `.py`). `codesign --verify --deep --strict` passes before launch, and — the question no other host can ask — still passes **after** running `Contents/MacOS/*` directly to "Start application main loop", with the `.pyc` count unchanged (969 → 969): `PYTHONDONTWRITEBYTECODE` in the launcher (2026-09-14 fix) holds under a pre-compiled stdlib exactly as it did under a source-only one. Timing, bundled interpreter, min of 5: `import kivy` **13.4 ms compiled vs 85.8 ms source-only** — **6.4×, ~72 ms per launch**, same shape as Windows (4.2×, ~210 ms) and the original Linux finding, larger ratio only because this Mac's absolute numbers are smaller (Apple M5 Pro). Deleting the stdlib `__pycache__` to get the source-only number did, as expected, break the signature (`a sealed resource is missing or invalid`); the example was re-packaged (re-signed, re-notarized, re-stapled) afterward, `git status` clean. §5.10 fully closed. |
+| 2026-09-17 | Linux `x86_64` (`dice-roller`) | stdlib byte-compile measurement | **WSL2** (Ubuntu 26.04, Python 3.14.4 host / 3.13.14 bundled) | Follow-up in [`build-package-output-linux-prompt.md`](build-package-output-linux-prompt.md). `package -p linux -f folder`: stdlib ships **633 `.py` and 633 `.pyc`** in 47 `__pycache__` dirs — the 2026-09-15 incidental subset (41 files / 6 dirs) is gone, replaced by the complete compile; payload still 0 `.py`. A/B on that AppDir, bundled interpreter, `PYTHONDONTWRITEBYTECODE=1`, min of 5: `import kivy` **34 ms compiled vs 214 ms after deleting the stdlib `__pycache__`** (wall 40 ms vs 260 ms) — 6.3×, ~180 ms per launch. Writes stayed suppressed (0 `.pyc` after the source-only runs). The `.AppImage` carries the same 633/633 pair (extracted and counted; tree discarded). AppDir restored afterwards. macOS remains the unmeasured desktop host as of this row — see the next one. |
+| 2026-09-17 | macOS `arm64` (`dice-roller`) | stdlib byte-compile measurement + signing interaction | macOS 26.6.2, Xcode 26.6 | **The macOS-specific half of item 9: does compiling the stdlib before `codesign` survive a real launch?** Yes. `package -p macos` (real Developer ID, notarized, stapled): stdlib ships 633 `.py` **and** 633 `.pyc`, app payload stays `.pyc`-only (0 `.py`). `codesign --verify --deep --strict` passes before launch, and — the question no other host can ask — still passes **after** running `Contents/MacOS/*` directly to "Start application main loop", with the `.pyc` count unchanged (969 → 969): `PYTHONDONTWRITEBYTECODE` in the launcher (2026-09-14 fix) holds under a pre-compiled stdlib exactly as it did under a source-only one. Timing, bundled interpreter, min of 5: `import kivy` **13.4 ms compiled vs 85.8 ms source-only** — **6.4×, ~72 ms per launch**, same shape as Windows (4.2×, ~210 ms) and Linux (6.3×, ~180 ms), larger ratio only because this Mac's absolute numbers are smaller (Apple M5 Pro). Deleting the stdlib `__pycache__` to get the source-only number did, as expected, break the signature (`a sealed resource is missing or invalid`); the example was re-packaged (re-signed, re-notarized, re-stapled) afterward, `git status` clean. All three desktop hosts now measured. §5.10 fully closed. |
 
 ### Known-unverified, stated plainly
 
