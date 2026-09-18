@@ -56,7 +56,7 @@ unvalidated, and needs a Mac.
 |---|---|---|---|
 | ~~1~~ | ~~Validate mobile `strip_source`, then the byte-compile doctor check~~ *(was P2)* | S | **done 2026-09-13** |
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
-| 3 | Output layer: `rich` rendering + `--json` | M | none |
+| ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
 | 5 | E2E automation against the matrix — *Android T3 slice done 2026-09-13* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
