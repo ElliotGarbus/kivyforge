@@ -1050,9 +1050,16 @@ build timestamps where the other four used relative ages.
    Windows, Linux and macOS. That process *is* the user's program, and closing
    its stdin would break a console app that reads input, which is the one thing
    `run` exists to let you do.
-8. **`AGENTS.md`** at the repo root for agents working *on* kivyforge (how to
+8. ~~**`AGENTS.md`** at the repo root for agents working *on* kivyforge (how to
    run the suite, the coverage gate, the ruff config, the cp1252 rule), plus a
-   short "driving kivyforge from an agent" page in item 6's docs.
+   short "driving kivyforge from an agent" page in item 6's docs.~~ **Done
+   2026-09-17** — [`AGENTS.md`](../../../AGENTS.md), with the "driving kivyforge
+   from an agent" half as its last section until item 6 has somewhere better to
+   put it. It points at each authoritative source rather than restating it, per
+   this repo's own rule about duplicated facts: the loop and its four gates, the
+   rules that are easy to break silently (the stdout/stderr split, codes as
+   contract, artifacts only from this run, cp1252, no prompting, no silent
+   skips), the cross-host prompt/findings convention, and what to commit.
 
 Optional, worth a look but not committed here: a `--dry-run` plan mode on
 `build`/`package` so an agent can validate config without paying for a full
