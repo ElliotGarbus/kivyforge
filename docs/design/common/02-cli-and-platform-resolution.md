@@ -50,7 +50,7 @@ The verb set is uniform; each platform backend implements the platform-specific 
 
 | Verb | Purpose |
 |------|---------|
-| `init` | Seed `[tool.kivy]` + the target's `[tool.kivy.<platform>]` overlay into `pyproject.toml`. |
+| `init` | Seed `[tool.kivy]` + the target's `[tool.kivy.<platform>]` overlay into `pyproject.toml`. `-p` is repeatable here — see the callout above. |
 | `lock` | Resolve `[project].dependencies` (and any native declarations) for the resolved target; write `pylock.<platform>.toml`. `--check` for CI pre-flight. |
 | `build` | Acquire the runtime + pinned artifacts and materialize the native project for the resolved target. The **development loop** verb. |
 | `run` | Build (unless `--no-build`), then install/launch on a device, simulator/emulator, or the host, as the platform supports. |

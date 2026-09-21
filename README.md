@@ -371,7 +371,7 @@ dependencies = []                       # PyPI/local deps resolved into the lock
 [tool.kivy]
 display_name = "Hello World"            # name shown under the icon
 app_dir = "src"                         # folder containing your Python source
-entry_point = "main"                    # module imported at launch (main.py)
+entry_point = "main"                    # module run as __main__ at launch (main.py)
 orientation = ["portrait"]
 
 [tool.kivy.ios]
@@ -405,7 +405,10 @@ for `UrlRequest`).
 
 The verbs are platform-neutral; each resolves a target from `-p/--platform`, the
 `KIVYFORGE_PLATFORM` environment variable, or the host default, and then does the
-platform's version of the same job.
+platform's version of the same job. `init` is the one exception: `-p` is
+repeatable there (`-p ios -p android`), since seeding several platforms into
+one `pyproject.toml` is its normal use case — every other verb builds, runs,
+or packages exactly one target per invocation.
 
       kivyforge init       Seed [tool.kivy] + the target's overlay into pyproject.toml
       kivyforge lock       Generate pylock.<platform>.toml from pyproject.toml
@@ -421,6 +424,7 @@ platform's version of the same job.
 Run `kivyforge <command> -h` (or `kf <command> -h`) for the full set of
 options on any verb. A few common ones:
 
+- `kivyforge init -p ios -p android` — seed several platforms' overlays in one run.
 - `kivyforge lock --check` — CI pre-flight; exits non-zero if the lock is stale.
 - `kivyforge build --simulator | --device | --release` (iOS) — pick the build flavor.
 - `kivyforge build --debug [--abi arm64_v8a|x86_64]` (Android) — assemble a debug APK, optionally for one ABI.
