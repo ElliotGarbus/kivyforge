@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### `kivyforge init -p` is now repeatable
+
+- **Seed several platforms in one run:** `kivyforge init -p ios -p android`
+  writes both overlays into `pyproject.toml` in a single call — the shared
+  `[tool.kivy]` table is written once, and each platform's own overlay is
+  added or (with `--force`) regenerated in turn. Previously this took one
+  `init` invocation per platform.
+- **`--json`'s shape is unchanged for the common, single-`-p` case**
+  (`platform` + `data.action`/`data.tables`). With more than one `-p`, the
+  envelope's `platform` is `null` and results are listed under
+  `data.results` as `{"platform", "action", "tables"}` per platform, in the
+  order given.
+- Every other verb (`build`, `run`, `package`, `doctor`, `status`, ...)
+  is unaffected — their `-p` still takes exactly one value, as it must.
+
 ### `entry_point` now runs as `__main__` on every platform
 
 - **Migration note.** `if __name__ == "__main__":` blocks in your entry

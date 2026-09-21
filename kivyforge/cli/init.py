@@ -6,10 +6,13 @@ One write path:
   platform's ``[tool.kivy]`` + ``[tool.kivy.<platform>]``; ``[project]`` and
   every other namespace are left untouched. No venv required.
 
-Platform-aware: resolves the target the same way as every other verb
+Platform-aware: resolves the target(s) the same way as every other verb
 (``-p`` / ``KIVYFORGE_PLATFORM``), plus two init-only fallbacks that make sense
 only when *configuring* a platform for the first time — see
-``_resolve_init_platform``.
+``_resolve_single_init_platform``. Unlike every other verb, ``-p`` is
+repeatable here (``kivyforge init -p ios -p android``), since seeding several
+platforms into one ``pyproject.toml`` is init's own normal use case, not a
+single build target — see ``_resolve_init_platforms``.
 
 If ``requirements.txt`` is found but no ``pyproject.toml``, init exits non-zero
 with a migration pointer rather than auto-migrating.
@@ -40,7 +43,7 @@ from ..platforms import PLATFORM_ENV_VAR, available_platform_names, get_platform
 from ..report import Diagnostic, Report, diagnostics
 from ._common import PYPROJECT_NAME, ToolchainError
 from ._output import output_options, reporting
-from ._platform import configured_platforms, platform_option
+from ._platform import configured_platforms
 from .init_writer import (
     append_block,
     has_kivy_dep,
@@ -142,27 +145,38 @@ _REQUIREMENTS_MSG = (
 
 
 @click.command()
-@platform_option
+@click.option(
+    "--platform",
+    "-p",
+    "cli_platforms",
+    type=click.Choice(available_platform_names()),
+    multiple=True,
+    help="Target platform. Repeatable to seed several at once, e.g. "
+    "-p ios -p android (overrides KIVYFORGE_PLATFORM and the host default). "
+    "Without it: KIVYFORGE_PLATFORM, then the project's one existing "
+    "overlay, then the host default.",
+)
 @click.option(
     "--force", is_flag=True, help="Regenerate [tool.kivy*] (preserves signing)."
 )
 @output_options
-def init(cli_platform: str | None, force: bool, json_out: bool, no_color: bool) -> None:
+def init(
+    cli_platforms: tuple[str, ...], force: bool, json_out: bool, no_color: bool
+) -> None:
     """Seed [tool.kivy] + the target platform's overlay into pyproject.toml."""
     with reporting("init", json_out=json_out, no_color=no_color) as report:
-        _init(report, cli_platform, force=force)
+        _init(report, cli_platforms, force=force)
 
 
-def _init(report: Report, cli_platform: str | None, *, force: bool) -> None:
+def _init(report: Report, cli_platforms: tuple[str, ...], *, force: bool) -> None:
     cwd = Path.cwd()
     pyproject = cwd / PYPROJECT_NAME
     requirements = cwd / REQUIREMENTS_NAME
     buildozer_spec = cwd / BUILDOZER_SPEC_NAME
 
     if pyproject.is_file():
-        platform_name = _resolve_init_platform(cli_platform, pyproject)
-        report.platform = platform_name
-        _run_update_path(report, pyproject, force=force, platform_name=platform_name)
+        platform_names = _resolve_init_platforms(cli_platforms, pyproject)
+        _run_update_path(report, pyproject, force=force, platform_names=platform_names)
     elif buildozer_spec.is_file():
         raise ToolchainError(_buildozer_migration_message(buildozer_spec))
     elif requirements.is_file():
@@ -232,27 +246,46 @@ def _ellipsize(value: str, limit: int = 70) -> str:
     return flat if len(flat) <= limit else flat[: limit - 3] + "..."
 
 
-def _resolve_init_platform(
-    cli_platform: str | None,
+def _resolve_init_platforms(
+    cli_platforms: tuple[str, ...],
+    pyproject: Path,
+    *,
+    host_system: str | None = None,
+) -> list[str]:
+    """Resolve init's target platform(s).
+
+    ``-p`` is repeatable (``kivyforge init -p ios -p android``), so several
+    overlays can be seeded or regenerated in one run — deduplicated, in the
+    order given. Given no ``-p`` at all, falls back to the single-platform
+    chain every other case here has always used; that chain is unchanged.
+    """
+    if cli_platforms:
+        seen: list[str] = []
+        for name in cli_platforms:
+            if name not in seen:
+                seen.append(name)
+        return seen
+    return [_resolve_single_init_platform(pyproject, host_system=host_system)]
+
+
+def _resolve_single_init_platform(
     pyproject: Path,
     *,
     host_system: str | None = None,
 ) -> str:
-    """Resolve init's target platform.
+    """Resolve init's target platform when no ``-p`` was given at all.
 
-    Same top two steps as every other verb (``-p`` then ``KIVYFORGE_PLATFORM``),
-    but init additionally needs to handle the case it alone faces: *configuring*
-    a platform for the first time, when nothing is "configured" yet. So instead
-    of the shared ``resolve_target`` (whose host-default step requires the
-    platform to already be configured — the right call for build/run/etc., but
-    backwards for init), this:
+    Init needs to handle the case it alone faces: *configuring* a platform for
+    the first time, when nothing is "configured" yet. So instead of the shared
+    ``resolve_target`` (whose host-default step requires the platform to
+    already be configured — the right call for build/run/etc., but backwards
+    for init), this:
 
-    1. ``--platform`` / ``-p``.
-    2. ``KIVYFORGE_PLATFORM``.
-    3. The project's one already-configured overlay, if exactly one exists
+    1. ``KIVYFORGE_PLATFORM``.
+    2. The project's one already-configured overlay, if exactly one exists
        (the ``--force``-regenerate case — no flag needed to update what's
        already there).
-    4. The host OS's own platform (unconditionally — this *is* how it gets
+    3. The host OS's own platform (unconditionally — this *is* how it gets
        configured the first time). iOS never matches here (no host maps to
        it); it always needs an explicit choice, same as everywhere else.
 
@@ -260,9 +293,6 @@ def _resolve_init_platform(
     tests aren't at the mercy of the machine they happen to run on; it
     defaults to the real host (``platform.system()``).
     """
-    if cli_platform:
-        return cli_platform
-
     env_platform = os.environ.get(PLATFORM_ENV_VAR)
     if env_platform:
         if env_platform not in available_platform_names():
@@ -296,17 +326,67 @@ def _resolve_init_platform(
 
 
 def _run_update_path(
-    report: Report, pyproject: Path, *, force: bool, platform_name: str
+    report: Report, pyproject: Path, *, force: bool, platform_names: list[str]
 ) -> None:
-    text = pyproject.read_text(encoding="utf-8")
-    raw = _safe_parse(text, pyproject)
+    """Seed/regenerate one or more platforms' overlays, emitting one envelope.
 
+    ``platform_names`` is usually a single-element list (the common case, and
+    its envelope shape is unchanged: ``report.platform`` + a flat ``action``/
+    ``tables`` payload). Given several — ``-p`` is repeatable — each is
+    processed in turn against the file's *accumulated* state, so adding a
+    second platform never re-adds the shared ``[tool.kivy]`` table, exactly as
+    when the same platforms are seeded one `init` call at a time. Exactly one
+    envelope is written regardless, under ``data.results`` — ``Report.emit()``
+    writes to stdout immediately and the ``--json`` contract is exactly one
+    document, so per-platform results are accumulated and emitted together
+    rather than once per platform.
+    """
+    raw = _safe_parse(pyproject.read_text(encoding="utf-8"), pyproject)
     if "project" not in raw:
         raise ToolchainError(
             f"{PYPROJECT_NAME} has no [project] table.\n"
             "  init updates only [tool.kivy*]; it will not author [project] for "
             "an existing file. Add a minimal [project] (name + version) first."
         )
+
+    results = [
+        {
+            "platform": platform_name,
+            **_update_one_platform(
+                report, pyproject, force=force, platform_name=platform_name
+            ),
+        }
+        for platform_name in platform_names
+    ]
+
+    _maybe_warn_drift(
+        report, _safe_parse(pyproject.read_text(encoding="utf-8"), pyproject)
+    )
+
+    if len(results) == 1:
+        report.platform = str(results[0]["platform"])
+        report.emit(
+            ok=True,
+            data={
+                "action": results[0]["action"],
+                "tables": results[0]["tables"],
+                "pyproject": PYPROJECT_NAME,
+            },
+        )
+    else:
+        report.emit(ok=True, data={"results": results, "pyproject": PYPROJECT_NAME})
+
+
+def _update_one_platform(
+    report: Report, pyproject: Path, *, force: bool, platform_name: str
+) -> dict[str, object]:
+    """Add or (with ``--force``) regenerate one platform's overlay.
+
+    Re-reads ``pyproject`` fresh so a prior platform's write (in a multi-``-p``
+    run) is what this one builds on. Returns ``{"action", "tables"}``.
+    """
+    text = pyproject.read_text(encoding="utf-8")
+    raw = _safe_parse(text, pyproject)
 
     table_key = f"tool.kivy.{platform_name}"
     existing_overlay = has_platform_overlay(text, platform_name)
@@ -357,14 +437,10 @@ def _run_update_path(
         tables = [table_key] if not include_shared else ["tool.kivy", table_key]
         report.line(f"Added {added} to pyproject.toml.")
 
-    _maybe_warn_drift(report, raw)
     report.line(
         f"Next: fill in the TODOs in [{table_key}], then `kivyforge lock -p {platform_name}`."
     )
-    report.emit(
-        ok=True,
-        data={"action": action, "tables": tables, "pyproject": PYPROJECT_NAME},
-    )
+    return {"action": action, "tables": tables}
 
 
 def _render_overlay(

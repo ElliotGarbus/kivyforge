@@ -16,6 +16,8 @@ Platform-aware verbs need to know *which* target they operate on. The selector i
 
 It is **explicit by design**. A positional target argument was rejected as error-prone; a user who doesn't want to type the flag on every command sets the environment variable instead (below).
 
+**`init` is the one exception: its `-p` is repeatable** (`kivyforge init -p ios -p android` seeds both overlays in one run, deduplicated, order preserved). Every other verb builds, runs, or packages exactly one target per invocation and must never accept a list — but seeding several platforms into one `pyproject.toml` is `init`'s own normal use case (the whole point of the shared-config-plus-overlay pattern below), so `init` declares its own `-p` option rather than reusing this shared one. Given no `-p` at all, `init` falls back to the same resolution chain as everything else, single-valued, unchanged.
+
 ### Resolution chain
 
 When a platform-aware verb runs, the target is resolved in this order:

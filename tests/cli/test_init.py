@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 import tomllib
 
@@ -779,3 +780,108 @@ class TestPlatformAware:
             result = runner.invoke(init, [])
         assert result.exit_code != 0
         assert "cannot infer a target platform" in result.output
+
+
+class TestMultiPlatform:
+    """``-p`` is repeatable on ``init`` alone: seed several overlays in one run."""
+
+    def test_repeated_flag_seeds_both_platforms_in_one_run(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, ["-p", "ios", "-p", "android"])
+            assert result.exit_code == 0, result.output
+            text = pp.read_text()
+            data = tomllib.loads(text)  # raises if [tool.kivy] was duplicated
+        assert text.count("[tool.kivy]") == 1
+        assert "ios" in data["tool"]["kivy"]
+        assert "android" in data["tool"]["kivy"]
+        assert data["tool"]["kivy"]["ios"]["bundle_id"] == "org.example.myapp"
+        assert data["tool"]["kivy"]["android"]["package"] == "org.example.myapp"
+
+    def test_repeated_flag_reports_one_json_envelope_with_a_result_per_platform(
+        self, runner, tmp_path
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, ["-p", "ios", "-p", "android", "--json"])
+            assert result.exit_code == 0, result.output
+        # Exactly one JSON document on stdout, not one per platform.
+        envelope = json.loads(result.stdout)
+        assert envelope["ok"] is True
+        results = envelope["data"]["results"]
+        assert [r["platform"] for r in results] == ["ios", "android"]
+        assert all(r["action"] == "added" for r in results)
+        assert results[0]["tables"] == ["tool.kivy", "tool.kivy.ios"]
+        assert results[1]["tables"] == ["tool.kivy.android"]
+
+    def test_single_platform_json_shape_is_unchanged(self, runner, tmp_path):
+        """Regression guard: the common (single -p) case keeps its original,
+        flat envelope shape (`platform` + `data.action`/`data.tables`) rather
+        than switching to the multi-platform `data.results` shape."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(init, ["-p", "macos", "--json"])
+            assert result.exit_code == 0, result.output
+        envelope = json.loads(result.stdout)
+        assert envelope["platform"] == "macos"
+        assert envelope["data"]["action"] == "added"
+        assert envelope["data"]["tables"] == ["tool.kivy", "tool.kivy.macos"]
+        assert "results" not in envelope["data"]
+
+    def test_repeated_flag_deduplicates_preserving_order(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            result = runner.invoke(
+                init, ["-p", "android", "-p", "ios", "-p", "android", "--json"]
+            )
+            assert result.exit_code == 0, result.output
+        envelope = json.loads(result.stdout)
+        assert [r["platform"] for r in envelope["data"]["results"]] == [
+            "android",
+            "ios",
+        ]
+
+    def test_second_platform_added_later_does_not_duplicate_shared_table(
+        self, runner, tmp_path
+    ):
+        """Same invariant as the single-flag case, exercised via two -p's in
+        one call instead of two separate `init` invocations."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            runner.invoke(init, ["-p", "macos"])
+            result = runner.invoke(init, ["-p", "ios", "-p", "linux"])
+            assert result.exit_code == 0, result.output
+            text = pp.read_text()
+            data = tomllib.loads(text)
+        assert text.count("[tool.kivy]") == 1
+        assert {"macos", "ios", "linux"} <= data["tool"]["kivy"].keys()
+
+    def test_force_regenerates_every_named_platform(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            runner.invoke(init, ["-p", "ios", "-p", "android"])
+            result = runner.invoke(
+                init, ["-p", "ios", "-p", "android", "--force", "--json"]
+            )
+            assert result.exit_code == 0, result.output
+        envelope = json.loads(result.stdout)
+        assert all(r["action"] == "regenerated" for r in envelope["data"]["results"])
+
+    def test_one_already_existing_overlay_without_force_stops_the_run(
+        self, runner, tmp_path
+    ):
+        """Fail-fast, same as the single-platform case: an existing overlay
+        hit partway through a multi--p run raises rather than skipping it."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = init_mod.Path(fs) / "pyproject.toml"
+            pp.write_text('[project]\nname = "myapp"\nversion = "1.0.0"\n')
+            runner.invoke(init, ["-p", "ios"])  # ios already configured
+            result = runner.invoke(init, ["-p", "ios", "-p", "android"])
+        assert result.exit_code != 0
+        assert "--force" in result.output
