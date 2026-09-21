@@ -431,6 +431,9 @@ options on any verb. A few common ones:
 Downloaded artifacts (`Python.xcframework`, the per-ABI Android runtime,
 `.aar`/`.jar`s, runtime archives) are cached per-user and shared across projects.
 
+Every verb but `run` also takes `--json`, for scripting or driving kivyforge
+from an agent — see [Working with agents](#working-with-agents) below.
+
 ## Typical workflow
 
 A normal session is a one-time setup followed by a tight edit → run loop. You only
@@ -464,6 +467,41 @@ Supporting commands fit around this loop: `kivyforge status` shows whether your
 lock and build are current, `kivyforge doctor` diagnoses environment problems,
 `kivyforge upgrade` re-fetches the pinned runtime, and `kivyforge clean` resets
 the generated project when you want a fresh build.
+
+## Working with agents
+
+kivyforge is designed to be driven non-interactively — by CI, or by an
+agent (Claude Code and similar) building or maintaining a Kivy app on your
+behalf. No verb prompts for input, and every verb but `run` accepts `--json`.
+
+- **Discover capabilities first:** `kivyforge capabilities --json` lists every
+  platform, its architectures and package formats, **which hosts can build
+  which targets**, every verb and whether it takes `--json`, and the exit-code
+  and `KF-*` diagnostic-code vocabularies. It needs no project, lock, or
+  network access, so it's the right first call before touching a real project.
+- **`--json` puts exactly one envelope on stdout** —
+  `{"schema", "kivyforge", "command", "platform", "ok", "data", "diagnostics"}`
+  — on success *and* on every failure. Progress and log lines go to stderr, so
+  a build log and a parseable result coexist on the same run.
+- **Branch on the exit code first, then `diagnostics[].code`**: `1` — fix
+  `pyproject.toml`; `2` — a bad flag (click's own usage error; kivyforge never
+  raises it); `3` — fix the machine (missing toolchain); `4` — the lock is
+  stale, re-run `kivyforge lock`; `5` — a build genuinely failed, read the log
+  on stderr. The code is a stable contract; the human-readable message next to
+  it is not, and may be reworded across releases.
+- **`diagnostics` on an `ok: true` run are warnings, not failures** — an
+  unsigned package, a byte-compile that silently degraded to shipping source,
+  a resolver policy note. Read them; don't treat `ok: true` as "nothing to
+  look at."
+- **Build/package outputs are `data.artifacts`**, as `{"path", "kind"}` pairs
+  relative to the project root, always posix-spelled — read that instead of
+  guessing the layout, and only trust artifacts a run reports for *itself*: a
+  failed run's `artifacts` never names a stale file left over from a previous
+  one.
+- **`run` is the one verb without `--json`.** It hands your app's own process
+  the console directly (stdout/stderr pass through untouched), which is the
+  point of the verb; script against `build`/`package` plus `status --json`
+  instead.
 
 ## Development
 

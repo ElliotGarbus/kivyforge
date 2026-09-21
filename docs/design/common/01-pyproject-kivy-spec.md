@@ -80,7 +80,7 @@ orientation = ["portrait", "portrait-upside-down"]
 | -------------- | -------------- | -------- | ----------------------- | ----------- |
 | `display_name` | string         | no       | `[project].name` titled | App display name shown to the user. Each platform maps it to its native slot (iOS `CFBundleDisplayName`, Android `android:label`, etc.). |
 | `app_dir`      | string         | yes      | —                       | Folder containing your `.py` source files, relative to `pyproject.toml`. **Must be a subdirectory** (e.g. `"src"`); the project root (`"."`), an empty value, an absolute path, or a path escaping the project are all rejected — see "`app_dir` + `entry_point` interaction" below. |
-| `entry_point`  | string         | no       | `"main"`                | Python module reference (dotted name). The generated bootstrap does the equivalent of `PyImport_ImportModule(entry_point)` after putting `app_dir` on `sys.path`. |
+| `entry_point`  | string         | no       | `"main"`                | Python module reference (dotted name), resolved after putting `app_dir` on `sys.path`. **Imported** (`PyImport_ImportModule`) on Android/iOS; **run as `__main__`** on Linux/macOS/Windows — see the callout below before writing anything that checks `if __name__ == "__main__":`. |
 | `orientation`  | list of string | no       | `["portrait"]`          | Allowed orientations. Valid: `portrait`, `portrait-upside-down`, `landscape-left`, `landscape-right`. Platforms map the declared list to their own conventions (see each overlay doc for platform-specific handling). |
 
 ### `app_dir` + `entry_point` interaction
@@ -102,7 +102,11 @@ Example layouts:
 | `./src/start.py` (no `src/__init__.py`)                  | `"src"`   | `"start"`       |
 | `./src/myapp/start.py` (only `src/myapp/__init__.py`)    | `"src"`   | `"myapp.start"` |
 
-> **`entry_point` is *imported*, not run as `__main__`.** The bootstrap does the equivalent of `PyImport_ImportModule(entry_point)`, so `entry_point` must name a module whose top-level code starts the app *on import*. Pointing it at a package (e.g. `"myapp"`) runs that package's `__init__.py`, **not** its `__main__.py`. If your launch code lives in `myapp/__main__.py`, either move it to an explicitly-named module (e.g. `myapp/start.py` with `entry_point = "myapp.start"`) or have `__init__.py` import and run it.
+> **The `__main__` behavior differs by platform group — this is a real, silent migration trap, not a footnote.** Android and iOS *import* `entry_point` (the equivalent of `PyImport_ImportModule(entry_point)`), so `__name__` is the module's own dotted name, never `"__main__"`. Linux, macOS, and Windows *run* it — the equivalent of `python -m entry_point` (`runpy.run_module(..., run_name="__main__")` on Windows; an `-m`-style exec on Linux/macOS) — because those three launchers were fixed specifically so ported desktop apps using the ordinary `if __name__ == "__main__":` idiom would actually start (docs/design/dev/test-matrix.md §7, 2026-09-14/17). The trap: an app gated behind that idiom starts fine on desktop and **silently never starts on Android or iOS** — the module imports cleanly, no traceback, nothing in the log names the cause.
+>
+> **Write one entry point that works on all five platforms: call `App().run()` unconditionally at module top level, with no `__main__` guard.** A `runpy`/`-m`-style run executes top-level code exactly like an import does, so the unconditional form is correct everywhere — this is the only style that is portable across the whole target list, not just within one platform group.
+>
+> Either way, `entry_point` must name a module whose top-level code starts the app *on import or on run* — pointing it at a package (e.g. `"myapp"`) runs that package's `__init__.py`, **not** its `__main__.py`, on every platform. If your launch code lives in `myapp/__main__.py`, either move it to an explicitly-named module (e.g. `myapp/start.py` with `entry_point = "myapp.start"`) or have `__init__.py` import and run it.
 
 ## Icons and splash screens are per-platform
 

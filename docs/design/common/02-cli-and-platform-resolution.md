@@ -76,6 +76,51 @@ The verb set is uniform; each platform backend implements the platform-specific 
 
 A platform with a single artifact shape (e.g. macOS `app` today) defaults `-f` to that shape; where a platform has no universal bundle convention (Linux), `-f` earns its keep as a required-ish selector.
 
+## Machine-readable output (`--json`)
+
+*Landed as roadmap item 3, 2026-09-14/17. Authoritative source: `kivyforge/report/` (`envelope.py`, `diagnostics.py`, `exit_codes.py`, `console.py`) — this section states the contract, not a second copy of it.*
+
+Every verb but `run` accepts `--json`. `run` hands the child app process kivyforge's own stdout/stderr directly, which is the point of the verb, so an envelope has nowhere to go without interleaving with the app's own output.
+
+**The stdout/stderr split is the load-bearing rule.** Product goes to stdout; progress, staging lines, and third-party tool output (Gradle, `xcodebuild`, `appimagetool`) go to stderr — always, including under `--json`. Under `--json`, stdout is *exactly one* envelope and nothing else, on success and on every failure class, so `kivyforge build -p android --json > build.json` stays parseable while the human still watches progress on the terminal.
+
+**Envelope shape** (`envelope.py`), identical across every verb:
+
+```json
+{
+  "schema": 1,
+  "kivyforge": "3.0.0.dev0",
+  "command": "doctor",
+  "platform": "linux",
+  "ok": true,
+  "data": {},
+  "diagnostics": []
+}
+```
+
+`schema` is an integer, bumped only for a non-additive change (adding a key inside `data` is not one). `data` and `diagnostics` are always present, even empty — never `null`, never omitted.
+
+**Exit codes** (`exit_codes.py`) are a stable, reserved taxonomy — a caller branches on the number, not on parsing the message:
+
+| Code | Meaning | Typical reaction |
+|---|---|---|
+| 0 | success | continue |
+| 1 | config / user error | edit `pyproject.toml` and retry |
+| 2 | usage error (click's, not ours) | fix the command line |
+| 3 | environment / toolchain missing | install something, retry unchanged |
+| 4 | lock drift | run `kivyforge lock -p <platform>` |
+| 5 | build failure | read the build log on stderr |
+
+`2` is reserved permanently for click's own `UsageError` — kivyforge never assigns it deliberately, so "you typed the flag wrong" and "this machine lacks a toolchain" stay distinguishable.
+
+**Diagnostics** (`diagnostics.py`) are `{"code", "severity", "message"}`, plus optional `"remediation"` and `"context"` (omitted, not emitted empty, when there is nothing to say). `severity` is one of `error` / `warning` / `info`. **A diagnostic on an `ok: true` run is a warning, not a failure** — an unsigned package (`KF-SIGNING-UNCONFIGURED`), a `byte_compile` that silently degraded to shipping source (`KF-BYTECOMPILE-NO-INTERP`), a resolver judgement call (`KF-LOCK-WARNING`). The code is the contract; the message is reworded freely across releases and must never be matched on.
+
+**`data.artifacts`** (`build`/`package`) is a list of `{"path", "kind"}` pairs, relative to the project root and always posix-spelled regardless of host. It lists only what *this invocation* finalised and verified — a failed run's `artifacts` is `[]` even when a previous run's output is still sitting on disk, because naming a stale file is worse than naming nothing (it is indistinguishable from success).
+
+**Discovery:** `kivyforge capabilities --json` needs no project, lock, or network. It publishes the platform/arch/format matrix, the host-capability matrix (which host can build which target — computed by calling each backend's own capability check, not a hand-kept table), the verb list with its `--json` support, and both vocabularies above. It is the first call an agent should make, before assuming anything about what this kivyforge version or this host can do.
+
+**Colour:** `--no-color` (or `NO_COLOR`/`FORCE_COLOR`) disables Rich styling and terminal-width detection, for a log file or CI transcript where a stray SGR code is as unwelcome as colour. Human-mode output is otherwise unaffected by `--json`'s presence, except that it is suppressed — the envelope supersedes it.
+
 ## Environment variables
 
 | Variable | Effect |
@@ -90,4 +135,4 @@ The platform-specific behavior of each verb is documented alongside the platform
 - **iOS** — [iOS CLI behavior](../platforms/ios/04-cli-ios.md) (build flags, `xcodebuild` integration, `run`/`open`, `doctor` checks, `kivy.mobile`).
 - **macOS** — [macOS spec](../platforms/macos/macos-spec.md).
 - **Linux** — [Linux spec](../platforms/linux/linux-spec.md).
-- **Windows** — [Windows spec](../platforms/windows/windows-spec.md) (design settled; implementation not started).
+- **Windows** — [Windows spec](../platforms/windows/windows-spec.md).

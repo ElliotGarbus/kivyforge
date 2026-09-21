@@ -65,6 +65,47 @@ unvalidated, and needs a Mac.
   item 5. See the item for the fuller queue (a Linux `x86_64` CI job, the
   desktop lock-for-CI decision it is gated on, and the `kivyforge run`
   debug-only fix).
+- **A real cross-platform `entry_point` inconsistency, found and partly fixed
+  (2026-09-21).** The shared spec claimed one universal contract —
+  "`entry_point` is imported, not run as `__main__`" — that stopped being true
+  the day Linux/macOS/Windows were fixed (2026-09-14/17, above and in
+  `test-matrix.md` §7) to run it *as* `__main__` specifically so an app using
+  the ordinary `if __name__ == "__main__":` idiom would start. Android and iOS
+  still only import it. The result: that idiom now starts fine on desktop and
+  **silently never starts on Android or iOS** — no traceback, nothing in the
+  log. This is not hypothetical; it is the same shape as the buildozer-migration
+  trap `android-loadmodel-findings.md` already documented, except now it can
+  bite a kivyforge user going desktop-first, not only a buildozer migrant.
+  **Fixed now:** `docs/design/common/01-pyproject-kivy-spec.md`'s `entry_point`
+  row and callout state the actual per-platform-group split and the one style
+  that is portable everywhere (`App().run()` unconditionally, no `__main__`
+  guard); cross-references added in the Android/iOS bootstrap docs. No code or
+  example changed — every in-repo example already follows the portable style.
+  **Deferred, tracked here rather than fixed blind:** unifying the *runtime* —
+  making Android's `main.c` and iOS's `kivyforge_bootstrap.m` run `entry_point`
+  as `__main__` too (`runpy.run_module`/an equivalent), the same fix already
+  applied to the three desktop backends — touches native launcher code on two
+  platforms and needs real device/emulator (Android) and simulator/device
+  (iOS, needs a Mac) validation before it can be trusted, which was not
+  available when this was found. **Done when:** both mobile launchers run
+  `entry_point` as `__main__`, every mobile example still boots on-device with
+  its existing (guard-free) `main.py`, and one example is temporarily flipped
+  to use the `if __name__ == "__main__":` guard to prove the fix rather than
+  merely assert it. Until then, the portable style (no guard) remains the
+  documented requirement for mobile.
+- **README pass (2026-09-21):** the `## Commands` section now points at
+  `--json`/`capabilities`, and a new `## Working with agents` section (mirroring
+  `AGENTS.md`'s "Driving kivyforge from an agent", written for kivyforge's own
+  users rather than kivyforge's contributors) covers the envelope shape, exit
+  codes, diagnostics-as-warnings-on-`ok`, and `data.artifacts`. Checked first:
+  `kivyforge init -p/--platform` — already implemented and fully wired to seed
+  per-platform `pyproject.toml` overlays; nothing to do there.
+  `docs/design/common/02-cli-and-platform-resolution.md` gained a "Machine-
+  readable output (`--json`)" section (the envelope/diagnostics/exit-code
+  contract had no design-doc home since item 3 landed — only prose in this
+  file) and a stale "Windows: implementation not started" note was corrected.
+  Per-platform CLI docs (`android/06-cli-android.md`, `ios/04-cli-ios.md`) still
+  do not mention `--json` at all — small, low-risk, left for item 6.
 
 ## Execution order
 

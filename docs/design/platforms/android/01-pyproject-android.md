@@ -19,6 +19,10 @@
 >   extended accordingly.
 > - **Entry point is *imported*** — an app must call `App().run()` at module top
 >   level, not under `if __name__ == "__main__"` (a buildozer→kivyforge trap).
+>   Same on iOS; Linux/macOS/Windows now run entry_point as `__main__` instead
+>   (fixed later, per-desktop-platform — see
+>   [common/01-pyproject-kivy-spec.md](../../common/01-pyproject-kivy-spec.md)),
+>   so the unconditional-`run()` style is the only one portable to every target.
 > - **Gradle/Maven verification is scoped in v1** — the resolved graph + per-
 >   artifact SHA-256 is committed in `pylock.android.toml` (the audit record),
 >   but Gradle-*enforced* `verification-metadata.xml` is deferred (it requires
