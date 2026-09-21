@@ -14,6 +14,17 @@
  * HEADER_SEARCH_PATHS is managed by `kivyforge build`; it adds SDL3 paths
  * only when SDL3.xcframework is present, which is exactly the condition
  * __has_include tests.
+ *
+ * Build flag (set by `kivyforge build` via GCC_PREPROCESSOR_DEFINITIONS,
+ * platforms/ios/buildsettings.py):
+ *
+ *   KIVYFORGE_REQUIRES_SDL=1
+ *       Set whenever this project stages SDL3.xcframework (i.e. it depends on
+ *       Kivy). If SDL3 headers are then missing at compile time — a broken
+ *       vendoring step, a manually edited HEADER_SEARCH_PATHS — the build
+ *       FAILS with an actionable error instead of silently falling back to
+ *       the headless path below, which would produce an app that launches
+ *       but can never open a window. Credit: PR #1 (kengoon).
  */
 
 /* ── common ─────────────────────────────────────────────────────────────── */
@@ -22,6 +33,10 @@
 #include <Python.h>
 #include "kivyforge_bootstrap.h"
 #include "kivyforge_native_modules.h"
+
+#if defined(KIVYFORGE_REQUIRES_SDL) && !__has_include(<SDL3/SDL_main.h>)
+#error "Kivy app selected (KIVYFORGE_REQUIRES_SDL) but SDL3 headers were not found. Check that SDL3.xcframework is embedded and HEADER_SEARCH_PATHS includes it."
+#endif
 
 typedef struct {
     const char *entry_module;

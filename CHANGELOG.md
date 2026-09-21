@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### iOS: a missing SDL3 now fails the build, not just the launch
+
+- **A Kivy iOS app that stages `SDL3.xcframework` now fails to *compile*** if
+  its SDL3 headers are somehow missing (a broken vendoring step, a manually
+  edited `HEADER_SEARCH_PATHS`), with an actionable error naming the cause.
+  Previously this silently compiled the headless (windowless) fallback path
+  instead — an app that launches but can never open a window, with nothing
+  in the build log explaining why.
+- Non-Kivy (pure-Python) apps are unaffected; the guard only activates when
+  SDL3.xcframework is actually staged.
+- Credit: [PR #1](https://github.com/ElliotGarbus/kivyforge/pull/1) (kengoon).
+
 ### `kivyforge init -p` is now repeatable
 
 - **Seed several platforms in one run:** `kivyforge init -p ios -p android`

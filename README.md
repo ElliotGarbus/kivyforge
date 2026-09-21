@@ -474,7 +474,7 @@ the generated project when you want a fresh build.
 
 ## Working with agents
 
-kivyforge is designed to be driven non-interactively — by CI, or by an
+kivyforge is designed to also be driven non-interactively — by CI, or by an
 agent (Claude Code and similar) building or maintaining a Kivy app on your
 behalf. No verb prompts for input, and every verb but `run` accepts `--json`.
 

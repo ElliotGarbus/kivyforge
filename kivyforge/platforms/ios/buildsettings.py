@@ -79,6 +79,16 @@ def managed_settings(
         "COPY_PHASE_STRIP": "NO",
     }
 
+    if _sdl3_staged(layout):
+        # Fail the build at compile time if SDL3 headers then turn out to be
+        # missing (a broken vendoring step, a manually edited
+        # HEADER_SEARCH_PATHS), rather than silently compiling the headless
+        # path in kivyforge_bootstrap.m -- an app that launches but can never
+        # open a window. Credit: PR #1 (kengoon).
+        settings["GCC_PREPROCESSOR_DEFINITIONS"] = (
+            "$(inherited) KIVYFORGE_REQUIRES_SDL=1"
+        )
+
     if ios.icons.source:
         # Designate the AppIcon set in Assets.xcassets as the app icon. Without
         # this the catalog still compiles, but Xcode assigns no icon — the
@@ -91,16 +101,24 @@ def managed_settings(
     return settings
 
 
+def _sdl3_staged(layout: StagingLayout | None) -> bool:
+    """Whether this build stages ``SDL3.xcframework`` — i.e. it depends on Kivy.
+
+    The one signal used everywhere this distinction matters: SDL3 header
+    search paths, and (``KIVYFORGE_REQUIRES_SDL``) the compile-time guard
+    against a Kivy app silently building without SDL3 headers.
+    """
+    return layout is not None and (layout.frameworks / "SDL3.xcframework").is_dir()
+
+
 def _header_search_paths(layout: StagingLayout | None) -> str:
     paths = ["$(BUILT_PRODUCTS_DIR)/Python.framework/Headers"]
-    if layout is not None:
-        sdl_xc = layout.frameworks / "SDL3.xcframework"
-        if sdl_xc.is_dir():
-            for slice_name in ("ios-arm64_x86_64-simulator", "ios-arm64"):
-                paths.append(
-                    f"$(PROJECT_DIR)/Frameworks/SDL3.xcframework/"
-                    f"{slice_name}/SDL3.framework/Headers"
-                )
+    if _sdl3_staged(layout):
+        for slice_name in ("ios-arm64_x86_64-simulator", "ios-arm64"):
+            paths.append(
+                f"$(PROJECT_DIR)/Frameworks/SDL3.xcframework/"
+                f"{slice_name}/SDL3.framework/Headers"
+            )
     return " ".join(f'"{path}"' for path in paths)
 
 

@@ -240,3 +240,20 @@ class TestNativeModulesHeader:
             in bootstrap
         )
         assert "PyImport_ImportModule(_g_args.entry_module)" not in bootstrap
+
+    def test_requires_sdl_flag_fails_the_build_when_headers_are_missing(
+        self, config, tmp_path
+    ):
+        """KIVYFORGE_REQUIRES_SDL=1 (set by buildsettings.py when SDL3.xcframework
+        is staged — see tests/platforms/ios/test_buildsettings.py) must gate a
+        compile-time #error here, not merely a runtime fallback. Credit: PR #1
+        (kengoon). Pinned so a future edit can't silently drop the guard while
+        leaving the macro plumbed through on the Python side.
+        """
+        write_sources(config, tmp_path)
+        bootstrap = (tmp_path / "kivyforge_bootstrap.m").read_text()
+        assert (
+            "#if defined(KIVYFORGE_REQUIRES_SDL) && "
+            "!__has_include(<SDL3/SDL_main.h>)" in bootstrap
+        )
+        assert "#error" in bootstrap
