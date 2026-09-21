@@ -225,9 +225,14 @@ existing API token is the correct tool.
   installable when pinned exactly, but is skipped by ordinary resolution.
 - `[project.urls]` still points at `ElliotGarbus/kivyforge`. That is accurate
   today; it is a P5 transition task, not a P0 blocker.
-- The default branch is `modernization-rfc` (with a stale `master` present).
-  Tags are branch-independent so this does not block the release, but the
-  branch situation should be resolved before the real 3.0.0.
+- ~~The default branch is `modernization-rfc` (with a stale `master`
+  present).~~ **Resolved 2026-09-21**, ahead of the item-7 schedule: `master`
+  was a strict ancestor of `modernization-rfc` (zero unique commits), so
+  GitHub's branch-rename API renamed `modernization-rfc` → `main` in place —
+  which auto-updated the repo's default branch and the one open PR's base ref
+  — and the now-fully-contained `master` was deleted. Safe to do early,
+  unlike the rest of item 7's checklist: nothing here is Kivy-org-specific or
+  double-work-if-done-twice the way Trusted Publishing is.
 
 **Done when** `pip install --pre kivyforge` installs `3.0.0.dev0` from PyPI.
 **— done 2026-07-31**, published from tag `v3.0.0.dev0` (commit `191b5829`);
@@ -1452,7 +1457,9 @@ under the Kivy org.
 - [ ] Update `[project.urls]` — Homepage, Source, Bug Reports — to the Kivy org.
 - [ ] Update the GitHub Pages URL and any absolute doc links; consider a custom
       domain only now.
-- [ ] Resolve the `modernization-rfc` / `master` default-branch situation.
+- [x] ~~Resolve the `modernization-rfc` / `master` default-branch situation.~~
+      **Done 2026-09-21**, ahead of this item's own gate — see "Where things
+      stand" above for why that was safe here specifically.
 - [ ] Re-check the SDL-glue sync workflow's cross-repo reference to
       `kivy-mobile-wheels` if that repo moves too.
 - [ ] Bump `3.0.0.dev0` → `3.0.0`, tag, release.

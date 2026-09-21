@@ -522,7 +522,7 @@ Run the test suite and the linter:
 
 For troubleshooting advice and other frequently asked questions, consult
 the latest 
-[kivyforge FAQ](https://github.com/ElliotGarbus/kivyforge/blob/master/FAQ.md).
+[kivyforge FAQ](https://github.com/ElliotGarbus/kivyforge/blob/main/FAQ.md).
 
 ## License
 
@@ -538,7 +538,7 @@ Is there an error you don’t understand? Are you trying to figure out how to us
 it? We have volunteers who can help!
 
 The best channels to contact us for support are listed in the latest 
-[Contact Us](https://github.com/ElliotGarbus/kivyforge/blob/master/CONTACT.md) document.
+[Contact Us](https://github.com/ElliotGarbus/kivyforge/blob/main/CONTACT.md) document.
 
 ## Contributing
 
@@ -548,7 +548,7 @@ is built entirely by the contributions of volunteers. We welcome (and rely on)
 users who want to give back to the community by contributing to the project.
 
 Contributions can come in many forms. See the latest 
-[Contribution Guidelines](https://github.com/ElliotGarbus/kivyforge/blob/master/CONTRIBUTING.md)
+[Contribution Guidelines](https://github.com/ElliotGarbus/kivyforge/blob/main/CONTRIBUTING.md)
 for how you can help us.
 
 ## Code of Conduct
