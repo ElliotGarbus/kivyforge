@@ -108,6 +108,28 @@ class TestRender:
         # The old hardcoded import ignored [tool.kivy].entry_point entirely.
         assert "import main\\n" not in main_c
 
+    def test_entry_point_is_imported_not_run_as_main(self):
+        """Pins the Android half of the entry_point contract (common/01 §
+        entry_point). Android *imports* entry_point — unlike Linux/macOS/
+        Windows, which run it as `__main__` (see each platform's own
+        `test_runs_entry_as_main` / `test_the_launcher_never_names_a_source_
+        file`). That asymmetry is real and currently intentional (an
+        unconditional `App().run()` at module scope works either way), but it
+        is also the exact shape of silent-behavior-drift bug this repo has
+        been bitten by before: a future refactor of main.c must change this
+        assertion deliberately, in the same commit as the entry_point docs, not
+        as an unnoticed side effect.
+        """
+        main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
+            "cpp/main.c"
+        ]
+        assert (
+            "importlib.import_module(os.environ.get('KF_ENTRY_POINT') or 'main')"
+            in main_c
+        )
+        assert "runpy" not in main_c
+        assert "__main__" not in main_c
+
     @pytest.mark.parametrize(
         "bad", ['main"; evil()', "main\nimport os", "1main", "pkg..mod", ""]
     )
