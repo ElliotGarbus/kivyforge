@@ -9,5 +9,7 @@ class HelloApp(App):
         return Label(text="Hello from kivyforge", font_size="28sp")
 
 
-# kivyforge imports the entry point (not run as __main__), so start at import.
+# Runs the same way with or without an `if __name__ == "__main__":` guard —
+# kivyforge runs entry_point as __main__ on every platform — so the plain,
+# unconditional form here is just the simpler of the two.
 HelloApp().run()

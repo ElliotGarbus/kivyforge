@@ -167,5 +167,6 @@ class QrApp(App):
             self._root.ids.status.text = "QR needs Android (ZXing via pyjnius)"
 
 
-# kivyforge imports the entry point (not run as __main__), so start at import.
+# Runs the same way with or without an `if __name__ == "__main__":` guard —
+# kivyforge runs entry_point as __main__ on every platform.
 QrApp().run()

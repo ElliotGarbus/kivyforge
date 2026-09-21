@@ -140,7 +140,6 @@ class DeviceInfoApp(App):
         ]
 
 
-# kivyforge *imports* the entry-point module (it is not run as __main__), so
-# the app must start at import time — no `if __name__ == "__main__"` guard.
-# (Migrating from buildozer, where main.py runs as __main__? Drop the guard.)
+# Runs the same way with or without an `if __name__ == "__main__":` guard —
+# kivyforge runs entry_point as __main__ on every platform, same as buildozer.
 DeviceInfoApp().run()

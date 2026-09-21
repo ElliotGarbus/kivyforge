@@ -97,10 +97,22 @@ unvalidated, and needs a Mac.
   per-platform behavior (`tests/platforms/android/test_bootstrap.py`,
   `tests/platforms/ios/test_plist_sources.py`) were flipped in the same
   change to pin the *new* one, exactly as their own docstrings said a future
-  change must do. Full hermetic suite green; no example needed changes (all
-  already use the portable, guard-free `App().run()` style).
-  **On-device validation:** tracked separately below rather than folded in
-  here, since it needs real hardware this repo does not always have to hand.
+  change must do. Full hermetic suite green; no example's *runtime* behavior
+  needed changes (all already use the portable, guard-free `App().run()`
+  style) — five (`hello-android`, `android-safe-area`, `hello-sdl3`,
+  `pyjnius-deviceinfo`, `qr-maven`) had a comment explaining the old
+  import-only behavior, corrected in the same change.
+  **On-device validation — Android done 2026-09-21, on a real device, both
+  ways.** `hello-android` (a committed-lock on-device gate example) on a
+  Pixel 8a: `kivyforge run --smoke -p android` passed unmodified (the normal
+  guard-free style still works), then **`src/main.py` was temporarily
+  edited to add the `if __name__ == "__main__":` guard, rebuilt, and passed
+  the same contract smoke test again** — the exact scenario that silently
+  failed before this fix, now proven on hardware rather than merely
+  hermetic-tested. Reverted after (`git diff` clean before recommit).
+  **iOS validation is next**, on the user's own Mac — a self-contained prompt
+  for it lives at
+  [`ios-entry-point-main-validation-prompt.md`](ios-entry-point-main-validation-prompt.md).
 - **README pass (2026-09-21):** the `## Commands` section now points at
   `--json`/`capabilities`, and a new `## Working with agents` section (mirroring
   `AGENTS.md`'s "Driving kivyforge from an agent", written for kivyforge's own

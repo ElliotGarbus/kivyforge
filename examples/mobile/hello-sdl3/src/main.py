@@ -13,5 +13,6 @@ class HelloSdl3App(App):
         return Label(text="Hello from SDL3", font_size="28sp")
 
 
-# kivyforge imports the entry point (not run as __main__), so start at import.
+# Runs the same way with or without an `if __name__ == "__main__":` guard —
+# kivyforge runs entry_point as __main__ on every platform.
 HelloSdl3App().run()
