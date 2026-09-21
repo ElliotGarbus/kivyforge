@@ -346,10 +346,44 @@ def semantic_equal(a: Lockfile, b: Lockfile) -> bool:
     """Compare two lockfiles ignoring the volatile ``generated_at`` field.
 
     Used by ``lock --check`` so a re-resolve that produces identical pins (but
-    a new timestamp) still reports "in sync".
+    a new timestamp) still reports "in sync". ``build_lockfile`` returns
+    ``packages``/``xcframeworks``/``swift_packages`` (and each package's
+    ``wheels``) in resolver-encounter order; only ``writer.dumps`` sorts them
+    for the file on disk (module docstring: "a deterministic ordering ...
+    so diffs across runs show only real changes"). Comparing the raw,
+    unsorted tuples here made ``lock --check`` report drift on *every* call
+    for any project whose resolver order differs from alphabetical — which is
+    effectively any project with more than one package — with an empty
+    ``diff_summary`` (nothing there is order-sensitive), so the false
+    positive was silent. Found validating the iOS entry_point fix on
+    ``hello-kivy`` (2026-09-21): a real re-resolve reproduced the exact same
+    three packages/wheels as the committed lock, `--update` wrote a file
+    identical modulo ``generated_at``, yet `--check` still failed. Normalizing
+    to the writer's own sort order before comparing fixes it without
+    weakening the check: a real content difference still fails, in any order.
     """
-    return dataclasses.replace(a, generated_at="") == dataclasses.replace(
-        b, generated_at=""
+    return _normalized(a) == _normalized(b)
+
+
+def _normalized(lock: Lockfile) -> Lockfile:
+    return dataclasses.replace(
+        lock,
+        generated_at="",
+        packages=tuple(
+            sorted(
+                (
+                    dataclasses.replace(
+                        p, wheels=tuple(sorted(p.wheels, key=lambda w: w.name))
+                    )
+                    for p in lock.packages
+                ),
+                key=lambda p: p.sort_key,
+            )
+        ),
+        xcframeworks=tuple(
+            sorted(lock.xcframeworks, key=lambda x: (x.name.lower(), x.version))
+        ),
+        swift_packages=tuple(sorted(lock.swift_packages, key=lambda s: s.name)),
     )
 
 

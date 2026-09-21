@@ -221,9 +221,39 @@ def _check_variants_complete(
 
 
 def semantic_equal(a: WheelRuntimeLock, b: WheelRuntimeLock) -> bool:
-    """Compare two locks ignoring the volatile ``generated_at`` field."""
-    return dataclasses.replace(a, generated_at="") == dataclasses.replace(
-        b, generated_at=""
+    """Compare two locks ignoring the volatile ``generated_at`` field.
+
+    ``build_wheel_runtime_lock`` returns ``packages``/``native_binaries`` (and
+    each package's ``wheels``) in resolver-encounter order; only
+    ``serialize.dumps`` sorts them for the file on disk. Comparing the raw,
+    unsorted tuples made ``lock --check`` report drift on every call for any
+    project whose resolver order differs from alphabetical, with an empty
+    ``diff_summary`` (nothing there is order-sensitive) — the iOS twin of this
+    function had the identical bug, found and fixed validating the
+    entry_point fix on a real ``hello-kivy`` re-resolve (2026-09-21;
+    ios-entry-point-main-validation-findings.md). Not independently reproduced
+    on a desktop example here, but the shape is the same code, so the fix is
+    applied the same way rather than left for a future example to trip over.
+    """
+    return _normalized(a) == _normalized(b)
+
+
+def _normalized(lock: WheelRuntimeLock) -> WheelRuntimeLock:
+    return dataclasses.replace(
+        lock,
+        generated_at="",
+        packages=tuple(
+            sorted(
+                (
+                    dataclasses.replace(
+                        p, wheels=tuple(sorted(p.wheels, key=lambda w: w.name))
+                    )
+                    for p in lock.packages
+                ),
+                key=lambda p: p.sort_key,
+            )
+        ),
+        native_binaries=tuple(sorted(lock.native_binaries, key=lambda b: b.name)),
     )
 
 

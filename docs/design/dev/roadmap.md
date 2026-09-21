@@ -110,9 +110,35 @@ unvalidated, and needs a Mac.
   the same contract smoke test again** — the exact scenario that silently
   failed before this fix, now proven on hardware rather than merely
   hermetic-tested. Reverted after (`git diff` clean before recommit).
-  **iOS validation is next**, on the user's own Mac — a self-contained prompt
-  for it lives at
-  [`ios-entry-point-main-validation-prompt.md`](ios-entry-point-main-validation-prompt.md).
+  **iOS validated 2026-09-21, on the user's own Mac, simulator and device**
+  ([`ios-entry-point-main-validation-prompt.md`](ios-entry-point-main-validation-prompt.md)
+  →
+  [`ios-entry-point-main-validation-findings.md`](ios-entry-point-main-validation-findings.md)).
+  `hello-kivy` on the iOS 26.5 simulator: unmodified (`App().run()`) builds
+  and renders "Hello Kivy", exactly as every prior run; `src/main.py` was then
+  temporarily edited to add the `if __name__ == "__main__":` guard — the
+  exact idiom that used to silently fail on iOS — rebuilt, and rendered the
+  identical "Hello Kivy" screen, both confirmed by simulator screenshot.
+  Repeated `--device` on a connected, provisioned iPhone 13 Pro Max: install
+  and launch both succeeded (exit 0, no "device not unlocked" error) with the
+  guard still in place; unlike the simulator there is no CLI path to
+  screenshot a physical device, so that leg is "launched without error," not
+  independently render-confirmed. Reverted (`git diff` clean before
+  recommit). **Both platforms are now proven on hardware, not just hermetic
+  template tests**, closing this item out.
+  **Incidental finding, fixed the same day:** checking for `pylock.ios.toml`
+  drift after the revert turned up an unrelated bug in `lock --check` itself
+  — it re-resolves live and compares the result against the loaded lock with
+  plain (order-sensitive) dataclass equality, while only the *writer* sorts
+  packages/wheels before they hit disk, so `--check` reported `KF-LOCK-DRIFT`
+  with an *empty* diff on every run, on a lock that a real `--update` proved
+  was byte-identical modulo the timestamp. Fixed in
+  `kivyforge/platforms/ios/lock/builder.py::semantic_equal` by normalizing
+  order before comparing (matching what `diff_summary` already tolerated),
+  and mirrored into `kivyforge/lock/wheelruntime/builder.py` (shared by
+  macOS/Linux/Windows), which had the identical shape though it wasn't
+  independently reproduced there. Regression tests added for both; full
+  suite + `pyright` + `ruff` clean. See the findings doc for the full trace.
 - **README pass (2026-09-21):** the `## Commands` section now points at
   `--json`/`capabilities`, and a new `## Working with agents` section (mirroring
   `AGENTS.md`'s "Driving kivyforge from an agent", written for kivyforge's own

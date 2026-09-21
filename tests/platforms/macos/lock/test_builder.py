@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.platforms.macos.lock import MacosBuildError, build_macos_lockfile
+from kivyforge.platforms.macos.lock import (
+    MacosBuildError,
+    build_macos_lockfile,
+    semantic_equal,
+)
 
 from .conftest import FakeMacosResolver, FakeRuntimeProvider
 
@@ -141,3 +147,39 @@ class TestBuild:
         cfg = load_config_from_text(text, project_root=tmp_path)
         with pytest.raises(MacosBuildError, match="no \\[tool.kivy.macos\\]"):
             build_macos_lockfile(cfg, text, project_root=tmp_path)
+
+
+class TestSemanticEqual:
+    def test_ignores_package_and_wheel_order(
+        self, macos_pyproject, tmp_path, fake_macos_resolver
+    ):
+        """Regression: ``build_wheel_runtime_lock`` (shared by macOS/Linux/
+        Windows) returns packages/wheels in resolver-encounter order; only
+        ``serialize.dumps`` sorts them for disk. ``lock --check`` compares a
+        freshly-built lock against one reloaded from that sorted file, so a
+        mere reorder (no content change) used to report drift on every call.
+        This is the desktop twin of the iOS bug found validating the
+        entry_point fix on a real ``hello-kivy`` re-resolve (2026-09-21).
+        """
+        cfg = _config(macos_pyproject, tmp_path)
+        lock = build_macos_lockfile(
+            cfg,
+            macos_pyproject,
+            project_root=tmp_path,
+            resolver=fake_macos_resolver,
+            runtime_provider=FakeRuntimeProvider(floor="11.0"),
+        )
+        assert len(lock.packages) >= 2
+
+        reordered = dataclasses.replace(lock, packages=tuple(reversed(lock.packages)))
+        assert reordered.packages != lock.packages
+        assert semantic_equal(lock, reordered)
+
+        changed = dataclasses.replace(
+            lock,
+            packages=tuple(
+                dataclasses.replace(p, version="99.0.0") if p.name == "kivy" else p
+                for p in reversed(lock.packages)
+            ),
+        )
+        assert not semantic_equal(lock, changed)

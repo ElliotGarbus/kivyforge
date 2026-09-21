@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -138,6 +139,49 @@ class TestDriftAndCheck:
         )
         assert a.generated_at != b.generated_at
         assert semantic_equal(a, b)
+
+    def test_semantic_equal_ignores_package_and_wheel_order(
+        self, minimal_pyproject, fake_resolver, fake_python_provider
+    ):
+        """Regression: ``build_lockfile`` returns packages/wheels in
+        resolver-encounter order; only ``writer.dumps`` sorts them for disk.
+        ``lock --check`` compares a freshly-built lock against one reloaded
+        from that sorted file, so a mere reorder (no content change) used to
+        report drift on every call, with an empty diff (found validating the
+        iOS entry_point fix on a real ``hello-kivy`` re-resolve, 2026-09-21).
+        """
+        lock = _build(minimal_pyproject, fake_resolver, fake_python_provider)
+        assert len(lock.packages) >= 2
+
+        reordered = dataclasses.replace(
+            lock,
+            packages=tuple(reversed(lock.packages)),
+        )
+        assert reordered.packages != lock.packages  # actually reordered
+        assert semantic_equal(lock, reordered)
+
+        kivy = next(p for p in lock.packages if p.name == "kivy")
+        assert len(kivy.wheels) >= 2
+        reordered_wheels = dataclasses.replace(
+            lock,
+            packages=tuple(
+                dataclasses.replace(p, wheels=tuple(reversed(p.wheels)))
+                if p.name == "kivy"
+                else p
+                for p in lock.packages
+            ),
+        )
+        assert semantic_equal(lock, reordered_wheels)
+
+        # A real content change must still be caught, in either order.
+        changed = dataclasses.replace(
+            lock,
+            packages=tuple(
+                dataclasses.replace(p, version="99.0.0") if p.name == "kivy" else p
+                for p in reversed(lock.packages)
+            ),
+        )
+        assert not semantic_equal(lock, changed)
 
 
 _SWIFT_BASE = (
