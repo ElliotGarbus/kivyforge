@@ -65,34 +65,42 @@ unvalidated, and needs a Mac.
   item 5. See the item for the fuller queue (a Linux `x86_64` CI job, the
   desktop lock-for-CI decision it is gated on, and the `kivyforge run`
   debug-only fix).
-- **A real cross-platform `entry_point` inconsistency, found and partly fixed
-  (2026-09-21).** The shared spec claimed one universal contract —
+- **A real cross-platform `entry_point` inconsistency, found 2026-09-21 and
+  fixed 2026-09-21/22.** The shared spec claimed one universal contract —
   "`entry_point` is imported, not run as `__main__`" — that stopped being true
   the day Linux/macOS/Windows were fixed (2026-09-14/17, above and in
   `test-matrix.md` §7) to run it *as* `__main__` specifically so an app using
   the ordinary `if __name__ == "__main__":` idiom would start. Android and iOS
-  still only import it. The result: that idiom now starts fine on desktop and
-  **silently never starts on Android or iOS** — no traceback, nothing in the
-  log. This is not hypothetical; it is the same shape as the buildozer-migration
-  trap `android-loadmodel-findings.md` already documented, except now it can
-  bite a kivyforge user going desktop-first, not only a buildozer migrant.
-  **Fixed now:** `docs/design/common/01-pyproject-kivy-spec.md`'s `entry_point`
-  row and callout state the actual per-platform-group split and the one style
-  that is portable everywhere (`App().run()` unconditionally, no `__main__`
-  guard); cross-references added in the Android/iOS bootstrap docs. No code or
-  example changed — every in-repo example already follows the portable style.
-  **Deferred, tracked here rather than fixed blind:** unifying the *runtime* —
-  making Android's `main.c` and iOS's `kivyforge_bootstrap.m` run `entry_point`
-  as `__main__` too (`runpy.run_module`/an equivalent), the same fix already
-  applied to the three desktop backends — touches native launcher code on two
-  platforms and needs real device/emulator (Android) and simulator/device
-  (iOS, needs a Mac) validation before it can be trusted, which was not
-  available when this was found. **Done when:** both mobile launchers run
-  `entry_point` as `__main__`, every mobile example still boots on-device with
-  its existing (guard-free) `main.py`, and one example is temporarily flipped
-  to use the `if __name__ == "__main__":` guard to prove the fix rather than
-  merely assert it. Until then, the portable style (no guard) remains the
-  documented requirement for mobile.
+  still only imported it, so that idiom started fine on desktop and **silently
+  never started on Android or iOS** — no traceback, nothing in the log. Same
+  shape as the buildozer-migration trap `android-loadmodel-findings.md`
+  already documented, except it could now bite a kivyforge user going
+  desktop-first too.
+  **External contribution caught the iOS half first:**
+  [PR #1](https://github.com/ElliotGarbus/kivyforge/pull/1) (kengoon), opened
+  2026-09-19, independently found and fixed exactly this for iOS via
+  `runpy.run_module`. Code-reviewed (`/code-review`, high effort) 2026-09-21 —
+  the C/Obj-C itself was sound, but the PR did iOS alone, breaking the
+  regression test added the same day (below) and leaving the common spec
+  wrong; declined for that reason, credited, and the fix taken on directly
+  instead so both platforms land together as this item always required. See
+  the PR's own comment thread for the full response.
+  **Fixed for both platforms, 2026-09-21/22.** Android's `main.c` and iOS's
+  `kivyforge_bootstrap.m` both now run `entry_point` as `__main__` via
+  `runpy.run_module(entry_point, run_name="__main__", alter_sys=True)`,
+  matching the three desktop backends — `docs/design/common/
+  01-pyproject-kivy-spec.md`'s `entry_point` section now states one unified
+  contract instead of a two-way split, with a migration note for the two real
+  behavior changes (package `entry_point` now needs a `__main__.py`
+  everywhere; the entry module is no longer left in `sys.modules` after
+  startup). The two regression tests added 2026-09-21 to pin the *old*
+  per-platform behavior (`tests/platforms/android/test_bootstrap.py`,
+  `tests/platforms/ios/test_plist_sources.py`) were flipped in the same
+  change to pin the *new* one, exactly as their own docstrings said a future
+  change must do. Full hermetic suite green; no example needed changes (all
+  already use the portable, guard-free `App().run()` style).
+  **On-device validation:** tracked separately below rather than folded in
+  here, since it needs real hardware this repo does not always have to hand.
 - **README pass (2026-09-21):** the `## Commands` section now points at
   `--json`/`capabilities`, and a new `## Working with agents` section (mirroring
   `AGENTS.md`'s "Driving kivyforge from an agent", written for kivyforge's own

@@ -218,20 +218,25 @@ class TestNativeModulesHeader:
             "Py_InitializeFromConfig(&config)"
         )
 
-    def test_entry_point_is_imported_not_run_as_main(self, config, tmp_path):
+    def test_entry_point_is_run_as_main(self, config, tmp_path):
         """Pins the iOS half of the entry_point contract (common/01 §
-        entry_point). iOS *imports* entry_point — unlike Linux/macOS/Windows,
-        which run it as `__main__` (see each platform's own
-        `test_runs_entry_as_main` / `test_the_launcher_never_names_a_source_
-        file`). That asymmetry is real and currently intentional (an
-        unconditional `App().run()` at module scope works either way), but it
-        is also the exact shape of silent-behavior-drift bug this repo has
-        been bitten by before: a future change to kivyforge_bootstrap.m must
-        change this assertion deliberately, in the same commit as the
-        entry_point docs, not as an unnoticed side effect.
+        entry_point). iOS now runs entry_point as `__main__` via
+        `runpy.run_module`, matching Linux/macOS/Windows/Android (see each
+        platform's own `test_runs_entry_as_main` /
+        `test_the_launcher_never_names_a_source_file` /
+        `test_entry_point_is_run_as_main` on Android) — unifying what used to
+        be a real, documented cross-platform split (roadmap.md,
+        2026-09-21/22; credit to PR #1 (kengoon) for catching this for iOS
+        first). This is the exact shape of silent-behavior-drift bug this
+        repo has been bitten by before: a future change to
+        kivyforge_bootstrap.m must change this assertion deliberately, in the
+        same commit as the entry_point docs, not as an unnoticed side effect.
         """
         write_sources(config, tmp_path)
         bootstrap = (tmp_path / "kivyforge_bootstrap.m").read_text()
-        assert "PyImport_ImportModule(_g_args.entry_module)" in bootstrap
-        assert "runpy" not in bootstrap
-        assert "__main__" not in bootstrap
+        assert (
+            'PyObject_CallMethod(runpy, "run_module", "sOsO",\n'
+            '                               name, Py_None, "__main__", Py_True)'
+            in bootstrap
+        )
+        assert "PyImport_ImportModule(_g_args.entry_module)" not in bootstrap

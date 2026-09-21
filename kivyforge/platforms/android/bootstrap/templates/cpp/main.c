@@ -88,12 +88,18 @@ static int kf_start_python(void) {
     LOGI("launcher: interpreter up");
 
     /* Step 5: finder, then site, then pip-deps site dir, then the entry point
-     * named by KF_ENTRY_POINT. When KIVYFORGE_SELFTEST is set (the instrumented
+     * named by KF_ENTRY_POINT, run the way `python -m <module>` would (i.e.
+     * with __name__ == "__main__", via runpy) so `if __name__ == "__main__":`
+     * blocks execute — the ordinary Python idiom, and the same contract
+     * Linux/macOS/Windows/iOS already give (docs/design/common/
+     * 01-pyproject-kivy-spec.md). A plain module import (the previous approach
+     * here) left __name__ as the module's own dotted name and never triggered
+     * those blocks. When KIVYFORGE_SELFTEST is set (the instrumented
      * contract test's intent extra, forwarded to the env by PythonActivity),
      * run the inert self-test hook instead of the app entry point.
      *
      * KF_SERVICE_MARKER, when set, names a file the interpreter stamps once it
-     * is up and stamps again if the entry-point import raises — the signal the
+     * is up and stamps again if the entry-point run raises — the signal the
      * generated service contract test polls (a service entry point normally
      * never returns, so there is nothing else to wait for). */
     const char *selftest = getenv("KIVYFORGE_SELFTEST");
@@ -104,7 +110,7 @@ static int kf_start_python(void) {
         "import site\n"
         "site.main()\n"
         "site.addsitedir(%s'%s')\n"
-        "import importlib, os, traceback\n"
+        "import os, runpy, traceback\n"
         "_marker = os.environ.get('KF_SERVICE_MARKER')\n"
         "if _marker:\n"
         "    with open(_marker, 'w') as _f:\n"
@@ -114,7 +120,8 @@ static int kf_start_python(void) {
         "        import _kivyforge_selftest\n"
         "        _kivyforge_selftest.run()\n"
         "    else:\n"
-        "        importlib.import_module(os.environ.get('KF_ENTRY_POINT') or 'main')\n"
+        "        runpy.run_module(os.environ.get('KF_ENTRY_POINT') or 'main',\n"
+        "                         run_name='__main__', alter_sys=True)\n"
         "except Exception:\n"
         "    traceback.print_exc()\n"
         "    if _marker:\n"
@@ -124,7 +131,7 @@ static int kf_start_python(void) {
         "r", bootstrap_path, "r", native_dir, "r", sp_path,
         (selftest && selftest[0] == '1') ? 1 : 0);
     int rc = PyRun_SimpleString(code);
-    LOGI("launcher: entry-point import returned %d", rc);
+    LOGI("launcher: entry-point run returned %d", rc);
 
     /* Keep the process alive briefly so instrumentation/logcat settle, then
      * finalize. A real app never reaches here while Kivy runs its loop. */

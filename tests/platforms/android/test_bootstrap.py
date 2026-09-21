@@ -108,27 +108,29 @@ class TestRender:
         # The old hardcoded import ignored [tool.kivy].entry_point entirely.
         assert "import main\\n" not in main_c
 
-    def test_entry_point_is_imported_not_run_as_main(self):
+    def test_entry_point_is_run_as_main(self):
         """Pins the Android half of the entry_point contract (common/01 §
-        entry_point). Android *imports* entry_point — unlike Linux/macOS/
-        Windows, which run it as `__main__` (see each platform's own
-        `test_runs_entry_as_main` / `test_the_launcher_never_names_a_source_
-        file`). That asymmetry is real and currently intentional (an
-        unconditional `App().run()` at module scope works either way), but it
-        is also the exact shape of silent-behavior-drift bug this repo has
-        been bitten by before: a future refactor of main.c must change this
-        assertion deliberately, in the same commit as the entry_point docs, not
-        as an unnoticed side effect.
+        entry_point). Android now runs entry_point as `__main__` via
+        `runpy.run_module`, matching Linux/macOS/Windows/iOS (see each
+        platform's own `test_runs_entry_as_main` /
+        `test_the_launcher_never_names_a_source_file` /
+        `test_entry_point_is_run_as_main` on iOS) — unifying what used to be a
+        real, documented cross-platform split (roadmap.md, 2026-09-21/22;
+        credit to PR #1 for catching the iOS half first). This is the exact
+        shape of silent-behavior-drift bug this repo has been bitten by
+        before: a future refactor of main.c must change this assertion
+        deliberately, in the same commit as the entry_point docs, not as an
+        unnoticed side effect.
         """
         main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
             "cpp/main.c"
         ]
         assert (
-            "importlib.import_module(os.environ.get('KF_ENTRY_POINT') or 'main')"
-            in main_c
+            "runpy.run_module(os.environ.get('KF_ENTRY_POINT') or 'main',\\n" in main_c
         )
-        assert "runpy" not in main_c
-        assert "__main__" not in main_c
+        assert "run_name='__main__', alter_sys=True" in main_c
+        assert "import os, runpy, traceback" in main_c
+        assert "importlib.import_module" not in main_c
 
     @pytest.mark.parametrize(
         "bad", ['main"; evil()', "main\nimport os", "1main", "pkg..mod", ""]

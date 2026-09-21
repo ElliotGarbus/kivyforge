@@ -17,12 +17,16 @@
 >   ship `org.renpy.android.Hardware` + `PythonActivity.mActivity` (Kivy's own
 >   `metrics.py` autoclasses them); the namespace-preservation section (05) is
 >   extended accordingly.
-> - **Entry point is *imported*** — an app must call `App().run()` at module top
+> - ~~**Entry point is *imported*** — an app must call `App().run()` at module top
 >   level, not under `if __name__ == "__main__"` (a buildozer→kivyforge trap).
 >   Same on iOS; Linux/macOS/Windows now run entry_point as `__main__` instead
->   (fixed later, per-desktop-platform — see
->   [common/01-pyproject-kivy-spec.md](../../common/01-pyproject-kivy-spec.md)),
->   so the unconditional-`run()` style is the only one portable to every target.
+>   (fixed later, per-desktop-platform).~~ **Resolved 2026-09-21**: Android
+>   (and iOS) now run `entry_point` as `__main__` too, the same as the desktop
+>   three — see the `entry_point` callout in
+>   [common/01-pyproject-kivy-spec.md](../../common/01-pyproject-kivy-spec.md)
+>   for the unified contract. The unconditional-`run()` style still works
+>   everywhere and remains the recommended one, but the buildozer-style
+>   `if __name__ == "__main__":` guard is no longer a trap on any platform.
 > - **Gradle/Maven verification is scoped in v1** — the resolved graph + per-
 >   artifact SHA-256 is committed in `pylock.android.toml` (the audit record),
 >   but Gradle-*enforced* `verification-metadata.xml` is deferred (it requires

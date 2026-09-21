@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### `entry_point` now runs as `__main__` on every platform
+
+- **Migration note.** `if __name__ == "__main__":` blocks in your entry
+  module now execute on Android and iOS, matching the behavior Linux, macOS
+  and Windows already had. Previously the entry module was only *imported* on
+  mobile, so that idiom silently never ran there — no error, nothing in the
+  log. If your app already calls `App().run()` unconditionally at module top
+  level (the style every in-repo example uses), nothing changes for you.
+- **Breaking for one specific pattern:** an `entry_point` pointing at a
+  *package* (not a module) now requires a `__main__.py` on every platform,
+  same as `python -m mypackage`. Before this change, Android and iOS ran the
+  package's `__init__.py` instead. Add a `__main__.py`, or point `entry_point`
+  at an explicitly-named module instead (e.g. `entry_point = "myapp.start"`).
+- **Also changes:** the entry module is no longer left in `sys.modules` after
+  startup (mobile only — desktop already worked this way). Code that expects
+  to `import` its own entry module again by name after startup will now
+  re-execute it instead of getting the cached one.
+- Implementation: Android's `main.c` and iOS's `kivyforge_bootstrap.m` both
+  now run the entry module via `runpy.run_module(entry_point,
+  run_name="__main__", alter_sys=True)`. Credit to
+  [PR #1](https://github.com/ElliotGarbus/kivyforge/pull/1) (kengoon), which
+  independently found and fixed the iOS half of this first.
+
 ### Desktop apps start faster: the embedded stdlib ships compiled
 
 - **The staged Python stdlib is byte-compiled at build time** on Windows, Linux

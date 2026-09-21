@@ -36,6 +36,30 @@ static void _crash(NSString *message) {
     exit(1);
 }
 
+/* Run the entry module the way `python -m <module>` would, i.e. with
+ * __name__ == "__main__", so `if __name__ == "__main__": App().run()` blocks
+ * execute — the ordinary Python idiom, and the same contract Linux/macOS/
+ * Windows already give (docs/design/common/01-pyproject-kivy-spec.md). Plain
+ * PyImport_ImportModule (the previous approach here) leaves __name__ as the
+ * module's own dotted name and never triggers those blocks. Approach credited
+ * to PR #1 (kengoon), which caught this for iOS first. */
+static void _run_entry_module(const char *name) {
+    PyObject *runpy = PyImport_ImportModule("runpy");
+    PyObject *result = runpy
+        ? PyObject_CallMethod(runpy, "run_module", "sOsO",
+                               name, Py_None, "__main__", Py_True)
+        : NULL;
+
+    if (result == NULL) {
+        PyErr_Print();  /* a SystemExit raised by the app exits here, as usual */
+        _crash([NSString stringWithFormat:
+            @"failed to run entry module \"%s\"", name]);
+    }
+
+    Py_DECREF(result);
+    Py_XDECREF(runpy);
+}
+
 /* Add every package-contributed native module to the interpreter's inittab.
  * Failing loudly here is deliberate: the alternative is an app that starts,
  * imports a same-named typing stub the package ships for off-device editing,
@@ -100,13 +124,7 @@ static void _run_python(void) {
     if (PyRun_SimpleString([addsite UTF8String]) != 0)
         _crash(@"failed to add pip-deps as a site directory");
 
-    PyObject *module = PyImport_ImportModule(_g_args.entry_module);
-    if (module == NULL) {
-        PyErr_Print();
-        _crash([NSString stringWithFormat:
-            @"failed to import entry module \"%s\"", _g_args.entry_module]);
-    }
-    Py_DECREF(module);
+    _run_entry_module(_g_args.entry_module);
     Py_Finalize();
 }
 

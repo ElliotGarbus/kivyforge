@@ -63,7 +63,7 @@ flowchart TD
     E --> F["Py_InitializeFromConfig\n(site_import deferred, utf8_mode, ...)"]
     F --> G["install extension-module finder\n(sys.meta_path, from manifest)"]
     G --> H["run site import + site.addsitedir(pip-deps)"]
-    H --> J["import entry_point module"]
+    H --> J["run entry_point module as __main__\n(runpy.run_module)"]
     J --> K["Kivy App().run() → SDL/EGL window\nvia SDLActivity surface"]
 ```
 
@@ -72,7 +72,7 @@ flowchart TD
 3. **The native launcher (`libmain.so`) unpacks the Python asset bundle** (`assets/_python_bundle/`) to app-private storage on first run (and after an update, keyed by a version stamp), since Python source must live on a real filesystem path. `libmain.so` is kivyforge's own C shim, compiled from the emitted `cpp/` sources by the NDK during the Gradle build (see [gradle-project-generation §"The native launcher"](04-gradle-project-generation.md#the-native-launcher-libmainso)).
 4. **It sets the environment** the runtime and pyjnius expect (below), then initializes CPython via `Py_InitializeFromConfig` with **`site_import` deferred** — so no `lib-dynload` extension is loaded before the finder is in place (core start-up needs only the modules built into `libpython`).
 5. **It installs the extension-module finder** on `sys.meta_path` from the bundle's manifest, then runs `import site` and registers `pip-deps` as a site directory (`site.addsitedir()`, not bare `PYTHONPATH`) so `.pth` files work — the same asymmetry the iOS bootstrap documents. See "Extension-module finder" below.
-6. **It imports the entry-point module** (`PyImport_ImportModule(entry_point)`) — same as iOS, and *not* the same as Linux/macOS/Windows, which run it as `__main__`; see the [common spec's entry_point callout](../../common/01-pyproject-kivy-spec.md) for the full split and the portable style. Kivy's `App().run()` drives the SDL surface `SDLActivity` created.
+6. **It runs the entry-point module as `__main__`** (`runpy.run_module(entry_point, run_name="__main__", alter_sys=True)`, matching every other platform since 2026-09-21 — was `PyImport_ImportModule(entry_point)` before; see the [common spec's entry_point callout](../../common/01-pyproject-kivy-spec.md) for the unified contract). Kivy's `App().run()` drives the SDL surface `SDLActivity` created.
 
 ## The environment contract
 
