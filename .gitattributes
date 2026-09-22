@@ -5,3 +5,11 @@
 
 # PowerShell scripts are Windows-native; keep them CRLF.
 *.ps1 text eol=crlf
+
+# CI fixture projects: LF on every host, because their line endings are part
+# of a hash. `pyproject_sha256` in a committed pylock.*.toml is taken over the
+# file's bytes, so with autocrlf a Windows checkout would produce CRLF, change
+# the digest, and make `kivyforge lock --check` fail there while passing on the
+# ubuntu runner. A gate whose result depends on which host ran it is not a gate
+# (the rule test-matrix.md and pyrightconfig.json both already enforce).
+tests/fixtures/apps/** text eol=lf

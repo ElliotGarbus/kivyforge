@@ -1,0 +1,44 @@
+[project]
+# The Linux CI gate's fixture app. Not an example — see ../README.md for why
+# this commits its lock when examples/** deliberately does not.
+name = "linux-gate"
+version = "1.0.0"
+requires-python = ">=3.13"
+# Kivy on purpose, rather than a dependency-free app. The Linux T3 checks that
+# have actually caught defects need third-party wheels to look at: the ELF-arch
+# sweep walks the whole staged tree, and payload stripping is scoped to
+# usr/app + usr/lib, which is empty without dependencies. A no-dependency
+# fixture would make the job green while inspecting almost nothing.
+dependencies = [
+    "kivy>=2.3.1",
+]
+
+[tool.kivy]
+display_name = "Linux Gate"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.linux]
+schema_version = 1
+app_id = "org.kivyforge.linux-gate"
+archs = ["x86_64"]
+# Kivy declares these unconditionally and nothing in this fixture needs them;
+# excluding them keeps the committed lock small enough to read in a diff, which
+# is the point of committing it.
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.linux.python]
+# Pinned rather than floating: the T3 .pyc-magic check asks the *staged*
+# interpreter what it accepts, so this value is what that assertion is made
+# against. Bumping it is a deliberate change to what the gate proves.
+version = "3.13.14"
