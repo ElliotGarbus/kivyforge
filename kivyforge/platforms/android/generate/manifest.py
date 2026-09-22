@@ -10,7 +10,7 @@ already enforced at config time; fragments are re-parsed here as a belt).
 
 from __future__ import annotations
 
-from xml.sax.saxutils import escape, quoteattr
+from xml.sax.saxutils import quoteattr
 
 from kivyforge.config.model import AndroidConfig, AndroidService
 
@@ -106,7 +106,14 @@ def service_class_name(service: AndroidService) -> str:
     return f"org.kivy.android.Service{service.name}"
 
 
-def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -> str:
+def effective_permissions(android: AndroidConfig) -> list[str]:
+    """Every ``<uses-permission>`` this config emits, in emission order.
+
+    Split out of :func:`generate_manifest` so the T3 merged-manifest content
+    check (``tests/artifact_checks.py``) can ask what config declared instead
+    of re-deriving the auto-add rule and drifting from it — the same reason the
+    ELF and PE constants are imported by those checks rather than copied.
+    """
     permissions = qualified_permissions(android.permissions.uses)
     # A declared foreground service auto-adds FOREGROUND_SERVICE + the typed
     # permission — the ONLY implicit permissions (android/01 §managed keys).
@@ -116,6 +123,35 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
             fstype = service.foreground_service_type or ""
             typed = "android.permission.FOREGROUND_SERVICE_" + _snake_upper(fstype)
             _add_unique(permissions, typed)
+    return permissions
+
+
+def effective_features(android: AndroidConfig) -> list[tuple[str, bool]]:
+    """Every ``<uses-feature>`` this config emits as ``(name, required)``.
+
+    Emission order: the synthesized implied features first (always
+    non-required), then the explicitly declared ones. An explicit entry
+    overrides the synthesized one for the same name, which is why the
+    synthesized list is filtered rather than merged. Split out for the same
+    reason as :func:`effective_permissions`.
+    """
+    explicit = {f.name: f.required for f in android.permissions.features}
+    synthesized = (
+        [
+            f
+            for f in implied_features(effective_permissions(android))
+            if f not in explicit
+        ]
+        if android.permissions.auto_features
+        else []
+    )
+    return [(name, False) for name in synthesized] + [
+        (f.name, f.required) for f in android.permissions.features
+    ]
+
+
+def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -> str:
+    permissions = effective_permissions(android)
 
     lines: list[str] = []
     lines.append('<?xml version="1.0" encoding="utf-8"?>')
@@ -124,23 +160,10 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
     for permission in permissions:
         lines.append(f"    <uses-permission android:name={quoteattr(permission)} />")
 
-    # Explicit features override the synthesized entry for the same name.
-    explicit = {f.name: f.required for f in android.permissions.features}
-    synthesized = (
-        [f for f in implied_features(permissions) if f not in explicit]
-        if android.permissions.auto_features
-        else []
-    )
-    for name in synthesized:
+    for name, required in effective_features(android):
         lines.append(
             f"    <uses-feature android:name={quoteattr(name)} "
-            'android:required="false" />'
-        )
-    for feature in android.permissions.features:
-        required = "true" if feature.required else "false"
-        lines.append(
-            f"    <uses-feature android:name={quoteattr(feature.name)} "
-            f'android:required="{required}" />'
+            f'android:required="{_b(required)}" />'
         )
 
     if android.manifest.extra_manifest_xml.strip():
@@ -259,9 +282,18 @@ def _attrs(attrs: dict[str, str]) -> str:
 
 
 def _attr_str(value: object) -> str:
+    """A passthrough config value as an attribute *value*, not yet quoted.
+
+    Deliberately does **not** escape: every caller hands the result to
+    :func:`_attrs`, which quotes it with ``quoteattr``, and escaping here too
+    produced ``&amp;amp;`` — so an ``android:label`` of ``"Salt & Pepper"``
+    shipped the literal text ``Salt &amp; Pepper`` to the device. Found by the
+    T3 merged-manifest content check (``tests/artifact_checks.py``) on its
+    first run. Escaping belongs at exactly one layer; this is not it.
+    """
     if isinstance(value, bool):
         return "true" if value else "false"
-    return escape(str(value))
+    return str(value)
 
 
 def _b(value: bool) -> str:

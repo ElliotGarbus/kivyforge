@@ -353,15 +353,21 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev,android]"
-    - name: Install the pinned NDK, CMake, and platform
+    - name: Install the pinned NDK, CMake, platform, and build-tools
       # The NDK version is kivyforge's own pin, emitted into the generated
       # app/build.gradle, so the one AGP resolves must be that one — not
       # whichever the runner image happens to ship. Read it from the source of
       # truth so a toolchain bump can't leave this workflow behind.
+      #
+      # build-tools is named explicitly even though the runner image ships
+      # some: the release signature step below resolves `apksigner` out of
+      # <sdk>/build-tools/*/, so relying on whatever the image happens to
+      # preinstall would make that check's presence an accident of the image.
       run: |
         ndk="$(python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)')"
         echo "Installing NDK ${ndk}"
-        sdkmanager --install "ndk;${ndk}" "cmake;3.22.1" "platforms;android-35"
+        sdkmanager --install "ndk;${ndk}" "cmake;3.22.1" "platforms;android-35" \
+          "build-tools;35.0.0"
     - name: Doctor (Android)
       # Advisory: doctor is allowed to report the known-interim Kivy wheel
       # (4 KB-aligned) as a FAIL, so this step must not gate the build.
@@ -407,6 +413,36 @@ jobs:
         apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
         pytest tests/platforms/android/test_apk_artifact.py -q --no-cov \
           --android-apk "$apk" --android-abi "$ABI" --android-stripped
+    - name: Assert the merged release manifest says what pyproject.toml declared (T3)
+      # `package` exported this manifest already, for the policy lint to read,
+      # and the job then threw it away on success — the same "CI produced the
+      # evidence and never looked at it" shape as item 1 (test-matrix.md §5.1).
+      # Policy lints the *posture*; this checks the *content*: applicationId,
+      # versionCode/versionName and min/target SDK (all injected by AGP out of
+      # build.gradle, so no generation test can cover them), every declared
+      # permission, feature, service and intent-filter, and that no manifest
+      # placeholder survived unresolved.
+      run: |
+        manifest="$APP_DIR/hello-android-android/app/build/kivyforge/AndroidManifest-merged-release.xml"
+        pytest tests/platforms/android/test_merged_manifest.py -q --no-cov \
+          --android-merged-manifest "$manifest" --android-project "$APP_DIR"
+    - name: Assert the release APK's signature verifies (T3)
+      # `apksigner verify` at the project's own min_sdk, against the release
+      # APK signed by the throwaway keystore above. Release-only on purpose:
+      # a debug APK's signature is Gradle's, not the project's, so the
+      # v1_signing comparison would be meaningless on one.
+      #
+      # KIVYFORGE_REQUIRE_TOOLCHAIN turns a missing `apksigner` into a failure
+      # rather than a skip: this job installs build-tools explicitly above, so
+      # its absence is a broken workflow, and a green run that verified no
+      # signature at all is exactly the silent-skip failure this tier exists
+      # to remove (test-matrix.md §2).
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: |
+        apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
+        pytest tests/platforms/android/test_apk_signature.py -q --no-cov \
+          --android-apk "$apk" --android-project "$APP_DIR"
     - name: Upload the generated project on failure (for triage)
       if: failure()
       uses: actions/upload-artifact@v6

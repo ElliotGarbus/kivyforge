@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Android: manifest passthrough values were escaped twice
+
+- **Fixed:** a value in `[tool.kivy.android.manifest.application]` or
+  `[tool.kivy.android.manifest.activity]` containing `&`, `<` or `>` reached
+  the device with the escape still in it — `android:description = "Rock &
+  Roll"` shipped as the literal text `Rock &amp; Roll`. The value was escaped
+  on its way into the attribute and then escaped again when the attribute was
+  quoted. Values without those three characters were never affected, which is
+  every in-repo example and most real configs.
+- Found by the new merged-manifest T3 check (below) on its first run.
+
+### Android: two new post-build checks in CI
+
+- The `android_gradle` job now asserts that **AGP's merged release manifest
+  still contains what `pyproject.toml` declared** — applicationId, version
+  code/name, min/target SDK, every declared permission, feature, service,
+  extra activity and intent-filter, and that no `${placeholder}` survived
+  unresolved. The release policy pass already read this manifest to lint its
+  *posture*; nothing checked that the project's own declarations had survived
+  the merge.
+- The same job now runs **`apksigner verify` on the release APK** at the
+  project's own `min_sdk`, and checks the v1 (JAR) signing scheme against
+  `[tool.kivy.android.signing].v1_signing`.
+- Both are test-only additions; no behavior change for builds that were
+  already correct.
+
 ### Android: `kivyforge run --release`
 
 - **`run --release` now builds and launches the release variant**, not just

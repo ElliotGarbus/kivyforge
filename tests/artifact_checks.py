@@ -31,6 +31,15 @@ Paths *inside* an artifact are always rendered with ``as_posix()``, never by
 interpolating a ``Path``. The artifact is a Linux or Apple bundle whatever host
 is reading it, so ``usr/app/main.py`` is the only correct spelling — inspecting
 an extracted AppDir from Windows must not start reporting ``usr\\app\\main.py``.
+
+**The no-toolchain rule has one shape of exception, and it is kept at arm's
+length.** Signature verification genuinely needs a tool (``apksigner``,
+``signtool``, ``codesign``) — there is no reading a signature out of a file by
+hand. So the *spawn* stays in the platform's driver module, where it can skip
+or fail on the tool's absence like any other toolchain test, and only the pure
+**parse** of that tool's report lives here (:func:`apksigner_report_problems`).
+That keeps every function in this module hermetically testable, which is the
+property the rule was protecting.
 """
 
 from __future__ import annotations
@@ -41,10 +50,20 @@ import posixpath
 import re
 import shlex
 import struct
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+from kivyforge.config.model import AndroidConfig
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64, machine_name
+from kivyforge.platforms.android.generate.manifest import (
+    GENERATED_THEME,
+    MAIN_ACTIVITY,
+    effective_features,
+    effective_permissions,
+    screen_orientation,
+    service_class_name,
+)
 from kivyforge.platforms.linux.elftools import (
     ARCH_ELF,
     ELF_MAGIC,
@@ -278,6 +297,473 @@ def _native_lib_problems(
                 f"{machine_name(expected)} — a host binary leaked into a "
                 "cross-build"
             )
+    return problems
+
+
+# --- Android: merged-manifest content vs. what config declared ---------------
+#
+# Everything above proves the APK's *shape*. This proves its *manifest
+# content*: that what pyproject.toml declared survived AGP's manifest merge
+# into the manifest that actually ships. Nothing else covers that.
+# ``platforms/android/policy.py`` also lints the merged manifest, but for a
+# dangerous *posture* — an exported component, a debuggable release, the
+# ``org.example.*`` placeholder — and it would pass, happily, a manifest that
+# had silently lost every permission the project asked for.
+#
+# **Presence, never equality.** A real merged manifest legitimately carries
+# components and permissions no pyproject.toml mentions, because a library
+# manifest contributed them: androidx.startup's ``InitializationProvider``,
+# profileinstaller's receiver, the generated
+# ``DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`` pair. Asserting that the merged
+# set *equals* the declared set would fail on every real build, and a check
+# that always fails gets deleted rather than fixed.
+#
+# Expectations are derived by importing the generator's own
+# ``effective_permissions`` / ``effective_features`` / ``screen_orientation``
+# / ``service_class_name`` rather than restating the auto-add, implied-feature
+# and orientation rules here — the same reasoning as the imported ELF and PE
+# constants at the top of this module. That does mean this check cannot catch
+# a generator that emits the wrong thing *consistently*; the hermetic
+# generation tests (T1) own that, and this owns the merge.
+#
+# The raw-XML passthrough fields (``extra_manifest_xml`` and friends) are
+# deliberately **not** matched element-by-element: they are arbitrary XML whose
+# merged shape is not predictable from config. What is checked instead is that
+# no ``${placeholder}`` survived anywhere in the merged file, which is the
+# failure those fields actually produce.
+
+ANDROID_MANIFEST_NS = "{http://schemas.android.com/apk/res/android}"
+
+_UNRESOLVED_PLACEHOLDER = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_.]*\}")
+
+_LAUNCHER_CATEGORY = "android.intent.category.LAUNCHER"
+
+
+def android_manifest_problems(
+    manifest_xml: str,
+    *,
+    android: AndroidConfig,
+    orientation: tuple[str, ...],
+    version_name: str,
+) -> list[str]:
+    """Every way AGP's *merged* manifest fails to carry what config declared.
+
+    ``manifest_xml`` is the text of the merged manifest — the artifact the
+    generated ``exportKivyforgeReleaseManifest`` task copies to
+    ``MERGED_MANIFEST_RELPATH``, not the manifest kivyforge generated as input
+    to the merge. Checking the input would prove nothing about the merge.
+
+    ``version_name`` is ``[project].version``, which reaches the manifest
+    through ``app/build.gradle``'s ``versionName`` rather than through the
+    generated manifest, so it is passed in rather than read off
+    ``AndroidConfig``.
+    """
+    try:
+        root = ET.fromstring(manifest_xml)
+    except ET.ParseError as exc:
+        return [f"the merged manifest does not parse: {exc}"]
+    if root.tag != "manifest":
+        return [f"the merged manifest's root element is <{root.tag}>, not <manifest>"]
+
+    problems = _manifest_identity_problems(
+        root, android=android, version_name=version_name
+    )
+    problems += _manifest_permission_problems(root, android=android)
+    problems += _manifest_feature_problems(root, android=android)
+
+    app = root.find("application")
+    if app is None:
+        # Every remaining check reads through <application>; saying so once is
+        # more useful than repeating "not found" for each of them.
+        return [*problems, "the merged manifest has no <application> element"]
+
+    problems += _manifest_application_problems(app, android=android)
+    problems += _manifest_main_activity_problems(
+        app, android=android, orientation=orientation
+    )
+    problems += _manifest_component_problems(app, android=android)
+    problems += _manifest_placeholder_problems(manifest_xml)
+    return problems
+
+
+def _android_attr(elem: ET.Element, name: str) -> str | None:
+    return elem.get(f"{ANDROID_MANIFEST_NS}{name}")
+
+
+def _attr_lookup_key(key: str) -> str | None:
+    """A config passthrough attribute key as :mod:`xml.etree` will spell it.
+
+    ``None`` for anything not in the ``android:`` namespace. A ``tools:``
+    attribute is an *instruction to the merger* and is consumed and removed by
+    it, so looking for one in the output is a guaranteed false positive; any
+    other prefix would need an ``xmlns`` this generator does not emit.
+    """
+    if key.startswith("android:"):
+        return f"{ANDROID_MANIFEST_NS}{key.removeprefix('android:')}"
+    return None
+
+
+def _expected_attr_value(value: object) -> str:
+    """The config value as a *parsed* attribute reads back.
+
+    Deliberately not ``generate.manifest._attr_str``: that escapes for
+    serialization, and ElementTree has already un-escaped on the way in, so
+    reusing it would compare ``"a &amp; b"`` against ``"a & b"`` and report a
+    fault on any value containing an ampersand.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _manifest_identity_problems(
+    root: ET.Element, *, android: AndroidConfig, version_name: str
+) -> list[str]:
+    """applicationId, version, and the SDK floor/target.
+
+    None of these four come from the generated manifest — AGP injects all of
+    them into the merged one out of ``app/build.gradle``'s ``defaultConfig``.
+    That makes them the part of this check with the least overlap with the
+    generation tests, and the part that would catch a build.gradle template
+    regression every hermetic manifest test would pass.
+    """
+    problems = []
+    if root.get("package") != android.package:
+        problems.append(
+            f"merged manifest package is {root.get('package')!r}, but config "
+            f"declares {android.package!r}"
+        )
+
+    expected_code = str(android.version_code)
+    if _android_attr(root, "versionCode") != expected_code:
+        problems.append(
+            f"merged manifest android:versionCode is "
+            f"{_android_attr(root, 'versionCode')!r}, expected {expected_code!r}"
+        )
+    if _android_attr(root, "versionName") != version_name:
+        problems.append(
+            f"merged manifest android:versionName is "
+            f"{_android_attr(root, 'versionName')!r}, expected {version_name!r}"
+        )
+
+    uses_sdk = root.find("uses-sdk")
+    if uses_sdk is None:
+        problems.append(
+            "merged manifest has no <uses-sdk>, so min_sdk/target_sdk cannot be "
+            "confirmed to have reached the artifact"
+        )
+        return problems
+    for attr, expected in (
+        ("minSdkVersion", android.min_sdk),
+        ("targetSdkVersion", android.target_sdk),
+    ):
+        actual = _android_attr(uses_sdk, attr)
+        if actual != str(expected):
+            problems.append(
+                f"merged manifest <uses-sdk> android:{attr} is {actual!r}, "
+                f"expected {str(expected)!r}"
+            )
+    return problems
+
+
+def _manifest_permission_problems(
+    root: ET.Element, *, android: AndroidConfig
+) -> list[str]:
+    declared = {_android_attr(p, "name") for p in root.iter("uses-permission")}
+    return [
+        f"<uses-permission android:name={name!r}> is declared in config but "
+        "missing from the merged manifest"
+        for name in effective_permissions(android)
+        if name not in declared
+    ]
+
+
+def _manifest_feature_problems(
+    root: ET.Element, *, android: AndroidConfig
+) -> list[str]:
+    merged = {
+        _android_attr(f, "name"): _android_attr(f, "required")
+        for f in root.iter("uses-feature")
+    }
+    problems = []
+    for name, required in effective_features(android):
+        if name not in merged:
+            problems.append(
+                f"<uses-feature android:name={name!r}> is declared in config "
+                "(or implied by a declared permission) but missing from the "
+                "merged manifest"
+            )
+            continue
+        # A library may contribute the same feature as required="true", and the
+        # merger takes the stronger claim — so a *stronger* requirement than
+        # config asked for is the merger working, not a fault. Only a weaker
+        # one loses something the project declared.
+        if required and merged[name] != "true":
+            problems.append(
+                f"<uses-feature android:name={name!r}> is android:required="
+                f"{merged[name]!r} in the merged manifest, but config declares "
+                "it required"
+            )
+    return problems
+
+
+def _manifest_application_problems(
+    app: ET.Element, *, android: AndroidConfig
+) -> list[str]:
+    """The generated <application> attributes, plus config's passthrough.
+
+    Built the way the generator builds them — defaults first, then
+    ``[tool.kivy.android.manifest.application]`` on top. Today those two sets
+    are disjoint, because every generated default is in
+    ``MANAGED_ANDROID_APPLICATION_ATTRS`` and the loader rejects a pyproject
+    that sets one. Layering them anyway costs nothing and means this check
+    cannot start disagreeing with the generator if a managed attribute is
+    ever released to passthrough.
+    """
+    expected: dict[str, str] = {
+        "android:label": "@string/app_name",
+        "android:icon": "@mipmap/ic_launcher",
+        "android:theme": GENERATED_THEME,
+    }
+    if android.icons.source:
+        expected["android:roundIcon"] = "@mipmap/ic_launcher_round"
+    for key, value in android.manifest.application.items():
+        expected[key] = _expected_attr_value(value)
+    return _attr_problems(app, expected, where="<application>")
+
+
+def _manifest_main_activity_problems(
+    app: ET.Element, *, android: AndroidConfig, orientation: tuple[str, ...]
+) -> list[str]:
+    main = None
+    for activity in app.iter("activity"):
+        if _android_attr(activity, "name") == MAIN_ACTIVITY:
+            main = activity
+            break
+    if main is None:
+        return [
+            f"the merged manifest has no <activity android:name={MAIN_ACTIVITY!r}>, "
+            "so the app has no launcher"
+        ]
+
+    expected: dict[str, str] = {
+        "android:exported": "true",
+        "android:configChanges": "keyboardHidden|orientation|screenSize",
+        "android:screenOrientation": screen_orientation(orientation),
+        "android:theme": GENERATED_THEME,
+    }
+    for key, value in android.manifest.activity.items():
+        expected[key] = _expected_attr_value(value)
+    problems = _attr_problems(main, expected, where=f"<activity {MAIN_ACTIVITY}>")
+
+    filters = list(main.iter("intent-filter"))
+    if not any(
+        _LAUNCHER_CATEGORY in {_android_attr(c, "name") for c in f.iter("category")}
+        for f in filters
+    ):
+        problems.append(
+            f"{MAIN_ACTIVITY} has no intent-filter carrying the "
+            f"{_LAUNCHER_CATEGORY} category"
+        )
+    problems += _intent_filter_problems(filters, android=android)
+    return problems
+
+
+def _intent_filter_problems(
+    filters: list[ET.Element], *, android: AndroidConfig
+) -> list[str]:
+    """Each declared filter must be *contained in* some merged filter.
+
+    Containment rather than equality: the merger is free to add categories to
+    a filter it also received from a library, so matching exactly would make
+    this check a hostage to whatever androidx ships next.
+    """
+    problems = []
+    for declared in android.intent_filters:
+        wanted_categories = set(declared.categories)
+        wanted_data = [dict(sorted(d.items())) for d in declared.data]
+        if not any(
+            _filter_contains(f, declared.action, wanted_categories, wanted_data)
+            for f in filters
+        ):
+            problems.append(
+                f"no intent-filter on {MAIN_ACTIVITY} carries the declared "
+                f"action {declared.action!r} with categories "
+                f"{sorted(wanted_categories)} and data {wanted_data}"
+            )
+    return problems
+
+
+def _filter_contains(
+    filter_elem: ET.Element,
+    action: str,
+    categories: set[str],
+    data: list[dict[str, str]],
+) -> bool:
+    actions = {_android_attr(a, "name") for a in filter_elem.iter("action")}
+    if action not in actions:
+        return False
+    # An <action>/<category> with no android:name is malformed rather than a
+    # match for anything, so the Nones are dropped instead of being compared.
+    present = {
+        name
+        for c in filter_elem.iter("category")
+        if (name := _android_attr(c, "name")) is not None
+    }
+    if not categories <= present:
+        return False
+    merged_data = [
+        {
+            k.removeprefix(ANDROID_MANIFEST_NS): v
+            for k, v in d.attrib.items()
+            if k.startswith(ANDROID_MANIFEST_NS)
+        }
+        for d in filter_elem.iter("data")
+    ]
+    return all(
+        any(wanted.items() <= have.items() for have in merged_data) for wanted in data
+    )
+
+
+def _manifest_component_problems(
+    app: ET.Element, *, android: AndroidConfig
+) -> list[str]:
+    """Declared services and extra activities survived the merge."""
+    problems = []
+
+    services = {_android_attr(s, "name"): s for s in app.iter("service")}
+    for service in android.services:
+        fqcn = service_class_name(service)
+        elem = services.get(fqcn)
+        if elem is None:
+            problems.append(
+                f"declared service {service.name!r} is missing from the merged "
+                f"manifest (expected <service android:name={fqcn!r}>)"
+            )
+            continue
+        expected = {
+            "android:process": f":service_{service.name.lower()}",
+            "android:exported": "true" if service.exported else "false",
+        }
+        if service.foreground:
+            expected["android:foregroundServiceType"] = (
+                service.foreground_service_type or ""
+            )
+        problems += _attr_problems(elem, expected, where=f"<service {fqcn}>")
+
+    activities = {_android_attr(a, "name"): a for a in app.iter("activity")}
+    for extra in android.activities:
+        elem = activities.get(extra.name)
+        if elem is None:
+            problems.append(
+                f"declared activity {extra.name!r} is missing from the merged manifest"
+            )
+            continue
+        problems += _attr_problems(
+            elem,
+            {"android:exported": "true" if extra.exported else "false"},
+            where=f"<activity {extra.name}>",
+        )
+    return problems
+
+
+def _attr_problems(
+    elem: ET.Element, expected: dict[str, str], *, where: str
+) -> list[str]:
+    problems = []
+    for key, want in sorted(expected.items()):
+        lookup = _attr_lookup_key(key)
+        if lookup is None:
+            continue
+        actual = elem.get(lookup)
+        if actual != want:
+            problems.append(
+                f"{where} {key} is {actual!r} in the merged manifest, expected {want!r}"
+            )
+    return problems
+
+
+def _manifest_placeholder_problems(manifest_xml: str) -> list[str]:
+    """No ``${placeholder}`` may survive into the shipped manifest.
+
+    This is the one check that covers the raw-XML passthrough fields, and it
+    covers the failure they actually cause: a fragment referencing a
+    placeholder that ``[tool.kivy.android.manifest].placeholders`` never
+    defined ships the literal text ``${whatever}`` as a class name, an
+    authority or a permission, and the app breaks at runtime rather than at
+    build time. AGP resolves ``${applicationId}`` itself, so anything left
+    here is genuinely unresolved.
+    """
+    left = sorted(set(_UNRESOLVED_PLACEHOLDER.findall(manifest_xml)))
+    if not left:
+        return []
+    return [
+        f"the merged manifest still contains unresolved placeholder(s) {left} "
+        "— declare them in [tool.kivy.android.manifest].placeholders"
+    ]
+
+
+# --- Android: the signature, as apksigner reports it ------------------------
+#
+# The spawn lives in ``tests/platforms/android/test_apk_artifact.py``; this is
+# only the parse, so it stays hermetic like everything else here (see the
+# module docstring).
+#
+# ``apksigner verify -v`` prints one line per signing scheme:
+#
+#     Verifies
+#     Verified using v1 scheme (JAR signing): false
+#     Verified using v2 scheme (APK Signature Scheme v2): true
+#     Verified using v3 scheme (APK Signature Scheme v3): true
+#
+# Both halves matter, and neither alone is enough. "Verifies" says the
+# signature is *intact*; the scheme lines say *which* signature, and that is
+# the half tied to config: ``[tool.kivy.android.signing].v1_signing`` defaults
+# off because the min_sdk floor is 24, where the platform verifies v2+. An APK
+# that verified only under v1 would install and would also mean that setting
+# had quietly stopped being honoured.
+
+_SCHEME_LINE = re.compile(
+    r"^Verified using (v\d) scheme [^:]*:\s*(true|false)\s*$", re.MULTILINE
+)
+
+MODERN_SIGNING_SCHEMES = ("v2", "v3", "v4")
+
+
+def apksigner_report_problems(report: str, *, v1_signing: bool) -> list[str]:
+    """Every way an ``apksigner verify -v`` report falls short of the config.
+
+    *report* is apksigner's combined stdout; the caller has already decided
+    what a non-zero exit means, because a tool that would not start is a
+    different failure from an artifact that does not verify.
+    """
+    schemes = {m.group(1): m.group(2) == "true" for m in _SCHEME_LINE.finditer(report)}
+    if not schemes:
+        return [
+            "apksigner reported no 'Verified using vN scheme' lines, so nothing "
+            "about the signature can be concluded from its output:\n" + report.strip()
+        ]
+
+    problems = []
+    if "Verifies" not in report.splitlines():
+        problems.append(
+            "apksigner did not print 'Verifies': the signature is not intact:\n"
+            + report.strip()
+        )
+
+    if schemes.get("v1", False) != v1_signing:
+        problems.append(
+            f"v1 (JAR) signing is {'on' if schemes.get('v1') else 'off'} in the "
+            f"APK, but config declares v1_signing = {str(v1_signing).lower()}"
+        )
+
+    if not any(schemes.get(scheme, False) for scheme in MODERN_SIGNING_SCHEMES):
+        signed = sorted(k for k, v in schemes.items() if v)
+        problems.append(
+            "the APK carries no modern signature block — apksigner verified "
+            f"only {signed or 'nothing'}, and one of "
+            f"{list(MODERN_SIGNING_SCHEMES)} is required at min_sdk 24+"
+        )
     return problems
 
 
