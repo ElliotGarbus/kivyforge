@@ -369,10 +369,16 @@ jobs:
       # whichever the runner image happens to ship. Read it from the source of
       # truth so a toolchain bump can't leave this workflow behind.
       #
-      # build-tools is named explicitly even though the runner image ships
-      # some: the release signature step below resolves `apksigner` out of
-      # <sdk>/build-tools/*/, so relying on whatever the image happens to
-      # preinstall would make that check's presence an accident of the image.
+      # build-tools is named explicitly to guarantee a floor: the release
+      # signature step below resolves `apksigner` out of
+      # <sdk>/build-tools/*/, and without this line that step's ability to run
+      # at all would depend on the runner image still shipping one.
+      #
+      # It does not pin which one runs. `_find_apksigner` takes the newest
+      # version directory, deliberately (it is what AGP resolves to), so on an
+      # image that already ships a newer build-tools this install is the
+      # fallback rather than the selection — the 2026-09-22 run used 37.0.0
+      # from the image, not the 35.0.0 installed here.
       run: |
         ndk="$(python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)')"
         echo "Installing NDK ${ndk}"
