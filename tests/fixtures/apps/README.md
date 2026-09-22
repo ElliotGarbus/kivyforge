@@ -55,3 +55,4 @@ richer case is a *separate* fixture, not this one growing.
 | Fixture | Target | What its job proves |
 |---|---|---|
 | `linux-gate` | Linux `x86_64` | `kivyforge package -p linux` end to end on a real `appimagetool`, then the full Linux T3 pass over the AppDir it produced |
+| `macos-gate` | macOS `arm64` | `kivyforge package -p macos` end to end ad-hoc signed (no certificate needed), then the full macOS T3 pass — including the `Info.plist`-vs-config comparison — over the `.app` it produced |

@@ -59,12 +59,12 @@ unvalidated, and needs a Mac.
   prebuilt multi-arch launcher *templates* in every install, which a naive
   PE-arch sweep flags as a leaked cross-arch binary; fixed by excluding the
   known filenames, with a regression test pinning it.
-  **Only Android's runs in CI** — `android_gradle` has driven
-  `test_apk_artifact.py` against both the debug and the stripped release APK
-  since 2026-09-13. (This file and item 5 both said "none of the four", which
-  was never true of Android; corrected 2026-09-21.) Linux, macOS and Windows
-  are still local, by-hand runs, and a Linux `x86_64` CI job is gated on the
-  desktop lock-for-CI decision, which is **still undecided** — see item 5.
+  **Only Android's ran in CI at the time this bullet was written** —
+  `android_gradle` had driven `test_apk_artifact.py` against both the debug
+  and the stripped release APK since 2026-09-13. (This file and item 5 both
+  said "none of the four", which was never true of Android; corrected
+  2026-09-21.) **Linux and macOS followed 2026-09-22** — see item 5's own
+  entry below; only Windows' checker is still local, by-hand only.
 - **Item 5's two open T3 sub-checks are both done (2026-09-21), and one of them
   found a shipped bug.** These were the last unchecked boxes in
   [`test-matrix.md`](test-matrix.md) §5.1.
@@ -104,12 +104,14 @@ unvalidated, and needs a Mac.
   comparison the matrix credited it with had never actually run. Replaced by
   an `expected_plist` dict covering every key config decides, derived by
   calling the production `build_info_plist` so it cannot drift, and supplied
-  from a new `--macos-project`. Hermetically tested; the real-bundle run needs
-  the Mac.
-  `kivyforge run`'s debug-only fix (below) is done as of 2026-09-22. What
-  remains on item 5 is getting the other three T3 checkers into CI, which
-  runs through the desktop lock-for-CI decision — **the one open question on
-  the item, and a call worth making deliberately.**
+  from a new `--macos-project`. Hermetically tested at the time; the
+  real-bundle run followed 2026-09-22 via the `macos-gate` fixture (see item
+  5's own entry below), retiring the "needs the Mac" caveat this sentence
+  used to end on.
+  `kivyforge run`'s debug-only fix (below) is done as of 2026-09-22, and so is
+  the desktop lock-for-CI decision (item 5) — Linux's and macOS's T3 checkers
+  both run in CI as of the same day. What remains on item 5 is Windows: the
+  one platform whose checker still has no *build* job feeding it.
 - **A real cross-platform `entry_point` inconsistency, found 2026-09-21 and
   fixed 2026-09-21/22.** The shared spec claimed one universal contract —
   "`entry_point` is imported, not run as `__main__`" — that stopped being true
@@ -1558,11 +1560,16 @@ its 2026-09-17 results-log row.
    2026-09-22** — `linux_appimage` packages the new `linux-gate` fixture on
    `ubuntu-latest` and runs the full T3 pass over the AppImage, the first CI
    job in the repo's history to run `kivyforge build`/`package` for any
-   desktop target. Android's has run in `android_gradle` since 2026-09-13, and
-   that job also runs the merged-manifest and signature checks as of
-   2026-09-21; `windows_signing` runs the Authenticode one. **macOS and
-   Windows remain**, and each needs a *build* job before its checker has
-   anything to inspect — the same fixture pattern applies to both.
+   desktop target. **macOS done the same day** — `macos_app` packages a new
+   `macos-gate` fixture on `macos-latest`, **ad-hoc signed** (no certificate
+   needed: `macos_package()` already falls back to the ad-hoc floor with no
+   signing configured, the same CI-safe shape `linux_appimage` sits on), and
+   runs the full T3 pass — including the `Info.plist`-vs-config comparison,
+   which had only ever run hermetically before this. Android's has run in
+   `android_gradle` since 2026-09-13, and that job also runs the
+   merged-manifest and signature checks as of 2026-09-21; `windows_signing`
+   runs the Authenticode one. **Windows remains** the one platform with no
+   *build* job feeding its checker; the same fixture pattern applies.
 3. ~~**A plain Linux `x86_64` CI build job**~~ — **done 2026-09-22**, once
    the lock question below was settled. `linux_appimage` on `ubuntu-latest`:
    doctor (gating, no waiver), `lock --check` against the committed fixture

@@ -552,6 +552,78 @@ jobs:
           ${{ env.APP_DIR }}/hello-android-android/app/build/reports/
           ${{ env.APP_DIR }}/hello-android-android/app/build/kivyforge/
 
+  # The macOS desktop gate: `kivyforge package -p macos` end to end against a
+  # real ad-hoc signature, then the T3 artifact pass over what it produced.
+  # Until this job existed, no CI job ran `kivyforge build`/`package` for ANY
+  # desktop target — Linux, macOS and Windows were all proven by local runs
+  # logged in test-matrix.md §7 and nothing that repeats (§3.2).
+  # `macos_integration` below runs the hermetic suite only.
+  #
+  # No signing identity is configured, so the ad-hoc floor applies
+  # (kivyforge/platforms/macos/cli.py: `package` requires no certificate,
+  # keychain, or secret without one) — everything a CI runner has and
+  # nothing more, the same reason `linux_appimage` needs no signing.
+  #
+  # It builds a fixture, not an example. tests/fixtures/apps/macos-gate commits
+  # its pylock.macos.toml, which examples/** deliberately never does; see that
+  # tree's README and test-matrix.md §5.3 (the reasoning `linux_appimage`
+  # already established — a gate needs the same inputs every run).
+  macos_app:
+    name: macOS App (package + T3)
+    runs-on: macos-latest
+    env:
+      APP_DIR: tests/fixtures/apps/macos-gate
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python 3.13
+      # Pinned, per test-matrix.md §5.8: this is the sole CI proof of macOS
+      # packaging, so it must not test whichever minor the runner image
+      # happens to ship.
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.13'
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Doctor (macOS)
+      # Gating, deliberately — no `continue-on-error` here. Every
+      # signing-related check SKIPs rather than FAILs when no identity is
+      # configured (the ad-hoc floor), so nothing here needs a certificate;
+      # unlike android_gradle there is no known-interim WARN to waive either.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge doctor -p macos
+    - name: Verify the committed lock still matches pyproject.toml
+      # Meaningful here precisely because the lock is committed — against a
+      # gitignored one it can only ever report "out of date"
+      # (03-lockfile-concept.md §"Example-repo lock policy").
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge lock -p macos --check
+    - name: Package the .app (T2, ad-hoc signed)
+      # No --update: the committed lock is the input. If this step starts
+      # failing without the fixture having changed, a pinned wheel or the PBS
+      # runtime moved at its URL, which is worth knowing loudly.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge package -p macos
+    - name: Assert the .app is the artifact the build promised (T3)
+      # --macos-project turns on the Info.plist-vs-config comparison, which
+      # had never run against a real bundle before this job (test-matrix.md
+      # §5.1) — every prior run passed no expectations to compare against.
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: |
+        app="$(ls -d "$APP_DIR"/build/macos/*.app)"
+        pytest tests/platforms/macos/test_app_artifact.py -q --no-cov \
+          --macos-app "$app" --macos-arch arm64 --macos-stripped \
+          --macos-project "$APP_DIR"
+    - name: Upload the app's Info.plist on failure (for triage)
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: macos-gate-app-plist
+        path: ${{ env.APP_DIR }}/build/macos/*.app/Contents/Info.plist
+
   # macOS integration: the full suite runs here too (pbxproj generation and
   # xcodebuild/simctl command construction get real-macOS coverage). The live
   # `kivyforge build --simulator` / `kivyforge run` smoke test against a

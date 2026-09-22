@@ -160,21 +160,23 @@ is the runner of the job named in it**, which is why this table comes first —
 | `windows_signing` | windows | `3.x` | Windows T2 (`signtool`, self-signed) |
 | `android_gradle` | ubuntu | **3.14** | Android T2 + T3 |
 | `linux_appimage` | ubuntu | **3.13** | Linux T2 + T3 (`package` + AppImage assertions) |
+| `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
 | `macos_integration` | macos | `3.x` | macOS T2 (two `clang` tests) |
 
-**Two jobs pin an exact minor, for different reasons.** `android_gradle`
+**Three jobs pin an exact minor, for different (two) reasons.** `android_gradle`
 *must*: its T3 magic-number check compares the APK's `.pyc` headers against the
 *runner's* `importlib.util.MAGIC_NUMBER`, so the runner's Python is part of the
 test definition, and `test_apk_artifact.py` fails naming the runner if they
-diverge. `linux_appimage` pins for the §5.8 reason instead — it is the sole CI
-proof of Linux, so it should not test whichever minor the image ships. Its own
-magic check is anchored differently and needs no pin: the Linux driver asks the
-artifact's **own staged interpreter** what magic it accepts, which a native
-x86_64 build can answer. Worth keeping straight, because "pin it like Android
-does" is the wrong reason to pin a desktop job and would mislead whoever adds
-the macOS and Windows ones.
+diverge. `linux_appimage` and `macos_app` pin for the §5.8 reason instead —
+each is the sole CI proof of its desktop platform, so it should not test
+whichever minor the image ships. Their own magic checks are anchored
+differently and need no pin: both drivers ask the artifact's **own staged
+interpreter** what magic it accepts, which a native build can always answer.
+Worth keeping straight, because "pin it like Android does" is the wrong reason
+to pin a desktop job and would mislead whoever adds the Windows one.
 The `3.x` jobs float deliberately-ish, but see §5.8 — `macos_integration`
-floating means the one macOS host we have is testing an unpinned interpreter.
+floating means the one thing that job proves is testing an unpinned
+interpreter (now that `macos_app` exists as the pinned macOS proof).
 
 Local scripts are producers too, and rule 1 means they count only when a run is
 logged in §7: `examples/verify-windows-examples.ps1` (a real Windows
@@ -184,7 +186,7 @@ build/run/package loop), `examples/verify-desktop-examples.sh`,
 logged run 2026-09-14** (§7) — the other four still have none. They remain the
 cheapest untapped coverage in the repo — `verify-windows-examples.ps1` in
 particular covers the Windows column that no CI job reaches (§5.3 — Linux's
-equivalent gap closed 2026-09-22, Windows' has not).
+and macOS's equivalent gaps closed 2026-09-22, Windows' has not).
 
 ### 3.2 Per-target coverage
 
@@ -195,7 +197,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Target | T0/T1 | T2 toolchain | T3 artifact | T4 launch | T5 hardware | Last proven |
 |---|---|---|---|---|---|---|
 | Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare, plus `windows_signing`'s Authenticode verification through `test_authenticode.py` (since 2026-09-21); the onedir-bundle and built-app-signature checks exist but have no build job to feed them (§5.3) | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
-| macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | **local** — a stripped, re-notarized `dice-roller.app` launched and rendered for the first time, after fixing the launcher (§7, 2026-09-14) | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3, T4) |
+| macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | `macos_app` — real `package -p macos` (ad-hoc signed) on every push (since 2026-09-22); previously local-only Developer-ID sign + notarize + staple + `strip_source` on `examples/desktop/dice-roller` remains the only *notarized*, non-ad-hoc evidence | `macos_app` — full T3 pass, including the `Info.plist`-vs-config comparison, on every push (since 2026-09-22); the notarized-`dice-roller.app` run (2026-09-14) remains the only evidence with a real Developer ID | **local** — a stripped, re-notarized `dice-roller.app` launched and rendered for the first time, after fixing the launcher (§7, 2026-09-14) | see §6 | every push (T0/T1/T2/T3); 2026-09-14 (T2-Developer-ID, T4) |
 | Linux `x86_64` | `unit_tests` | `linux_appimage` — real `appimagetool` on every push (since 2026-09-22); previously local only | `linux_appimage` — full T3 pass over the packaged AppImage on every push | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1/T2/T3); 2026-09-13 (T4) |
 | Linux `aarch64` | `unit_tests` | **local only** — cross `package` on x86_64 WSL2, host `appimagetool` + target type2 runtime | **local only** — T3 driver extracts via `unsquashfs` (the aarch64 type2 ELF cannot `--appimage-extract` here); ELF leak check caught a planted host `.so` | **local** — stripped AppImage reaches main loop on Pi 5 (labwc, Broadcom V3D) | **manual** — Pi 5 only; Pi 4 untested | 2026-09-17 |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
@@ -221,27 +223,28 @@ against a compiled stub `python.exe`, proving spawn/argv/exit-code/env and
 process-tree teardown; a genuine T4 for the launcher that says nothing about a
 Kivy app. **No CI job runs `kivyforge build -p windows`.**
 
-**macOS's CI job is still two tests** — `macos_integration` runs `pytest -q`
-and nothing else; its entire marginal value over `unit_tests` is the two
-`TestLauncherCompile` tests that `clang` makes runnable, which is why that
-class now fails rather than skips when `clang` is absent. **No CI job runs
-`kivyforge build -p macos`.** But outside CI the maintainer has been building,
+**macOS's CI now has two jobs, and one of them is the real thing.** Until
+2026-09-22, `macos_integration` ran `pytest -q` and nothing else — its entire
+marginal value over `unit_tests` was the two `TestLauncherCompile` tests that
+`clang` makes runnable — and no CI job ran `kivyforge build -p macos`.
+`macos_app` closes that: `doctor`, `lock --check` against a committed lock,
+`package -p macos` (ad-hoc signed — no certificate needed), then the full T3
+pass over the produced `.app`, on `tests/fixtures/apps/macos-gate` every push
+(§5.3). Outside CI the maintainer has separately been building,
 Developer-ID-signing, and notarizing `dice-roller` by hand since July 2026 (five
-`notarytool` submissions, all `Accepted` — §7), and 2026-09-14 turned that
-existing habit into logged evidence plus a T3 driver
-(`tests/platforms/macos/test_app_artifact.py`, §5.1) that ran `codesign
---verify` and file-level Mach-O/`.pyc`/`Info.plist` assertions against that real
-notarized `.app` — both passed. So `codesign`, `lipo`, and `hdiutil` are no
-longer mock-only; they are local-only, which is a real but different gap (see
-below).
+`notarytool` submissions, all `Accepted` — §7); that remains the only evidence
+with a *real* Developer ID and notarization, which `macos_app`'s ad-hoc floor
+does not exercise. So `codesign`, `lipo`, and `hdiutil` are no longer mock-only
+**or** local-only for the ad-hoc case — they run every push — while the
+Developer-ID/notarization path stays local-only, a narrower and more honest
+remaining gap than "no CI job runs the build at all".
 
-**Linux is still the emptiest CI column, but it is no longer unproven.** No CI
-job runs `kivyforge build -p linux`, so the AppDir → AppImage step remains
-untested *in CI*. It has now run once locally (§7, 2026-09-13), and that single
-run is the argument for §5.3: it found a defect that made every default
-`kivyforge package -p linux` produce an AppImage that could not start. The T3
-assertions it exposed that with are hermetic and do run every push; what does
-not re-run is anything pointing them at a real artifact.
+**Linux's CI column filled in the same way, one day earlier.** `linux_appimage`
+runs `kivyforge build -p linux` (via `package`) every push, closing what this
+paragraph used to say was untested in CI. The 2026-09-13 local run (§7) remains
+the only evidence of the *defect it found* — a bug in a since-fixed code
+path — and of `aarch64` cross-compilation, which `linux_appimage` does not
+attempt (native `x86_64` only; §5.3/§4 own the cross case).
 
 **Android is the strongest column, and the only one with real T3.**
 `android_gradle` is the real thing — AGP, the pinned NDK, CMake, and `javac` all
@@ -392,14 +395,18 @@ twice: once on the debug APK, once on the stripped release APK.
       hoisted to `lib/<abi>/`, since Android's loader will not open a `.so` from
       the unpacked assets tree. A leftover is an on-device `ImportError`.
 - [x] **Exactly one CPython runtime** in the APK.
-- [x] **macOS check *functions* and driver — done 2026-09-14.**
+- [x] **macOS check *functions* and driver — done 2026-09-14. In CI since
+      2026-09-22** via `macos_app` (§5.3), mirroring `linux_appimage`'s shape.
       `tests/artifact_checks.py::macos_app_problems` (required entries, Mach-O
       arch via a new pure-Python `machotools.read_macho_cpu_type`, payload
       stripping scoped to `app/`+`lib/` only per the settled stdlib-exclusion
       design, `.pyc` magic, `Info.plist`), hermetic-tested in
       `tests/test_artifact_checks.py`, and wired to a real bundle via
       `tests/platforms/macos/test_app_artifact.py --macos-app`. Ran against the
-      real notarized `dice-roller.app` — passed. Not yet in CI (§3.2).
+      real notarized `dice-roller.app` (2026-09-14) — passed. The `--macos-project`
+      `Info.plist`-vs-config comparison (added 2026-09-21) had never run against
+      a real bundle until the `macos-gate` fixture (§5.3) exercised it
+      2026-09-22 — see that row.
 - [x] **Linux check functions — done 2026-09-13, and they caught a shipped bug.
       In CI since 2026-09-22** via `linux_appimage` (§5.3), the first desktop
       build job in the repo — so this is the one desktop platform whose T3 pass
@@ -611,9 +618,34 @@ meaningful **only** against a committed lock — against a gitignored one it can
 only ever report "out of date", so nothing in CI had ever exercised that verb
 against a real lock.
 
-Still open: the macOS and Windows build jobs. The same fixture pattern applies
-to both; macOS additionally needs a signing story and Windows has no blocker
-left beyond someone writing it.
+**macOS followed the identical shape the same day (2026-09-22), and it turned
+out to need no signing story at all.** The "macOS additionally needs a signing
+story" caveat this paragraph originally carried was wrong: `macos_package()`
+(`kivyforge/platforms/macos/cli.py`) already falls back to an **ad-hoc**
+signature — no certificate, keychain, or secret — whenever
+`[tool.kivy.macos.signing]` is unset, exactly the CI-runner-safe floor
+`linux_appimage` sits on. `tests/fixtures/apps/macos-gate/` commits its
+`pylock.macos.toml` the same way; the `macos_app` job runs `doctor -p macos`
+(every signing check `SKIP`s rather than `FAIL`s — nothing to waive), `lock -p
+macos --check`, `package -p macos`, then the full T3 pass including
+`--macos-project`. Proven locally first, on this Mac, before the job was
+written: `doctor` clean, `lock --check` "up to date", `package` produced a
+57-Mach-O ad-hoc-signed `.app` in ~4s, and the T3 driver 2 passed against it —
+the **first real-bundle run of the `--macos-project` `Info.plist` comparison**
+(added 2026-09-21, never previously exercised against anything but synthetic
+trees; §5.1). **Negative controls**, both against the same real bundle: forcing
+`--macos-arch x86_64` reported 11 arm64 binaries as foreign, by name
+(`Contents/MacOS/macos-gate`, the staged `python3.13`, `libpython3.13.dylib`,
+…); editing the built `Info.plist`'s `CFBundleIdentifier` directly (leaving the
+committed fixture untouched) was caught by *both* checks independently — the
+plist comparison flagged the mismatch, and rewriting a sealed resource
+post-signing invalidated `codesign --verify` too. Rebuilt clean afterward;
+`git status` clean before committing.
+
+Still open: the Windows build job. The same fixture pattern applies; no
+blocker remains beyond someone writing it (Windows Authenticode already has
+the identical ad-hoc-equivalent floor — an unsigned exe — that `windows_signing`
+exercises separately from this desktop-fixture pattern).
 
 <details>
 <summary>The original framing, kept because the reasoning it records is still
@@ -905,6 +937,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 
 | 2026-09-22 | Linux `x86_64` (`linux-gate` fixture) | T2 + T3 (local, then CI) | **WSL2** (Ubuntu, Python 3.14.4 host / 3.13.14 staged) | **The desktop lock question decided and the first desktop build job built** (§5.3). New fixture `tests/fixtures/apps/linux-gate` with a **committed** `pylock.linux.toml` — 48 lines, 2 packages (Kivy 2.3.1 `manylinux_2_17_x86_64` cp313 + `filetype`) and the PBS 3.13.14 runtime; small enough to read in a diff, which is the point of committing it. Proven locally before the job was written: `doctor -p linux` exit 0, `lock -p linux --check` "up to date" (exit 0 — the first exercise of that verb against a real committed desktop lock, and of the 2026-09-21 `semantic_equal` fix), `package -p linux` 22 s producing `linux-gate-1.0.0-x86_64.AppImage` with the payload `.pyc`-only, and the T3 driver 3 passed against that AppImage. **Negative control:** re-run with `--linux-arch aarch64` reports `usr/lib/Kivy.libs/libSDL2-*.so`, `kivy/_clock.cpython-313-x86_64-linux-gnu.so` and others — which is why the fixture depends on Kivy rather than being dependency-free; a bare bundle gives the ELF sweep and the `usr/lib` strip scope nothing to walk. Headless `doctor` also simulated (`env -u DISPLAY -u WAYLAND_DISPLAY`): WARN, exit 0, so the CI step gates without a waiver. |
 | 2026-09-22 | Linux `x86_64` | **§5.6 case-insensitive staging collision, observed for real** | **WSL2**, building onto `/mnt/c` (NTFS, case-insensitive) | Incidental, and the first producer §5.6 has ever had. The first `package -p linux` attempt was run with the project on the Windows mount and died in staging: `shutil.Error` on `python/share/terminfo/h/hp70092A` vs `hp70092`, `terminfo/X` vs `x`, `terminfo/A` vs `a` — the embedded runtime's terminfo database contains entries differing only by case, which a case-insensitive filesystem cannot hold. **Not a kivyforge defect**, and not a CI concern (`ubuntu-latest` is ext4), but it means *no Linux build can be produced onto `/mnt/c` from WSL2*, which is worth knowing before anyone tries it again. Re-running the identical command with the project copied to ext4 succeeded in 22 s. §5.6's entry can now name a reproduction instead of a suspicion. |
+
+| 2026-09-22 | macOS `arm64` (`macos-gate` fixture) | T2 + T3 (local, then CI) | macOS 26.6.2, Xcode 26.6 | **macOS follows `linux-gate`'s pattern the same day, and the "needs a signing story" caveat §5.3 originally carried turns out to be wrong** — `macos_package()` already falls back to an ad-hoc signature (no certificate) with no signing configured, exactly the CI-safe floor a gate needs. New fixture `tests/fixtures/apps/macos-gate` with a **committed** `pylock.macos.toml` (2 packages: Kivy 2.3.1 `macosx_10_15_universal2` cp313 + `filetype`, PBS 3.13.14 arm64 runtime). Proven locally before the CI job was written: `doctor -p macos` clean (every signing check `SKIP`, ad-hoc floor), `lock -p macos --check` "up to date", `package -p macos` ~4 s producing an ad-hoc-signed `.app` (57 Mach-O binaries signed), and the T3 driver 2 passed — **the first real-bundle run of the `--macos-project` `Info.plist`-vs-config comparison** (added 2026-09-21, hermetic-only until now; §5.1). **Negative controls**, both against the same bundle: `--macos-arch x86_64` reported all 11 shipped Mach-O binaries as foreign by name (`Contents/MacOS/macos-gate`, staged `python3.13`, `libpython3.13.dylib`, …); editing the *built* `Info.plist`'s `CFBundleIdentifier` (fixture's own config untouched) was caught by both checks independently — the plist comparison named the mismatch, and rewriting a sealed resource post-signing separately broke `codesign --verify`, confirming the seal covers `Info.plist`. Rebuilt clean afterward; `git status` clean. `macos_app` CI job added mirroring `linux_appimage`'s shape exactly (`.github/workflows/kivyforge.yml`). |
 
 ### Known-unverified, stated plainly
 
