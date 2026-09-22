@@ -14,6 +14,21 @@
   signing isn't configured, so `run --release` never requires release secrets
   to work.
 
+### iOS: signing settings now reach the project, fixing SPM packages that need a team
+
+- **Fixed:** an iOS app with a Swift Package dependency that has its own
+  signable target (e.g. Firebase's resource-bundle targets) could fail to
+  build with `Signing for "..." requires a development team`, even with
+  automatic signing and a team correctly configured — the app's own target
+  built and signed fine, but Xcode resolves a Swift Package's targets
+  against the *project's* build settings, not the consuming target's, and
+  `DEVELOPMENT_TEAM`/`CODE_SIGN_STYLE` were only ever written to the app
+  target.
+- Signing settings are now also written to the project's own build
+  configuration (both Debug and Release), matching what Xcode's own UI does
+  when you set a Team in Signing & Capabilities.
+- Reported by an early user after adding the Firebase SPM package.
+
 ### iOS: a missing SDL3 now fails the build, not just the launch
 
 - **A Kivy iOS app that stages `SDL3.xcframework` now fails to *compile*** if

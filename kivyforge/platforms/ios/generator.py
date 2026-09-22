@@ -147,6 +147,36 @@ class XcodeProjectGenerator:
                     target_name=self.app_name,
                     configuration_name=configuration,
                 )
+            self._apply_project_level_signing(project, signing, configuration)
+
+    def _apply_project_level_signing(
+        self,
+        project: XcodeProject,
+        signing: dict[str, str],
+        configuration: str,
+    ) -> None:
+        """Mirror signing settings onto the *project's* build configuration.
+
+        ``set_flags(..., target_name=self.app_name, ...)`` above only reaches
+        the app's own target. That is enough for the app itself, but Xcode
+        resolves and builds a Swift Package's own targets (e.g. Firebase's
+        resource-bundle targets, which recent Xcode versions require to be
+        signed) against the *project's* build settings, not the consuming
+        target's -- there is no per-package-target place to put
+        ``DEVELOPMENT_TEAM``. Without this, any app that adds an SPM
+        dependency with a signable target fails with "Signing for ... requires
+        a development team" even though the app target itself is correctly
+        signed. Xcode's own UI writes ``DEVELOPMENT_TEAM`` to both the target
+        and the project when you set a Team in Signing & Capabilities, for
+        exactly this reason. Reported against an early build: adding the
+        Firebase SPM package failed this way (`Firebase_FirebaseCore`).
+        """
+        objects = cast(Any, project).objects
+        for key, value in signing.items():
+            for config_obj in objects.get_project_configurations(
+                configuration_name=configuration
+            ):
+                config_obj.set_flags(key, value)
 
     # -- run script --------------------------------------------------------- #
     def _sync_run_script(self, project: XcodeProject) -> None:

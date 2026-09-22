@@ -29,6 +29,15 @@ def _settings_for(project, target_name, configuration):
     return {}
 
 
+def _project_settings_for(project, configuration):
+    """The root ``PBXProject``'s own build settings (not any target's)."""
+    for cfg in _objects(project).get_project_configurations(
+        configuration_name=configuration
+    ):
+        return {k: cfg.buildSettings[k] for k in cfg.buildSettings.get_keys()}
+    return {}
+
+
 class TestStaging:
     # Asserts the POSIX symlink target "../src"; on Windows the staging code
     # emits "..\\src" (os.sep). iOS only builds on macOS, so skip on Windows.
@@ -218,6 +227,35 @@ class TestPbxprojGeneration:
         project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
         debug = _settings_for(project, "touchtracer", "Debug")
         assert debug["DEVELOPMENT_TEAM"] == "ABCDE12345"
+
+    def test_signing_settings_also_reach_the_project_level(self, config, project_root):
+        """DEVELOPMENT_TEAM must land on the *project*, not only the app target.
+
+        Xcode resolves a Swift Package's own targets (e.g. Firebase's
+        resource-bundle targets) against the project's build settings, not
+        the consuming target's. Before this, signing was only applied via
+        ``set_flags(..., target_name=self.app_name, ...)``, so any SPM
+        dependency with a target requiring signing failed with "Signing for
+        ... requires a development team" even though the app target itself
+        was correctly signed and building standalone. Reported against an
+        early build after adding the Firebase SPM package
+        (``Firebase_FirebaseCore``).
+        """
+        layout = materialize_project(config, project_root)
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        debug = _project_settings_for(project, "Debug")
+        release = _project_settings_for(project, "Release")
+        assert debug["DEVELOPMENT_TEAM"] == "ABCDE12345"
+        assert release["DEVELOPMENT_TEAM"] == "ABCDE12345"
+        assert debug["CODE_SIGN_STYLE"] == "Automatic"
+
+    def test_signing_settings_team_id_override_reaches_project_level(
+        self, config, project_root
+    ):
+        layout = materialize_project(config, project_root, team_id="OVERRIDE99")
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        debug = _project_settings_for(project, "Debug")
+        assert debug["DEVELOPMENT_TEAM"] == "OVERRIDE99"
 
     def test_last_upgrade_check_current(self, config, project_root):
         # Xcode prompts "Update to recommended settings" when LastUpgradeCheck
