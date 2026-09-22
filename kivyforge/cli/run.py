@@ -61,7 +61,7 @@ from ._platform import platform_option, reject_android_only, resolve_target
 @click.option(
     "--release",
     is_flag=True,
-    help="Android (with --smoke): target the release variant.",
+    help="Android: target the release variant (with --smoke, the release probe).",
 )
 @click.option(
     "--abi",
@@ -141,6 +141,7 @@ def run(
             android_run(
                 project_root,
                 no_build=no_build,
+                release=release,
                 abi=abi,
                 serial=serial or destination,
                 avd=avd,

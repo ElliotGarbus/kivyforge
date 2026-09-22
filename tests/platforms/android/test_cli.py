@@ -1137,6 +1137,111 @@ class TestAndroidRun:
         cli.android_run(project, wait_sec=0)
         assert calls["write_app_build_gradle"][-1]["abis"] == ("arm64_v8a",)
 
+    def test_release_invokes_assemblerelease_and_installs_the_release_apk(
+        self, build_env, monkeypatch
+    ):
+        """The only way `byte_compile`/`strip_source` (release-only) are ever
+        exercised through the command developers actually use day to day."""
+        project, calls = build_env
+        installed = []
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(
+            adb_mod, "install_apk", lambda dev, apk: installed.append(apk)
+        )
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, release=True, wait_sec=0)
+        assert calls["run_gradle"] == [("assembleRelease",)]
+        (apk,) = installed
+        assert apk.name == "app-release.apk"
+
+    def test_release_no_build_missing_apk_names_the_release_variant(
+        self, build_env, monkeypatch
+    ):
+        project, _ = build_env
+        _fake_device(monkeypatch)
+        with pytest.raises(ToolchainError, match="no release APK"):
+            cli.android_run(project, no_build=True, release=True)
+
+    def test_release_no_build_uses_existing_release_apk(self, build_env, monkeypatch):
+        project, calls = build_env
+        apk = (
+            project
+            / "demoapp-android"
+            / "app"
+            / "build"
+            / "outputs"
+            / "apk"
+            / "release"
+            / "app-release.apk"
+        )
+        apk.parent.mkdir(parents=True)
+        apk.write_bytes(b"fake")
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, no_build=True, release=True, wait_sec=0)
+        assert not calls["run_gradle"]
+
+    def test_release_falls_back_to_the_debug_keystore_when_unconfigured(
+        self, build_env, monkeypatch, capsys
+    ):
+        """`run --release` is a dev-loop verb, not `package`: it must not
+        require release signing secrets to work, same reasoning as
+        `--smoke --release`."""
+        project, calls = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, release=True, wait_sec=0)
+        assert calls["write_app_build_gradle"][-1]["signing_config_block"] == ""
+        assert (
+            "signing the release app with the debug keystore" in capsys.readouterr().out
+        )
+
+    def test_release_prefers_the_configured_release_identity(
+        self, project, monkeypatch, tmp_path
+    ):
+        keystore = tmp_path / "release.keystore"
+        keystore.write_bytes(b"fake-keystore")
+        pyproject = project / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8") + "\n[tool.kivy.android.signing]\n"
+            f'keystore = "{keystore.as_posix()}"\nkey_alias = "upload"\n',
+            encoding="utf-8",
+        )
+        _write_lock(project)
+        monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "fake-sdk"))
+        monkeypatch.setenv("KIVYFORGE_KEYSTORE_PASSWORD", "hunter2")
+        calls: dict = {}
+        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
+        monkeypatch.setattr(signing_mod, "_verify_alias", lambda *a, **kw: None)
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, release=True, wait_sec=0)
+        assert "upload" in calls["write_app_build_gradle"][-1]["signing_config_block"]
+
+    def test_debug_run_is_unaffected_by_release_signing_wiring(
+        self, build_env, monkeypatch
+    ):
+        """release defaults to False: existing debug callers see no change."""
+        project, calls = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
+        cli.android_run(project, wait_sec=0)
+        assert calls["run_gradle"] == [("assembleDebug",)]
+
     def test_require_physical_reaches_adb(self, build_env, monkeypatch):
         project, _ = build_env
         seen = _fake_device(monkeypatch)

@@ -430,6 +430,7 @@ options on any verb. A few common ones:
 - `kivyforge build --debug [--abi arm64_v8a|x86_64]` (Android) — assemble a debug APK, optionally for one ABI.
 - `kivyforge run --list-devices` — list available simulators/emulators and devices.
 - `kivyforge run --smoke` (Android) — run the generated on-device contract test.
+- `kivyforge run --release` (Android) — build and launch the release variant, to exercise `byte_compile`/`strip_source` outside of `package`.
 - `kivyforge clean --cache` — also flush the artifact download cache.
 
 Downloaded artifacts (`Python.xcframework`, the per-ABI Android runtime,

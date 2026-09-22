@@ -62,9 +62,9 @@ unvalidated, and needs a Mac.
   **None of the four run in CI yet** — that, plus the two still-open T3
   sub-checks (manifest/`Info.plist` *content* vs. config, and
   `apksigner`/`signtool` signature verification), is what is actually next on
-  item 5. See the item for the fuller queue (a Linux `x86_64` CI job, the
-  desktop lock-for-CI decision it is gated on, and the `kivyforge run`
-  debug-only fix).
+  item 5. `kivyforge run`'s debug-only fix (below) is done as of 2026-09-22;
+  see the item for the rest of the queue (a Linux `x86_64` CI job and the
+  desktop lock-for-CI decision it is gated on).
 - **A real cross-platform `entry_point` inconsistency, found 2026-09-21 and
   fixed 2026-09-21/22.** The shared spec claimed one universal contract —
   "`entry_point` is imported, not run as `__main__`" — that stopped being true
@@ -195,6 +195,19 @@ unvalidated, and needs a Mac.
   `data.results` (one entry per platform) and top-level `platform` is
   `null`. Documented in the README, `docs/design/common/
   02-cli-and-platform-resolution.md`, and `CHANGELOG.md`.
+- **`kivyforge run --release` (Android), 2026-09-22 — item 5's `run`
+  debug-only fix, done.** `run` always built debug before this, so
+  `byte_compile`/`strip_source` (release-only tri-states) could only ever be
+  exercised through `kivyforge package`, never through the command
+  developers actually use for day-to-day iteration. `--release` now builds
+  and installs the release APK (`assembleRelease`), skipping `package`'s
+  manifest-policy/lint gates (the distribution path's job, not the dev
+  loop's) and falling back to the debug keystore when release signing isn't
+  configured — the same reasoning, and the same now-generalized helper
+  (`_release_dev_signing`), `--smoke --release` already established. 6 new
+  hermetic tests; not yet validated against a real device (the change
+  mirrors already-validated `--smoke --release`/`package` code paths closely
+  enough that hermetic coverage was judged sufficient for now).
 
 ## Execution order
 
@@ -1420,14 +1433,23 @@ are in [`test-matrix.md`](test-matrix.md) §5.1.
   grow one. This decides the shape of the "small fixture-app set" above, so
   settle it first.
 
-- **`kivyforge run` needs a release path before anything can test one.**
+- ~~**`kivyforge run` needs a release path before anything can test one.**
   `android_run()` calls `android_build(..., debug=True)` unconditionally and then
   looks for the debug output, so no flag makes `run` produce a release build.
   Android applies `byte_compile`/`strip_source` in release only, so the command
-  developers use most cannot reach the stripping path at all. Fix the command,
-  then cover it — a test written against `run` today would exercise the branch
-  that was already fine. Small, and it belongs to this item because it is the
-  reason the gap persisted.
+  developers use most cannot reach the stripping path at all.~~ **Done
+  2026-09-22.** `run --release` now builds and installs the release APK
+  (`assembleRelease`, mirroring `android_package` minus its manifest-policy/
+  lint gates, which are `package`'s job, not the dev loop's); signing falls
+  back to the debug keystore when release signing isn't configured, reusing
+  the same fallback `--smoke --release` already had (`_release_dev_signing`,
+  generalized from `_release_smoke_signing`). 6 new tests in
+  `tests/platforms/android/test_cli.py::TestAndroidRun`; documented in
+  `docs/design/platforms/android/06-cli-android.md`, the README, and
+  `CHANGELOG.md`. Not yet validated on a real device — the fix is small and
+  mirrors already-validated `--smoke --release`/`package` code paths closely
+  enough that hermetic coverage was judged sufficient, but that's worth
+  knowing if it ever needs re-litigating.
 - **Android T3 has never run from a Windows host**, which is where item 1's bug
   actually lived: `android_gradle` runs on ubuntu, so `find_interpreter()`'s
   Windows behaviour (the `py` launcher, versioned executables, pre-release

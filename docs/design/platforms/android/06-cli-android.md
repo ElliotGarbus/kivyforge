@@ -158,13 +158,14 @@ Flags:
 - `--abi` (as in `build`; defaults to **the resolved target's own ABI**, read from its `ro.product.cpu.abilist` — so an x86_64 AVD, an arm64 AVD on Apple Silicon, and an arm64 phone each build only what they can run. Falls back to the host architecture's ABI if the target reports nothing kivyforge builds for. A target needing an ABI the project does not lock **fails before Gradle runs**, naming both, rather than surfacing later as `INSTALL_FAILED_NO_MATCHING_ABIS`.)
 
 - `--smoke` (run the generated **contract smoke test** instead of a normal launch; exits non-zero on failure — see below).
-- `--release` (with `--smoke`: target the **release** variant/artifact instead of a debug build, so the probe exercises byte-compilation, stripping, and R8).
+- `--release` (2026-09-22: applies to plain `run` too, not just `--smoke`. Targets the **release** variant/artifact instead of a debug build — the only way `byte_compile`/`strip_source` (release-only tri-states, android/01) are exercised through the command developers actually use day to day, rather than only through `kivyforge package`. With `--smoke`, the probe exercises byte-compilation, stripping, and R8; without it, a plain `run --release` installs and launches the release APK like any other `run`).
 
 **Implicit build step.** By default `run` performs `build --debug` for the
-selected target, then installs and launches:
+selected target, then installs and launches; `--release` builds and launches
+the release variant instead:
 
 1. Resolve the target **first** — because `--abi`'s default comes from it. `--emulator` boots the AVD if one is not already running (`emulator -avd <name>`) and waits for `sys.boot_completed`, so the emulator warms up while Gradle works; `--device` takes the attached device.
-2. `build --debug --abi <the target's ABI>`, unless `--no-build`.
+2. `build --debug --abi <the target's ABI>`, unless `--no-build`. With `--release`: stage the release payload (as `package` does) and run Gradle's `assembleRelease` directly — `run --release` does **not** run `package`'s manifest-policy/lint gates, since those belong to the distribution path, not the dev loop. Signing falls back to the debug keystore when release signing isn't configured (same reasoning as `--smoke --release`: a dev-loop verb must not require release secrets to run).
 3. `adb install -r`, then launch via `adb shell am start -n <package>/org.kivy.android.PythonActivity`.
 4. Capture logcat: `run` waits ~25s for the app to get through startup, then takes a **one-shot `adb logcat -d` dump** and echoes the lines tagged `kivyforge`, `python.std`, or `SDL`. It is a snapshot, not a live stream — `run` returns rather than tailing, which is what makes it usable as a scripted step. For live output, `adb logcat` alongside it.
 

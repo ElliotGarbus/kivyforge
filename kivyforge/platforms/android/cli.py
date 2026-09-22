@@ -646,6 +646,7 @@ def android_run(
     project_root: Path,
     *,
     no_build: bool = False,
+    release: bool = False,
     abi: str | None = None,
     serial: str | None = None,
     avd: str | None = None,
@@ -653,7 +654,17 @@ def android_run(
     require_physical: bool = False,
     wait_sec: int = 25,
 ) -> str:
-    """Build (unless ``--no-build``), install, launch, echo + return app logcat."""
+    """Build (unless ``--no-build``), install, launch, echo + return app logcat.
+
+    ``release`` builds and installs the release variant instead of debug —
+    the only way to exercise `byte_compile`/`strip_source` (release-only
+    tri-states, android/01) through the command developers actually use day
+    to day, rather than only through `kivyforge package`. Signing falls back
+    to the debug keystore when release signing isn't configured, same
+    reasoning as ``--smoke --release``: a dev-loop verb should not require
+    release secrets to run. Unlike `package`, this skips manifest-policy
+    enforcement and R8/lint — those are `package`'s job, not the dev loop's.
+    """
     from . import adb as adb_mod
 
     config, _lock = _load(project_root, no_verify_lock=False)
@@ -671,17 +682,43 @@ def android_run(
     except adb_mod.AdbError as exc:
         raise AndroidBuildError(str(exc)) from exc
     click.echo(f"[run] device {device}")
-    if not no_build:
-        android_build(
-            project_root,
-            debug=True,
-            fmt="apk",
-            abi=abi or _abi_for_device(device, android),
-        )
     dest = project_dir_for(project_root, config)
-    apk = _debug_output(dest, "apk")
+    if not no_build:
+        target_abi = abi or _abi_for_device(device, android)
+        if release:
+            # android_build(debug=False, ...) only stages the release payload
+            # (steps 1-7); unlike the debug path it runs no Gradle task itself
+            # (android_package's own explicit assembleRelease is why), so this
+            # does what android_package does for a signed distributable, minus
+            # the manifest-policy/lint gates that verb owns.
+            signing_block, _ = _release_dev_signing(
+                android, project_root, tag="[run]", label="app"
+            )
+            android_build(
+                project_root,
+                debug=False,
+                fmt="apk",
+                abi=target_abi,
+                signing_config_block=signing_block,
+            )
+            click.echo("[run] assembleRelease")
+            try:
+                run_gradle(dest, ["assembleRelease"])
+            except GradleError as exc:
+                raise _gradle_failure(exc, "assembleRelease") from exc
+        else:
+            android_build(
+                project_root,
+                debug=True,
+                fmt="apk",
+                abi=target_abi,
+            )
+    apk = _release_output(dest, "apk") if release else _debug_output(dest, "apk")
     if not apk.is_file():
-        raise AndroidBuildError(f"no debug APK at {apk}; run without --no-build first.")
+        variant = "release" if release else "debug"
+        raise AndroidBuildError(
+            f"no {variant} APK at {apk}; run without --no-build first."
+        )
 
     try:
         adb_mod.install_apk(device, apk)
@@ -765,7 +802,7 @@ def android_smoke(
     # must share a key) and testBuildType, since AGP only generates
     # connectedReleaseAndroidTest when the tests target that variant.
     signing_block, signing_name = (
-        _release_smoke_signing(config.android_required, project_root)
+        _release_dev_signing(config.android_required, project_root, tag="[smoke]")
         if release
         else ("", None)
     )
@@ -787,17 +824,20 @@ def android_smoke(
     click.echo("Contract smoke test PASSED.")
 
 
-def _release_smoke_signing(
-    android: AndroidConfig, project_root: Path
+def _release_dev_signing(
+    android: AndroidConfig, project_root: Path, *, tag: str, label: str = "probe"
 ) -> tuple[str, str]:
-    """The signing config the release smoke test builds against.
+    """The signing config a dev-loop release build (``--smoke --release``,
+    ``run --release``) builds against.
 
     The project's real release identity when it is configured *and* usable — the
-    probe then exercises exactly what ships. Otherwise the debug keystore, which
-    Android Studio and the SDK create unattended: a smoke test is a test, and
-    requiring release secrets to run it would keep the gate out of reach of the
-    hosts that most need it (android/06 §--smoke, "test-instrumentation signing
-    config").
+    build then exercises exactly what ships. Otherwise the debug keystore, which
+    Android Studio and the SDK create unattended: these are dev-loop verbs, not
+    `package`, and requiring release secrets to run them would keep the release
+    path out of reach of the hosts that most need it (android/06 §--smoke,
+    "test-instrumentation signing config"; the same reasoning extends to
+    ``run --release``). ``tag`` is the caller's own echo prefix (``"[smoke]"``,
+    ``"[run]"``); ``label`` names what's being signed in the message.
     """
     from .signing import SigningError, resolve_signing, signing_config_gradle
 
@@ -806,12 +846,12 @@ def _release_smoke_signing(
             signing = resolve_signing(android.signing, project_root=project_root)
         except SigningError as exc:
             click.echo(
-                f"[smoke] release signing is configured but unusable ({exc}); "
-                "falling back to the debug keystore for the probe."
+                f"{tag} release signing is configured but unusable ({exc}); "
+                f"falling back to the debug keystore for the {label}."
             )
         else:
             return signing_config_gradle(signing), "release"
-    click.echo("[smoke] signing the release probe with the debug keystore.")
+    click.echo(f"{tag} signing the release {label} with the debug keystore.")
     return "", "debug"
 
 

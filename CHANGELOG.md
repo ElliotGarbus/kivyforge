@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Android: `kivyforge run --release`
+
+- **`run --release` now builds and launches the release variant**, not just
+  `--smoke --release`. Previously `run` always built debug, so `byte_compile`/
+  `strip_source` (both release-only by default) could only ever be exercised
+  through `kivyforge package` — never through the command developers actually
+  use for day-to-day iteration.
+- Skips `package`'s manifest-policy and lint gates (those belong to the
+  distribution path); signing falls back to the debug keystore when release
+  signing isn't configured, so `run --release` never requires release secrets
+  to work.
+
 ### iOS: a missing SDL3 now fails the build, not just the launch
 
 - **A Kivy iOS app that stages `SDL3.xcframework` now fails to *compile*** if
