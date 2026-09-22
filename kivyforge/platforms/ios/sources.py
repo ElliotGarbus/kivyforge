@@ -3,7 +3,7 @@
 Generated source layout in <app>-ios/:
   main.m                  — trivial entry point; calls kivyforge_main()
   kivyforge_bootstrap.h    — bootstrap public header
-  kivyforge_bootstrap.m    — dual-mode bootstrap (SDL3 for Kivy, UIKit for pure-Python)
+  kivyforge_bootstrap.m    — SDL3 lifecycle for Kivy; no-SDL path is a smoke-test scaffold
   main_config.h           — per-project defines (entry point, py version)
   kivyforge_native_modules.h — inittab for package-contributed native modules
 

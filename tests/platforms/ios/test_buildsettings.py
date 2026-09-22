@@ -26,8 +26,8 @@ def _layout(tmp_path, *, sdl3: bool) -> StagingLayout:
 class TestRequiresSdlFlag:
     """KIVYFORGE_REQUIRES_SDL=1 gates a compile-time #error in
     kivyforge_bootstrap.m when a Kivy app's SDL3 headers go missing, instead
-    of silently building the headless (windowless) fallback path. Credit:
-    PR #1 (kengoon)."""
+    of silently building the no-SDL smoke-test path, which can never open a
+    window. Credit: PR #1 (kengoon)."""
 
     def test_set_when_sdl3_is_staged(self, config, tmp_path):
         layout = _layout(tmp_path, sdl3=True)
@@ -38,9 +38,9 @@ class TestRequiresSdlFlag:
         )
 
     def test_absent_when_sdl3_is_not_staged(self, config, tmp_path):
-        """A pure-Python (no-Kivy) app must not get a macro demanding SDL3 —
-        its own bootstrap's headless path is the correct one, not a bug to
-        fail the build over."""
+        """A project with no SDL3.xcframework must not get a macro demanding
+        SDL3. The no-SDL branch is the smoke-test scaffold, and failing the
+        build over its lack of SDL would reject that project."""
         layout = _layout(tmp_path, sdl3=False)
         settings = managed_settings(config, configuration="Debug", layout=layout)
         assert "GCC_PREPROCESSOR_DEFINITIONS" not in settings

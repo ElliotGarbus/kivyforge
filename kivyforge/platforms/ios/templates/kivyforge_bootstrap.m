@@ -2,11 +2,12 @@
  * kivyforge_bootstrap.m — dual-mode iOS bootstrap.
  *
  * When SDL3 is available (Kivy wheel embedded in Frameworks/) SDL_RunApp
- * drives the UIKit lifecycle.  When SDL3 is absent (pure-Python / no-Kivy
- * apps) a minimal UIApplicationDelegate does the same job without the SDL
- * dependency.  The right path is chosen at compile time by __has_include so
- * the same source file works in both configurations without any ifdef noise
- * in generated projects.
+ * drives the UIKit lifecycle.  When SDL3 is absent, the no-SDL path below
+ * runs the entry module and exits.  That path is the smoke-test scaffold
+ * used to prove the generated Xcode project before a Kivy dependency was
+ * wired up — not a supported headless or console app mode.  The right path
+ * is chosen at compile time by __has_include so the same source file works
+ * in both configurations without any ifdef noise in generated projects.
  *
  * Python headers  → Python.xcframework (always present)
  * SDL3 headers    → Frameworks/SDL3.xcframework (only for Kivy apps)
@@ -23,8 +24,8 @@
  *       Kivy). If SDL3 headers are then missing at compile time — a broken
  *       vendoring step, a manually edited HEADER_SEARCH_PATHS — the build
  *       FAILS with an actionable error instead of silently falling back to
- *       the headless path below, which would produce an app that launches
- *       but can never open a window. Credit: PR #1 (kengoon).
+ *       the no-SDL path below, which runs Python and exits and can never
+ *       open a window. Credit: PR #1 (kengoon).
  */
 
 /* ── common ─────────────────────────────────────────────────────────────── */
@@ -168,18 +169,20 @@ int kivyforge_main(
     return SDL_RunApp(argc, argv, _sdl_callback, NULL);
 }
 
-/* ── headless path — pure-Python / no-Kivy apps ─────────────────────────── */
+/* ── no-SDL path — smoke-test scaffold, not a supported app mode ────────── */
 #else
 
 /*
- * Without SDL there is no UI toolkit driving the app, so Python runs directly
- * on the main thread.  We deliberately do NOT call UIApplicationMain: doing so
- * starts the UIKit app lifecycle, which (a) emits "UIScene lifecycle will soon
- * be required" for a delegate that has no scene, and (b) triggers CoreAnimation
- * app-launch measurements that can never complete because a headless app never
- * presents a first frame.  Running Python directly keeps pure-Python apps clean
- * and matches their console/headless nature.  Kivy apps take the SDL path above,
- * where SDL_RunApp owns the full UIKit lifecycle.
+ * Smoke-test scaffold.  While the Xcode project generator was coming
+ * together, this path was how a project with no Kivy/SDL dependency could
+ * still compile, launch, run the entry module, and exit — proving the
+ * project, not offering a headless or console app.
+ *
+ * Python runs on the main thread, and UIApplicationMain is not called.
+ * Calling it starts a UIKit lifecycle this path has no scene and no first
+ * frame for, which logs "UIScene lifecycle will soon be required" and
+ * leaves a CoreAnimation launch measurement that never completes.  A Kivy
+ * app takes the SDL path above, where SDL_RunApp owns that lifecycle.
  */
 int kivyforge_main(
     int         argc,

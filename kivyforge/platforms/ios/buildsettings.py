@@ -67,8 +67,8 @@ def managed_settings(
         # Manage the runpath explicitly rather than relying on pbxproj embedding
         # side effects, so any embed path resolves under .app/Frameworks/.
         "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
-        # UIKit is always required: SDL apps use it transitively through
-        # SDL3.framework; pure-Python apps call UIApplicationMain directly.
+        # Linked for every project. Kivy apps need it through SDL3.framework.
+        # The no-SDL smoke-test path does not call UIApplicationMain.
         "OTHER_LDFLAGS": "-framework UIKit",
         "GCC_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
         "ALWAYS_SEARCH_USER_PATHS": "NO",
@@ -82,9 +82,9 @@ def managed_settings(
     if _sdl3_staged(layout):
         # Fail the build at compile time if SDL3 headers then turn out to be
         # missing (a broken vendoring step, a manually edited
-        # HEADER_SEARCH_PATHS), rather than silently compiling the headless
-        # path in kivyforge_bootstrap.m -- an app that launches but can never
-        # open a window. Credit: PR #1 (kengoon).
+        # HEADER_SEARCH_PATHS), rather than silently compiling the no-SDL
+        # smoke-test path in kivyforge_bootstrap.m -- an app that launches
+        # but can never open a window. Credit: PR #1 (kengoon).
         settings["GCC_PREPROCESSOR_DEFINITIONS"] = (
             "$(inherited) KIVYFORGE_REQUIRES_SDL=1"
         )
