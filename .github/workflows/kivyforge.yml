@@ -1,7 +1,14 @@
 name: kivyforge
 
 on:
+  # `push` is limited to main so a branch with an open PR does not run the whole
+  # matrix twice. It used to fire on every branch, which doubled the cost of
+  # every push and — because the desktop gates' `lock --check` queries GitHub's
+  # API — doubled the rate-limit pressure too. That is not hypothetical: two
+  # concurrent runs of the same commit are what produced the 403 on 2026-09-22
+  # (test-matrix.md §7). Branch coverage comes from `pull_request`.
   push:
+    branches: [main]
   pull_request:
   # Manual re-vendor of the Windows launcher when the runner's MSVC toolset drifts
   # (see the revendor_launcher job).
@@ -368,6 +375,11 @@ jobs:
       # date" (03-lockfile-concept.md §"Example-repo lock policy"). Nothing
       # else in CI exercises this verb against a real lock.
       working-directory: ${{ env.APP_DIR }}
+      env:
+        # The PBS runtime lookup queries GitHub's API, which is 60
+        # requests/hour per IP unauthenticated; the token Actions
+        # already provides raises that to 5000 and costs nothing.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: kivyforge lock -p linux --check
     - name: Package the AppImage (T2)
       # No --update: the committed lock is the input. If this step starts
@@ -434,6 +446,11 @@ jobs:
       run: kivyforge doctor -p windows
     - name: Verify the committed lock still matches pyproject.toml
       working-directory: ${{ env.APP_DIR }}
+      env:
+        # The PBS runtime lookup queries GitHub's API, which is 60
+        # requests/hour per IP unauthenticated; the token Actions
+        # already provides raises that to 5000 and costs nothing.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: kivyforge lock -p windows --check
     - name: Package the onedir bundle (T2)
       # No --update: the committed lock is the input, so a failure here means a
@@ -699,6 +716,11 @@ jobs:
       # gitignored one it can only ever report "out of date"
       # (03-lockfile-concept.md §"Example-repo lock policy").
       working-directory: ${{ env.APP_DIR }}
+      env:
+        # The PBS runtime lookup queries GitHub's API, which is 60
+        # requests/hour per IP unauthenticated; the token Actions
+        # already provides raises that to 5000 and costs nothing.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: kivyforge lock -p macos --check
     - name: Package the .app (T2, ad-hoc signed)
       # No --update: the committed lock is the input. If this step starts

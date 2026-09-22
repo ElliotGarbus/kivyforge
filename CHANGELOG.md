@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### `kivyforge lock` honors `GH_TOKEN` / `GITHUB_TOKEN`
+
+- **Fixed:** resolving the python-build-standalone runtime queries GitHub's
+  API, which allows only **60 requests/hour per IP** unauthenticated — enough
+  for a dev box, not for CI, where a shared runner egress address can exhaust
+  it and fail the lock with `HTTP Error 403: rate limit`. A single resolve can
+  spend up to 16 of those requests.
+- `lock` (and `lock --check`, which re-resolves) now sends `GH_TOKEN` or
+  `GITHUB_TOKEN` as a bearer token when either is set, raising the ceiling to
+  5000/hour. `GH_TOKEN` takes precedence, matching the `gh` CLI. An empty or
+  whitespace-only value is ignored rather than sent, so an unset CI secret
+  degrades to an anonymous request instead of a 401.
+- No configuration is needed to keep the old behavior: with neither variable
+  set, the request is anonymous exactly as before.
+- On GitHub Actions, `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` needs no
+  setup. A rate-limited failure now says so in its error message.
+
 ### Android: manifest passthrough values were escaped twice
 
 - **Fixed:** a value in `[tool.kivy.android.manifest.application]` or
