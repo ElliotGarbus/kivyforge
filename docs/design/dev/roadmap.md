@@ -183,6 +183,18 @@ unvalidated, and needs a Mac.
   file) and a stale "Windows: implementation not started" note was corrected.
   Per-platform CLI docs (`android/06-cli-android.md`, `ios/04-cli-ios.md`) still
   do not mention `--json` at all — small, low-risk, left for item 6.
+- **`kivyforge init -p` is now repeatable, 2026-09-22.** Follow-up to the
+  README pass above: `kivyforge init -p ios -p android` seeds both overlays
+  in one run instead of needing one `init` per platform — the shared
+  `[tool.kivy]` table is written once, and each platform is added or (with
+  `--force`) regenerated against the file's accumulated state. `init`
+  declares its own repeatable `-p` rather than reusing the shared
+  `platform_option`, since every other verb operates on exactly one target
+  per invocation and must never accept a list. `--json`'s shape is unchanged
+  for the common single-`-p` case; with several, results move to
+  `data.results` (one entry per platform) and top-level `platform` is
+  `null`. Documented in the README, `docs/design/common/
+  02-cli-and-platform-resolution.md`, and `CHANGELOG.md`.
 
 ## Execution order
 
