@@ -181,6 +181,27 @@ class TestManifest:
         assert app is not None
         assert app.get(f"{NS}largeHeap") == "true"
 
+    def test_a_passthrough_value_is_escaped_exactly_once(self):
+        """An ``&`` in a passthrough value must not ship as ``&amp;``.
+
+        ``_attr_str`` escaped and then ``_attrs``' ``quoteattr`` escaped
+        again, so a value of "Rock & Roll" reached the device as the literal
+        text ``Rock &amp; Roll``. Found by the T3 merged-manifest content
+        check; pinned here because the generator is where the fault was, and
+        a future "let's be safe and escape it" edit would bring it straight
+        back.
+        """
+        _, android = _android(
+            "[tool.kivy.android.manifest]\n"
+            'application = { "android:description" = "Rock & Roll" }\n'
+        )
+        text, tree = _manifest_tree(android)
+        app = tree.find("application")
+        assert app is not None
+        assert app.get(f"{NS}description") == "Rock & Roll"
+        # The serialized form is escaped once, which is what makes it parse.
+        assert 'android:description="Rock &amp; Roll"' in text
+
     def test_orientation_mapping(self):
         assert screen_orientation(("portrait",)) == "portrait"
         assert (

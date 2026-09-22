@@ -84,6 +84,19 @@ def pytest_addoption(parser):
         help="Assert the payload is bytecode-only (strip_source applied).",
     )
     group.addoption(
+        "--android-merged-manifest",
+        default=None,
+        help="Path to AGP's merged release manifest (the copy the generated "
+        "exportKivyforgeReleaseManifest task makes) to check against config.",
+    )
+    group.addoption(
+        "--android-project",
+        default=None,
+        help="Path to the project directory whose pyproject.toml the merged "
+        "manifest must agree with. Required by --android-merged-manifest: "
+        "the check is a comparison, so it needs both sides.",
+    )
+    group.addoption(
         "--macos-app",
         default=None,
         help="Path to a built .app to run the T3 artifact assertions against.",

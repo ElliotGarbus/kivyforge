@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import shutil
 import struct
 import zipfile
@@ -25,7 +26,24 @@ from pathlib import Path
 
 import pytest
 
+from kivyforge.config.model import (
+    AndroidActivity,
+    AndroidConfig,
+    AndroidFeature,
+    AndroidIconConfig,
+    AndroidIntentFilter,
+    AndroidManifestConfig,
+    AndroidPermissions,
+    AndroidService,
+)
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64
+from kivyforge.platforms.android.generate.manifest import (
+    ANDROID_NS,
+    GENERATED_THEME,
+    MAIN_ACTIVITY,
+    ManifestError,
+    generate_manifest,
+)
 from kivyforge.platforms.linux.elftools import ELFCLASS32
 from kivyforge.platforms.macos.machotools import CPU_TYPE_ARM64, CPU_TYPE_X86_64
 from kivyforge.platforms.windows.petools import (
@@ -36,6 +54,8 @@ from tests.artifact_checks import (
     BUNDLE_ROOT,
     ELFCLASS64,
     android_apk_problems,
+    android_manifest_problems,
+    apksigner_report_problems,
     linux_appdir_problems,
     linux_appimage_file_problems,
     macos_app_problems,
@@ -231,6 +251,610 @@ class TestRequiredEntries:
         assert problems == [
             "unknown ABI 'armeabi-v7a'; expected one of ['arm64-v8a', 'x86_64']"
         ]
+
+
+# --- Android merged manifest ------------------------------------------------
+#
+# The fixture is deliberately *not* hand-written XML. It is the real generated
+# manifest put through the transformations AGP's merge actually performs —
+# ``package``/``versionCode``/``versionName`` injected onto ``<manifest>``,
+# ``<uses-sdk>`` inserted, and a library's own components and permissions
+# appended. Hand-written XML would let the fixture drift into a shape no merge
+# produces, and the tolerate-the-extras behaviour (which is most of what makes
+# this check usable against a real build) would go untested.
+#
+# The extras are copied from a real merged manifest of ``hello-android``:
+# androidx.startup's InitializationProvider, profileinstaller's exported
+# receiver, and the ``DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`` pair AGP
+# synthesizes. Every one of them is absent from that project's pyproject.toml,
+# so a check asserting set equality would fail on it.
+
+_LIBRARY_PERMISSIONS = """
+    <permission
+        android:name="org.kivyforge.test.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:protectionLevel="signature" />
+    <uses-permission
+        android:name="org.kivyforge.test.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+"""
+
+_LIBRARY_COMPONENTS = """
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="org.kivyforge.test.androidx-startup"
+            android:exported="false" />
+        <receiver
+            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+"""
+
+
+def _android(**overrides) -> AndroidConfig:
+    base: dict[str, object] = {
+        "schema_version": 1,
+        "package": "org.kivyforge.test",
+        "min_sdk": 24,
+        "target_sdk": 35,
+    }
+    base.update(overrides)
+    return AndroidConfig(**base)  # pyright: ignore[reportArgumentType]
+
+
+def _merged(
+    android: AndroidConfig,
+    *,
+    orientation: tuple[str, ...] = ("portrait",),
+    version_name: str = "1.0.0",
+    library_content: bool = True,
+) -> str:
+    """The generated manifest, transformed the way AGP's merge transforms it."""
+    generated = generate_manifest(android, orientation=orientation)
+    if library_content:
+        generated = generated.replace(
+            "    <application", _LIBRARY_PERMISSIONS + "    <application", 1
+        )
+        generated = generated.replace(
+            "    </application>", _LIBRARY_COMPONENTS + "    </application>", 1
+        )
+    # AGP injects these four out of app/build.gradle's defaultConfig; the
+    # generated manifest carries none of them.
+    injected = (
+        f'<manifest xmlns:android="{ANDROID_NS}"'
+        f' package="{android.package}"'
+        f' android:versionCode="{android.version_code}"'
+        f' android:versionName="{version_name}">\n'
+        f'    <uses-sdk android:minSdkVersion="{android.min_sdk}"'
+        f' android:targetSdkVersion="{android.target_sdk}" />'
+    )
+    return generated.replace(f'<manifest xmlns:android="{ANDROID_NS}">', injected, 1)
+
+
+def _mcheck(
+    manifest_xml: str,
+    android: AndroidConfig,
+    *,
+    orientation: tuple[str, ...] = ("portrait",),
+    version_name: str = "1.0.0",
+) -> list[str]:
+    return android_manifest_problems(
+        manifest_xml,
+        android=android,
+        orientation=orientation,
+        version_name=version_name,
+    )
+
+
+class TestMergedManifestCleanArtifacts:
+    def test_a_plain_merged_manifest_has_no_problems(self):
+        android = _android(permissions=AndroidPermissions(uses=("INTERNET",)))
+        assert _mcheck(_merged(android), android) == []
+
+    def test_library_contributed_content_is_not_a_fault(self):
+        """The check tolerates what it did not ask for; see the note above."""
+        android = _android()
+        with_extras = _merged(android, library_content=True)
+        without = _merged(android, library_content=False)
+        assert _mcheck(with_extras, android) == []
+        assert _mcheck(without, android) == []
+
+    def test_a_fully_featured_config_round_trips(self):
+        android = _android(
+            version_code=417,
+            icons=AndroidIconConfig(source="icon.png"),
+            permissions=AndroidPermissions(
+                uses=("CAMERA", "INTERNET"),
+                features=(AndroidFeature(name="android.hardware.nfc", required=True),),
+            ),
+            services=(
+                AndroidService(
+                    name="Sync",
+                    entry_point="sync",
+                    foreground=True,
+                    foreground_service_type="dataSync",
+                ),
+            ),
+            activities=(AndroidActivity(name="com.example.Second", exported=True),),
+            intent_filters=(
+                AndroidIntentFilter(
+                    action="android.intent.action.VIEW",
+                    categories=("android.intent.category.DEFAULT",),
+                    data=({"scheme": "kivyforge", "host": "open"},),
+                ),
+            ),
+            manifest=AndroidManifestConfig(
+                application={"android:largeHeap": True},
+                activity={"android:windowSoftInputMode": "adjustResize"},
+            ),
+        )
+        orientation = ("landscape-left", "landscape-right")
+        assert (
+            _mcheck(
+                _merged(android, orientation=orientation, version_name="2.4.1"),
+                android,
+                orientation=orientation,
+                version_name="2.4.1",
+            )
+            == []
+        )
+
+
+class TestMergedManifestIdentity:
+    """The four values AGP injects, which no generation test can cover."""
+
+    def test_a_package_that_is_not_the_configured_one_is_reported(self):
+        android = _android()
+        bad = _merged(android).replace(
+            'package="org.kivyforge.test"', 'package="org.example.app"'
+        )
+        assert any("package is 'org.example.app'" in p for p in _mcheck(bad, android))
+
+    def test_a_wrong_version_code_is_reported(self):
+        android = _android(version_code=9)
+        bad = _merged(android).replace(
+            'android:versionCode="9"', 'android:versionCode="1"'
+        )
+        assert any("versionCode" in p for p in _mcheck(bad, android))
+
+    def test_a_wrong_version_name_is_reported(self):
+        android = _android()
+        problems = _mcheck(
+            _merged(android, version_name="1.0.0"), android, version_name="2.0.0"
+        )
+        assert any("versionName" in p for p in problems)
+
+    def test_a_lowered_min_sdk_is_reported(self):
+        android = _android(min_sdk=24)
+        bad = _merged(android).replace(
+            'android:minSdkVersion="24"', 'android:minSdkVersion="21"'
+        )
+        assert any("minSdkVersion is '21'" in p for p in _mcheck(bad, android))
+
+    def test_a_wrong_target_sdk_is_reported(self):
+        android = _android(target_sdk=35)
+        bad = _merged(android).replace(
+            'android:targetSdkVersion="35"', 'android:targetSdkVersion="33"'
+        )
+        assert any("targetSdkVersion is '33'" in p for p in _mcheck(bad, android))
+
+    def test_a_missing_uses_sdk_is_reported_rather_than_passing_silently(self):
+        """The dangerous case: no <uses-sdk> means the check knows nothing."""
+        android = _android()
+        bad = re.sub(r"<uses-sdk[^>]*/>", "", _merged(android))
+        assert any("no <uses-sdk>" in p for p in _mcheck(bad, android))
+
+
+class TestMergedManifestPermissions:
+    def test_a_dropped_permission_is_reported(self):
+        android = _android(permissions=AndroidPermissions(uses=("INTERNET",)))
+        bad = _merged(android).replace(
+            '<uses-permission android:name="android.permission.INTERNET" />', ""
+        )
+        problems = _mcheck(bad, android)
+        assert any("android.permission.INTERNET" in p for p in problems)
+
+    def test_a_foreground_services_auto_added_pair_is_required_too(self):
+        """The auto-adds are config's declarations as much as `uses` is."""
+        android = _android(
+            services=(
+                AndroidService(
+                    name="Sync",
+                    entry_point="sync",
+                    foreground=True,
+                    foreground_service_type="dataSync",
+                ),
+            )
+        )
+        bad = _merged(android).replace(
+            "<uses-permission "
+            'android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />',
+            "",
+        )
+        problems = _mcheck(bad, android)
+        assert any("FOREGROUND_SERVICE_DATA_SYNC" in p for p in problems)
+
+
+class TestMergedManifestFeatures:
+    def test_a_dropped_implied_feature_is_reported(self):
+        android = _android(permissions=AndroidPermissions(uses=("NFC",)))
+        bad = _merged(android).replace(
+            '<uses-feature android:name="android.hardware.nfc" '
+            'android:required="false" />',
+            "",
+        )
+        assert any("android.hardware.nfc" in p for p in _mcheck(bad, android))
+
+    def test_a_required_feature_downgraded_by_the_merge_is_reported(self):
+        android = _android(
+            permissions=AndroidPermissions(
+                auto_features=False,
+                features=(AndroidFeature(name="android.hardware.nfc", required=True),),
+            )
+        )
+        bad = _merged(android).replace(
+            'android:required="true"', 'android:required="false"'
+        )
+        problems = _mcheck(bad, android)
+        assert any("but config declares it required" in p for p in problems)
+
+    def test_a_feature_the_merge_strengthened_is_not_a_fault(self):
+        """A library asking for `required=true` is the merger, not a defect.
+
+        Only losing what the project declared is a fault; gaining a stronger
+        requirement from a dependency is the merge working as designed, and
+        flagging it would make the check fail on builds that are correct.
+        """
+        android = _android(
+            permissions=AndroidPermissions(
+                auto_features=False,
+                features=(AndroidFeature(name="android.hardware.nfc", required=False),),
+            )
+        )
+        stronger = _merged(android).replace(
+            'android:required="false"', 'android:required="true"'
+        )
+        assert _mcheck(stronger, android) == []
+
+
+class TestMergedManifestComponents:
+    def _with_service(self, **service_kwargs) -> AndroidConfig:
+        return _android(
+            services=(
+                AndroidService(name="Sync", entry_point="sync", **service_kwargs),
+            )
+        )
+
+    def test_a_dropped_service_is_reported(self):
+        android = self._with_service()
+        bad = re.sub(r"<service[^>]*/>", "", _merged(android))
+        problems = _mcheck(bad, android)
+        assert any("declared service 'Sync' is missing" in p for p in problems)
+
+    def test_a_service_whose_process_changed_is_reported(self):
+        android = self._with_service()
+        bad = _merged(android).replace(
+            'android:process=":service_sync"', 'android:process=":other"'
+        )
+        assert any("android:process" in p for p in _mcheck(bad, android))
+
+    def test_a_service_silently_exported_by_the_merge_is_reported(self):
+        android = self._with_service(exported=False)
+        bad = _merged(android).replace(
+            'android:name="org.kivy.android.ServiceSync" '
+            'android:process=":service_sync" android:exported="false"',
+            'android:name="org.kivy.android.ServiceSync" '
+            'android:process=":service_sync" android:exported="true"',
+        )
+        assert any("android:exported" in p for p in _mcheck(bad, android))
+
+    def test_a_lost_foreground_service_type_is_reported(self):
+        android = self._with_service(
+            foreground=True, foreground_service_type="dataSync"
+        )
+        bad = _merged(android).replace('android:foregroundServiceType="dataSync"', "")
+        assert any("foregroundServiceType" in p for p in _mcheck(bad, android))
+
+    def test_a_dropped_extra_activity_is_reported(self):
+        android = _android(activities=(AndroidActivity(name="com.example.Second"),))
+        bad = _merged(android).replace(
+            '<activity android:name="com.example.Second"',
+            '<activity android:name="com.example.Gone"',
+        )
+        problems = _mcheck(bad, android)
+        assert any("com.example.Second" in p and "missing" in p for p in problems)
+
+    def test_an_extra_activity_exported_by_the_merge_is_reported(self):
+        android = _android(
+            activities=(AndroidActivity(name="com.example.Second", exported=False),)
+        )
+        bad = _merged(android).replace(
+            '<activity android:name="com.example.Second" android:exported="false" />',
+            '<activity android:name="com.example.Second" android:exported="true" />',
+        )
+        assert any("android:exported" in p for p in _mcheck(bad, android))
+
+
+class TestMergedManifestMainActivity:
+    def test_a_missing_launcher_activity_is_reported(self):
+        android = _android()
+        bad = _merged(android).replace(MAIN_ACTIVITY, "com.other.Activity")
+        problems = _mcheck(bad, android)
+        assert any("no <activity" in p and "no launcher" in p for p in problems)
+
+    def test_an_orientation_the_merge_changed_is_reported(self):
+        android = _android()
+        bad = _merged(android).replace(
+            'android:screenOrientation="portrait"',
+            'android:screenOrientation="landscape"',
+        )
+        assert any("screenOrientation" in p for p in _mcheck(bad, android))
+
+    def test_the_orientation_asserted_is_the_mapped_one_not_the_raw_config(self):
+        """Three orientations map to `fullSensor`; the check must expect that."""
+        android = _android()
+        orientation = ("portrait", "landscape-left", "landscape-right")
+        merged = _merged(android, orientation=orientation)
+        assert 'android:screenOrientation="fullSensor"' in merged
+        assert _mcheck(merged, android, orientation=orientation) == []
+
+    def test_a_lost_generated_theme_is_reported(self):
+        android = _android()
+        bad = _merged(android).replace(f'android:theme="{GENERATED_THEME}"', "", 1)
+        assert any("android:theme" in p for p in _mcheck(bad, android))
+
+    def test_a_dropped_launcher_category_is_reported(self):
+        android = _android()
+        bad = _merged(android).replace(
+            '<category android:name="android.intent.category.LAUNCHER" />', ""
+        )
+        assert any("LAUNCHER" in p for p in _mcheck(bad, android))
+
+
+class TestMergedManifestIntentFilters:
+    def _config(self, **kwargs) -> AndroidConfig:
+        return _android(intent_filters=(AndroidIntentFilter(**kwargs),))
+
+    def test_a_dropped_declared_filter_is_reported(self):
+        android = self._config(
+            action="android.intent.action.VIEW",
+            categories=("android.intent.category.BROWSABLE",),
+        )
+        bad = _merged(android).replace(
+            'android:name="android.intent.action.VIEW"',
+            'android:name="android.intent.action.EDIT"',
+        )
+        problems = _mcheck(bad, android)
+        assert any("android.intent.action.VIEW" in p for p in problems)
+
+    def test_a_filter_that_lost_one_category_is_reported(self):
+        android = self._config(
+            action="android.intent.action.VIEW",
+            categories=(
+                "android.intent.category.DEFAULT",
+                "android.intent.category.BROWSABLE",
+            ),
+        )
+        bad = _merged(android).replace(
+            '<category android:name="android.intent.category.BROWSABLE" />', ""
+        )
+        assert any("android.intent.action.VIEW" in p for p in _mcheck(bad, android))
+
+    def test_a_filter_whose_deep_link_data_changed_is_reported(self):
+        android = self._config(
+            action="android.intent.action.VIEW",
+            data=({"scheme": "kivyforge", "host": "open"},),
+        )
+        bad = _merged(android).replace(
+            'android:host="open"', 'android:host="elsewhere"'
+        )
+        assert any("android.intent.action.VIEW" in p for p in _mcheck(bad, android))
+
+    def test_a_category_the_merge_added_is_not_a_fault(self):
+        android = self._config(
+            action="android.intent.action.VIEW",
+            categories=("android.intent.category.DEFAULT",),
+        )
+        richer = _merged(android).replace(
+            '<category android:name="android.intent.category.DEFAULT" />',
+            '<category android:name="android.intent.category.DEFAULT" />'
+            '<category android:name="android.intent.category.BROWSABLE" />',
+        )
+        assert _mcheck(richer, android) == []
+
+
+class TestMergedManifestPassthrough:
+    def test_a_passthrough_attribute_the_merge_dropped_is_reported(self):
+        android = _android(
+            manifest=AndroidManifestConfig(application={"android:largeHeap": True})
+        )
+        bad = _merged(android).replace('android:largeHeap="true"', "")
+        assert any("android:largeHeap" in p for p in _mcheck(bad, android))
+
+    def test_a_generated_default_the_merge_dropped_is_reported(self):
+        """The four generated defaults are expectations passthrough cannot move.
+
+        ``android:label``/``icon``/``roundIcon``/``theme`` are all in
+        ``MANAGED_ANDROID_APPLICATION_ATTRS``, so the loader rejects a
+        pyproject that tries to set them and no real config can override
+        them. The check still builds its expectation defaults-then-passthrough
+        the way the generator does, so the two cannot disagree if that ever
+        changes — but today only the merge can take one of these away.
+        """
+        android = _android()
+        bad = _merged(android).replace('android:icon="@mipmap/ic_launcher"', "", 1)
+        assert any("android:icon" in p for p in _mcheck(bad, android))
+
+    def test_the_round_icon_is_expected_only_when_an_icon_source_is_configured(self):
+        """Naming a roundIcon with no icon source would fail AAPT, so it is absent."""
+        plain = _android()
+        assert _mcheck(_merged(plain), plain) == []
+
+        with_icon = _android(icons=AndroidIconConfig(source="icon.png"))
+        bad = _merged(with_icon).replace(
+            'android:roundIcon="@mipmap/ic_launcher_round"', "", 1
+        )
+        assert any("android:roundIcon" in p for p in _mcheck(bad, with_icon))
+
+    def test_a_value_containing_an_ampersand_is_compared_unescaped(self):
+        """ElementTree un-escapes on the way in; the expectation must not re-escape.
+
+        This is the test whose first run found the generator double-escaping
+        passthrough values (fixed in ``generate/manifest.py::_attr_str``), so
+        it is pinning the checker and the generator against each other.
+        """
+        android = _android(
+            manifest=AndroidManifestConfig(
+                application={"android:description": "Rock & Roll"}
+            )
+        )
+        assert _mcheck(_merged(android), android) == []
+
+    def test_a_non_android_namespaced_key_is_not_looked_for(self):
+        """Only ``android:`` keys are expectations; others cannot be asserted.
+
+        A bare (un-prefixed) key lands in the generated manifest verbatim and
+        in no namespace, so Android ignores it and this check must too —
+        looking for it under the ``android:`` namespace would report a fault
+        on every build. ``tools:`` never reaches here at all: the generator
+        emits no ``xmlns:tools``, so a ``tools:``-prefixed passthrough key
+        fails well-formedness at generation time, which is the right place.
+        """
+        android = _android(
+            manifest=AndroidManifestConfig(application={"largeHeap": True})
+        )
+        assert _mcheck(_merged(android), android) == []
+
+        with pytest.raises(ManifestError, match="not well-formed"):
+            generate_manifest(
+                _android(
+                    manifest=AndroidManifestConfig(
+                        application={"tools:replace": "android:label"}
+                    )
+                ),
+                orientation=("portrait",),
+            )
+
+
+class TestMergedManifestPlaceholders:
+    def test_an_unresolved_placeholder_is_reported(self):
+        android = _android(
+            manifest=AndroidManifestConfig(
+                extra_application_xml=(
+                    '<meta-data android:name="api.key" android:value="${apiKey}" />'
+                )
+            )
+        )
+        problems = _mcheck(_merged(android), android)
+        assert any("unresolved placeholder" in p and "${apiKey}" in p for p in problems)
+
+    def test_a_substituted_placeholder_leaves_nothing_behind(self):
+        android = _android(
+            manifest=AndroidManifestConfig(
+                placeholders={"apiKey": "abc123"},
+                extra_application_xml=(
+                    '<meta-data android:name="api.key" android:value="${apiKey}" />'
+                ),
+            )
+        )
+        assert _mcheck(_merged(android), android) == []
+
+    def test_applicationid_substitution_is_not_reported(self):
+        android = _android(
+            manifest=AndroidManifestConfig(
+                extra_application_xml=(
+                    '<meta-data android:name="pkg" android:value="${applicationId}" />'
+                )
+            )
+        )
+        assert _mcheck(_merged(android), android) == []
+
+
+class TestMergedManifestMalformed:
+    def test_a_manifest_that_does_not_parse_is_reported(self):
+        assert any("does not parse" in p for p in _mcheck("<<< not xml", _android()))
+
+    def test_a_manifest_rooted_at_the_wrong_element_is_reported(self):
+        problems = _mcheck("<project />", _android())
+        assert any("root element is <project>" in p for p in problems)
+
+    def test_a_manifest_with_no_application_is_reported(self):
+        problems = _mcheck(
+            f'<manifest xmlns:android="{ANDROID_NS}" package="org.kivyforge.test" />',
+            _android(),
+        )
+        assert any("no <application>" in p for p in problems)
+
+
+# --- Android signature report -----------------------------------------------
+#
+# The fixture strings are real ``apksigner verify -v`` output, trimmed to the
+# lines the parser reads. The spawn that produces them is in the driver
+# (``test_apk_artifact.py``), which is why only the parse is tested here.
+
+_V2_V3_REPORT = """Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+"""
+
+_V1_ONLY_REPORT = """Verifies
+Verified using v1 scheme (JAR signing): true
+Verified using v2 scheme (APK Signature Scheme v2): false
+Verified using v3 scheme (APK Signature Scheme v3): false
+Number of signers: 1
+"""
+
+
+class TestApksignerReport:
+    def test_a_v2_signed_apk_with_v1_off_is_clean(self):
+        assert apksigner_report_problems(_V2_V3_REPORT, v1_signing=False) == []
+
+    def test_v1_signing_left_on_when_config_turned_it_off_is_reported(self):
+        both = _V2_V3_REPORT.replace(
+            "v1 scheme (JAR signing): false", "v1 scheme (JAR signing): true"
+        )
+        problems = apksigner_report_problems(both, v1_signing=False)
+        assert any("v1 (JAR) signing is on" in p for p in problems)
+
+    def test_v1_signing_missing_when_config_asked_for_it_is_reported(self):
+        problems = apksigner_report_problems(_V2_V3_REPORT, v1_signing=True)
+        assert any("v1 (JAR) signing is off" in p for p in problems)
+
+    def test_a_v1_only_apk_is_reported_even_though_it_verifies(self):
+        """The case the check exists for: intact, installable, and still wrong.
+
+        A v1-only APK passes ``apksigner verify`` outright. It is a fault
+        because ``min_sdk`` is 24, where the platform verifies v2+, so the
+        signature the device actually checks is not the one present.
+        """
+        problems = apksigner_report_problems(_V1_ONLY_REPORT, v1_signing=True)
+        assert any("no modern signature block" in p for p in problems)
+
+    def test_a_report_with_no_scheme_lines_is_a_fault_not_a_pass(self):
+        """An unparseable report must never read as "nothing wrong found"."""
+        problems = apksigner_report_problems("DOES NOT VERIFY\n", v1_signing=False)
+        assert any("no 'Verified using vN scheme' lines" in p for p in problems)
+
+    def test_scheme_lines_without_the_verifies_header_are_reported(self):
+        no_header = _V2_V3_REPORT.replace("Verifies\n", "", 1)
+        problems = apksigner_report_problems(no_header, v1_signing=False)
+        assert any("did not print 'Verifies'" in p for p in problems)
+
+    def test_the_verifies_header_must_be_its_own_line(self):
+        """``Verifies`` is matched against whole lines, not as a substring.
+
+        ``DOES NOT VERIFY`` and a warning mentioning the word both contain it;
+        apksigner's success marker is the bare line, and anything looser would
+        turn a failed verification into a pass.
+        """
+        sneaky = _V2_V3_REPORT.replace(
+            "Verifies\n", "WARNING: Verifies is not what this says\n", 1
+        )
+        problems = apksigner_report_problems(sneaky, v1_signing=False)
+        assert any("did not print 'Verifies'" in p for p in problems)
 
 
 # --- macOS -------------------------------------------------------------------
