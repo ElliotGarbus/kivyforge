@@ -59,12 +59,57 @@ unvalidated, and needs a Mac.
   prebuilt multi-arch launcher *templates* in every install, which a naive
   PE-arch sweep flags as a leaked cross-arch binary; fixed by excluding the
   known filenames, with a regression test pinning it.
-  **None of the four run in CI yet** — that, plus the two still-open T3
-  sub-checks (manifest/`Info.plist` *content* vs. config, and
-  `apksigner`/`signtool` signature verification), is what is actually next on
-  item 5. `kivyforge run`'s debug-only fix (below) is done as of 2026-09-22;
-  see the item for the rest of the queue (a Linux `x86_64` CI job and the
-  desktop lock-for-CI decision it is gated on).
+  **Only Android's runs in CI** — `android_gradle` has driven
+  `test_apk_artifact.py` against both the debug and the stripped release APK
+  since 2026-09-13. (This file and item 5 both said "none of the four", which
+  was never true of Android; corrected 2026-09-21.) Linux, macOS and Windows
+  are still local, by-hand runs, and a Linux `x86_64` CI job is gated on the
+  desktop lock-for-CI decision, which is **still undecided** — see item 5.
+- **Item 5's two open T3 sub-checks are both done (2026-09-21), and one of them
+  found a shipped bug.** These were the last unchecked boxes in
+  [`test-matrix.md`](test-matrix.md) §5.1.
+  **Merged-manifest content vs. config.** `kivyforge package` already exported
+  AGP's merged release manifest so the release policy pass could lint it, and
+  CI then threw it away on success — item 1's exact shape, a third time.
+  Policy lints the *posture* (an exported component, a debuggable release) and
+  would pass a manifest that had silently lost every permission the project
+  asked for. The new check reads the other half, and the keys it cares most
+  about are the ones **AGP injects** out of `build.gradle` — applicationId,
+  `versionCode`/`versionName`, min/target SDK — because those reach the
+  artifact only through the merge, so no generation test can reach them at
+  all. It runs in `android_gradle` now. Presence, never equality: a real merged
+  manifest carries androidx components no `pyproject.toml` mentions, and a
+  set-equality assertion would fail on every real build.
+  **It found a live bug on its first run.** Passthrough manifest attribute
+  values were escaped twice — `_attr_str`'s `escape` and then `_attrs`'
+  `quoteattr` — so `android:description = "Rock & Roll"` shipped the literal
+  text `Rock &amp; Roll` to the device. Any value containing `&`, `<` or `>`
+  was affected; no in-repo example has one, which is why two releases of
+  passthrough never surfaced it. Fixed, with the regression pinned in
+  `test_generate.py`.
+  **Signature verification**, closing that box for all three signable
+  platforms. Android's `apksigner verify` runs in `android_gradle` at the
+  project's own `min_sdk` and checks the v1 scheme against
+  `v1_signing`; Windows' `signtool verify /pa` has both legs (any signed PE,
+  and the launcher inside a built bundle), with `windows_signing` now routing
+  its own signed artifact through the driver instead of reading an exit code —
+  which is what gets the parser into CI at all, since no job builds a Windows
+  bundle. Developing the Windows parser against a **real revoked-certificate**
+  failure is what established that it must read signtool's verification
+  *counts*: that case prints a full certificate chain, a timestamp line and
+  the word "verified", and only the counts say it failed.
+  **Also closed a quieter gap of this tier's own favourite shape.**
+  `macos_app_problems` had accepted `bundle_id`/`executable` expectations
+  since 2026-09-14 and **no driver ever passed one**, so the `Info.plist`
+  comparison the matrix credited it with had never actually run. Replaced by
+  an `expected_plist` dict covering every key config decides, derived by
+  calling the production `build_info_plist` so it cannot drift, and supplied
+  from a new `--macos-project`. Hermetically tested; the real-bundle run needs
+  the Mac.
+  `kivyforge run`'s debug-only fix (below) is done as of 2026-09-22. What
+  remains on item 5 is getting the other three T3 checkers into CI, which
+  runs through the desktop lock-for-CI decision — **the one open question on
+  the item, and a call worth making deliberately.**
 - **A real cross-platform `entry_point` inconsistency, found 2026-09-21 and
   fixed 2026-09-21/22.** The shared spec claimed one universal contract —
   "`entry_point` is imported, not run as `__main__`" — that stopped being true
@@ -217,7 +262,7 @@ unvalidated, and needs a Mac.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *T3 check functions done for all four platforms (Android/Linux 2026-09-13, macOS 2026-09-14, Windows 2026-09-17); none in CI yet* | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T3 checks complete for all four platforms, §5.1's last two boxes closed 2026-09-21; Android's run in CI, the other three need a build job, which is gated on the undecided desktop lock policy* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -1477,28 +1522,39 @@ its 2026-09-17 results-log row.
 
 **What is actually next on this item, in order:**
 
-1. **Two T3 sub-checks are still open**, both listed as unchecked in
-   [`test-matrix.md`](test-matrix.md) §5.1: merged `AndroidManifest.xml`/
-   `Info.plist` *content* matching what config declared (structural checks
-   exist; content matching does not), and signature verification
-   (`apksigner verify` / `signtool verify`).
-2. **None of the four T3 checkers run in CI.** Every one of them today is a
-   local, by-hand `pytest --<platform>-* ...` run against a build nobody
-   automated. Wiring even one of them into an existing job is the highest-value
-   remaining move in this item, per its own "T3 first" ordering.
+1. ~~**Two T3 sub-checks are still open**~~ — **both done 2026-09-21.** Merged
+   `AndroidManifest.xml` content vs. config (and the macOS `Info.plist` half,
+   which turned out never to have run), and signature verification for all
+   three signable platforms. Both are described in the "Where things stand"
+   entry above; the manifest check found a live double-escaping bug in
+   passthrough manifest attributes. [`test-matrix.md`](test-matrix.md) §5.1's
+   last two boxes are now checked.
+2. **Get the Linux, macOS and Windows T3 checkers into CI.** Android's has run
+   in `android_gradle` since 2026-09-13, and as of 2026-09-21 that job also
+   runs the merged-manifest and signature checks; `windows_signing` runs the
+   Authenticode one. The other three are still local, by-hand
+   `pytest --<platform>-* ...` runs against a build nobody automated — and each
+   needs a *build* job before its checker has anything to inspect, which is
+   why this now reduces to items 3 and 4 rather than being separable from
+   them.
 3. **A plain Linux `x86_64` CI build job** (`ubuntu-latest`, no signing
    identity, no Mac needed) is the cheapest *new* job to add — but settle the
    desktop lock-for-CI policy first (next bullet), since it decides that job's
    shape.
-4. **Settle the desktop lock-for-CI policy.** No `examples/desktop/*` project
-   commits a lock; per
+4. **Settle the desktop lock-for-CI policy — this is the item's one real open
+   question, and everything left is behind it.** No `examples/desktop/*`
+   project commits a lock; per
    [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md)
    §"Example-repo lock policy" the choice is a Linux gate example (item 4
    supplies a real Pi 5 gate as of 2026-09-17, so this option is now open) or
-   lock-at-CI-time. Undecided.
-5. **Fix `kivyforge run`'s debug-only path** (`android_run()` hardcodes
-   `debug=True`), so `strip_source`/`byte_compile` become testable through the
-   command developers actually use, not just `build`/`package`.
+   lock-at-CI-time. [`test-matrix.md`](test-matrix.md) §5.3 recommends
+   **lock-at-CI-time** for desktop, on the grounds that desktop wheels come
+   from immutable PyPI while the mobile gates' bridge-index wheels are not
+   bit-reproducible — so a committed desktop lock buys much less evidence
+   while taking on the churn the policy objects to. Recorded there as a
+   recommendation, not a decision. **Still undecided.**
+5. ~~**Fix `kivyforge run`'s debug-only path**~~ — **done 2026-09-22**, see the
+   struck-through bullet above.
 
 See [`test-matrix.md`](test-matrix.md) §5 for the full gap list in priority
 order; it is the work queue for this item.
