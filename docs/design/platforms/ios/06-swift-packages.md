@@ -85,7 +85,9 @@ by default — a vanilla Kivy app needs no entries.
 ```toml
 [tool.kivy.ios.native.swift_packages]
 # name = { url, requirement, products }
-Sentry = { url = "https://github.com/getsentry/sentry-cocoa", requirement = { from = "8.49.0" }, products = ["Sentry"] }
+# Sentry's "Sentry" product is a dynamic framework, so it overrides the
+# `embed` default (false for a remote package — see below) explicitly.
+Sentry = { url = "https://github.com/getsentry/sentry-cocoa", requirement = { from = "8.49.0" }, products = ["Sentry"], embed = true }
 ```
 
 - **Type**: table of name → inline table.
@@ -104,44 +106,41 @@ Per-entry fields:
 | `requirement` | inline table | yes (remote) | Version requirement, exactly one of the SPM rule kinds — see below. Ignored for `path` packages. |
 | `products` | list of string | yes | The package product names to depend on (one `XCSwiftPackageProductDependency` each). Non-empty. |
 | `link` | bool | no (default `true`) | Add the product to the target's link step. |
-| `embed` | bool | no (default `true`) | Embed the product's framework(s) into `.app/Frameworks/` and code-sign via an explicit Copy Files phase (Xcode does **not** auto-embed in the generated project — see Phase 0 findings). Set `false` for a package pulled in transitively by another embedded product (e.g. an upstream reached only through a local shim) so it is not embedded — and code-signed — twice. See [§"Pinning the upstream package reached through a shim"](#pinning-the-upstream-package-reached-through-a-shim). **Set `false` for any product that is a static library** (most third-party SPM packages, including every Firebase product) — see the warning immediately below. |
+| `embed` | bool | no (default `true` for a `path` package, `false` for a `url` package — see below) | Embed the product's framework(s) into `.app/Frameworks/` and code-sign via an explicit Copy Files phase (Xcode does **not** auto-embed in the generated project — see Phase 0 findings). |
 
-> **`embed = true` only works for a genuinely `dynamic` product — check before
-> relying on the default.** A Swift Package **product** (as opposed to a
-> *target*) is `automatic`, `static`, or `dynamic`; a `library`-type product
-> with no explicit `type:` (the common case) is `automatic`, which Xcode
-> resolves to **static** for a standalone consuming app target like the one
-> kivyforge generates — there is no separate `.framework` file for Xcode to
-> copy. Embedding a static product fails at `xcodebuild build`, not at
-> `kivyforge lock` or `kivyforge build`'s project generation, with an error
-> that does not mention "static" or "embed" at all:
+> **Why the default depends on `url` vs. `path`.** A Swift Package **product**
+> (as opposed to a *target*) is `automatic`, `static`, or `dynamic`; a
+> `library`-type product with no explicit `type:` (the common case for
+> third-party packages) is `automatic`, which Xcode resolves to **static** for
+> a standalone consuming app target like the one kivyforge generates — there
+> is no separate `.framework` file for Xcode to copy, and `embed = true` fails
+> at `xcodebuild build` (not at `kivyforge lock`/`build`'s project generation)
+> with an error that never mentions "static" or "embed":
 >
 > ```
 > error: The file "<ProductName>" couldn't be opened because there is no such file.
 > ```
 >
 > (Sometimes with a `-product` suffix instead — the exact spelling Xcode picks
-> is not meaningful; the cause is the same either way.)
+> is not meaningful; the cause is the same either way.) Since almost every
+> third-party **remote** package — every Firebase product
+> (`FirebaseCore`, `FirebaseAuth`, `FirebaseFirestore`, …) included, reproduced
+> against the real `firebase-ios-sdk` package, 2026-09-21; see
+> [`ios-firebase-spm-signing-findings.md`](../../dev/ios-firebase-spm-signing-findings.md)
+> — is static, `embed` defaults to **`false` for a `url` package**. `link =
+> true` (the default) still applies and is what actually matters for a static
+> product: it is linked into the app binary directly.
 >
-> **Every Firebase product is static** (`FirebaseCore`, `FirebaseAuth`,
-> `FirebaseFirestore`, …) — reproduced against the real `firebase-ios-sdk`
-> package, 2026-09-21; see
-> [`ios-firebase-spm-signing-findings.md`](../../dev/ios-firebase-spm-signing-findings.md).
-> Declare every Firebase product with `embed = false`:
+> A **local `path` shim you author yourself** (like `keychain-spm`'s
+> `KeychainBridge`, below) is different: you control the package's own
+> `Package.swift` and can declare `type: .dynamic` deliberately, so `embed`
+> defaults to **`true` for a `path` package**.
 >
-> ```toml
-> [tool.kivy.ios.native.swift_packages]
-> Firebase = { url = "https://github.com/firebase/firebase-ios-sdk", requirement = { from = "11.0.0" }, products = ["FirebaseCore", "FirebaseAuth"], embed = false }
-> ```
->
-> `link = true` (the default) still applies — a static product is linked into
-> the app binary directly, which is exactly what `link` is for. Only a
-> **local `path` shim you author yourself** (like `keychain-spm`'s
-> `KeychainBridge`, below) can safely rely on the `embed = true` default,
-> because only there do you control the package's own `Package.swift` and can
-> declare `type: .dynamic` deliberately. For a *remote* package, assume
-> `embed = false` is correct unless its own documentation says the product is
-> a dynamic framework.
+> Override the default either way when a specific product doesn't match this
+> shape — e.g. `embed = true` for a remote package whose product really is
+> `dynamic` (some do declare it explicitly; check the package's own docs), or
+> `embed = false` for a local shim reached only transitively (see
+> [§"Pinning the upstream package reached through a shim"](#pinning-the-upstream-package-reached-through-a-shim)).
 
 ### `requirement` rule kinds (remote packages)
 
@@ -190,7 +189,7 @@ embed = true
 | `revision` | string | yes (remote) | The exact commit SPM resolved — the reproducibility anchor. |
 | `version` | string | no | Resolved semantic version when the requirement resolved via a tag. |
 | `products` | list of string | yes | Resolved product names. |
-| `link` / `embed` | bool | no (default `true`) | Xcode-phase intent, as in pyproject. |
+| `link` / `embed` | bool | no (`link` defaults `true`; `embed`'s default depends on `url` vs. `path` — see above) | Xcode-phase intent, resolved from pyproject at lock time; the lock always records the concrete resolved boolean, not a marker. |
 
 There is intentionally **no per-artifact `sha256`/`url` sub-array** here (unlike
 `[[tool.kivyforge.xcframeworks]]`): Xcode owns artifact fetching for this channel,

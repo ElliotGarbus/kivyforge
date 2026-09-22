@@ -125,7 +125,10 @@ class TestSwiftPackages:
         assert lottie.path is None
         assert lottie.requirement == {"from": "4.4.0"}
         assert lottie.products == ("Lottie",)
-        assert lottie.link is True and lottie.embed is True
+        # link defaults true regardless of source; embed's default differs by
+        # source (see test_embed_default_differs_by_source) -- a remote
+        # package defaults to *not* embedded.
+        assert lottie.link is True and lottie.embed is False
 
         mykit = pkgs["MyKit"]
         assert mykit.path == "vendor/MyKit"
@@ -133,6 +136,43 @@ class TestSwiftPackages:
         assert mykit.requirement is None
         assert mykit.products == ("MyKit", "MyKitUI")
         assert mykit.embed is False
+
+    def test_embed_default_differs_by_source(self):
+        """Regression: a remote (`url`) package's library product is usually
+        `automatic`, which Xcode resolves to *static* for a standalone
+        consuming target -- there is no `.framework` for Xcode to embed, and
+        `embed = true` fails at `xcodebuild build` (not here) with an error
+        that never says "static". Reproduced against two real Firebase
+        products (`FirebaseCore`, `FirebaseAuth`); see
+        docs/design/dev/ios-firebase-spm-signing-findings.md. A local `path`
+        shim is author-controlled (can declare `type: .dynamic` on purpose,
+        as keychain-spm's KeychainBridge does) so it keeps the old default.
+        """
+        cfg = load_swift(
+            """
+            [tool.kivy.ios.native.swift_packages]
+            Remote = { url = "https://x/foo.git", requirement = { from = "1.0.0" }, products = ["Remote"] }
+            Local = { path = "vendor/Local", products = ["Local"] }
+            """
+        )
+        pkgs = {p.name: p for p in cfg.ios_required.swift_packages}
+        assert pkgs["Remote"].embed is False
+        assert pkgs["Local"].embed is True
+        # link's default is unaffected either way.
+        assert pkgs["Remote"].link is True
+        assert pkgs["Local"].link is True
+
+    def test_embed_true_still_settable_on_a_remote_package(self):
+        # An explicit override always wins -- for a remote package that really
+        # is a dynamic framework (e.g. Sentry's "Sentry" product).
+        cfg = load_swift(
+            """
+            [tool.kivy.ios.native.swift_packages]
+            Sentry = { url = "https://github.com/getsentry/sentry-cocoa", requirement = { from = "8.49.0" }, products = ["Sentry"], embed = true }
+            """
+        )
+        (sentry,) = cfg.ios_required.swift_packages
+        assert sentry.embed is True
 
     def test_range_requirement(self):
         cfg = load_swift(
@@ -147,6 +187,7 @@ class TestSwiftPackages:
             products=("Foo",),
             url="https://example.com/foo.git",
             requirement={"range": ["1.0.0", "2.0.0"]},
+            embed=False,  # remote package: not embedded unless overridden
         )
 
     def test_table_must_be_table(self):

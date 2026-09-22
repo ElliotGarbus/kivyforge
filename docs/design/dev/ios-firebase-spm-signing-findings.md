@@ -199,3 +199,86 @@ doc's own worked example (`Sentry`) and `keychain-spm`'s local shim
 working, and a wrong default in that direction fails silently at runtime
 (`dyld: Library not loaded`) rather than loudly at build time — arguably a
 worse failure mode to default into.
+
+### Spike: what would `dump-package` cost at lock time?
+
+Measured directly (2026-09-21), reusing the real scratch-manifest flow from
+`spm.py`'s `XcodeSpmResolver` (so the `swift package resolve` timing is
+identical to what `kivyforge lock` runs today), then timing `swift package
+dump-package --package-path <checkout>` against the real checkouts produced.
+
+| Case | `resolve` (existing) | `dump-package` added | Total | Delta |
+|---|---|---|---|---|
+| 1 small package (`KeychainAccess`) | 3.02s | 0.51s (1 call) | 3.53s | +17% |
+| Firebase — every transitive checkout (14) | 23.33s | 7.32s (14 calls) | 30.65s | +31% |
+| Firebase — only the user's declared package (1) | 23.33s | 0.70s (1 call) | 24.03s | +3% |
+
+**Each `dump-package` call costs ~0.5s regardless of the package's size or
+complexity** (Firebase's own large manifest dumped in 0.70s, the same
+ballpark as a tiny package's 0.51s) — the cost is Swift toolchain process
+startup, not manifest parsing. That means the right scope for the check is
+the packages the user actually **declared** in
+`[tool.kivy.ios.native.swift_packages]` (the ones with an `embed` setting to
+validate), not every transitive dependency Xcode's own resolver pulls in —
+Firebase resolves 14 repos but the user declares 1, and the relevant cost is
+the 1-package row (+3%), not the 14-package row (+31%). For a typical
+project (1–5 declared packages) this adds roughly 0.5–2.5s to
+`kivyforge lock --update`, and the calls are independent and parallelizable
+if that ever mattered.
+
+One structural implication the spike surfaced: `XcodeSpmResolver.resolve()`
+currently deletes its scratch checkout the moment `swift package resolve`
+returns (`with tempfile.TemporaryDirectory()`), so `dump-package` would need
+to run against those checkouts before that cleanup — a code-structure change,
+not a performance one.
+
+**Conclusion: cost is not a reason to skip this.** Implementation effort
+(matching checkouts to declared packages, handling `dump-package` failures
+gracefully, only checking `url` packages with library-type products, tests,
+a real-toolchain validation pass) remains the actual scoping question.
+
+### Resolution (same day) — the default flip, revisited
+
+Two cheaper alternatives to `dump-package` were weighed against the spike
+above:
+
+- **B: parse `xcodebuild`'s output text** for the "couldn't be opened"
+  error and turn it into an actionable message post hoc. Rejected —
+  Xcode's exact wording is explicitly *not* a contract (this doc's own "not
+  meaningful" note about the `-product` suffix proves the string is
+  incidental), so a string match is one Xcode release away from silently
+  stopping matching. Not implemented.
+- **A: make the default track `url` vs. `path`** instead of being a single
+  global boolean. The rejection recorded above ("flipping the *global*
+  default to `false` was considered and rejected") was correctly reasoning
+  about a *single* default for every entry — it did not consider splitting
+  the default by the field kivyforge already branches on for
+  mutual-exclusivity (`url` XOR `path`). A `path` package is
+  author-controlled (the case `keychain-spm`'s `KeychainBridge` and this
+  doc's own rejection both depend on) and keeps `embed = true`. A `url`
+  package's product is `automatic` far more often than not — every
+  remote package reproduced against in this doc (Firebase's `FirebaseCore`,
+  `FirebaseAuth`) is static — so it now defaults to `embed = false`.
+
+**Implemented.** `kivyforge/config/loader.py`'s `_parse_swift_packages`
+changed `entry.get("embed", True)` to `entry.get("embed", not url)`. A
+package whose product really is dynamic (e.g. Sentry's, per the worked
+doc example) still overrides with `embed = true`, unchanged from before.
+`docs/design/platforms/ios/06-swift-packages.md`'s `embed` field
+documentation and worked examples were updated to match: the Sentry example
+now sets `embed = true` explicitly (it no longer gets it for free from the
+old default), and the Firebase example's `embed = false` is now redundant
+with the default but kept for clarity. Regression tests added in
+`tests/config/test_loader.py` (`test_embed_default_differs_by_source`,
+`test_embed_true_still_settable_on_a_remote_package`) pin both defaults and
+the override path.
+
+This closes the "possible follow-up" above for the common case without the
+`dump-package` machinery: a user who declares a remote package and does
+nothing else now gets the behavior that works for most third-party SPM
+packages, rather than the behavior that only worked for the doc's own
+example. `dump-package`-based validation (option C above) remains
+un-implemented and is not blocking — it would only add value for the
+remaining case (a `url` package whose product actually is dynamic but the
+author forgets to set `embed = true`), which now fails loudly at
+`xcodebuild build` with the same "couldn't be opened" error, not silently.

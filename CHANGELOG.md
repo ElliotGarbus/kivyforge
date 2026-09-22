@@ -37,6 +37,27 @@
   and confirmed fixed against the real package (`FirebaseCore` product,
   `firebase-ios-sdk` 11.15.0) on a real device build, 2026-09-21.
 
+### iOS: a remote Swift Package no longer embeds by default
+
+- **Changed:** `[tool.kivy.ios.native.swift_packages]`'s `embed` field now
+  defaults to `false` for a `url` (remote) package; a `path` (local) package
+  is unchanged and still defaults to `true`. A remote package's library
+  product is almost always `automatic`, which Xcode resolves to **static**
+  for a standalone consuming target — there's no `.framework` for Xcode to
+  copy, so the old `embed = true` default failed at `xcodebuild build` with
+  `The file "<Product>" couldn't be opened because there is no such file`
+  for most third-party packages, Firebase's included. A local `path` shim is
+  author-controlled (its own `Package.swift` can deliberately declare
+  `type: .dynamic`) and keeps the old default.
+- **Migration:** if a remote package's product really is a dynamic framework
+  (check its own docs — Sentry's `Sentry` product is one example), set
+  `embed = true` explicitly; it no longer comes for free.
+- Reported by an early user after adding `FirebaseAuth`; reproduced against
+  the real package and confirmed `embed = false` fixes it. See
+  `docs/design/dev/ios-firebase-spm-signing-findings.md` for the full
+  investigation, including why a reactive fix (matching `xcodebuild`'s error
+  text) was rejected as fragile in favor of this proactive default.
+
 ### iOS: a missing SDL3 now fails the build, not just the launch
 
 - **A Kivy iOS app that stages `SDL3.xcframework` now fails to *compile*** if

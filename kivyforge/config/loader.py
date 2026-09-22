@@ -2864,8 +2864,20 @@ def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDe
                     field="link",
                     finder=finder,
                 ),
+                # Default true for a local `path` shim (the author controls its
+                # own Package.swift and can declare `type: .dynamic` on purpose —
+                # see keychain-spm's KeychainBridge); default false for a remote
+                # `url` package, whose library product is `automatic` unless its
+                # manifest says otherwise, which Xcode resolves to *static* for
+                # a standalone consuming target like the one kivyforge generates.
+                # `embed = true` on a static product fails at `xcodebuild build`,
+                # not here, with an error that never mentions "static": `The
+                # file "<Product>" couldn't be opened because there is no such
+                # file.` Reproduced against two real remote products (Firebase's
+                # FirebaseCore and FirebaseAuth) — see
+                # docs/design/dev/ios-firebase-spm-signing-findings.md.
                 embed=_require_bool(
-                    entry.get("embed", True),
+                    entry.get("embed", not url),
                     key_path=f"{key_path}.embed",
                     field="embed",
                     finder=finder,
