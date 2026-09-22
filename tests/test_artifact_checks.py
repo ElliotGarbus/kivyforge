@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from kivyforge.config.loader import load_config_from_text
 from kivyforge.config.model import (
     AndroidActivity,
     AndroidConfig,
@@ -59,8 +60,10 @@ from tests.artifact_checks import (
     linux_appdir_problems,
     linux_appimage_file_problems,
     macos_app_problems,
+    macos_expected_plist,
     shipped_python_tags,
     shipped_python_tags_appdir,
+    signtool_report_problems,
     windows_onedir_problems,
 )
 
@@ -857,6 +860,133 @@ class TestApksignerReport:
         assert any("did not print 'Verifies'" in p for p in problems)
 
 
+# --- Windows signature report -----------------------------------------------
+#
+# All three fixtures are verbatim ``signtool verify /pa /v`` output captured on
+# 2026-09-21 from the Windows SDK 10.0.22621.0 signtool: a currently-valid
+# Microsoft-signed binary, kivyforge's own unsigned built launcher, and a
+# python.org ``python.exe`` whose signing certificate had since been revoked.
+# The last one is the fixture that matters most — it prints a full certificate
+# chain and "The signature is timestamped", so every marker of a pass except
+# the counts is present in a report that must fail.
+
+_SIGNTOOL_GOOD = """
+Verifying: signtool.exe
+
+Signature Index: 0 (Primary Signature)
+Hash of file (sha256): 68121927396A705450D0FAEF2886F480114E8FD2E0BDC412CBF3758AEA61A61F
+
+Signing Certificate Chain:
+    Issued to: Microsoft Root Certificate Authority 2010
+    Issued by: Microsoft Root Certificate Authority 2010
+
+The signature is timestamped: Sat Sep 30 02:08:11 2023
+
+Successfully verified: signtool.exe
+
+Number of files successfully Verified: 1
+Number of warnings: 0
+Number of errors: 0
+"""
+
+# The two failing fixtures keep signtool's real quirks, both of which broke a
+# first attempt at the parser that a tidier fixture had passed:
+#
+# 1. signtool separates *every* line of its output with a blank one, so the
+#    tab-indented explanation of an error is two lines below the error, not
+#    one.
+# 2. the verification counts go to **stdout** and the ``SignTool Error`` lines
+#    to **stderr**, so in the driver's ``stdout + stderr`` the errors appear
+#    after the counts rather than interleaved where signtool's console shows
+#    them.
+#
+# These fixtures are spelled the way the driver actually sees them.
+
+_SIGNTOOL_UNSIGNED = """
+Verifying: Dice Roller.exe
+
+Number of files successfully Verified: 0
+
+Number of warnings: 0
+
+Number of errors: 1
+
+SignTool Error: No signature found.
+"""
+
+_SIGNTOOL_REVOKED = """
+Verifying: python.exe
+
+Signature Index: 0 (Primary Signature)
+
+Hash of file (sha256): 68121927396A705450D0FAEF2886F480114E8FD2E0BDC412CBF3758AEA61A61F
+
+Signing Certificate Chain:
+
+    Issued to: Python Software Foundation
+
+    Issued by: Microsoft ID Verified CS EOC CA 02
+
+The signature is timestamped: Tue Dec 03 13:13:09 2024
+
+Number of files successfully Verified: 0
+
+Number of warnings: 0
+
+Number of errors: 1
+
+SignTool Error: WinVerifyTrust returned error: 0x800B010C
+
+\tA certificate was explicitly revoked by its issuer.
+"""
+
+
+class TestSigntoolReport:
+    def test_a_valid_timestamped_signature_is_clean(self):
+        assert signtool_report_problems(_SIGNTOOL_GOOD) == []
+
+    def test_an_unsigned_binary_is_reported(self):
+        problems = signtool_report_problems(_SIGNTOOL_UNSIGNED)
+        assert any("verified 0 file(s)" in p for p in problems)
+        assert any("No signature found" in p for p in problems)
+
+    def test_a_revoked_certificate_is_reported_despite_the_full_chain(self):
+        """The case that makes counting necessary rather than pattern-matching.
+
+        This report has a certificate chain, a timestamp line, and the word
+        "verified" in it. Only the counts and the ``SignTool Error`` line say
+        it failed.
+        """
+        problems = signtool_report_problems(_SIGNTOOL_REVOKED)
+        assert any("explicitly revoked" in p for p in problems)
+
+    def test_an_untimestamped_signature_is_reported(self):
+        no_stamp = "\n".join(
+            line for line in _SIGNTOOL_GOOD.splitlines() if "is timestamped" not in line
+        )
+        problems = signtool_report_problems(no_stamp)
+        assert any("no RFC3161 timestamp" in p for p in problems)
+
+    def test_the_timestamp_requirement_can_be_waived(self):
+        no_stamp = "\n".join(
+            line for line in _SIGNTOOL_GOOD.splitlines() if "is timestamped" not in line
+        )
+        assert signtool_report_problems(no_stamp, require_timestamp=False) == []
+
+    def test_a_report_with_no_counts_is_a_fault_not_a_pass(self):
+        problems = signtool_report_problems("signtool did something else\n")
+        assert any("printed no verification counts" in p for p in problems)
+
+    def test_more_than_one_verified_file_is_reported(self):
+        """One file in, one file verified; anything else means the wrong argv."""
+        two = _SIGNTOOL_GOOD.replace(
+            "Number of files successfully Verified: 1",
+            "Number of files successfully Verified: 2",
+        )
+        problems = signtool_report_problems(two)
+        assert any("verified 2 file(s), expected 1" in p for p in problems)
+
+
 # --- macOS -------------------------------------------------------------------
 #
 # 0xFEEDFACF is MH_MAGIC_64, hardcoded rather than imported so these fixtures
@@ -921,7 +1051,7 @@ def _check_macos(
     arch: str = "arm64",
     stripped: bool = True,
     magic: bytes = MAGIC_MACOS_314,
-    bundle_id=None,
+    expected_plist=None,
     executable=None,
 ):
     return macos_app_problems(
@@ -929,7 +1059,7 @@ def _check_macos(
         arch=arch,
         stripped=stripped,
         expected_magic=magic,
-        bundle_id=bundle_id,
+        expected_plist=expected_plist,
         executable=executable,
     )
 
@@ -949,7 +1079,14 @@ class TestMacosCleanArtifacts:
 
     def test_plist_matching_expected_values_passes(self, tmp_path):
         app = _macos_app(tmp_path, bundle_id="org.kivy.demo", executable="demo")
-        assert _check_macos(app, bundle_id="org.kivy.demo", executable="demo") == []
+        assert (
+            _check_macos(
+                app,
+                expected_plist={"CFBundleIdentifier": "org.kivy.demo"},
+                executable="demo",
+            )
+            == []
+        )
 
 
 class TestMacosStdlibExcluded:
@@ -1013,8 +1150,67 @@ class TestMacosArch:
 class TestMacosPlist:
     def test_a_mismatched_bundle_id_is_reported(self, tmp_path):
         app = _macos_app(tmp_path, bundle_id="org.example.test")
-        problems = _check_macos(app, bundle_id="org.other.app")
+        problems = _check_macos(
+            app, expected_plist={"CFBundleIdentifier": "org.other.app"}
+        )
         assert any("CFBundleIdentifier" in p and "org.other.app" in p for p in problems)
+
+    def test_every_expected_key_is_compared_not_just_the_first(self, tmp_path):
+        """One run reports every mismatched key, like every other check here."""
+        app = _macos_app(tmp_path, bundle_id="org.example.test")
+        problems = _check_macos(
+            app,
+            expected_plist={
+                "CFBundleIdentifier": "org.other.app",
+                "CFBundleShortVersionString": "9.9.9",
+                "LSMinimumSystemVersion": "14.0",
+            },
+        )
+        assert len(problems) == 3, problems
+
+    def test_a_key_absent_from_the_plist_is_reported(self, tmp_path):
+        """A missing key must not read as "nothing to compare, so fine"."""
+        app = _macos_app(tmp_path)
+        problems = _check_macos(app, expected_plist={"LSMinimumSystemVersion": "11.0"})
+        assert any("LSMinimumSystemVersion is None" in p for p in problems)
+
+    def test_keys_not_named_in_the_expectation_are_ignored(self, tmp_path):
+        """The plist holds build-time and fixed keys config does not decide."""
+        app = _macos_app(tmp_path, bundle_id="org.example.test")
+        assert _check_macos(app, expected_plist={}) == []
+
+    def test_the_expected_plist_comes_from_the_production_builder(self):
+        """``macos_expected_plist`` must not grow its own copy of the key list.
+
+        Asserting the shape rather than the values: the point is that it is
+        ``build_info_plist``'s output minus the two build-time keys, so a key
+        added to the production builder is picked up here for free.
+        """
+        config = load_config_from_text(
+            "[project]\n"
+            'name = "demo"\n'
+            'version = "2.3.4"\n'
+            "[tool.kivy]\n"
+            'app_dir = "src"\n'
+            'entry_point = "main"\n'
+            'display_name = "Demo App"\n'
+            "[tool.kivy.macos]\n"
+            "schema_version = 1\n"
+            'bundle_id = "org.kivy.demo"\n'
+            "build = 7\n"
+            "[tool.kivy.macos.python]\n"
+            'version = "3.13.1"\n',
+            require_ios=False,
+            require_macos=True,
+        )
+        expected = macos_expected_plist(config)
+        assert expected["CFBundleIdentifier"] == "org.kivy.demo"
+        assert expected["CFBundleShortVersionString"] == "2.3.4"
+        assert expected["CFBundleVersion"] == "7"
+        assert expected["CFBundleDisplayName"] == "Demo App"
+        # The two a config-only caller cannot know are absent, not empty.
+        assert "CFBundleExecutable" not in expected
+        assert "CFBundleIconFile" not in expected
 
     def test_a_mismatched_executable_is_reported(self, tmp_path):
         app = _macos_app(tmp_path, executable="test-app")

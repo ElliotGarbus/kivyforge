@@ -112,6 +112,12 @@ def pytest_addoption(parser):
         help="Assert app+lib are bytecode-only (strip_source applied).",
     )
     group.addoption(
+        "--macos-project",
+        default=None,
+        help="Path to the project directory whose pyproject.toml the .app was "
+        "built from; supplies the Info.plist keys config decides.",
+    )
+    group.addoption(
         "--linux-appimage",
         default=None,
         help="Path to a built .AppImage to run the T3 artifact assertions against.",
@@ -147,6 +153,19 @@ def pytest_addoption(parser):
         "--windows-stripped",
         action="store_true",
         help="Assert the Windows payload is bytecode-only (strip_source applied).",
+    )
+    group.addoption(
+        "--windows-project",
+        default=None,
+        help="Path to the project directory whose pyproject.toml the Windows "
+        "bundle was built from; supplies the launcher's filename and the "
+        "signing config.",
+    )
+    group.addoption(
+        "--windows-signed-exe",
+        default=None,
+        help="Path to any Authenticode-signed PE to verify. The windows_signing "
+        "job points this at the launcher copy it just signed.",
     )
 
 

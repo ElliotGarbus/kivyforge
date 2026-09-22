@@ -303,9 +303,19 @@ jobs:
 
         # Sign a copy of the vendored launcher via our own SigntoolSigner, then
         # verify the resulting Authenticode signature + timestamp.
+        #
+        # The verification goes through tests/platforms/windows/
+        # test_authenticode.py rather than a bare `signtool verify /pa`, which
+        # checked only the exit code. The driver asserts the verification
+        # counts and the RFC3161 timestamp as well, and running it here is what
+        # puts the report parser itself under CI — no job builds a Windows
+        # bundle yet, so this is the only place that exercises it
+        # (test-matrix.md §5.1, §5.3).
         Copy-Item kivyforge\platforms\windows\vendor\launcher-amd64.exe signed.exe
         python -c "from pathlib import Path; from kivyforge.platforms.windows.signing import SigntoolSigner; SigntoolSigner('$tp', 'http://timestamp.digicert.com', 'current_user').sign([Path('signed.exe')])"
-        signtool verify /pa signed.exe
+        $env:KIVYFORGE_REQUIRE_TOOLCHAIN = '1'
+        pytest tests/platforms/windows/test_authenticode.py -q --no-cov `
+          --windows-signed-exe signed.exe
 
   # The Android gate that unit tests structurally cannot be: every generated
   # Gradle/CMake/Java/XML file is only a *string* until AGP, AAPT, the NDK, and

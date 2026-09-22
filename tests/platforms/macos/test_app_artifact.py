@@ -10,6 +10,9 @@ exactly: the checks themselves are hermetic and unit-tested in
 them at a real bundle.
 
 Skips without ``--macos-app`` so a local `pytest` run stays green.
+
+``--macos-project`` additionally turns on the Info.plist-vs-config
+comparison; see ``test_the_app_is_internally_consistent``.
 """
 
 from __future__ import annotations
@@ -20,8 +23,9 @@ from pathlib import Path
 
 import pytest
 
+from kivyforge.config.loader import load_config
 from kivyforge.platforms.macos.machotools import codesign_verify
-from tests.artifact_checks import macos_app_problems
+from tests.artifact_checks import macos_app_problems, macos_expected_plist
 
 pytestmark = pytest.mark.integration
 
@@ -75,11 +79,24 @@ def test_the_app_is_internally_consistent(app, pytestconfig):
     # bytecode to judge — mirrors test_apk_artifact.py's same guard.
     expected_magic = _expected_magic(app) if stripped else b""
 
+    # The Info.plist-vs-config half of test-matrix.md §5.1. Without
+    # --macos-project only the plist's internal shape is checked, which is
+    # what every run before this one did — `macos_app_problems` has taken
+    # plist expectations since 2026-09-14 and nothing ever passed any.
+    project = pytestconfig.getoption("--macos-project")
+    expected_plist = None
+    if project:
+        config = load_config(
+            Path(project) / "pyproject.toml", require_ios=False, require_macos=True
+        )
+        expected_plist = macos_expected_plist(config)
+
     problems = macos_app_problems(
         app,
         arch=arch,
         stripped=stripped,
         expected_magic=expected_magic,
+        expected_plist=expected_plist,
     )
     assert not problems, (
         f"{app.name} is not the artifact the build promised "
