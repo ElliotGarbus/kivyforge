@@ -15,6 +15,7 @@ fake ``MetadataFetcher``).
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.request
 
@@ -30,6 +31,60 @@ _LATEST_URL = f"{_API}/releases/latest"
 _RELEASES_URL = f"{_API}/releases?per_page={{per_page}}&page={{page}}"
 _PAGE_SIZE = 10
 _MAX_PAGES = 15
+
+
+# GitHub's API allows 60 requests/hour per IP unauthenticated and 5000/hour
+# with a token. One `fetch()` can spend up to _MAX_PAGES + 1 of those, so an
+# unauthenticated CI runner on a shared egress IP exhausts the budget quickly
+# — which is exactly how it failed: `lock --check` on a committed lock, in two
+# concurrently-triggered workflow runs, returning `HTTP Error 403: rate limit`
+# (test-matrix.md §7, 2026-09-22).
+#
+# Every CI provider already exposes a token, and GitHub Actions injects
+# GITHUB_TOKEN for free, so honoring it costs the caller nothing and removes
+# the ceiling. Read from the environment rather than taking a parameter: this
+# fetcher is constructed deep inside the lock pipeline, and threading a
+# credential through that call chain to reach one header would be a worse
+# trade than reading the variable the surrounding tool already set.
+#
+# GH_TOKEN first, matching the `gh` CLI's own precedence, so a developer who
+# has set it for `gh` gets the higher limit locally too.
+_TOKEN_VARS = ("GH_TOKEN", "GITHUB_TOKEN")
+
+_RATE_LIMIT_HINT = (
+    "\n  GitHub rate-limits unauthenticated API calls to 60/hour per IP. "
+    "Set GH_TOKEN or GITHUB_TOKEN to raise it to 5000/hour — in GitHub "
+    "Actions, `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` needs no "
+    "extra setup."
+)
+
+
+def _github_token() -> str:
+    for var in _TOKEN_VARS:
+        token = os.environ.get(var, "").strip()
+        if token:
+            return token
+    return ""
+
+
+def _request_headers() -> dict[str, str]:
+    headers = {"Accept": "application/vnd.github+json"}
+    token = _github_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    """Whether *exc* is GitHub's rate-limit rejection, so the hint is earned.
+
+    403 is the status GitHub uses for an exhausted rate limit; it also uses it
+    for genuine authorization failures, which is why the hint is phrased as a
+    possibility to check rather than as the diagnosis. 429 is included because
+    GitHub has begun returning it for secondary limits.
+    """
+    status = getattr(exc, "code", None)
+    return status in (403, 429)
 
 
 class GithubPbsMetadataFetcher:
@@ -122,7 +177,7 @@ class GithubPbsMetadataFetcher:
 
     def _get_text(self, url: str) -> str:
         req = urllib.request.Request(  # noqa: S310 — https GitHub API only
-            url, headers={"Accept": "application/vnd.github+json"}
+            url, headers=_request_headers()
         )
         try:
             with urllib.request.urlopen(req) as resp:  # noqa: S310
@@ -130,4 +185,5 @@ class GithubPbsMetadataFetcher:
         except (OSError, ValueError) as exc:
             raise RuntimeProviderError(
                 f"failed to query python-build-standalone metadata ({url}): {exc}"
+                + (_RATE_LIMIT_HINT if _is_rate_limited(exc) else "")
             ) from exc

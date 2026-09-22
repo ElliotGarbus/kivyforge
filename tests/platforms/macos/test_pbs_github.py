@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import urllib.error
+import urllib.request
+from email.message import Message
+
 import pytest
 
-from kivyforge.lock.wheelruntime.pbs_github import GithubPbsMetadataFetcher
+from kivyforge.lock.wheelruntime.pbs_github import (
+    GithubPbsMetadataFetcher,
+    _is_rate_limited,
+    _request_headers,
+)
 from kivyforge.lock.wheelruntime.runtime import RuntimeProviderError
 
 _NAME = "cpython-3.14.5+20260602-aarch64-apple-darwin-install_only.tar.gz"
@@ -79,3 +87,93 @@ class TestFetch:
             _Fetcher({"assets": []}).fetch(
                 "3.14.5", "aarch64-apple-darwin", offline=True
             )
+
+
+def _http_error(url: str, code: int, reason: str) -> urllib.error.HTTPError:
+    """An ``HTTPError`` with real headers.
+
+    ``hdrs`` is typed as ``email.message.Message``; a bare ``{}`` works at
+    runtime but pyright rejects it, and `pythonPlatform: All` means that
+    error shows up for every contributor rather than only on one host.
+    """
+    return urllib.error.HTTPError(url, code, reason, Message(), None)
+
+
+class TestAuthentication:
+    """GitHub's API budget is 60/hour per IP unauthenticated, 5000 with a token.
+
+    One `fetch()` can spend up to 16 of those, which is how a `lock --check`
+    on a *committed* lock managed to fail CI with `HTTP Error 403: rate limit`
+    (test-matrix.md §7, 2026-09-22) — two concurrently-triggered workflow runs
+    on shared runner egress.
+    """
+
+    def test_no_authorization_header_without_a_token(self, monkeypatch):
+        for var in ("GH_TOKEN", "GITHUB_TOKEN"):
+            monkeypatch.delenv(var, raising=False)
+        assert "Authorization" not in _request_headers()
+
+    def test_github_token_is_sent_as_a_bearer_token(self, monkeypatch):
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.setenv("GITHUB_TOKEN", "ghs_example")
+        assert _request_headers()["Authorization"] == "Bearer ghs_example"
+
+    def test_gh_token_wins_over_github_token(self, monkeypatch):
+        """Matches the `gh` CLI's own precedence, so a dev box agrees with it."""
+        monkeypatch.setenv("GH_TOKEN", "from-gh")
+        monkeypatch.setenv("GITHUB_TOKEN", "from-actions")
+        assert _request_headers()["Authorization"] == "Bearer from-gh"
+
+    def test_a_blank_token_is_ignored_rather_than_sent(self, monkeypatch):
+        """`env: GH_TOKEN: ${{ secrets.MISSING }}` sets it to the empty string.
+
+        Sending `Authorization: Bearer ` would turn a would-be anonymous
+        request into a 401, converting a working call into a broken one.
+        """
+        monkeypatch.setenv("GH_TOKEN", "   ")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        assert "Authorization" not in _request_headers()
+
+    def test_the_accept_header_is_kept_alongside_the_token(self, monkeypatch):
+        monkeypatch.setenv("GH_TOKEN", "t")
+        assert _request_headers()["Accept"] == "application/vnd.github+json"
+
+
+class TestRateLimitHint:
+    def test_a_403_earns_the_hint(self):
+        err = _http_error("u", 403, "rate limit exceeded")
+        assert _is_rate_limited(err)
+
+    def test_a_429_earns_the_hint(self):
+        """GitHub returns 429 for secondary rate limits."""
+        err = _http_error("u", 429, "too many requests")
+        assert _is_rate_limited(err)
+
+    def test_an_ordinary_failure_does_not(self):
+        """A 404 or a DNS error must not be explained as a rate limit."""
+        assert not _is_rate_limited(_http_error("u", 404, "not found"))
+        assert not _is_rate_limited(OSError("name resolution failed"))
+
+    def test_the_hint_reaches_the_raised_error(self, monkeypatch):
+        """End to end: a rate-limited fetch says what to do about it."""
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+        def _429(req, *a, **kw):
+            raise _http_error(req.full_url, 403, "rate limit exceeded")
+
+        monkeypatch.setattr(urllib.request, "urlopen", _429)
+        with pytest.raises(RuntimeProviderError) as excinfo:
+            GithubPbsMetadataFetcher().fetch("3.13.14", "x86_64-unknown-linux-gnu")
+        message = str(excinfo.value)
+        assert "rate limit" in message
+        assert "GH_TOKEN" in message
+
+    def test_an_unrelated_failure_is_not_given_the_hint(self, monkeypatch):
+        def _404(req, *a, **kw):
+            raise _http_error(req.full_url, 404, "nope")
+
+        monkeypatch.setattr(urllib.request, "urlopen", _404)
+        with pytest.raises(RuntimeProviderError) as excinfo:
+            GithubPbsMetadataFetcher().fetch("3.13.14", "x86_64-unknown-linux-gnu")
+        assert "GH_TOKEN" not in str(excinfo.value)
