@@ -139,6 +139,37 @@ unvalidated, and needs a Mac.
   macOS/Linux/Windows), which had the identical shape though it wasn't
   independently reproduced there. Regression tests added for both; full
   suite + `pyright` + `ruff` clean. See the findings doc for the full trace.
+- **`KIVYFORGE_REQUIRES_SDL`, the other idea from PR #1, landed and validated
+  against real Xcode, 2026-09-21/22.** `kivyforge_bootstrap.m` gained a
+  compile-time guard (`#if defined(KIVYFORGE_REQUIRES_SDL) &&
+  !__has_include(<SDL3/SDL_main.h>)`, `#error`), and
+  `buildsettings.py::managed_settings()` sets
+  `GCC_PREPROCESSOR_DEFINITIONS = "$(inherited) KIVYFORGE_REQUIRES_SDL=1"`
+  whenever `SDL3.xcframework` is staged, so a Kivy app that loses its SDL3
+  headers after project generation (broken vendoring, a manually edited
+  `HEADER_SEARCH_PATHS`) now fails to **compile** with an actionable error
+  instead of silently falling back to the headless path. Landed hermetically
+  tested only (`test_buildsettings.py`, `test_plist_sources.py`); validated
+  for real 2026-09-21
+  ([`ios-requires-sdl-validation-prompt.md`](ios-requires-sdl-validation-prompt.md)
+  →
+  [`ios-requires-sdl-validation-findings.md`](ios-requires-sdl-validation-findings.md)):
+  `hello-kivy` builds normally with `KIVYFORGE_REQUIRES_SDL=1` present on
+  both configurations; renaming the simulator slice's `SDL3.framework/
+  Headers` out of the way and building directly with `xcodebuild` fails with
+  exactly the `#error` text, for both simulator archs, nothing else masking
+  it; restoring the headers and rebuilding (via `kivyforge build`, which the
+  findings doc explains is the reliable check — see below) succeeds again;
+  `hello-world` (no dependencies) never gets the macro at all. **Unrelated
+  wrinkle found, not fixed (not a regression, already known):** the prompt's
+  suggested bare `xcodebuild -destination 'generic/platform=iOS Simulator'`
+  restore-check command hits the pre-existing, already-documented
+  `lib-$ARCHS` universal-simulator-build limitation in
+  `xcode/commands.py` (a run-script phase failure unrelated to this guard) —
+  `kivyforge build` already pins `ARCHS=` to avoid it, which is why the real
+  build path is unaffected. `KIVYFORGE_HEADLESS_UIKIT`, the other half of
+  PR #1's idea, remains a separate, not-yet-agreed follow-up — not touched
+  here.
 - **README pass (2026-09-21):** the `## Commands` section now points at
   `--json`/`capabilities`, and a new `## Working with agents` section (mirroring
   `AGENTS.md`'s "Driving kivyforge from an agent", written for kivyforge's own
