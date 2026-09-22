@@ -111,6 +111,15 @@ mistake in a new place. The `--android-apk` / `--android-abi` /
 `--android-stripped` options are the T3 entry point, and they are named here
 rather than buried in §5.1 for exactly that reason.
 
+**The `--<platform>-project` options are the other half of that entry point.**
+`--android-project`, `--macos-project` and `--windows-project` hand a check the
+project's `pyproject.toml`, which is what any *comparison against config*
+needs: the merged-manifest check, the `Info.plist` check and both signature
+checks are comparisons rather than self-consistency checks, so without the
+project they have only one side. Leaving one off is the cheapest way to get a
+green run that compared nothing — which is why the merged-manifest driver
+*fails* rather than skips when given a manifest and no project.
+
 **Three env vars exist because a self-skipping test is indistinguishable from a
 passing one:**
 
@@ -176,12 +185,12 @@ evidence is a single logged run in §7 that nothing re-runs.
 
 | Target | T0/T1 | T2 toolchain | T3 artifact | T4 launch | T5 hardware | Last proven |
 |---|---|---|---|---|---|---|
-| Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare only | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
+| Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare, plus `windows_signing`'s Authenticode verification through `test_authenticode.py` (since 2026-09-21); the onedir-bundle and built-app-signature checks exist but have no build job to feed them (§5.3) | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
 | macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | **local** — a stripped, re-notarized `dice-roller.app` launched and rendered for the first time, after fixing the launcher (§7, 2026-09-14) | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3, T4) |
 | Linux `x86_64` | `unit_tests` | **local only** — `appimagetool`, one run | **local only** — assertions exist and are hermetically tested every push; pointed at a real artifact once | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1); 2026-09-13 (T2/T3/T4) |
 | Linux `aarch64` | `unit_tests` | **local only** — cross `package` on x86_64 WSL2, host `appimagetool` + target type2 runtime | **local only** — T3 driver extracts via `unsquashfs` (the aarch64 type2 ELF cannot `--appimage-extract` here); ELF leak check caught a planted host `.so` | **local** — stripped AppImage reaches main loop on Pi 5 (labwc, Broadcom V3D) | **manual** — Pi 5 only; Pi 4 untested | 2026-09-17 |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
-| Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
+| Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
 | iOS device `arm64` | `unit_tests` | **local** — `build -p ios --device`, `package -p ios --export-method development`, real iPhone14,3 | **none** | **local** — installed, launched, `hello-kivy` rendered on device | **manual** — first physical run, 2026-09-14 | 2026-09-14 |
 | iOS simulator `arm64` | `unit_tests` | **local** — `xcodebuild` via `build -p ios --simulator`, 6 examples | **none** | **local** — `simctl` launch, all 6 render | n/a | 2026-09-14 (regression re-check; no drift since 2026-07-27) |
 
@@ -433,19 +442,88 @@ twice: once on the debug APK, once on the stripped release APK.
       (`test_distlibs_own_launcher_templates_are_not_a_fault`) pinning the
       exclusion so a future broadening of the sweep's scope cannot silently
       reintroduce it.
-- [ ] **Merged `AndroidManifest.xml` and `Info.plist` contain what config asked
-      for.** `android_gradle` already exports the merged manifest to
-      `app/build/kivyforge/AndroidManifest-merged-release.xml` and currently
-      archives it **only on failure** — so the artifact needed to assert this is
-      produced on every run and thrown away on success. (The macOS check above
-      does assert `Info.plist` structure/optional-exact-match; the Android
-      manifest side of this item is still open.)
+- [x] **Merged `AndroidManifest.xml` and `Info.plist` contain what config asked
+      for — done 2026-09-21.** `android_manifest_problems` in
+      `tests/artifact_checks.py`, driven by
+      `tests/platforms/android/test_merged_manifest.py`
+      (`--android-merged-manifest` + `--android-project`) and **run in
+      `android_gradle` after `kivyforge package`** — the manifest that job
+      exported for the policy lint and then discarded on success is now
+      asserted on every run. Four things worth carrying forward:
+      - **Presence, never equality.** A real merged manifest carries
+        androidx.startup's `InitializationProvider`, profileinstaller's
+        receiver and the synthesized `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
+        pair, none of which any `pyproject.toml` mentions. A set-equality
+        assertion fails on every real build, and a check that always fails gets
+        deleted rather than fixed. Same shape as the distlib false positive in
+        the Windows box below.
+      - **The highest-value keys are the ones AGP injects**, not the ones
+        kivyforge generates: `package`, `versionCode`, `versionName`,
+        `minSdkVersion`, `targetSdkVersion` all come from `build.gradle`'s
+        `defaultConfig` and reach the artifact only through the merge, so no
+        generation test can reach them at all.
+      - **Expectations are imported, not restated.** The check calls the
+        generator's own `effective_permissions`/`effective_features`/
+        `screen_orientation`/`service_class_name` (the first two extracted from
+        `generate_manifest` for this) rather than keeping a second copy of the
+        auto-add and implied-feature rules — the same reasoning as the ELF/PE
+        constants. It therefore cannot catch a generator that is *consistently*
+        wrong; the hermetic generation tests own that, this owns the merge.
+      - **It found a real bug on its first run.** `_attr_str` escaped a
+        passthrough attribute value and `_attrs`' `quoteattr` escaped it again,
+        so `android:description = "Rock & Roll"` shipped the literal text
+        `Rock &amp; Roll`. Fixed in `generate/manifest.py`; regression pinned in
+        `test_generate.py`.
+
+      **The macOS `Info.plist` half is now genuinely wired, which it was not.**
+      This file previously credited `macos_app_problems` with asserting
+      "structure/optional-exact-match" — but its `bundle_id`/`executable`
+      expectations had been optional since 2026-09-14 and **no driver ever
+      passed one**, so the comparison had never run. An expectation nothing
+      supplies is a check that never runs, which is this tier's own failure
+      mode. `bundle_id` is replaced by an `expected_plist` dict covering every
+      key config decides, produced by calling the *production*
+      `build_info_plist` and dropping the two keys a config-only caller cannot
+      know (`CFBundleExecutable`, `CFBundleIconFile`), and supplied by
+      `test_app_artifact.py` from a new `--macos-project`. Hermetically tested;
+      **not yet run against a real bundle — that needs the Mac.**
 - [x] **macOS code signature verifies** — `codesign --verify`, via
       `machotools.codesign_verify`, exercised in
       `test_app_artifact.py::test_the_app_is_codesigned` against the real
       notarized `dice-roller.app`.
-- [ ] **Signatures verify** — `apksigner verify` (Android), and `signtool verify
-      /pa` on a *built app* rather than on the vendored launcher (Windows).
+- [x] **Signatures verify — done 2026-09-21**, closing the box for all three
+      signable platforms (macOS was done 2026-09-14, above).
+      - **Android:** `tests/platforms/android/test_apk_signature.py`, run in
+        `android_gradle` against the release APK the throwaway keystore signed.
+        It verifies at the project's own **`min_sdk`**, not apksigner's default,
+        because the question worth answering is not "is this signature
+        well-formed" but "will every platform version this project claims to
+        support accept it" — a v1-only signature installs fine on API 23 and is
+        what the platform ignores from 24 up, which is exactly why
+        `[tool.kivy.android.signing].v1_signing` defaults off. The v1 scheme is
+        therefore checked *against that setting* rather than against a fixed
+        expectation. Release-only on purpose: a debug APK's signature is
+        Gradle's, not the project's.
+      - **Windows:** `tests/platforms/windows/test_authenticode.py`, both
+        halves. `--windows-signed-exe` takes any signed PE, and
+        **`windows_signing` now routes its own signed launcher through it**
+        instead of a bare `signtool verify /pa` that read only the exit code —
+        which is what puts the report parser under CI at all, since no job
+        builds a Windows bundle (§5.3). `--windows-onedir` +
+        `--windows-project` is the built-app half §5.1 originally asked for
+        (`package` signs exactly one file, the launcher in the dist copy);
+        validated locally, and a local gate until a Windows build job exists.
+      - **Read the counts, not the exit code or the word "verified."** A
+        signed-but-untrusted binary prints a full certificate chain, "The
+        signature is timestamped" and the word "verified" — every marker of a
+        pass except `Number of files successfully Verified` and the `SignTool
+        Error` lines. A real revoked-certificate case is what established that,
+        and is now a fixture.
+      - **Both parsers live in `artifact_checks.py`; both *spawns* live in the
+        platform drivers.** Signature verification is the one thing in this
+        tier that genuinely needs a tool, so the split keeps every function in
+        `artifact_checks.py` hermetic, which is the property the
+        no-toolchain rule was protecting.
 
 ### 5.2 Android T3 from a Windows host — the item-1 code path
 
@@ -732,8 +810,23 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-21 | iOS device `arm64` (`hello-kivy` + real `firebase-ios-sdk`) | user-report repro + product fix | macOS 26.6.2, Xcode 26.6 | **The prior commit's fix for "Signing for ... requires a development team" (same day, commit `56ca1730`) does not actually fix it.** Reproduced the original user report with the real Firebase SPM package (`FirebaseCore` product, 11.15.0, via a temporary `swift_packages` entry — not committed) and a real device build: identical failure, with `DEVELOPMENT_TEAM` confirmed already present in the generated `.pbxproj` at both target and project level. A second hypothesis (`PBXProject.attributes.TargetAttributes`, what Xcode's Signing & Capabilities *tab* actually writes, as opposed to the Build Settings tab) also reproduced the failure identically when patched in directly. The actual fix: pass `DEVELOPMENT_TEAM=<team>` as an `xcodebuild` **command-line** override, the same way `CODE_SIGN_IDENTITY` already was — a Swift Package's own targets build as a synthesized sub-project that reads neither the consuming project's baked `buildSettings` nor its `TargetAttributes`, only command-line overrides. Verified against the real package: builds and `codesign -dv` confirms proper signing; a regression check (rebuild with the command-line override removed, everything else unchanged) reproduced the original error again, 5 instances. `build_command()`/`archive_command()` and both `cli.py` call sites (`_xcodebuild_step7`, `ios_run`) updated; `ios_run` had the identical gap independently. Full detail: [`ios-firebase-spm-signing-findings.md`](ios-firebase-spm-signing-findings.md). |
 | 2026-09-21 | iOS (hermetic; no device/toolchain) | product fix — `embed` default | — | **A second, independent Firebase footgun from the same user report** (`FirebaseAuth` this time): `embed`'s old default (`true` for every entry) fails at `xcodebuild build` — `The file "FirebaseAuth" couldn't be opened because there is no such file` — for any remote package whose product is `automatic`/`static`, which is most third-party SPM packages, not just Firebase's. Considered and rejected: parsing `xcodebuild`'s error text to detect this reactively — its exact wording is explicitly not a contract (confirmed the `-product`-suffix variant is cosmetic), so a text match is one Xcode release away from silently stopping matching. Fixed proactively instead: `embed` now defaults to `false` for a `url` package and stays `true` for a `path` package (author-controlled, e.g. `keychain-spm`'s `KeychainBridge` shim, which still needs the old default). `kivyforge/config/loader.py`'s one-line change (`entry.get("embed", not url)`), doc rewrite (`06-swift-packages.md`, including flipping its own Sentry example to set `embed = true` explicitly now that it no longer gets it for free), and two new regression tests in `tests/config/test_loader.py`. Not re-verified against the real device/Firebase (that leg was already closed in the row above); this is a hermetic-only follow-up. Full detail: the "Resolution" section appended to [`ios-firebase-spm-signing-findings.md`](ios-firebase-spm-signing-findings.md). |
 
+| 2026-09-21 | Android (merged manifest) | T3 infra + CI | Windows 11, Python 3.13.1 | §5.1's manifest-content box. `android_manifest_problems` + `test_merged_manifest.py`, wired into `android_gradle` after `kivyforge package`. **Validated against real AGP output before wiring, not after:** three merged manifests left on disk by earlier local builds (`hello-android`, `hello-sdl3`, `android-safe-area`, the last exercising the three-orientation `fullSensor` mapping) all pass clean; 15 hand mutations of one of them — dropped permission, wrong min/target SDK, wrong versionCode/versionName, wrong package, flipped orientation, lost theme, renamed launcher activity, dropped LAUNCHER category, removed `<uses-sdk>`, unresolved placeholder, malformed XML, wrong root element — are all caught; and pointing the driver at a deliberately mismatched project reports both real differences at once. **Found a real bug on the first run:** passthrough manifest attribute values were escaped twice (`_attr_str`'s `escape` plus `_attrs`' `quoteattr`), so `android:description = "Rock & Roll"` shipped as the literal `Rock &amp; Roll`. Fixed and pinned. 39 hermetic tests; full suite + `ruff` + `pyright` clean, coverage 93.20%. |
+| 2026-09-21 | Android `x86_64` (CI) | T3 (signature) | ubuntu (wired), Windows 11 (validated) | §5.1's Android signature half. `test_apk_signature.py`, run in `android_gradle` against the keystore-signed release APK with `KIVYFORGE_REQUIRE_TOOLCHAIN=1` so a missing `apksigner` fails rather than skips; `build-tools;35.0.0` added to the job's `sdkmanager` line so the tool's presence is declared rather than inherited from the runner image. Validated locally against a real APK using the SDK's own `apksigner.bat` (build-tools 35.0.0): real output matches the parser's fixtures exactly (`v1: false`, `v2: true`), and the driver passes end to end. |
+| 2026-09-21 | Windows `amd64` | T3 (signature) | Windows 11, SDK 10.0.22621.0 signtool | §5.1's Windows signature half, both legs. `test_authenticode.py`; `windows_signing` now verifies its own signed launcher through it rather than a bare `signtool verify /pa`. **Validated against real signtool in all three states:** a currently-valid Microsoft-signed binary passes; kivyforge's own unsigned built launcher (`dice-roller` dist copy) is rejected with all three faults reported at once; and a python.org `python.exe` whose signing certificate had since been **revoked** is rejected — that last one is why the parser reads verification *counts*, since it prints a full certificate chain, a timestamp line and the word "verified". Two real signtool quirks were only found this way and are now pinned by faithful fixtures: signtool blank-line-separates every output line, so an error's tab-indented explanation sits two lines below it and a naive continuation scan silently dropped the only human-readable half of the message; and the counts go to stdout while the errors go to stderr. The built-app leg (`--windows-onedir`) is wired but has no CI job to run it (§5.3). |
+
 ### Known-unverified, stated plainly
 
+- The **macOS `Info.plist`-vs-config** comparison (§5.1): wired 2026-09-21 and
+  hermetically tested, but never run against a real `.app`. Needs the Mac, and
+  is one extra flag (`--macos-project`) on the T3 command the 2026-09-17 macOS
+  session already ran.
+- The **Windows built-app signature** leg (§5.1): validated against real
+  signtool, but only on binaries signed by someone else. Verifying a launcher
+  that *kivyforge* signed inside a real bundle needs a code-signing cert this
+  dev box does not have, so the two legs together prove the parser and the
+  spawn but not yet the full round trip on a kivyforge-built artifact. The
+  `windows_signing` CI job does prove that round trip on a copy of the
+  vendored launcher.
 - iOS `strip_source`: never run, on simulator or device — and, as of 2026-09-14,
   known to be currently *unrunnable* on any in-repo example, since all of them
   pin the pre-release `3.15.0b4` and `package -p ios` requires a final CPython

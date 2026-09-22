@@ -108,10 +108,11 @@ def test_the_app_is_internally_consistent(app, pytestconfig):
 def test_the_app_is_codesigned(app):
     """``codesign --verify`` against a *built* app, not the vendored launcher.
 
-    test-matrix.md §5.1 lists "signatures verify" as open for every platform;
-    this is the macOS half of that item using the wrapper the bundler itself
-    calls (``platforms/macos/machotools.codesign_verify``), so it cannot drift
-    from what a real build actually signs with.
+    The macOS third of test-matrix.md §5.1's signature box — the first of the
+    three to land (2026-09-14; Android and Windows followed on 2026-09-21).
+    Uses the wrapper the bundler itself calls
+    (``platforms/macos/machotools.codesign_verify``), so it cannot drift from
+    what a real build actually signs with.
     """
     if sys.platform != "darwin":
         pytest.skip("codesign is macOS-only")
