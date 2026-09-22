@@ -143,3 +143,59 @@ setting that needs to reach package targets must go out as an `xcodebuild`
 argument, matching how `CODE_SIGN_IDENTITY` was already handled — a pattern
 worth remembering before adding another `.pbxproj`-only "fix" for a
 package-graph signing failure in the future.
+
+## Follow-up (same day) — a second, independent Firebase footgun: `embed` defaults to `true`
+
+A second user report against the same underlying `kivyforge` version, this
+time on `FirebaseAuth`:
+
+```
+Copy .../test-kivyforge.app/Frameworks/FirebaseAuth-product /.../Debug-iphoneos/FirebaseAuth-product
+error: The file "FirebaseAuth-product" couldn't be opened because there is no such file.
+```
+
+This is **not** a signing issue and the fix above does not touch it.
+Reproduced with the real `FirebaseAuth` product and the *default* `embed`
+setting (unset in `pyproject.toml`, which `[tool.kivy.ios.native.swift_packages]`
+defaults to `true`):
+
+```
+Copy .../hello-kivy.app/Frameworks/FirebaseAuth /.../Debug-iphoneos/FirebaseAuth
+error: The file "FirebaseAuth" couldn't be opened because there is no such file.
+```
+
+Same error class (Xcode's exact spelling — with or without a `-product`
+suffix — is not meaningful). Root cause: a Swift Package **product** is
+`automatic`, `static`, or `dynamic`; `library`-type products with no explicit
+`type:` (the common case, including every Firebase product) are `automatic`,
+which Xcode resolves to **static** for a standalone consuming target — there
+is no `.framework` file for the Embed Frameworks / Copy Files phase to copy.
+`kivyforge` has no way to know this ahead of `xcodebuild` (it does not run
+`swift package dump-package`), so `embed = true`'s default silently fails at
+`xcodebuild build` for any static product, which in practice means most
+third-party SPM packages, not just Firebase's.
+
+Confirmed the fix: adding `embed = false` (keeping the `link = true`
+default) and re-locking — the identical project builds and succeeds. No
+code fix was made for this (there is no reliable way for kivyforge to
+detect a product's declared library type without adding a
+`dump-package`-based lock-time check, which is a real feature, not a small
+one); `docs/design/platforms/ios/06-swift-packages.md`'s `embed` field
+documentation was rewritten with a prominent warning and a worked Firebase
+example, since the *existing* default was only ever validated against one
+real remote package (`Sentry`, the doc's own worked example, which is
+presumably genuinely dynamic) and silently does the wrong thing for the
+common static case.
+
+**Possible follow-up (not implemented):** run `swift package dump-package`
+against each resolved package at `kivyforge lock` time and fail with an
+actionable `KF-ERROR` when `embed = true` (default or explicit) is paired
+with a product whose declared type is not `dynamic`, catching this at `lock`
+time with a clear message instead of at a confusing `xcodebuild` failure.
+Flipping the *global* default to `false` was considered and rejected: the
+doc's own worked example (`Sentry`) and `keychain-spm`'s local shim
+(`KeychainBridge`, deliberately declared `type: .dynamic` in its own
+`Package.swift` specifically to use this default) both rely on `embed = true`
+working, and a wrong default in that direction fails silently at runtime
+(`dyld: Library not loaded`) rather than loudly at build time — arguably a
+worse failure mode to default into.

@@ -104,7 +104,44 @@ Per-entry fields:
 | `requirement` | inline table | yes (remote) | Version requirement, exactly one of the SPM rule kinds — see below. Ignored for `path` packages. |
 | `products` | list of string | yes | The package product names to depend on (one `XCSwiftPackageProductDependency` each). Non-empty. |
 | `link` | bool | no (default `true`) | Add the product to the target's link step. |
-| `embed` | bool | no (default `true`) | Embed the product's framework(s) into `.app/Frameworks/` and code-sign via an explicit Copy Files phase (Xcode does **not** auto-embed in the generated project — see Phase 0 findings). Set `false` for a package pulled in transitively by another embedded product (e.g. an upstream reached only through a local shim) so it is not embedded — and code-signed — twice. See [§"Pinning the upstream package reached through a shim"](#pinning-the-upstream-package-reached-through-a-shim). |
+| `embed` | bool | no (default `true`) | Embed the product's framework(s) into `.app/Frameworks/` and code-sign via an explicit Copy Files phase (Xcode does **not** auto-embed in the generated project — see Phase 0 findings). Set `false` for a package pulled in transitively by another embedded product (e.g. an upstream reached only through a local shim) so it is not embedded — and code-signed — twice. See [§"Pinning the upstream package reached through a shim"](#pinning-the-upstream-package-reached-through-a-shim). **Set `false` for any product that is a static library** (most third-party SPM packages, including every Firebase product) — see the warning immediately below. |
+
+> **`embed = true` only works for a genuinely `dynamic` product — check before
+> relying on the default.** A Swift Package **product** (as opposed to a
+> *target*) is `automatic`, `static`, or `dynamic`; a `library`-type product
+> with no explicit `type:` (the common case) is `automatic`, which Xcode
+> resolves to **static** for a standalone consuming app target like the one
+> kivyforge generates — there is no separate `.framework` file for Xcode to
+> copy. Embedding a static product fails at `xcodebuild build`, not at
+> `kivyforge lock` or `kivyforge build`'s project generation, with an error
+> that does not mention "static" or "embed" at all:
+>
+> ```
+> error: The file "<ProductName>" couldn't be opened because there is no such file.
+> ```
+>
+> (Sometimes with a `-product` suffix instead — the exact spelling Xcode picks
+> is not meaningful; the cause is the same either way.)
+>
+> **Every Firebase product is static** (`FirebaseCore`, `FirebaseAuth`,
+> `FirebaseFirestore`, …) — reproduced against the real `firebase-ios-sdk`
+> package, 2026-09-21; see
+> [`ios-firebase-spm-signing-findings.md`](../../dev/ios-firebase-spm-signing-findings.md).
+> Declare every Firebase product with `embed = false`:
+>
+> ```toml
+> [tool.kivy.ios.native.swift_packages]
+> Firebase = { url = "https://github.com/firebase/firebase-ios-sdk", requirement = { from = "11.0.0" }, products = ["FirebaseCore", "FirebaseAuth"], embed = false }
+> ```
+>
+> `link = true` (the default) still applies — a static product is linked into
+> the app binary directly, which is exactly what `link` is for. Only a
+> **local `path` shim you author yourself** (like `keychain-spm`'s
+> `KeychainBridge`, below) can safely rely on the `embed = true` default,
+> because only there do you control the package's own `Package.swift` and can
+> declare `type: .dynamic` deliberately. For a *remote* package, assume
+> `embed = false` is correct unless its own documentation says the product is
+> a dynamic framework.
 
 ### `requirement` rule kinds (remote packages)
 
