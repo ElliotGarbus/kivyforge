@@ -160,6 +160,7 @@ is the runner of the job named in it**, which is why this table comes first —
 | `windows_signing` | windows | `3.x` | Windows T2 (`signtool`, self-signed) |
 | `android_gradle` | ubuntu | **3.14** | Android T2 + T3 |
 | `linux_appimage` | ubuntu | **3.13** | Linux T2 + T3 (`package` + AppImage assertions) |
+| `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
 | `macos_integration` | macos | `3.x` | macOS T2 (two `clang` tests) |
 
@@ -196,7 +197,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 
 | Target | T0/T1 | T2 toolchain | T3 artifact | T4 launch | T5 hardware | Last proven |
 |---|---|---|---|---|---|---|
-| Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare, plus `windows_signing`'s Authenticode verification through `test_authenticode.py` (since 2026-09-21); the onedir-bundle and built-app-signature checks exist but have no build job to feed them (§5.3) | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
+| Windows `amd64` | `windows_tests` | `windows_onedir` — real `package -p windows` on every push (since 2026-09-22); plus `windows_launcher` (MSVC) and `windows_signing` (self-signed `signtool`) | `windows_onedir` — full onedir T3 pass, **plus `signtool verify /pa` on the built launcher** after signing it with a throwaway cert; `windows_launcher`'s vendored byte-compare continues alongside | **partial** — launcher against a stub `python.exe`; no Kivy app launched | see §6 | every push |
 | macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | `macos_app` — real `package -p macos` (ad-hoc signed) on every push (since 2026-09-22); previously local-only Developer-ID sign + notarize + staple + `strip_source` on `examples/desktop/dice-roller` remains the only *notarized*, non-ad-hoc evidence | `macos_app` — full T3 pass, including the `Info.plist`-vs-config comparison, on every push (since 2026-09-22); the notarized-`dice-roller.app` run (2026-09-14) remains the only evidence with a real Developer ID | **local** — a stripped, re-notarized `dice-roller.app` launched and rendered for the first time, after fixing the launcher (§7, 2026-09-14) | see §6 | every push (T0/T1/T2/T3); 2026-09-14 (T2-Developer-ID, T4) |
 | Linux `x86_64` | `unit_tests` | `linux_appimage` — real `appimagetool` on every push (since 2026-09-22); previously local only | `linux_appimage` — full T3 pass over the packaged AppImage on every push | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1/T2/T3); 2026-09-13 (T4) |
 | Linux `aarch64` | `unit_tests` | **local only** — cross `package` on x86_64 WSL2, host `appimagetool` + target type2 runtime | **local only** — T3 driver extracts via `unsquashfs` (the aarch64 type2 ELF cannot `--appimage-extract` here); ELF leak check caught a planted host `.so` | **local** — stripped AppImage reaches main loop on Pi 5 (labwc, Broadcom V3D) | **manual** — Pi 5 only; Pi 4 untested | 2026-09-17 |
@@ -441,7 +442,10 @@ twice: once on the debug APK, once on the stripped release APK.
       `test_plist_launcher.py`). The real-clang argv test plus the actual
       launch in §7 hold the line; a static conftest-driven check would be
       ceremony on top of them.
-- [x] **Windows check functions — done 2026-09-17.** `windows_onedir_problems`
+- [x] **Windows check functions — done 2026-09-17. In CI since 2026-09-22**
+      via `windows_onedir` (§5.3), completing the desktop set — all three
+      desktop targets now run their T3 pass on every push rather than as a
+      logged one-off. `windows_onedir_problems`
       in `tests/artifact_checks.py`, mirroring `linux_appdir_problems`'s shape
       (required entries, payload stripping scoped to `app`/`python/Lib/
       site-packages`, a PE-arch sweep of the whole tree via the new
@@ -527,11 +531,19 @@ twice: once on the debug APK, once on the stripped release APK.
         halves. `--windows-signed-exe` takes any signed PE, and
         **`windows_signing` now routes its own signed launcher through it**
         instead of a bare `signtool verify /pa` that read only the exit code —
-        which is what puts the report parser under CI at all, since no job
-        builds a Windows bundle (§5.3). `--windows-onedir` +
-        `--windows-project` is the built-app half §5.1 originally asked for
-        (`package` signs exactly one file, the launcher in the dist copy);
-        validated locally, and a local gate until a Windows build job exists.
+        which is what first put the report parser under CI. **The built-app
+        half closed 2026-09-22** with `windows_onedir` (§5.3): it packages the
+        `windows-gate` fixture unsigned, signs the launcher *inside that
+        bundle* through `SigntoolSigner`, and verifies it — so `signtool
+        verify /pa` now runs against an artifact `kivyforge package`
+        produced, which is what this box originally asked for.
+        The signing is a separate job step rather than something `package`
+        did, because Windows has no ad-hoc floor like macOS's: signtool needs
+        a real certificate, and a per-run thumbprint in the fixture's
+        `pyproject.toml` would change `pyproject_sha256` and break the same
+        job's `lock --check`. The `--windows-onedir` + `--windows-project`
+        driver path remains for a project that *does* configure signing; it
+        is still local-only, since no CI fixture configures one.
       - **Read the counts, not the exit code or the word "verified."** A
         signed-but-untrusted binary prints a full certificate chain, "The
         signature is timestamped" and the word "verified" — every marker of a
@@ -642,10 +654,27 @@ plist comparison flagged the mismatch, and rewriting a sealed resource
 post-signing invalidated `codesign --verify` too. Rebuilt clean afterward;
 `git status` clean before committing.
 
-Still open: the Windows build job. The same fixture pattern applies; no
-blocker remains beyond someone writing it (Windows Authenticode already has
-the identical ad-hoc-equivalent floor — an unsigned exe — that `windows_signing`
-exercises separately from this desktop-fixture pattern).
+**Windows closed the set on 2026-09-22.** `tests/fixtures/apps/windows-gate`
+(committed `pylock.windows.toml`, 7 packages — Kivy plus `kivy_deps.{sdl2,
+glew,angle}` and `pywin32`, which is what gives the PE-arch sweep real DLLs to
+walk) and the `windows_onedir` job: doctor (gating — the signtool and
+certificate checks SKIP rather than FAIL when signing is unconfigured), `lock
+--check`, `package -p windows`, the T3 onedir pass, and then the one step
+neither of the other two desktop jobs can do.
+
+**Windows is where the fixture pattern and the signature check meet**, and it
+needed a different shape from macOS. macOS has an ad-hoc floor, so
+`macos_app`'s artifact is signed by `package` itself; Windows has none —
+signtool needs a real certificate. Putting a throwaway cert's thumbprint in
+the fixture's `pyproject.toml` would change `pyproject_sha256` and break the
+`lock --check` step in the same job. So the job packages **unsigned**, then
+signs the *built launcher* through kivyforge's own `SigntoolSigner` (the
+recipe `windows_signing` already proves) and verifies it through
+`test_authenticode.py`. That is §5.1's "on a *built app* rather than on the
+vendored launcher", finally satisfied.
+
+All three desktop targets now have a build job. What is left is §5.4's Android
+emulator T4 and the iOS simulator job waiting on published wheels.
 
 <details>
 <summary>The original framing, kept because the reasoning it records is still
@@ -939,6 +968,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-22 | Linux `x86_64` | **§5.6 case-insensitive staging collision, observed for real** | **WSL2**, building onto `/mnt/c` (NTFS, case-insensitive) | Incidental, and the first producer §5.6 has ever had. The first `package -p linux` attempt was run with the project on the Windows mount and died in staging: `shutil.Error` on `python/share/terminfo/h/hp70092A` vs `hp70092`, `terminfo/X` vs `x`, `terminfo/A` vs `a` — the embedded runtime's terminfo database contains entries differing only by case, which a case-insensitive filesystem cannot hold. **Not a kivyforge defect**, and not a CI concern (`ubuntu-latest` is ext4), but it means *no Linux build can be produced onto `/mnt/c` from WSL2*, which is worth knowing before anyone tries it again. Re-running the identical command with the project copied to ext4 succeeded in 22 s. §5.6's entry can now name a reproduction instead of a suspicion. |
 
 | 2026-09-22 | macOS `arm64` (`macos-gate` fixture) | T2 + T3 (local, then CI) | macOS 26.6.2, Xcode 26.6 | **macOS follows `linux-gate`'s pattern the same day, and the "needs a signing story" caveat §5.3 originally carried turns out to be wrong** — `macos_package()` already falls back to an ad-hoc signature (no certificate) with no signing configured, exactly the CI-safe floor a gate needs. New fixture `tests/fixtures/apps/macos-gate` with a **committed** `pylock.macos.toml` (2 packages: Kivy 2.3.1 `macosx_10_15_universal2` cp313 + `filetype`, PBS 3.13.14 arm64 runtime). Proven locally before the CI job was written: `doctor -p macos` clean (every signing check `SKIP`, ad-hoc floor), `lock -p macos --check` "up to date", `package -p macos` ~4 s producing an ad-hoc-signed `.app` (57 Mach-O binaries signed), and the T3 driver 2 passed — **the first real-bundle run of the `--macos-project` `Info.plist`-vs-config comparison** (added 2026-09-21, hermetic-only until now; §5.1). **Negative controls**, both against the same bundle: `--macos-arch x86_64` reported all 11 shipped Mach-O binaries as foreign by name (`Contents/MacOS/macos-gate`, staged `python3.13`, `libpython3.13.dylib`, …); editing the *built* `Info.plist`'s `CFBundleIdentifier` (fixture's own config untouched) was caught by both checks independently — the plist comparison named the mismatch, and rewriting a sealed resource post-signing separately broke `codesign --verify`, confirming the seal covers `Info.plist`. Rebuilt clean afterward; `git status` clean. `macos_app` CI job added mirroring `linux_appimage`'s shape exactly (`.github/workflows/kivyforge.yml`). |
+
+| 2026-09-22 | Windows `amd64` (`windows-gate` fixture) | T2 + T3 (local, then CI) | Windows 11, Python 3.13.1 host / 3.13.14 staged | **The desktop set completed** (§5.3): `windows_onedir` joins `linux_appimage` and `macos_app`, so all three desktop targets now build in CI. New fixture with a committed `pylock.windows.toml` — 94 lines, 7 packages (Kivy 2.3.1 `win_amd64` cp313, `kivy_deps.{sdl2,glew,angle}`, `pywin32`/`pypiwin32`, `filetype`) plus the PBS 3.13.14 runtime. Proven locally before the job was written: `doctor -p windows` exit 0 with the signtool and certificate checks **SKIP**ping on an unsigned fixture (so the step gates without a waiver, same as Linux and macOS), `lock -p windows --check` "up to date", `package -p windows` 45 s to a `.pyc`-only onedir bundle, and `test_onedir_artifact.py` 1 passed against it. **Negative control:** `--windows-arch arm64` names the SDL2 DLLs, the tcl DLLs, `vcruntime140.dll`, the `.pyd` extension modules and the launcher itself — which is why this fixture depends on Kivy rather than being dependency-free. **Partially validated, stated plainly:** the signature step's *reject* half was verified locally (the driver correctly fails the built, unsigned launcher with "No signature found"), but the sign-then-pass half was **not** run here — it needs a self-signed cert imported into the machine trust store, which is not a change to make on a dev box. It reuses `windows_signing`'s already-green recipe verbatim; first real execution is its first CI run. |
 
 ### Known-unverified, stated plainly
 

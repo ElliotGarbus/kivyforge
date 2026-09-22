@@ -1568,8 +1568,17 @@ its 2026-09-17 results-log row.
    which had only ever run hermetically before this. Android's has run in
    `android_gradle` since 2026-09-13, and that job also runs the
    merged-manifest and signature checks as of 2026-09-21; `windows_signing`
-   runs the Authenticode one. **Windows remains** the one platform with no
-   *build* job feeding its checker; the same fixture pattern applies.
+   runs the Authenticode one. **Windows done the same day, completing the
+   set** — `windows_onedir` packages a new `windows-gate` fixture on
+   `windows-latest` and runs the onedir T3 pass, then does the one thing
+   neither other desktop job can: it signs the launcher *inside the bundle it
+   just built* with a throwaway self-signed cert and verifies it, which is
+   what §5.1's "on a built app rather than on the vendored launcher" asked
+   for. Signing is a separate job step rather than something `package` did,
+   because Windows has no ad-hoc floor like macOS's — signtool needs a real
+   certificate, and a per-run thumbprint in the fixture's `pyproject.toml`
+   would change `pyproject_sha256` and break the same job's `lock --check`.
+   **All four platforms' T3 checkers now run in CI**, which closes this step.
 3. ~~**A plain Linux `x86_64` CI build job**~~ — **done 2026-09-22**, once
    the lock question below was settled. `linux_appimage` on `ubuntu-latest`:
    doctor (gating, no waiver), `lock --check` against the committed fixture

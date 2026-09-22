@@ -398,6 +398,106 @@ jobs:
           ${{ env.APP_DIR }}/build/linux/*.AppDir/AppRun
           ${{ env.APP_DIR }}/build/linux/*.AppDir/*.desktop
 
+  # The Windows desktop gate, completing the set alongside linux_appimage and
+  # macos_app: `kivyforge package -p windows` end to end, then the T3 pass over
+  # the onedir bundle it produced, then the one thing neither of the other two
+  # can do — sign a *built* launcher and verify it.
+  #
+  # Same fixture pattern as the other two (test-matrix.md §5.3): the project is
+  # tests/fixtures/apps/windows-gate, which commits its pylock.windows.toml so
+  # the gate builds identical inputs every run.
+  windows_onedir:
+    name: Windows onedir (package + T3 + signature)
+    runs-on: windows-latest
+    env:
+      APP_DIR: tests/fixtures/apps/windows-gate
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python 3.13
+      # Pinned for the §5.8 reason — this is the only CI job that builds a
+      # Windows app, so it must not test whichever minor the image ships.
+      # The .pyc-magic assertion is anchored to the bundle's own staged
+      # interpreter rather than to this runner, same as the Linux job.
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.13'
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Doctor (Windows)
+      # Gating, like the Linux and macOS jobs. With no
+      # [tool.kivy.windows.signing] the signtool and certificate checks SKIP
+      # rather than FAIL, so an unsigned fixture needs no waiver.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge doctor -p windows
+    - name: Verify the committed lock still matches pyproject.toml
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge lock -p windows --check
+    - name: Package the onedir bundle (T2)
+      # No --update: the committed lock is the input, so a failure here means a
+      # pinned wheel or the PBS runtime moved at its URL.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge package -p windows
+    - name: Assert the bundle is the artifact the build promised (T3)
+      # strip_source and byte_compile default to "release" and `package` is the
+      # only Windows verb that reaches them, so --windows-stripped is correct
+      # here and would be wrong for a `build`.
+      shell: bash
+      run: |
+        bundle="$(ls -d "$APP_DIR"/dist/windows/*-amd64)"
+        pytest tests/platforms/windows/test_onedir_artifact.py -q --no-cov \
+          --windows-onedir "$bundle" --windows-arch amd64 --windows-stripped
+    - name: Sign the built launcher and verify it (T3, signature)
+      # test-matrix.md §5.1 asked for `signtool verify /pa` "on a *built app*
+      # rather than on the vendored launcher". This is that: the launcher
+      # inside the bundle the previous step just inspected.
+      #
+      # Signed here rather than by `kivyforge package` because Windows has no
+      # ad-hoc floor the way macOS does — signtool needs a real certificate,
+      # and the thumbprint of a per-run throwaway cert cannot go in the
+      # fixture's pyproject.toml without changing pyproject_sha256 and
+      # breaking the `lock --check` step above. So the job signs the built
+      # artifact through kivyforge's own SigntoolSigner, exactly as
+      # windows_signing already does for the vendored launcher, and then
+      # verifies it through the same driver.
+      shell: pwsh
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: |
+        $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+          Sort-Object FullName -Descending | Select-Object -First 1
+        if (-not $signtool) { throw "signtool.exe not found in the Windows SDK" }
+        $env:PATH = "$($signtool.Directory);$env:PATH"
+
+        # A throwaway code-signing cert in CurrentUser\My (the store
+        # SigntoolSigner uses without /sm); its public cert is trusted so
+        # `verify /pa`, which applies the full Authenticode policy, can pass.
+        $cert = New-SelfSignedCertificate -Type CodeSigningCert `
+          -Subject "CN=kivyforge CI windows-gate" -CertStoreLocation Cert:\CurrentUser\My
+        Export-Certificate -Cert $cert -FilePath ci-gate.cer | Out-Null
+        Import-Certificate -FilePath ci-gate.cer -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
+
+        $bundle = (Get-ChildItem "$env:APP_DIR\dist\windows" -Directory |
+          Where-Object Name -like "*-amd64" | Select-Object -First 1).FullName
+        $launcher = Join-Path $bundle "Windows Gate.exe"
+        if (-not (Test-Path $launcher)) { throw "built launcher not found at $launcher" }
+
+        python -c "from pathlib import Path; from kivyforge.platforms.windows.signing import SigntoolSigner; SigntoolSigner('$($cert.Thumbprint)', 'http://timestamp.digicert.com', 'current_user').sign([Path(r'$launcher')])"
+        pytest tests/platforms/windows/test_authenticode.py -q --no-cov `
+          --windows-signed-exe "$launcher"
+    - name: Upload the bundle listing on failure (for triage)
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: windows-gate-bundle-listing
+        # The bundle is ~200 MB and mostly the embedded runtime; the launcher
+        # and the generated bootstrap answer what triage actually asks.
+        path: |
+          ${{ env.APP_DIR }}/dist/windows/*-amd64/_kivyforge_bootstrap.py
+          ${{ env.APP_DIR }}/dist/windows/*-amd64/*.exe
+
   # The Android gate that unit tests structurally cannot be: every generated
   # Gradle/CMake/Java/XML file is only a *string* until AGP, AAPT, the NDK, and
   # javac actually consume it. This job builds a real app end to end from its

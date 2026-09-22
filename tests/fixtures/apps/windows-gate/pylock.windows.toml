@@ -1,0 +1,94 @@
+lock-version = "1.0"
+created-by = "kivyforge"
+requires-python = ">=3.13"
+extras = []
+dependency-groups = []
+default-groups = []
+
+[[packages]]
+name = "filetype"
+version = "1.2.0"
+
+[[packages.wheels]]
+name = "filetype-1.2.0-py2.py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/18/79/1b8fa1bb3568781e84c9200f951c735f3f157429f44be0495da55894d620/filetype-1.2.0-py2.py3-none-any.whl"
+hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1c2d25" }
+
+[[packages]]
+name = "Kivy"
+version = "2.3.1"
+requires-python = ">=3.8"
+dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }, { name = "kivy-deps.angle" }, { name = "kivy-deps.sdl2" }, { name = "kivy-deps.glew" }, { name = "pypiwin32" }, { name = "kivy-deps.angle" }, { name = "pillow" }, { name = "pytest" }, { name = "pytest-cov" }, { name = "pytest-asyncio" }, { name = "pytest-timeout" }, { name = "pytest-benchmark" }, { name = "pyinstaller" }, { name = "sphinx" }, { name = "sphinxcontrib-jquery" }, { name = "flake8" }, { name = "pre-commit" }, { name = "responses" }, { name = "kivy-deps.gstreamer-dev" }, { name = "kivy-deps.sdl2-dev" }, { name = "kivy-deps.glew-dev" }, { name = "pillow" }, { name = "ffpyplayer" }, { name = "kivy-deps.gstreamer" }, { name = "kivy-deps.glew" }, { name = "kivy-deps.gstreamer" }, { name = "ffpyplayer" }, { name = "kivy-deps.gstreamer" }, { name = "kivy-deps.sdl2" }, { name = "oscpy" }]
+
+[packages.tool.kivyforge]
+direct_requirement = true
+
+[[packages.wheels]]
+name = "Kivy-2.3.1-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/ef/c3/76e559df7250c3e06abf682f6f9d0856299f21629d50c441006b3413a7d0/Kivy-2.3.1-cp313-cp313-win_amd64.whl"
+hashes = { sha256 = "b5127af11c2fc1299f2331402fe4f6edb0985711c2841fbfdf509830c058c78e" }
+
+[[packages]]
+name = "kivy_deps.angle"
+version = "0.4.0"
+
+[[packages.wheels]]
+name = "kivy_deps.angle-0.4.0-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/47/7e/ad805773fb76f07cb1bdf5147e66ba264a94f5ac54553cd9dee809a161bb/kivy_deps.angle-0.4.0-cp313-cp313-win_amd64.whl"
+hashes = { sha256 = "9afbf702f8bb9a993c48f39c018ca3b4d2ec381a5d3f82fe65bdaa6af0bba29b" }
+
+[[packages]]
+name = "kivy_deps.glew"
+version = "0.3.1"
+
+[[packages.wheels]]
+name = "kivy_deps.glew-0.3.1-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/21/99/e3478c34afed7a820b3348ce7fefc53f2034fa340348dca57162695e69d9/kivy_deps.glew-0.3.1-cp313-cp313-win_amd64.whl"
+hashes = { sha256 = "f4aa8322078359862ccd9e16e5cea61976d75fb43125d87922e20c916fa31a11" }
+
+[[packages]]
+name = "kivy_deps.sdl2"
+version = "0.8.0"
+
+[[packages.wheels]]
+name = "kivy_deps.sdl2-0.8.0-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/9f/94/ef03ca62e042cd8e6a1455279622648c22cd891577b4ad980e1322dcb4ee/kivy_deps.sdl2-0.8.0-cp313-cp313-win_amd64.whl"
+hashes = { sha256 = "56b1c44565b5e8cfc510585db13396edfc605965254f49ed8931189c546d481f" }
+
+[[packages]]
+name = "pypiwin32"
+version = "223"
+dependencies = [{ name = "pywin32" }]
+
+[[packages.wheels]]
+name = "pypiwin32-223-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/d0/1b/2f292bbd742e369a100c91faa0483172cd91a1a422a6692055ac920946c5/pypiwin32-223-py3-none-any.whl"
+hashes = { sha256 = "67adf399debc1d5d14dffc1ab5acacb800da569754fafdc576b2a039485aa775" }
+
+[[packages]]
+name = "pywin32"
+version = "312"
+requires-python = ">=3.9"
+
+[[packages.wheels]]
+name = "pywin32-312-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/ba/db/36a78e3403099d31d9746d13fdcde5accc43c1155f375a34d15983a479a7/pywin32-312-cp313-cp313-win_amd64.whl"
+hashes = { sha256 = "c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3acbaaf9" }
+
+[tool.kivyforge]
+schema_version = 1
+kivyforge_version = "3.0.0.dev0"
+generated_at = "2026-09-22T21:21:00Z"
+pyproject_sha256 = "8f30436a00170a76010f8d2f0d78cbd55ef60cadd8e24d4c02f35ba314a22174"
+tool_kivyforge_schema_version = 1
+archs = ["amd64"]
+
+[tool.kivyforge.python_runtime]
+provider = "python-build-standalone"
+version = "3.13.14"
+
+[[tool.kivyforge.python_runtime.artifacts]]
+arch = "amd64"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260805/cpython-3.13.14%2B20260805-x86_64-pc-windows-msvc-install_only.tar.gz"
+sha256 = "ab746e98c31913a83da4af5b60ea0b024ea20f3c3327e4e21ef3106013c549a3"
+archive_format = "tar.gz"
