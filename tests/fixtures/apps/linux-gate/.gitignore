@@ -1,0 +1,8 @@
+# Build output.
+build/
+dist/
+
+# pylock.linux.toml is deliberately NOT ignored here, unlike every
+# examples/** project. See ../README.md: this fixture exists to give the CI
+# gate deterministic build inputs, which is the whole reason it is a fixture
+# and not an example.

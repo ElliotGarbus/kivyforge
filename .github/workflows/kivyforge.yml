@@ -317,6 +317,87 @@ jobs:
         pytest tests/platforms/windows/test_authenticode.py -q --no-cov `
           --windows-signed-exe signed.exe
 
+  # The Linux desktop gate: `kivyforge package -p linux` end to end against a
+  # real appimagetool, then the T3 artifact pass over what it produced. Until
+  # this job existed, no CI job ran `kivyforge build` or `package` for ANY
+  # desktop target — Linux, macOS and Windows were all proven by local runs
+  # logged in test-matrix.md §7 and nothing that repeats (§3.2).
+  #
+  # It builds a fixture, not an example. tests/fixtures/apps/linux-gate commits
+  # its pylock.linux.toml, which examples/** deliberately never does; the
+  # reasoning is in that tree's README and in test-matrix.md §5.3. The short
+  # version: a gate needs the same inputs every run, so that red means
+  # kivyforge changed rather than PyPI did.
+  linux_appimage:
+    name: Linux AppImage (package + T3)
+    runs-on: ubuntu-latest
+    env:
+      APP_DIR: tests/fixtures/apps/linux-gate
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python 3.13
+      # Pinned, per test-matrix.md §5.8: this is the sole CI proof of Linux, so
+      # it must not test whichever minor the runner image happens to ship.
+      #
+      # Not pinned for the .pyc-magic check, which is a different mechanism
+      # here than on Android: the Linux T3 driver asks the artifact's OWN
+      # staged interpreter what magic it accepts (a native x86_64 build stages
+      # an executable one), so that assertion is anchored to the bundle rather
+      # than to this runner.
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.13'
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Doctor (Linux)
+      # Gating, deliberately — no `continue-on-error` here. The reason
+      # android_gradle waives its doctor step (a known-interim Kivy wheel it
+      # reports as FAIL, test-matrix.md §5.9) has no Linux equivalent, and a
+      # headless runner only costs a WARN: `check_display_session` returns
+      # WARN, not FAIL, when DISPLAY and WAYLAND_DISPLAY are both unset, and
+      # doctor's exit code reacts only to FAIL. Verified by running it with
+      # both variables unset.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge doctor -p linux
+    - name: Verify the committed lock still matches pyproject.toml
+      # `lock --check` is meaningful here precisely because the lock is
+      # committed — against a gitignored one it can only ever report "out of
+      # date" (03-lockfile-concept.md §"Example-repo lock policy"). Nothing
+      # else in CI exercises this verb against a real lock.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge lock -p linux --check
+    - name: Package the AppImage (T2)
+      # No --update: the committed lock is the input. If this step starts
+      # failing without the fixture having changed, a pinned wheel or the PBS
+      # runtime moved at its URL, which is worth knowing loudly.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge package -p linux
+    - name: Assert the AppImage is the artifact the build promised (T3)
+      # strip_source and byte_compile both default to "release" and `package`
+      # is the only Linux verb that reaches them, so --linux-stripped is
+      # correct here and would be wrong for a `build`. This is the pass that
+      # caught the shipped AppRun defect in test-matrix.md §7.
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: |
+        image="$(ls "$APP_DIR"/dist/linux/*.AppImage)"
+        pytest tests/platforms/linux/test_appimage_artifact.py -q --no-cov \
+          --linux-appimage "$image" --linux-arch x86_64 --linux-stripped
+    - name: Upload the AppDir listing on failure (for triage)
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: linux-gate-appdir-listing
+        # The AppDir itself is ~120 MB and mostly the embedded runtime; a file
+        # listing plus the generated launcher answers every question triage
+        # actually asks of it.
+        path: |
+          ${{ env.APP_DIR }}/build/linux/*.AppDir/AppRun
+          ${{ env.APP_DIR }}/build/linux/*.AppDir/*.desktop
+
   # The Android gate that unit tests structurally cannot be: every generated
   # Gradle/CMake/Java/XML file is only a *string* until AGP, AAPT, the NDK, and
   # javac actually consume it. This job builds a real app end to end from its

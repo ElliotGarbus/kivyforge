@@ -254,6 +254,31 @@ unvalidated, and needs a Mac.
   mirrors already-validated `--smoke --release`/`package` code paths closely
   enough that hermetic coverage was judged sufficient for now).
 
+- **The desktop lock-for-CI question is decided, and Linux has a build job
+  (2026-09-22).** This was item 5's last open decision and the thing every
+  remaining desktop checker sat behind. The answer was neither option the
+  matrix posed: **a dedicated CI fixture with a committed lock, under test
+  control rather than in `examples/`.** Lock-at-CI-time would have let a Kivy
+  release turn the gate red with nothing in the repo changed; a gate
+  *example* would have hit the real churn argument the lockfile policy makes
+  about `examples/**`. A fixture has no audience to impress, so nobody edits
+  its overlay cosmetically, and its lock cannot go stale unnoticed because CI
+  downloads and hash-verifies those exact artifacts every push.
+  `tests/fixtures/apps/linux-gate` (Kivy 2.3.1, 48-line lock) is now built by
+  `linux_appimage` on `ubuntu-latest` — **the first CI job in this repo's
+  history to run `kivyforge build`/`package` for any desktop target** —
+  followed by the full Linux T3 pass. It also covers two things nothing else
+  did: a *gating* `doctor -p linux` with no `continue-on-error` waiver, and
+  `lock --check` against a real committed desktop lock, which is meaningless
+  against a gitignored one. Proven end to end on WSL2 before the job was
+  written; see [`test-matrix.md`](test-matrix.md) §5.3 and the 2026-09-22
+  results rows. macOS and Windows want the same pattern.
+  **Incidental finding:** no Linux build can be produced onto `/mnt/c` from
+  WSL2 — the embedded runtime's terminfo database ships `hp70092` beside
+  `hp70092A`, which a case-insensitive filesystem cannot hold. Not a
+  kivyforge defect, but it is the first real reproduction of §5.6's
+  long-suspected case-insensitive staging collision.
+
 ## Execution order
 
 | # | Item | Size | Gate |
@@ -262,7 +287,7 @@ unvalidated, and needs a Mac.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *T3 checks complete for all four platforms, §5.1's last two boxes closed 2026-09-21; Android's run in CI, the other three need a build job, which is gated on the undecided desktop lock policy* | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T3 checks complete for all four platforms (§5.1 closed 2026-09-21); Android and Linux run in CI, Linux via the new `linux-gate` fixture 2026-09-22; macOS and Windows still need a build job each* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -1529,30 +1554,38 @@ its 2026-09-17 results-log row.
    entry above; the manifest check found a live double-escaping bug in
    passthrough manifest attributes. [`test-matrix.md`](test-matrix.md) §5.1's
    last two boxes are now checked.
-2. **Get the Linux, macOS and Windows T3 checkers into CI.** Android's has run
-   in `android_gradle` since 2026-09-13, and as of 2026-09-21 that job also
-   runs the merged-manifest and signature checks; `windows_signing` runs the
-   Authenticode one. The other three are still local, by-hand
-   `pytest --<platform>-* ...` runs against a build nobody automated — and each
-   needs a *build* job before its checker has anything to inspect, which is
-   why this now reduces to items 3 and 4 rather than being separable from
-   them.
-3. **A plain Linux `x86_64` CI build job** (`ubuntu-latest`, no signing
-   identity, no Mac needed) is the cheapest *new* job to add — but settle the
-   desktop lock-for-CI policy first (next bullet), since it decides that job's
-   shape.
-4. **Settle the desktop lock-for-CI policy — this is the item's one real open
-   question, and everything left is behind it.** No `examples/desktop/*`
-   project commits a lock; per
-   [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md)
-   §"Example-repo lock policy" the choice is a Linux gate example (item 4
-   supplies a real Pi 5 gate as of 2026-09-17, so this option is now open) or
-   lock-at-CI-time. [`test-matrix.md`](test-matrix.md) §5.3 recommends
-   **lock-at-CI-time** for desktop, on the grounds that desktop wheels come
-   from immutable PyPI while the mobile gates' bridge-index wheels are not
-   bit-reproducible — so a committed desktop lock buys much less evidence
-   while taking on the churn the policy objects to. Recorded there as a
-   recommendation, not a decision. **Still undecided.**
+2. **Get the Linux, macOS and Windows T3 checkers into CI.** **Linux done
+   2026-09-22** — `linux_appimage` packages the new `linux-gate` fixture on
+   `ubuntu-latest` and runs the full T3 pass over the AppImage, the first CI
+   job in the repo's history to run `kivyforge build`/`package` for any
+   desktop target. Android's has run in `android_gradle` since 2026-09-13, and
+   that job also runs the merged-manifest and signature checks as of
+   2026-09-21; `windows_signing` runs the Authenticode one. **macOS and
+   Windows remain**, and each needs a *build* job before its checker has
+   anything to inspect — the same fixture pattern applies to both.
+3. ~~**A plain Linux `x86_64` CI build job**~~ — **done 2026-09-22**, once
+   the lock question below was settled. `linux_appimage` on `ubuntu-latest`:
+   doctor (gating, no waiver), `lock --check` against the committed fixture
+   lock, `package -p linux` on a real `appimagetool`, then the T3 assertions.
+4. ~~**Settle the desktop lock-for-CI policy**~~ — **decided 2026-09-22:
+   a dedicated CI fixture with a committed lock, under test control rather
+   than in `examples/`.** Neither option the matrix originally posed, because
+   both assumed the project being built has to be an example.
+   Lock-at-CI-time was rejected for the gate: re-resolving on every push means
+   a Kivy release or a bad transitive dep turns the job red with nothing in
+   the repo changed, and a gate that goes red for reasons you did not cause is
+   one people learn to ignore. A gate *example* was rejected because the
+   churn argument in
+   [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md) is
+   right about `examples/**` — `pyproject_sha256` hashes the whole
+   `pyproject.toml`, and `dice-roller` carries macOS signing plus iOS and
+   Windows overlays, so it is exactly the file that argument describes.
+   A fixture escapes both: nobody edits its overlay for cosmetic reasons, and
+   its lock cannot "go silently stale" because CI downloads and hash-verifies
+   those exact artifacts every push. Item 5 had already committed to this
+   shape ("a small fixture-app set"), so the lock question largely dissolved
+   once the fixture existed. Full reasoning in
+   [`test-matrix.md`](test-matrix.md) §5.3.
 5. ~~**Fix `kivyforge run`'s debug-only path**~~ — **done 2026-09-22**, see the
    struck-through bullet above.
 

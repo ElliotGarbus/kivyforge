@@ -19,8 +19,15 @@
   ],
   // Generated-project and Android bootstrap templates: they import jnius and
   // other on-device modules that do not exist in any host environment.
+  //
+  // CI fixture apps are excluded for the same class of reason: their source is
+  // a *build input* staged into an artifact, not code this repo runs, and it
+  // imports the app's own dependencies (kivy), which are deliberately not in
+  // the dev environment. examples/ is outside "include" already and needs no
+  // entry here.
   "exclude": [
     "kivyforge/project/templates",
-    "kivyforge/platforms/android/bootstrap/templates"
+    "kivyforge/platforms/android/bootstrap/templates",
+    "tests/fixtures/apps"
   ]
 }

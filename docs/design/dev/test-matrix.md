@@ -159,12 +159,20 @@ is the runner of the job named in it**, which is why this table comes first —
 | `revendor_launcher` / `revendor_verify` | windows | `3.x` | launcher reproducibility |
 | `windows_signing` | windows | `3.x` | Windows T2 (`signtool`, self-signed) |
 | `android_gradle` | ubuntu | **3.14** | Android T2 + T3 |
+| `linux_appimage` | ubuntu | **3.13** | Linux T2 + T3 (`package` + AppImage assertions) |
 | `macos_integration` | macos | `3.x` | macOS T2 (two `clang` tests) |
 
-**Only `android_gradle` pins an exact minor, and it is the only one that must.**
-Its T3 magic-number check compares the APK's `.pyc` headers against the
+**Two jobs pin an exact minor, for different reasons.** `android_gradle`
+*must*: its T3 magic-number check compares the APK's `.pyc` headers against the
 *runner's* `importlib.util.MAGIC_NUMBER`, so the runner's Python is part of the
-test definition; `test_apk_artifact.py` fails naming the runner if they diverge.
+test definition, and `test_apk_artifact.py` fails naming the runner if they
+diverge. `linux_appimage` pins for the §5.8 reason instead — it is the sole CI
+proof of Linux, so it should not test whichever minor the image ships. Its own
+magic check is anchored differently and needs no pin: the Linux driver asks the
+artifact's **own staged interpreter** what magic it accepts, which a native
+x86_64 build can answer. Worth keeping straight, because "pin it like Android
+does" is the wrong reason to pin a desktop job and would mislead whoever adds
+the macOS and Windows ones.
 The `3.x` jobs float deliberately-ish, but see §5.8 — `macos_integration`
 floating means the one macOS host we have is testing an unpinned interpreter.
 
@@ -175,7 +183,8 @@ build/run/package loop), `examples/verify-desktop-examples.sh`,
 `examples/run-examples.sh`. **`examples/verify-ios-device.sh` got its first
 logged run 2026-09-14** (§7) — the other four still have none. They remain the
 cheapest untapped coverage in the repo — `verify-windows-examples.ps1` in
-particular covers the Windows column that no CI job reaches (§5.3).
+particular covers the Windows column that no CI job reaches (§5.3 — Linux's
+equivalent gap closed 2026-09-22, Windows' has not).
 
 ### 3.2 Per-target coverage
 
@@ -187,7 +196,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 |---|---|---|---|---|---|---|
 | Windows `amd64` | `windows_tests` | **partial** — `windows_launcher` (MSVC), `windows_signing` (self-signed `signtool`) | **partial** — vendored launcher byte-compare, plus `windows_signing`'s Authenticode verification through `test_authenticode.py` (since 2026-09-21); the onedir-bundle and built-app-signature checks exist but have no build job to feed them (§5.3) | **partial** — launcher against a stub `python.exe`; no Kivy app | see §6 | every push |
 | macOS `arm64` | `unit_tests` (minus mac-only), `macos_integration` | **two `clang` tests** (CI); **local** — real Developer-ID sign + notarize + staple + `strip_source`, `examples/desktop/dice-roller` | **local** — `tests/platforms/macos/test_app_artifact.py` via `--macos-app`, run against the notarized `dice-roller.app` | **local** — a stripped, re-notarized `dice-roller.app` launched and rendered for the first time, after fixing the launcher (§7, 2026-09-14) | see §6 | every push (T0/T1/T2-CI); 2026-09-14 (T2-local, T3, T4) |
-| Linux `x86_64` | `unit_tests` | **local only** — `appimagetool`, one run | **local only** — assertions exist and are hermetically tested every push; pointed at a real artifact once | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1); 2026-09-13 (T2/T3/T4) |
+| Linux `x86_64` | `unit_tests` | `linux_appimage` — real `appimagetool` on every push (since 2026-09-22); previously local only | `linux_appimage` — full T3 pass over the packaged AppImage on every push | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1/T2/T3); 2026-09-13 (T4) |
 | Linux `aarch64` | `unit_tests` | **local only** — cross `package` on x86_64 WSL2, host `appimagetool` + target type2 runtime | **local only** — T3 driver extracts via `unsquashfs` (the aarch64 type2 ELF cannot `--appimage-extract` here); ELF leak check caught a planted host `.so` | **local** — stripped AppImage reaches main loop on Pi 5 (labwc, Broadcom V3D) | **manual** — Pi 5 only; Pi 4 untested | 2026-09-17 |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
 | Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
@@ -391,7 +400,10 @@ twice: once on the debug APK, once on the stripped release APK.
       `tests/test_artifact_checks.py`, and wired to a real bundle via
       `tests/platforms/macos/test_app_artifact.py --macos-app`. Ran against the
       real notarized `dice-roller.app` — passed. Not yet in CI (§3.2).
-- [x] **Linux check functions — done 2026-09-13, and they caught a shipped bug.**
+- [x] **Linux check functions — done 2026-09-13, and they caught a shipped bug.
+      In CI since 2026-09-22** via `linux_appimage` (§5.3), the first desktop
+      build job in the repo — so this is the one desktop platform whose T3 pass
+      is standing coverage rather than a logged one-off.
       `linux_appdir_problems` / `linux_appimage_file_problems` in
       `tests/artifact_checks.py`, 36 hermetic tests on synthetic AppDirs, driver
       behind `--linux-appimage` / `--linux-appdir`. Three things worth carrying
@@ -539,7 +551,75 @@ plus Gradle time. Middle form: run it locally and log it in §7. Doing neither
 leaves the exact shape of item 1 uncovered while the file that exists because of
 item 1 claims Android is the strong column.
 
-### 5.3 A desktop build job — and the lock blocker is real for *all three*
+### 5.3 A desktop build job — **decided and built 2026-09-22**
+
+**Decision: a dedicated CI fixture with a committed lock, under test control
+rather than in `examples/`.** `tests/fixtures/apps/linux-gate/` commits its
+`pylock.linux.toml`; the `linux_appimage` job builds it on `ubuntu-latest` and
+runs the Linux T3 pass over the AppImage. That closes the blocker this section
+had been describing since 2026-09-13, and with it the first desktop build job
+in the repo's history — before it, **no CI job ran `kivyforge build` or
+`package` for any desktop target at all**.
+
+**Why not either option this section originally posed.** The choice was framed
+as "a Linux gate example, or lock-at-CI-time", and the recommendation below
+leaned lock-at-CI-time. Both were answering the wrong question, because both
+assumed the project being built has to be an *example*.
+
+- **Against lock-at-CI-time for the gate.** Re-resolving on every push means
+  the build inputs change when nobody touched the repo: a Kivy release, a bad
+  transitive dep, a PyPI hiccup. The job goes red, someone investigates, and
+  the answer is "the world changed". A gate that goes red for reasons you did
+  not cause is one people learn to ignore — which costs more than the coverage
+  it was buying.
+- **Against a gate *example*.** The policy in
+  [`common/03-lockfile-concept.md`](../common/03-lockfile-concept.md) is right
+  about `examples/**`: `pyproject_sha256` hashes the whole `pyproject.toml`, so
+  an overlay edit regenerates the lock and churns the diff with nothing pinned
+  having changed. `dice-roller` carries macOS signing identity plus iOS and
+  Windows overlays, so it is precisely the file that argument was written
+  about. Item 4's Pi 5 gate arguably qualifies it for the evidence exemption;
+  the churn makes it a poor choice anyway.
+
+**Why a fixture escapes both objections.** The churn argument is about files
+maintainers edit for cosmetic reasons, and nobody edits a fixture's overlay to
+change an icon — it has no audience. The policy's other objection, that a
+committed lock "can go silently stale", is about a lock kept for *reference*,
+checked in and never built from; this one is downloaded, hash-verified and
+built on every push, so a wheel or runtime that moves at its URL fails the very
+next run. Nothing about it is silent, and no scheduled re-lock job is needed to
+notice — that was considered and dropped as solving a problem that does not
+arise here.
+
+Roadmap item 5 had already committed to this shape independently ("a small
+fixture-app set rather than testing against the full 11 examples"), so the lock
+question largely dissolves once the fixture exists. `tests/` is pruned from the
+sdist, so none of it ships.
+
+**The fixture depends on Kivy on purpose.** A dependency-free app would make
+the job green while inspecting almost nothing: payload stripping is scoped to
+`usr/app` + `usr/lib`, and the ELF-arch sweep needs staged third-party binaries
+to walk. Confirmed rather than assumed — a deliberate wrong-arch run reports
+`usr/lib/Kivy.libs/libSDL2-*.so` and `kivy/_clock.cpython-313-x86_64-linux-gnu.so`
+among others, none of which exist in a bare bundle.
+
+**Two things this job covers that nothing else did.** It gates on
+`kivyforge doctor -p linux` without a `continue-on-error` waiver (§5.9's
+complaint about `android_gradle` has no Linux equivalent, and a headless runner
+only costs a WARN), and it runs `kivyforge lock -p linux --check`, which is
+meaningful **only** against a committed lock — against a gitignored one it can
+only ever report "out of date", so nothing in CI had ever exercised that verb
+against a real lock.
+
+Still open: the macOS and Windows build jobs. The same fixture pattern applies
+to both; macOS additionally needs a signing story and Windows has no blocker
+left beyond someone writing it.
+
+<details>
+<summary>The original framing, kept because the reasoning it records is still
+the reason the desktop examples stay gitignored</summary>
+
+#### A desktop build job — and the lock blocker is real for *all three*
 
 **Corrected 2026-09-13.** The first revision claimed the four
 `examples/desktop/*` projects commit `pylock.windows.toml`. **They commit no
@@ -588,6 +668,8 @@ box a Windows build needs no other OS and
 `examples/verify-windows-examples.ps1` already exists to drive it (§3.1), so the
 cheapest *evidence* and the cheapest *job* are different targets.
 
+</details>
+
 ### 5.4 T4 on an Android emulator, in CI
 
 `android/06 run --smoke` is the instrumented contract test. It **has** run
@@ -619,7 +701,12 @@ measured, not argued.
 ### 5.6 Host-dependent cases with no test at all
 
 From §4, the ones with no producer of any kind: Windows path-length /
-`longPathAware`, and case-insensitive staging collisions. Both are cheap policy
+`longPathAware`, and case-insensitive staging collisions — though the second
+now has a **reproduction** rather than only a suspicion, logged 2026-09-22 in
+§7: staging the embedded runtime onto a case-insensitive filesystem fails on
+the terminfo database, which ships `hp70092` beside `hp70092A`. Observed on
+WSL2 writing to `/mnt/c`. Still no automated producer; what changed is that
+the failure mode is now known to be real and to have a concrete trigger. Both are cheap policy
 or generation tests rather than toolchain work — the model is
 `tests/test_message_encoding.py`, which turned a host-specific footgun into a
 static check over the source tree.
@@ -815,6 +902,9 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-21 | Windows `amd64` | T3 (signature) | Windows 11, SDK 10.0.22621.0 signtool | §5.1's Windows signature half, both legs. `test_authenticode.py`; `windows_signing` now verifies its own signed launcher through it rather than a bare `signtool verify /pa`. **Validated against real signtool in all three states:** a currently-valid Microsoft-signed binary passes; kivyforge's own unsigned built launcher (`dice-roller` dist copy) is rejected with all three faults reported at once; and a python.org `python.exe` whose signing certificate had since been **revoked** is rejected — that last one is why the parser reads verification *counts*, since it prints a full certificate chain, a timestamp line and the word "verified". Two real signtool quirks were only found this way and are now pinned by faithful fixtures: signtool blank-line-separates every output line, so an error's tab-indented explanation sits two lines below it and a naive continuation scan silently dropped the only human-readable half of the message; and the counts go to stdout while the errors go to stderr. The built-app leg (`--windows-onedir`) is wired but has no CI job to run it (§5.3). |
 
 | 2026-09-22 | Android `x86_64` + Windows `amd64` (CI) | T3 | ubuntu + windows (GitHub runners) | **First CI execution of the three checks added 2026-09-21**, which the rows above could only describe as "wired". Run [35740389054](https://github.com/ElliotGarbus/kivyforge/actions/runs/35740389054), all 11 active jobs green. What makes this row worth more than "green": each step's pytest emitted `.`, not `s` — merged-manifest content `1 passed`, `apksigner verify` `1 passed` (with `KIVYFORGE_REQUIRE_TOOLCHAIN=1` visible in the step's env, so a missing tool would have failed rather than skipped), and `windows_signing`'s Authenticode step `.s` — the signed-PE leg passed, the built-app leg skipped for want of a bundle, exactly its designed shape. A green job containing a skipped assertion is the failure this tier exists to remove, so the result character is the evidence, not the job conclusion. **One correction to the row above:** the runner image already ships `build-tools 37.0.0` and `_find_apksigner` takes the newest version directory, so the explicit `build-tools;35.0.0` install guarantees a floor but is *not* what supplied the apksigner that ran. Consistent with the helper's documented "newest wins, matching AGP", but the job comment overstated it and has been corrected. |
+
+| 2026-09-22 | Linux `x86_64` (`linux-gate` fixture) | T2 + T3 (local, then CI) | **WSL2** (Ubuntu, Python 3.14.4 host / 3.13.14 staged) | **The desktop lock question decided and the first desktop build job built** (§5.3). New fixture `tests/fixtures/apps/linux-gate` with a **committed** `pylock.linux.toml` — 48 lines, 2 packages (Kivy 2.3.1 `manylinux_2_17_x86_64` cp313 + `filetype`) and the PBS 3.13.14 runtime; small enough to read in a diff, which is the point of committing it. Proven locally before the job was written: `doctor -p linux` exit 0, `lock -p linux --check` "up to date" (exit 0 — the first exercise of that verb against a real committed desktop lock, and of the 2026-09-21 `semantic_equal` fix), `package -p linux` 22 s producing `linux-gate-1.0.0-x86_64.AppImage` with the payload `.pyc`-only, and the T3 driver 3 passed against that AppImage. **Negative control:** re-run with `--linux-arch aarch64` reports `usr/lib/Kivy.libs/libSDL2-*.so`, `kivy/_clock.cpython-313-x86_64-linux-gnu.so` and others — which is why the fixture depends on Kivy rather than being dependency-free; a bare bundle gives the ELF sweep and the `usr/lib` strip scope nothing to walk. Headless `doctor` also simulated (`env -u DISPLAY -u WAYLAND_DISPLAY`): WARN, exit 0, so the CI step gates without a waiver. |
+| 2026-09-22 | Linux `x86_64` | **§5.6 case-insensitive staging collision, observed for real** | **WSL2**, building onto `/mnt/c` (NTFS, case-insensitive) | Incidental, and the first producer §5.6 has ever had. The first `package -p linux` attempt was run with the project on the Windows mount and died in staging: `shutil.Error` on `python/share/terminfo/h/hp70092A` vs `hp70092`, `terminfo/X` vs `x`, `terminfo/A` vs `a` — the embedded runtime's terminfo database contains entries differing only by case, which a case-insensitive filesystem cannot hold. **Not a kivyforge defect**, and not a CI concern (`ubuntu-latest` is ext4), but it means *no Linux build can be produced onto `/mnt/c` from WSL2*, which is worth knowing before anyone tries it again. Re-running the identical command with the project copied to ext4 succeeded in 22 s. §5.6's entry can now name a reproduction instead of a suspicion. |
 
 ### Known-unverified, stated plainly
 
