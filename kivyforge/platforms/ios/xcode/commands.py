@@ -166,6 +166,7 @@ def build_command(
     arch: str | None = None,
     derived_data_path: str | Path | None = None,
     signing_identity: str | None = None,
+    team_id: str | None = None,
     allow_provisioning_updates: bool = False,
 ) -> list[str]:
     """`xcodebuild build` argv for --simulator/--device (Debug).
@@ -179,6 +180,20 @@ def build_command(
     the command line (Xcode's IDE does this silently; bare ``xcodebuild`` does
     not unless asked — see "Resolving common notarization issues"-adjacent
     Apple guidance on ``xcodebuild`` + automatic signing).
+
+    ``team_id``, like ``signing_identity``, must be passed as a command-line
+    override here, **not** only baked into the ``.pbxproj``'s ``buildSettings``
+    (which ``generator.py`` also does, for the ordinary "Build Settings" tab).
+    A Swift Package with a target that needs signing (a resource bundle, e.g.
+    Firebase's) is built by Xcode as a separate, synthesized sub-project that
+    does not read the consuming project's baked settings or its
+    ``PBXProject.attributes.TargetAttributes`` at all — confirmed by
+    reproducing a real user report (adding the Firebase SPM package) against
+    a project with both of those already correctly set, which still failed
+    with "Signing for ... requires a development team". Only passing
+    ``DEVELOPMENT_TEAM`` as an ``xcodebuild`` command-line argument, the same
+    way ``CODE_SIGN_IDENTITY`` already is, made the package's own targets
+    resolve a team and build.
     """
     cmd = [
         "xcodebuild",
@@ -200,6 +215,8 @@ def build_command(
     else:
         if signing_identity:
             cmd.append(f"CODE_SIGN_IDENTITY={signing_identity}")
+        if team_id:
+            cmd.append(f"DEVELOPMENT_TEAM={team_id}")
         if allow_provisioning_updates:
             cmd.append("-allowProvisioningUpdates")
     cmd.append("build")
@@ -223,6 +240,7 @@ def archive_command(
     xb: XcodeBuild,
     *,
     signing_identity: str | None = None,
+    team_id: str | None = None,
     allow_provisioning_updates: bool = False,
 ) -> list[str]:
     """`xcodebuild archive` argv for --release (step 7.1).
@@ -231,7 +249,10 @@ def archive_command(
     the archive's signing step — only pass this for an *explicit* user override;
     forcing the pyproject default (typically "Apple Development", meant for
     ``--device`` debug builds) onto a distribution archive requests the wrong
-    profile type and fails. ``allow_provisioning_updates``: see ``build_command``.
+    profile type and fails. ``team_id``: see ``build_command`` — a Swift
+    Package target that needs signing only picks up a team when it is passed
+    as an ``xcodebuild`` command-line override, not from the ``.pbxproj``.
+    ``allow_provisioning_updates``: see ``build_command``.
     """
     cmd = [
         "xcodebuild",
@@ -249,6 +270,8 @@ def archive_command(
     ]
     if signing_identity:
         cmd.append(f"CODE_SIGN_IDENTITY={signing_identity}")
+    if team_id:
+        cmd.append(f"DEVELOPMENT_TEAM={team_id}")
     if allow_provisioning_updates:
         cmd.append("-allowProvisioningUpdates")
     return cmd

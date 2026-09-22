@@ -110,6 +110,31 @@ class TestBuildCommand:
         cmd = build_command(xb, "simulator", signing_identity="Apple Distribution: Me")
         assert not any(c.startswith("CODE_SIGN_IDENTITY=") for c in cmd)
 
+    def test_device_team_id_passed_on_command_line(self, xb):
+        """Regression: reproduced against a real Firebase SPM package.
+
+        Baking DEVELOPMENT_TEAM into the generated .pbxproj (both the app's
+        target and, since an earlier fix, the project itself) is *not*
+        enough -- a Swift Package target that needs signing (a resource
+        bundle, e.g. Firebase's `Firebase_FirebaseCore`) is built by Xcode as
+        a separate synthesized sub-project that does not read either of
+        those, and still fails with "Signing for ... requires a development
+        team." Only passing DEVELOPMENT_TEAM as an xcodebuild command-line
+        override -- the same way CODE_SIGN_IDENTITY already is -- resolved
+        it. Found integrating the real firebase-ios-sdk package, 2026-09-21.
+        """
+        cmd = build_command(xb, "device", team_id="ABCDE12345")
+        assert "DEVELOPMENT_TEAM=ABCDE12345" in cmd
+
+    def test_simulator_ignores_team_id(self, xb):
+        # Simulator builds are unsigned; the override would be meaningless.
+        cmd = build_command(xb, "simulator", team_id="ABCDE12345")
+        assert not any(c.startswith("DEVELOPMENT_TEAM=") for c in cmd)
+
+    def test_device_no_team_id_by_default(self, xb):
+        cmd = build_command(xb, "device")
+        assert not any(c.startswith("DEVELOPMENT_TEAM=") for c in cmd)
+
     def test_device_allow_provisioning_updates(self, xb):
         cmd = build_command(xb, "device", allow_provisioning_updates=True)
         assert "-allowProvisioningUpdates" in cmd
@@ -146,6 +171,17 @@ class TestArchiveExport:
     def test_archive_signing_identity_override(self, xb):
         cmd = archive_command(xb, signing_identity="Apple Distribution: Me")
         assert "CODE_SIGN_IDENTITY=Apple Distribution: Me" in cmd
+
+    def test_archive_team_id_passed_on_command_line(self, xb):
+        # Same rationale as build_command's device_team_id test: a release
+        # archive with an SPM package needing signing hits the identical
+        # "requires a development team" failure without this.
+        cmd = archive_command(xb, team_id="ABCDE12345")
+        assert "DEVELOPMENT_TEAM=ABCDE12345" in cmd
+
+    def test_archive_no_team_id_by_default(self, xb):
+        cmd = archive_command(xb)
+        assert not any(c.startswith("DEVELOPMENT_TEAM=") for c in cmd)
 
     def test_archive_allow_provisioning_updates(self, xb):
         cmd = archive_command(xb, allow_provisioning_updates=True)

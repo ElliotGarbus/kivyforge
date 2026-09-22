@@ -270,6 +270,15 @@ def _xcodebuild_step7(
         # The pyproject default ("Apple Development") is meant for exactly this
         # case — a device debug build.
         identity = resolve_signing_identity(config, identity_flag=signing_identity_flag)
+        # Re-resolved here (already done once by the caller for prepare_build)
+        # to pass on the xcodebuild command line — see build_command's
+        # docstring for why the .pbxproj's baked DEVELOPMENT_TEAM is not
+        # enough once a Swift Package with a signable target is involved.
+        device_team_id = (
+            preflight_signing(config, "device", team_id_flag=team_id_flag)
+            if target == "device"
+            else None
+        )
         sim_arch = arch if target == "simulator" else None
         # Pinned to the project-local DerivedData, as `run` does, so the .app
         # has a project-relative path instead of landing in Xcode's global cache.
@@ -282,6 +291,7 @@ def _xcodebuild_step7(
                 arch=sim_arch,
                 derived_data_path=derived_data,
                 signing_identity=identity,
+                team_id=device_team_id,
                 allow_provisioning_updates=auto_signing and target == "device",
             )
         )
@@ -309,6 +319,7 @@ def _xcodebuild_step7(
         archive_command(
             xb,
             signing_identity=release_identity,
+            team_id=resolved_team_id,
             allow_provisioning_updates=auto_signing,
         )
     )
@@ -484,7 +495,20 @@ def ios_run(
                 team_id=resolved_team_id,
             )
             click.echo(f"xcodebuild build ({target}) ...")
-            run_command(build_command(xb, target, derived_data_path=derived_data))
+            run_command(
+                build_command(
+                    xb,
+                    target,
+                    derived_data_path=derived_data,
+                    signing_identity=resolve_signing_identity(config)
+                    if target == "device"
+                    else None,
+                    team_id=resolved_team_id,
+                    allow_provisioning_updates=(
+                        config.ios_required.signing.auto_signing and target == "device"
+                    ),
+                )
+            )
 
         app = product_app_path(derived_data, xb.scheme, target)
         if not app.exists():

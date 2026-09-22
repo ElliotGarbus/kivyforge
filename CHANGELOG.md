@@ -14,20 +14,28 @@
   signing isn't configured, so `run --release` never requires release secrets
   to work.
 
-### iOS: signing settings now reach the project, fixing SPM packages that need a team
+### iOS: a Swift Package with a signable target (e.g. Firebase) now builds for device/release
 
 - **Fixed:** an iOS app with a Swift Package dependency that has its own
-  signable target (e.g. Firebase's resource-bundle targets) could fail to
-  build with `Signing for "..." requires a development team`, even with
-  automatic signing and a team correctly configured — the app's own target
-  built and signed fine, but Xcode resolves a Swift Package's targets
-  against the *project's* build settings, not the consuming target's, and
-  `DEVELOPMENT_TEAM`/`CODE_SIGN_STYLE` were only ever written to the app
-  target.
-- Signing settings are now also written to the project's own build
-  configuration (both Debug and Release), matching what Xcode's own UI does
-  when you set a Team in Signing & Capabilities.
-- Reported by an early user after adding the Firebase SPM package.
+  signable target (e.g. Firebase's resource-bundle targets, `Firebase_FirebaseCore`)
+  could fail to build with `Signing for "..." requires a development team`,
+  even with automatic signing and a team correctly configured — the app's own
+  target built and signed fine, but Xcode builds a Swift Package's targets as
+  a *separate, synthesized sub-project* that does not inherit signing from
+  either the consuming target's or the project's `.pbxproj` build settings.
+  `DEVELOPMENT_TEAM` now also goes out as an `xcodebuild` command-line
+  override (as `CODE_SIGN_IDENTITY` already did) for `--device` builds and
+  `--release` archives, which is what the package's own targets actually
+  read.
+- An earlier attempt at this fix (also writing `DEVELOPMENT_TEAM`/
+  `CODE_SIGN_STYLE` to the project's own build configuration, matching what
+  Xcode's UI does when you set a Team in Signing & Capabilities) is kept —
+  it's harmless and correct for the app's own target — but was verified,
+  against the real `firebase-ios-sdk` package, to be **insufficient on its
+  own**: the identical error still reproduced with only that fix in place.
+- Reported by an early user after adding the Firebase SPM package; reproduced
+  and confirmed fixed against the real package (`FirebaseCore` product,
+  `firebase-ios-sdk` 11.15.0) on a real device build, 2026-09-21.
 
 ### iOS: a missing SDL3 now fails the build, not just the launch
 
