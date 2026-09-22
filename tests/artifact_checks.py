@@ -54,7 +54,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-from kivyforge.config.model import AndroidConfig
+from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64, machine_name
 from kivyforge.platforms.android.generate.manifest import (
     GENERATED_THEME,
@@ -79,6 +79,7 @@ from kivyforge.platforms.macos.machotools import (
     cpu_type_name,
     read_macho_cpu_type,
 )
+from kivyforge.platforms.macos.plist import build_info_plist
 from kivyforge.platforms.windows.launcher import BOOTSTRAP_NAME
 from kivyforge.platforms.windows.petools import (
     IMAGE_FILE_MACHINE_AMD64,
@@ -705,7 +706,7 @@ def _manifest_placeholder_problems(manifest_xml: str) -> list[str]:
 
 # --- Android: the signature, as apksigner reports it ------------------------
 #
-# The spawn lives in ``tests/platforms/android/test_apk_artifact.py``; this is
+# The spawn lives in ``tests/platforms/android/test_apk_signature.py``; this is
 # only the parse, so it stays hermetic like everything else here (see the
 # module docstring).
 #
@@ -767,6 +768,114 @@ def apksigner_report_problems(report: str, *, v1_signing: bool) -> list[str]:
     return problems
 
 
+# --- Windows: the signature, as signtool reports it -------------------------
+#
+# The spawn lives in ``tests/platforms/windows/test_authenticode.py``; same
+# split, and for the same reason, as the apksigner parse above.
+#
+# ``signtool verify /pa /v`` on a good binary ends with:
+#
+#     The signature is timestamped: Sat Sep 30 02:08:11 2023
+#     Successfully verified: C:\\...\\signtool.exe
+#     Number of files successfully Verified: 1
+#     Number of errors: 0
+#
+# and on an unsigned one with:
+#
+#     Number of files successfully Verified: 0
+#     Number of errors: 1
+#     SignTool Error: No signature found.
+#
+# The counts are what this reads, not the exit code (the caller has that) and
+# not the word "verified" on its own — a signed-but-untrusted binary prints a
+# full certificate chain and "The signature is timestamped", and only the
+# counts and the ``SignTool Error`` lines distinguish it from a pass. That
+# exact case was used to develop this parser: a python.org ``python.exe``
+# whose signing certificate had since been revoked, which prints almost
+# everything a passing verification does.
+#
+# The timestamp assertion is config-tied rather than cosmetic:
+# ``SigntoolSigner.command`` always passes ``/tr`` + ``/td SHA256``, so a
+# kivyforge-signed artifact is always RFC3161-timestamped, and an
+# untimestamped signature silently stops validating the day the certificate
+# expires.
+
+_VERIFIED_COUNT = re.compile(
+    r"^Number of files successfully Verified:\s*(\d+)\s*$", re.MULTILINE
+)
+_ERROR_COUNT = re.compile(r"^Number of errors:\s*(\d+)\s*$", re.MULTILINE)
+
+_TIMESTAMPED = "The signature is timestamped:"
+
+
+def _signtool_error_lines(report: str) -> list[str]:
+    """``SignTool Error:`` lines, each with its indented continuation.
+
+    signtool puts the code on the ``SignTool Error`` line and the human
+    explanation on the tab-indented line beneath it — "WinVerifyTrust returned
+    error: 0x800B010C" followed by "A certificate was explicitly revoked by
+    its issuer." Reporting only the first line hands the reader a hex code and
+    makes them go looking for the sentence signtool already wrote.
+
+    Blank lines do not end a continuation: signtool separates **every** line
+    of its output with one, so ``\\n\\n`` sits between the code and its
+    explanation. Treating a blank line as a terminator silently dropped the
+    explanation on real output while passing a hand-written fixture that
+    lacked the double spacing.
+    """
+    out: list[str] = []
+    collecting = False
+    for line in report.splitlines():
+        if line.strip().startswith("SignTool Error"):
+            out.append(line.strip())
+            collecting = True
+        elif not line.strip():
+            continue
+        elif collecting and line[:1] in (" ", "\t"):
+            out[-1] += " " + line.strip()
+        else:
+            collecting = False
+    return out
+
+
+def signtool_report_problems(
+    report: str, *, require_timestamp: bool = True
+) -> list[str]:
+    """Every way a ``signtool verify /pa /v`` report falls short of a pass.
+
+    *report* is signtool's combined output. ``require_timestamp`` is a
+    parameter rather than a constant only so the check can be pointed at a
+    third-party binary that was signed without one; for anything kivyforge
+    signed it must stay ``True``.
+    """
+    verified = _VERIFIED_COUNT.search(report)
+    errors = _ERROR_COUNT.search(report)
+    if verified is None or errors is None:
+        return [
+            "signtool printed no verification counts, so nothing about the "
+            "signature can be concluded from its output:\n" + report.strip()
+        ]
+
+    problems = []
+    signtool_errors = _signtool_error_lines(report)
+    if int(verified.group(1)) != 1:
+        problems.append(
+            f"signtool verified {verified.group(1)} file(s), expected 1"
+            + (f"; it reported: {signtool_errors}" if signtool_errors else "")
+        )
+    if int(errors.group(1)) != 0:
+        problems.append(
+            f"signtool reported {errors.group(1)} error(s): {signtool_errors}"
+        )
+    if require_timestamp and _TIMESTAMPED not in report:
+        problems.append(
+            "the signature carries no RFC3161 timestamp, so it will stop "
+            "validating when the signing certificate expires (kivyforge always "
+            "signs with /tr, so this should be impossible)"
+        )
+    return problems
+
+
 # --- macOS ------------------------------------------------------------------
 #
 # The macOS ``.app`` is a real directory tree, not a zip, so these walk the
@@ -785,13 +894,35 @@ MACOS_ARCH_MACHINES = {"arm64": CPU_TYPE_ARM64, "x86_64": CPU_TYPE_X86_64}
 _MACOS_STRIP_SCOPE = ("Contents/Resources/app", "Contents/Resources/lib")
 
 
+def macos_expected_plist(config: Config) -> dict[str, object]:
+    """The ``Info.plist`` keys a project's config decides, for comparison.
+
+    Produced by calling the **production** builder rather than restating its
+    key list: ``build_info_plist`` is the definition of what the bundle should
+    carry, and a second copy here would drift the first time a key was added.
+
+    Two keys are then dropped, because a driver holding only the config cannot
+    know them:
+
+    * ``CFBundleExecutable`` — the launcher's filename, decided at build time.
+      It is still checked, by the cross-reference in
+      :func:`_macos_plist_problems` that it names a real file in
+      ``Contents/MacOS/``.
+    * ``CFBundleIconFile`` — omitted by passing ``icon_file=None``, since
+      whether an icon was staged is a build-time outcome.
+    """
+    plist = build_info_plist(config, executable="", icon_file=None)
+    plist.pop("CFBundleExecutable", None)
+    return plist
+
+
 def macos_app_problems(
     app: Path,
     *,
     arch: str,
     stripped: bool,
     expected_magic: bytes,
-    bundle_id: str | None = None,
+    expected_plist: dict[str, object] | None = None,
     executable: str | None = None,
 ) -> list[str]:
     """Every way *app* fails to be the artifact the build promised.
@@ -803,11 +934,18 @@ def macos_app_problems(
     ``shipped_python_tags`` for the reasoning; on macOS the equivalent is
     running the bundle's own ``Contents/Resources/python/bin/python3``).
 
-    ``bundle_id``/``executable``, if given, are checked against
-    ``Info.plist``; omitted, only the plist's internal shape (present, parses,
-    required keys non-empty) is checked. Exact match against the project's
-    full resolved config is left for a follow-up, same as Android's own open
-    "merged manifest matches config" item in test-matrix.md §5.1.
+    ``expected_plist`` is the config-derived ``Info.plist`` keys the bundle
+    must carry — the macOS half of test-matrix.md §5.1's "manifest and
+    ``Info.plist`` contain what config asked for". Keys not named in it are
+    ignored, because the plist legitimately holds build-time values
+    (``CFBundleIconFile``, ``CFBundleExecutable``) and fixed ones
+    (``CFBundlePackageType``) that config does not decide. Omitted, only the
+    plist's internal shape is checked — present, parses, required keys
+    non-empty.
+
+    It replaces an earlier ``bundle_id`` parameter, which covered one key and
+    which no driver ever passed: an expectation nothing supplies is a check
+    that never runs, which is this tier's own failure mode.
     """
     if arch not in MACOS_ARCH_MACHINES:
         return [f"unknown arch {arch!r}; expected one of {sorted(MACOS_ARCH_MACHINES)}"]
@@ -818,7 +956,9 @@ def macos_app_problems(
         # that is missing its basic shape.
         return problems
 
-    problems += _macos_plist_problems(app, bundle_id=bundle_id, executable=executable)
+    problems += _macos_plist_problems(
+        app, expected_plist=expected_plist, executable=executable
+    )
     problems += _macos_arch_problems(app, arch=arch)
     problems += _macos_payload_problems(app, stripped=stripped)
     if stripped:
@@ -844,7 +984,7 @@ def _macos_required_entry_problems(app: Path) -> list[str]:
 
 
 def _macos_plist_problems(
-    app: Path, *, bundle_id: str | None, executable: str | None
+    app: Path, *, expected_plist: dict[str, object] | None, executable: str | None
 ) -> list[str]:
     plist_path = app / "Contents" / "Info.plist"
     try:
@@ -864,11 +1004,11 @@ def _macos_plist_problems(
         if not plist.get(key):
             problems.append(f"Info.plist is missing (or has an empty) {key}")
 
-    if bundle_id is not None and plist.get("CFBundleIdentifier") != bundle_id:
-        problems.append(
-            f"Info.plist CFBundleIdentifier is {plist.get('CFBundleIdentifier')!r}, "
-            f"expected {bundle_id!r}"
-        )
+    for key, want in sorted((expected_plist or {}).items()):
+        if plist.get(key) != want:
+            problems.append(
+                f"Info.plist {key} is {plist.get(key)!r}, but config declares {want!r}"
+            )
     if executable is not None and plist.get("CFBundleExecutable") != executable:
         problems.append(
             f"Info.plist CFBundleExecutable is {plist.get('CFBundleExecutable')!r}, "
