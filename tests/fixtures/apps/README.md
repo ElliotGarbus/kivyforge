@@ -32,6 +32,23 @@ transitive dep could turn the gate red with nothing in the repo having
 changed — and a gate that goes red for reasons you did not cause is one
 people learn to ignore.
 
+## Line endings are not a concern here
+
+Worth stating, because it looks like one and was briefly treated as one. A
+committed lock records `pyproject_sha256`, and `core.autocrlf` rewrites line
+endings on checkout, so it is natural to assume a Windows checkout would
+change the digest and make `kivyforge lock --check` disagree across hosts.
+
+It does not. `compute_pyproject_sha256` hashes
+`pyproject.read_text(encoding="utf-8")` — **text mode**, so Python's universal
+newlines translate `\r\n` to `\n` before the hash is taken. CRLF and LF produce
+the same digest. Verified against the committed `hello-android` lock, which
+matches either form of its `pyproject.toml`.
+
+So these fixtures need no `.gitattributes` treatment, and neither do the three
+committed mobile gate locks. Recorded here so the concern is not rediscovered
+and "fixed" again.
+
 ## Updating a lock
 
 Deliberately, as its own reviewable change:
