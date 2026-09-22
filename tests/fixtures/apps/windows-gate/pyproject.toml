@@ -1,0 +1,58 @@
+[project]
+# The Windows CI gate's fixture app. Not an example — see ../README.md for why
+# this commits its lock when examples/** deliberately does not.
+name = "windows-gate"
+version = "1.0.0"
+requires-python = ">=3.13"
+# Kivy on purpose, rather than a dependency-free app. The Windows T3 checks
+# that have actually caught things need third-party wheels to look at: the
+# PE-arch sweep walks the whole staged tree, and payload stripping is scoped to
+# app/ + python/Lib/site-packages, the second of which is where the interesting
+# content lives. A no-dependency fixture would make the job green while
+# inspecting almost nothing — and would never have surfaced the vendored
+# distlib launcher-stub false positive that the 2026-09-17 run hit.
+dependencies = [
+    "kivy>=2.3.1",
+]
+
+[tool.kivy]
+display_name = "Windows Gate"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.windows]
+schema_version = 1
+# The AppUserModelID — a different identifier from the Linux reverse-DNS
+# app_id and the macOS bundle_id, and pascal-case by convention (doctor warns
+# otherwise).
+app_id = "Kivyforge.WindowsGate"
+archs = ["amd64"]
+# Kivy declares these unconditionally and nothing in this fixture needs them;
+# excluding them keeps the committed lock small enough to read in a diff, which
+# is the point of committing it.
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.windows.python]
+# Pinned rather than floating: the T3 .pyc-magic check asks the *staged*
+# interpreter what it accepts, so this value is what that assertion is made
+# against. Bumping it is a deliberate change to what the gate proves.
+version = "3.13.14"
+
+# No [tool.kivy.windows.signing]: unsigned is the v1 default, and Windows has
+# no ad-hoc floor the way macOS does — signtool needs a real certificate. The
+# job therefore packages unsigned, then signs the *built launcher* in a
+# separate step with a throwaway self-signed cert and verifies it, which is
+# what test-matrix.md §5.1 asked for ("on a built app rather than on the
+# vendored launcher"). Configuring signing here instead would mean CI editing
+# this file to inject a per-run thumbprint, which would change
+# pyproject_sha256 and break `lock --check` in the same job.
