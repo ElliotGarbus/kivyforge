@@ -523,16 +523,45 @@ jobs:
   # here runs on-device, so the instrumented contract smoke test (android/06
   # `run --smoke`) is still a local/manual gate.
   android_gradle:
-    name: Android build (Gradle, no emulator)
+    name: Android build (Gradle, ${{ matrix.abi }})
     runs-on: ubuntu-latest
+    strategy:
+      # Both ABIs, since 2026-09-23. This used to build x86_64 only, on the
+      # reasoning that "one ABI is enough to compile the launcher and prove
+      # the load model; both would double the CMake work for no new signal".
+      # The first half still holds; the second stopped being true once this
+      # was the *only* direct Android T3 anywhere. x86_64 is the emulator's
+      # ABI — arm64_v8a is the one every real phone runs, and test-matrix.md
+      # §3.2 had it as "inherited, not direct" all along. The new signal is
+      # concrete: its ELF machine, its per-ABI jniLibs, and the stray-ABI
+      # check, none of which x86_64 exercises for it.
+      #
+      # fail-fast off so one ABI breaking still reports the other, which is
+      # exactly the comparison worth having when an ABI-specific fault lands.
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64_v8a
+            android_abi: arm64-v8a
+          - abi: x86_64
+            android_abi: x86_64
     env:
       # The example this gate builds; its pylock.android.toml is committed, so
       # the job needs no Gradle-at-lock-time and no resolver network beyond
       # fetching the pinned artifacts.
       APP_DIR: examples/mobile/hello-android
-      # One ABI is enough to compile the launcher and prove the load model; both
-      # would double the CMake work for no new signal.
-      ABI: x86_64
+      # Two spellings of the same ABI, deliberately both here. kivyforge's
+      # --abi takes the wheel-tag form ([tool.kivy.android].abis: arm64_v8a),
+      # while the T3 driver's --android-abi takes Android's own dashed
+      # directory name (lib/arm64-v8a/). They are identical for x86_64, which
+      # is why one variable sufficed while this job built only that.
+      #
+      # Passing the wheel-tag form to --android-abi fails *loudly*, not
+      # silently — `unknown ABI 'arm64_v8a'; expected one of ['arm64-v8a',
+      # 'x86_64']`, confirmed by running it. So this split is about the job
+      # passing for the right reason, not about avoiding a false green.
+      ABI: ${{ matrix.abi }}
+      ANDROID_ABI: ${{ matrix.android_abi }}
     steps:
     - name: Checkout kivyforge
       uses: actions/checkout@v6
@@ -615,7 +644,7 @@ jobs:
       run: |
         apk="$(ls "$APP_DIR"/hello-android-android/app/build/outputs/apk/debug/*.apk)"
         pytest tests/platforms/android/test_apk_artifact.py -q --no-cov \
-          --android-apk "$apk" --android-abi "$ABI"
+          --android-apk "$apk" --android-abi "$ANDROID_ABI"
     - name: Exercise the release policy path (lintRelease + merged manifest)
       # `package` is the only path that runs the curated lintRelease subset and
       # the merged-manifest policy pass, and both live in generated Groovy — so
@@ -640,7 +669,7 @@ jobs:
       run: |
         apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
         pytest tests/platforms/android/test_apk_artifact.py -q --no-cov \
-          --android-apk "$apk" --android-abi "$ABI" --android-stripped
+          --android-apk "$apk" --android-abi "$ANDROID_ABI" --android-stripped
     - name: Assert the merged release manifest says what pyproject.toml declared (T3)
       # `package` exported this manifest already, for the policy lint to read,
       # and the job then threw it away on success — the same "CI produced the
