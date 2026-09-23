@@ -165,7 +165,7 @@ is the runner of the job named in it**, which is why this table comes first —
 | `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
 | `macos_integration` | macos | **3.13** | macOS T2 (two `clang` tests) |
-| `ios_simulator` | macos | **3.13** | iOS T2 + T4 (`build`/`run --simulator`, no T3 harness yet) |
+| `ios_simulator` | macos | **3.13** | iOS T2 + T3 + T4 (`build`/`run --simulator`, plus the `.app` artifact pass) |
 
 **Seven jobs pin an exact minor, for two different reasons.** `android_gradle`
 and `android_emulator` *must*: the T3 magic-number check compares the APK's
@@ -224,7 +224,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Android `arm64_v8a` | `unit_tests` | `android_gradle` (matrix leg, since 2026-09-23) | `android_gradle` — debug **and** stripped release APK on every push, same three checks as x86_64 | none — the emulator is x86_64, so T4 for this ABI stays a device run | **manual** | every push (T2/T3); 2026-09-13 (T5, Pixel 8a) |
 | Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | `android_emulator` — `run --smoke --release` on an API-35 x86_64 AVD on every push (since 2026-09-23); previously local-only and last run 2026-07-27 | n/a | every push (T2/T3/T4; T2+T3 also from a **Windows** host via `android_windows_host` since 2026-09-23) |
 | iOS device `arm64` | `unit_tests` | **local** — `build -p ios --device`, `package -p ios --export-method development`, real iPhone14,3 | **none** | **local** — installed, launched, `hello-kivy` rendered on device | **manual** — first physical run, 2026-09-14 | 2026-09-14 |
-| iOS simulator `arm64` | `unit_tests` | `ios_simulator` — real `build -p ios --simulator` on every push (since 2026-09-23); previously local-only, 6 examples | **none** — no T3 harness exists for iOS yet (unlike macOS/Android); spec'd in [`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md) | `ios_simulator` — `run -p ios --simulator --no-build` install+launch, plus a screenshot artifact, on every push (since 2026-09-23); previously local only, all 6 examples render | n/a | every push (T2/T4, `hello-kivy` only); 2026-09-14 (regression re-check on all 6, local; no drift since 2026-07-27) |
+| iOS simulator `arm64` | `unit_tests` | `ios_simulator` — real `build -p ios --simulator` on every push (since 2026-09-23); previously local-only, 6 examples | `ios_simulator` — real T3 pass since 2026-09-23 (spec'd in [`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md), findings in [`ios-t3-checks-findings.md`](ios-t3-checks-findings.md)): required entries, a whole-bundle Mach-O arch sweep (100+ per-extension-module `Frameworks/*.framework`, hoisted there by `install_python`), `Info.plist` vs. config, and `codesign --verify`. **No stripped/`.pyc`-magic check** — iOS `strip_source` still cannot be exercised honestly (every example pins a CPython 3.15 pre-release; §7 2026-09-14/2026-09-23) | `ios_simulator` — `run -p ios --simulator --no-build` install+launch, plus a screenshot artifact, on every push (since 2026-09-23); previously local only, all 6 examples render | n/a | every push (T2/T3/T4, `hello-kivy` only); 2026-09-14 (regression re-check on all 6, local; no drift since 2026-07-27) |
 
 Legend for how a cell was proven, because "covered" hides the difference:
 **CI** = re-proven every push; **local** = a first-party run on a maintainer's
@@ -314,11 +314,13 @@ simulator path never signs at all, so this was unreachable from any coverage
 this file previously counted. Fixed in `buildsettings.py` /`generator.py` /
 `materialize.py` / `cli.py`, with two new regression tests.
 
-What remains genuinely unproven for iOS, restated after that run: **no CI**
-(the device and simulator runs above are local and unrepeated — a regression
-surfaces only when someone next runs it by hand), **no T3** (nothing inspects
-the built `.app` or `.ipa` the way `--macos-app` now inspects a macOS bundle),
-and **`strip_source`**, which is not merely unrun but currently *unrunnable*:
+What remained genuinely unproven for iOS as of that run: **no CI** (the device
+and simulator runs above were local and unrepeated — fixed 2026-09-23 by
+`ios_simulator`, for the simulator leg), **no T3** (nothing inspected the
+built `.app` or `.ipa` the way `--macos-app` inspects a macOS bundle — also
+fixed 2026-09-23, by `ios_app_problems`/`--ios-app`, wired into the same job),
+and **`strip_source`**, which is not merely unrun but currently *unrunnable*,
+and remains so — no checker exists for it, deliberately (§5.1):
 `package -p ios` degrades to shipping source because there is no final CPython
 3.15 yet, and **every iOS example in this repo pins `3.15.0b4`** — so this is a
 structural gap general to the whole platform, not a gap in any one example or
@@ -472,7 +474,33 @@ twice: once on the debug APK, once on the stripped release APK.
       `test_plist_launcher.py`). The real-clang argv test plus the actual
       launch in §7 hold the line; a static conftest-driven check would be
       ceremony on top of them.
-- [ ] **iOS check functions — the one platform with no T3 at all.** Spec'd for the Mac in [`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md) (written 2026-09-23): `ios_simulator` already builds a real `.app` on every push, so both the artifact and the place to wire the check exist. **Scope is capped by something external**: iOS `strip_source` is unreachable while every example pins `3.15.0b4` (§7, 2026-09-14), and python.org ships no iOS xcframework below `3.15.0b1` — so the stripping and `.pyc`-magic checks, the ones that caught item 1 and the two launcher defects elsewhere, cannot be written honestly yet. What is checkable now: required entries, Mach-O arch plus a stray-arch sweep, `Info.plist` vs. config, and the code signature.
+- [x] **iOS check functions and driver — done 2026-09-23. In CI the same day**
+      via `ios_simulator` (§3.1/§3.3), closing the one platform that had no T3
+      tier at all. `tests/artifact_checks.py::ios_app_problems` (required
+      entries; a whole-bundle Mach-O arch sweep via the existing
+      `machotools.read_macho_cpu_type` — no separate iOS Mach-O reader;
+      `Info.plist` vs. config via `ios_expected_plist`, mirroring
+      `macos_expected_plist`'s "call the production builder, drop the
+      build-time key" shape), hermetic-tested in `tests/test_artifact_checks.py`,
+      wired to a real bundle via `tests/platforms/ios/test_app_artifact.py`
+      (`--ios-app`/`--ios-arch`/`--ios-project`) plus a `codesign --verify`
+      test reusing macOS's `codesign_verify` wrapper directly (the tool is the
+      same regardless of which bundle it signs). Findings in
+      [`ios-t3-checks-findings.md`](ios-t3-checks-findings.md), including the
+      Step 0 layout dump: an iOS `.app` is flat (no `Contents/`), and every
+      compiled extension module — 120+ of them for `hello-kivy` alone — is
+      hoisted by python-apple-support's `install_python` into its own
+      `Frameworks/<name>.framework/`, leaving a plain-text `.fwork` stub
+      behind. **Scope is capped by something external, and still is**: iOS
+      `strip_source` is unreachable while every example pins `3.15.0b4` (§7,
+      2026-09-14), and python.org still ships no final-release iOS
+      `Python.xcframework` as of 2026-09-23 — confirmed against a real build
+      the day this closed (`kivyforge doctor -p ios` still warns "no final
+      CPython 3.15 found") — so the stripping and `.pyc`-magic checks, the
+      ones that caught item 1 and the two launcher defects elsewhere, are not
+      written; `ios_app_problems` takes no `stripped` parameter at all rather
+      than carrying one nothing exercises. Revisit when a final 3.15 iOS
+      xcframework ships.
 - [x] **Windows check functions — done 2026-09-17. In CI since 2026-09-22**
       via `windows_onedir` (§5.3), completing the desktop set — all three
       desktop targets now run their T3 pass on every push rather than as a
@@ -1121,6 +1149,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 
 | 2026-09-23 | Android `x86_64` (emulator) | **T4** (local, then CI) | Windows 11 host / API-35 `google_apis` x86_64 AVD | **The last tier reaches CI** (§5.4). Rehearsed locally first on the AVD this box already had: `kivyforge run --smoke --release -p android --serial emulator-5554` on `hello-android` → `Contract smoke test PASSED`, `connectedReleaseAndroidTest` 1 test, Gradle 1m25s, 2m10s end to end. **First logged smoke run since 2026-07-27, and the first on the release variant** — so it exercises byte-compilation, stripping and R8, not just the load model. `git status` clean afterwards: the committed `pylock.android.toml` was verified, not rewritten. Then wired as `android_emulator` (`ubuntu-latest` + a `/dev/kvm` udev rule + `reactivecircus/android-emulator-runner`), pinned to CPython 3.14 for the same load-bearing reason `android_gradle` is — without a final 3.14 the release build degrades to shipping source and the job would quietly stop testing stripping. **Corrected a stale design claim in passing:** `android/06`'s gate table said `run --smoke` is "not hosted CI" because an emulator implies a self-hosted runner; hosted `ubuntu-latest` exposes `/dev/kvm`, so that is no longer true. **First CI run failed, and the emulator was not why.** The AVD booted fine; `kivyforge` then reported `missing [tool.kivy] table` — against *kivyforge's own* `pyproject.toml`, because `reactivecircus/android-emulator-runner` executes **each line of `script:` as its own `sh -c`**. The `cd "$APP_DIR"` line therefore applied to a shell that immediately exited, and the next line started back at the repo root. Fixed by making it one `&&`-chained command. Worth knowing before adding a second step to that script, and worth noting about the local rehearsal: running the command by hand proved the *command*, and could not have caught the *wiring*. |
 
+| 2026-09-23 | iOS simulator `arm64` (`hello-kivy`) | T3 infra + CI | macOS 26.6.2, Xcode 26.6 | **Closes §5.1's last open box — the one platform with no T3 tier at all now has one, wired into CI the same day it was built.** Following [`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md): Step 0 built `hello-kivy` for the simulator and dumped the real bundle (`doctor -p ios` still warns "no final CPython 3.15 found", confirming the scope constraint is unchanged since 2026-09-14). The bundle is flat — no `Contents/` — and every one of `hello-kivy`'s 120+ compiled extension modules lives in its own `Frameworks/<name>.framework/`, hoisted there by python-apple-support's `install_python`, with a plain-text `.fwork` stub left behind at the original `app/`/`pip-deps/`/`python/lib` location. `ios_app_problems` + `ios_expected_plist` added to `tests/artifact_checks.py` (required entries, a whole-bundle Mach-O arch sweep reusing `machotools.read_macho_cpu_type`, `Info.plist` vs. config mirroring `macos_expected_plist`'s shape); 20 hermetic tests in `tests/test_artifact_checks.py`; `--ios-app`/`--ios-arch`/`--ios-project` in `conftest.py` (no `--ios-stripped` — see below); `tests/platforms/ios/test_app_artifact.py` mirroring the macOS driver, including a `codesign --verify` test that reuses `machotools.codesign_verify` directly rather than duplicating it. **Validated against the real Step 0 bundle, including negatives:** clean pass with `--ios-arch arm64 --ios-project`; claiming `--ios-arch x86_64` named all 114 real Mach-O binaries (every framework plus the root executable) as foreign-arch; editing the *built* `Info.plist`'s `CFBundleShortVersionString` (fixture's own config untouched) was caught by the comparison **and** independently broke `codesign --verify` — the signature seals `Info.plist` exactly as it does on macOS. Restored byte-for-byte afterward; both tests green again. Wired into `ios_simulator` as a new step between the T2 build and the T4 launch; confirmed locally with the exact CI command (`ls -d`-globbed path, `KIVYFORGE_REQUIRE_TOOLCHAIN=1`) that pytest prints `..`, not `.s`. **Scope decision, explicit:** no `stripped`/`.pyc`-magic check — `ios_app_problems` takes no `stripped` parameter at all, rather than one no driver would ever set `True`, because the scope constraint from Step 0 is unchanged. `pylock.ios.toml` untouched; `hello-kivy-ios/` was never in the working tree (gitignored). Full suite 3012 passed / 55 skipped, 92.88% coverage; `ruff check`/`format` and `pyright` clean. Full detail: [`ios-t3-checks-findings.md`](ios-t3-checks-findings.md). |
+
 | 2026-09-23 | Android `x86_64` from a **Windows** host | T2 + T3 (local, then CI) | Windows 11, CPython 3.14.7 (via the `py` launcher) | **§5.2 closed — the item-1 code path finally has automated coverage.** Every Android build in CI had run on ubuntu, where `find_interpreter` reaches a versioned `python3.14` directly; item 1's bug lived in what that search does on Windows. Measured here first: `find_interpreter("3.14.6")` → `('py', '-3.14')`, the PEP 397 launcher, resolving to **CPython 3.14.7 final, 64-bit** — and `py --list` confirms the launcher knows 3.14 through 3.7, so the pre-release-rejection branch has real candidates to reject. `package -p android --abi x86_64` against a throwaway keystore produced a stripped, byte-compiled release APK, and all three T3 drivers (`test_apk_artifact` `--android-stripped`, `test_merged_manifest`, `test_apk_signature`) passed against it — run under a scratch 3.14.7 venv, because the magic assertion compares against the *runner's* MAGIC_NUMBER and this repo's dev venv is 3.13. Then wired as `android_windows_host`. **Coverage stated precisely:** CI proves the Windows branch end to end, but `setup-python` puts 3.14 on PATH while the launcher usually does not know a hostedtoolcache install, so CI likely resolves via `('python',)` rather than the launcher — the job logs which candidate won so this is answerable per run instead of assumed, and the `py`-launcher leg is *this* row. **Not a bug, noted because it reads like one:** `find_interpreter` returns `()` for "use the interpreter already running" and `None` for no match; a `()` is success. **First CI run failed before reaching any of that**, on a Windows-shell detail rather than anything Android: `sdkmanager` is `sdkmanager.bat`, and Git Bash does not apply `PATHEXT`, so a bare `sdkmanager` is "command not found" even with the SDK action having put it on PATH. That one step moved to `pwsh`; the rest of the job stays on bash because the tools it calls (`keytool`, `kivyforge`, `pytest`) are `.exe`, which bash does resolve — audited rather than assumed, and the same two were driven from bash by hand during the local leg above. **Second run green, and its resolver log line corrected this row's own premise:** CI printed `resolver picked: ()` — the "use the interpreter already running" fast path, taken *before* the Windows candidate list is built, because `setup-python` makes the runner the same 3.14 the project ships. So CI covers Windows Gradle/NDK, Windows path handling, byte-compilation on a Windows host and the full T3 pass, but **not** the `py`-launcher search — that is this row's local leg and the unit tests, nothing standing. The step was added to make that answerable rather than assumed, and on its first run it contradicted both guesses about what CI would pick, which is the argument for logging rather than reasoning about it. `package` 1m20s, T3 3 passed. |
 
 | 2026-09-23 | Android **`arm64_v8a`** | T2 + T3 (local, then CI) | Windows 11, CPython 3.14.7 | **The ABI every real phone runs had no direct CI coverage** — all three Android jobs passed `--abi x86_64`, and §3.2 had carried arm64_v8a as "inherited, not direct" since the matrix was written. `android_gradle` is now a two-leg matrix. Proven locally first: `package -p android --abi arm64_v8a` produced a stripped release APK and `test_apk_artifact.py --android-abi arm64-v8a --android-stripped` passed against it. **Two negative controls, both fired:** claiming `x86_64` on that APK reports the missing `lib/x86_64/libmain.so` *and* the stray `arm64-v8a` objects; and passing the wheel-tag spelling to `--android-abi` gives `unknown ABI 'arm64_v8a'; expected one of ['arm64-v8a', 'x86_64']`. **That second one is the trap worth recording:** kivyforge's `--abi` takes `arm64_v8a` while the T3 driver's `--android-abi` takes `arm64-v8a`, and the two are *identical for x86_64* — which is exactly why one `$ABI` variable sufficed for as long as this job built only that ABI. The matrix now carries both spellings. It fails loudly rather than silently, so this was never a false-green risk, only a job that would not have run. |
@@ -1157,12 +1187,14 @@ Linux say whether it was WSL2 or bare metal (§4).
   §3.2, §5.3). The device leg stays local-only, permanently — no CI runner
   has a physical iPhone attached, the same reason Android's `arm64_v8a` row
   is `manual` rather than CI.
-- No T3 for iOS: nothing inspects a built `.app`/`.ipa` — not its `Info.plist`,
-  not its Mach-O arch, not whether `strip_source` did anything. (macOS gained a
-  T3 driver 2026-09-14 — see below — but nothing analogous exists for iOS yet.)
-  Still true after `ios_simulator`: that job proves T2 (build) and T4 (launch),
-  deliberately not T3 — no harness exists to write into it yet, and roadmap
-  item 5 asked for exactly this narrower thing ("Add an iOS simulator job...").
+- ~~No T3 for iOS: nothing inspects a built `.app`/`.ipa` — not its
+  `Info.plist`, not its Mach-O arch, not whether `strip_source` did
+  anything.~~ — **done 2026-09-23** (§5.1, §7): `ios_app_problems` covers
+  required entries, a whole-bundle Mach-O arch sweep, and `Info.plist` vs.
+  config, wired into `ios_simulator` the same day. **Still true, and by
+  design:** whether `strip_source` did anything — iOS `strip_source` remains
+  unrunnable on every in-repo example (the bullet above), so there is nothing
+  honest to check it against.
 - ~~Any `kivyforge build` for Linux, macOS, **or Windows**: never run in
   CI~~ — **done 2026-09-22, all three**: `linux_appimage`, `macos_app`, and
   `windows_onedir` each run `kivyforge build`/`package` for their platform on
