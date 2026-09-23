@@ -159,6 +159,7 @@ is the runner of the job named in it**, which is why this table comes first —
 | `revendor_launcher` / `revendor_verify` | windows | `3.x` | launcher reproducibility |
 | `windows_signing` | windows | `3.x` | Windows T2 (`signtool`, self-signed) |
 | `android_gradle` | ubuntu | **3.14** | Android T2 + T3 |
+| `android_emulator` | ubuntu | **3.14** | Android **T4** (`run --smoke --release` on an x86_64 AVD) |
 | `linux_appimage` | ubuntu | **3.13** | Linux T2 + T3 (`package` + AppImage assertions) |
 | `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
@@ -214,7 +215,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Linux `x86_64` | `unit_tests` | `linux_appimage` — real `appimagetool` on every push (since 2026-09-22); previously local only | `linux_appimage` — full T3 pass over the packaged AppImage on every push | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1/T2/T3); 2026-09-13 (T4) |
 | Linux `aarch64` | `unit_tests` | **local only** — cross `package` on x86_64 WSL2, host `appimagetool` + target type2 runtime | **local only** — T3 driver extracts via `unsquashfs` (the aarch64 type2 ELF cannot `--appimage-extract` here); ELF leak check caught a planted host `.so` | **local** — stripped AppImage reaches main loop on Pi 5 (labwc, Broadcom V3D) | **manual** — Pi 5 only; Pi 4 untested | 2026-09-17 |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
-| Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
+| Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | `android_emulator` — `run --smoke --release` on an API-35 x86_64 AVD on every push (since 2026-09-23); previously local-only and last run 2026-07-27 | n/a | every push (T2/T3/T4) |
 | iOS device `arm64` | `unit_tests` | **local** — `build -p ios --device`, `package -p ios --export-method development`, real iPhone14,3 | **none** | **local** — installed, launched, `hello-kivy` rendered on device | **manual** — first physical run, 2026-09-14 | 2026-09-14 |
 | iOS simulator `arm64` | `unit_tests` | `ios_simulator` — real `build -p ios --simulator` on every push (since 2026-09-23); previously local-only, 6 examples | **none** — no T3 harness exists for iOS yet (unlike macOS/Android) | `ios_simulator` — `run -p ios --simulator --no-build` install+launch, plus a screenshot artifact, on every push (since 2026-09-23); previously local only, all 6 examples render | n/a | every push (T2/T4, `hello-kivy` only); 2026-09-14 (regression re-check on all 6, local; no drift since 2026-07-27) |
 
@@ -703,11 +704,11 @@ The iOS half is also done, one day later than this section's own "2026-09-22"
 heading suggests: `ios_simulator` landed 2026-09-23 (§3.1, §3.2) — the wheels
 it was supposedly still waiting on had actually been published since
 2026-07-27 (§3.2 above), so this was unbuilt work, not a live blocker, by the
-time this very paragraph was last edited. What is left is §5.4's Android
-emulator T4, which needs an actual AVD in CI rather than the simulator-only
-proof `ios_simulator` gets away with (a real iOS simulator ships in the
-`macos-latest` image; Android's emulator does not ship pre-booted the same
-way).
+time this very paragraph was last edited. §5.4's Android emulator T4 followed
+the same day — it did need the extra work this paragraph predicted, since a
+real iOS simulator ships in the `macos-latest` image while an Android AVD has
+to be created and booted, behind a `/dev/kvm` udev rule. **Both mobile targets
+now have T4 in CI**, which was the last tier missing anywhere.
 
 <details>
 <summary>The original framing, kept because the reasoning it records is still
@@ -764,14 +765,37 @@ cheapest *evidence* and the cheapest *job* are different targets.
 
 </details>
 
-### 5.4 T4 on an Android emulator, in CI
+### 5.4 T4 on an Android emulator, in CI — **done 2026-09-23**
 
-`android/06 run --smoke` is the instrumented contract test. It **has** run
-green on an API-31 AVD as first-party local runs (§7, 2026-07-24 and
-2026-07-27) — it has never run in CI, so nothing re-proves it and a regression
-would surface whenever someone next ran it by hand. An `x86_64` AVD on a
-KVM-enabled runner is the standard shape, and it is the tier that would have
-caught the item-1 device hang without a human holding a phone.
+`android_emulator` boots an API-35 `google_apis` x86_64 AVD on `ubuntu-latest`
+and runs `kivyforge run --smoke --release`. **T4 now runs in CI**, which was
+the last tier missing and the last thing standing between item 5 and its own
+"done when".
+
+**`--release`, not plain `--smoke`.** The release variant is byte-compiled,
+stripped and R8-processed, so this is the tier that would have caught roadmap
+item 1 — a stripped bundle the device refuses to import — without a human
+holding a phone. A debug smoke run exercises the load model but not the
+stripping, which is the part with the history. `android/06` calls this exact
+shape the "required release gate"; CI now demonstrates it rather than only
+prescribing it.
+
+**The "needs a self-hosted runner" assumption was stale.** `android/06`'s
+gate table said `run --smoke` is "not hosted CI" because an emulator implies
+a self-hosted machine. Hosted `ubuntu-latest` exposes `/dev/kvm` — to the
+`kvm` group, hence the udev rule the job applies — so an x86_64 AVD boots
+fast enough to gate on. That row is corrected.
+
+**Rehearsed locally before the job was written**, on the AVD this box already
+had: `run --smoke --release --serial emulator-5554` against API 35 x86_64,
+`Contract smoke test PASSED`, Gradle 1m25s and 2m10s end to end. That is also
+the first logged smoke run since 2026-07-27 and the first on the release
+variant on an emulator — see §7.
+
+Physical-device runs remain manual, and remain what
+[08-compatibility-matrix](../platforms/android/08-compatibility-matrix.md)'s
+**Validated** rows cite. What changed is that a regression no longer waits for
+someone to run one by hand.
 
 ### 5.5 `kivyforge run` cannot reach release stripping at all
 
@@ -1044,6 +1068,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-23 | iOS simulator `arm64` (`hello-kivy`) | T2 + T4 (local, then CI) | macOS 26.6.2, Xcode 26.6 | **Closes roadmap item 5's iOS bullet**, one day after all three desktop targets — the wheels it was "waiting on" had actually been published since 2026-07-27 (§3.2), so the delay was oversight, not a live blocker. Reused `examples/mobile/hello-kivy` directly rather than a new fixture, matching `android_gradle`'s choice: it is one of the three on-device-gate examples whose `pylock.ios.toml` is already committed. Proven locally before the CI job was written: `doctor -p ios` clean (2 expected `WARN`s only — byte-compile and privacy-manifest, neither iOS-simulator-specific), `lock -p ios --check` "up to date" with no `GITHUB_TOKEN` needed (iOS resolves against `kivy-mobile-wheels`' static index and python.org, not `api.github.com`, so the 2026-09-22 rate-limit fix does not apply here), `build -p ios --simulator` produced the `.app` in ~20 s, and `run -p ios --simulator --no-build` installed and launched it — with a screenshot confirming "Hello Kivy" rendered. **One real finding along the way:** `kivyforge run` invokes `simctl launch --console-pty`, which streams the app's console forever for a GUI app that keeps running — there is no "confirm launched, then exit" verb, so running it in a CI step's foreground would hang until the job timeout. Confirmed by reproducing the hang directly, then confirming the fix: background the command, wait 15 s, and treat "still running" as launch success / "exited early" as `simctl launch` having raised — verified both branches for real (the success path against a built app, the early-exit path by deleting the `.app` first and confirming the CLI's own `built app not found` message surfaces). No T3 harness exists for iOS (§5.1), so this job proves T2 + T4 only, exactly what the roadmap bullet asked for; a screenshot is uploaded every run for a human to glance at, since nothing automated reads its pixels. `git status` clean before committing (build artifacts and screenshot were never in the working tree, both gitignored/discarded). |
 
 | 2026-09-23 | CI hygiene (all jobs) | §5.7 + §5.8 + §5.9 closed | Windows 11 (authoring); evidence from the 2026-09-23 `main` run | Three small gaps closed together, each of the same shape — a check that could not fail. **§5.9:** `android_gradle`'s doctor step no longer waives itself. The waiver was protecting against a FAIL that cannot occur *there*: `_check_16k_alignment` runs only `if project_dir.is_dir()` (the **generated** project), which the `build` step below has not created yet, so the check is not registered rather than passing. Verified against the real run — 0 FAIL, 2 WARN (no device, no AVD) — and `ok = worst_status(results) is not Status.FAIL`, so WARNs never gated. **§5.8:** `macos_integration` pinned to 3.13, the last platform proof running `3.x`; the seven remaining floaters are cross-cutting jobs or ones exercising a C toolchain, and §3.1 now says so explicitly so nobody finishes the job by pinning them too. **§5.7:** `requires_device` removed rather than wired. No test ever carried it, so `KIVYFORGE_DEVICE_TESTS=1` enabled nothing while implying device coverage existed behind a flag; wiring it would have meant writing ADB tests from a host with no device, which is how tests that assert nothing get written. Device runs stay manual and logged here. |
+
+| 2026-09-23 | Android `x86_64` (emulator) | **T4** (local, then CI) | Windows 11 host / API-35 `google_apis` x86_64 AVD | **The last tier reaches CI** (§5.4). Rehearsed locally first on the AVD this box already had: `kivyforge run --smoke --release -p android --serial emulator-5554` on `hello-android` → `Contract smoke test PASSED`, `connectedReleaseAndroidTest` 1 test, Gradle 1m25s, 2m10s end to end. **First logged smoke run since 2026-07-27, and the first on the release variant** — so it exercises byte-compilation, stripping and R8, not just the load model. `git status` clean afterwards: the committed `pylock.android.toml` was verified, not rewritten. Then wired as `android_emulator` (`ubuntu-latest` + a `/dev/kvm` udev rule + `reactivecircus/android-emulator-runner`), pinned to CPython 3.14 for the same load-bearing reason `android_gradle` is — without a final 3.14 the release build degrades to shipping source and the job would quietly stop testing stripping. **Corrected a stale design claim in passing:** `android/06`'s gate table said `run --smoke` is "not hosted CI" because an emulator implies a self-hosted runner; hosted `ubuntu-latest` exposes `/dev/kvm`, so that is no longer true. |
 
 ### Known-unverified, stated plainly
 
