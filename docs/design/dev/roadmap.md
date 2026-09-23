@@ -325,7 +325,7 @@ known-unverified list.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *T3 complete and in CI for all four platforms (§5.1 closed 2026-09-21; Linux/macOS/Windows build jobs all landed 2026-09-22). T4: iOS's simulator job landed 2026-09-23 — the "blocked on published wheels" premise was already stale, they'd shipped 2026-07-27. **§5.4's Android emulator job is what remains.*** | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T4 completed 2026-09-23 on both mobile targets: iOS via `ios_simulator`, Android via `android_emulator`. T3 landed 2026-09-21/22 for Android and the three desktop targets. Remaining: iOS has no T3 harness, §5.2 Android T3 from a Windows host, and a runnable hardware checklist* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -1660,6 +1660,31 @@ cert, a physical device, or store submission. Item 2's checklist owns those.
 
 **Done when** T0–T4 run in CI for every cell the matrix marks automatable, and
 a hardware pass has a documented, repeatable procedure.
+
+**T4 — the last tier — landed 2026-09-23, on both mobile targets the same
+day.** `android_emulator` runs `kivyforge run --smoke --release` on an API-35
+x86_64 AVD (the *release* variant, so it covers byte-compilation, stripping
+and R8 rather than only the load model — the tier that would have caught item
+1 without a human holding a phone), and `ios_simulator` runs
+`build`/`run --simulator` on `macos-latest`.
+
+What is left against this condition is narrower than the condition sounds:
+
+- **iOS has T2 and T4 but no T3**, because no iOS artifact-check harness
+  exists yet (§5.1). The other four platforms have all of T0–T3.
+  *(An earlier version of this bullet said the iOS job was "waiting on
+  published wheels". Those wheels shipped 2026-07-27; the bullet had simply
+  not been revisited, and repeating it kept a non-blocker looking like a
+  blocker. Worth remembering when a roadmap bullet names an external
+  dependency: check whether it is still true before planning around it.)*
+- **§5.2 — Android T3 from a *Windows* host** is still uncovered, and it is
+  the exact code path item 1's bug lived in (`find_interpreter`'s `py`
+  launcher / versioned-executable search). Cheapest remaining real gap.
+- **The hardware pass** (the second half) still has no runnable checklist —
+  item 5's "manual checklist becomes runnable" bullet.
+
+So item 5 is blocked on nothing and has no large piece left: §5.2, an iOS T3
+harness, and the checklist script.
 
 ---
 

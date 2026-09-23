@@ -196,6 +196,10 @@ caught by identical assertions.
 > artifact, boot an emulator, run `kivyforge run --smoke --release`, and publish
 > only on green. `doctor`'s **Emulator / virtualization** check gates whether the
 > job can run on a given host.
+>
+> Since 2026-09-23 kivyforge's own CI runs exactly this shape on every push
+> (`android_emulator`), so the gate is demonstrated rather than only
+> prescribed — a project adopting it can copy that job.
 
 #### What kivyforge's own CI gates, and what it doesn't
 
@@ -206,7 +210,7 @@ different claims and only one of them is cheap to test:
 |------|-------|--------|
 | Unit tests | every push (Ubuntu + Windows) | Generation, staging, lock, policy, and bootstrap-contract logic — every generated file as a *string*. |
 | `android_gradle` job | every push (Ubuntu, no device) | The real toolchain consuming those strings: AGP + AAPT + javac + the NDK build [`examples/mobile/hello-android`](../../../../examples/mobile/hello-android) from its committed lock (`build --debug --abi x86_64`), the APK is asserted to carry `libmain.so`, `libpython3.14.so`, and `assets/_python_bundle/`, and `package` then runs the whole release policy path (curated `lintRelease` + merged-manifest export + signing) against a throwaway keystore. |
-| `run --smoke` | **not** hosted CI | Everything that only a running app can prove: the load order, the extension-module finder, the pyjnius `invoke0` round-trip. It needs an emulator or device, so it is run locally / on a self-hosted runner and is the release gate above. Rows in [compatibility-matrix](08-compatibility-matrix.md) marked **Validated** cite those runs. |
+| `run --smoke --release` | **every push** (`android_emulator`, Ubuntu + KVM) | Everything that only a running app can prove: the load order, the extension-module finder, the pyjnius `invoke0` round-trip — and, because it is the *release* variant, that byte-compilation, stripping and R8 did not break any of them. **Corrected 2026-09-23:** this row used to read "not hosted CI", on the grounds that an emulator means a self-hosted runner. That stopped being true — hosted `ubuntu-latest` exposes `/dev/kvm`, so an `x86_64` AVD boots fast enough to gate on. Physical-device runs are still manual and still what [compatibility-matrix](08-compatibility-matrix.md) **Validated** rows cite; what changed is that a regression no longer waits for someone to run it by hand. |
 
 ### `kivyforge open`
 
