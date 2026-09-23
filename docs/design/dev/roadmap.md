@@ -214,9 +214,36 @@ unvalidated, and needs a Mac.
   `lib-$ARCHS` universal-simulator-build limitation in
   `xcode/commands.py` (a run-script phase failure unrelated to this guard) —
   `kivyforge build` already pins `ARCHS=` to avoid it, which is why the real
-  build path is unaffected. `KIVYFORGE_HEADLESS_UIKIT`, the other half of
-  PR #1's idea, remains a separate, not-yet-agreed follow-up — not touched
-  here.
+  build path is unaffected.
+- **`KIVYFORGE_HEADLESS_UIKIT` — closed 2026-09-22, will not be built.** This
+  was the other half of [PR #1](https://github.com/ElliotGarbus/kivyforge/pull/1)'s
+  idea and had been carried as a not-yet-agreed follow-up since. **Decision:
+  there is no use case for it, so it is off the list rather than deferred.**
+  The reasoning is worth keeping, because the proposal was a reasonable
+  inference from what the repo does — and from how the repo *described* what
+  it does. iOS builds a windowless binary for an app with no SDL3: it runs
+  the entry module and exits, which is how `hello-world` builds and what the
+  contract smoke test drives. PR #1 read that as a product capability waiting
+  to be exposed, and proposed promoting it to an opt-in mode with a UIKit
+  lifecycle.
+  It is not a capability. It is **smoke-test scaffold** — something for a
+  dependency-free app and the contract test to build and launch — and a Kivy
+  app that reaches it has a *defect*, which is exactly what the
+  `KIVYFORGE_REQUIRES_SDL` guard above now turns into a compile error instead
+  of a silent fallback. Supporting it as a feature would mean committing to
+  an app that can never open a window, and nothing has asked for one.
+  **The naming invited the misreading, and that is fixed too.** The bootstrap
+  called this "the headless path" and one comment advertised a
+  `UIApplicationDelegate` the code never calls, so the source read like a
+  half-finished feature rather than a test fixture. `e12b4d24` renames it to
+  the **no-SDL path — smoke-test scaffold, not a supported app mode**; this
+  file uses that wording for the same reason, and "headless mode" should not
+  come back in either place.
+  The two halves of PR #1 therefore ended in opposite places, which is not a
+  contradiction: `KIVYFORGE_REQUIRES_SDL` landed, and was validated against
+  real Xcode, because it makes the no-SDL path *harder* to reach by accident;
+  `KIVYFORGE_HEADLESS_UIKIT` is declined because it would make it easier to
+  reach on purpose. Credit for the first stands as recorded.
 - **README pass (2026-09-21):** the `## Commands` section now points at
   `--json`/`capabilities`, and a new `## Working with agents` section (mirroring
   `AGENTS.md`'s "Driving kivyforge from an agent", written for kivyforge's own
