@@ -841,8 +841,14 @@ jobs:
         emulator-options: >-
           -no-window -no-audio -no-boot-anim -no-snapshot
           -gpu swiftshader_indirect -camera-back none
-        script: |
-          cd "$APP_DIR"
+        # One line, chained with &&, on purpose. This action runs **each line
+        # of `script` as its own `sh -c`**, so a `cd` on its own line applies
+        # to a shell that then exits and the next line starts back at the
+        # repo root. That failed exactly once, with kivyforge reporting
+        # "missing [tool.kivy] table" against kivyforge's own pyproject.toml
+        # rather than the example's. Keep it a single command.
+        script: >-
+          cd "$APP_DIR" &&
           kivyforge run --smoke --release -p android --abi "$ABI"
     - name: Upload the instrumentation report on failure (for triage)
       if: failure()
