@@ -802,11 +802,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev,android]"
     - name: Install the pinned NDK, CMake, platform, and build-tools
-      shell: bash
+      # pwsh, not bash, and only for this step. `sdkmanager` on Windows is
+      # `sdkmanager.bat`, and Git Bash does not apply PATHEXT — so a bare
+      # `sdkmanager` is "command not found" there even though the SDK action
+      # put it on PATH. The rest of this job stays on bash because the tools
+      # those steps call (keytool, kivyforge, pytest) are .exe, which bash
+      # does resolve.
+      shell: pwsh
       run: |
-        ndk="$(python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)')"
-        sdkmanager --install "ndk;${ndk}" "cmake;3.22.1" "platforms;android-35" \
-          "build-tools;35.0.0"
+        $ndk = python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)'
+        sdkmanager --install "ndk;$ndk" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
     - name: Report which interpreter the Windows resolver picked
       # This job's whole point is the Windows branch of `find_interpreter`, so
       # say out loud which candidate won rather than assuming. On a dev box
