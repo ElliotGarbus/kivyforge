@@ -583,9 +583,23 @@ jobs:
         sdkmanager --install "ndk;${ndk}" "cmake;3.22.1" "platforms;android-35" \
           "build-tools;35.0.0"
     - name: Doctor (Android)
-      # Advisory: doctor is allowed to report the known-interim Kivy wheel
-      # (4 KB-aligned) as a FAIL, so this step must not gate the build.
-      continue-on-error: true
+      # Gating, as of 2026-09-23 — the `continue-on-error: true` that used to
+      # be here is gone, closing test-matrix.md §5.9. The waiver's stated
+      # reason was that doctor reports the known-interim 4 KB-aligned Kivy
+      # wheel as a FAIL, and that reason does not hold *at this point in the
+      # job*: `_check_16k_alignment` runs only `if project_dir.is_dir()`,
+      # meaning the *generated* project, which `build` below has not created
+      # yet. So the check is not merely passing here, it is not registered.
+      #
+      # Checked rather than reasoned about — the 2026-09-23 run of this job
+      # reports 0 FAIL and 2 WARN (no device attached, no AVD), and doctor's
+      # exit code is `worst_status(results) is not Status.FAIL`, so WARNs do
+      # not gate. What the waiver actually bought was that this job ignored
+      # *every* diagnostic doctor produced, which is what §5.9 objected to.
+      #
+      # If a future change stages jniLibs before this step, the interim-wheel
+      # FAIL becomes reachable again and this needs the allow-list §5.9
+      # originally proposed rather than the waiver coming back.
       working-directory: ${{ env.APP_DIR }}
       run: kivyforge doctor -p android
     - name: Build the debug APK (assembleDebug)
@@ -757,10 +771,19 @@ jobs:
     steps:
     - name: Checkout kivyforge
       uses: actions/checkout@v6
-    - name: Set up Python
+    - name: Set up Python 3.13
+      # Pinned 2026-09-23, closing test-matrix.md §5.8. This job ran '3.x' —
+      # whichever minor the runner image happened to ship — while being the
+      # only host in the system that compiles the macOS launcher with a real
+      # clang. A macOS-specific break on one minor versus another was
+      # therefore invisible, and the interpreter could change under us the
+      # way the MSVC toolset did three times (§7).
+      #
+      # 3.13 matches macos_app, so the two macOS jobs agree; the hermetic
+      # suite's own 3.13/3.14 matrix coverage comes from unit_tests.
       uses: actions/setup-python@v6
       with:
-        python-version: '3.x'
+        python-version: '3.13'
     - name: Install kivyforge and test dependencies
       run: |
         python -m pip install --upgrade pip
