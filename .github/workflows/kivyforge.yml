@@ -1012,13 +1012,14 @@ jobs:
   # .gitignore) specifically so a CI job has a determinate lock to build
   # from without re-resolving it.
   #
-  # There is no T3 harness for iOS yet (test-matrix.md, "Known-unverified" —
-  # nothing inspects a built .app/.ipa's Info.plist or Mach-O arch the way
-  # tests/platforms/{macos,android}/test_*_artifact.py do for their
-  # platforms). Building that is separable, larger, out-of-repo-precedent
-  # work; this job proves the T2 build and the T4 launch smoke the roadmap
-  # bullet actually asked for, plus a screenshot for a human to glance at
-  # (no CLI or CI checker actually looks at pixels).
+  # T3 harness added 2026-09-23 (ios-t3-checks-prompt.md / test-matrix.md
+  # §5.1): required entries, a whole-bundle Mach-O arch sweep, and the
+  # Info.plist-vs-config comparison. No stripped/`.pyc`-magic pass — iOS
+  # `strip_source` cannot be exercised honestly yet (see
+  # tests/artifact_checks.py's iOS module note) — and no separate signature
+  # step: `--simulator` never signs with a real identity (spec 05), so
+  # `codesign --verify`'s only interesting outcome here is "ad-hoc still
+  # verifies", which `test_the_app_is_codesigned` already covers every push.
   ios_simulator:
     name: iOS Simulator (build + run)
     runs-on: macos-latest
@@ -1058,6 +1059,18 @@ jobs:
     - name: Build for the simulator (T2)
       working-directory: ${{ env.APP_DIR }}
       run: kivyforge build -p ios --simulator
+    - name: Assert the .app is the artifact the build promised (T3)
+      # --ios-project turns on the Info.plist-vs-config comparison, mirroring
+      # macos_app's own --macos-project step — the first time either check
+      # has run against a real built .app. Not run from working-directory
+      # ${{ env.APP_DIR }}, the same reason android_gradle's/linux_appimage's
+      # T3 steps aren't: `tests/` is repo-root-relative.
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: |
+        app="$(ls -d "$APP_DIR"/hello-kivy-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/*.app)"
+        pytest tests/platforms/ios/test_app_artifact.py -q --no-cov \
+          --ios-app "$app" --ios-arch arm64 --ios-project "$APP_DIR"
     - name: Install + launch on the simulator (T4 launch smoke)
       # resolve_simulator_destination boots a default device itself when none
       # is running, so this needs no prior `simctl boot` step.

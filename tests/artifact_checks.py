@@ -64,6 +64,7 @@ from kivyforge.platforms.android.generate.manifest import (
     screen_orientation,
     service_class_name,
 )
+from kivyforge.platforms.ios.plist import build_info_plist as ios_build_info_plist
 from kivyforge.platforms.linux.elftools import (
     ARCH_ELF,
     ELF_MAGIC,
@@ -1121,6 +1122,208 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
                     "written by an interpreter of a different CPython build "
                     "and cannot be imported"
                 )
+    return problems
+
+
+# --------------------------------------------------------------------------
+# iOS
+# --------------------------------------------------------------------------
+#
+# Spec'd in ios-t3-checks-prompt.md (2026-09-23): iOS was the one platform
+# with no T3 tier at all, and `ios_simulator` had built a real `.app` on every
+# push since the day before this was written without anything inspecting it.
+#
+# **Scope is narrower than the other four platforms', and deliberately so.**
+# iOS `strip_source` cannot be exercised honestly yet: every iOS example pins
+# a CPython 3.15 *pre-release* (`3.15.0b4`), `_compile_app_copy` /
+# `_compile_pip_deps` both degrade to shipping source with "no final CPython
+# 3.15 found" (confirmed against a real build the day this was written — see
+# ios-t3-checks-findings.md Step 0), and python.org publishes no iOS
+# `Python.xcframework` below `3.15.0b1` — so there is no "pin an
+# already-final minor" escape the way desktop has. Writing a stripped/`.pyc`-
+# magic check with nothing to run it against would be exactly the
+# never-exercised-code-path shape roadmap item 1 already cost this project
+# once; the parameter is omitted entirely rather than carried unused, and iOS
+# has no `*_STRIP_SCOPE` constant to show for it. Revisit if a final CPython
+# 3.15 iOS xcframework is ever published.
+#
+# **The bundle is flat — no `Contents/`.** Read off a real
+# `kivyforge build -p ios --simulator` of `examples/mobile/hello-kivy`
+# (ios-t3-checks-findings.md Step 0): the executable and `Info.plist` sit
+# directly at the bundle root, `app/` is the developer's own payload,
+# `pip-deps/` is the third-party-wheel payload (macOS's `Contents/Resources/
+# {app,lib}` equivalents), and `python/lib/` is the embedded runtime's own
+# stdlib (macOS's `Contents/Resources/python` equivalent — never stripped,
+# same as every other platform).
+#
+# **Every compiled extension module is hoisted into its own
+# `Frameworks/<name>.framework/`** — Apple requires dynamic libraries to live
+# under `Frameworks/`, so python-apple-support's `install_python` (run as an
+# Xcode "Build Python" script phase) moves each one out of `app/`/`pip-deps/`/
+# `python/lib/.../lib-dynload/` and leaves a `.fwork` text stub (a relative
+# path back to itself, not a Mach-O) at the original location — a real build
+# of `hello-kivy` alone produces 121 frameworks, one per Kivy/CPython compiled
+# module, plus `Python.framework` (the runtime itself), `SDL3*.framework`,
+# `KivyThorVG.framework`, `libEGL.framework`/`libGLESv2.framework`. That is
+# *why* the arch sweep below walks the whole tree rather than a `lib/`-style
+# subdirectory the way Android's does: on iOS, `Frameworks/` is where every
+# binary already is.
+
+IOS_ARCH_MACHINES = {"arm64": CPU_TYPE_ARM64, "x86_64": CPU_TYPE_X86_64}
+
+
+def ios_expected_plist(config: Config) -> dict[str, object]:
+    """The ``Info.plist`` keys a project's config decides, for comparison.
+
+    Mirrors :func:`macos_expected_plist`: produced by calling the
+    **production** ``platforms.ios.plist.build_info_plist`` builder rather
+    than restating its key list, so this cannot drift from what a real build
+    actually writes.
+
+    ``CFBundleExecutable`` is dropped: ``ios.plist`` writes it as the literal
+    build-setting placeholder ``"$(EXECUTABLE_NAME)"``, which only Xcode
+    resolves, so comparing it to config would fail on every real bundle. It
+    is still checked — by the cross-reference in :func:`_ios_plist_problems`
+    that whatever the *built* plist says names a real file at the bundle
+    root.
+    """
+    plist = ios_build_info_plist(config)
+    plist.pop("CFBundleExecutable", None)
+    return plist
+
+
+def ios_app_problems(
+    app: Path,
+    *,
+    arch: str,
+    expected_plist: dict[str, object] | None = None,
+) -> list[str]:
+    """Every way *app* fails to be the artifact the build promised.
+
+    ``arch`` is the Mach-O arch name (``"arm64"``, the default simulator arch
+    on Apple Silicon and the only device arch; ``"x86_64"`` is still accepted
+    the way ``macos_app_problems`` accepts it, for the same Intel-host-relic
+    reasons — see ``xcode/commands.py::default_simulator_arch``).
+    ``expected_plist`` is config-derived via :func:`ios_expected_plist`;
+    omitted, only the plist's internal shape is checked.
+
+    No ``stripped``/``expected_magic`` parameters — see the module-level note
+    above on why that check cannot be written honestly yet. The code
+    signature is likewise not here: ``codesign`` is a real tool, so that
+    verification stays in the driver
+    (``tests/platforms/ios/test_app_artifact.py``), the same split as
+    macOS's ``codesign_verify``.
+    """
+    if arch not in IOS_ARCH_MACHINES:
+        return [f"unknown arch {arch!r}; expected one of {sorted(IOS_ARCH_MACHINES)}"]
+
+    problems = _ios_required_entry_problems(app)
+    if problems:
+        # Nothing else below can be trusted to mean anything on a bundle
+        # that is missing its basic shape.
+        return problems
+
+    problems += _ios_plist_problems(app, expected_plist=expected_plist)
+    problems += _ios_arch_problems(app, arch=arch)
+    return problems
+
+
+def _ios_required_entry_problems(app: Path) -> list[str]:
+    """The handful of things without which this is not a launchable ``.app``.
+
+    All at the bundle root or one level down — see the module-level layout
+    note above. ``pip-deps/`` is checked for existence, not contents: the
+    Build Python run script always creates it (even for a project with no
+    third-party dependencies beyond Kivy), and its absence means that script
+    never ran at all.
+    """
+    problems = []
+    if not (app / "Info.plist").is_file():
+        problems.append("Info.plist is missing")
+    if not (app / "Frameworks" / "Python.framework" / "Python").is_file():
+        problems.append(
+            "Frameworks/Python.framework/Python (the embedded CPython "
+            "runtime) is missing"
+        )
+    if not (app / "python" / "lib").is_dir():
+        problems.append("python/lib (the embedded runtime's own stdlib) is missing")
+    if not (app / "app").is_dir():
+        problems.append("app/ (the app payload) is missing")
+    if not (app / "pip-deps").is_dir():
+        problems.append(
+            "pip-deps/ is missing; the Build Python run script did not stage it"
+        )
+    return problems
+
+
+def _ios_plist_problems(
+    app: Path, *, expected_plist: dict[str, object] | None
+) -> list[str]:
+    plist_path = app / "Info.plist"
+    try:
+        with plist_path.open("rb") as fh:
+            plist = plistlib.load(fh)
+    except Exception as exc:  # noqa: BLE001 - report, don't crash the check
+        return [f"Info.plist does not parse: {exc}"]
+
+    problems = []
+    required_keys = (
+        "CFBundleIdentifier",
+        "CFBundleExecutable",
+        "CFBundleShortVersionString",
+        "CFBundleVersion",
+    )
+    for key in required_keys:
+        if not plist.get(key):
+            problems.append(f"Info.plist is missing (or has an empty) {key}")
+
+    executable = plist.get("CFBundleExecutable")
+    if executable and not (app / executable).is_file():
+        problems.append(
+            f"Info.plist CFBundleExecutable {executable!r} does not name a "
+            "file at the bundle root"
+        )
+
+    for key, want in sorted((expected_plist or {}).items()):
+        if plist.get(key) != want:
+            problems.append(
+                f"Info.plist {key} is {plist.get(key)!r}, but config declares {want!r}"
+            )
+    return problems
+
+
+def _ios_arch_problems(app: Path, *, arch: str) -> list[str]:
+    """Every Mach-O under the bundle must be *arch*, and only *arch*.
+
+    Walks the whole tree, same breadth as ``_macos_arch_problems`` — the root
+    executable, ``Frameworks/Python.framework``, and every one of the (often
+    100+) per-extension-module frameworks ``install_python`` hoisted out of
+    ``app/``/``pip-deps/``/``python/lib`` (see the module-level note). The
+    ``.fwork`` stubs those hoists leave behind are plain text, not Mach-O, so
+    they fall out through the same ``MachoError`` skip as any other non-binary
+    file. A host-arch binary leaking into a cross-build is the item-1-shaped
+    bug this exists to catch, on the one platform where the *default*
+    simulator arch already varies by host.
+    """
+    expected = IOS_ARCH_MACHINES[arch]
+    problems: list[str] = []
+    for path in sorted(app.rglob("*")):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            head = path.read_bytes()[:8]
+        except OSError:
+            continue
+        try:
+            cpu_type = read_macho_cpu_type(head)
+        except MachoError:
+            continue  # not a Mach-O (or a 32-bit/fat one we don't parse) — skip
+        if cpu_type != expected:
+            rel = path.relative_to(app).as_posix()
+            problems.append(
+                f"{rel} is {cpu_type_name(cpu_type)} but this build is {arch} — "
+                "a host or cross-arch binary leaked into the bundle"
+            )
     return problems
 
 

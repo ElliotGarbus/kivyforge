@@ -113,6 +113,25 @@ def pytest_addoption(parser):
         "built from; supplies the Info.plist keys config decides.",
     )
     group.addoption(
+        "--ios-app",
+        default=None,
+        help="Path to a built .app (simulator or device) to run the T3 "
+        "artifact assertions against.",
+    )
+    group.addoption(
+        "--ios-arch",
+        default="arm64",
+        help="Mach-O arch the .app was built for (default: arm64).",
+    )
+    group.addoption(
+        "--ios-project",
+        default=None,
+        help="Path to the project directory whose pyproject.toml the .app was "
+        "built from; supplies the Info.plist keys config decides. No "
+        "--ios-stripped option exists: iOS strip_source cannot be exercised "
+        "honestly yet (see tests/artifact_checks.py's iOS module note).",
+    )
+    group.addoption(
         "--linux-appimage",
         default=None,
         help="Path to a built .AppImage to run the T3 artifact assertions against.",

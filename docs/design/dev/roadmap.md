@@ -50,9 +50,11 @@ known-unverified list.
   (a real bug found and fixed along the way — see item 5), signing/
   provisioning got a real user-report repro and fix on 2026-09-21, and the
   simulator path is now a CI job (`ios_simulator`, 2026-09-23) rather than
-  first-party-only. What is still unproven is `strip_source` (blocked on a
-  final CPython 3.15, not on Mac access — see above) and any T3 on the built
-  `.app`/`.ipa` (no harness exists yet, unlike macOS/Android).
+  first-party-only, and that same job gained a T3 pass the same day
+  (`ios_app_problems` — required entries, Mach-O arch, `Info.plist` vs.
+  config; test-matrix.md §5.1). What is still unproven is `strip_source`
+  (blocked on a final CPython 3.15, not on Mac access — see above); no
+  checker covers it because there is nothing honest to run one against.
 - **Item 4 is done (2026-09-17), on a Pi 5 only.** Cross-build T2+T3 on WSL2,
   then the same AppImage launched on a Raspberry Pi 5 Model B Rev 1.1
   (Debian 13 / labwc, Broadcom V3D). HDMI: Dice Roller rendered. A Pi 4
@@ -325,7 +327,7 @@ known-unverified list.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *T0–T4 all run in CI as of 2026-09-23, including Android T3 from a Windows host (§5.2). Remaining: an iOS T3 harness, and a runnable hardware checklist* | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T0–T3 all run in CI for every platform as of 2026-09-23, including Android T3 from a Windows host (§5.2) and the iOS T3 harness. Remaining: only a runnable hardware checklist* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -1508,8 +1510,9 @@ item 3's JSON output to assert against.
   (`kivy-mobile-wheels`, test-matrix.md §3.2), this bullet just hadn't been
   revisited since. `build -p ios --simulator` (T2) then `run -p ios
   --simulator --no-build` (T4) against `hello-kivy`, plus a screenshot
-  artifact for a human to glance at — no T3 harness for iOS exists yet, so
-  this proves what the bullet actually asked for and no more.
+  artifact for a human to glance at — the T3 harness the job lacked at the
+  time this bullet was written landed later the same day (§5.1); this
+  bullet's own scope was T2 + T4 only, which is what it proved.
 - **A small fixture-app set** rather than testing against the full 11 examples:
   one minimal app per target plus one that exercises native binaries, wheels
   with extension modules, icons, and `strip_source`. Full-example builds stay
@@ -1670,8 +1673,15 @@ and R8 rather than only the load model — the tier that would have caught item
 
 What is left against this condition is narrower than the condition sounds:
 
-- **iOS has T2 and T4 but no T3**, because no iOS artifact-check harness
-  exists yet (§5.1). The other four platforms have all of T0–T3.
+- ~~**iOS has T2 and T4 but no T3**, because no iOS artifact-check harness
+  exists yet (§5.1). The other four platforms have all of T0–T3.~~ — **done
+  2026-09-23.** `ios_app_problems` covers required entries, a whole-bundle
+  Mach-O arch sweep, and `Info.plist` vs. config, wired into `ios_simulator`
+  the same day it was written (`ios-t3-checks-prompt.md`,
+  `ios-t3-checks-findings.md`). Every platform now has T0–T3 in CI.
+  **Narrower than the other four's, deliberately:** no stripped/`.pyc`-magic
+  check — iOS `strip_source` still cannot be exercised honestly (every
+  example pins a CPython 3.15 pre-release; see below).
   *(An earlier version of this bullet said the iOS job was "waiting on
   published wheels". Those wheels shipped 2026-07-27; the bullet had simply
   not been revisited, and repeating it kept a non-blocker looking like a
@@ -1694,18 +1704,20 @@ What is left against this condition is narrower than the condition sounds:
   item 5's "manual checklist becomes runnable" bullet.
 
 So item 5 is blocked on nothing and has no large piece left. After
-2026-09-23 the list is **an iOS T3 harness and the runnable hardware
-checklist** — the second of which is the "done when" clause's other half.
+2026-09-23 the iOS T3 harness above is also done, so what remains is
+**only the runnable hardware checklist** — the "done when" clause's other
+half.
 
-The iOS harness is spec'd for the Mac in
-[`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md), with one thing worth
-knowing before scheduling it: **its value is currently capped by an external
+The iOS harness that closed the bullet above was spec'd for the Mac in
+[`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md) and built the same day
+(findings: [`ios-t3-checks-findings.md`](ios-t3-checks-findings.md)), with one
+thing that stayed true throughout: **its value was capped by an external
 blocker.** iOS `strip_source` cannot run while every example pins
 `3.15.0b4`, so the stripping and `.pyc`-magic checks — the highest-value
-ones on the other four platforms — are out of scope until a final 3.15 iOS
-xcframework exists. The harness is still worth building for arch,
-`Info.plist`-vs-config and signature coverage; just do not expect it to buy
-what the Android and desktop checkers bought.
+ones on the other four platforms — stayed out of scope; a final 3.15 iOS
+xcframework would remove that cap. The harness still ships arch,
+`Info.plist`-vs-config and signature coverage; it does not buy what the
+Android and desktop checkers bought.
 
 ---
 

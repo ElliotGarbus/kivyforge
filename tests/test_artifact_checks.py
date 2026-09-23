@@ -57,6 +57,8 @@ from tests.artifact_checks import (
     android_apk_problems,
     android_manifest_problems,
     apksigner_report_problems,
+    ios_app_problems,
+    ios_expected_plist,
     linux_appdir_problems,
     linux_appimage_file_problems,
     macos_app_problems,
@@ -1291,6 +1293,234 @@ class TestMacosRequiredEntries:
         shutil.rmtree(app / "Contents/Resources/app")
         problems = _check_macos(app)
         assert any("app payload" in p for p in problems)
+
+
+# ---------------------------------------------------------------------------
+# iOS
+# ---------------------------------------------------------------------------
+#
+# The fixture is deliberately flat (no ``Contents/``) — see
+# ``artifact_checks.py``'s iOS module note and ios-t3-checks-findings.md's
+# Step 0 dump, which is what this shape is read off. No stripped/pyc-magic
+# variant exists here, for the same reason ``ios_app_problems`` takes no
+# ``stripped`` parameter: there is nothing honest to write a test against yet.
+
+
+def _ios_app(
+    tmp_path: Path,
+    *,
+    name: str = "Test.app",
+    arch: int = CPU_TYPE_ARM64,
+    executable: str = "test-app",
+    bundle_id: str = "org.example.test",
+    version: str = "1.0",
+    build: str = "1",
+) -> Path:
+    app = tmp_path / name
+    (app / "Frameworks" / "Python.framework").mkdir(parents=True)
+    (app / "python" / "lib" / "python3.15").mkdir(parents=True)
+    (app / "app").mkdir(parents=True)
+    (app / "pip-deps").mkdir(parents=True)
+
+    (app / executable).write_bytes(_macho(arch))
+    (app / "Frameworks" / "Python.framework" / "Python").write_bytes(_macho(arch))
+    (app / "app" / "main.py").write_text("x = 1\n")
+
+    plist = {
+        "CFBundleIdentifier": bundle_id,
+        "CFBundleExecutable": executable,
+        "CFBundleShortVersionString": version,
+        "CFBundleVersion": build,
+    }
+    with (app / "Info.plist").open("wb") as fh:
+        plistlib.dump(plist, fh)
+
+    return app
+
+
+def _check_ios(app: Path, *, arch: str = "arm64", expected_plist=None):
+    return ios_app_problems(app, arch=arch, expected_plist=expected_plist)
+
+
+class TestIosCleanArtifacts:
+    def test_a_well_formed_app_has_no_problems(self, tmp_path):
+        app = _ios_app(tmp_path)
+        assert _check_ios(app) == []
+
+    def test_x86_64_is_checked_against_its_own_arch(self, tmp_path):
+        app = _ios_app(tmp_path, arch=CPU_TYPE_X86_64)
+        assert _check_ios(app, arch="x86_64") == []
+
+    def test_plist_matching_expected_values_passes(self, tmp_path):
+        app = _ios_app(tmp_path, bundle_id="org.kivy.demo")
+        assert (
+            _check_ios(app, expected_plist={"CFBundleIdentifier": "org.kivy.demo"})
+            == []
+        )
+
+
+class TestIosArch:
+    def test_a_host_binary_leaking_into_a_hoisted_framework_is_reported(self, tmp_path):
+        """The failure ``install_python`` hoisting exists to make impossible.
+
+        Every compiled extension module lives in its own
+        ``Frameworks/<name>.framework/<name>`` (see the module note) — so a
+        cross-arch leak there is exactly as real a bug as one in the root
+        executable, and the sweep has to reach it.
+        """
+        app = _ios_app(tmp_path, arch=CPU_TYPE_ARM64)
+        (app / "Frameworks" / "_ssl.framework").mkdir(parents=True)
+        (app / "Frameworks" / "_ssl.framework" / "_ssl").write_bytes(
+            _macho(CPU_TYPE_X86_64)
+        )
+        problems = _check_ios(app, arch="arm64")
+        assert any(
+            "Frameworks/_ssl.framework/_ssl is x86_64 but this build is arm64" in p
+            for p in problems
+        )
+
+    def test_a_fwork_stub_is_not_mistaken_for_a_binary(self, tmp_path):
+        """``.fwork`` stubs are plain text (a relative path), never Mach-O."""
+        app = _ios_app(tmp_path)
+        (app / "pip-deps" / "kivy").mkdir(parents=True)
+        (
+            app / "pip-deps" / "kivy" / "_clock.cpython-315-iphonesimulator.fwork"
+        ).write_text("Frameworks/kivy._clock.framework/kivy._clock\n")
+        assert _check_ios(app) == []
+
+    def test_a_non_macho_file_is_not_flagged(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "app" / "readme.txt").write_text("not a binary")
+        assert _check_ios(app) == []
+
+    def test_an_unknown_arch_fails_fast(self, tmp_path):
+        app = _ios_app(tmp_path)
+        assert _check_ios(app, arch="armv7") == [
+            "unknown arch 'armv7'; expected one of ['arm64', 'x86_64']"
+        ]
+
+
+class TestIosPlist:
+    def test_a_mismatched_bundle_id_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path, bundle_id="org.example.test")
+        problems = _check_ios(
+            app, expected_plist={"CFBundleIdentifier": "org.other.app"}
+        )
+        assert any("CFBundleIdentifier" in p and "org.other.app" in p for p in problems)
+
+    def test_every_expected_key_is_compared_not_just_the_first(self, tmp_path):
+        app = _ios_app(tmp_path, bundle_id="org.example.test")
+        problems = _check_ios(
+            app,
+            expected_plist={
+                "CFBundleIdentifier": "org.other.app",
+                "CFBundleShortVersionString": "9.9.9",
+                "MinimumOSVersion": "18.0",
+            },
+        )
+        assert len(problems) == 3, problems
+
+    def test_a_key_absent_from_the_plist_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        problems = _check_ios(app, expected_plist={"MinimumOSVersion": "16.0"})
+        assert any("MinimumOSVersion is None" in p for p in problems)
+
+    def test_keys_not_named_in_the_expectation_are_ignored(self, tmp_path):
+        app = _ios_app(tmp_path, bundle_id="org.example.test")
+        assert _check_ios(app, expected_plist={}) == []
+
+    def test_the_expected_plist_comes_from_the_production_builder(self):
+        """``ios_expected_plist`` must not grow its own copy of the key list.
+
+        Same reasoning as ``macos_expected_plist``'s own version of this test:
+        the point is that it is ``build_info_plist``'s output minus the one
+        build-time key, so a key added to the production builder is picked up
+        here for free.
+        """
+        config = load_config_from_text(
+            "[project]\n"
+            'name = "demo"\n'
+            'version = "2.3.4"\n'
+            "[tool.kivy]\n"
+            'app_dir = "src"\n'
+            'entry_point = "main"\n'
+            'display_name = "Demo App"\n'
+            "[tool.kivy.ios]\n"
+            "schema_version = 1\n"
+            'bundle_id = "org.kivy.demo"\n'
+            "build = 7\n"
+            "[tool.kivy.ios.python]\n"
+            'version = "3.15.0"\n',
+            require_ios=True,
+            require_macos=False,
+        )
+        expected = ios_expected_plist(config)
+        assert expected["CFBundleIdentifier"] == "org.kivy.demo"
+        assert expected["CFBundleShortVersionString"] == "2.3.4"
+        assert expected["CFBundleVersion"] == "7"
+        assert expected["CFBundleDisplayName"] == "Demo App"
+        # The one key a config-only caller cannot know is absent, not empty.
+        assert "CFBundleExecutable" not in expected
+
+    def test_an_executable_not_matching_any_file_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        plist_path = app / "Info.plist"
+        with plist_path.open("rb") as fh:
+            plist = plistlib.load(fh)
+        plist["CFBundleExecutable"] = "does-not-exist"
+        with plist_path.open("wb") as fh:
+            plistlib.dump(plist, fh)
+        problems = _check_ios(app)
+        assert any("does not name a file" in p for p in problems)
+
+    def test_an_unparseable_plist_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "Info.plist").write_bytes(b"not a plist")
+        problems = _check_ios(app)
+        assert any("does not parse" in p for p in problems)
+
+    def test_a_missing_required_key_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        plist_path = app / "Info.plist"
+        with plist_path.open("rb") as fh:
+            plist = plistlib.load(fh)
+        del plist["CFBundleVersion"]
+        with plist_path.open("wb") as fh:
+            plistlib.dump(plist, fh)
+        problems = _check_ios(app)
+        assert any("CFBundleVersion" in p for p in problems)
+
+
+class TestIosRequiredEntries:
+    def test_a_missing_info_plist_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "Info.plist").unlink()
+        problems = _check_ios(app)
+        assert any("Info.plist is missing" in p for p in problems)
+
+    def test_a_missing_runtime_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "Frameworks" / "Python.framework")
+        problems = _check_ios(app)
+        assert any("embedded CPython runtime" in p for p in problems)
+
+    def test_a_missing_stdlib_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "python")
+        problems = _check_ios(app)
+        assert any("embedded runtime's own stdlib" in p for p in problems)
+
+    def test_a_missing_app_payload_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "app")
+        problems = _check_ios(app)
+        assert any("app payload" in p for p in problems)
+
+    def test_a_missing_pip_deps_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "pip-deps")
+        problems = _check_ios(app)
+        assert any("pip-deps/ is missing" in p for p in problems)
 
 
 # ---------------------------------------------------------------------------
