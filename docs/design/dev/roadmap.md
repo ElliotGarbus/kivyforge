@@ -1697,6 +1697,16 @@ So item 5 is blocked on nothing and has no large piece left. After
 2026-09-23 the list is **an iOS T3 harness and the runnable hardware
 checklist** — the second of which is the "done when" clause's other half.
 
+The iOS harness is spec'd for the Mac in
+[`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md), with one thing worth
+knowing before scheduling it: **its value is currently capped by an external
+blocker.** iOS `strip_source` cannot run while every example pins
+`3.15.0b4`, so the stripping and `.pyc`-magic checks — the highest-value
+ones on the other four platforms — are out of scope until a final 3.15 iOS
+xcframework exists. The harness is still worth building for arch,
+`Info.plist`-vs-config and signature coverage; just do not expect it to buy
+what the Android and desktop checkers bought.
+
 ---
 
 ### 6. End-user docs (MkDocs Material → GitHub Pages)
