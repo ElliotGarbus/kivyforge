@@ -164,33 +164,39 @@ is the runner of the job named in it**, which is why this table comes first —
 | `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
 | `macos_integration` | macos | **3.13** | macOS T2 (two `clang` tests) |
-| `ios_simulator` | macos | `3.x` | iOS T2 + T4 (`build`/`run --simulator`, no T3 harness yet) |
+| `ios_simulator` | macos | **3.13** | iOS T2 + T4 (`build`/`run --simulator`, no T3 harness yet) |
 
-**Five jobs pin an exact minor, for two different reasons.** `android_gradle`
-*must*: its T3 magic-number check compares the APK's `.pyc` headers against the
-*runner's* `importlib.util.MAGIC_NUMBER`, so the runner's Python is part of the
-test definition, and `test_apk_artifact.py` fails naming the runner if they
-diverge. `linux_appimage`, `windows_onedir`, `macos_app` and — since
-2026-09-23, closing §5.8 — `macos_integration` pin for a different reason:
-each is the sole CI proof of its platform, so none should test whichever minor
-the image happens to ship. The three desktop *build* jobs' own magic checks
-need no pin, because each driver asks the artifact's **own staged
-interpreter** what magic it accepts, which a native build can always answer.
-Worth keeping straight: "pin it like Android does" is the wrong reason to pin
-a desktop job.
+**Seven jobs pin an exact minor, for two different reasons.** `android_gradle`
+and `android_emulator` *must*: the T3 magic-number check compares the APK's
+`.pyc` headers against the *runner's* `importlib.util.MAGIC_NUMBER`, so the
+runner's Python is part of the test definition (`test_apk_artifact.py` fails
+naming the runner if they diverge), and `android_emulator`'s `--release` leg
+byte-compiles with it. Both pin 3.14, the minor those projects ship.
 
-**What still floats, and why that is correct.** `lint`, `package`,
-`sdl_glue_sync`, `windows_launcher`, `windows_signing`, the two `revendor_*`
-jobs, and — unlike its `macos_integration` neighbor — `ios_simulator` stay on
-`3.x`. The first six are not the sole proof of a *platform*: they are
-cross-cutting checks, or they exercise a C toolchain and a signing tool whose
-behaviour does not turn on the Python minor. `ios_simulator` *is* the sole
-proof of its platform but §5.8's reasoning still does not reach it: that
-reasoning is about byte-compile magic numbers, and `ios_simulator` only runs
-`build`/`run`, never `package`/`strip_source` — there is no magic number at
-stake here to pin against, on iOS or anywhere else. §5.8 asked for the
-platform proofs *that byte-compile* to be pinned, not for everything to be,
-and pinning the rest would give up the early warning that floating buys.
+`linux_appimage`, `windows_onedir`, `macos_app`, `macos_integration` and
+`ios_simulator` pin 3.13 for the other reason: **each is the sole CI proof of
+its platform**, so none should test whichever minor the image happens to ship
+(§5.8). Their own magic checks need no pin — each desktop driver asks the
+artifact's **own staged interpreter** what magic it accepts, and iOS never
+byte-compiles at all on this path. Worth keeping straight: "pin it like
+Android does" is the wrong reason to pin one of these, and briefly cost
+`ios_simulator` its pin on the argument that no magic number was at stake
+— true, and beside the point.
+
+**Five jobs still float, and that is correct.** `lint`, `package`,
+`sdl_glue_sync`, `windows_launcher`, `windows_signing` and the two
+`revendor_*` jobs stay on `3.x`. None is the sole proof of a *platform*: they
+are cross-cutting checks, or they exercise a C toolchain and a signing tool
+whose behaviour does not turn on the Python minor. Pinning them would give up
+the early warning that floating buys, for nothing.
+
+**Every job that *is* the sole proof of a platform now pins** —
+`android_gradle`, `android_emulator`, `linux_appimage`, `windows_onedir`,
+`macos_app`, `macos_integration`, `ios_simulator`. That is §5.8's rule applied
+mechanically, which is the point of stating it that way: "is this the only job
+proving platform X?" needs no per-job judgment, whereas "does the host
+interpreter affect the artifact?" needs to know each platform's byte-compile
+path before you can answer.
 
 Local scripts are producers too, and rule 1 means they count only when a run is
 logged in §7: `examples/verify-windows-examples.ps1` (a real Windows
@@ -848,24 +854,34 @@ than ahead of them.
 
 ### 5.8 Pin the floating jobs — **done 2026-09-23**
 
-`macos_integration` was the last platform proof running `3.x`; it now pins
-3.13, matching `macos_app` so the two macOS jobs agree. With
-`android_gradle` (3.14), `linux_appimage`, `windows_onedir` and `macos_app`
-(3.13) already pinned, every job that is the sole CI proof of a platform now
-names its interpreter.
+**The rule, stated so it can be applied without re-deriving it: a job that is
+the sole CI proof of a platform pins an exact minor.** Nothing about
+byte-compilation, nothing about magic numbers — those are `android_gradle`'s
+separate and stronger reason. This rule is about *host drift*: an unpinned
+sole-platform-proof tests whichever minor the runner image happens to ship,
+so a break on one minor versus another is invisible, and the interpreter can
+change under us the way the MSVC toolset did three times (§7).
+
+All seven such jobs now pin — `android_gradle` and `android_emulator` (3.14,
+which they *must*, for the magic number), and `linux_appimage`,
+`windows_onedir`, `macos_app`, `macos_integration` and `ios_simulator` (3.13,
+for the rule above).
+
+**`ios_simulator` is worth recording, because it is where the two reasons got
+confused.** It landed unpinned, with a comment arguing that plain
+`build`/`run` never byte-compiles so the host minor "has nothing to match".
+That is correct and it is beside the point: it answers `android_gradle`'s
+argument, not this one. Every step of that job runs kivyforge itself under
+the host interpreter, and it is the only job exercising the iOS code paths
+against a real Xcode — exactly the invisibility this section was written
+about. Pinned 2026-09-23.
 
 **Deliberately still floating:** `lint`, `package`, `sdl_glue_sync`,
-`windows_launcher`, `windows_signing`, and the two `revendor_*` jobs. None is
+`windows_launcher`, `windows_signing` and the two `revendor_*` jobs. None is
 the sole proof of a platform — they are cross-cutting, or they exercise a C
-toolchain and a signing tool that do not turn on the Python minor. Pinning
-them would trade away the early warning floating buys for nothing. §3.1 states
-the split so "finish pinning the rest" does not look like leftover work.
-
-One exception, added after this section closed: `ios_simulator` (2026-09-23)
-*is* the sole CI proof of its platform and still floats. This section's
-argument does not apply to it — the argument is about byte-compile magic
-numbers, and `ios_simulator` only runs `build`/`run`, never `package`, so there
-is no magic number at stake to pin against. See §3.1.
+toolchain and a signing tool that do not turn on the Python minor — and
+pinning them would trade away the early warning floating buys. §3.1 states
+the split so "finish pinning the rest" does not read as leftover work.
 
 ### 5.9 Let doctor fail the Android job — **done 2026-09-23**
 

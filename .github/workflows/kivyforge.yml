@@ -920,13 +920,21 @@ jobs:
     steps:
     - name: Checkout kivyforge
       uses: actions/checkout@v6
-    - name: Set up Python
-      # No exact-minor requirement: unlike macos_app's byte-compile leg, plain
-      # `build`/`run` (as opposed to `package`) never byte-compiles, so the
-      # host Python's minor has nothing to match here.
+    - name: Set up Python 3.13
+      # Pinned for the §5.8 reason, not the byte-compile one. Correct that
+      # plain `build`/`run` never byte-compiles, so no *magic number* has to
+      # match here — but that is `android_gradle`'s argument, not §5.8's.
+      # §5.8 is about host drift: this is the only job that exercises the iOS
+      # code paths against a real Xcode, and every one of its steps runs
+      # kivyforge itself under this interpreter, so an iOS-path break on one
+      # minor versus another would be invisible while the image chooses.
+      #
+      # 3.13 matches macos_app and macos_integration, so all three macOS-runner
+      # jobs agree. The iOS *target* runtime is the vendored
+      # Python.xcframework and is unaffected by this.
       uses: actions/setup-python@v6
       with:
-        python-version: '3.x'
+        python-version: '3.13'
     - name: Install kivyforge
       run: |
         python -m pip install --upgrade pip
