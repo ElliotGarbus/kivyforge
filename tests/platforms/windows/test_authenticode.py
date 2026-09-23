@@ -12,11 +12,20 @@ because they are the same verification pointed at different files:
   assertions and gets the report parser itself under CI.
 * ``test_the_bundled_launcher_is_signed`` takes a built onedir bundle via
   ``--windows-onedir`` + ``--windows-project`` and verifies the launcher
-  *inside it* — the built-app half. `kivyforge package` signs exactly one
-  file (``_sign_launcher``: the launcher exe in the dist copy), so that file
-  is the whole of what there is to verify. No CI job builds a Windows bundle
-  yet (test-matrix.md §5.3, the desktop lock question), so this one is a
-  local gate until one exists.
+  *inside it*. `kivyforge package` signs exactly one file
+  (``_sign_launcher``: the launcher exe in the dist copy), so that file is
+  the whole of what there is to verify.
+
+  **This one is still local-only, but not for the reason it used to be.**
+  ``windows_onedir`` has built a Windows bundle on every push since
+  2026-09-22, and it *does* verify that bundle's launcher — through the
+  first test above, after signing it with a throwaway cert. What it cannot
+  exercise is this path, because this path requires a project that
+  configures ``[tool.kivy.windows.signing]``, and no fixture does: a per-run
+  thumbprint in a fixture's ``pyproject.toml`` would change its
+  ``pyproject_sha256`` and break the same job's ``lock --check``
+  (test-matrix.md §5.3). So this covers a real project that signs through
+  ``package`` itself, which CI has no way to be.
 
 Both skip without their options so a local `pytest` run stays green. The
 report parsing is hermetic and unit-tested in ``tests/test_artifact_checks.py``

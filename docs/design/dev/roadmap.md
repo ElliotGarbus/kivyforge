@@ -325,7 +325,7 @@ known-unverified list.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *T3 checks complete for all four platforms (§5.1 closed 2026-09-21); Android and Linux run in CI, Linux via the new `linux-gate` fixture 2026-09-22; macOS and Windows still need a build job each* | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T3 complete and in CI for all four platforms (§5.1 closed 2026-09-21; Linux/macOS/Windows build jobs all landed 2026-09-22). T4: iOS's simulator job landed 2026-09-23 — the "blocked on published wheels" premise was already stale, they'd shipped 2026-07-27. **§5.4's Android emulator job is what remains.*** | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |

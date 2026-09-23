@@ -162,26 +162,34 @@ is the runner of the job named in it**, which is why this table comes first —
 | `linux_appimage` | ubuntu | **3.13** | Linux T2 + T3 (`package` + AppImage assertions) |
 | `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
-| `macos_integration` | macos | `3.x` | macOS T2 (two `clang` tests) |
+| `macos_integration` | macos | **3.13** | macOS T2 (two `clang` tests) |
 | `ios_simulator` | macos | `3.x` | iOS T2 + T4 (`build`/`run --simulator`, no T3 harness yet) |
 
-**Four jobs pin an exact minor, for different (two) reasons.** `android_gradle`
+**Five jobs pin an exact minor, for two different reasons.** `android_gradle`
 *must*: its T3 magic-number check compares the APK's `.pyc` headers against the
 *runner's* `importlib.util.MAGIC_NUMBER`, so the runner's Python is part of the
 test definition, and `test_apk_artifact.py` fails naming the runner if they
-diverge. `linux_appimage`, `windows_onedir` and `macos_app` pin for the §5.8
-reason instead — each is the sole CI proof of its desktop platform, so it
-should not test whichever minor the image ships. Their own magic checks are
-anchored differently and need no pin: both drivers ask the artifact's **own
-staged interpreter** what magic it accepts, which a native build can always
-answer. Worth keeping straight, because "pin it like Android does" is the
-wrong reason to pin a desktop job.
-The `3.x` jobs (`macos_integration`, `ios_simulator`) float deliberately —
-neither byte-compiles (§5.8 does not apply: `ios_simulator` runs `build`/`run`,
-never `package`/`strip_source`), so there is no magic number at stake to pin
-against. `macos_integration` floating means the one thing that job proves is
-testing an unpinned interpreter (now that `macos_app` exists as the pinned
-macOS proof).
+diverge. `linux_appimage`, `windows_onedir`, `macos_app` and — since
+2026-09-23, closing §5.8 — `macos_integration` pin for a different reason:
+each is the sole CI proof of its platform, so none should test whichever minor
+the image happens to ship. The three desktop *build* jobs' own magic checks
+need no pin, because each driver asks the artifact's **own staged
+interpreter** what magic it accepts, which a native build can always answer.
+Worth keeping straight: "pin it like Android does" is the wrong reason to pin
+a desktop job.
+
+**What still floats, and why that is correct.** `lint`, `package`,
+`sdl_glue_sync`, `windows_launcher`, `windows_signing`, the two `revendor_*`
+jobs, and — unlike its `macos_integration` neighbor — `ios_simulator` stay on
+`3.x`. The first six are not the sole proof of a *platform*: they are
+cross-cutting checks, or they exercise a C toolchain and a signing tool whose
+behaviour does not turn on the Python minor. `ios_simulator` *is* the sole
+proof of its platform but §5.8's reasoning still does not reach it: that
+reasoning is about byte-compile magic numbers, and `ios_simulator` only runs
+`build`/`run`, never `package`/`strip_source` — there is no magic number at
+stake here to pin against, on iOS or anywhere else. §5.8 asked for the
+platform proofs *that byte-compile* to be pinned, not for everything to be,
+and pinning the rest would give up the early warning that floating buys.
 
 Local scripts are producers too, and rule 1 means they count only when a run is
 logged in §7: `examples/verify-windows-examples.ps1` (a real Windows
@@ -797,33 +805,69 @@ or generation tests rather than toolchain work — the model is
 `tests/test_message_encoding.py`, which turned a host-specific footgun into a
 static check over the source tree.
 
-### 5.7 Wire `requires_device`, or remove it
+### 5.7 Wire `requires_device`, or remove it — **removed 2026-09-23**
 
-Nothing uses it (§2). An opt-in marker with no tests behind it is a silent skip
-with extra steps: `KIVYFORGE_DEVICE_TESTS=1` currently enables nothing, and
-would keep reporting success after real device tests were added and broken.
-Either give it the ADB-driven checks from the 2026-09-13 device session or drop
-it until there is something to mark.
+Removed, which was the second of the two options this section offered. No test
+ever carried the marker, so `KIVYFORGE_DEVICE_TESTS=1` enabled nothing while
+implying that device coverage existed behind a flag — a silent skip with extra
+steps, and one that would have kept reporting success after real device tests
+were added and broken.
 
-### 5.8 Pin the floating jobs
+Wiring it instead would have meant writing ADB-driven tests speculatively, from
+a host with no device attached, which is how you get tests that pass because
+they assert nothing. Real device runs stay manual and logged in §7, where the
+2026-09-13 Pixel 8a session and the 2026-09-21 iPhone runs already are.
 
-`macos_integration` runs `python-version: '3.x'` (§3.1). It is the only macOS
-host in the system and it tests whichever minor the runner image happens to
-ship — so a macOS-specific break on 3.13 versus 3.14 is invisible, and the
-interpreter can change under us the way the MSVC toolset did (§7, three times).
-`android_gradle` pins 3.14 because its T3 check forced the issue; the same
-argument applies wherever a job is the sole proof of a platform.
+`tests/conftest.py` records the reasoning next to the two surviving markers: if
+ADB-driven tests are ever written, the marker comes back **with** them rather
+than ahead of them.
 
-### 5.9 Let doctor fail the Android job
+### 5.8 Pin the floating jobs — **done 2026-09-23**
 
-`android_gradle`'s doctor step is `continue-on-error: true`, with a documented
-reason: doctor reports the known-interim 4 KB-aligned Kivy wheel as a FAIL, so
-gating on it would fail every build. The reason is legitimate and the blast
-radius is not — **the job that exists to prove the Android toolchain currently
-ignores every diagnostic doctor produces**, including ones unrelated to that
-wheel. Narrow it to the known FAIL (allow-list that diagnostic, gate on the
-rest) rather than waiving the whole step, and the waiver disappears on its own
-when the wheel is fixed.
+`macos_integration` was the last platform proof running `3.x`; it now pins
+3.13, matching `macos_app` so the two macOS jobs agree. With
+`android_gradle` (3.14), `linux_appimage`, `windows_onedir` and `macos_app`
+(3.13) already pinned, every job that is the sole CI proof of a platform now
+names its interpreter.
+
+**Deliberately still floating:** `lint`, `package`, `sdl_glue_sync`,
+`windows_launcher`, `windows_signing`, and the two `revendor_*` jobs. None is
+the sole proof of a platform — they are cross-cutting, or they exercise a C
+toolchain and a signing tool that do not turn on the Python minor. Pinning
+them would trade away the early warning floating buys for nothing. §3.1 states
+the split so "finish pinning the rest" does not look like leftover work.
+
+One exception, added after this section closed: `ios_simulator` (2026-09-23)
+*is* the sole CI proof of its platform and still floats. This section's
+argument does not apply to it — the argument is about byte-compile magic
+numbers, and `ios_simulator` only runs `build`/`run`, never `package`, so there
+is no magic number at stake to pin against. See §3.1.
+
+### 5.9 Let doctor fail the Android job — **done 2026-09-23**
+
+The `continue-on-error: true` is gone; `android_gradle`'s doctor step now
+gates, like the three desktop jobs'.
+
+**The waiver turned out to be unnecessary rather than needing the allow-list
+this section proposed.** Its stated reason was that doctor reports the
+known-interim 4 KB-aligned Kivy wheel as a FAIL — true in general, but not at
+that point in the job: `_check_16k_alignment` runs only
+`if project_dir.is_dir()`, meaning the *generated* project, which the `build`
+step below has not created yet. The check is not passing there; it is not
+registered.
+
+Confirmed against a real run rather than inferred: the 2026-09-23
+`android_gradle` doctor step reports **0 FAIL and 2 WARN** (no device
+attached, no AVD), and doctor's exit code is
+`worst_status(results) is not Status.FAIL`, so WARNs never gated anyway. What
+the waiver actually bought was that the job which exists to prove the Android
+toolchain ignored *every* diagnostic doctor produced — the thing this section
+objected to.
+
+The workflow comment records the condition under which this reverses: if a
+future change stages jniLibs before the doctor step, the interim-wheel FAIL
+becomes reachable and the allow-list originally proposed here is the fix, not
+the blanket waiver.
 
 ### 5.10 Byte-compile the embedded stdlib at build time — **closed 2026-09-17**
 
@@ -998,6 +1042,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 
 | 2026-09-22 | All desktop gates (CI) | **CI failure + fix** | ubuntu / macos / windows runners | **`macos_app` went red on `main` with `HTTP Error 403: rate limit`**, at `kivyforge lock -p macos --check`. Not a code defect and not caused by the commit that triggered it: the same job passed on the same SHA in that commit's `pull_request` run. **Root cause:** `lock --check` re-resolves live, and the PBS lookup in `lock/wheelruntime/pbs_github.py` called `api.github.com` unauthenticated — 60 requests/hour per IP, against a `fetch()` that can spend 16 of them — while `push` and `pull_request` were running the same commit concurrently and sharing runner egress. **A tension worth naming:** `lock --check` was added to these gates *because* it is meaningful only against a committed lock, but it also makes a gate depend on a live third-party API every push, which cuts against the determinism the committed lock exists to provide. **Fixed three ways:** the fetcher now honors `GH_TOKEN`/`GITHUB_TOKEN` (5000/hour) and names that remedy when it sees a 403/429; the three desktop jobs pass the token Actions already provides; and `on: push` is limited to `main`, so a branch with an open PR no longer runs the whole matrix twice. Each of the first and third alone would have prevented it. **Process note, because it is the reusable lesson:** the failure was merged past because only the `pull_request` run was checked — two runs fire per branch push with an open PR, and a divergence between them is a signal, not noise. Re-running the failed job on `main` afterwards passed with zero failing jobs, confirming the transience. |
 | 2026-09-23 | iOS simulator `arm64` (`hello-kivy`) | T2 + T4 (local, then CI) | macOS 26.6.2, Xcode 26.6 | **Closes roadmap item 5's iOS bullet**, one day after all three desktop targets — the wheels it was "waiting on" had actually been published since 2026-07-27 (§3.2), so the delay was oversight, not a live blocker. Reused `examples/mobile/hello-kivy` directly rather than a new fixture, matching `android_gradle`'s choice: it is one of the three on-device-gate examples whose `pylock.ios.toml` is already committed. Proven locally before the CI job was written: `doctor -p ios` clean (2 expected `WARN`s only — byte-compile and privacy-manifest, neither iOS-simulator-specific), `lock -p ios --check` "up to date" with no `GITHUB_TOKEN` needed (iOS resolves against `kivy-mobile-wheels`' static index and python.org, not `api.github.com`, so the 2026-09-22 rate-limit fix does not apply here), `build -p ios --simulator` produced the `.app` in ~20 s, and `run -p ios --simulator --no-build` installed and launched it — with a screenshot confirming "Hello Kivy" rendered. **One real finding along the way:** `kivyforge run` invokes `simctl launch --console-pty`, which streams the app's console forever for a GUI app that keeps running — there is no "confirm launched, then exit" verb, so running it in a CI step's foreground would hang until the job timeout. Confirmed by reproducing the hang directly, then confirming the fix: background the command, wait 15 s, and treat "still running" as launch success / "exited early" as `simctl launch` having raised — verified both branches for real (the success path against a built app, the early-exit path by deleting the `.app` first and confirming the CLI's own `built app not found` message surfaces). No T3 harness exists for iOS (§5.1), so this job proves T2 + T4 only, exactly what the roadmap bullet asked for; a screenshot is uploaded every run for a human to glance at, since nothing automated reads its pixels. `git status` clean before committing (build artifacts and screenshot were never in the working tree, both gitignored/discarded). |
+
+| 2026-09-23 | CI hygiene (all jobs) | §5.7 + §5.8 + §5.9 closed | Windows 11 (authoring); evidence from the 2026-09-23 `main` run | Three small gaps closed together, each of the same shape — a check that could not fail. **§5.9:** `android_gradle`'s doctor step no longer waives itself. The waiver was protecting against a FAIL that cannot occur *there*: `_check_16k_alignment` runs only `if project_dir.is_dir()` (the **generated** project), which the `build` step below has not created yet, so the check is not registered rather than passing. Verified against the real run — 0 FAIL, 2 WARN (no device, no AVD) — and `ok = worst_status(results) is not Status.FAIL`, so WARNs never gated. **§5.8:** `macos_integration` pinned to 3.13, the last platform proof running `3.x`; the seven remaining floaters are cross-cutting jobs or ones exercising a C toolchain, and §3.1 now says so explicitly so nobody finishes the job by pinning them too. **§5.7:** `requires_device` removed rather than wired. No test ever carried it, so `KIVYFORGE_DEVICE_TESTS=1` enabled nothing while implying device coverage existed behind a flag; wiring it would have meant writing ADB tests from a host with no device, which is how tests that assert nothing get written. Device runs stay manual and logged here. |
 
 ### Known-unverified, stated plainly
 

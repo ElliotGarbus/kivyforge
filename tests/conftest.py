@@ -36,11 +36,6 @@ def _detect_symlink_support() -> bool:
 
 SYMLINKS_SUPPORTED = _detect_symlink_support()
 
-# Device tests drive real hardware, so they are opt-in rather than self-skipping:
-# there is no device in CI and never will be, and a marker that skips silently
-# everywhere is one nobody notices has stopped running.
-DEVICE_TESTS_ENABLED = bool(os.environ.get("KIVYFORGE_DEVICE_TESTS"))
-
 TOOLCHAIN_REQUIRED = bool(os.environ.get("KIVYFORGE_REQUIRE_TOOLCHAIN"))
 
 
@@ -194,25 +189,26 @@ def pytest_configure(config):
         "requires_windows: needs a Windows host (skipped elsewhere). Needing the "
         "MSVC toolset on top of that is requires_toolchain, below.",
     )
-    # The three below name the tiers in docs/design/dev/test-matrix.md, so that
+    # The two below name the tiers in docs/design/dev/test-matrix.md, so that
     # "which tier does CI actually run" is a `-m` expression rather than a
     # question about which job happens to invoke which paths.
+    #
+    # There was a third, `requires_device`, removed 2026-09-23 (test-matrix.md
+    # §5.7): no test ever carried it, so `KIVYFORGE_DEVICE_TESTS=1` enabled
+    # nothing while implying device coverage existed behind a flag. Real
+    # device runs are manual and logged in §7. If ADB-driven tests are ever
+    # written, reintroduce the marker *with* them rather than ahead of them.
     config.addinivalue_line(
         "markers",
-        "integration: not hermetic — needs a real toolchain, device, or network. "
-        'Implied by requires_toolchain and requires_device; `-m "not '
-        'integration"` is the hermetic suite.',
+        "integration: not hermetic — needs a real toolchain, artifact, or "
+        'network. Implied by requires_toolchain; `-m "not integration"` is the '
+        "hermetic suite.",
     )
     config.addinivalue_line(
         "markers",
         "requires_toolchain: shells out to a real external toolchain, and "
         "self-skips when it is absent — set KIVYFORGE_REQUIRE_TOOLCHAIN to make "
         "that a failure instead (see skip_missing_toolchain).",
-    )
-    config.addinivalue_line(
-        "markers",
-        "requires_device: drives real hardware; opt-in via KIVYFORGE_DEVICE_TESTS "
-        "because no CI runner has a device attached.",
     )
 
 
@@ -222,7 +218,6 @@ def pytest_collection_modifyitems(config, items):
     )
     skip_posix = pytest.mark.skip(reason="requires a POSIX host/shell")
     skip_windows = pytest.mark.skip(reason="requires a Windows host")
-    skip_device = pytest.mark.skip(reason="needs a device; set KIVYFORGE_DEVICE_TESTS")
     for item in items:
         if "requires_symlinks" in item.keywords and not SYMLINKS_SUPPORTED:
             item.add_marker(skip_symlinks)
@@ -230,10 +225,6 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_posix)
         if "requires_windows" in item.keywords and sys.platform != "win32":
             item.add_marker(skip_windows)
-        if "requires_device" in item.keywords:
-            item.add_marker(pytest.mark.integration)
-            if not DEVICE_TESTS_ENABLED:
-                item.add_marker(skip_device)
         if "requires_toolchain" in item.keywords:
             item.add_marker(pytest.mark.integration)
 
