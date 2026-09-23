@@ -163,21 +163,25 @@ is the runner of the job named in it**, which is why this table comes first —
 | `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
 | `macos_integration` | macos | `3.x` | macOS T2 (two `clang` tests) |
+| `ios_simulator` | macos | `3.x` | iOS T2 + T4 (`build`/`run --simulator`, no T3 harness yet) |
 
-**Three jobs pin an exact minor, for different (two) reasons.** `android_gradle`
+**Four jobs pin an exact minor, for different (two) reasons.** `android_gradle`
 *must*: its T3 magic-number check compares the APK's `.pyc` headers against the
 *runner's* `importlib.util.MAGIC_NUMBER`, so the runner's Python is part of the
 test definition, and `test_apk_artifact.py` fails naming the runner if they
-diverge. `linux_appimage` and `macos_app` pin for the §5.8 reason instead —
-each is the sole CI proof of its desktop platform, so it should not test
-whichever minor the image ships. Their own magic checks are anchored
-differently and need no pin: both drivers ask the artifact's **own staged
-interpreter** what magic it accepts, which a native build can always answer.
-Worth keeping straight, because "pin it like Android does" is the wrong reason
-to pin a desktop job and would mislead whoever adds the Windows one.
-The `3.x` jobs float deliberately-ish, but see §5.8 — `macos_integration`
-floating means the one thing that job proves is testing an unpinned
-interpreter (now that `macos_app` exists as the pinned macOS proof).
+diverge. `linux_appimage`, `windows_onedir` and `macos_app` pin for the §5.8
+reason instead — each is the sole CI proof of its desktop platform, so it
+should not test whichever minor the image ships. Their own magic checks are
+anchored differently and need no pin: both drivers ask the artifact's **own
+staged interpreter** what magic it accepts, which a native build can always
+answer. Worth keeping straight, because "pin it like Android does" is the
+wrong reason to pin a desktop job.
+The `3.x` jobs (`macos_integration`, `ios_simulator`) float deliberately —
+neither byte-compiles (§5.8 does not apply: `ios_simulator` runs `build`/`run`,
+never `package`/`strip_source`), so there is no magic number at stake to pin
+against. `macos_integration` floating means the one thing that job proves is
+testing an unpinned interpreter (now that `macos_app` exists as the pinned
+macOS proof).
 
 Local scripts are producers too, and rule 1 means they count only when a run is
 logged in §7: `examples/verify-windows-examples.ps1` (a real Windows
@@ -204,7 +208,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
 | Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | **local only** — `run --smoke` on an API-31 AVD, not CI | n/a | every push (T2/T3); 2026-07-27 (T4) |
 | iOS device `arm64` | `unit_tests` | **local** — `build -p ios --device`, `package -p ios --export-method development`, real iPhone14,3 | **none** | **local** — installed, launched, `hello-kivy` rendered on device | **manual** — first physical run, 2026-09-14 | 2026-09-14 |
-| iOS simulator `arm64` | `unit_tests` | **local** — `xcodebuild` via `build -p ios --simulator`, 6 examples | **none** | **local** — `simctl` launch, all 6 render | n/a | 2026-09-14 (regression re-check; no drift since 2026-07-27) |
+| iOS simulator `arm64` | `unit_tests` | `ios_simulator` — real `build -p ios --simulator` on every push (since 2026-09-23); previously local-only, 6 examples | **none** — no T3 harness exists for iOS yet (unlike macOS/Android) | `ios_simulator` — `run -p ios --simulator --no-build` install+launch, plus a screenshot artifact, on every push (since 2026-09-23); previously local only, all 6 examples render | n/a | every push (T2/T4, `hello-kivy` only); 2026-09-14 (regression re-check on all 6, local; no drift since 2026-07-27) |
 
 Legend for how a cell was proven, because "covered" hides the difference:
 **CI** = re-proven every push; **local** = a first-party run on a maintainer's
@@ -273,7 +277,14 @@ line instead of reading the findings — was wrong.
 
 The old claim that iOS was blocked on the `Python.xcframework` and wheels being
 published is also stale: all six examples now resolve from the
-`kivy-mobile-wheels` index.
+`kivy-mobile-wheels` index. **As of 2026-09-23 that blocker's own removal has
+finally been acted on**: `ios_simulator` runs `build -p ios --simulator` (T2)
+and `run -p ios --simulator --no-build` (T4) against `hello-kivy` every push,
+with a screenshot uploaded for a human to glance at. Only `hello-kivy`, not all
+six — a small fixture-app footprint is the deliberate choice item 5 itself made
+(full-example builds stay a local/nightly cost, not a per-push one), the same
+choice `android_gradle`/`linux_appimage`/`macos_app` already made for their
+platforms.
 
 **iOS got its first physical-device run 2026-09-14.** `build -p ios --device`,
 `run -p ios --device`, and `package -p ios --export-method development` all
@@ -678,8 +689,17 @@ recipe `windows_signing` already proves) and verifies it through
 `test_authenticode.py`. That is §5.1's "on a *built app* rather than on the
 vendored launcher", finally satisfied.
 
-All three desktop targets now have a build job. What is left is §5.4's Android
-emulator T4 and the iOS simulator job waiting on published wheels.
+All three desktop targets now have a build job. ~~What is left is §5.4's
+Android emulator T4 and the iOS simulator job waiting on published wheels.~~
+The iOS half is also done, one day later than this section's own "2026-09-22"
+heading suggests: `ios_simulator` landed 2026-09-23 (§3.1, §3.2) — the wheels
+it was supposedly still waiting on had actually been published since
+2026-07-27 (§3.2 above), so this was unbuilt work, not a live blocker, by the
+time this very paragraph was last edited. What is left is §5.4's Android
+emulator T4, which needs an actual AVD in CI rather than the simulator-only
+proof `ios_simulator` gets away with (a real iOS simulator ships in the
+`macos-latest` image; Android's emulator does not ship pre-booted the same
+way).
 
 <details>
 <summary>The original framing, kept because the reasoning it records is still
@@ -977,6 +997,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-22 | Windows `amd64` (`windows-gate` fixture) | T2 + T3 (local, then CI) | Windows 11, Python 3.13.1 host / 3.13.14 staged | **The desktop set completed** (§5.3): `windows_onedir` joins `linux_appimage` and `macos_app`, so all three desktop targets now build in CI. New fixture with a committed `pylock.windows.toml` — 94 lines, 7 packages (Kivy 2.3.1 `win_amd64` cp313, `kivy_deps.{sdl2,glew,angle}`, `pywin32`/`pypiwin32`, `filetype`) plus the PBS 3.13.14 runtime. Proven locally before the job was written: `doctor -p windows` exit 0 with the signtool and certificate checks **SKIP**ping on an unsigned fixture (so the step gates without a waiver, same as Linux and macOS), `lock -p windows --check` "up to date", `package -p windows` 45 s to a `.pyc`-only onedir bundle, and `test_onedir_artifact.py` 1 passed against it. **Negative control:** `--windows-arch arm64` names the SDL2 DLLs, the tcl DLLs, `vcruntime140.dll`, the `.pyd` extension modules and the launcher itself — which is why this fixture depends on Kivy rather than being dependency-free. **Partially validated, stated plainly:** the signature step's *reject* half was verified locally (the driver correctly fails the built, unsigned launcher with "No signature found"), but the sign-then-pass half was **not** run here — it needs a self-signed cert imported into the machine trust store, which is not a change to make on a dev box. It reuses `windows_signing`'s already-green recipe verbatim; first real execution is its first CI run. |
 
 | 2026-09-22 | All desktop gates (CI) | **CI failure + fix** | ubuntu / macos / windows runners | **`macos_app` went red on `main` with `HTTP Error 403: rate limit`**, at `kivyforge lock -p macos --check`. Not a code defect and not caused by the commit that triggered it: the same job passed on the same SHA in that commit's `pull_request` run. **Root cause:** `lock --check` re-resolves live, and the PBS lookup in `lock/wheelruntime/pbs_github.py` called `api.github.com` unauthenticated — 60 requests/hour per IP, against a `fetch()` that can spend 16 of them — while `push` and `pull_request` were running the same commit concurrently and sharing runner egress. **A tension worth naming:** `lock --check` was added to these gates *because* it is meaningful only against a committed lock, but it also makes a gate depend on a live third-party API every push, which cuts against the determinism the committed lock exists to provide. **Fixed three ways:** the fetcher now honors `GH_TOKEN`/`GITHUB_TOKEN` (5000/hour) and names that remedy when it sees a 403/429; the three desktop jobs pass the token Actions already provides; and `on: push` is limited to `main`, so a branch with an open PR no longer runs the whole matrix twice. Each of the first and third alone would have prevented it. **Process note, because it is the reusable lesson:** the failure was merged past because only the `pull_request` run was checked — two runs fire per branch push with an open PR, and a divergence between them is a signal, not noise. Re-running the failed job on `main` afterwards passed with zero failing jobs, confirming the transience. |
+| 2026-09-23 | iOS simulator `arm64` (`hello-kivy`) | T2 + T4 (local, then CI) | macOS 26.6.2, Xcode 26.6 | **Closes roadmap item 5's iOS bullet**, one day after all three desktop targets — the wheels it was "waiting on" had actually been published since 2026-07-27 (§3.2), so the delay was oversight, not a live blocker. Reused `examples/mobile/hello-kivy` directly rather than a new fixture, matching `android_gradle`'s choice: it is one of the three on-device-gate examples whose `pylock.ios.toml` is already committed. Proven locally before the CI job was written: `doctor -p ios` clean (2 expected `WARN`s only — byte-compile and privacy-manifest, neither iOS-simulator-specific), `lock -p ios --check` "up to date" with no `GITHUB_TOKEN` needed (iOS resolves against `kivy-mobile-wheels`' static index and python.org, not `api.github.com`, so the 2026-09-22 rate-limit fix does not apply here), `build -p ios --simulator` produced the `.app` in ~20 s, and `run -p ios --simulator --no-build` installed and launched it — with a screenshot confirming "Hello Kivy" rendered. **One real finding along the way:** `kivyforge run` invokes `simctl launch --console-pty`, which streams the app's console forever for a GUI app that keeps running — there is no "confirm launched, then exit" verb, so running it in a CI step's foreground would hang until the job timeout. Confirmed by reproducing the hang directly, then confirming the fix: background the command, wait 15 s, and treat "still running" as launch success / "exited early" as `simctl launch` having raised — verified both branches for real (the success path against a built app, the early-exit path by deleting the `.app` first and confirming the CLI's own `built app not found` message surfaces). No T3 harness exists for iOS (§5.1), so this job proves T2 + T4 only, exactly what the roadmap bullet asked for; a screenshot is uploaded every run for a human to glance at, since nothing automated reads its pixels. `git status` clean before committing (build artifacts and screenshot were never in the working tree, both gitignored/discarded). |
 
 ### Known-unverified, stated plainly
 
@@ -1003,11 +1024,19 @@ Linux say whether it was WSL2 or bare metal (§4).
   error) — but that run had no CLI path to screenshot the device, so it is
   launch-confirmed, not render-confirmed the way the simulator legs of both
   dates are. Still local and by hand both times, not standing coverage.
-- Nothing iOS in CI: both the simulator and device coverage above are local and
-  unrepeated in CI, so none of it proves a continuously-checked tree.
+- ~~Nothing iOS in CI: both the simulator and device coverage above are local
+  and unrepeated in CI, so none of it proves a continuously-checked
+  tree.~~ — **partly done 2026-09-23**: the simulator leg (`build`/`run
+  --simulator` on `hello-kivy`) is now `ios_simulator`, every push (§3.1,
+  §3.2, §5.3). The device leg stays local-only, permanently — no CI runner
+  has a physical iPhone attached, the same reason Android's `arm64_v8a` row
+  is `manual` rather than CI.
 - No T3 for iOS: nothing inspects a built `.app`/`.ipa` — not its `Info.plist`,
   not its Mach-O arch, not whether `strip_source` did anything. (macOS gained a
   T3 driver 2026-09-14 — see below — but nothing analogous exists for iOS yet.)
+  Still true after `ios_simulator`: that job proves T2 (build) and T4 (launch),
+  deliberately not T3 — no harness exists to write into it yet, and roadmap
+  item 5 asked for exactly this narrower thing ("Add an iOS simulator job...").
 - ~~Any `kivyforge build` for Linux, macOS, **or Windows**: never run in
   CI~~ — **done 2026-09-22, all three**: `linux_appimage`, `macos_app`, and
   `windows_onedir` each run `kivyforge build`/`package` for their platform on

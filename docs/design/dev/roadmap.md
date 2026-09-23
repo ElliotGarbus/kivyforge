@@ -15,8 +15,12 @@
 
 Phase B (byte-compile / `strip_source`) is implemented across Android, the
 three desktop backends, and iOS, and is validated on a real Windows release
-build **and on Android** (Pixel 8a, 2026-09-13 — see item 1). iOS is still
-unvalidated, and needs a Mac.
+build **and on Android** (Pixel 8a, 2026-09-13 — see item 1). iOS
+`strip_source` is still unvalidated — not for lack of a Mac (there has been
+one since 2026-09-14) but because it needs a final CPython 3.15, which has not
+shipped yet (latest upstream tag as of 2026-09-23 is `v3.15.0rc2`); see the
+"iOS `strip_source`" entry in [`test-matrix.md`](test-matrix.md)'s
+known-unverified list.
 
 - **Item 1 is done (2026-09-13).** CPython 3.14.7 (64-bit) is installed, Android
   `strip_source` has produced a real `.pyc`-only bundle that runs on a Pixel 8a,
@@ -38,12 +42,17 @@ unvalidated, and needs a Mac.
   because `android_gradle` was already building the stripped release APK that
   item 1's bug would have corrupted and never inspecting it. Item 1's failure mode
   is now a CI gate.
-- **iOS is validated on the simulator and nowhere else** — corrected 2026-09-14,
-  because both this file and the matrix had drifted into implying nothing iOS had
-  ever run. `build`/`run -p ios --simulator` are green and all six iOS examples
-  render, as first-party local runs in July. What is unproven is `strip_source`,
-  any physical device, signing/provisioning, and any T3 on the built `.app` — and
-  no amount of Windows-side work changes that: it needs the Mac.
+- ~~iOS is validated on the simulator and nowhere else~~ — corrected
+  2026-09-14, because both this file and the matrix had drifted into implying
+  nothing iOS had ever run: `build`/`run -p ios --simulator` were green and
+  all six iOS examples rendered, as first-party local runs in July. Overtaken
+  the same day and since: a physical device followed within 2026-09-14 itself
+  (a real bug found and fixed along the way — see item 5), signing/
+  provisioning got a real user-report repro and fix on 2026-09-21, and the
+  simulator path is now a CI job (`ios_simulator`, 2026-09-23) rather than
+  first-party-only. What is still unproven is `strip_source` (blocked on a
+  final CPython 3.15, not on Mac access — see above) and any T3 on the built
+  `.app`/`.ipa` (no harness exists yet, unlike macOS/Android).
 - **Item 4 is done (2026-09-17), on a Pi 5 only.** Cross-build T2+T3 on WSL2,
   then the same AppImage launched on a Raspberry Pi 5 Model B Rev 1.1
   (Debian 13 / labwc, Broadcom V3D). HDMI: Dice Roller rendered. A Pi 4
@@ -690,9 +699,14 @@ shipping source with *"no final CPython 3.15 found (this project ships
 3.15.0b4)"*, and **every iOS example in the repo pins `3.15.0b4`** — all seven
 were checked. Byte-compilation needs a *final* interpreter, so iOS
 `strip_source` is not merely unexercised but **currently unexercisable here**
-until CPython 3.15 ships (~Oct 2026) or an example is deliberately pinned to an
-already-final minor. See
-[`macos-ios-validation-findings.md`](macos-ios-validation-findings.md) §4.
+until CPython 3.15 ships final. Unlike macOS/Linux/Windows, "pin an example to
+an already-final minor instead" is not an available workaround: python.org's
+official iOS `XCframework` artifact only exists from `3.15.0b1` onward
+(confirmed against `docs/design/platforms/ios/02-pylock-ios-spec.md` and
+`kivyforge/platforms/ios/lock/builder.py`, whose sole provider is
+`PythonOrgProvider`), so there is no older final minor to pin to — the wait is
+unconditional. As of 2026-09-23 the latest upstream tag is still `v3.15.0rc2`.
+See [`macos-ios-validation-findings.md`](macos-ios-validation-findings.md) §4.
 
 The one thing that mattered most in that attempt did pass: `<app>-ios/app` was
 materialised as a **real directory copy, not a symlink**, and the working tree
@@ -1488,8 +1502,14 @@ item 3's JSON output to assert against.
   AppImage (cross, T2+T3) — item 4 has landed, this job is unblocked, it is
   still not in CI. Add an Android emulator job for
   T4 — CI deliberately skips the emulator today, and `run --smoke` already
-  exists to be driven. Add an iOS simulator job on the macOS runner when the
-  wheels it waits on are published.
+  exists to be driven. ~~Add an iOS simulator job on the macOS runner when the
+  wheels it waits on are published.~~ **Done 2026-09-23** as `ios_simulator`
+  — the wheels' own blocker had already been lifted 2026-07-27
+  (`kivy-mobile-wheels`, test-matrix.md §3.2), this bullet just hadn't been
+  revisited since. `build -p ios --simulator` (T2) then `run -p ios
+  --simulator --no-build` (T4) against `hello-kivy`, plus a screenshot
+  artifact for a human to glance at — no T3 harness for iOS exists yet, so
+  this proves what the bullet actually asked for and no more.
 - **A small fixture-app set** rather than testing against the full 11 examples:
   one minimal app per target plus one that exercises native binaries, wheels
   with extension modules, icons, and `strip_source`. Full-example builds stay

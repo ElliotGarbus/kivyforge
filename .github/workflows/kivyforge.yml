@@ -748,9 +748,12 @@ jobs:
 
   # macOS integration: the full suite runs here too (pbxproj generation and
   # xcodebuild/simctl command construction get real-macOS coverage). The live
-  # `kivyforge build --simulator` / `kivyforge run` smoke test against a
-  # pure-Python app on the BeeWare runtime is wired in once the iOS
-  # Python.xcframework + wheels are published (spec 03/04).
+  # `kivyforge build --simulator` / `kivyforge run` smoke test against a real
+  # iOS app is `ios_simulator`, below — it was deferred here pending the iOS
+  # Python.xcframework + wheels being published (spec 03/04); that happened
+  # 2026-07-27 (test-matrix.md §3.2), so this job now exists as its own step
+  # rather than folded into this one, mirroring how `macos_app` sits beside
+  # this job instead of inside it.
   macos_integration:
     name: Integration (macOS)
     runs-on: macos-latest
@@ -772,3 +775,104 @@ jobs:
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
       run: pytest -q
+
+  # The iOS simulator gate: roadmap item 5 asked for this "when the wheels it
+  # waits on are published" — they were, 2026-07-27, and this closes that out.
+  # No signing, no cert, no team_id: --simulator never signs (spec 05), so
+  # this needs nothing a CI runner doesn't already have, the same reason
+  # macos_app needs no certificate for its ad-hoc floor.
+  #
+  # This runs `examples/mobile/hello-kivy` directly rather than a
+  # tests/fixtures/apps fixture, the same choice android_gradle made:
+  # hello-kivy is one of the three on-device gate examples whose
+  # pylock.ios.toml is deliberately committed (AGENTS.md, this example's own
+  # .gitignore) specifically so a CI job has a determinate lock to build
+  # from without re-resolving it.
+  #
+  # There is no T3 harness for iOS yet (test-matrix.md, "Known-unverified" —
+  # nothing inspects a built .app/.ipa's Info.plist or Mach-O arch the way
+  # tests/platforms/{macos,android}/test_*_artifact.py do for their
+  # platforms). Building that is separable, larger, out-of-repo-precedent
+  # work; this job proves the T2 build and the T4 launch smoke the roadmap
+  # bullet actually asked for, plus a screenshot for a human to glance at
+  # (no CLI or CI checker actually looks at pixels).
+  ios_simulator:
+    name: iOS Simulator (build + run)
+    runs-on: macos-latest
+    env:
+      APP_DIR: examples/mobile/hello-kivy
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python
+      # No exact-minor requirement: unlike macos_app's byte-compile leg, plain
+      # `build`/`run` (as opposed to `package`) never byte-compiles, so the
+      # host Python's minor has nothing to match here.
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Doctor (iOS)
+      # Gating, deliberately. auto_signing = true and an empty
+      # provisioning_profile/entitlements set means every signing-related
+      # check PASSes or SKIPs on a bare runner — nothing here needs a waiver.
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge doctor -p ios
+    - name: Verify the committed lock still matches pyproject.toml
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge lock -p ios --check
+    - name: Build for the simulator (T2)
+      working-directory: ${{ env.APP_DIR }}
+      run: kivyforge build -p ios --simulator
+    - name: Install + launch on the simulator (T4 launch smoke)
+      # resolve_simulator_destination boots a default device itself when none
+      # is running, so this needs no prior `simctl boot` step.
+      #
+      # Backgrounded rather than run in the foreground: `simctl launch`'s
+      # `--console-pty` (kivyforge/platforms/ios/xcode/runner.py) streams the
+      # app's console forever once it launches — correct for a human watching
+      # a real device, but there is no "confirm launched, then detach" verb,
+      # so a foreground run here would never return and the step would hang
+      # until the job timeout. Still running after the wait is the launch
+      # succeeding; exiting early is `simctl launch` raising, exactly as it
+      # would have printed in the foreground. Confirmed locally (2026-09-23)
+      # against a real `iPhone Air` simulator before writing it this way.
+      working-directory: ${{ env.APP_DIR }}
+      run: |
+        kivyforge run -p ios --simulator --no-build > run.log 2>&1 &
+        run_pid=$!
+        sleep 15
+        if ! kill -0 "$run_pid" 2>/dev/null; then
+          echo "kivyforge run exited early -- install or launch failed:"
+          cat run.log
+          exit 1
+        fi
+        echo "Still running after 15s (installed and launched):"
+        cat run.log
+    - name: Screenshot the running app
+      # Confirms the T4 bar test-matrix.md names — "the app reaches its first
+      # frame" — visually, the same evidence the local validation sessions
+      # captured by hand (ios-validation-findings.md and friends). No
+      # assertion reads this file; it is for a human to open from the run.
+      working-directory: ${{ env.APP_DIR }}
+      run: |
+        sleep 3
+        xcrun simctl io booted screenshot hello-kivy-simulator.png
+    - name: Upload the simulator screenshot
+      if: always()
+      uses: actions/upload-artifact@v6
+      with:
+        name: ios-simulator-screenshot
+        path: ${{ env.APP_DIR }}/hello-kivy-simulator.png
+        if-no-files-found: ignore
+    - name: Upload the generated project on failure (for triage)
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: ios-generated-project
+        path: |
+          ${{ env.APP_DIR }}/hello-kivy-ios/hello-kivy.xcodeproj/project.pbxproj
+          ${{ env.APP_DIR }}/hello-kivy-ios/build/DerivedData/Build/Products/**/Info.plist
