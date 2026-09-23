@@ -297,14 +297,17 @@ and **`strip_source`**, which is not merely unrun but currently *unrunnable*:
 structural gap general to the whole platform, not a gap in any one example or
 test.
 
-**macOS as a *target* is no longer the empty half.** No CI job runs
-`kivyforge build -p macos`, but the maintainer has been building,
-signing, and notarizing `dice-roller` by hand since July 2026, and 2026-09-14
-turned that into logged evidence (§7) plus an automated T3 check (§5.1) that
-passed against the real artifact. What's left is making that CI-shaped: a
-`macos_integration`-adjacent job that actually runs `kivyforge build -p macos`
-and points `--macos-app` at the result, rather than relying on a human
-remembering to notarize.
+**macOS as a *target* is no longer the empty half, and as of 2026-09-22 it is
+CI-shaped too.** The maintainer has been building, signing, and notarizing
+`dice-roller` by hand since July 2026, and 2026-09-14 turned that into logged
+evidence (§7) plus an automated T3 check (§5.1) that passed against the real
+artifact. `macos_app` (§5.3) is exactly the job this paragraph used to ask
+for: it runs `kivyforge build -p macos` (via `package`, ad-hoc signed — no
+certificate needed) every push and points the T3 driver at the result, on a
+dedicated `macos-gate` fixture rather than on `dice-roller`. What the CI job
+does *not* cover is the Developer-ID/notarization path — that stays the
+human-remembered, local-only evidence described above, since ad-hoc signing
+is a deliberately different, secret-free tier.
 
 ### 3.3 Relationship to the Android compatibility matrix
 
@@ -508,8 +511,10 @@ twice: once on the debug APK, once on the stripped release APK.
       key config decides, produced by calling the *production*
       `build_info_plist` and dropping the two keys a config-only caller cannot
       know (`CFBundleExecutable`, `CFBundleIconFile`), and supplied by
-      `test_app_artifact.py` from a new `--macos-project`. Hermetically tested;
-      **not yet run against a real bundle — that needs the Mac.**
+      `test_app_artifact.py` from a new `--macos-project`. **Ran against a
+      real bundle 2026-09-22** — the `macos-gate` fixture, both locally and in
+      the new `macos_app` CI job (§5.3, §7) — closing the "needs the Mac"
+      caveat this bullet used to end on.
 - [x] **macOS code signature verifies** — `codesign --verify`, via
       `machotools.codesign_verify`, exercised in
       `test_app_artifact.py::test_the_app_is_codesigned` against the real
@@ -975,17 +980,18 @@ Linux say whether it was WSL2 or bare metal (§4).
 
 ### Known-unverified, stated plainly
 
-- The **macOS `Info.plist`-vs-config** comparison (§5.1): wired 2026-09-21 and
-  hermetically tested, but never run against a real `.app`. Needs the Mac, and
-  is one extra flag (`--macos-project`) on the T3 command the 2026-09-17 macOS
-  session already ran.
-- The **Windows built-app signature** leg (§5.1): validated against real
+- ~~The **macOS `Info.plist`-vs-config** comparison (§5.1): wired 2026-09-21
+  and hermetically tested, but never run against a real `.app`. Needs the
+  Mac~~ — **done 2026-09-22** via the `macos-gate` fixture, both locally and
+  in the new `macos_app` CI job (§5.1, §5.3, §7).
+- ~~The **Windows built-app signature** leg (§5.1): validated against real
   signtool, but only on binaries signed by someone else. Verifying a launcher
   that *kivyforge* signed inside a real bundle needs a code-signing cert this
-  dev box does not have, so the two legs together prove the parser and the
-  spawn but not yet the full round trip on a kivyforge-built artifact. The
-  `windows_signing` CI job does prove that round trip on a copy of the
-  vendored launcher.
+  dev box does not have~~ — **done 2026-09-22** in CI: `windows_onedir` signs
+  the launcher *inside* the `windows-gate` bundle it just built (a throwaway
+  self-signed cert, since this dev box still has none) and verifies it,
+  closing the full round trip §5.1 asked for. Not locally reproducible on this
+  Mac either way.
 - iOS `strip_source`: never run, on simulator or device — and, as of 2026-09-14,
   known to be currently *unrunnable* on any in-repo example, since all of them
   pin the pre-release `3.15.0b4` and `package -p ios` requires a final CPython
@@ -1002,15 +1008,20 @@ Linux say whether it was WSL2 or bare metal (§4).
 - No T3 for iOS: nothing inspects a built `.app`/`.ipa` — not its `Info.plist`,
   not its Mach-O arch, not whether `strip_source` did anything. (macOS gained a
   T3 driver 2026-09-14 — see below — but nothing analogous exists for iOS yet.)
-- Any `kivyforge build` for Linux, macOS, **or Windows**: never run in CI.
-  Linux and macOS have each been built **locally** (§7, 2026-09-13 and
-  2026-09-14); nothing re-runs either.
-- `kivyforge build -p macos`: never run in CI, but run **locally by hand
-  repeatedly since 2026-07-07** (five notarized `dice-roller` builds, §7) —
-  `codesign`, `lipo`, and (as of 2026-09-14) file-level Mach-O/`.pyc`/`Info.plist`
+- ~~Any `kivyforge build` for Linux, macOS, **or Windows**: never run in
+  CI~~ — **done 2026-09-22, all three**: `linux_appimage`, `macos_app`, and
+  `windows_onedir` each run `kivyforge build`/`package` for their platform on
+  every push (§5.3, §7). What's left for macOS specifically is the
+  Developer-ID/notarization path, which stays local-only by design (§3.2) —
+  the CI job uses the ad-hoc floor, deliberately, since a CI runner has no
+  certificate.
+- `kivyforge build -p macos` with **real Developer-ID signing +
+  notarization**: still local-only, run **by hand repeatedly since
+  2026-07-07** (five notarized `dice-roller` builds, §7) — `codesign`,
+  `lipo`, and (as of 2026-09-14) file-level Mach-O/`.pyc`/`Info.plist`
   assertions via `--macos-app` have all executed against a real signed,
-  notarized artifact. What's still missing is CI: nothing re-proves this on
-  every push.
+  notarized artifact. The ad-hoc-signed path runs in CI (`macos_app`, above);
+  the notarized one needs a real Apple Developer credential CI does not have.
 - Notarization: **verified** — five `notarytool Accepted` submissions since
   2026-07-07 (§7). Previously listed as unverified in §6; that was stale.
 - `appimagetool`: run once, locally, 2026-09-13 (§7). Never in CI.
