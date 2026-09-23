@@ -1682,8 +1682,14 @@ What is left against this condition is narrower than the condition sounds:
   the three T3 checks against it, so the code path item 1's bug lived in is
   finally exercised by something that repeats. The local leg measured the
   `py`-launcher resolution directly (`('py', '-3.14')` → CPython 3.14.7
-  final); CI likely resolves via PATH instead, and the job logs which
-  candidate won rather than leaving it assumed.
+  final). **CI turned out to resolve via neither candidate:** it prints
+  `resolver picked: ()`, the "use the interpreter already running" fast path,
+  because `setup-python` makes the runner the same 3.14 the project ships. So
+  the job covers Windows Gradle/NDK, Windows path handling and byte-compiling
+  on a Windows host — real coverage ubuntu does not give — while the
+  `py`-launcher *search* stays covered by the local run and the unit tests.
+  The log step is what caught that, having contradicted both predictions on
+  its first run.
 - **The hardware pass** (the second half) still has no runnable checklist —
   item 5's "manual checklist becomes runnable" bullet.
 
