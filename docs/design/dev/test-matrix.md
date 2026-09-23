@@ -128,14 +128,12 @@ passing one:**
 - `KIVYFORGE_REQUIRE_TOOLCHAIN=1` — a missing toolchain becomes a failure
   instead of a skip (`skip_missing_toolchain()`). Set on the three jobs whose
   entire purpose is a toolchain they are known to have.
-- `KIVYFORGE_DEVICE_TESTS=1` — the inverse: `requires_device` is opt-**in**,
-  because no runner has a device and a marker that skips everywhere is one
-  nobody notices has stopped running.
-
-**`requires_device` currently marks nothing.** The marker and its env var are
-wired in `conftest.py`, and no test in `tests/` uses either. T5 is a checklist
-(§6) and a log (§7), not a selectable suite — so an unused opt-in marker is
-itself a silent skip waiting to happen. See §5.7.
+**There used to be a third, `KIVYFORGE_DEVICE_TESTS`, for a `requires_device`
+marker. Both were removed 2026-09-23 (§5.7):** no test ever carried the
+marker, so the variable enabled nothing while implying device coverage
+existed behind a flag. T5 is a checklist (§6) and a log (§7), not a
+selectable suite. If ADB-driven tests are ever written, the marker returns
+*with* them.
 
 ---
 
@@ -242,7 +240,14 @@ it against the vendored copy, which is a strong T3 — but **of one vendored
 binary, not of a built app**. `test_launcher_exe.py` runs the real launcher
 against a compiled stub `python.exe`, proving spawn/argv/exit-code/env and
 process-tree teardown; a genuine T4 for the launcher that says nothing about a
-Kivy app. **No CI job runs `kivyforge build -p windows`.**
+Kivy app.
+
+**Corrected 2026-09-23:** this paragraph used to end "No CI job runs
+`kivyforge build -p windows`." `windows_onedir` has done so on every push
+since 2026-09-22, via `package`, and the §3.1 table two paragraphs above
+already said as much — exactly the stale-sentence failure the rules at the top
+of this file exist to prevent. What the *launcher* jobs above prove is still
+narrower than a built app, which is why they are described as partials.
 
 **macOS's CI now has two jobs, and one of them is the real thing.** Until
 2026-09-22, `macos_integration` ran `pytest -q` and nothing else — its entire
@@ -273,13 +278,15 @@ consume generated files, and the release path runs `lintRelease` plus the
 merged-manifest policy pass against a throwaway keystore. Both the debug APK and
 the **stripped release APK** go through `tests/artifact_checks.py` (§5.1).
 
-**Android `arm64_v8a` is marked *inherited* rather than covered**, which is a
-downgrade from this file's first revision and the right one. `android_gradle`
-builds `x86_64` only, so the shipping ABI is never built in CI. The stray-ABI
-check partly compensates — it fails if anything other than the requested ABI
-appears — but the arch assertions are precisely the ABI-specific ones, so
-claiming `x86_64`'s T3 covers `arm64_v8a` is an argument, not a run. Rule 1 says
-label it as such.
+**Android `arm64_v8a` was marked *inherited* rather than covered — resolved
+2026-09-23.** For most of this file's life `android_gradle` built `x86_64`
+only, so the shipping ABI was never built in CI. The stray-ABI check partly
+compensated, but the arch assertions are precisely the ABI-specific ones, so
+claiming `x86_64`'s T3 covered `arm64_v8a` was an argument, not a run — and
+rule 1 says label that as such, which is why it read *inherited* for so long.
+`android_gradle` is now a two-leg matrix and runs the full T3 pass on both
+ABIs directly. T4 for `arm64_v8a` is still a device run, since the emulator
+is x86_64.
 
 **iOS's simulator coverage is real, local, and was missing from this file until
 2026-09-14** — the same fault as §3.3's Android T4, found the same way. The
@@ -355,6 +362,8 @@ and by logging those runs in §7, where under this file's own rules they belonge
 all along. When the two files disagree in future, the compatibility matrix owns
 the runtime dimension and this one owns host × tier.
 
+**Superseded 2026-09-23 for Android `x86_64`.** That overlap was a labelling problem only while Android T4 lived outside CI. `android_emulator` now runs `run --smoke --release` on an AVD on every push, so that cell is plain CI coverage and needs no **local** qualifier. The label still applies to Android `arm64_v8a` T4 and to the iOS device, both of which remain hardware runs.
+
 ---
 
 ## 4. Host-dependent behaviour
@@ -366,9 +375,16 @@ passes" is not host-independent. Each of these has bitten:
   staged interpreter when the build is native and searches the host via
   `find_interpreter()` otherwise. A Windows host building Windows `amd64` takes
   the first path; the same host building Android takes the second. Item 1 was
-  precisely a bug in the second path — and since `android_gradle` runs on ubuntu,
-  **CI's Android T3 does not take the path item 1 broke.** Tracked as §5.2, not
-  left as an observation.
+  precisely a bug in the second path — and since `android_gradle` runs on
+  ubuntu, CI's Android T3 there does not take it. **Partly addressed
+  2026-09-23** (§5.2): `android_windows_host` now builds and inspects a
+  release APK on `windows-latest` every push. But read that section before
+  treating this as closed — its own log line shows CI resolving via
+  `find_interpreter`'s "interpreter already running" fast path, *before* the
+  Windows candidate list is built, because `setup-python` makes the runner the
+  same 3.14 the project ships. **So the `py`-launcher search item 1 actually
+  broke is still covered only by the dated local measurement in §7 and by
+  `tests/bundle/test_pycompile.py`**, not by anything standing.
 - **Windows needs Developer Mode for symlinks.** Covered by
   `requires_symlinks` + `KIVYFORGE_REQUIRE_SYMLINKS`.
 - **Windows has a path-length ceiling** that deep staging trees can hit, and the
@@ -392,12 +408,38 @@ passes" is not host-independent. Each of these has bitten:
 
 ## 5. The gap list, in priority order
 
-Two orderings are in play and they disagree, so both are stated. §5.1–5.5 are in
-**CI-cost order**: cheapest standing coverage first. But the dev box is Windows,
-so *what this week can prove* is a different list — §5.2 (Windows-host Android
-T3), §5.3 (a Windows or WSL2 desktop build), and §5.6 are all reachable today,
-while §5.4's AVD is cheap in CI and awkward locally. Pick by which constraint
-is actually binding.
+**Rewritten 2026-09-23, because the list it used to prioritise is done.** This
+section used to weigh "CI-cost order" against "what the Windows dev box can
+prove this week", and offered §5.2, §5.3, §5.4 and §5.6 as the reachable
+ones. §5.2, §5.3, §5.4, §5.5, §5.7, §5.8, §5.9 and §5.10 have all since
+closed, so that trade no longer decides anything.
+
+What is actually left, in value order:
+
+1. **§5.5's product half** — `kivyforge run` still cannot build a release on
+   Linux, so the command people use while iterating never reaches
+   `strip_source`. That is the hole the `AppRun` defect lived in. Android's
+   half was fixed 2026-09-22; Linux's was not. **The only *product* gap on
+   this list** — everything else here is test coverage.
+2. **§5.2's remaining sliver** — the Windows `py`-launcher *search*, still
+   local-measurement-only. CI builds an APK on Windows now, but its resolver
+   takes the "interpreter already running" fast path, so the candidate search
+   item 1 broke is covered by one dated measurement and the unit tests.
+3. **§5.6** — now with a real reproduction (the terminfo collision) and still
+   no test; `longPathAware` remains a suspicion.
+4. **The hardware checklist** — roadmap item 5's "done when" has two halves,
+   and this is the second: §6 is prose, not something runnable that records a
+   dated result. Not a §5 subsection, which is part of why it keeps being
+   skipped over.
+
+**§5.1's iOS box closed 2026-09-23**, while this very list was being written
+— `ios_app_problems` landed and iOS stopped being the one platform without a
+T3. Left recorded here rather than silently deleted, because a list of "what
+is left" that goes stale within the hour is the same failure this file's rules
+name, and it went stale in the good direction.
+
+The sections below keep their original numbering and their closure notes, so
+the reasoning that produced each one survives even where the gap does not.
 
 ### 5.1 T3 artifact assertions — highest value available
 
@@ -1211,7 +1253,7 @@ Linux say whether it was WSL2 or bare metal (§4).
   the notarized one needs a real Apple Developer credential CI does not have.
 - Notarization: **verified** — five `notarytool Accepted` submissions since
   2026-07-07 (§7). Previously listed as unverified in §6; that was stale.
-- `appimagetool`: run once, locally, 2026-09-13 (§7). Never in CI.
+- ~~`appimagetool`: run once, locally, 2026-09-13 (§7). Never in CI.~~ — **in CI since 2026-09-22**: `linux_appimage` packages the `linux-gate` fixture with a real `appimagetool` on every push (§5.3, §7).
 - Linux `strip_source`: proven end to end **once natively**, 2026-09-13, and
   only after the `AppRun` fix in the same session. The *cross* byte-compile
   path (`find_interpreter()` → host `python3.13`) first ran on 2026-09-17
@@ -1237,21 +1279,25 @@ Linux say whether it was WSL2 or bare metal (§4).
   `PYTHONDONTWRITEBYTECODE=1` in the launcher; a repeat launch afterward left
   `codesign --verify` passing. Windows is unaffected (Authenticode signs the
   executable, not a bundle-wide resource seal).
-- The same question **on Linux**: unverified, and queued as
-  [`linux-launcher-bytecode-prompt.md`](linux-launcher-bytecode-prompt.md). The
-  Linux `AppRun` does not set `PYTHONDONTWRITEBYTECODE` (read out of
-  `linux/launcher.py`), and the reasoning that Linux is therefore safe — an
-  AppImage mounts read-only, so the write cannot persist — is a hypothesis
-  nobody has tested. It also does not cover `package -f folder`, which leaves a
-  *writable* AppDir that is simultaneously the tree the T3 driver inspects. Per
-  this file's own first rule, that makes Linux uncovered here, not fine. The
-  same prompt asks for the startup cost of shipping an uncompiled stdlib to be
-  measured, since the macOS write is evidence that no usable `.pyc` ships and
-  every launch on every platform re-parses the stdlib from source.
-- Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64` only), so
-  its T2/T3 is inherited from `x86_64` plus the stray-ABI check, not direct.
-- Android T3 from a Windows host: once, by hand, 2026-09-13 (§5.2).
-- Android T4 in CI: never; the emulator runs above are local and unrepeated.
+- ~~The same question **on Linux**: unverified, and the Linux `AppRun` does
+  not set `PYTHONDONTWRITEBYTECODE`.~~ — **both halves are stale, corrected
+  2026-09-23.** The question was answered on 2026-09-15 by
+  [`linux-launcher-bytecode-findings.md`](linux-launcher-bytecode-findings.md):
+  an unstripped folder AppDir gained 209 files on launch, 100 of them in the
+  payload, and the `.AppImage` was immune because its squashfs mounts
+  read-only. **`AppRun` has set `PYTHONDONTWRITEBYTECODE=1` since that same
+  session** (`linux/launcher.py`), after which a re-measure showed zero new
+  files in either shape. The startup cost the prompt also asked for was
+  measured on all three desktop hosts and closed §5.10. Leaving this bullet
+  saying the opposite of what the launcher does is exactly the failure the
+  rules at the top of this file name.
+- ~~Android `arm64_v8a` in CI: never built (`android_gradle` is `x86_64`
+  only), so its T2/T3 is inherited from `x86_64` plus the stray-ABI check, not
+  direct.~~ — **built in CI since 2026-09-23**: `android_gradle` is a two-leg
+  matrix and runs the full T3 pass on both ABIs. T4 for `arm64_v8a` stays
+  manual, since the emulator is x86_64.
+- ~~Android T3 from a Windows host: once, by hand, 2026-09-13 (§5.2).~~ — **in CI since 2026-09-23** via `android_windows_host`. **But not the part item 1 broke:** that job's own log line shows the resolver taking the "interpreter already running" fast path, so the Windows `py`-launcher *search* is still covered only by the 2026-09-23 local measurement and by `tests/bundle/test_pycompile.py`. See §5.2.
+- ~~Android T4 in CI: never; the emulator runs above are local and unrepeated.~~ — **in CI since 2026-09-23**: `android_emulator` runs `run --smoke --release` on an API-35 x86_64 AVD every push (§5.4). `arm64_v8a` T4 stays manual — the emulator is x86_64, so that ABI needs a device.
 - Every `examples/verify-*` script except `verify-ios-device.sh`: no logged run.
   `verify-ios-device.sh` got its first logged run 2026-09-14 (§7).
-- `requires_device` / `KIVYFORGE_DEVICE_TESTS`: enable nothing today.
+- ~~`requires_device` / `KIVYFORGE_DEVICE_TESTS`: enable nothing today.~~ — **both removed 2026-09-23** (§5.7), rather than left as an opt-in that enabled nothing.
