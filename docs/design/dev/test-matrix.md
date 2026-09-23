@@ -160,6 +160,7 @@ is the runner of the job named in it**, which is why this table comes first —
 | `windows_signing` | windows | `3.x` | Windows T2 (`signtool`, self-signed) |
 | `android_gradle` | ubuntu | **3.14** | Android T2 + T3 |
 | `android_emulator` | ubuntu | **3.14** | Android **T4** (`run --smoke --release` on an x86_64 AVD) |
+| `android_windows_host` | **windows** | **3.14** | Android T2 + T3 from a *Windows* host (§5.2's resolver path) |
 | `linux_appimage` | ubuntu | **3.13** | Linux T2 + T3 (`package` + AppImage assertions) |
 | `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
@@ -221,7 +222,7 @@ evidence is a single logged run in §7 that nothing re-runs.
 | Linux `x86_64` | `unit_tests` | `linux_appimage` — real `appimagetool` on every push (since 2026-09-22); previously local only | `linux_appimage` — full T3 pass over the packaged AppImage on every push | **local only** — stripped AppImage reaches first frame (llvmpipe) | see §6 | every push (T0/T1/T2/T3); 2026-09-13 (T4) |
 | Linux `aarch64` | `unit_tests` | **local only** — cross `package` on x86_64 WSL2, host `appimagetool` + target type2 runtime | **local only** — T3 driver extracts via `unsquashfs` (the aarch64 type2 ELF cannot `--appimage-extract` here); ELF leak check caught a planted host `.so` | **local** — stripped AppImage reaches main loop on Pi 5 (labwc, Broadcom V3D) | **manual** — Pi 5 only; Pi 4 untested | 2026-09-17 |
 | Android `arm64_v8a` | `unit_tests` | **inherited, not direct** | **inherited, not direct** | none | **manual** | 2026-09-13 |
-| Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | `android_emulator` — `run --smoke --release` on an API-35 x86_64 AVD on every push (since 2026-09-23); previously local-only and last run 2026-07-27 | n/a | every push (T2/T3/T4) |
+| Android `x86_64` | `unit_tests` | `android_gradle` (AGP, NDK, CMake, `javac`) | `android_gradle` — debug **and** stripped release APK shape, plus the merged release manifest vs. config and `apksigner verify` on the signed release APK (both since 2026-09-21) | `android_emulator` — `run --smoke --release` on an API-35 x86_64 AVD on every push (since 2026-09-23); previously local-only and last run 2026-07-27 | n/a | every push (T2/T3/T4; T2+T3 also from a **Windows** host via `android_windows_host` since 2026-09-23) |
 | iOS device `arm64` | `unit_tests` | **local** — `build -p ios --device`, `package -p ios --export-method development`, real iPhone14,3 | **none** | **local** — installed, launched, `hello-kivy` rendered on device | **manual** — first physical run, 2026-09-14 | 2026-09-14 |
 | iOS simulator `arm64` | `unit_tests` | `ios_simulator` — real `build -p ios --simulator` on every push (since 2026-09-23); previously local-only, 6 examples | **none** — no T3 harness exists for iOS yet (unlike macOS/Android) | `ios_simulator` — `run -p ios --simulator --no-build` install+launch, plus a screenshot artifact, on every push (since 2026-09-23); previously local only, all 6 examples render | n/a | every push (T2/T4, `hello-kivy` only); 2026-09-14 (regression re-check on all 6, local; no drift since 2026-07-27) |
 
@@ -587,19 +588,36 @@ twice: once on the debug APK, once on the stripped release APK.
         `artifact_checks.py` hermetic, which is the property the
         no-toolchain rule was protecting.
 
-### 5.2 Android T3 from a Windows host — the item-1 code path
+### 5.2 Android T3 from a Windows host — **done 2026-09-23**
 
-`android_gradle` runs on ubuntu, where a native-ish `find_interpreter()` search
-finds the runner's own CPython. **Item 1's bug lived in what that search does on
-Windows** (the `py` launcher, versioned executables, pre-release rejection), and
-no automated run exercises it. The unit tests in `tests/bundle/test_pycompile.py`
-cover the resolver's logic; nothing builds an APK on Windows and inspects it.
+`android_windows_host` on `windows-latest`: `package -p android --abi x86_64`
+(release, so `byte_compile`/`strip_source` actually apply) followed by the same
+three T3 checks `android_gradle` runs. Both the "cheapest form" this section
+asked for and the "middle form" — the local run is logged in §7.
 
-Cheapest form: a `windows-latest` job that builds `hello-android` for one ABI and
-runs the existing T3 assertions — the checks already exist, so this is wiring
-plus Gradle time. Middle form: run it locally and log it in §7. Doing neither
-leaves the exact shape of item 1 uncovered while the file that exists because of
-item 1 claims Android is the strong column.
+**Release only, unlike `android_gradle`'s debug+release.** `byte_compile` and
+`strip_source` are release-only tri-states, so the release path is the only one
+that invokes `find_interpreter` at all; a debug build here would spend Gradle
+time on Windows and exercise nothing this job exists for.
+
+**The job logs which interpreter the resolver picked**, because that is the
+thing under test and the answer differs by host. Measured on the dev box:
+`find_interpreter("3.14.6")` returns `("py", "-3.14")` — the PEP 397 launcher,
+resolving to CPython 3.14.7 **final**, 64-bit. That is the Windows-only
+mechanism item 1's bug lived in. On a hosted runner `setup-python` puts 3.14 on
+PATH while the launcher generally does not know about a hostedtoolcache
+install, so `("python",)` is the likely winner there instead.
+
+**So state the coverage precisely rather than claiming more than it proves:**
+CI covers the Windows branch of the resolver end to end — resolve, byte-compile,
+`.pyc` in the APK, magic asserted against the runner. The **`py` launcher
+specifically** is covered by the dated local run in §7, not by CI, unless the
+job's own log line says otherwise on a given run. That log line exists so the
+question is answerable from the run rather than assumed.
+
+One clarification worth leaving here, since it reads like a bug and is not:
+`find_interpreter` returns `()` for "use the interpreter I am already running",
+and `None` for "no match". A `()` in that output is a success.
 
 ### 5.3 A desktop build job — **decided and built 2026-09-22**
 
@@ -1086,6 +1104,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-23 | CI hygiene (all jobs) | §5.7 + §5.8 + §5.9 closed | Windows 11 (authoring); evidence from the 2026-09-23 `main` run | Three small gaps closed together, each of the same shape — a check that could not fail. **§5.9:** `android_gradle`'s doctor step no longer waives itself. The waiver was protecting against a FAIL that cannot occur *there*: `_check_16k_alignment` runs only `if project_dir.is_dir()` (the **generated** project), which the `build` step below has not created yet, so the check is not registered rather than passing. Verified against the real run — 0 FAIL, 2 WARN (no device, no AVD) — and `ok = worst_status(results) is not Status.FAIL`, so WARNs never gated. **§5.8:** `macos_integration` pinned to 3.13, the last platform proof running `3.x`; the seven remaining floaters are cross-cutting jobs or ones exercising a C toolchain, and §3.1 now says so explicitly so nobody finishes the job by pinning them too. **§5.7:** `requires_device` removed rather than wired. No test ever carried it, so `KIVYFORGE_DEVICE_TESTS=1` enabled nothing while implying device coverage existed behind a flag; wiring it would have meant writing ADB tests from a host with no device, which is how tests that assert nothing get written. Device runs stay manual and logged here. |
 
 | 2026-09-23 | Android `x86_64` (emulator) | **T4** (local, then CI) | Windows 11 host / API-35 `google_apis` x86_64 AVD | **The last tier reaches CI** (§5.4). Rehearsed locally first on the AVD this box already had: `kivyforge run --smoke --release -p android --serial emulator-5554` on `hello-android` → `Contract smoke test PASSED`, `connectedReleaseAndroidTest` 1 test, Gradle 1m25s, 2m10s end to end. **First logged smoke run since 2026-07-27, and the first on the release variant** — so it exercises byte-compilation, stripping and R8, not just the load model. `git status` clean afterwards: the committed `pylock.android.toml` was verified, not rewritten. Then wired as `android_emulator` (`ubuntu-latest` + a `/dev/kvm` udev rule + `reactivecircus/android-emulator-runner`), pinned to CPython 3.14 for the same load-bearing reason `android_gradle` is — without a final 3.14 the release build degrades to shipping source and the job would quietly stop testing stripping. **Corrected a stale design claim in passing:** `android/06`'s gate table said `run --smoke` is "not hosted CI" because an emulator implies a self-hosted runner; hosted `ubuntu-latest` exposes `/dev/kvm`, so that is no longer true. **First CI run failed, and the emulator was not why.** The AVD booted fine; `kivyforge` then reported `missing [tool.kivy] table` — against *kivyforge's own* `pyproject.toml`, because `reactivecircus/android-emulator-runner` executes **each line of `script:` as its own `sh -c`**. The `cd "$APP_DIR"` line therefore applied to a shell that immediately exited, and the next line started back at the repo root. Fixed by making it one `&&`-chained command. Worth knowing before adding a second step to that script, and worth noting about the local rehearsal: running the command by hand proved the *command*, and could not have caught the *wiring*. |
+
+| 2026-09-23 | Android `x86_64` from a **Windows** host | T2 + T3 (local, then CI) | Windows 11, CPython 3.14.7 (via the `py` launcher) | **§5.2 closed — the item-1 code path finally has automated coverage.** Every Android build in CI had run on ubuntu, where `find_interpreter` reaches a versioned `python3.14` directly; item 1's bug lived in what that search does on Windows. Measured here first: `find_interpreter("3.14.6")` → `('py', '-3.14')`, the PEP 397 launcher, resolving to **CPython 3.14.7 final, 64-bit** — and `py --list` confirms the launcher knows 3.14 through 3.7, so the pre-release-rejection branch has real candidates to reject. `package -p android --abi x86_64` against a throwaway keystore produced a stripped, byte-compiled release APK, and all three T3 drivers (`test_apk_artifact` `--android-stripped`, `test_merged_manifest`, `test_apk_signature`) passed against it — run under a scratch 3.14.7 venv, because the magic assertion compares against the *runner's* MAGIC_NUMBER and this repo's dev venv is 3.13. Then wired as `android_windows_host`. **Coverage stated precisely:** CI proves the Windows branch end to end, but `setup-python` puts 3.14 on PATH while the launcher usually does not know a hostedtoolcache install, so CI likely resolves via `('python',)` rather than the launcher — the job logs which candidate won so this is answerable per run instead of assumed, and the `py`-launcher leg is *this* row. **Not a bug, noted because it reads like one:** `find_interpreter` returns `()` for "use the interpreter already running" and `None` for no match; a `()` is success. |
 
 ### Known-unverified, stated plainly
 

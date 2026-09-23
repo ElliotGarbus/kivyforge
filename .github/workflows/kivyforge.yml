@@ -760,6 +760,102 @@ jobs:
         name: macos-gate-app-plist
         path: ${{ env.APP_DIR }}/build/macos/*.app/Contents/Info.plist
 
+  # Android T3 from a *Windows* host (test-matrix.md §5.2). android_gradle
+  # builds the same app on ubuntu, where `find_interpreter()` reaches a
+  # versioned `python3.14` directly. Item 1's bug lived in what that search
+  # does on **Windows** — the PEP 397 `py` launcher, versioned executables,
+  # and rejecting a pre-release of the right minor — and nothing automated
+  # ever built an APK there and inspected it.
+  #
+  # Release only, unlike android_gradle's debug+release. byte_compile and
+  # strip_source are release-only tri-states, so the release path is the one
+  # that invokes the resolver at all; a debug build here would cost Gradle
+  # time on Windows and exercise nothing this job exists for.
+  android_windows_host:
+    name: Android T3 from a Windows host
+    runs-on: windows-latest
+    env:
+      APP_DIR: examples/mobile/hello-android
+      ABI: x86_64
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python 3.14
+      # Load-bearing twice over: the release build byte-compiles with a
+      # *final* CPython of the minor this project ships, and the T3 magic
+      # check compares the APK's .pyc headers against this runner's own
+      # MAGIC_NUMBER.
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+    - name: Set up JDK 17
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Set up the Android SDK
+      uses: android-actions/setup-android@v4
+      with:
+        packages: platform-tools
+    - name: Install kivyforge (with the Android extra)
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,android]"
+    - name: Install the pinned NDK, CMake, platform, and build-tools
+      shell: bash
+      run: |
+        ndk="$(python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)')"
+        sdkmanager --install "ndk;${ndk}" "cmake;3.22.1" "platforms;android-35" \
+          "build-tools;35.0.0"
+    - name: Report which interpreter the Windows resolver picked
+      # This job's whole point is the Windows branch of `find_interpreter`, so
+      # say out loud which candidate won rather than assuming. On a dev box
+      # it is normally ('py', '-3.14') — the PEP 397 launcher. On a hosted
+      # runner `setup-python` puts 3.14 on PATH while the launcher usually
+      # does not know about a hostedtoolcache install, so ('python',) is the
+      # likely winner here. Both are Windows-only paths ubuntu never takes;
+      # logging it keeps the difference visible instead of inferred.
+      run: |
+        python -c "from kivyforge.bundle.pycompile import find_interpreter; print('resolver picked:', find_interpreter('3.14.6'))"
+    - name: Package the release APK (byte-compiled + stripped)
+      # `package` rather than `build --debug`: byte_compile/strip_source are
+      # release-only, so this is the only verb that reaches the resolver.
+      shell: bash
+      working-directory: ${{ env.APP_DIR }}
+      env:
+        KIVYFORGE_KEYSTORE_PASSWORD: ci-not-a-secret
+      run: |
+        keytool -genkeypair -noprompt -keystore ci.keystore -alias ci \
+          -storepass "$KIVYFORGE_KEYSTORE_PASSWORD" \
+          -keypass "$KIVYFORGE_KEYSTORE_PASSWORD" \
+          -keyalg RSA -keysize 2048 -validity 30 -dname "CN=kivyforge CI"
+        kivyforge package -p android --abi "$ABI" \
+          --keystore ci.keystore --key-alias ci
+    - name: Assert the Windows-built APK is what the build promised (T3)
+      # The same three checks android_gradle runs, against an APK produced by
+      # the Windows code path. --android-stripped is what makes the .pyc magic
+      # assertion fire, which is item 1's actual failure mode.
+      shell: bash
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: |
+        apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
+        manifest="$APP_DIR/hello-android-android/app/build/kivyforge/AndroidManifest-merged-release.xml"
+        pytest tests/platforms/android/test_apk_artifact.py \
+               tests/platforms/android/test_merged_manifest.py \
+               tests/platforms/android/test_apk_signature.py \
+          -q --no-cov \
+          --android-apk "$apk" --android-abi "$ABI" --android-stripped \
+          --android-merged-manifest "$manifest" --android-project "$APP_DIR"
+    - name: Upload the generated project on failure (for triage)
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: android-windows-host-project
+        path: |
+          ${{ env.APP_DIR }}/hello-android-android/app/build.gradle
+          ${{ env.APP_DIR }}/hello-android-android/app/build/kivyforge/
+
   # T4, the last tier to reach CI: the app actually starts on a device and the
   # runtime contract holds. android_gradle proves the toolchain consumes our
   # output and the APK is shaped right; nothing before this job proved the

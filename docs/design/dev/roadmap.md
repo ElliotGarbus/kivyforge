@@ -325,7 +325,7 @@ known-unverified list.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *T4 completed 2026-09-23 on both mobile targets: iOS via `ios_simulator`, Android via `android_emulator`. T3 landed 2026-09-21/22 for Android and the three desktop targets. Remaining: iOS has no T3 harness, §5.2 Android T3 from a Windows host, and a runnable hardware checklist* | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T0–T4 all run in CI as of 2026-09-23, including Android T3 from a Windows host (§5.2). Remaining: an iOS T3 harness, and a runnable hardware checklist* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -1677,14 +1677,19 @@ What is left against this condition is narrower than the condition sounds:
   not been revisited, and repeating it kept a non-blocker looking like a
   blocker. Worth remembering when a roadmap bullet names an external
   dependency: check whether it is still true before planning around it.)*
-- **§5.2 — Android T3 from a *Windows* host** is still uncovered, and it is
-  the exact code path item 1's bug lived in (`find_interpreter`'s `py`
-  launcher / versioned-executable search). Cheapest remaining real gap.
+- ~~**§5.2 — Android T3 from a *Windows* host**~~ — **done 2026-09-23.**
+  `android_windows_host` packages a release APK on `windows-latest` and runs
+  the three T3 checks against it, so the code path item 1's bug lived in is
+  finally exercised by something that repeats. The local leg measured the
+  `py`-launcher resolution directly (`('py', '-3.14')` → CPython 3.14.7
+  final); CI likely resolves via PATH instead, and the job logs which
+  candidate won rather than leaving it assumed.
 - **The hardware pass** (the second half) still has no runnable checklist —
   item 5's "manual checklist becomes runnable" bullet.
 
-So item 5 is blocked on nothing and has no large piece left: §5.2, an iOS T3
-harness, and the checklist script.
+So item 5 is blocked on nothing and has no large piece left. After
+2026-09-23 the list is **an iOS T3 harness and the runnable hardware
+checklist** — the second of which is the "done when" clause's other half.
 
 ---
 
