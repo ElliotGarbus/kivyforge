@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Desktop: clear error when the runtime can't be staged on a case-insensitive filesystem
+
+- **Fixed:** every python-build-standalone Linux runtime ships 25 pairs of
+  paths that differ only by case, all in `python/share/terminfo`
+  (`h/hp70092A` beside `h/hp70092a`). Building a Linux app onto a
+  case-insensitive filesystem, such as `/mnt/c` from WSL2, used to die partway
+  through staging with a bare `shutil.Error`. Worse, extracting straight onto
+  such a filesystem silently overwrote one file of each pair.
+- Staging now checks the runtime archive **before** extracting it, and stops
+  with the number of colliding paths, an example pair, the directory, and what
+  to do instead (under WSL2: build from the Linux side, e.g. under `~`).
+- Applies to the Linux, macOS and Windows runtime stagers. The filesystem is
+  only probed when an archive actually has such collisions; no macOS or
+  Windows runtime measured so far does, so those builds are unaffected.
+
 ### Desktop: `kivyforge run --release` (Linux, macOS, Windows)
 
 - **`run --release` now works on the desktop backends**, as it has on Android
