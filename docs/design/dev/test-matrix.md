@@ -394,7 +394,11 @@ passes" is not host-independent. Each of these has bitten:
   can reach a stream and cannot encode — the model for the kind of cheap policy
   test this matrix should have more of.
 - **macOS and Windows are case-insensitive; Linux is not.** Staging collisions
-  appear on one host and not another. **No test.** (§5.6)
+  appear on one host and not another. ~~**No test.**~~ **Tested since
+  2026-09-23** (§5.6): the runtime stagers refuse an archive with case-only
+  collisions before extracting it onto a case-insensitive filesystem, and
+  `tests/bundle/test_casefold.py` runs that against the real host filesystem
+  on both the Ubuntu and the Windows unit legs.
 - **WSL2 is a Linux host** and is how Linux work happens from the Windows dev
   box. It is not identical to a bare Linux host: `/mnt/c` is a different
   filesystem with different case and permission behaviour, and WSLg supplies a
@@ -421,8 +425,9 @@ product gap remains on this list:
    local-measurement-only. CI builds an APK on Windows now, but its resolver
    takes the "interpreter already running" fast path, so the candidate search
    item 1 broke is covered by one dated measurement and the unit tests.
-2. **§5.6** — now with a real reproduction (the terminfo collision) and still
-   no test; `longPathAware` remains a suspicion.
+2. **§5.6's remaining half** — Windows path length / `longPathAware`, still a
+   suspicion with no reproduction and no test. The case-collision half closed
+   2026-09-23.
 3. **The hardware checklist** — roadmap item 5's "done when" has two halves,
    and this is the second: §6 is prose, not something runnable that records a
    dated result. Not a §5 subsection, which is part of why it keeps being
@@ -967,7 +972,7 @@ performs is the one `package` already runs under T3 in `linux_appimage`,
 `macos_app` and `windows_onedir`. What was new here is the wiring from `run`
 to that build, and that is what the unit tests pin.
 
-### 5.6 Host-dependent cases with no test at all
+### 5.6 Host-dependent cases with no test at all — **case-collision half done 2026-09-23**
 
 From §4, the ones with no producer of any kind: Windows path-length /
 `longPathAware`, and case-insensitive staging collisions — though the second
@@ -979,6 +984,42 @@ the failure mode is now known to be real and to have a concrete trigger. Both ar
 or generation tests rather than toolchain work — the model is
 `tests/test_message_encoding.py`, which turned a host-specific footgun into a
 static check over the source tree.
+
+**The case-collision half closed 2026-09-23, as a product fix plus the test.**
+Measured first: every Linux runtime in the WSL2 cache (x86_64 and aarch64,
+PBS `20260623` and `20260805`) ships the **same 25 collision groups, all
+under `python/share/terminfo`** — 2,871 of the runtime's 4,525 members are
+terminfo. None of the 47 other cached archives (30 on the Windows host,
+including the Windows runtime; 17 in WSL2, all wheels) has any. So the trigger
+is specifically *a Linux runtime staged onto a case-insensitive filesystem*.
+
+It turned out to have **two failure modes, and the worse one is silent.** The
+2026-09-22 WSL2 run was loud only because the runtime was extracted to ext4
+`/tmp` and then `copytree`'d onto `/mnt/c`. Extracting the same pair straight
+onto NTFS raises nothing: `tarfile` writes one file over the other and staging
+"succeeds". The test below showed that when the check was removed, failing
+with `DID NOT RAISE`.
+
+The fix is `kivyforge/bundle/casefold.py`, called by all three desktop runtime
+stagers **before** extraction. If the archive has case-only collisions *and*
+a directory it is about to write into is case-insensitive, staging stops
+with the count, an example pair, the directory, and what to do instead (per
+backend: the Linux side of WSL2, a case-sensitive APFS volume). The
+filesystem is only probed when collisions exist, so the macOS and Windows
+runtimes — none measured — are untouched. **Terminfo was deliberately not
+pruned:** that would change the runtime for any app using `curses` or
+`readline`, a product decision rather than a fix.
+
+Validated on the real runtime: `kivyforge build -p linux` with the
+`linux-gate` project on `/mnt/c` now stops in 3.4 s, naming 25 paths and
+`2621A`/`2621a`, where it used to die partway through staging in a bare
+`shutil.Error`. The automated producer is `tests/bundle/test_casefold.py`'s
+`TestRealHostProducer`, with **no mocks**: the host filesystem decides, so the
+Ubuntu legs prove a case-sensitive host still stages both files distinctly and
+the Windows legs prove a case-insensitive one is refused up front.
+Hermetically, all three stagers are covered, as is "no collision → no probe".
+
+**Still open: `longPathAware`**, with no reproduction.
 
 ### 5.7 Wire `requires_device`, or remove it — **removed 2026-09-23**
 
@@ -1239,6 +1280,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-23 | Android **`arm64_v8a`** | T2 + T3 (local, then CI) | Windows 11, CPython 3.14.7 | **The ABI every real phone runs had no direct CI coverage** — all three Android jobs passed `--abi x86_64`, and §3.2 had carried arm64_v8a as "inherited, not direct" since the matrix was written. `android_gradle` is now a two-leg matrix. Proven locally first: `package -p android --abi arm64_v8a` produced a stripped release APK and `test_apk_artifact.py --android-abi arm64-v8a --android-stripped` passed against it. **Two negative controls, both fired:** claiming `x86_64` on that APK reports the missing `lib/x86_64/libmain.so` *and* the stray `arm64-v8a` objects; and passing the wheel-tag spelling to `--android-abi` gives `unknown ABI 'arm64_v8a'; expected one of ['arm64-v8a', 'x86_64']`. **That second one is the trap worth recording:** kivyforge's `--abi` takes `arm64_v8a` while the T3 driver's `--android-abi` takes `arm64-v8a`, and the two are *identical for x86_64* — which is exactly why one `$ABI` variable sufficed for as long as this job built only that ABI. The matrix now carries both spellings. It fails loudly rather than silently, so this was never a false-green risk, only a job that would not have run. |
 | 2026-09-23 | Windows `amd64` (`windows-gate`) | T2 + T3 + T4 (local) | Windows 11, CPython 3.13.1 venv; fixture pins 3.13.14 | **§5.5 closed on desktop — `run --release` reaches `strip_source`.** `kivyforge run -p windows --release`: "[stage] byte-compiling the Python payload … (.pyc only)" and "byte-compiling the embedded stdlib", then `Launching Windows Gate ...`; `Windows Gate.exe` still running 8 s later, then closed by `taskkill` (so the logged "exited with status 1" is the kill, not the app). `test_onedir_artifact.py --windows-stripped` against `build/windows/Windows Gate` → `.` (asserted, not skipped). **Negative control:** plain `run -p windows` printed no byte-compile step, and the same assertion failed: `app/main.py` plus 1,194 `.py` under `python/Lib/site-packages`. |
 | 2026-09-23 | Linux `x86_64` (`linux-gate`) | T2 + T3 + T4 (local) | **WSL2** (Ubuntu, Python 3.14.4, WSLg), built on ext4, not `/mnt/c` (§5.6) | Same check as the Windows row. `run -p linux --release` byte-compiled "(.pyc only)" plus the stdlib; `AppRun`'s `python3 -P -m main` still running 10 s after `Launching`. `test_appimage_artifact.py --linux-appdir … --linux-stripped` → 2 passed, 1 skipped (the AppImage-container test, which has no AppImage to inspect for a bare AppDir). **Negative control:** plain `run` failed it: 336 `.py` files, no `.pyc` at all. Kivy's non-fatal `libmtdev.so.1` traceback, printed at startup in both runs, showed the difference too: release frames had no source text. The first attempt failed on setup, not the change: the WSL venv predated the `rich` dependency and had no `pytest-cov` for the repo's `addopts`. |
+| 2026-09-23 | Linux `x86_64` runtime on a case-insensitive FS | **§5.6 case-collision half closed** (product fix + test) | Windows 11 host + **WSL2** (Ubuntu, Python 3.14.4) | Measured first: all three cached Linux PBS runtimes (x86_64/aarch64, `20260623`/`20260805`) carry the same 25 case-only collision groups, all in `python/share/terminfo`; 0 in 47 other cached archives, the Windows runtime included. The stagers now refuse such an archive before extracting it onto a case-insensitive FS. `kivyforge build -p linux` with `linux-gate` on `/mnt/c` → exit 1 in 3.4 s: "…contains 25 path(s) that differ only by case (e.g. python/share/terminfo/2/2621A and python/share/terminfo/2/2621a), and /mnt/c/… is on a case-insensitive filesystem… Under WSL2 that means the Linux side (for example under ~), not /mnt/c." `tests/bundle/test_casefold.py`: 16 passed / 2 skipped on Windows, the mirror image on WSL2 ext4. **Mutation:** with the check removed, the unmocked Windows test failed with `DID NOT RAISE` — `tarfile` onto NTFS merges the pair *silently*, so the 2026-09-22 row's loud `shutil.Error` was the milder of the two failure modes. |
 
 ### Known-unverified, stated plainly
 

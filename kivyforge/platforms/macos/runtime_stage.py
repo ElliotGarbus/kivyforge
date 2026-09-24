@@ -19,6 +19,7 @@ from pathlib import Path
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.download import DownloadError, fetch_artifact
+from kivyforge.bundle.casefold import case_collision_problem
 from kivyforge.lock.wheelruntime.model import PythonRuntime
 from kivyforge.lock.wheelruntime.runtime import (
     RuntimeProviderError,
@@ -58,7 +59,7 @@ def stage_runtime(
                 f"{', '.join(a.arch for a in runtime.artifacts)})."
             )
         archive = _fetch(artifact, arch, project_root, cache, no_cache)
-        extracted = _extract(archive, tmp / arch, runtime.provider)
+        extracted = _extract(archive, tmp / arch, runtime.provider, writes_to=(home,))
 
         if home.exists():
             shutil.rmtree(home)
@@ -85,10 +86,13 @@ def _fetch(artifact, arch, project_root, cache, no_cache) -> Path:
         raise AppBundleError(str(exc)) from exc
 
 
-def _extract(archive: Path, into: Path, provider: str) -> Path:
+def _extract(
+    archive: Path, into: Path, provider: str, *, writes_to: tuple[Path, ...] = ()
+) -> Path:
     into.mkdir(parents=True, exist_ok=True)
     try:
         with tarfile.open(archive, "r:*") as tf:
+            _refuse_case_collisions(tf, archive, (into, *writes_to))
             _safe_extractall(tf, into)
     except (tarfile.TarError, OSError) as exc:
         raise AppBundleError(f"failed to extract {archive.name}: {exc}") from exc
@@ -96,6 +100,22 @@ def _extract(archive: Path, into: Path, provider: str) -> Path:
         return normalized_runtime_root(provider, into)
     except RuntimeProviderError as exc:
         raise AppBundleError(f"{archive.name}: {exc}") from exc
+
+
+def _refuse_case_collisions(
+    tf: tarfile.TarFile, archive: Path, dirs: tuple[Path, ...]
+) -> None:
+    """Fail clearly, before extracting, if *dirs* cannot hold the archive.
+
+    See :mod:`kivyforge.bundle.casefold` (test-matrix.md §5.6).
+    """
+    problem = case_collision_problem(
+        (m.name for m in tf.getmembers()), archive.name, writes_to=dirs
+    )
+    if problem:
+        raise AppBundleError(
+            problem + " On macOS that means a case-sensitive APFS volume."
+        )
 
 
 def _safe_extractall(tf: tarfile.TarFile, into: Path) -> None:

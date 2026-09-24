@@ -328,7 +328,11 @@ known-unverified list.
   WSL2 — the embedded runtime's terminfo database ships `hp70092` beside
   `hp70092A`, which a case-insensitive filesystem cannot hold. Not a
   kivyforge defect, but it is the first real reproduction of §5.6's
-  long-suspected case-insensitive staging collision.
+  long-suspected case-insensitive staging collision. *(Fixed 2026-09-23: the
+  stagers now refuse such an archive up front with an actionable message.
+  "Not a kivyforge defect" was too generous: extracting straight onto a
+  case-insensitive filesystem merges the pair **silently**. See test-matrix
+  §5.6.)*
 
 ## Execution order
 
