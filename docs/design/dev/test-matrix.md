@@ -414,23 +414,25 @@ prove this week", and offered §5.2, §5.3, §5.4 and §5.6 as the reachable
 ones. §5.2, §5.3, §5.4, §5.5, §5.7, §5.8, §5.9 and §5.10 have all since
 closed, so that trade no longer decides anything.
 
-What is actually left, in value order:
+What is actually left, in value order — **all of it test coverage**; no
+product gap remains on this list:
 
-1. **§5.5's product half** — `kivyforge run` still cannot build a release on
-   Linux, so the command people use while iterating never reaches
-   `strip_source`. That is the hole the `AppRun` defect lived in. Android's
-   half was fixed 2026-09-22; Linux's was not. **The only *product* gap on
-   this list** — everything else here is test coverage.
-2. **§5.2's remaining sliver** — the Windows `py`-launcher *search*, still
+1. **§5.2's remaining sliver** — the Windows `py`-launcher *search*, still
    local-measurement-only. CI builds an APK on Windows now, but its resolver
    takes the "interpreter already running" fast path, so the candidate search
    item 1 broke is covered by one dated measurement and the unit tests.
-3. **§5.6** — now with a real reproduction (the terminfo collision) and still
+2. **§5.6** — now with a real reproduction (the terminfo collision) and still
    no test; `longPathAware` remains a suspicion.
-4. **The hardware checklist** — roadmap item 5's "done when" has two halves,
+3. **The hardware checklist** — roadmap item 5's "done when" has two halves,
    and this is the second: §6 is prose, not something runnable that records a
    dated result. Not a §5 subsection, which is part of why it keeps being
    skipped over.
+
+**§5.5's product half closed 2026-09-23** — it was item 1 here. `run
+--release` now reaches `strip_source` on Linux, macOS and Windows, not only
+Android; see §5.5's closure note. The gap was wider than this list said:
+it named Linux, but macOS and Windows `run` hardcoded the same
+`release=False`.
 
 **§5.1's iOS box closed 2026-09-23**, while this very list was being written
 — `ios_app_problems` landed and iOS stopped being the one platform without a
@@ -907,7 +909,7 @@ Physical-device runs remain manual, and remain what
 **Validated** rows cite. What changed is that a regression no longer waits for
 someone to run one by hand.
 
-### 5.5 `kivyforge run` cannot reach release stripping at all
+### 5.5 `kivyforge run` cannot reach release stripping at all — **done 2026-09-23**
 
 This is a **product** hole, not only a test gap, which is why §5.4's predecessor
 understated it. `android_run()` calls `android_build(..., debug=True)`
@@ -925,6 +927,45 @@ emits a distributable nobody launches while iterating. That gap is exactly where
 the `AppRun` defect in §7 lived: shipped, reproducible in one command, and
 invisible to every path a developer actually uses. The cost of this hole is now
 measured, not argued.
+
+**Closed in two halves.** Android got `run --release` on 2026-09-22. The
+desktop half landed 2026-09-23, and it was **wider than this section said**:
+the text above names Linux, but `macos_run` and `windows_run` hardcoded the
+same `release=False` (`windows_build` in its body, `macos_run` by never
+passing the parameter `macos_build` already had). All three now take
+`--release`, threaded through `Platform.run` to the bundler — the same
+`release=True` build `package` does, into the `build/<platform>/` tree `run`
+always launches. Two refusals rather than silent drops: `--release
+--no-build` (nothing records which flavor the existing build was, so
+accepting it would claim a stripped build that may not exist), and `run -p
+ios --release` (an iOS release is an archive + `.ipa`, not a simulator
+install).
+
+**Validated end to end on two of the three**, each with a negative control,
+because a check that passes a stripped build proves nothing unless it also
+fails an unstripped one (§7, 2026-09-23):
+
+- **Windows** (`windows-gate`, local): `run --release` printed the
+  byte-compile step "(.pyc only)", the app launched and stayed up, and the
+  existing T3 driver with `--windows-stripped` passed against the tree `run`
+  left behind. Plain `run` then printed no byte-compile step, and the same
+  assertion **failed** on `app/main.py` plus 1,194 `.py` files in
+  site-packages.
+- **Linux** (`linux-gate`, WSL2 on ext4): the same shape. `run --release`
+  passed the stripped T3; plain `run` failed it with 336 `.py` files and no
+  `.pyc`. The app's own startup traceback showed the difference too: release
+  frames name `usr/lib/kivy/...` with no source text, plain frames print it.
+- **macOS: hermetic only.** Same code path as the other two, exercised by the
+  unit tests; no Mac run was made for this change.
+
+Hermetic coverage: `release` reaching the bundler through the real CLI in
+both directions on all three platforms (so an inverted default cannot pass),
+the `--no-build` refusal, the iOS refusal, and desktop forwarding in the
+shared verb. Re-hardcoding `release=False` fails the three `True` legs.
+**Not in CI:** `run` launches a GUI app and blocks on it, and the build it
+performs is the one `package` already runs under T3 in `linux_appimage`,
+`macos_app` and `windows_onedir`. What was new here is the wiring from `run`
+to that build, and that is what the unit tests pin.
 
 ### 5.6 Host-dependent cases with no test at all
 
@@ -1196,6 +1237,8 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-23 | Android `x86_64` from a **Windows** host | T2 + T3 (local, then CI) | Windows 11, CPython 3.14.7 (via the `py` launcher) | **§5.2 closed — the item-1 code path finally has automated coverage.** Every Android build in CI had run on ubuntu, where `find_interpreter` reaches a versioned `python3.14` directly; item 1's bug lived in what that search does on Windows. Measured here first: `find_interpreter("3.14.6")` → `('py', '-3.14')`, the PEP 397 launcher, resolving to **CPython 3.14.7 final, 64-bit** — and `py --list` confirms the launcher knows 3.14 through 3.7, so the pre-release-rejection branch has real candidates to reject. `package -p android --abi x86_64` against a throwaway keystore produced a stripped, byte-compiled release APK, and all three T3 drivers (`test_apk_artifact` `--android-stripped`, `test_merged_manifest`, `test_apk_signature`) passed against it — run under a scratch 3.14.7 venv, because the magic assertion compares against the *runner's* MAGIC_NUMBER and this repo's dev venv is 3.13. Then wired as `android_windows_host`. **Coverage stated precisely:** CI proves the Windows branch end to end, but `setup-python` puts 3.14 on PATH while the launcher usually does not know a hostedtoolcache install, so CI likely resolves via `('python',)` rather than the launcher — the job logs which candidate won so this is answerable per run instead of assumed, and the `py`-launcher leg is *this* row. **Not a bug, noted because it reads like one:** `find_interpreter` returns `()` for "use the interpreter already running" and `None` for no match; a `()` is success. **First CI run failed before reaching any of that**, on a Windows-shell detail rather than anything Android: `sdkmanager` is `sdkmanager.bat`, and Git Bash does not apply `PATHEXT`, so a bare `sdkmanager` is "command not found" even with the SDK action having put it on PATH. That one step moved to `pwsh`; the rest of the job stays on bash because the tools it calls (`keytool`, `kivyforge`, `pytest`) are `.exe`, which bash does resolve — audited rather than assumed, and the same two were driven from bash by hand during the local leg above. **Second run green, and its resolver log line corrected this row's own premise:** CI printed `resolver picked: ()` — the "use the interpreter already running" fast path, taken *before* the Windows candidate list is built, because `setup-python` makes the runner the same 3.14 the project ships. So CI covers Windows Gradle/NDK, Windows path handling, byte-compilation on a Windows host and the full T3 pass, but **not** the `py`-launcher search — that is this row's local leg and the unit tests, nothing standing. The step was added to make that answerable rather than assumed, and on its first run it contradicted both guesses about what CI would pick, which is the argument for logging rather than reasoning about it. `package` 1m20s, T3 3 passed. |
 
 | 2026-09-23 | Android **`arm64_v8a`** | T2 + T3 (local, then CI) | Windows 11, CPython 3.14.7 | **The ABI every real phone runs had no direct CI coverage** — all three Android jobs passed `--abi x86_64`, and §3.2 had carried arm64_v8a as "inherited, not direct" since the matrix was written. `android_gradle` is now a two-leg matrix. Proven locally first: `package -p android --abi arm64_v8a` produced a stripped release APK and `test_apk_artifact.py --android-abi arm64-v8a --android-stripped` passed against it. **Two negative controls, both fired:** claiming `x86_64` on that APK reports the missing `lib/x86_64/libmain.so` *and* the stray `arm64-v8a` objects; and passing the wheel-tag spelling to `--android-abi` gives `unknown ABI 'arm64_v8a'; expected one of ['arm64-v8a', 'x86_64']`. **That second one is the trap worth recording:** kivyforge's `--abi` takes `arm64_v8a` while the T3 driver's `--android-abi` takes `arm64-v8a`, and the two are *identical for x86_64* — which is exactly why one `$ABI` variable sufficed for as long as this job built only that ABI. The matrix now carries both spellings. It fails loudly rather than silently, so this was never a false-green risk, only a job that would not have run. |
+| 2026-09-23 | Windows `amd64` (`windows-gate`) | T2 + T3 + T4 (local) | Windows 11, CPython 3.13.1 venv; fixture pins 3.13.14 | **§5.5 closed on desktop — `run --release` reaches `strip_source`.** `kivyforge run -p windows --release`: "[stage] byte-compiling the Python payload … (.pyc only)" and "byte-compiling the embedded stdlib", then `Launching Windows Gate ...`; `Windows Gate.exe` still running 8 s later, then closed by `taskkill` (so the logged "exited with status 1" is the kill, not the app). `test_onedir_artifact.py --windows-stripped` against `build/windows/Windows Gate` → `.` (asserted, not skipped). **Negative control:** plain `run -p windows` printed no byte-compile step, and the same assertion failed: `app/main.py` plus 1,194 `.py` under `python/Lib/site-packages`. |
+| 2026-09-23 | Linux `x86_64` (`linux-gate`) | T2 + T3 + T4 (local) | **WSL2** (Ubuntu, Python 3.14.4, WSLg), built on ext4, not `/mnt/c` (§5.6) | Same check as the Windows row. `run -p linux --release` byte-compiled "(.pyc only)" plus the stdlib; `AppRun`'s `python3 -P -m main` still running 10 s after `Launching`. `test_appimage_artifact.py --linux-appdir … --linux-stripped` → 2 passed, 1 skipped (the AppImage-container test, which has no AppImage to inspect for a bare AppDir). **Negative control:** plain `run` failed it: 336 `.py` files, no `.pyc` at all. Kivy's non-fatal `libmtdev.so.1` traceback, printed at startup in both runs, showed the difference too: release frames had no source text. The first attempt failed on setup, not the change: the WSL venv predated the `rich` dependency and had no `pytest-cov` for the repo's `addopts`. |
 
 ### Known-unverified, stated plainly
 

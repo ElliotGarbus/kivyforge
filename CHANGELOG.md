@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Desktop: `kivyforge run --release` (Linux, macOS, Windows)
+
+- **`run --release` now works on the desktop backends**, as it has on Android
+  since the entry below. Previously `run` on Linux, macOS and Windows always
+  built the dev flavor, so `byte_compile`/`strip_source` (both release-only by
+  default) could only be reached through `kivyforge package` — never through
+  the command used for day-to-day iteration. That gap is where the Linux
+  `AppRun` defect lived: shipped, reproducible in one command, and invisible
+  to every verb a developer runs while working.
+- The release flavor is built into the same `build/<platform>/` tree `run`
+  always launches, so a later plain `run` rebuilds it with readable source.
+- `--release --no-build` is refused: `--no-build` launches whatever the last
+  build left, and nothing records whether that was a release build.
+- `run -p ios --release` is refused rather than ignored — an iOS release build
+  is an archive and a signed `.ipa`, not a simulator install. Use
+  `kivyforge build --release` or `kivyforge package -p ios`.
+
 ### `kivyforge lock` honors `GH_TOKEN` / `GITHUB_TOKEN`
 
 - **Fixed:** resolving the python-build-standalone runtime queries GitHub's

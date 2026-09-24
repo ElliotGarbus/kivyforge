@@ -37,7 +37,9 @@ known-unverified list.
   Windows, the markers do not describe what CI runs, and two new gaps came out of
   it — Android T3 has never run from a Windows host (item 1's own code path), and
   `kivyforge run` cannot produce a release build at all, so it can never exercise
-  `strip_source`. The latter is a product hole, not a test gap.
+  `strip_source`. The latter is a product hole, not a test gap. *(Closed in two
+  halves: Android 2026-09-22, then Linux, macOS and Windows 2026-09-23 — see
+  item 5.)*
 - **Item 5's Android T3 slice is done (2026-09-13)**, pulled ahead of item 3
   because `android_gradle` was already building the stripped release APK that
   item 1's bug would have corrupted and never inspecting it. Item 1's failure mode
@@ -293,6 +295,15 @@ known-unverified list.
   hermetic tests; not yet validated against a real device (the change
   mirrors already-validated `--smoke --release`/`package` code paths closely
   enough that hermetic coverage was judged sufficient for now).
+- **`kivyforge run --release` (Linux, macOS, Windows), 2026-09-23 — the
+  desktop half of the same fix.** `linux_run`/`macos_run`/`windows_run`
+  hardcoded `release=False` exactly as `android_run` had, so on desktop too
+  `strip_source` was reachable only through `package` — and the Linux `AppRun`
+  defect had lived in precisely that gap. `--release` now threads through
+  `Platform.run` to each desktop bundler. `--release --no-build` is refused
+  (nothing records which flavor the existing build was), and `run -p ios
+  --release` is refused rather than silently ignored. See test-matrix.md §5.5
+  for the local end-to-end validation and the negative control.
 
 - **The desktop lock-for-CI question is decided, and Linux has a build job
   (2026-09-22).** This was item 5's last open decision and the thing every
@@ -1572,6 +1583,11 @@ are in [`test-matrix.md`](test-matrix.md) §5.1.
   mirrors already-validated `--smoke --release`/`package` code paths closely
   enough that hermetic coverage was judged sufficient, but that's worth
   knowing if it ever needs re-litigating.
+  **Correction, 2026-09-23: this strike-through claimed more than was done.**
+  It closed Android only; Linux, macOS and Windows `run` still hardcoded
+  `release=False`, and test-matrix.md §5.5 carried that as the one remaining
+  *product* gap while this bullet read as finished. The desktop half landed
+  2026-09-23 (`run --release` on all three).
 - **Android T3 has never run from a Windows host**, which is where item 1's bug
   actually lived: `android_gradle` runs on ubuntu, so `find_interpreter()`'s
   Windows behaviour (the `py` launcher, versioned executables, pre-release

@@ -130,12 +130,14 @@ class AndroidPlatform(Platform):
         arch: str | None,
         destination: str | None,
         no_build: bool,
+        release: bool = False,
     ) -> None:
         from .cli import android_run
 
         android_run(
             project_root,
             no_build=no_build,
+            release=release,
             abi=arch,
             serial=destination,
         )

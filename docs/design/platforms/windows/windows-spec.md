@@ -200,8 +200,9 @@ DLLs / helper executables; empty by default. Full semantics in
 Build settings: `[tool.kivy.windows.build_settings]` controls byte-compiling
 the shipped Python payload — `app\` and `Lib\site-packages\` only, never the
 staged stdlib (Windows PBS ships it as `.pyc` already). `byte_compile` /
-`strip_source` are each `"release"` (the default, meaning `package` only —
-`build`/`run` always keep readable `.py` for fast iteration) or an explicit
+`strip_source` are each `"release"` (the default, meaning `package` and
+`run --release` only — plain `build`/`run` keep readable `.py` for fast
+iteration) or an explicit
 `true`/`false`. `strip_source` is ignored while `byte_compile` is off. The
 compiler is picked in order: the bundle's own staged `python.exe` when it can
 run on this host (target arch == host arch — kivyforge never depends on
@@ -573,7 +574,11 @@ failure mode: a genuinely different toolchain can emit different *code*.
   stdin/stdout/stderr** for the child so tracebacks land in the terminal — see
   the [bootloader doc](bootloader-windows.md#windowed-subsystem-only). (On a
   double-click launch there is no parent console; the child is created with
-  `CREATE_NO_WINDOW` so no console flashes.)
+  `CREATE_NO_WINDOW` so no console flashes.) `--release` builds
+  the release flavor first, so `byte_compile`/`strip_source` apply exactly as
+  they do for `package` — the only way to exercise them through the dev loop
+  (added 2026-09-23, test-matrix §5.5; it does not combine with `--no-build`,
+  since nothing records which flavor the existing build was).
 - **`package -f folder`** — **copies** the `build/windows` tree into the
   finished distributable at `dist/windows/<safe-name>-<version>-amd64/`
   (`<safe-name>` is `display_name` run through the Windows filename sanitizer),

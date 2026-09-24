@@ -114,6 +114,7 @@ class Platform(ABC):
         arch: str | None,
         destination: str | None,
         no_build: bool,
+        release: bool = False,
     ) -> None:
         raise NotImplementedError(f"run is not supported for {self.name!r}.")
 

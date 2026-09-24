@@ -135,6 +135,43 @@ class TestRun:
         cli.windows_run(project, arch=None, no_build=False)
         assert launched["cmd"][0].endswith("My App.exe")
 
+    @pytest.mark.parametrize("release", [False, True])
+    def test_release_reaches_the_bundler(self, project, monkeypatch, release):
+        # test-matrix §5.5: windows_build used to hardcode release=False, so
+        # `run` could never reach byte_compile/strip_source. Driven through the
+        # WindowsPlatform backend so its forwarding is covered too.
+        from kivyforge.platforms.windows import WindowsPlatform
+
+        seen = {}
+
+        def _fake_build(config, lock, project_root, **kw):
+            seen["release"] = kw["release"]
+            bundle = project_root / "build" / "windows" / "My App"
+            bundle.mkdir(parents=True, exist_ok=True)
+            return bundle
+
+        class _Proc:
+            returncode = 0
+
+        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
+        monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: ("cfg", "lock"))
+        monkeypatch.setattr(cli, "build_onedir", _fake_build)
+        monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: _Proc())
+        WindowsPlatform().run(
+            project,
+            target="simulator",
+            arch=None,
+            destination=None,
+            no_build=False,
+            release=release,
+        )
+        assert seen == {"release": release}
+
+    def test_release_with_no_build_rejected(self, project, monkeypatch):
+        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
+        with pytest.raises(ToolchainError, match="--release applies to the build"):
+            cli.windows_run(project, arch=None, no_build=True, release=True)
+
 
 class TestPackage:
     class _Lock:

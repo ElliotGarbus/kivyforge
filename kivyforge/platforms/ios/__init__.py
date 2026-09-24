@@ -82,7 +82,20 @@ class IosPlatform(Platform):
         arch: str | None,
         destination: str | None,
         no_build: bool,
+        release: bool = False,
     ) -> None:
+        if release:
+            # Refused rather than dropped: a flag the user passed and the backend
+            # quietly ignores is the worst outcome (see reject_android_only).
+            # iOS's release flavor is an archive + signed .ipa, not something
+            # `run` installs on a simulator.
+            from kivyforge.cli._common import ToolchainError
+
+            raise ToolchainError(
+                "--release is not valid for `run -p ios`: an iOS release build "
+                "is an archive + signed .ipa, not a simulator/device install.\n"
+                "  Use `kivyforge build --release` or `kivyforge package -p ios`."
+            )
         from .cli import ios_run
 
         ios_run(

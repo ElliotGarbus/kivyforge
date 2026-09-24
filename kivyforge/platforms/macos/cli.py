@@ -86,8 +86,18 @@ def macos_run(
     *,
     arch: str | None,
     no_build: bool,
+    release: bool = False,
 ) -> None:
     """Build (unless --no-build) and launch the ``.app`` in the foreground."""
+    if no_build and release:
+        # --no-build launches whatever the last build left in build/macos; nothing
+        # records which flavor that was, so accepting --release here would claim
+        # a stripped build that may not exist.
+        raise ToolchainError(
+            "--release applies to the build step, and --no-build skips it.\n"
+            "  Drop --no-build to rebuild as release, or drop --release to launch "
+            "the existing build."
+        )
     if no_build:
         _require_macos_host()
         config = _load_config(project_root)
@@ -99,7 +109,11 @@ def macos_run(
             )
     else:
         built = macos_build(
-            project_root, arch=arch, no_verify_lock=False, no_cache=False
+            project_root,
+            arch=arch,
+            no_verify_lock=False,
+            no_cache=False,
+            release=release,
         )
         app = project_root / built.artifacts[0].path
 
