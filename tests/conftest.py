@@ -193,6 +193,13 @@ def pytest_addoption(parser):
         "via the py launcher on Windows — rather than by the running-interpreter "
         "fast path.",
     )
+    group.addoption(
+        "--windows-long-paths-off-bundle",
+        default=None,
+        help="Path to a built onedir bundle to measure against MAX_PATH. Only "
+        "meaningful on a Windows host where LongPathsEnabled has been set to 0; "
+        "the test fails if it has not.",
+    )
     resolver.addoption(
         "--resolver-prerelease-minor",
         default=None,

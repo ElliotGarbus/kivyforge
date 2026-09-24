@@ -504,6 +504,20 @@ jobs:
         python -c "from pathlib import Path; from kivyforge.platforms.windows.signing import SigntoolSigner; SigntoolSigner('$($cert.Thumbprint)', 'http://timestamp.digicert.com', 'current_user').sign([Path(r'$launcher')])"
         pytest tests/platforms/windows/test_authenticode.py -q --no-cov `
           --windows-signed-exe "$launcher"
+    - name: Reproduce the MAX_PATH limit with long paths off (§5.6)
+      # LongPathsEnabled is off on a default Windows install, which is what
+      # most users run, but on for this runner and the dev box, so the limit
+      # had never been observed. Switched off here, on a disposable VM, and
+      # deliberately the LAST real step: every process started after it runs
+      # with long paths off. The test moves the packaged bundle into folders of
+      # chosen lengths and asserts the headroom `package` reports is exact:
+      # the deepest file opens at that folder length and not one character
+      # past it. It fails rather than skips if long paths are not really off.
+      shell: pwsh
+      run: |
+        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Value 0 -Type DWord
+        $bundle = (Get-ChildItem "$env:APP_DIR/dist/windows" -Directory | Where-Object Name -like '*-amd64').FullName
+        python -m pytest tests/platforms/windows/test_long_paths_live.py -v -s --no-cov --windows-long-paths-off-bundle "$bundle"
     - name: Upload the bundle listing on failure (for triage)
       if: failure()
       uses: actions/upload-artifact@v6

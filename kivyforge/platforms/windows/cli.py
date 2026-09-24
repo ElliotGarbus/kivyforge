@@ -40,6 +40,7 @@ from .bundle import (
 from .fsswap import discard_reserved, reserve_previous, restore_previous
 from .lock import WindowsLockfile
 from .lock import load as load_windows_lock
+from .pathdepth import MIN_FOLDER_HEADROOM, deepest_relative_path, folder_headroom
 from .signing import select_signer
 
 # Never copy VCS metadata or editor droppings into the shipped dist tree. The
@@ -145,6 +146,7 @@ def windows_package(
         restore_previous(trash, dest)
         raise
     discard_reserved(trash)
+    _note_path_depth(dest, events)
 
     trust = (
         "signed + timestamped"
@@ -164,6 +166,35 @@ def windows_package(
             f"  Run it by double-clicking {launcher_name(config)}, or zip the folder "
             "to distribute. An installer is an external step.",
         )
+    )
+
+
+def _note_path_depth(bundle: Path, events: BuildEvents) -> None:
+    """Warn when *bundle* only fits in a short folder with long paths off.
+
+    Long paths are off on a default Windows install, so every file has to fit
+    in MAX_PATH *including* the folder the user unzips or installs into. That
+    folder is outside kivyforge's control, so this can only say how much room
+    is left (test-matrix.md §5.6).
+    """
+    deepest = deepest_relative_path(bundle)
+    headroom = folder_headroom(deepest)
+    if headroom >= MIN_FOLDER_HEADROOM:
+        return
+    message = (
+        f"the deepest path in this bundle is {len(deepest)} characters "
+        f"({deepest}), so it only works from a folder of at most {headroom} "
+        "characters on Windows with long paths off (the default)."
+    )
+    events.on_progress(
+        f"[package] warning: {message}\n"
+        "  Install it to a short folder, or enable long paths on the machines "
+        "that run it."
+    )
+    events.note(
+        diagnostics.PATH_DEPTH,
+        message,
+        {"deepest": deepest, "folder_headroom": str(headroom)},
     )
 
 

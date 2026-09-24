@@ -388,7 +388,10 @@ passes" is not host-independent. Each of these has bitten:
 - **Windows needs Developer Mode for symlinks.** Covered by
   `requires_symlinks` + `KIVYFORGE_REQUIRE_SYMLINKS`.
 - **Windows has a path-length ceiling** that deep staging trees can hit, and the
-  launcher declares no `longPathAware` manifest. **No test.** (§5.6)
+  launcher declares no `longPathAware` manifest. ~~**No test.**~~ **Measured
+  and tested since 2026-09-24** (§5.6). The manifest turned out to be beside
+  the point: the real limit is the install folder's length plus the bundle's
+  deepest path, with long paths off (the Windows default).
 - **Windows redirected streams are cp1252.** Guarded statically by
   `tests/test_message_encoding.py`, which parses `kivyforge/` for strings that
   can reach a stream and cannot encode — the model for the kind of cheap policy
@@ -421,13 +424,13 @@ closed, so that trade no longer decides anything.
 What is actually left, in value order — **all of it test coverage**; no
 product gap remains on this list:
 
-1. **§5.6's remaining half** — Windows path length / `longPathAware`, still a
-   suspicion with no reproduction and no test. The case-collision half closed
-   2026-09-23.
-2. **The hardware checklist** — roadmap item 5's "done when" has two halves,
+1. **The hardware checklist** — roadmap item 5's "done when" has two halves,
    and this is the second: §6 is prose, not something runnable that records a
    dated result. Not a §5 subsection, which is part of why it keeps being
    skipped over.
+
+**§5.6's `longPathAware` half closed 2026-09-24**, which leaves the hardware
+checklist as the only item; see §5.6's closure note.
 
 **§5.2's remaining sliver closed 2026-09-24** — the Windows `py`-launcher
 search now runs in CI, finding a 3.14 final and rejecting a 3.15 pre-release
@@ -1013,7 +1016,7 @@ performs is the one `package` already runs under T3 in `linux_appimage`,
 `macos_app` and `windows_onedir`. What was new here is the wiring from `run`
 to that build, and that is what the unit tests pin.
 
-### 5.6 Host-dependent cases with no test at all — **case-collision half done 2026-09-23**
+### 5.6 Host-dependent cases with no test at all — **done: case collisions 2026-09-23, path length 2026-09-24**
 
 From §4, the ones with no producer of any kind: Windows path-length /
 `longPathAware`, and case-insensitive staging collisions — though the second
@@ -1062,7 +1065,56 @@ Ubuntu legs prove a case-sensitive host still stages both files distinctly and
 the Windows legs prove a case-insensitive one is refused up front.
 Hermetically, all three stagers are covered, as is "no collision → no probe".
 
-**Still open: `longPathAware`**, with no reproduction.
+~~**Still open: `longPathAware`**, with no reproduction.~~
+
+**The path-length half closed 2026-09-24. The suspicion was aimed at the
+wrong component.** Measured on the dev box (§7):
+
+- The bundle's own `python.exe` and `pythonw.exe` already declare
+  `longPathAware=true`. The launcher declares nothing, but it does no deep
+  file I/O, and its self-location already uses a growable buffer.
+- **Windows will not start an executable whose own path exceeds `MAX_PATH`
+  at all**, even with `LongPathsEnabled = 1` and a long-path-aware caller:
+  `python.exe` at a 283-character folder gave `[WinError 206] The filename or
+  extension is too long`. So a `longPathAware` launcher could not help a
+  bundle placed in a folder too long for its own `python.exe`. Below that
+  length, `python.exe`, the process doing the I/O, already opts in.
+- The real constraint is **the install folder plus the bundle's deepest
+  relative path**, with long paths **off**, which is the Windows default and
+  the setting most users have. `windows-gate`'s deepest entry is 105
+  characters (pip's `__pycache__`, inside the shipped runtime), leaving **153
+  characters** for the folder. With long paths on, the deepest import worked
+  from a 199-character folder, a 280-character path. That is exactly the case
+  that fails on a default machine.
+
+**The fix is therefore to report the number, not change a manifest.**
+`kivyforge/platforms/windows/pathdepth.py` measures the deepest relative path
+and the folder headroom it leaves. `package -p windows` prints a warning and
+attaches `KF-PATH-DEPTH` when the headroom falls under 100 characters, which
+comfortably covers a per-user install such as
+`C:\Users\<name>\AppData\Local\Programs\<App>-1.0.0-amd64` (~85). The Windows
+T3 check asserts the same budget, so a kivyforge layout change that deepens
+every bundle fails CI instead of only warning. `windows-gate` has 153, so
+neither fires today.
+
+**Reproduced in CI, not just argued.** `windows_onedir` now ends by switching
+`LongPathsEnabled` off on its disposable runner and running
+`tests/platforms/windows/test_long_paths_live.py` against the bundle it just
+packaged. The test moves the bundle (a rename) into folders of chosen length.
+At exactly the reported headroom, the deepest file must open and the deepest
+module must import; one character past it, the deepest file must **fail** to
+open. So the number is neither over-promising nor needlessly conservative. It
+also bisects for the longest folder the deepest *import* survives, which is
+the figure a user actually hits. A precondition test checks both the registry
+value and the behaviour (a file created through `\\?\` must be unreachable by
+an ordinary path from a fresh process), and fails rather than skips when long
+paths are not really off.
+
+**Not covered: the *build host*.** Staging a bundle from a deep project
+directory on a machine with long paths off will hit the same limit
+mid-staging, probably with an unhelpful `OSError`. That is not reproduced yet,
+and kivyforge does not yet turn it into a clear message. The same measurement
+explains it (project folder + `build\windows\<name>\` + 105).
 
 ### 5.7 Wire `requires_device`, or remove it — **removed 2026-09-23**
 
@@ -1327,6 +1379,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-24 | macOS `arm64` runtime | §5.6 follow-up — **inferred, not scanned** | CI (`macos_app`, `macos-latest`) | The macOS PBS runtime was not in either cache scanned for §5.6, so its collision count was unknown. PR #14's `macos_app` run passed with the new check live. `stage_runtime` extracts into a `tempfile.mkdtemp()` directory, which is case-insensitive on a default APFS runner volume, so an archive with case-only collisions would have been refused there. Read as **no case-only collisions in the macOS runtime `macos-gate` pins**. Two assumptions this rests on: the runner's temp volume really is case-insensitive (the GitHub default, not verified in that run), and only that one pinned runtime was exercised. A direct scan of the archive's member names would settle it. |
 | 2026-09-24 | Windows host (resolver) | §5.2 live resolver, **local rehearsal** | Windows 11; kivyforge under the repo `.venv` (CPython 3.13.1); `py --list`: 3.14.7 final (64-bit), 3.14.0a7 (`-3.14-32`), 3.13, 3.12, 3.11, 3.10, 3.9 | `tests/bundle/test_resolver_live.py`. `--resolver-found-minor 3.14` → passed, `resolver picked for 3.14: ('py', '-3.14')`. Both preconditions fire as written: `--resolver-found-minor 3.13` (the running minor) → fails "would return at its fast path and never search"; `--resolver-prerelease-minor 3.15` with no 3.15 installed → fails "py -3.15 found nothing". The pre-release rejection itself could not run here: the only 3.14 pre-release is the 32-bit `-3.14-32` tag, which `py -3.14` never picks over 3.14.7 final, so its first real execution is CI's. |
 | 2026-09-24 | Windows `windows-latest` (resolver) | §5.2 live resolver, **CI** (`android_windows_host`, PR #15) | GitHub `windows-latest`; kivyforge under setup-python 3.13; 3.14 and a 3.15 pre-release also installed | **First CI execution of the Windows candidate search.** `py --list`: `-V:3.15 *`, 3.14, 3.13, 3.12, 3.11, 3.10, so the launcher does see hostedtoolcache installs. `test_resolver_live.py`: 2 passed; `resolver picked for 3.14: ('py', '-3.14')`; `py -3.15 offers 3.15.0rc2 (candidate)`, rejected. Build: `[stage] byte-compiling the Python payload with py -3.14 (.pyc only)`; T3 under 3.14 → `...`. **Caveat:** the rejected interpreter was a *release candidate*, not an alpha like item 1's `3.14.0a7`; it is the same `releaselevel == "final"` gate. **Found in the same run:** the floating `'3.15'` + `allow-prereleases` spec would have become 3.15.0 final on 2026-10-01 and failed the precondition; it is now pinned to `3.15.0-rc.2`. |
+| 2026-09-24 | Windows `amd64` (`windows-gate`) | §5.6 path length, **local measurement** | Windows 11, `LongPathsEnabled = 1`; bundled CPython 3.13.14 | `kivyforge build -p windows`: 5,024 entries; deepest relative path **105** characters, `python\Lib\site-packages\pip\_internal\resolution\resolvelib\__pycache__\found_candidates.cpython-313.pyc`, so **153** characters of folder headroom with long paths off. Manifests: `python.exe` and `pythonw.exe` `longPathAware=true`; the launcher has none. Bundle copied to a 199-character folder: the bundled `python.exe` imported `pip._internal.resolution.resolvelib.found_candidates` from a **280-character** path (long paths on). Copied to a 283-character folder: `python.exe` **would not start**, `[WinError 206] The filename or extension is too long`, with long paths on and a long-path-aware caller. So the launcher manifest is moot. The long-paths-**off** reproduction could not run here without changing a system setting; it runs in CI. |
 
 ### Known-unverified, stated plainly
 

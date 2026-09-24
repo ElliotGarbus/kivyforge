@@ -2053,6 +2053,30 @@ class TestWindowsPeArch:
         assert _wcheck(bundle) == []
 
 
+def _deep_file(bundle: Path, rel_len: int) -> str:
+    """Add one file whose path relative to *bundle* is exactly *rel_len* long."""
+    head = "python/Lib/site-packages/pkg/"
+    name = "m" * (rel_len - len(head) - len(".py")) + ".py"
+    _write(bundle / head / name, b"x = 1\n")
+    return head + name
+
+
+class TestWindowsPathDepth:
+    """test-matrix §5.6: the bundle must leave room for its install folder."""
+
+    def test_exactly_the_minimum_headroom_passes(self, tmp_path):
+        bundle = _windows_bundle(tmp_path, stripped=False)
+        _deep_file(bundle, 158)  # 259 - 1 - 158 = 100
+        assert _wcheck(bundle, stripped=False) == []
+
+    def test_one_character_less_headroom_is_reported(self, tmp_path):
+        bundle = _windows_bundle(tmp_path, stripped=False)
+        _deep_file(bundle, 159)
+        [problem] = _wcheck(bundle, stripped=False)
+        assert problem.startswith("deepest path is 159 characters (python")
+        assert "leaving only 99 for the install folder" in problem
+
+
 class TestWindowsRequiredEntries:
     def test_a_missing_exe_is_reported(self, tmp_path):
         bundle = _windows_bundle(tmp_path)

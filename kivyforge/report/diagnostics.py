@@ -60,6 +60,11 @@ BYTECOMPILE_NO_INTERP = "KF-BYTECOMPILE-NO-INTERP"
 #: configurable. WARNING: the artifact is usable, just not trusted.
 SIGNING_UNCONFIGURED = "KF-SIGNING-UNCONFIGURED"
 
+#: A Windows onedir bundle nests so deep that it only works from a short
+#: folder when long paths are off (the Windows default). WARNING: the
+#: artifact is fine; where the user puts it is the constraint.
+PATH_DEPTH = "KF-PATH-DEPTH"
+
 #: The Android release-manifest policy passed with an informational finding.
 MANIFEST_POLICY = "KF-MANIFEST-POLICY"
 
