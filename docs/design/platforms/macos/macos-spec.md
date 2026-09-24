@@ -93,8 +93,8 @@ Both are optional; without them `package` ships the ad-hoc floor.
 Build settings: `[tool.kivy.macos.build_settings]` controls byte-compiling the
 shipped Python payload — `Resources/app/` and `Resources/lib/` only, never
 the staged stdlib. `byte_compile` / `strip_source` are each `"release"` (the
-default, meaning `package` only — `build`/`run` always keep readable `.py`)
-or an explicit `true`/`false`; `strip_source` is ignored while `byte_compile`
+default, meaning `package` and `run --release` only — plain `build`/`run`
+keep readable `.py`) or an explicit `true`/`false`; `strip_source` is ignored while `byte_compile`
 is off. The compiler is picked in order: the bundle's own staged
 `Resources/python/bin/python3` when it can run on this host (target arch ==
 host arch — kivyforge never depends on Rosetta or any other emulation);
@@ -348,7 +348,11 @@ content, so a `.class` file under `app_dir` would be misidentified and fail
 - **`build`** — resolve (if needed), acquire the runtime and wheels, and assemble
   the `.app` staging tree.
 - **`run`** — build (unless `--no-build`), then **launch the `.app`** on the host
-  (the desktop analog of installing to a simulator). The fast dev loop.
+  (the desktop analog of installing to a simulator). The fast dev loop. `--release` builds
+  the release flavor first, so `byte_compile`/`strip_source` apply exactly as
+  they do for `package` — the only way to exercise them through the dev loop
+  (added 2026-09-23, test-matrix §5.5; it does not combine with `--no-build`,
+  since nothing records which flavor the existing build was).
 - **`package -f app`** — produce the finished, **signed** `.app` (ad-hoc for now).
   `-f app` is the only format this phase supports; `.dmg`/installer is external.
 

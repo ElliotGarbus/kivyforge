@@ -45,6 +45,15 @@ from ._platform import platform_option, reject_android_only, resolve_target
     is_flag=True,
     help="Skip the implicit build; install + launch the existing app.",
 )
+@click.option(
+    "--release",
+    is_flag=True,
+    help=(
+        "Build the release flavor, so byte_compile/strip_source apply as they do "
+        "for `package` (Android, Linux, macOS, Windows). Android: the release "
+        "variant (with --smoke, the release probe)."
+    ),
+)
 # --- Android-only ---
 @click.option(
     "--emulator", is_flag=True, help="Android: boot/target an emulator (AVD)."
@@ -57,11 +66,6 @@ from ._platform import platform_option, reject_android_only, resolve_target
     "--smoke",
     is_flag=True,
     help="Android: run the generated contract smoke test instead of launching.",
-)
-@click.option(
-    "--release",
-    is_flag=True,
-    help="Android: target the release variant (with --smoke, the release probe).",
 )
 @click.option(
     "--abi",
@@ -93,7 +97,6 @@ def run(
             "--avd": avd,
             "--serial": serial,
             "--smoke": smoke,
-            "--release": release,
             "--abi": abi,
         },
     )
@@ -160,4 +163,5 @@ def run(
         arch=arch,
         destination=destination,
         no_build=no_build,
+        release=release,
     )

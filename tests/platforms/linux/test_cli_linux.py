@@ -70,11 +70,14 @@ def runner():
 @pytest.fixture(autouse=True)
 def fake_bundler(monkeypatch):
     """build_appdir just materializes a minimal AppDir; no host tools run."""
-    calls = {"arch": [], "no_cache": []}
+    calls = {"arch": [], "no_cache": [], "release": []}
 
-    def fake_build(config, lock, project_root, *, arch=None, no_cache=False, **k):
+    def fake_build(
+        config, lock, project_root, *, arch=None, no_cache=False, release=False, **k
+    ):
         calls["arch"].append(arch)
         calls["no_cache"].append(no_cache)
+        calls["release"].append(release)
         appdir = project_root / "build" / "linux" / f"{config.display_name}.AppDir"
         appdir.mkdir(parents=True, exist_ok=True)
         (appdir / "AppRun").write_text("#!/bin/sh\n")
@@ -159,6 +162,34 @@ class TestRun:
             result = runner.invoke(run, ["-p", "linux", "--no-build"])
             assert result.exit_code != 0
             assert "run without --no-build" in result.output
+
+    @pytest.mark.parametrize(
+        ("flags", "expected"), [([], False), (["--release"], True)]
+    )
+    def test_release_reaches_the_bundler(
+        self, runner, tmp_path, fake_bundler, monkeypatch, flags, expected
+    ):
+        # test-matrix §5.5: `run` used to hardcode release=False, so the verb
+        # developers iterate with could never reach byte_compile/strip_source.
+        # Both directions, so an inverted default cannot pass.
+        monkeypatch.setattr(
+            _linux.subprocess, "run", lambda cmd: subprocess.CompletedProcess(cmd, 0)
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(run, ["-p", "linux", *flags])
+            assert result.exit_code == 0, result.output
+            assert fake_bundler["release"] == [expected]
+
+    def test_release_with_no_build_rejected(self, runner, tmp_path, fake_bundler):
+        # --no-build launches whatever is already built; nothing records whether
+        # that was a release build, so --release there would be a false claim.
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(run, ["-p", "linux", "--no-build", "--release"])
+            assert result.exit_code != 0
+            assert "--release applies to the build step" in result.output
+            assert fake_bundler["release"] == []
 
 
 class TestStatus:

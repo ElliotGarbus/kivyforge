@@ -307,8 +307,8 @@ class DesktopBuildSettings:
     analog, and no native-library stripping distinct from ``strip_source``.
 
     ``byte_compile`` / ``strip_source`` are a bool or the string ``"release"``
-    (apply to `kivyforge package` only -- the default; a plain `build` always
-    keeps source, matching the dev-loop/shippable-artifact split each backend
+    (apply to release builds only -- the default: `kivyforge package`, and on
+    desktop `run --release`; a plain `build`/`run` keeps source, matching the dev-loop/shippable-artifact split each backend
     already draws for signing). **stdlib is never stripped** regardless
     of this setting -- only the app's own code and installed wheels are, since
     the platform runtime ships its stdlib pre-compiled already.

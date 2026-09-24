@@ -84,10 +84,11 @@ class LinuxPlatform(Platform):
         arch: str | None,
         destination: str | None,
         no_build: bool,
+        release: bool = False,
     ) -> None:
         from .cli import linux_run
 
-        linux_run(project_root, arch=arch, no_build=no_build)
+        linux_run(project_root, arch=arch, no_build=no_build, release=release)
 
     def package(
         self,

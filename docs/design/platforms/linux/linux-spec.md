@@ -153,8 +153,8 @@ main categories written into the `.desktop` `Categories=` key (default
 Build settings: `[tool.kivy.linux.build_settings]` controls byte-compiling the
 shipped Python payload — `usr/app/` and `usr/lib/` only, never the staged
 stdlib. `byte_compile` / `strip_source` are each `"release"` (the default,
-meaning `package` only — `build`/`run` always keep readable `.py`) or an
-explicit `true`/`false`; `strip_source` is ignored while `byte_compile` is
+meaning `package` and `run --release` only — plain `build`/`run` keep
+readable `.py`) or an explicit `true`/`false`; `strip_source` is ignored while `byte_compile` is
 off. The compiler is picked in order: the bundle's own staged
 `usr/python/bin/python3` when it can run on this host (target arch == host
 arch — kivyforge never depends on emulation); otherwise the interpreter
@@ -451,7 +451,11 @@ It must pass `desktop-file-validate` (also a `doctor` check).
   assemble the AppDir tree.
 - **`run`** — build (unless `--no-build`), then execute `./AppRun` directly in
   the foreground so the developer sees stdout/stderr + tracebacks. The fast dev
-  loop needs no AppImage and no FUSE.
+  loop needs no AppImage and no FUSE. `--release` builds
+  the release flavor first, so `byte_compile`/`strip_source` apply exactly as
+  they do for `package` — the only way to exercise them through the dev loop
+  (added 2026-09-23, test-matrix §5.5; it does not combine with `--no-build`,
+  since nothing records which flavor the existing build was).
 - **`package -f appimage`** (default) — wrap the AppDir into a single
   `.AppImage` executable. **`package -f folder`** emits the AppDir directory
   itself (the substrate / fallback).

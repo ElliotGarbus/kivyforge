@@ -388,9 +388,9 @@ jobs:
       working-directory: ${{ env.APP_DIR }}
       run: kivyforge package -p linux
     - name: Assert the AppImage is the artifact the build promised (T3)
-      # strip_source and byte_compile both default to "release" and `package`
-      # is the only Linux verb that reaches them, so --linux-stripped is
-      # correct here and would be wrong for a `build`. This is the pass that
+      # strip_source and byte_compile both default to "release", which only
+      # `package` and `run --release` reach, so --linux-stripped is correct
+      # here and would be wrong for a `build`. This is the pass that
       # caught the shipped AppRun defect in test-matrix.md §7.
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
@@ -458,8 +458,8 @@ jobs:
       working-directory: ${{ env.APP_DIR }}
       run: kivyforge package -p windows
     - name: Assert the bundle is the artifact the build promised (T3)
-      # strip_source and byte_compile default to "release" and `package` is the
-      # only Windows verb that reaches them, so --windows-stripped is correct
+      # strip_source and byte_compile default to "release", which only
+      # `package` and `run --release` reach, so --windows-stripped is correct
       # here and would be wrong for a `build`.
       shell: bash
       run: |

@@ -18,11 +18,11 @@ files open, so any previous bundle is reserved first and restored if assembly
 fails — a broken build never destroys a working one.
 
 The onedir *folder* is a distributable format either way (portable use, zip it
-up yourself) — but *this* build's contents depend on ``release``: ``build``/
-``run`` (``release=False``) keep readable ``.py`` for fast iteration, while
-``package`` (``release=True``) additionally byte-compiles per
-``[tool.kivy.windows.build_settings]`` before copying the tree into
-``dist/windows``. ``release`` is a build-policy flag, not a statement about
+up yourself) — but *this* build's contents depend on ``release``: ``build``
+and plain ``run`` (``release=False``) keep readable ``.py`` for fast
+iteration, while ``package`` and ``run --release`` (``release=True``)
+additionally byte-compile per ``[tool.kivy.windows.build_settings]`` —
+``package`` then copies the tree into ``dist/windows``. ``release`` is a build-policy flag, not a statement about
 whether the folder *can* be distributed.
 """
 

@@ -83,10 +83,11 @@ class MacosPlatform(Platform):
         arch: str | None,
         destination: str | None,
         no_build: bool,
+        release: bool = False,
     ) -> None:
         from .cli import macos_run
 
-        macos_run(project_root, arch=arch, no_build=no_build)
+        macos_run(project_root, arch=arch, no_build=no_build, release=release)
 
     def package(
         self,

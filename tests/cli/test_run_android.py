@@ -43,7 +43,7 @@ def _patch_resolve_target(monkeypatch, backend, project_root):
 class TestAndroidOnlyFlagsGuard:
     @pytest.mark.parametrize(
         "flag",
-        ["--emulator", "--serial=ABC123", "--smoke", "--release", "--avd=Pixel"],
+        ["--emulator", "--serial=ABC123", "--smoke", "--avd=Pixel"],
     )
     def test_android_only_flag_rejected_on_other_backends(
         self, runner, fake_project_root, monkeypatch, flag
@@ -53,6 +53,33 @@ class TestAndroidOnlyFlagsGuard:
         result = runner.invoke(run_cmd, [flag])
         assert result.exit_code != 0
         assert "Android-only" in result.output
+
+    @pytest.mark.parametrize("name", ["linux", "macos", "windows"])
+    def test_release_is_forwarded_to_desktop_backends(
+        self, runner, fake_project_root, monkeypatch, name
+    ):
+        # --release used to be Android-only; test-matrix §5.5 extended it to
+        # the desktop backends so `run` can reach byte_compile/strip_source.
+        backend = _FakeBackend(name)
+        _patch_resolve_target(monkeypatch, backend, fake_project_root)
+        result = runner.invoke(run_cmd, ["--release"])
+        assert result.exit_code == 0, result.output
+        assert backend.run_calls[0]["release"] is True
+
+    def test_release_rejected_by_the_ios_backend(self, fake_project_root):
+        # Refused, not silently dropped: iOS's release flavor is an archive.
+        from kivyforge.cli._common import ToolchainError
+        from kivyforge.platforms.ios import IosPlatform
+
+        with pytest.raises(ToolchainError, match="not valid for `run -p ios`"):
+            IosPlatform().run(
+                fake_project_root,
+                target="simulator",
+                arch=None,
+                destination=None,
+                no_build=False,
+                release=True,
+            )
 
     def test_multiple_flags_pluralised_message(
         self, runner, fake_project_root, monkeypatch
