@@ -421,17 +421,17 @@ closed, so that trade no longer decides anything.
 What is actually left, in value order — **all of it test coverage**; no
 product gap remains on this list:
 
-1. **§5.2's remaining sliver** — the Windows `py`-launcher *search*, still
-   local-measurement-only. CI builds an APK on Windows now, but its resolver
-   takes the "interpreter already running" fast path, so the candidate search
-   item 1 broke is covered by one dated measurement and the unit tests.
-2. **§5.6's remaining half** — Windows path length / `longPathAware`, still a
+1. **§5.6's remaining half** — Windows path length / `longPathAware`, still a
    suspicion with no reproduction and no test. The case-collision half closed
    2026-09-23.
-3. **The hardware checklist** — roadmap item 5's "done when" has two halves,
+2. **The hardware checklist** — roadmap item 5's "done when" has two halves,
    and this is the second: §6 is prose, not something runnable that records a
    dated result. Not a §5 subsection, which is part of why it keeps being
    skipped over.
+
+**§5.2's remaining sliver closed 2026-09-24** — the Windows `py`-launcher
+search now runs in CI, finding a 3.14 final and rejecting a 3.15 pre-release
+on a real launcher; see §5.2's closure note.
 
 **§5.5's product half closed 2026-09-23** — it was item 1 here. `run
 --release` now reaches `strip_source` on Linux, macOS and Windows, not only
@@ -707,6 +707,27 @@ Closing that last sliver in CI would take forcing the search rather than the
 fast path — e.g. an extra step invoking the resolver under a *different*
 minor than the project ships, so the candidate loop has to run. Cheap, and
 not done here; noted so it is a choice rather than an oversight.
+
+**Closed 2026-09-24, by making the build itself search.** `android_windows_host`
+now runs kivyforge under **3.13** while the project ships 3.14, so the release
+build can only byte-compile if the Windows candidate search finds a 3.14 final,
+and the APK's existing `.pyc`-magic T3 check proves it did (that check still
+runs under 3.14, since it reads its own `MAGIC_NUMBER`). The job also installs
+a **3.15 pre-release as the only 3.15**, so a real `py -3.15` answers with a
+pre-release that the resolver must reject: roadmap item 1's trap, on a real
+launcher instead of a mocked `subprocess`. That is covered by
+`tests/bundle/test_resolver_live.py`, which is driven by `--resolver-found-minor` /
+`--resolver-prerelease-minor` and skips without them. Each of its tests
+**fails rather than skips** when its precondition is not met: running under
+the minor it is resolving (fast path), or no pre-release visible to `py`. A
+host that was not set up right therefore cannot pass vacuously.
+
+Rehearsed locally first (§7, 2026-09-24): under this box's 3.13 venv the
+positive test passes with `('py', '-3.14')`, and both failure preconditions
+fire as written. The pre-release half could not be rehearsed here. This box's
+only 3.14 pre-release is the original item-1 `3.14.0a7`, installed as the
+32-bit `-3.14-32` tag, which `py -3.14` never selects because 3.14.7 final is
+present. So CI's run is that half's first real execution.
 
 One clarification worth leaving here, since it reads like a bug and is not:
 `find_interpreter` returns `()` for "use the interpreter I am already running",
@@ -1284,6 +1305,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-23 | Linux `x86_64` (`linux-gate`) | T2 + T3 + T4 (local) | **WSL2** (Ubuntu, Python 3.14.4, WSLg), built on ext4, not `/mnt/c` (§5.6) | Same check as the Windows row. `run -p linux --release` byte-compiled "(.pyc only)" plus the stdlib; `AppRun`'s `python3 -P -m main` still running 10 s after `Launching`. `test_appimage_artifact.py --linux-appdir … --linux-stripped` → 2 passed, 1 skipped (the AppImage-container test, which has no AppImage to inspect for a bare AppDir). **Negative control:** plain `run` failed it: 336 `.py` files, no `.pyc` at all. Kivy's non-fatal `libmtdev.so.1` traceback, printed at startup in both runs, showed the difference too: release frames had no source text. The first attempt failed on setup, not the change: the WSL venv predated the `rich` dependency and had no `pytest-cov` for the repo's `addopts`. |
 | 2026-09-23 | Linux `x86_64` runtime on a case-insensitive FS | **§5.6 case-collision half closed** (product fix + test) | Windows 11 host + **WSL2** (Ubuntu, Python 3.14.4) | Measured first: all three cached Linux PBS runtimes (x86_64/aarch64, `20260623`/`20260805`) carry the same 25 case-only collision groups, all in `python/share/terminfo`; 0 in 47 other cached archives, the Windows runtime included. The stagers now refuse such an archive before extracting it onto a case-insensitive FS. `kivyforge build -p linux` with `linux-gate` on `/mnt/c` → exit 1 in 3.4 s: "…contains 25 path(s) that differ only by case (e.g. python/share/terminfo/2/2621A and python/share/terminfo/2/2621a), and /mnt/c/… is on a case-insensitive filesystem… Under WSL2 that means the Linux side (for example under ~), not /mnt/c." `tests/bundle/test_casefold.py`: 16 passed / 2 skipped on Windows, the mirror image on WSL2 ext4. **Mutation:** with the check removed, the unmocked Windows test failed with `DID NOT RAISE` — `tarfile` onto NTFS merges the pair *silently*, so the 2026-09-22 row's loud `shutil.Error` was the milder of the two failure modes. |
 | 2026-09-24 | macOS `arm64` runtime | §5.6 follow-up — **inferred, not scanned** | CI (`macos_app`, `macos-latest`) | The macOS PBS runtime was not in either cache scanned for §5.6, so its collision count was unknown. PR #14's `macos_app` run passed with the new check live. `stage_runtime` extracts into a `tempfile.mkdtemp()` directory, which is case-insensitive on a default APFS runner volume, so an archive with case-only collisions would have been refused there. Read as **no case-only collisions in the macOS runtime `macos-gate` pins**. Two assumptions this rests on: the runner's temp volume really is case-insensitive (the GitHub default, not verified in that run), and only that one pinned runtime was exercised. A direct scan of the archive's member names would settle it. |
+| 2026-09-24 | Windows host (resolver) | §5.2 live resolver, **local rehearsal** | Windows 11; kivyforge under the repo `.venv` (CPython 3.13.1); `py --list`: 3.14.7 final (64-bit), 3.14.0a7 (`-3.14-32`), 3.13, 3.12, 3.11, 3.10, 3.9 | `tests/bundle/test_resolver_live.py`. `--resolver-found-minor 3.14` → passed, `resolver picked for 3.14: ('py', '-3.14')`. Both preconditions fire as written: `--resolver-found-minor 3.13` (the running minor) → fails "would return at its fast path and never search"; `--resolver-prerelease-minor 3.15` with no 3.15 installed → fails "py -3.15 found nothing". The pre-release rejection itself could not run here: the only 3.14 pre-release is the 32-bit `-3.14-32` tag, which `py -3.14` never picks over 3.14.7 final, so its first real execution is CI's. |
 
 ### Known-unverified, stated plainly
 

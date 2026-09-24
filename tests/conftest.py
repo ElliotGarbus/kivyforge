@@ -181,6 +181,24 @@ def pytest_addoption(parser):
         help="Path to any Authenticode-signed PE to verify. The windows_signing "
         "job points this at the launcher copy it just signed.",
     )
+    # Not an artifact: a *host* to interrogate. find_interpreter's Windows
+    # candidate search only runs when kivyforge is not already running under
+    # the minor being shipped, so a CI job sets these up deliberately
+    # (test-matrix.md §5.2).
+    resolver = parser.getgroup("kivyforge interpreter resolver (live)")
+    resolver.addoption(
+        "--resolver-found-minor",
+        default=None,
+        help="A CPython minor (e.g. 3.14) that must be found by searching — "
+        "via the py launcher on Windows — rather than by the running-interpreter "
+        "fast path.",
+    )
+    resolver.addoption(
+        "--resolver-prerelease-minor",
+        default=None,
+        help="A CPython minor whose only installed interpreter is a pre-release; "
+        "the resolver must reject it (roadmap item 1's trap).",
+    )
 
 
 def pytest_configure(config):

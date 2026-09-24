@@ -796,6 +796,13 @@ jobs:
   # and rejecting a pre-release of the right minor — and nothing automated
   # ever built an APK there and inspected it.
   #
+  # kivyforge runs under **3.13** here while the project ships 3.14, on
+  # purpose. Run under 3.14, the resolver returns at its "use the running
+  # interpreter" fast path and never searches, which is what this job did
+  # until 2026-09-24 (it logged `resolver picked: ()`). Under 3.13 the build
+  # has to find 3.14 itself, so the APK's .pyc magic check below proves the
+  # *searched* interpreter wrote them.
+  #
   # Release only, unlike android_gradle's debug+release. byte_compile and
   # strip_source are release-only tri-states, so the release path is the one
   # that invokes the resolver at all; a debug build here would cost Gradle
@@ -809,14 +816,30 @@ jobs:
     steps:
     - name: Checkout kivyforge
       uses: actions/checkout@v6
-    - name: Set up Python 3.14
-      # Load-bearing twice over: the release build byte-compiles with a
-      # *final* CPython of the minor this project ships, and the T3 magic
-      # check compares the APK's .pyc headers against this runner's own
-      # MAGIC_NUMBER.
+    # Three interpreters, set up in this order because each setup-python
+    # prepends to PATH and the last one becomes the default `python`:
+    #   3.15 pre-release: the *only* 3.15, so `py -3.15` answers with a
+    #                     pre-release the resolver must reject (roadmap item
+    #                     1's trap: a 3.14.0a7 once passed a bare version
+    #                     check and wrote bytecode 3.14.6 refused to import);
+    #   3.14 final:       what the project ships; the resolver must find it by
+    #                     searching, and T3 runs under it because the magic
+    #                     check reads its own MAGIC_NUMBER;
+    #   3.13:             the default, and what kivyforge itself runs under.
+    - name: Set up a Python 3.15 pre-release (to be rejected)
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.15'
+        allow-prereleases: true
+    - name: Set up Python 3.14 (shipped; found by search; runs T3)
+      id: py314
       uses: actions/setup-python@v6
       with:
         python-version: '3.14'
+    - name: Set up Python 3.13 (runs kivyforge)
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.13'
     - name: Set up JDK 17
       uses: actions/setup-java@v5
       with:
@@ -827,9 +850,14 @@ jobs:
       with:
         packages: platform-tools
     - name: Install kivyforge (with the Android extra)
+      # Twice: under the default 3.13, which runs the build, and under 3.14,
+      # which runs the T3 step (see the setup-python comment above).
+      env:
+        PY314: ${{ steps.py314.outputs.python-path }}
       run: |
         python -m pip install --upgrade pip
-        pip install -e ".[dev,android]"
+        python -m pip install -e ".[dev,android]"
+        & $env:PY314 -m pip install -e ".[dev]"
     - name: Install the pinned NDK, CMake, platform, and build-tools
       # pwsh, not bash, and only for this step. `sdkmanager` on Windows is
       # `sdkmanager.bat`, and Git Bash does not apply PATHEXT — so a bare
@@ -841,19 +869,21 @@ jobs:
       run: |
         $ndk = python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)'
         sdkmanager --install "ndk;$ndk" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
-    - name: Report which interpreter the Windows resolver picked
-      # This job's whole point is the Windows branch of `find_interpreter`, so
-      # say out loud which candidate won rather than assuming. On a dev box
-      # it is normally ('py', '-3.14') — the PEP 397 launcher. On a hosted
-      # runner `setup-python` puts 3.14 on PATH while the launcher usually
-      # does not know about a hostedtoolcache install, so ('python',) is the
-      # likely winner here. Both are Windows-only paths ubuntu never takes;
-      # logging it keeps the difference visible instead of inferred.
+    - name: Assert the Windows resolver searches, finds and rejects correctly
+      # The live half of test-matrix §5.2, which test_pycompile.py can only
+      # cover with subprocess mocked. Under 3.13: `py -3.14` must win the
+      # search, and a 3.15 whose only install is a pre-release must be
+      # rejected. Each test fails (never skips) if its precondition is not
+      # met, so a mis-set-up host cannot pass vacuously. `py --list` first,
+      # so a failure shows what the launcher could see.
       run: |
-        python -c "from kivyforge.bundle.pycompile import find_interpreter; print('resolver picked:', find_interpreter('3.14.6'))"
+        py --list
+        python -m pytest tests/bundle/test_resolver_live.py -v --no-cov -s --resolver-found-minor 3.14 --resolver-prerelease-minor 3.15
     - name: Package the release APK (byte-compiled + stripped)
       # `package` rather than `build --debug`: byte_compile/strip_source are
-      # release-only, so this is the only verb that reaches the resolver.
+      # release-only, so the release path is the one that reaches the
+      # resolver. kivyforge runs under 3.13 here, so the 3.14 it compiles
+      # with is the one the step above proved the search finds.
       shell: bash
       working-directory: ${{ env.APP_DIR }}
       env:
@@ -868,14 +898,17 @@ jobs:
     - name: Assert the Windows-built APK is what the build promised (T3)
       # The same three checks android_gradle runs, against an APK produced by
       # the Windows code path. --android-stripped is what makes the .pyc magic
-      # assertion fire, which is item 1's actual failure mode.
+      # assertion fire, which is item 1's actual failure mode. Under 3.14,
+      # not the default 3.13: the magic check compares against the running
+      # interpreter's MAGIC_NUMBER, and refuses a mismatched runner outright.
       shell: bash
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+        PY314: ${{ steps.py314.outputs.python-path }}
       run: |
         apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
         manifest="$APP_DIR/hello-android-android/app/build/kivyforge/AndroidManifest-merged-release.xml"
-        pytest tests/platforms/android/test_apk_artifact.py \
+        "$PY314" -m pytest tests/platforms/android/test_apk_artifact.py \
                tests/platforms/android/test_merged_manifest.py \
                tests/platforms/android/test_apk_signature.py \
           -q --no-cov \

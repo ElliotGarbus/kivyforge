@@ -1719,7 +1719,10 @@ What is left against this condition is narrower than the condition sounds:
   on a Windows host — real coverage ubuntu does not give — while the
   `py`-launcher *search* stays covered by the local run and the unit tests.
   The log step is what caught that, having contradicted both predictions on
-  its first run.
+  its first run. **Closed 2026-09-24:** the job now runs kivyforge
+  under 3.13 so the build must *search* for the 3.14 it ships, and a 3.15
+  pre-release installed as the only 3.15 must be rejected by a real `py`
+  launcher (`tests/bundle/test_resolver_live.py`; test-matrix §5.2).
 - **The hardware pass** (the second half) still has no runnable checklist —
   item 5's "manual checklist becomes runnable" bullet.
 
