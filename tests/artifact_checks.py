@@ -82,6 +82,11 @@ from kivyforge.platforms.macos.machotools import (
 )
 from kivyforge.platforms.macos.plist import build_info_plist
 from kivyforge.platforms.windows.launcher import BOOTSTRAP_NAME
+from kivyforge.platforms.windows.pathdepth import (
+    MIN_FOLDER_HEADROOM,
+    deepest_relative_path,
+    folder_headroom,
+)
 from kivyforge.platforms.windows.petools import (
     IMAGE_FILE_MACHINE_AMD64,
     IMAGE_FILE_MACHINE_ARM64,
@@ -1719,9 +1724,30 @@ def windows_onedir_problems(
     problems = _windows_required_problems(bundle)
     problems += _windows_payload_problems(bundle, stripped=stripped)
     problems += _windows_pe_problems(bundle, arch=arch)
+    problems += _windows_path_depth_problems(bundle)
     if stripped:
         problems += _windows_pyc_magic_problems(bundle, expected_magic=expected_magic)
     return problems
+
+
+def _windows_path_depth_problems(bundle: Path) -> list[str]:
+    """Whether the bundle still fits in a normal install folder, long paths off.
+
+    Long paths are off on a default Windows install, so the bundle's deepest
+    relative path decides how long a folder it can live in (test-matrix.md
+    §5.6). The product warns about this at package time; asserting it here
+    catches a kivyforge layout change that deepens every bundle, which the
+    warning alone would only report.
+    """
+    deepest = deepest_relative_path(bundle)
+    headroom = folder_headroom(deepest)
+    if headroom >= MIN_FOLDER_HEADROOM:
+        return []
+    return [
+        f"deepest path is {len(deepest)} characters ({deepest}), leaving only "
+        f"{headroom} for the install folder with long paths off; need at least "
+        f"{MIN_FOLDER_HEADROOM}"
+    ]
 
 
 def _windows_required_problems(bundle: Path) -> list[str]:
