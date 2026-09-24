@@ -112,7 +112,9 @@ def test_a_prerelease_of_the_right_minor_is_rejected(prerelease_minor):
         version, level = reported
         assert version.startswith(f"{prerelease_minor}.") and level != "final", (
             f"py -{prerelease_minor} is {version} ({level}), not a pre-release; "
-            "the test would not exercise the rejection"
+            "the test would not exercise the rejection. If a final of this "
+            "minor now exists on the host (a runner image update), pin a "
+            "pre-release of a minor that has none, and pass that minor."
         )
         print(f"py -{prerelease_minor} offers {version} ({level})")
     assert find_interpreter(f"{prerelease_minor}.0") is None

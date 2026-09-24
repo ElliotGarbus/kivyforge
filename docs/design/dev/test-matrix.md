@@ -729,6 +729,26 @@ only 3.14 pre-release is the original item-1 `3.14.0a7`, installed as the
 32-bit `-3.14-32` tag, which `py -3.14` never selects because 3.14.7 final is
 present. So CI's run is that half's first real execution.
 
+**CI, first run (§7, 2026-09-24): green on every count.** `py --list` on the
+runner saw all three `setup-python` installs, so the launcher does find
+hostedtoolcache Pythons, which the old comment in this job had predicted it
+would not. The resolver picked `('py', '-3.14')`; the build logged
+`byte-compiling the Python payload with py -3.14 (.pyc only)`; T3 under 3.14
+passed. **What `py -3.15` offered was `3.15.0rc2`, a release candidate, not
+an alpha.** The rejection exercised is kivyforge's `releaselevel == "final"`
+gate, the same comparison that rejects item 1's `3.14.0a7`. But the
+interpreter it rejected was an RC, which kivyforge excludes by policy even
+though an RC's magic number is already frozen. Stated so that nobody reads
+"item 1's trap" as "an alpha was tested in CI".
+
+**That run also showed the job would have broken itself within a week.**
+`python-version: '3.15'` + `allow-prereleases` floats to the newest 3.15,
+which becomes 3.15.0 final on 2026-10-01 (PEP 790). The precondition would
+then fail, correctly, but for a reason unrelated to any change. So the job
+now pins `3.15.0-rc.2` exactly. That pin needs replacing if the runner image
+ever preinstalls a 3.15 final, since `py -3.15` would prefer it, and the
+test's failure message says so.
+
 One clarification worth leaving here, since it reads like a bug and is not:
 `find_interpreter` returns `()` for "use the interpreter I am already running",
 and `None` for "no match". A `()` in that output is a success.
@@ -1306,6 +1326,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-23 | Linux `x86_64` runtime on a case-insensitive FS | **§5.6 case-collision half closed** (product fix + test) | Windows 11 host + **WSL2** (Ubuntu, Python 3.14.4) | Measured first: all three cached Linux PBS runtimes (x86_64/aarch64, `20260623`/`20260805`) carry the same 25 case-only collision groups, all in `python/share/terminfo`; 0 in 47 other cached archives, the Windows runtime included. The stagers now refuse such an archive before extracting it onto a case-insensitive FS. `kivyforge build -p linux` with `linux-gate` on `/mnt/c` → exit 1 in 3.4 s: "…contains 25 path(s) that differ only by case (e.g. python/share/terminfo/2/2621A and python/share/terminfo/2/2621a), and /mnt/c/… is on a case-insensitive filesystem… Under WSL2 that means the Linux side (for example under ~), not /mnt/c." `tests/bundle/test_casefold.py`: 16 passed / 2 skipped on Windows, the mirror image on WSL2 ext4. **Mutation:** with the check removed, the unmocked Windows test failed with `DID NOT RAISE` — `tarfile` onto NTFS merges the pair *silently*, so the 2026-09-22 row's loud `shutil.Error` was the milder of the two failure modes. |
 | 2026-09-24 | macOS `arm64` runtime | §5.6 follow-up — **inferred, not scanned** | CI (`macos_app`, `macos-latest`) | The macOS PBS runtime was not in either cache scanned for §5.6, so its collision count was unknown. PR #14's `macos_app` run passed with the new check live. `stage_runtime` extracts into a `tempfile.mkdtemp()` directory, which is case-insensitive on a default APFS runner volume, so an archive with case-only collisions would have been refused there. Read as **no case-only collisions in the macOS runtime `macos-gate` pins**. Two assumptions this rests on: the runner's temp volume really is case-insensitive (the GitHub default, not verified in that run), and only that one pinned runtime was exercised. A direct scan of the archive's member names would settle it. |
 | 2026-09-24 | Windows host (resolver) | §5.2 live resolver, **local rehearsal** | Windows 11; kivyforge under the repo `.venv` (CPython 3.13.1); `py --list`: 3.14.7 final (64-bit), 3.14.0a7 (`-3.14-32`), 3.13, 3.12, 3.11, 3.10, 3.9 | `tests/bundle/test_resolver_live.py`. `--resolver-found-minor 3.14` → passed, `resolver picked for 3.14: ('py', '-3.14')`. Both preconditions fire as written: `--resolver-found-minor 3.13` (the running minor) → fails "would return at its fast path and never search"; `--resolver-prerelease-minor 3.15` with no 3.15 installed → fails "py -3.15 found nothing". The pre-release rejection itself could not run here: the only 3.14 pre-release is the 32-bit `-3.14-32` tag, which `py -3.14` never picks over 3.14.7 final, so its first real execution is CI's. |
+| 2026-09-24 | Windows `windows-latest` (resolver) | §5.2 live resolver, **CI** (`android_windows_host`, PR #15) | GitHub `windows-latest`; kivyforge under setup-python 3.13; 3.14 and a 3.15 pre-release also installed | **First CI execution of the Windows candidate search.** `py --list`: `-V:3.15 *`, 3.14, 3.13, 3.12, 3.11, 3.10, so the launcher does see hostedtoolcache installs. `test_resolver_live.py`: 2 passed; `resolver picked for 3.14: ('py', '-3.14')`; `py -3.15 offers 3.15.0rc2 (candidate)`, rejected. Build: `[stage] byte-compiling the Python payload with py -3.14 (.pyc only)`; T3 under 3.14 → `...`. **Caveat:** the rejected interpreter was a *release candidate*, not an alpha like item 1's `3.14.0a7`; it is the same `releaselevel == "final"` gate. **Found in the same run:** the floating `'3.15'` + `allow-prereleases` spec would have become 3.15.0 final on 2026-10-01 and failed the precondition; it is now pinned to `3.15.0-rc.2`. |
 
 ### Known-unverified, stated plainly
 
