@@ -827,9 +827,15 @@ jobs:
     #                     check reads its own MAGIC_NUMBER;
     #   3.13:             the default, and what kivyforge itself runs under.
     - name: Set up a Python 3.15 pre-release (to be rejected)
+      # Pinned to an exact pre-release, not '3.15' + allow-prereleases: that
+      # floats to 3.15.0 final once it ships (PEP 790: 2026-10-01), and the
+      # rejection test would then fail its own precondition for reasons that
+      # have nothing to do with the change under test. It will need a new pin
+      # if the runner image ever preinstalls a 3.15 final, since `py -3.15`
+      # would prefer it; the test says so when that happens.
       uses: actions/setup-python@v6
       with:
-        python-version: '3.15'
+        python-version: '3.15.0-rc.2'
         allow-prereleases: true
     - name: Set up Python 3.14 (shipped; found by search; runs T3)
       id: py314
