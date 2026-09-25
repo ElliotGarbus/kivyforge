@@ -101,6 +101,8 @@ def runner():
 def stub_collect(monkeypatch):
     """Skip artifact collection in build/run orchestration tests."""
     monkeypatch.setattr(ios_cli, "collect_artifacts", lambda *a, **k: None)
+    # An x86_64 host is refused a simulator build; these tests are not about that.
+    monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "arm64")
 
 
 @pytest.fixture
