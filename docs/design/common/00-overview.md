@@ -6,7 +6,7 @@ kivyforge is a declarative, [PEP 621](https://peps.python.org/pep-0621/)-aligned
 
 It is the successor to **kivy-ios**, **python-for-android**, and **buildozer**, unifying their per-platform workflows behind a single declarative configuration. The goal is one toolchain for every platform Kivy runs on — **Android, iOS, Linux, macOS, and Windows**.
 
-> These are **design documents**, not user guides. They describe how kivyforge is intended to work and why. User-facing guides will be derived from this material later (see the reserved [`docs/guides/`](../../guides/README.md)).
+> These are **design documents**, not user guides. They describe how kivyforge is intended to work and why. The user-facing guides derived from this material are published at <https://elliotgarbus.github.io/kivyforge/> and their sources live in [`docs/guides/`](../../guides/index.md).
 
 ## The core model
 

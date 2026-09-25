@@ -81,6 +81,13 @@ windows = [
 android = [
     "Pillow>=10",
 ]
+# End-user documentation site (MkDocs Material -> GitHub Pages; roadmap item 6).
+# Installing this extra also installs kivyforge itself, which both mkdocs-click
+# (for the generated CLI reference) and docs/hooks/kf_generated.py import.
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocs-click>=0.8",
+]
 
 # ---------------------------------------------------------------------------
 # Setuptools package discovery

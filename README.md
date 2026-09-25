@@ -20,6 +20,11 @@ their per-platform workflows behind a single declarative configuration.
 The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
 Linux, macOS, and Windows**.
 
+📖 **Documentation:** <https://elliotgarbus.github.io/kivyforge/> — installation,
+quickstarts for every platform, the configuration and CLI reference, and
+troubleshooting. Build it locally with `pip install -e ".[docs]"` then
+`mkdocs serve`.
+
 > **Status: early development — iOS + macOS + Linux + Windows + Android.**
 > kivyforge targets **iOS** (resolve into `pylock.ios.toml`, download the official
 > [`Python.xcframework`](https://www.python.org/downloads/) + prebuilt iOS
@@ -67,11 +72,12 @@ kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 Each target platform has its own host requirements. **Building for iOS requires
 macOS** (Xcode-based), so the iOS workflow below is useful only on a Mac:
 
-- macOS with [Xcode](https://developer.apple.com/xcode/) installed, either from
-  the [Mac App Store](https://apps.apple.com/app/xcode/id497799835) or from the
-  command line:
+- macOS with the full [Xcode](https://developer.apple.com/xcode/) app installed
+  from the [Mac App Store](https://apps.apple.com/app/xcode/id497799835).
+  (`xcode-select --install` installs only the command-line tools, which are
+  not enough for iOS.) Point the tools at it:
 
-      xcode-select --install
+      sudo xcode-select --switch /Applications/Xcode.app
 
 - Accept the Xcode license once:
 

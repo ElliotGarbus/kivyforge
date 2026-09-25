@@ -40,6 +40,19 @@
   also covers iOS's 24.3), so every installer, including uv and pipx, gets a
   pip new enough for every target.
 
+### Docs: end-user documentation site (MkDocs Material)
+
+- **Added:** a task-based user guide — installation, per-platform quickstarts,
+  concepts, per-platform how-to guides, a full configuration/CLI reference, and
+  troubleshooting — built with MkDocs Material and published to GitHub Pages
+  (roadmap item 6). Sources live in `docs/guides/`; the design documents under
+  `docs/design/` stay unpublished.
+- The host matrix, exit codes, and `KF-*` diagnostic vocabulary are generated at
+  build time from kivyforge's own `capabilities`/`report` modules, and the CLI
+  reference from the click command tree, so the site cannot drift from the tool.
+  `mkdocs build --strict` runs in CI and fails on a broken internal link, a
+  missing nav page, or a `KF-*` code the reference does not document.
+
 ### Desktop: clear error when the runtime can't be staged on a case-insensitive filesystem
 
 - **Fixed:** every python-build-standalone Linux runtime ships 25 pairs of
