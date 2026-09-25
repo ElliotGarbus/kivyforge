@@ -1,6 +1,7 @@
 """Generate ``<app>.entitlements`` from ``[tool.kivy.ios.entitlements]`` (spec 06).
 
-Also reads a pinned ``.mobileprovision`` so ``build`` and ``doctor`` can check
+Also reads the pinned provisioning profile -- an installed profile found by name
+or UUID, or a ``.mobileprovision`` path -- so ``build`` and ``doctor`` can check
 declared entitlements against what the profile actually grants: ``codesign``
 requires the app's entitlements to be a *subset* of the profile's, and a
 mismatch otherwise fails deep inside ``xcodebuild`` naming neither the pyproject
@@ -60,15 +61,99 @@ class ProvisioningProfile:
     name: str
     app_id: str
     entitlements: dict
+    uuid: str = ""
 
 
-def resolve_profile_path(config: Config, project_root: Path) -> Path | None:
-    """Absolute path of the pinned profile, or None when none is configured."""
-    profile = config.ios_required.signing.provisioning_profile
-    if not profile:
+PROFILE_SUFFIX = ".mobileprovision"
+
+
+def installed_profile_dirs() -> tuple[Path, ...]:
+    """Where Xcode installs provisioning profiles, newest location first.
+
+    Xcode 16 moved them to ``UserData``; older Xcodes and double-clicking a
+    profile in Finder still use ``MobileDevice``. Both are searched.
+    """
+    home = Path.home()
+    return (
+        home / "Library" / "Developer" / "Xcode" / "UserData" / "Provisioning Profiles",
+        home / "Library" / "MobileDevice" / "Provisioning Profiles",
+    )
+
+
+def is_profile_path(value: str) -> bool:
+    """True when ``provisioning_profile`` names a file rather than a profile.
+
+    The contract is Xcode's: a profile *name or UUID*. A value ending in
+    ``.mobileprovision`` is accepted as a path to a downloaded profile instead.
+    """
+    return value.lower().endswith(PROFILE_SUFFIX)
+
+
+def find_installed_profile(
+    specifier: str, search_dirs: tuple[Path, ...] | None = None
+) -> Path | None:
+    """The installed profile whose UUID or Name matches *specifier*, or None.
+
+    A UUID match wins (case-insensitive). Several profiles can share a Name --
+    a regenerated profile keeps its name but gets a new UUID -- so among Name
+    matches the most recently modified file wins. Unreadable files are skipped.
+    """
+    dirs = installed_profile_dirs() if search_dirs is None else search_dirs
+    wanted = specifier.strip()
+    by_name: list[Path] = []
+    for directory in dirs:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob(f"*{PROFILE_SUFFIX}")):
+            try:
+                profile = read_profile(path)
+            except ProfileError:
+                continue
+            if profile.uuid and profile.uuid.lower() == wanted.lower():
+                return path
+            if profile.name == wanted:
+                by_name.append(path)
+    if not by_name:
         return None
-    path = Path(profile)
-    return path if path.is_absolute() else project_root / profile
+    return max(by_name, key=lambda p: p.stat().st_mtime)
+
+
+def resolve_profile_path(
+    config: Config, project_root: Path, *, search_dirs: tuple[Path, ...] | None = None
+) -> Path | None:
+    """The file behind the pinned profile, or None.
+
+    None when no profile is pinned, or when a name/UUID matches no installed
+    profile. A path value is returned as-is (relative to *project_root*) even if
+    the file is missing, so callers can report which file they looked for.
+    """
+    value = config.ios_required.signing.provisioning_profile
+    if not value:
+        return None
+    if is_profile_path(value):
+        path = Path(value)
+        return path if path.is_absolute() else project_root / value
+    return find_installed_profile(value, search_dirs)
+
+
+def xcode_profile_specifier(config: Config, project_root: Path | None) -> str:
+    """The ``PROVISIONING_PROFILE_SPECIFIER`` value for *config*.
+
+    A name or UUID passes through unchanged. A ``.mobileprovision`` path is
+    replaced by the UUID read from the file, since Xcode resolves specifiers
+    against installed profiles and never against paths. If the file cannot be
+    read the raw value is kept; ``doctor`` reports the unreadable file.
+    """
+    value = config.ios_required.signing.provisioning_profile
+    if not value or not is_profile_path(value) or project_root is None:
+        return value
+    path = resolve_profile_path(config, project_root)
+    assert path is not None
+    try:
+        profile = read_profile(path)
+    except ProfileError:
+        return value
+    return profile.uuid or profile.name
 
 
 def read_profile(path: str | Path) -> ProvisioningProfile:
@@ -98,10 +183,12 @@ def read_profile(path: str | Path) -> ProvisioningProfile:
     granted = payload.get("Entitlements")
     granted = dict(granted) if isinstance(granted, dict) else {}
     app_id = granted.get("application-identifier", "")
+    uuid = payload.get("UUID", "")
     return ProvisioningProfile(
         name=str(payload.get("Name", "") or path.name),
         app_id=str(app_id) if isinstance(app_id, str) else "",
         entitlements=granted,
+        uuid=uuid if isinstance(uuid, str) else "",
     )
 
 
@@ -116,7 +203,11 @@ def missing_entitlements(declared: Iterable[str], granted: Iterable[str]) -> lis
 
 
 def preflight_entitlements(
-    config: Config, project_root: Path, target: str
+    config: Config,
+    project_root: Path,
+    target: str,
+    *,
+    search_dirs: tuple[Path, ...] | None = None,
 ) -> list[str]:
     """Check declared entitlements against a pinned profile (spec 05 step 7).
 
@@ -127,15 +218,16 @@ def preflight_entitlements(
     mid-build.
 
     Returns an empty list whenever there is nothing to compare: a target that
-    does not sign, no declared entitlements, no pinned profile, or a profile that
-    cannot be parsed (``doctor`` reports that case — it should not block a build).
+    does not sign, no declared entitlements, no pinned profile, a pinned profile
+    that cannot be found, or one that cannot be parsed (``doctor`` reports those
+    cases — they should not block a build).
     """
     if target == "simulator":
         return []
     declared = config.ios_required.entitlements
     if not declared:
         return []
-    path = resolve_profile_path(config, project_root)
+    path = resolve_profile_path(config, project_root, search_dirs=search_dirs)
     if path is None or not path.exists():
         return []
     try:

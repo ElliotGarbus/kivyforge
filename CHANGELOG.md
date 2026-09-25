@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### iOS: `provisioning_profile` works as documented
+
+- **Fixed:** `[tool.kivy.ios.signing].provisioning_profile` was read two
+  incompatible ways. Xcode received it as a profile name or UUID (the
+  documented form), but `doctor` and the entitlements pre-flight treated it as
+  a file path. A name or UUID made `doctor` FAIL ("not found") and silently
+  skipped the entitlements check; a path passed `doctor` and then failed the
+  Xcode build.
+- A name or UUID is now looked up among the profiles installed on the Mac, so
+  `doctor` and the entitlements check use the same profile Xcode signs with.
+- A path to a `.mobileprovision` is also accepted: kivyforge reads the file and
+  passes its UUID to Xcode. `doctor` warns if that profile is not installed,
+  since Xcode signs only with installed profiles.
+- **Migration:** none for the documented name/UUID form. If you set a path,
+  it keeps working, and now also reaches Xcode correctly.
+
 ### Linux: `--arch aarch64` is accepted
 
 - **Fixed:** `build` and `package` rejected `--arch aarch64` as a usage error,

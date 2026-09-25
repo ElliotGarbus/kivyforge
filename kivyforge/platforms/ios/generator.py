@@ -127,7 +127,9 @@ class XcodeProjectGenerator:
 
     # -- build settings ----------------------------------------------------- #
     def _apply_build_settings(self, project: XcodeProject) -> None:
-        signing = signing_settings(self.config, team_id=self.team_id)
+        signing = signing_settings(
+            self.config, team_id=self.team_id, project_root=self.layout.root.parent
+        )
         user = user_build_settings(self.config)
         for configuration in CONFIGURATIONS:
             project.set_flags(

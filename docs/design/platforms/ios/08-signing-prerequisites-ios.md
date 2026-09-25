@@ -103,7 +103,8 @@ kivyforge build -p ios --release        # archive + export a signed .ipa
 Run `doctor` first — it pre-checks the setup above. The signing-relevant checks
 are **Signing identity** (when `auto_signing = false`, the named identity is
 present in the keychain) and **Provisioning profile** (when
-`provisioning_profile` is set, it exists). `--simulator` and the bare, no-flag
+`provisioning_profile` is set, a profile with that name or UUID is installed —
+or, for a `.mobileprovision` path, the file exists and is installed). `--simulator` and the bare, no-flag
 `build` (which stops after generating the project) skip signing entirely and need
 none of this. See the [iOS CLI doctor table](04-cli-ios.md#kivyforge-doctor).
 

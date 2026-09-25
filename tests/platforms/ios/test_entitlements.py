@@ -16,24 +16,30 @@ import pytest
 from kivyforge.config import load_config_from_text
 from kivyforge.doctor.result import Status
 from kivyforge.platforms.ios import doctor as C
+from kivyforge.platforms.ios.buildsettings import signing_settings
 from kivyforge.platforms.ios.entitlements import (
     ProfileError,
+    find_installed_profile,
+    is_profile_path,
     missing_entitlements,
     preflight_entitlements,
     read_profile,
     resolve_profile_path,
+    xcode_profile_specifier,
 )
 from kivyforge.platforms.ios.xcode.commands import SigningError
 
 APP_ID = "ABCDE12345.org.example.myapp"
 
 
-def write_profile(path, granted, *, name="Acme Development"):
+def write_profile(path, granted, *, name="Acme Development", uuid=""):
     """A .mobileprovision is a CMS envelope wrapping a verbatim XML plist."""
     payload = {
         "Name": name,
         "Entitlements": {"application-identifier": APP_ID, **granted},
     }
+    if uuid:
+        payload["UUID"] = uuid
     path.write_bytes(b"\x30\x82\xde\xad" + plistlib.dumps(payload) + b"\x00\x01\x02")
     return path
 
@@ -95,6 +101,152 @@ class TestReadProfile:
         profile = read_profile(path)
         assert profile.entitlements == {}
         assert profile.app_id == ""
+        assert profile.uuid == ""
+
+    def test_extracts_uuid(self, tmp_path):
+        path = write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
+        assert read_profile(path).uuid == UUID
+
+
+UUID = "1A2B3C4D-0000-1111-2222-333344445555"
+
+
+@pytest.fixture
+def installed(tmp_path):
+    """Two fake Xcode profile directories; returned as the search_dirs tuple."""
+    new = tmp_path / "UserData" / "Provisioning Profiles"
+    old = tmp_path / "MobileDevice" / "Provisioning Profiles"
+    new.mkdir(parents=True)
+    old.mkdir(parents=True)
+    return (new, old)
+
+
+class TestIsProfilePath:
+    @pytest.mark.parametrize(
+        "value",
+        ["p.mobileprovision", "signing/Dev.MOBILEPROVISION", "/abs/x.mobileprovision"],
+    )
+    def test_paths(self, value):
+        assert is_profile_path(value)
+
+    @pytest.mark.parametrize("value", ["Acme Development", UUID])
+    def test_names_and_uuids(self, value):
+        assert not is_profile_path(value)
+
+
+class TestFindInstalledProfile:
+    def test_by_uuid_case_insensitive(self, installed):
+        path = write_profile(installed[1] / "a.mobileprovision", {}, uuid=UUID)
+        assert find_installed_profile(UUID.lower(), installed) == path
+
+    def test_by_name(self, installed):
+        path = write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
+        assert find_installed_profile("Acme Development", installed) == path
+
+    def test_newest_wins_among_same_name(self, installed):
+        import os
+
+        old = write_profile(installed[0] / "old.mobileprovision", {}, uuid="OLD")
+        new = write_profile(installed[1] / "new.mobileprovision", {}, uuid="NEW")
+        os.utime(old, (1_000, 1_000))
+        os.utime(new, (2_000, 2_000))
+        assert find_installed_profile("Acme Development", installed) == new
+
+    def test_none_when_absent(self, installed):
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
+        assert find_installed_profile("Someone Else", installed) is None
+
+    def test_missing_dirs_and_unreadable_files_are_skipped(self, tmp_path, installed):
+        (installed[0] / "junk.mobileprovision").write_bytes(b"garbage")
+        dirs = (tmp_path / "does-not-exist", *installed)
+        assert find_installed_profile("Acme Development", dirs) is None
+
+
+class TestXcodeSpecifier:
+    def test_name_passes_through(self, tmp_path):
+        cfg = make_config(profile="Acme Development")
+        assert xcode_profile_specifier(cfg, tmp_path) == "Acme Development"
+
+    def test_path_becomes_the_files_uuid(self, tmp_path):
+        write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(profile="p.mobileprovision")
+        assert xcode_profile_specifier(cfg, tmp_path) == UUID
+
+    def test_unreadable_path_kept_raw(self, tmp_path):
+        cfg = make_config(profile="gone.mobileprovision")
+        assert xcode_profile_specifier(cfg, tmp_path) == "gone.mobileprovision"
+
+    def test_reaches_xcode_build_settings(self, tmp_path):
+        # Xcode resolves PROVISIONING_PROFILE_SPECIFIER against installed
+        # profiles only, so a path must never reach it verbatim.
+        write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(profile="p.mobileprovision")
+        settings = signing_settings(cfg, project_root=tmp_path)
+        assert settings["PROVISIONING_PROFILE_SPECIFIER"] == UUID
+
+
+class TestProvisioningProfileCheck:
+    def test_name_installed_passes(self, tmp_path, installed):
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(profile="Acme Development")
+        result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.PASS
+
+    def test_name_not_installed_fails(self, tmp_path, installed):
+        # Before, a name/UUID -- the documented form -- was treated as a file
+        # path, so this FAILed even when the profile was installed.
+        cfg = make_config(profile="Acme Development")
+        result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.FAIL
+        assert "name or UUID" in result.detail
+
+    def test_path_missing_fails(self, tmp_path, installed):
+        cfg = make_config(profile="gone.mobileprovision")
+        result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.FAIL
+
+    def test_path_unreadable_fails(self, tmp_path, installed):
+        (tmp_path / "p.mobileprovision").write_bytes(b"garbage")
+        cfg = make_config(profile="p.mobileprovision")
+        result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.FAIL
+
+    def test_path_not_installed_warns(self, tmp_path, installed):
+        write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(profile="p.mobileprovision")
+        result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.WARN
+        assert "double-click" in result.hint
+
+    def test_path_installed_passes(self, tmp_path, installed):
+        write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
+        write_profile(installed[1] / "copy.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(profile="p.mobileprovision")
+        result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.PASS
+
+
+class TestProfilePinnedByName:
+    """The entitlements checks used to be silently skipped for a name/UUID."""
+
+    def test_preflight_uses_installed_profile(self, tmp_path, installed):
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(entitlements=HEALTHKIT, profile=UUID, auto_signing=False)
+        with pytest.raises(SigningError):
+            preflight_entitlements(cfg, tmp_path, "device", search_dirs=installed)
+
+    def test_doctor_uses_installed_profile(self, tmp_path, installed):
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(
+            entitlements=HEALTHKIT, profile="Acme Development", auto_signing=False
+        )
+        result = C.check_entitlements_vs_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.FAIL
+
+    def test_doctor_skips_when_name_not_installed(self, tmp_path, installed):
+        cfg = make_config(entitlements=HEALTHKIT, profile="Nobody")
+        result = C.check_entitlements_vs_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.SKIP
 
 
 class TestMissingEntitlements:
