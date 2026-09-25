@@ -12,7 +12,13 @@ import click
 
 from ._common import ToolchainError
 from ._output import output_options, report_events, reporting
-from ._platform import platform_option, reject_android_only, resolve_target
+from ._platform import (
+    passed,
+    platform_option,
+    reject_android_only,
+    reject_unread,
+    resolve_target,
+)
 
 
 @click.command()
@@ -35,12 +41,14 @@ from ._platform import platform_option, reject_android_only, resolve_target
     "to package (default: the first).",
 )
 @click.option(
-    "--team-id", default=None, help="Override [tool.kivy.ios.signing].team_id."
+    "--team-id", default=None, help="iOS: override [tool.kivy.ios.signing].team_id."
 )
 @click.option(
     "--signing-identity",
     default=None,
-    help="Override [tool.kivy.<platform>.signing].identity.",
+    help="iOS and macOS: override [tool.kivy.<platform>.signing].identity. "
+    "Windows signs with [tool.kivy.windows.signing].thumbprint, and Android "
+    "with --keystore.",
 )
 @click.option(
     "--export-method",
@@ -107,6 +115,16 @@ def package(
         reject_android_only(
             backend,
             {"--abi": abi, "--keystore": keystore, "--key-alias": key_alias},
+        )
+        reject_unread(
+            backend,
+            {
+                "--team-id": (team_id is not None, ("ios",)),
+                "--signing-identity": (signing_identity is not None, ("ios", "macos")),
+                "--export-method": (passed("export_method"), ("ios",)),
+                "--notarize/--no-notarize": (notarize is not None, ("macos",)),
+                "--notary-profile": (notary_profile is not None, ("macos",)),
+            },
         )
         fmt = _resolve_format(backend, fmt)
 

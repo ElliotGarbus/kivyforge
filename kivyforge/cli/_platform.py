@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import os
 import tomllib
+from collections.abc import Collection, Mapping
 from pathlib import Path
 
 import click
+from click.core import ParameterSource
 
 from ..platforms import (
     Platform,
@@ -58,6 +60,34 @@ def reject_android_only(backend: Platform, options: dict[str, object]) -> None:
     raise ToolchainError(
         f"{', '.join(used)} {'is' if len(used) == 1 else 'are'} "
         f"Android-only; not valid for {backend.name}."
+    )
+
+
+def passed(name: str) -> bool:
+    """Whether the user set parameter ``name``, as opposed to click's default."""
+    source = click.get_current_context().get_parameter_source(name)
+    return source not in (None, ParameterSource.DEFAULT, ParameterSource.DEFAULT_MAP)
+
+
+def reject_unread(
+    backend: Platform, options: Mapping[str, tuple[bool, Collection[str]]]
+) -> None:
+    """Fail when an option was passed for a platform that does not read it.
+
+    ``options`` maps each flag to whether it was passed and the platforms that
+    act on it. Same reasoning as :func:`reject_android_only`, for the options
+    only some non-Android backends read.
+    """
+    unread = [
+        f"{flag} ({'/'.join(platforms)} only)"
+        for flag, (used, platforms) in options.items()
+        if used and backend.name not in platforms
+    ]
+    if not unread:
+        return
+    raise ToolchainError(
+        f"{', '.join(unread)} {'is' if len(unread) == 1 else 'are'} "
+        f"not valid for {backend.name}."
     )
 
 
