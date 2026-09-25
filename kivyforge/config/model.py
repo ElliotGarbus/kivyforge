@@ -2,8 +2,9 @@
 
 These dataclasses are the validated, in-memory representation produced by
 ``kivyforge.config.loader.load_config``. They intentionally only model the
-fields kivyforge consumes; unknown keys elsewhere in ``pyproject.toml`` are
-ignored (PEP 518 tool-namespace convention).
+fields kivyforge consumes. Keys outside ``[tool.kivy]`` are ignored (PEP 518
+tool-namespace convention); unknown keys inside it are rejected, against the
+allow-list in ``kivyforge.config.keys``.
 """
 
 from __future__ import annotations

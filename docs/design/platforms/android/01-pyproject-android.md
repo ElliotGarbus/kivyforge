@@ -655,6 +655,14 @@ with a diagnostic.
 
 ### `[tool.kivy.android.proguard]` — R8 keep rules
 
+> **Status: specified, not implemented.** No release reads this table, and the
+> loader rejects it as an unknown key rather than build without the rules (it
+> used to be dropped silently, which shipped a release build missing every keep
+> rule it declared). The generated `proguard-rules.pro` carries only the
+> kivyforge baseline, and the doctor "R8 keep rules" check in
+> [cli-android](06-cli-android.md) does not exist yet. Until both land, an app
+> that reaches Java from Python should leave `minify` off.
+
 Extra keep-rules merged into the generated `app/proguard-rules.pro`. Only
 consulted when [`build_settings.minify`](#toolkivyandroidbuild_settings) is on;
 declaring rules with `minify = false` is harmless and ignored.

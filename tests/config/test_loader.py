@@ -601,7 +601,7 @@ class TestPythonVersionRequired:
             load(
                 "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
                 "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
-                "[tool.kivy.ios.python]\nother='x'"
+                "[tool.kivy.ios.python]\n"
             )
 
     def test_empty_version_rejected(self):

@@ -17,6 +17,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from .errors import ConfigError
+from .keys import UnknownKey, find_unknown_keys, overlay_suggestion
 from .model import (
     ANDROID_MIN_SDK_FLOOR,
     ANDROID_RELEASE_ONLY,
@@ -168,6 +169,7 @@ def load_config_from_text(
 
     finder = _LineFinder(text)
     project = _parse_project(raw, finder)
+    _reject_unknown_keys(raw, finder)
     kivy = _parse_kivy(raw, finder)
     ios = _parse_ios(raw, finder, project, project_root=project_root)
     macos = _parse_macos(raw, finder, project, project_root=project_root)
@@ -179,36 +181,56 @@ def load_config_from_text(
         raise ConfigError(
             "missing [tool.kivy.ios] table",
             key_path="tool.kivy.ios",
-            hint="add a [tool.kivy.ios] overlay; [tool.kivy] alone is not a "
-            "buildable iOS target. Run `kivyforge init`.",
+            hint=_overlay_hint(
+                raw,
+                "ios",
+                "add a [tool.kivy.ios] overlay; [tool.kivy] alone is not a "
+                "buildable iOS target. Run `kivyforge init`.",
+            ),
         )
     if macos is None and require_macos:
         raise ConfigError(
             "missing [tool.kivy.macos] table",
             key_path="tool.kivy.macos",
-            hint="add a [tool.kivy.macos] overlay; [tool.kivy] alone is not a "
-            "buildable macOS target.",
+            hint=_overlay_hint(
+                raw,
+                "macos",
+                "add a [tool.kivy.macos] overlay; [tool.kivy] alone is not a "
+                "buildable macOS target.",
+            ),
         )
     if linux is None and require_linux:
         raise ConfigError(
             "missing [tool.kivy.linux] table",
             key_path="tool.kivy.linux",
-            hint="add a [tool.kivy.linux] overlay; [tool.kivy] alone is not a "
-            "buildable Linux target.",
+            hint=_overlay_hint(
+                raw,
+                "linux",
+                "add a [tool.kivy.linux] overlay; [tool.kivy] alone is not a "
+                "buildable Linux target.",
+            ),
         )
     if windows is None and require_windows:
         raise ConfigError(
             "missing [tool.kivy.windows] table",
             key_path="tool.kivy.windows",
-            hint="add a [tool.kivy.windows] overlay; [tool.kivy] alone is not a "
-            "buildable Windows target.",
+            hint=_overlay_hint(
+                raw,
+                "windows",
+                "add a [tool.kivy.windows] overlay; [tool.kivy] alone is not a "
+                "buildable Windows target.",
+            ),
         )
     if android is None and require_android:
         raise ConfigError(
             "missing [tool.kivy.android] table",
             key_path="tool.kivy.android",
-            hint="add a [tool.kivy.android] overlay; [tool.kivy] alone is not a "
-            "buildable Android target. Run `kivyforge init`.",
+            hint=_overlay_hint(
+                raw,
+                "android",
+                "add a [tool.kivy.android] overlay; [tool.kivy] alone is not a "
+                "buildable Android target. Run `kivyforge init`.",
+            ),
         )
 
     return Config(
@@ -220,6 +242,58 @@ def load_config_from_text(
         windows=windows,
         android=android,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Unknown keys under [tool.kivy]
+# --------------------------------------------------------------------------- #
+_UNKNOWN_KEY_HINT = (
+    "kivyforge does not read this key, so it would have no effect. Check the "
+    "spelling, or upgrade kivyforge if the key comes from a newer release."
+)
+
+
+def _overlay_hint(raw: dict, platform: str, hint: str) -> str:
+    tool = raw.get("tool")
+    kivy = tool.get("kivy") if isinstance(tool, dict) else None
+    guess = overlay_suggestion(kivy, platform)
+    if guess is None:
+        return hint
+    return f"found [tool.kivy.{guess}]; rename it to [tool.kivy.{platform}]."
+
+
+def _reject_unknown_keys(raw: dict, finder: _LineFinder) -> None:
+    tool = raw.get("tool")
+    kivy = tool.get("kivy") if isinstance(tool, dict) else None
+    if not isinstance(kivy, dict):
+        return
+    unknown = find_unknown_keys(kivy)
+    if not unknown:
+        return
+    if len(unknown) == 1:
+        (entry,) = unknown
+        suggestion = entry.suggestion
+        if suggestion:
+            hint = f"did you mean {suggestion!r}? {_UNKNOWN_KEY_HINT}"
+        else:
+            hint = (
+                f"{_UNKNOWN_KEY_HINT} Valid keys in [{entry.table}]: "
+                f"{', '.join(entry.known)}."
+            )
+        raise ConfigError(
+            f"unknown key {entry.key!r} in [{entry.table}]",
+            key_path=entry.key_path,
+            line=finder.unknown_key_line(entry),
+            hint=hint,
+        )
+    lines = [f"{len(unknown)} unknown keys under [tool.kivy]:"]
+    for entry in unknown:
+        line = finder.unknown_key_line(entry)
+        where = f" (line {line})" if line is not None else ""
+        suggestion = entry.suggestion
+        guess = f"; did you mean {suggestion!r}?" if suggestion else ""
+        lines.append(f"  {entry.key!r} in [{entry.table}]{where}{guess}")
+    raise ConfigError("\n".join(lines), hint=_UNKNOWN_KEY_HINT)
 
 
 # --------------------------------------------------------------------------- #
@@ -3086,4 +3160,21 @@ class _LineFinder:
         for i, line in enumerate(self._lines, start=1):
             if key_re.search(line):
                 return i
+        return None
+
+    def unknown_key_line(self, entry: UnknownKey) -> int | None:
+        """The line of an unknown key: its own ``[header]``, else ``key =``.
+
+        ``line`` alone misses both a sub-table header (``[tool.kivy.android.
+        proguard]`` does not start with ``proguard``) and a dotted key
+        (``signing.team_idd = ...``).
+        """
+        header_re = re.compile(
+            rf"^\s*\[\[?\s*{re.escape(entry.header)}\.{re.escape(entry.key)}\s*[\].]"
+        )
+        dotted_re = re.compile(rf"^\s*([\w\"'-]+\s*\.\s*)*{re.escape(entry.key)}\s*=")
+        for pattern in (header_re, dotted_re):
+            for i, line in enumerate(self._lines, start=1):
+                if pattern.search(line):
+                    return i
         return None
