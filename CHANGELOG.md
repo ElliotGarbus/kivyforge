@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Install: pip is now a dependency
+
+- **Fixed:** `uv tool install kivyforge` produced an install where every
+  `kivyforge lock` failed. kivyforge runs `python -m pip` to resolve and stage
+  wheels, and uv tool environments ship without pip. The failure was also
+  misleading: it reported that a dependency had no wheel upstream.
+- kivyforge now depends on `pip>=25.1` (the Android resolver's floor, which
+  also covers iOS's 24.3), so every installer, including uv and pipx, gets a
+  pip new enough for every target.
+
 ### Desktop: clear error when the runtime can't be staged on a case-insensitive filesystem
 
 - **Fixed:** every python-build-standalone Linux runtime ships 25 pairs of
