@@ -148,7 +148,8 @@ class Platform(ABC):
         from kivyforge.cli._common import ToolchainError
 
         raise ToolchainError(
-            f"`open` is an iOS/Xcode command; {self.name} has no project to open."
+            f"`open` supports iOS (Xcode) and Android (Android Studio); "
+            f"{self.name} has no IDE project to open."
         )
 
     def status(self, project_root: Path) -> StatusReport:

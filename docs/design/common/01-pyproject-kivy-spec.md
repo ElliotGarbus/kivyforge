@@ -136,9 +136,19 @@ The `[tool.kivy]` namespace accommodates every current and future Kivy platform.
 
 Reservation semantics:
 
-- A backend **ignores** overlays for other platforms (unknown keys are silently passed over by TOML parsers and are not validated). Running an iOS command reads only `[tool.kivy.ios]`; a `[tool.kivy.macos]` table alongside it is inert for that command.
+- A backend **acts on** only its own overlay. Running an iOS command builds from `[tool.kivy.ios]`; a `[tool.kivy.macos]` table alongside it is inert for that command, though it is still validated (every overlay is parsed on every load).
 - Every overlay follows the same **additive overlay + independent `schema_version`** convention.
-- App developers may add an overlay for a not-yet-implemented platform today without breaking any current command.
+- App developers may add an overlay for a not-yet-implemented platform today without breaking any current command: an unrecognised *table* directly under `[tool.kivy]` is accepted and ignored.
+
+## Unknown keys
+
+Any other key under `[tool.kivy]` that kivyforge does not read is a **validation error**, reported with its line and, when a known key is close, a "did you mean" hint. This covers a misspelt key (`deployment_targt`), a table a design doc specifies but no release implements yet, and a key from a newer kivyforge. Dropping such a key silently was worse than failing: the build went ahead as if it had never been written, and nothing told the user. The allow-list is `kivyforge/config/keys.py`, checked before any value is parsed so a misspelt *required* key reports as a typo rather than as missing.
+
+Three things are deliberately not checked:
+
+- **Keys outside `[tool.kivy]`.** `[project]` belongs to PEP 621 and the rest of `[tool]` to other tools.
+- **Passthrough tables**, whose keys belong to another tool: `ios.info_plist`, `ios.entitlements`, `ios.xcode.build_settings`, `macos.entitlements`, `android.manifest.application`/`.activity`/`.placeholders`, and `android.gradle_properties`. Their own managed/reserved-key rules still apply.
+- **An unrecognised table directly under `[tool.kivy]`**, per the reservation rule above. This does not reopen the typo hole: an overlay only takes effect when a verb targets it, and targeting a misspelt one fails as missing, naming the near-miss table (`found [tool.kivy.andriod]; rename it to [tool.kivy.android]`).
 
 ## Validation
 

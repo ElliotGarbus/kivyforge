@@ -85,6 +85,10 @@ the shared `build` command (`cli/build.py:26-37`) and `run` command
 
 ### 1.4 Under-abstraction — `open_project` is meaningful for exactly one backend
 
+> **Resolved 2026-09-25.** Android now overrides it too (Android Studio), and
+> the default's message names both IDEs instead of calling `open` an iOS/Xcode
+> command; the verb's help says the same. The finding below is left as written.
+
 `base.py:116-121` defaults to raising an iOS/Xcode-worded error:
 
 ```116:121:kivyforge/platforms/base.py
@@ -184,6 +188,10 @@ the built artifact by `config.display_name` (`platforms/macos/cli.py:191`); iOS
 uses `config.app_slug` and reports two build slices (`platforms/ios/cli.py:474-479`).
 
 ### 1.7 Silent iOS default in shared entry points
+
+> **Help text resolved 2026-09-25:** the top-level help and the package
+> docstring now name all five platforms. The `doctor` fallback below is
+> unchanged.
 
 The top-level CLI help calls the whole tool an iOS bundler
 (`cli/__init__.py:31-34`): `"kivyforge 3.0 — a declarative iOS bundler for Kivy

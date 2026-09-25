@@ -1,6 +1,6 @@
-"""``kivyforge build`` — materialize the lock into an Xcode project (specs 05/06).
+"""``kivyforge build`` — materialize the lock into the platform project (specs 05/06).
 
-Build performs, in order:
+For iOS, build performs, in order:
 
 1. **Drift check** — the lock must be in sync with ``pyproject.toml``.
 2-5. **Artifact collection** — Python.xcframework, pinned wheels into
@@ -15,7 +15,13 @@ from __future__ import annotations
 import click
 
 from ._output import output_options, report_events, reporting
-from ._platform import platform_option, reject_android_only, resolve_target
+from ._platform import (
+    passed,
+    platform_option,
+    reject_android_only,
+    reject_unread,
+    resolve_target,
+)
 
 
 @click.command()
@@ -48,18 +54,18 @@ from ._platform import platform_option, reject_android_only, resolve_target
 )
 @click.option("--no-cache", is_flag=True, help="Force re-download of every artifact.")
 @click.option(
-    "--team-id", default=None, help="Override [tool.kivy.ios.signing].team_id."
+    "--team-id", default=None, help="iOS: override [tool.kivy.ios.signing].team_id."
 )
 @click.option(
     "--signing-identity",
     default=None,
-    help="Override [tool.kivy.ios.signing].identity.",
+    help="iOS: override [tool.kivy.ios.signing].identity.",
 )
 @click.option(
     "--export-method",
     type=click.Choice(["app-store", "ad-hoc", "development"]),
     default="app-store",
-    help="Export method (only meaningful with --release).",
+    help="iOS (with --release): export method.",
 )
 # --- Android-only ---
 @click.option(
@@ -107,6 +113,14 @@ def build(
         report.platform = backend.name
         reject_android_only(
             backend, {"--debug": debug, "-f/--format": fmt, "--abi": abi}
+        )
+        reject_unread(
+            backend,
+            {
+                "--team-id": (team_id is not None, ("ios",)),
+                "--signing-identity": (signing_identity is not None, ("ios",)),
+                "--export-method": (passed("export_method"), ("ios",)),
+            },
         )
 
         outcome = backend.build(

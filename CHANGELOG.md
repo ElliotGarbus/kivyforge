@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### CLI: help text matches what each option does
+
+- **Fixed:** the top-level help called kivyforge "a declarative iOS bundler";
+  it now names all five platforms. Its em dash also printed as `ΓÇö` when help
+  was piped on Windows; help text is now ASCII-only, and a test keeps it so.
+- `open` help, and its error on platforms without an IDE project, now say it
+  opens Xcode for iOS and Android Studio for Android.
+- `--team-id`, `--signing-identity`, and `--export-method` now say which
+  platforms read them. `package --signing-identity` applies to iOS and macOS
+  only; Windows signs with `[tool.kivy.windows.signing].thumbprint`, and
+  Android with `--keystore`.
+- **Changed:** `build` and `package` now refuse those options, and `package`'s
+  `--notarize`/`--no-notarize`/`--notary-profile`, on a platform that does not
+  read them, as they already refused Android-only options elsewhere. Before,
+  `package -p windows --signing-identity X` succeeded and signed nothing with
+  X. The error names each option and the platforms it applies to (exit 1).
+- **Migration:** a script that passes one of these to a platform that ignores
+  it, such as one command line shared across targets, now fails; drop the
+  option for that platform. Nothing it did changes: the option was never
+  applied there.
+
 ### Config: unknown keys under `[tool.kivy]` are errors
 
 - **Changed:** a key kivyforge does not recognise anywhere under `[tool.kivy]`

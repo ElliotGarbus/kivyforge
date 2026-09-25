@@ -26,6 +26,20 @@ dependencies from `[project].dependencies`.
 | `display_name` | string | `[project].name` | The app name shown to users. Each platform maps it to its own field, for example `CFBundleDisplayName` on iOS and `android:label` on Android. |
 | `orientation` | list of string | `["portrait"]` | Allowed screen orientations. Valid values: `portrait`, `portrait-upside-down`, `landscape-left`, `landscape-right`. The list must not be empty. |
 
+kivyforge rejects any key under `[tool.kivy]` that it doesn't recognize,
+including keys in the platform overlays. The error names the key and its line,
+and suggests the closest valid key, for example:
+
+```text
+Error: unknown key 'deployment_targt' in [tool.kivy.ios] (line 14)
+  hint: did you mean 'deployment_target'? kivyforge does not read this key, so it would have no effect. [...]
+```
+
+The exceptions are tables whose keys belong to another tool, such as
+`[tool.kivy.ios.info_plist]` and `[tool.kivy.android.gradle_properties]`, and a
+table for a platform that kivyforge doesn't support yet, such as
+`[tool.kivy.web]`, which is ignored.
+
 ## Example
 
 ```toml

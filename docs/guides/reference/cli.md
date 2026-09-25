@@ -44,7 +44,10 @@ it, also falls back to the project's only existing overlay. See
 
 ## Platform-specific flags
 
-Some flags apply to only one target. The platform guides explain them in context.
+Some flags apply to only some targets. The platform guides explain them in
+context. Passing a flag to a target that doesn't use it is an error rather than
+being ignored. For example, `package -p windows --signing-identity NAME` fails
+with `--signing-identity (ios/macos only) is not valid for windows.`
 
 | Target | Flags | Guide |
 |---|---|---|

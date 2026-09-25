@@ -27,7 +27,8 @@ from . import (
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"]},
     help=(
-        "kivyforge 3.0 — a declarative iOS bundler for Kivy apps.\n\n"
+        "kivyforge 3.0: build, run, and package Kivy apps for Android, iOS, "
+        "macOS, Windows, and Linux from one pyproject.toml.\n\n"
         "Run commands from the directory that contains your pyproject.toml."
     ),
 )

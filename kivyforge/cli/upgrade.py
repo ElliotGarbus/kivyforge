@@ -34,8 +34,8 @@ from ._platform import platform_option, resolve_target
     "python_only",
     is_flag=True,
     help="Only refresh the bundled Python runtime (iOS: Python.xcframework; "
-    "macOS/Linux: the runtime archive(s) — a no-op flag there, it's already "
-    "the only refreshable artifact).",
+    "macOS/Linux: the runtime archive(s), where the flag is a no-op because the "
+    "runtime is already the only refreshable artifact).",
 )
 @click.option(
     "--xcframeworks",
@@ -47,7 +47,7 @@ from ._platform import platform_option, resolve_target
     "--libs",
     "libs_only",
     is_flag=True,
-    help="Only refresh the locked .aar/.jar artifacts (Android only) — the "
+    help="Only refresh the locked .aar/.jar artifacts (Android only); the "
     "Android counterpart of --xcframeworks.",
 )
 @click.option(
