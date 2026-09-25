@@ -151,6 +151,7 @@ is the runner of the job named in it**, which is why this table comes first —
 | `lint` | ubuntu | `3.x` | ruff, cross-cutting |
 | `package` | ubuntu | `3.x` | build + `twine check`, cross-cutting |
 | `sdl_glue_sync` | ubuntu | `3.x` | vendored SDL Java glue vs. kivy-mobile-wheels |
+| `docs` | ubuntu | `3.x` | `mkdocs build --strict` of the end-user site, cross-cutting |
 | `unit_tests` | ubuntu | 3.13, 3.14 | hermetic, all targets |
 | `windows_tests` | windows | 3.13, 3.14 | hermetic incl. `requires_windows` + symlinks |
 | `windows_launcher` | windows | `3.x` | Windows T2/T3 (MSVC, byte-compare) |
@@ -158,7 +159,7 @@ is the runner of the job named in it**, which is why this table comes first —
 | `windows_signing` | windows | `3.x` | Windows T2 (`signtool`, self-signed) |
 | `android_gradle` | ubuntu | **3.14** | Android T2 + T3, **both ABIs** (matrix: `arm64_v8a`, `x86_64`) |
 | `android_emulator` | ubuntu | **3.14** | Android **T4** (`run --smoke --release` on an x86_64 AVD) |
-| `android_windows_host` | **windows** | **3.14** | Android T2 + T3 from a *Windows* host (§5.2's resolver path) |
+| `android_windows_host` | **windows** | **3.13** + **3.14** + **3.15.0-rc.2** | Android T2 + T3 from a *Windows* host (§5.2's resolver path) |
 | `linux_appimage` | ubuntu | **3.13** | Linux T2 + T3 (`package` + AppImage assertions) |
 | `windows_onedir` | windows | **3.13** | Windows T2 + T3 (`package` + onedir assertions + built-launcher signature) |
 | `macos_app` | macos | **3.13** | macOS T2 + T3 (`package`, ad-hoc signed, + `.app` assertions) |
@@ -182,16 +183,26 @@ Android does" is the wrong reason to pin one of these, and briefly cost
 `ios_simulator` its pin on the argument that no magic number was at stake
 — true, and beside the point.
 
-**Five jobs still float, and that is correct.** `lint`, `package`,
-`sdl_glue_sync`, `windows_launcher`, `windows_signing` and the two
+**`android_windows_host` pins three interpreters, one per role**, because the
+resolver it tests needs a field of candidates to choose from: 3.13 runs
+kivyforge and is the default `python`; 3.14 is what the project ships, which
+the resolver must find by *searching* and which T3 then runs under (the same
+magic-number reason as `android_gradle`); and `3.15.0-rc.2` is the only 3.15
+present, so `py -3.15` offers a pre-release the resolver must reject. That last
+pin is exact rather than `'3.15'` + `allow-prereleases`, which would float to
+3.15.0 final on 2026-10-01 and void the rejection test's precondition (§7,
+2026-09-24).
+
+**Eight jobs float, and that is correct.** `lint`, `package`,
+`sdl_glue_sync`, `docs`, `windows_launcher`, `windows_signing` and the two
 `revendor_*` jobs stay on `3.x`. None is the sole proof of a *platform*: they
 are cross-cutting checks, or they exercise a C toolchain and a signing tool
 whose behaviour does not turn on the Python minor. Pinning them would give up
 the early warning that floating buys, for nothing.
 
 **Every job that *is* the sole proof of a platform now pins** —
-`android_gradle`, `android_emulator`, `linux_appimage`, `windows_onedir`,
-`macos_app`, `macos_integration`, `ios_simulator`. That is §5.8's rule applied
+`android_gradle`, `android_emulator`, `android_windows_host`, `linux_appimage`,
+`windows_onedir`, `macos_app`, `macos_integration`, `ios_simulator`. That is §5.8's rule applied
 mechanically, which is the point of stating it that way: "is this the only job
 proving platform X?" needs no per-job judgment, whereas "does the host
 interpreter affect the artifact?" needs to know each platform's byte-compile
@@ -1146,7 +1157,9 @@ change under us the way the MSVC toolset did three times (§7).
 All seven such jobs now pin — `android_gradle` and `android_emulator` (3.14,
 which they *must*, for the magic number), and `linux_appimage`,
 `windows_onedir`, `macos_app`, `macos_integration` and `ios_simulator` (3.13,
-for the rule above).
+for the rule above). ~~That was every platform proof on 2026-09-23.~~
+`android_windows_host` (added the same day, §5.2) is an eighth; it pins all
+three interpreters it installs, for the reasons in §3.1.
 
 **`ios_simulator` is worth recording, because it is where the two reasons got
 confused.** It landed unpinned, with a comment arguing that plain
@@ -1157,7 +1170,7 @@ the host interpreter, and it is the only job exercising the iOS code paths
 against a real Xcode — exactly the invisibility this section was written
 about. Pinned 2026-09-23.
 
-**Deliberately still floating:** `lint`, `package`, `sdl_glue_sync`,
+**Deliberately still floating:** `lint`, `package`, `sdl_glue_sync`, `docs`,
 `windows_launcher`, `windows_signing` and the two `revendor_*` jobs. None is
 the sole proof of a platform — they are cross-cutting, or they exercise a C
 toolchain and a signing tool that do not turn on the Python minor — and
