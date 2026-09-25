@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import plistlib
 import shutil
-import tempfile
 from pathlib import Path
 
 import click
@@ -26,6 +25,7 @@ from kivyforge.bundle.pycompile import (
     compile_stdlib,
     select_compiler,
 )
+from kivyforge.bundle.workdir import make_work_dir
 from kivyforge.config.model import Config
 from kivyforge.host import host_runs_natively
 from kivyforge.report import diagnostics
@@ -145,7 +145,7 @@ def build_app_bundle(
     # failure) leaves the previous, working .app untouched instead of a
     # half-written one. Mirrors the Linux AppDir builder's write-then-swap.
     staging_dir.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(dir=staging_dir, prefix=f".{app.name}.tmp-"))
+    work = make_work_dir(staging_dir, prefix=f".{app.name}.tmp-")
     try:
         contents = work / "Contents"
         (contents / "MacOS").mkdir(parents=True)

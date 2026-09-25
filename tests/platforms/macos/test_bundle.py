@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import plistlib
+import stat
 from pathlib import Path
 
 import pytest
@@ -271,6 +273,24 @@ class TestBuildAppBundle:
         assert plist["CFBundleIdentifier"] == "org.example.myapp"
         # The bundle is ad-hoc signed once (on the temp tree, before the swap).
         assert len(faked["sign"]) == 1
+
+    @pytest.mark.requires_posix
+    def test_app_is_not_owner_only(self, tmp_path, faked):
+        # Assembled in a mkdtemp tree (always 0700) and renamed into place, so
+        # without a reset only the building user could open it.
+        root = _project(tmp_path)
+        old = os.umask(0o022)
+        try:
+            app = bundle.build_app_bundle(
+                _config(),
+                _lock(),
+                root,
+                staging_dir=tmp_path / "out",
+                echo=lambda *a: None,
+            )
+        finally:
+            os.umask(old)
+        assert stat.S_IMODE(app.stat().st_mode) == 0o755
 
     def test_arch_passed_to_stagers(self, tmp_path, faked):
         root = _project(tmp_path)

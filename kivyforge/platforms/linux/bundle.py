@@ -14,7 +14,6 @@ launcher + ``.desktop`` entry. Produces the layout documented in linux-spec:
 from __future__ import annotations
 
 import shutil
-import tempfile
 from pathlib import Path
 
 import click
@@ -27,6 +26,7 @@ from kivyforge.bundle.pycompile import (
     compile_stdlib,
     select_compiler,
 )
+from kivyforge.bundle.workdir import make_work_dir
 from kivyforge.config.model import Config
 from kivyforge.host import host_runs_natively
 from kivyforge.report import diagnostics
@@ -146,7 +146,7 @@ def build_appdir(
     # mid-assembly (e.g. a transient runtime/wheel fetch error) leaves the
     # previous, working AppDir untouched instead of a half-written one.
     staging_dir.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(dir=staging_dir, prefix=f".{appdir.name}.tmp-"))
+    work = make_work_dir(staging_dir, prefix=f".{appdir.name}.tmp-")
     try:
         (work / "usr").mkdir(parents=True)
 
