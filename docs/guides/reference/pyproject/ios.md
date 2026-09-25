@@ -60,7 +60,7 @@ Required.
 |---|---|---|---|
 | `team_id` | string | `""` | Apple Developer Team ID. Required for device builds and release exports. Overridden by `--team-id`, then `KIVYFORGE_TEAM_ID`. |
 | `identity` | string | `"Apple Development"` | Signing identity for device debug builds. Not passed to release exports. Overridden by `--signing-identity`, then `KIVYFORGE_SIGNING_IDENTITY`. |
-| `provisioning_profile` | string | `""` | Provisioning profile to pin: its name or UUID, or a path to a `.mobileprovision` file. Empty means Xcode chooses. See the note below. |
+| `provisioning_profile` | string | `""` | Provisioning profile to pin: its name or UUID, or a path to a `.mobileprovision` file. Requires `auto_signing = false`. Empty means Xcode chooses. See the note below. |
 | `auto_signing` | bool | `true` | Use Xcode automatic signing. When `true`, signing `xcodebuild` runs get `-allowProvisioningUpdates`. |
 | `upload_symbols` | bool | `true` | Value of `uploadSymbols` in the export options for release exports. |
 
@@ -76,6 +76,12 @@ Required.
     absolute or relative to the project. kivyforge reads the file and passes its
     UUID to Xcode. Xcode signs only with installed profiles, so install the file
     too (double-click it); `doctor` warns if it is not installed.
+
+    A pinned profile is manual signing, so set `auto_signing = false`: Xcode
+    refuses a pin under automatic signing. The profile must be one created at
+    developer.apple.com, not an Xcode-managed `iOS Team Provisioning Profile`,
+    which manual signing rejects. A device or release build stops before
+    `xcodebuild` on either, and `doctor` fails on both.
 
 ## `[tool.kivy.ios.entitlements]`
 

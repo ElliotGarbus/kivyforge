@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### iOS: a pinned profile Xcode will refuse stops the build up front
+
+- **Changed:** a device or release build, `run --device`, and `package` now
+  stop before `xcodebuild` in two cases where Xcode refuses the pinned profile.
+  Before, both built the whole app and then failed (exit 5) with Xcode's error,
+  while `doctor` reported PASS:
+  - `provisioning_profile` set with `auto_signing = true` (the default). Xcode
+    rejects a pinned profile under automatic signing.
+  - an Xcode-managed profile (`iOS Team Provisioning Profile: ...`, the kind
+    automatic signing installs) pinned under `auto_signing = false`. Manual
+    signing requires a profile created at developer.apple.com.
+- `doctor -p ios` now FAILs the Provisioning profile check in both cases.
+- `package` now runs the entitlements check that `build` already ran, so an
+  entitlement the pinned profile does not grant fails before the archive
+  instead of at export.
+- **`KF-ENTITLEMENTS-UNGRANTED` is retired.** It warned about ungranted
+  entitlements under automatic signing with a pinned profile, a combination
+  that never built. It is no longer emitted and will not be reused.
+- **Migration:** if you pin `provisioning_profile`, set `auto_signing = false`
+  and pin a manually created profile; or remove `provisioning_profile` and let
+  Xcode manage signing. Re-lock afterwards. Simulator builds are unaffected.
+
+### iOS: `run` streams the app's console
+
+- **Fixed:** `run -p ios` launched the app but never showed its output, and
+  Ctrl+C discarded it; the quickstart said it streamed. The launch now runs
+  attached to your terminal, as macOS `run` does, until the app exits or you
+  press Ctrl+C. On a device the launch passes `devicectl --console`, which
+  attaches to the app's output and waits for it to exit.
+
+### iOS: `--arch` offers only the simulator slice kivyforge pins
+
+- **Fixed:** `build -p ios --arch aarch64` suggested `x86_64`, which then
+  crashed with a traceback (no `--json` envelope) because no lock pins an
+  x86_64 simulator slice. The error now suggests `arm64` only.
+- On an Intel Mac, a simulator build fails before downloading anything, with
+  exit 3 (`KF-HOST-INCAPABLE`), and says to build for a device or on Apple
+  Silicon. Device builds on an Intel Mac are unaffected.
+- A wheel the lock does not cover for the requested slice is now a
+  configuration error with a `--json` envelope, and says to re-lock.
+
+### macOS and Linux: the built bundle is readable by other users
+
+- **Fixed:** the macOS `.app` and the Linux AppDir were created mode `0700`,
+  so only the user who built them could open them, and `cp -R` carried that
+  into a DMG or `/Applications`. They now get the mode a plain `mkdir` would
+  (`0755` under the usual umask). Rebuild to pick it up.
+
 ### CLI: help text matches what each option does
 
 - **Fixed:** the top-level help called kivyforge "a declarative iOS bundler";

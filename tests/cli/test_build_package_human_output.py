@@ -190,18 +190,12 @@ class TestIos:
             stdout="Generated demo-ios\n" + built,
         )
 
-    def test_build_device_warns_on_ungranted_entitlements(self, ios, monkeypatch):
-        monkeypatch.setattr(
-            ios, "preflight_entitlements", lambda *a: ["com.apple.developer.healthkit"]
-        )
+    def test_build_device(self, ios):
         result = _invoke(build, ["-p", "ios", "--device"])
         built = f"Built {_IOS_PRODUCTS}{os.sep}Debug-iphoneos{os.sep}demo.app\n"
         _assert_streams(
             result,
-            merged="Warning: entitlements not granted by the pinned provisioning "
-            "profile: com.apple.developer.healthkit\n"
-            "  auto_signing is on, so Xcode may register them at build time.\n"
-            + _ios_prepare(_IOS_DEVICE_TAGS)
+            merged=_ios_prepare(_IOS_DEVICE_TAGS)
             + "xcodebuild build (device) ...\n"
             + built,
             stdout="Generated demo-ios\n" + built,

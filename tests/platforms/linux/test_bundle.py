@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -239,6 +241,23 @@ class TestBuildAppdir:
         # The generated .desktop is validated during assembly (in the temp tree,
         # before the atomic swap-in).
         assert faked["validated"].name == "org.example.myapp.desktop"
+
+    @pytest.mark.requires_posix
+    def test_appdir_is_not_owner_only(self, tmp_path, faked):
+        # Assembled in a mkdtemp tree (always 0700) and renamed into place.
+        root = _project(tmp_path)
+        old = os.umask(0o022)
+        try:
+            appdir = bundle.build_appdir(
+                _config(),
+                _lock(),
+                root,
+                staging_dir=tmp_path / "out",
+                echo=lambda *a: None,
+            )
+        finally:
+            os.umask(old)
+        assert stat.S_IMODE(appdir.stat().st_mode) == 0o755
 
     def test_dotted_entry_point_maps_to_nested_source(self, tmp_path, faked):
         (tmp_path / "src" / "pkg").mkdir(parents=True)

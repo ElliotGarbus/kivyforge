@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..lock.model import LockedPackage, LockedWheel
+from ..report.failures import ClassifiedError
 
 # Build target -> the simulator/device platform-tag suffix.
 TARGET_SUFFIX = {
@@ -81,9 +82,11 @@ def select_wheel(package: LockedPackage, slice_: BuildSlice) -> LockedWheel:
     available = ", ".join(sorted(w.platform_tag for w in package.wheels))
     raise WheelSelectionError(
         f"{package.name} has no compatible wheel for slice "
-        f"{slice_.platform_tag} (have: {available})."
+        f"{slice_.platform_tag} (have: {available}).\n"
+        "  Fix: re-run `kivyforge lock -p ios` so the lock covers this slice, or "
+        "build a slice it already covers."
     )
 
 
-class WheelSelectionError(Exception):
+class WheelSelectionError(ClassifiedError):
     pass

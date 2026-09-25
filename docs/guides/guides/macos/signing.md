@@ -90,6 +90,12 @@ xcrun stapler validate "build/macos/APP_NAME.app"
 
 Replace `APP_NAME` with your app's display name.
 
+To check the signature itself, independently of Gatekeeper:
+
+```bash
+codesign --verify --deep --strict --verbose=2 "build/macos/APP_NAME.app"
+```
+
 ## What gets signed
 
 kivyforge signs every Mach-O binary inside the `.app`: the launcher, the bundled
@@ -113,9 +119,18 @@ is set, because notarization always rejects it.
 
 ### `errSecInternalComponent` on every Mach-O
 
-If signing fails on every binary with `errSecInternalComponent`, even after you
-retry, the private key's access control list in your login keychain may be
-corrupted. Apple recommends keeping a Developer ID identity in its own keychain
+First check that the keychain holding your identity is unlocked. A locked
+keychain produces the same error, and it is the more common cause:
+
+```bash
+security unlock-keychain KEYCHAIN_PATH
+```
+
+Replace `KEYCHAIN_PATH` with the keychain, for example
+`~/Library/Keychains/login.keychain-db`, then run `package` again.
+
+If signing still fails on every binary with `errSecInternalComponent`, the
+private key's access control list in your login keychain may be corrupted. Apple recommends keeping a Developer ID identity in its own keychain
 for this reason, and `kivyforge doctor` warns when your identity is in
 `login.keychain-db`.
 

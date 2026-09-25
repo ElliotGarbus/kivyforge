@@ -324,17 +324,6 @@ class TestIos:
             )
         assert rec.artifacts == []
 
-    def test_ungranted_entitlements_are_noted(self, ios, monkeypatch):
-        monkeypatch.setattr(
-            ios, "preflight_entitlements", lambda *a: ["com.apple.developer.healthkit"]
-        )
-        rec = Recorder()
-        self._build(ios, "device", rec)
-        assert rec.note_codes == [diagnostics.ENTITLEMENTS_UNGRANTED]
-        # The human warning goes where it always went (stderr), not through
-        # on_line or on_progress.
-        assert not any("entitlements" in line for line in rec.lines + rec.progress)
-
 
 class TestAndroid:
     def test_package_records_only_the_release_artifact(self, android):

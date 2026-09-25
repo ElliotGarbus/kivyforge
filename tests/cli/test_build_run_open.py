@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from kivyforge.cli.build import build
 from kivyforge.cli.open_cmd import open_
+from kivyforge.cli.package import package
 from kivyforge.cli.run import run as run_cmd
 from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.ios.lock import (
@@ -100,10 +101,12 @@ def runner():
 def stub_collect(monkeypatch):
     """Skip artifact collection in build/run orchestration tests."""
     monkeypatch.setattr(ios_cli, "collect_artifacts", lambda *a, **k: None)
+    # An x86_64 host is refused a simulator build; these tests are not about that.
+    monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "arm64")
 
 
 @pytest.fixture
-def record_xcodebuild(monkeypatch):
+def record_xcodebuild(monkeypatch, launches):
     """Record every run_command argv across build/run/open."""
     calls = []
 
@@ -118,9 +121,20 @@ def record_xcodebuild(monkeypatch):
             proc.stdout = _SIMCTL_JSON
         return proc
 
+    def fake_foreground(argv, *, runner=None):
+        calls.append(argv)
+        launches.append(argv)
+
     monkeypatch.setattr(ios_cli, "run_command", fake)
     monkeypatch.setattr(runner_mod, "run_command", fake)
+    monkeypatch.setattr(ios_cli, "run_foreground", fake_foreground)
     return calls
+
+
+@pytest.fixture
+def launches():
+    """The argv of every app launch, which must reach the user's terminal."""
+    return []
 
 
 class TestBuildStep7:
@@ -217,16 +231,27 @@ class TestEntitlementsPreflight:
             assert "com.apple.developer.healthkit" in result.output
             assert "developer.apple.com" in result.output
 
-    def test_device_build_warns_under_auto_signing(
+    def test_pin_under_auto_signing_fails_before_xcodebuild(
         self, runner, tmp_path, record_xcodebuild
     ):
+        # Xcode refuses a pinned profile under automatic signing; before, this
+        # warned about the entitlements and then failed at the end of the build.
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _project_with_ungranted_entitlement(fs, auto_signing=True)
             result = runner.invoke(build, ["--device"])
-            assert result.exit_code == 0, result.output
+            assert result.exit_code == 1
+            assert "auto_signing is on" in result.output
+            assert record_xcodebuild == []
+
+    def test_package_is_checked_too(self, runner, tmp_path, record_xcodebuild):
+        # package used to skip the entitlements check that build ran, so the
+        # mismatch surfaced only at export.
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _project_with_ungranted_entitlement(fs, auto_signing=False)
+            result = runner.invoke(package, [])
+            assert result.exit_code == 1
             assert "com.apple.developer.healthkit" in result.output
-            # -allowProvisioningUpdates may still register it, so the build runs.
-            assert any("xcodebuild" in " ".join(c) for c in record_xcodebuild)
+            assert record_xcodebuild == []
 
     def test_run_device_is_checked_too(self, runner, tmp_path, record_xcodebuild):
         # `run` signs via its own xcodebuild call rather than going through
@@ -247,7 +272,9 @@ class TestEntitlementsPreflight:
 
 
 class TestRun:
-    def test_run_simulator_install_launch(self, runner, tmp_path, record_xcodebuild):
+    def test_run_simulator_install_launch(
+        self, runner, tmp_path, record_xcodebuild, launches
+    ):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
             # pre-create the built .app so the locate step passes
@@ -266,7 +293,9 @@ class TestRun:
             assert result.exit_code == 0, result.output
             joined = [" ".join(c) for c in record_xcodebuild]
             assert any("simctl install" in j for j in joined)
-            assert any("simctl launch" in j for j in joined)
+            # Captured output would show the app's console only after it exits.
+            assert [c[:3] for c in launches] == [["xcrun", "simctl", "launch"]]
+            assert "--console-pty" in launches[0]
 
     def test_run_no_build_missing_app_errors(self, runner, tmp_path, record_xcodebuild):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

@@ -22,7 +22,7 @@ from kivyforge.platforms.ios.entitlements import (
     find_installed_profile,
     is_profile_path,
     missing_entitlements,
-    preflight_entitlements,
+    preflight_profile,
     read_profile,
     resolve_profile_path,
     xcode_profile_specifier,
@@ -32,7 +32,7 @@ from kivyforge.platforms.ios.xcode.commands import SigningError
 APP_ID = "ABCDE12345.org.example.myapp"
 
 
-def write_profile(path, granted, *, name="Acme Development", uuid=""):
+def write_profile(path, granted, *, name="Acme Development", uuid="", managed=False):
     """A .mobileprovision is a CMS envelope wrapping a verbatim XML plist."""
     payload = {
         "Name": name,
@@ -40,6 +40,8 @@ def write_profile(path, granted, *, name="Acme Development", uuid=""):
     }
     if uuid:
         payload["UUID"] = uuid
+    if managed:
+        payload["IsXcodeManaged"] = True
     path.write_bytes(b"\x30\x82\xde\xad" + plistlib.dumps(payload) + b"\x00\x01\x02")
     return path
 
@@ -185,35 +187,39 @@ class TestXcodeSpecifier:
         assert settings["PROVISIONING_PROFILE_SPECIFIER"] == UUID
 
 
+def manual(profile):
+    return make_config(profile=profile, auto_signing=False)
+
+
 class TestProvisioningProfileCheck:
     def test_name_installed_passes(self, tmp_path, installed):
         write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
-        cfg = make_config(profile="Acme Development")
+        cfg = manual("Acme Development")
         result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
         assert result.status is Status.PASS
 
     def test_name_not_installed_fails(self, tmp_path, installed):
         # Before, a name/UUID -- the documented form -- was treated as a file
         # path, so this FAILed even when the profile was installed.
-        cfg = make_config(profile="Acme Development")
+        cfg = manual("Acme Development")
         result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
         assert result.status is Status.FAIL
         assert "name or UUID" in result.detail
 
     def test_path_missing_fails(self, tmp_path, installed):
-        cfg = make_config(profile="gone.mobileprovision")
+        cfg = manual("gone.mobileprovision")
         result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
         assert result.status is Status.FAIL
 
     def test_path_unreadable_fails(self, tmp_path, installed):
         (tmp_path / "p.mobileprovision").write_bytes(b"garbage")
-        cfg = make_config(profile="p.mobileprovision")
+        cfg = manual("p.mobileprovision")
         result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
         assert result.status is Status.FAIL
 
     def test_path_not_installed_warns(self, tmp_path, installed):
         write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
-        cfg = make_config(profile="p.mobileprovision")
+        cfg = manual("p.mobileprovision")
         result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
         assert result.status is Status.WARN
         assert "double-click" in result.hint
@@ -221,9 +227,74 @@ class TestProvisioningProfileCheck:
     def test_path_installed_passes(self, tmp_path, installed):
         write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
         write_profile(installed[1] / "copy.mobileprovision", {}, uuid=UUID)
-        cfg = make_config(profile="p.mobileprovision")
+        cfg = manual("p.mobileprovision")
         result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
         assert result.status is Status.PASS
+
+    def test_pin_under_auto_signing_fails(self, tmp_path, installed):
+        # Xcode refuses PROVISIONING_PROFILE_SPECIFIER with CODE_SIGN_STYLE
+        # Automatic, so an installed, valid profile still cannot be used.
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
+        cfg = make_config(profile="Acme Development", auto_signing=True)
+        result = C.check_provisioning_profile(cfg, tmp_path, search_dirs=installed)
+        assert result.status is Status.FAIL
+        assert "auto_signing = false" in result.hint
+
+    @pytest.mark.parametrize("pin", ["Acme Development", "p.mobileprovision"])
+    def test_xcode_managed_profile_fails(self, tmp_path, installed, pin):
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID, managed=True)
+        write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID, managed=True)
+        result = C.check_provisioning_profile(
+            manual(pin), tmp_path, search_dirs=installed
+        )
+        assert result.status is Status.FAIL
+        assert "Xcode-managed" in result.detail
+        assert "developer.apple.com" in result.hint
+
+
+class TestPreflightProfile:
+    """Xcode's two refusals of a pinned profile, caught before any build work."""
+
+    def test_pin_under_auto_signing_raises(self, tmp_path, installed):
+        cfg = make_config(profile="Acme Development", auto_signing=True)
+        with pytest.raises(SigningError, match="auto_signing is on"):
+            preflight_profile(cfg, tmp_path, "device", search_dirs=installed)
+
+    def test_xcode_managed_raises_under_manual_signing(self, tmp_path, installed):
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID, managed=True)
+        with pytest.raises(SigningError, match="managed by Xcode"):
+            preflight_profile(
+                manual("Acme Development"), tmp_path, "release", search_dirs=installed
+            )
+
+    def test_manual_profile_passes(self, tmp_path, installed):
+        write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
+        preflight_profile(
+            manual("Acme Development"), tmp_path, "device", search_dirs=installed
+        )
+
+    @pytest.mark.parametrize(
+        "cfg",
+        [
+            make_config(profile="Acme Development", auto_signing=True),
+            make_config(),
+        ],
+        ids=["simulator-does-not-sign", "no-pin"],
+    )
+    def test_nothing_to_refuse(self, tmp_path, installed, cfg):
+        target = (
+            "simulator" if cfg.ios_required.signing.provisioning_profile else "device"
+        )
+        preflight_profile(cfg, tmp_path, target, search_dirs=installed)
+
+    def test_unfindable_profile_is_left_to_doctor(self, tmp_path, installed):
+        preflight_profile(manual("Nobody"), tmp_path, "device", search_dirs=installed)
+
+    def test_reads_is_xcode_managed(self, tmp_path):
+        path = write_profile(tmp_path / "p.mobileprovision", {}, managed=True)
+        assert read_profile(path).xcode_managed is True
+        plain = write_profile(tmp_path / "q.mobileprovision", {})
+        assert read_profile(plain).xcode_managed is False
 
 
 class TestProfilePinnedByName:
@@ -233,7 +304,7 @@ class TestProfilePinnedByName:
         write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
         cfg = make_config(entitlements=HEALTHKIT, profile=UUID, auto_signing=False)
         with pytest.raises(SigningError):
-            preflight_entitlements(cfg, tmp_path, "device", search_dirs=installed)
+            preflight_profile(cfg, tmp_path, "device", search_dirs=installed)
 
     def test_doctor_uses_installed_profile(self, tmp_path, installed):
         write_profile(installed[0] / "a.mobileprovision", {}, uuid=UUID)
@@ -244,7 +315,7 @@ class TestProfilePinnedByName:
         assert result.status is Status.FAIL
 
     def test_doctor_skips_when_name_not_installed(self, tmp_path, installed):
-        cfg = make_config(entitlements=HEALTHKIT, profile="Nobody")
+        cfg = make_config(entitlements=HEALTHKIT, profile="Nobody", auto_signing=False)
         result = C.check_entitlements_vs_profile(cfg, tmp_path, search_dirs=installed)
         assert result.status is Status.SKIP
 
@@ -276,35 +347,35 @@ class TestResolveProfilePath:
         assert resolve_profile_path(cfg, tmp_path) == absolute
 
 
-class TestPreflight:
+class TestPreflightEntitlements:
     def test_simulator_never_checks(self, tmp_path):
         write_profile(tmp_path / "p.mobileprovision", {})
         cfg = make_config(
             entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=False
         )
-        assert preflight_entitlements(cfg, tmp_path, "simulator") == []
+        preflight_profile(cfg, tmp_path, "simulator")
 
     def test_no_entitlements_declared(self, tmp_path):
         write_profile(tmp_path / "p.mobileprovision", {})
         cfg = make_config(profile="p.mobileprovision", auto_signing=False)
-        assert preflight_entitlements(cfg, tmp_path, "device") == []
+        preflight_profile(cfg, tmp_path, "device")
 
     def test_no_profile_pinned(self, tmp_path):
         cfg = make_config(entitlements=HEALTHKIT, auto_signing=False)
-        assert preflight_entitlements(cfg, tmp_path, "device") == []
+        preflight_profile(cfg, tmp_path, "device")
 
     def test_absent_profile_file_does_not_block(self, tmp_path):
         cfg = make_config(
             entitlements=HEALTHKIT, profile="gone.mobileprovision", auto_signing=False
         )
-        assert preflight_entitlements(cfg, tmp_path, "device") == []
+        preflight_profile(cfg, tmp_path, "device")
 
     def test_unparseable_profile_does_not_block(self, tmp_path):
         (tmp_path / "p.mobileprovision").write_bytes(b"garbage")
         cfg = make_config(
             entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=False
         )
-        assert preflight_entitlements(cfg, tmp_path, "device") == []
+        preflight_profile(cfg, tmp_path, "device")
 
     def test_all_granted_is_quiet(self, tmp_path):
         write_profile(
@@ -313,7 +384,7 @@ class TestPreflight:
         cfg = make_config(
             entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=False
         )
-        assert preflight_entitlements(cfg, tmp_path, "device") == []
+        preflight_profile(cfg, tmp_path, "device")
 
     def test_manual_signing_raises_with_actionable_message(self, tmp_path):
         write_profile(tmp_path / "p.mobileprovision", {})
@@ -321,21 +392,12 @@ class TestPreflight:
             entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=False
         )
         with pytest.raises(SigningError) as exc:
-            preflight_entitlements(cfg, tmp_path, "device")
+            preflight_profile(cfg, tmp_path, "device")
         message = str(exc.value)
         assert "com.apple.developer.healthkit" in message
         assert "Acme Development" in message
         assert APP_ID in message
         assert "developer.apple.com" in message
-
-    def test_auto_signing_returns_keys_instead_of_raising(self, tmp_path):
-        write_profile(tmp_path / "p.mobileprovision", {})
-        cfg = make_config(
-            entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=True
-        )
-        assert preflight_entitlements(cfg, tmp_path, "device") == [
-            "com.apple.developer.healthkit"
-        ]
 
     def test_release_target_is_checked(self, tmp_path):
         write_profile(tmp_path / "p.mobileprovision", {})
@@ -343,7 +405,7 @@ class TestPreflight:
             entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=False
         )
         with pytest.raises(SigningError):
-            preflight_entitlements(cfg, tmp_path, "release")
+            preflight_profile(cfg, tmp_path, "release")
 
 
 class TestDoctorCheck:
@@ -358,14 +420,18 @@ class TestDoctorCheck:
         assert "provisioning_profile" in result.detail
 
     def test_skip_when_profile_file_absent(self, tmp_path):
-        cfg = make_config(entitlements=HEALTHKIT, profile="gone.mobileprovision")
+        cfg = make_config(
+            entitlements=HEALTHKIT, profile="gone.mobileprovision", auto_signing=False
+        )
         assert C.check_entitlements_vs_profile(cfg, tmp_path).status is Status.SKIP
 
     def test_pass_when_granted(self, tmp_path):
         write_profile(
             tmp_path / "p.mobileprovision", {"com.apple.developer.healthkit": True}
         )
-        cfg = make_config(entitlements=HEALTHKIT, profile="p.mobileprovision")
+        cfg = make_config(
+            entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=False
+        )
         result = C.check_entitlements_vs_profile(cfg, tmp_path)
         assert result.status is Status.PASS
         assert "Acme Development" in result.detail
@@ -380,14 +446,16 @@ class TestDoctorCheck:
         assert "com.apple.developer.healthkit" in result.detail
         assert APP_ID in result.hint
 
-    def test_warn_under_auto_signing(self, tmp_path):
+    def test_skip_under_auto_signing(self, tmp_path):
+        # The Provisioning profile check FAILs the pin itself; a second verdict
+        # on a profile Xcode will never sign with would only add noise.
         write_profile(tmp_path / "p.mobileprovision", {})
         cfg = make_config(
             entitlements=HEALTHKIT, profile="p.mobileprovision", auto_signing=True
         )
         result = C.check_entitlements_vs_profile(cfg, tmp_path)
-        assert result.status is Status.WARN
-        assert "auto_signing" in result.hint
+        assert result.status is Status.SKIP
+        assert "auto_signing" in result.detail
 
     def test_warn_when_profile_unreadable(self, tmp_path):
         (tmp_path / "p.mobileprovision").write_bytes(b"garbage")

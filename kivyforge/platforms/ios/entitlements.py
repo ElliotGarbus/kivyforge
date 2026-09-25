@@ -62,6 +62,7 @@ class ProvisioningProfile:
     app_id: str
     entitlements: dict
     uuid: str = ""
+    xcode_managed: bool = False
 
 
 PROFILE_SUFFIX = ".mobileprovision"
@@ -189,6 +190,28 @@ def read_profile(path: str | Path) -> ProvisioningProfile:
         app_id=str(app_id) if isinstance(app_id, str) else "",
         entitlements=granted,
         uuid=uuid if isinstance(uuid, str) else "",
+        xcode_managed=payload.get("IsXcodeManaged") is True,
+    )
+
+
+PIN_NEEDS_MANUAL_SIGNING = (
+    "provisioning_profile is set, but auto_signing is on, and Xcode refuses a "
+    "pinned profile under automatic signing.\n"
+    "  Fix one of these ways:\n"
+    "    - Set [tool.kivy.ios.signing].auto_signing = false to sign with the "
+    "pinned profile, then re-lock\n"
+    "    - Remove provisioning_profile to let Xcode manage signing, then re-lock"
+)
+
+
+def xcode_managed_message(profile_name: str) -> str:
+    return (
+        f"the pinned provisioning profile {profile_name!r} is managed by Xcode, "
+        "and Xcode will not sign with it under manual signing.\n"
+        "  Fix one of these ways:\n"
+        "    - Create a manual profile for this App ID at developer.apple.com, "
+        "install it, and pin that one\n"
+        "    - Set auto_signing = true and remove provisioning_profile, then re-lock"
     )
 
 
@@ -202,45 +225,48 @@ def missing_entitlements(declared: Iterable[str], granted: Iterable[str]) -> lis
     return sorted(key for key in declared if key not in granted_keys)
 
 
-def preflight_entitlements(
+def preflight_profile(
     config: Config,
     project_root: Path,
     target: str,
     *,
     search_dirs: tuple[Path, ...] | None = None,
-) -> list[str]:
-    """Check declared entitlements against a pinned profile (spec 05 step 7).
+) -> None:
+    """Refuse a pinned profile Xcode will not sign with (spec 05 step 7).
 
-    Raises ``SigningError`` under manual signing, where the pinned profile is the
-    one that will sign and a missing key is a certain ``codesign`` failure. Under
-    automatic signing the missing keys are *returned* instead, so the caller can
-    warn while letting Xcode's ``-allowProvisioningUpdates`` try to register them
-    mid-build.
+    Each of these otherwise surfaces only after the whole build has run:
 
-    Returns an empty list whenever there is nothing to compare: a target that
-    does not sign, no declared entitlements, no pinned profile, a pinned profile
-    that cannot be found, or one that cannot be parsed (``doctor`` reports those
-    cases — they should not block a build).
+    - a pin under automatic signing, which Xcode rejects outright;
+    - an Xcode-managed profile, which manual signing rejects;
+    - declared entitlements the profile does not grant, which ``codesign``
+      rejects, since the app's entitlements must be a subset of the profile's.
+
+    Nothing is checked for a target that does not sign or when no profile is
+    pinned. A pinned profile that cannot be found or parsed does not block the
+    build either; ``doctor`` reports it.
     """
     if target == "simulator":
-        return []
-    declared = config.ios_required.entitlements
-    if not declared:
-        return []
+        return
+    signing = config.ios_required.signing
+    if not signing.provisioning_profile:
+        return
+    if signing.auto_signing:
+        raise SigningError(PIN_NEEDS_MANUAL_SIGNING)
     path = resolve_profile_path(config, project_root, search_dirs=search_dirs)
     if path is None or not path.exists():
-        return []
+        return
     try:
         profile = read_profile(path)
     except ProfileError:
-        return []
+        return
+    if profile.xcode_managed:
+        raise SigningError(xcode_managed_message(profile.name))
 
-    missing = missing_entitlements(declared, profile.entitlements)
+    missing = missing_entitlements(
+        config.ios_required.entitlements, profile.entitlements
+    )
     if not missing:
-        return []
-    if config.ios_required.signing.auto_signing:
-        return missing
-
+        return
     app_id = f"  (App ID: {profile.app_id})" if profile.app_id else ""
     raise SigningError(
         "entitlements declared in pyproject.toml are not granted by the "
