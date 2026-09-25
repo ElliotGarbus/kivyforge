@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Config: unknown keys under `[tool.kivy]` are errors
+
+- **Changed:** a key kivyforge does not recognise anywhere under `[tool.kivy]`
+  now fails every verb with a configuration error (exit 1). Before, it was
+  dropped without a word and the build went ahead as if it had never been
+  written: a typo such as `deployment_targt`, or `[tool.kivy.android.proguard]`,
+  which the Android spec describes but no release implements, so a release
+  build shipped with none of the keep rules it declared.
+- The error names the key and its line, and suggests the closest valid key
+  (`did you mean 'deployment_target'?`) or lists the valid ones. All unknown
+  keys are reported in one run.
+- Not checked: keys outside `[tool.kivy]`; tables passed through to another
+  tool (`info_plist`, `entitlements`, `xcode.build_settings`, the Android
+  `manifest` attribute tables, `gradle_properties`); and a table for a platform
+  kivyforge does not support yet, such as `[tool.kivy.web]`, which spec 01
+  promises is inert. Targeting a misspelt overlay now names it:
+  `found [tool.kivy.andriod]; rename it to [tool.kivy.android]`.
+- **Migration:** a project with an unknown key stops building until the key
+  is fixed or removed. No setting changes meaning: every key the error names
+  was already being ignored. Remove `[tool.kivy.android.proguard]` if you
+  set it; it never took effect.
+
+### Windows: `package` warns when a bundle only fits in a short folder
+
+- Windows limits a path to 259 characters unless long paths are enabled, and
+  they are **off** by default. Every file in an app has to fit, *including*
+  the folder the user unzips or installs it into, so the deepest path inside
+  the bundle decides how long that folder can be.
+- `kivyforge package -p windows` now measures this. When the bundle leaves
+  less than 100 characters for its folder, it prints a warning naming the
+  deepest path and the longest folder that will work, and reports
+  **`KF-PATH-DEPTH`** in `--json` output. A typical Kivy app leaves about 154,
+  so most projects will never see it; deep dependency trees can.
+- Measured, not estimated: with long paths off, a bundle in a folder of
+  exactly the reported length works, and one character longer does not.
+- No change to the launcher. Declaring it `longPathAware` would not help:
+  Windows refuses to start an executable from a folder too long for its own
+  path even with long paths enabled, and the bundled `python.exe`, which does
+  the file access, already opts in.
+
 ### iOS: `provisioning_profile` works as documented
 
 - **Fixed:** `[tool.kivy.ios.signing].provisioning_profile` was read two
