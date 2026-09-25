@@ -144,7 +144,7 @@ def ios(desktop_project, monkeypatch):
     monkeypatch.setattr(cli, "_load_lock", lambda root: lock)
     monkeypatch.setattr(cli, "is_in_sync", lambda lock, text: True)
     monkeypatch.setattr(cli, "preflight_signing", lambda *a, **k: "TEAM123456")
-    monkeypatch.setattr(cli, "preflight_entitlements", lambda *a: [])
+    monkeypatch.setattr(cli, "preflight_profile", lambda *a: None)
     monkeypatch.setattr(cli, "create_staging", fake_create_staging)
     monkeypatch.setattr(cli, "collect_artifacts", fake_collect_artifacts)
     monkeypatch.setattr(cli, "materialize_project", lambda *a, **k: None)

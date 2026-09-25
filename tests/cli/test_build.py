@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -118,34 +119,68 @@ class TestBuildOrchestration:
     def test_simulator_arch_override(self, runner, tmp_path, mock_collect):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
-            runner.invoke(build, ["--simulator", "--arch", "x86_64"])
+            runner.invoke(build, ["--simulator", "--arch", "arm64"])
             tags = [s.platform_tag for s in mock_collect[0]["slices"]]
-            assert tags == ["ios_13_0_x86_64_iphonesimulator"]
+            assert tags == ["ios_13_0_arm64_iphonesimulator"]
 
-    def test_linux_only_arch_rejected(self, runner, tmp_path, mock_collect):
-        # --arch is a union across platforms; aarch64 is a Linux name and must
-        # not become an iOS platform tag.
+    @pytest.mark.parametrize(
+        "target", [["--simulator"], ["--device", "--team-id", "ABCDE12345"], []]
+    )
+    @pytest.mark.parametrize("arch", ["aarch64", "x86_64"])
+    def test_unpinned_arch_rejected(self, runner, tmp_path, mock_collect, arch, target):
+        # --arch is a union across platforms, and the lock pins only the arm64
+        # simulator slice. The old refusal suggested x86_64, which then crashed
+        # in wheel selection (mac-docs-and-provisioning-findings, defect 4).
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
-            result = runner.invoke(build, ["--simulator", "--arch", "aarch64"])
-            assert result.exit_code != 0
-            assert "not an iOS simulator arch" in result.output
+            result = runner.invoke(build, [*target, "--arch", arch])
+            assert result.exit_code == 1
+            assert f"--arch {arch} is not an iOS simulator arch" in result.output
+            assert "pass --arch arm64 or omit --arch" in result.output
+            assert "x86_64," not in result.output
             assert mock_collect == []
 
-    def test_intel_host_collects_x86_64_simulator(
-        self, runner, tmp_path, mock_collect, monkeypatch
+    @pytest.mark.parametrize("target", [["--simulator"], []])
+    def test_intel_host_fails_before_collecting(
+        self, runner, tmp_path, mock_collect, monkeypatch, target
     ):
-        # On an Intel host (no --arch), the bare and targeted simulator builds
-        # must collect the x86_64 slice the machine can actually run, not arm64.
         monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "x86_64")
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
-            runner.invoke(build, [])
+            result = runner.invoke(build, target)
+            assert result.exit_code == 3
+            assert "pins only the arm64 simulator slice" in result.output
+            assert mock_collect == []
+
+    def test_wheel_selection_failure_is_an_envelope_not_a_traceback(
+        self, runner, tmp_path, monkeypatch
+    ):
+        from kivyforge.artifacts.wheels import WheelSelectionError
+
+        def no_wheel(*args, **kwargs):
+            raise WheelSelectionError("Kivy has no compatible wheel for slice X.")
+
+        monkeypatch.setattr(ios_cli, "collect_artifacts", no_wheel)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["--simulator", "--json"])
+        assert result.exit_code == 1
+        assert not isinstance(result.exception, WheelSelectionError)
+        envelope = json.loads(result.stdout)
+        assert envelope["ok"] is False
+        assert envelope["diagnostics"][0]["code"] == "KF-ERROR"
+        assert "no compatible wheel" in envelope["diagnostics"][0]["message"]
+
+    def test_intel_host_can_still_build_for_a_device(
+        self, runner, tmp_path, mock_collect, monkeypatch
+    ):
+        monkeypatch.setattr(ios_cli, "default_simulator_arch", lambda: "x86_64")
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["--device", "--team-id", "ABCDE12345"])
+            assert result.exit_code == 0, result.output
             tags = [s.platform_tag for s in mock_collect[0]["slices"]]
-            assert tags == [
-                "ios_13_0_arm64_iphoneos",
-                "ios_13_0_x86_64_iphonesimulator",
-            ]
+            assert tags == ["ios_13_0_arm64_iphoneos"]
 
     def test_no_cache_forwarded(self, runner, tmp_path, mock_collect):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

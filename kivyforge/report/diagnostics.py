@@ -68,8 +68,9 @@ PATH_DEPTH = "KF-PATH-DEPTH"
 #: The Android release-manifest policy passed with an informational finding.
 MANIFEST_POLICY = "KF-MANIFEST-POLICY"
 
-#: iOS auto-signing: the pinned profile does not grant entitlements the app
-#: declares. WARNING, because Xcode may register them during the build.
+#: Retired: no longer emitted. It warned that a profile pinned under iOS
+#: auto-signing lacked declared entitlements, but Xcode refuses any pin under
+#: auto-signing, so the build now fails instead. Never reuse this code.
 ENTITLEMENTS_UNGRANTED = "KF-ENTITLEMENTS-UNGRANTED"
 
 #: A build tool (Gradle, xcodebuild, appimagetool) ran and exited non-zero.

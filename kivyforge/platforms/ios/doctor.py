@@ -24,6 +24,7 @@ from kivyforge.lock.reader import LockError
 
 from .entitlements import (
     ProfileError,
+    ProvisioningProfile,
     find_installed_profile,
     is_profile_path,
     missing_entitlements,
@@ -165,21 +166,44 @@ _INSTALL_HINT = (
 )
 
 
+def _xcode_managed(profile: ProvisioningProfile, label: str) -> CheckResult | None:
+    """A FAIL when *profile* is Xcode-managed; None otherwise."""
+    if not profile.xcode_managed:
+        return None
+    return CheckResult(
+        "Provisioning profile",
+        Status.FAIL,
+        f"{label} is an Xcode-managed profile, which manual signing refuses",
+        hint="create a manual profile for this App ID at developer.apple.com, "
+        "install it, and pin that one.",
+    )
+
+
 def check_provisioning_profile(
     config: Config,
     project_root: Path,
     *,
     search_dirs: tuple[Path, ...] | None = None,
 ) -> CheckResult:
-    """A pinned profile must be findable, and installed so Xcode can sign with it.
+    """A pinned profile must be one Xcode will sign with, and installed.
 
     The value is Xcode's specifier -- a profile name or UUID, looked up among
-    installed profiles -- or a path to a ``.mobileprovision``.
+    installed profiles -- or a path to a ``.mobileprovision``. Xcode refuses a
+    pin under automatic signing, and an Xcode-managed profile under manual
+    signing, so both FAIL here rather than at the end of a build.
     """
     name = "Provisioning profile"
     value = config.ios_required.signing.provisioning_profile
     if not value:
         return CheckResult(name, Status.PASS, "not set")
+    if config.ios_required.signing.auto_signing:
+        return CheckResult(
+            name,
+            Status.FAIL,
+            f"{value} is pinned, but auto_signing is on",
+            hint="pinning requires auto_signing = false; set it, or remove "
+            "provisioning_profile to let Xcode manage signing.",
+        )
     path = resolve_profile_path(config, project_root, search_dirs=search_dirs)
 
     if not is_profile_path(value):
@@ -190,6 +214,10 @@ def check_provisioning_profile(
                 f"no installed profile has the name or UUID {value!r}",
                 hint=f"check the spelling, or {_INSTALL_HINT}",
             )
+        # find_installed_profile only matches profiles it could read.
+        managed = _xcode_managed(read_profile(path), value)
+        if managed is not None:
+            return managed
         return CheckResult(name, Status.PASS, f"{value} (installed)")
 
     assert path is not None  # a path value always resolves to a path
@@ -210,6 +238,9 @@ def check_provisioning_profile(
             str(exc),
             hint="re-download the profile from developer.apple.com.",
         )
+    managed = _xcode_managed(profile, profile.name)
+    if managed is not None:
+        return managed
     if not profile.uuid or find_installed_profile(profile.uuid, search_dirs) is None:
         return CheckResult(
             name,
@@ -229,9 +260,7 @@ def check_entitlements_vs_profile(
 ) -> CheckResult:
     """Declared entitlements must be a subset of what the pinned profile grants.
 
-    FAIL under manual signing (the pinned profile is the one that will sign, so a
-    missing key is a certain ``codesign`` failure); WARN under automatic signing,
-    where ``-allowProvisioningUpdates`` may register the capability mid-build.
+    A missing key is a certain ``codesign`` failure, so it FAILs.
     """
     name = "Entitlements vs. profile"
     declared = config.ios_required.entitlements
@@ -240,6 +269,9 @@ def check_entitlements_vs_profile(
 
     if not config.ios_required.signing.provisioning_profile:
         return CheckResult(name, Status.SKIP, "no provisioning_profile pinned")
+    if config.ios_required.signing.auto_signing:
+        # The Provisioning profile check already FAILs a pin under auto-signing.
+        return CheckResult(name, Status.SKIP, "auto_signing is on")
     path = resolve_profile_path(config, project_root, search_dirs=search_dirs)
     if path is None or not path.exists():
         # The Provisioning profile check already FAILs on a profile it cannot find.
@@ -261,20 +293,14 @@ def check_entitlements_vs_profile(
             name, Status.PASS, f"{len(declared)} granted by {profile.name}"
         )
 
-    auto = config.ios_required.signing.auto_signing
     app_id = f" on App ID {profile.app_id}" if profile.app_id else ""
-    hint = (
-        f"enable the matching capability{app_id} at developer.apple.com and "
-        "regenerate the profile, or remove the key from "
-        "[tool.kivy.ios.entitlements]."
-    )
-    if auto:
-        hint += " auto_signing is on, so Xcode may register it at build time."
     return CheckResult(
         name,
-        Status.WARN if auto else Status.FAIL,
+        Status.FAIL,
         f"not granted by {profile.name}: {', '.join(missing)}",
-        hint=hint,
+        hint=f"enable the matching capability{app_id} at developer.apple.com and "
+        "regenerate the profile, or remove the key from "
+        "[tool.kivy.ios.entitlements].",
     )
 
 

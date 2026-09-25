@@ -15,7 +15,7 @@ from pathlib import Path
 import click
 
 from kivyforge.artifacts.collect import CollectError, collect_artifacts
-from kivyforge.artifacts.wheels import BuildSlice
+from kivyforge.artifacts.wheels import BuildSlice, WheelSelectionError
 from kivyforge.build_outcome import (
     ArtifactKind,
     BuildEvents,
@@ -30,12 +30,13 @@ from kivyforge.cli._common import (
 )
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import IconSourceError
+from kivyforge.config.model import VALID_SIMULATOR_ARCHS
 from kivyforge.lock import LockError, is_in_sync
 from kivyforge.platforms.base import HostCapabilityError
-from kivyforge.report import diagnostics, failures
+from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
-from .entitlements import preflight_entitlements
+from .entitlements import preflight_profile
 from .lock import load
 from .materialize import materialize_project
 from .staging import StagingError, create_staging
@@ -57,6 +58,7 @@ from .xcode import (
     resolve_device_destination,
     resolve_simulator_destination,
     run_command,
+    run_foreground,
     simctl_install,
     simctl_launch,
     simctl_list,
@@ -64,20 +66,6 @@ from .xcode import (
 from .xcode.commands import SIGNING_IDENTITY_ENV, resolve_signing_identity
 
 # ---- build --------------------------------------------------------------- #
-
-
-def _ungranted_warning(keys: list[str]) -> str:
-    """Non-fatal note for entitlements the pinned profile does not grant.
-
-    Only reachable under ``auto_signing = true``, where ``xcodebuild`` gets
-    ``-allowProvisioningUpdates`` and may register the capability mid-build —
-    so these are named rather than treated as a certain failure.
-    """
-    return (
-        "Warning: entitlements not granted by the pinned provisioning profile: "
-        f"{', '.join(keys)}\n"
-        "  auto_signing is on, so Xcode may register them at build time."
-    )
 
 
 def ios_build(
@@ -102,16 +90,9 @@ def ios_build(
     if target is not None:
         try:
             resolved_team_id = preflight_signing(config, target, team_id_flag=team_id)
-            ungranted = preflight_entitlements(config, project_root, target)
+            preflight_profile(config, project_root, target)
         except SigningError as exc:
             raise ToolchainError.wrap(exc) from exc
-        if ungranted:
-            click.echo(_ungranted_warning(ungranted), err=True)
-            events.note(
-                diagnostics.ENTITLEMENTS_UNGRANTED,
-                "entitlements not granted by the pinned provisioning profile: "
-                f"{', '.join(ungranted)}",
-            )
 
     prepare_build(
         config,
@@ -240,7 +221,7 @@ def prepare_build(
             xcframeworks=lock.xcframeworks,
             team_id=team_id,
         )
-    except CollectError as exc:
+    except (CollectError, WheelSelectionError) as exc:
         raise ToolchainError.wrap(exc) from exc
     except IconSourceError as exc:
         raise ToolchainError.wrap(exc) from exc
@@ -357,7 +338,7 @@ def _require_product(path: Path, xb: XcodeBuild) -> Path:
     return path
 
 
-_SIMULATOR_ARCH_CHOICES = ("arm64", "x86_64")
+_SIMULATOR_ARCH_CHOICES = tuple(sorted(VALID_SIMULATOR_ARCHS))
 
 
 def _resolve_slices(
@@ -371,21 +352,28 @@ def _resolve_slices(
     device slice would make the very first in-Xcode build fail. A targeted build
     collects only the slice it is about to build.
 
-    The simulator slice defaults to the host's native arch (``--arch`` overrides):
-    a single ``pip-deps-simulator`` directory holds one arch's compiled ``.so``
-    files, so the right one to stage is the arch the developer's machine actually
-    runs — ``x86_64`` on Intel, ``arm64`` on Apple Silicon. The lock pins both
-    simulator arches; the build picks the host's.
+    The simulator slice defaults to the host's native arch (``--arch`` overrides).
+    The lock pins only ``VALID_SIMULATOR_ARCHS`` (arm64), so both an explicit
+    ``--arch`` and the host default are checked against it here, before any
+    artifact is collected: the shared ``--arch`` Choice is a union across
+    platforms, and an Intel host defaults to ``x86_64``, and either would
+    otherwise fail deep in wheel selection.
     """
+    valid = ", ".join(_SIMULATOR_ARCH_CHOICES)
     if arch is not None and arch not in _SIMULATOR_ARCH_CHOICES:
-        # The shared --arch Choice is a union across platforms, so a Linux-only
-        # name reaches here; without this it would become a bogus platform tag.
         raise ToolchainError(
             f"--arch {arch} is not an iOS simulator arch.\n"
-            f"  Use one of: {', '.join(_SIMULATOR_ARCH_CHOICES)}, or omit --arch "
-            "to use the host's."
+            f"  The simulator slice is {valid} only; pass --arch {valid} "
+            "or omit --arch."
         )
     sim_arch = arch or default_simulator_arch()
+    if target in (None, "simulator") and sim_arch not in _SIMULATOR_ARCH_CHOICES:
+        raise ToolchainError(
+            f"this host's simulator arch is {sim_arch}, but kivyforge pins only "
+            f"the {valid} simulator slice.\n"
+            "  Build for a device (--device) or on an Apple Silicon Mac.",
+            **failures.HOST_INCAPABLE,
+        )
     if target is None:
         return [
             BuildSlice("device", "arm64", deployment_target),
@@ -491,11 +479,9 @@ def ios_run(
             if target == "device":
                 resolved_team_id = preflight_signing(config, "device")
                 # run signs via its own xcodebuild invocation rather than going
-                # through ios_build, so the entitlements check must repeat here.
+                # through ios_build, so the profile checks must repeat here.
                 # --no-build installs an already-signed .app: nothing to pre-empt.
-                ungranted = preflight_entitlements(config, project_root, "device")
-                if ungranted:
-                    click.echo(_ungranted_warning(ungranted), err=True)
+                preflight_profile(config, project_root, "device")
             prepare_build(
                 config,
                 project_root,
@@ -553,7 +539,7 @@ def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     click.echo(f"Installing on simulator {label} ...")
     run_command(simctl_install(device.udid, app))
     click.echo(f"Launching {bundle_id} ...")
-    run_command(simctl_launch(device.udid, bundle_id))
+    run_foreground(simctl_launch(device.udid, bundle_id))
 
 
 def _run_device(destination: str | None, app: Path, bundle_id: str) -> None:
@@ -562,7 +548,7 @@ def _run_device(destination: str | None, app: Path, bundle_id: str) -> None:
     click.echo(f"Installing on device {label} ...")
     run_command(devicectl_install(device.identifier, app))
     click.echo(f"Launching {bundle_id} ...")
-    run_command(devicectl_launch(device.identifier, bundle_id))
+    run_foreground(devicectl_launch(device.identifier, bundle_id))
 
 
 # ---- package ------------------------------------------------------------- #
@@ -592,6 +578,7 @@ def ios_package(
         # again for the export step, which is harmless (same three sources,
         # same answer) but the project must already have it before archiving.
         resolved_team_id = preflight_signing(config, "release", team_id_flag=team_id)
+        preflight_profile(config, project_root, "release")
         prepare_build(
             config,
             project_root,

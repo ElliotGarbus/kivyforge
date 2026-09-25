@@ -92,8 +92,10 @@ _DIAGNOSTIC = {
     ),
     "KF-ENTITLEMENTS-UNGRANTED": (
         "warning",
-        "An iOS provisioning profile does not grant an entitlement the app declares.",
-        "Add the entitlement to the profile, or let Xcode register it during the build.",
+        "Retired: no longer emitted. It warned that a profile pinned under iOS "
+        "automatic signing lacked a declared entitlement; Xcode refuses any pin "
+        "under automatic signing, so that build now fails before `xcodebuild`.",
+        "None. The code stays reserved and will not be reused.",
     ),
     "KF-BUILD-TOOL-FAILED": (
         "error",

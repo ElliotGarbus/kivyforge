@@ -45,6 +45,15 @@ not, so if you only run on the Simulator, you can skip this page.
       an installed profile (or a path to its `.mobileprovision` file). See the
       [`provisioning_profile` reference](../../reference/pyproject/ios.md#toolkivyiossigning).
 
+    !!! warning "Pinning a profile requires manual signing"
+        Xcode refuses a pinned profile under automatic signing, so kivyforge
+        stops a device or release build that sets `provisioning_profile` with
+        `auto_signing = true`. The profile must also be one you created at
+        [developer.apple.com](https://developer.apple.com/account/resources/profiles/list).
+        Profiles named `iOS Team Provisioning Profile: ...` are the ones
+        automatic signing installs; they are Xcode-managed, and manual signing
+        rejects them. `kivyforge doctor -p ios` checks both.
+
 2. Check the setup:
 
     ```bash
@@ -94,16 +103,13 @@ If `[tool.kivy.ios.entitlements]` declares keys, such as HealthKit, App Groups,
 or push notifications, enable the matching capability on your App ID on the Apple
 Developer website and regenerate the provisioning profile.
 
-When you also set `provisioning_profile`, kivyforge compares the declared keys
-with what the profile grants before it signs a device or release build:
+When you pin a `provisioning_profile` (manual signing), kivyforge compares the
+declared keys with what the profile grants before it signs a device or release
+build. A key the profile does not grant stops the build, because it would fail
+to sign. `kivyforge doctor -p ios` runs the same comparison.
 
-- With `auto_signing = true`, a key the profile does not grant is a warning,
-  reported as `KF-ENTITLEMENTS-UNGRANTED`, because Xcode may register the
-  capability during the build.
-- With `auto_signing = false`, it is an error, because the build would fail to
-  sign.
-
-`kivyforge doctor -p ios` runs the same comparison.
+With automatic signing and no pinned profile, there is nothing to compare
+against: Xcode fetches or creates the profile during the build.
 
 ## Verify
 

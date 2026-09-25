@@ -109,14 +109,6 @@ class TestSuccessWithNotes:
         ]
         assert env["diagnostics"][2]["context"] == {"manifest": "merged"}
 
-    def test_ios_ungranted_entitlements(self, ios, monkeypatch):
-        monkeypatch.setattr(
-            ios, "preflight_entitlements", lambda *a: ["com.apple.developer.healthkit"]
-        )
-        result, env = _run(build, ["-p", "ios", "--device"])
-        assert result.exit_code == 0
-        assert _codes(env) == [diagnostics.ENTITLEMENTS_UNGRANTED]
-
 
 class TestFailure:
     def test_before_target_resolution_still_has_the_key(self, tmp_path, monkeypatch):

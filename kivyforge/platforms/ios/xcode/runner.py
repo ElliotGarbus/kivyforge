@@ -31,19 +31,7 @@ def run_command(argv: list[str], *, runner=subprocess.run, check: bool = True):
     try:
         proc = runner(argv, capture_output=True, text=True, stdin=subprocess.DEVNULL)
     except OSError as exc:
-        # Not a CommandError: the tool never ran, so there is no build to blame.
-        # Raised as the CLI error directly, because an OSError escaping here
-        # used to surface as a traceback with no --json envelope at all.
-        from kivyforge.cli._common import ToolchainError
-        from kivyforge.report.failures import spawn_failure
-
-        tool = Path(argv[0]).name
-        raise ToolchainError(
-            f"could not run {tool}: {exc}.\n"
-            "  Fix: install Xcode and select it with `xcode-select -s`; "
-            "`kivyforge doctor -p ios` checks the setup.",
-            **spawn_failure(tool, exc),
-        ) from exc
+        raise _spawn_failure(argv, exc) from exc
     if check and proc.returncode != 0:
         # xcodebuild routes destination-matching notes/warnings to stderr but
         # the actual `error:` diagnostics (signing, compile failures, ...) to
@@ -52,6 +40,39 @@ def run_command(argv: list[str], *, runner=subprocess.run, check: bool = True):
         output = "\n".join(part for part in (proc.stdout, proc.stderr) if part)
         raise CommandError(argv, proc.returncode, output)
     return proc
+
+
+def run_foreground(argv: list[str], *, runner=subprocess.run) -> None:
+    """Run the app launch attached to the user's terminal, until it exits.
+
+    The one exception to ``run_command``'s capture and closed stdin: the
+    launched process is the user's app, whose console is the point of ``run``,
+    and a captured stream is shown only after the app exits, which under
+    Ctrl+C is never.
+    """
+    try:
+        proc = runner(argv)
+    except OSError as exc:
+        raise _spawn_failure(argv, exc) from exc
+    if proc.returncode != 0:
+        # The tool's own output already reached the terminal.
+        raise CommandError(argv, proc.returncode)
+
+
+def _spawn_failure(argv: list[str], exc: OSError) -> Exception:
+    # Not a CommandError: the tool never ran, so there is no build to blame.
+    # Raised as the CLI error directly, because an OSError escaping here
+    # used to surface as a traceback with no --json envelope at all.
+    from kivyforge.cli._common import ToolchainError
+    from kivyforge.report.failures import spawn_failure
+
+    tool = Path(argv[0]).name
+    return ToolchainError(
+        f"could not run {tool}: {exc}.\n"
+        "  Fix: install Xcode and select it with `xcode-select -s`; "
+        "`kivyforge doctor -p ios` checks the setup.",
+        **spawn_failure(tool, exc),
+    )
 
 
 def open_command(xcodeproj: str | Path) -> list[str]:
@@ -314,17 +335,16 @@ def devicectl_install(destination: str, app_path: str | Path) -> list[str]:
     ]
 
 
-def devicectl_launch(destination: str, bundle_id: str) -> list[str]:
-    return [
-        "xcrun",
-        "devicectl",
-        "device",
-        "process",
-        "launch",
-        "--device",
-        destination,
-        bundle_id,
-    ]
+def devicectl_launch(
+    destination: str, bundle_id: str, *, console: bool = True
+) -> list[str]:
+    cmd = ["xcrun", "devicectl", "device", "process", "launch"]
+    if console:
+        # Attach to the app's stdio and wait for it to exit, like simctl's
+        # --console-pty; without it devicectl returns as soon as the app starts.
+        cmd.append("--console")
+    cmd += ["--device", destination, bundle_id]
+    return cmd
 
 
 def devicectl_list() -> list[str]:

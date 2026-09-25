@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from kivyforge.cli._common import ToolchainError
 from kivyforge.platforms.ios.xcode.runner import (
     CommandError,
     devicectl_install,
@@ -17,6 +18,7 @@ from kivyforge.platforms.ios.xcode.runner import (
     resolve_device_destination,
     resolve_simulator_destination,
     run_command,
+    run_foreground,
     simctl_boot,
     simctl_install,
     simctl_launch,
@@ -64,6 +66,34 @@ class TestRunCommand:
         assert proc.returncode == 1
 
 
+class TestRunForeground:
+    """The app launch keeps the user's terminal: nothing captured, stdin kept."""
+
+    def test_inherits_stdio(self):
+        seen = []
+
+        def runner(argv, **kwargs):
+            seen.append(kwargs)
+            return _Proc(0)
+
+        run_foreground(["xcrun", "simctl", "launch"], runner=runner)
+        assert seen == [{}]
+
+    def test_failure_raises_without_replaying_output(self):
+        with pytest.raises(CommandError) as exc:
+            run_foreground(["xcrun"], runner=lambda *a, **k: _Proc(3))
+        assert exc.value.returncode == 3
+        assert exc.value.output == ""
+
+    def test_spawn_failure_is_classified(self):
+        def runner(argv, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory")
+
+        with pytest.raises(ToolchainError) as exc:
+            run_foreground(["xcrun"], runner=runner)
+        assert exc.value.exit_code == 3
+
+
 class TestArgvBuilders:
     def test_open(self, tmp_path):
         assert open_command(tmp_path / "x.xcodeproj") == [
@@ -94,6 +124,10 @@ class TestArgvBuilders:
             "launch",
         ]
         assert launch[-1] == "org.x.app"
+        assert "--console" in launch
+
+    def test_devicectl_launch_no_console(self):
+        assert "--console" not in devicectl_launch("U", "b", console=False)
 
 
 class TestSimulatorSelection:
