@@ -1723,6 +1723,14 @@ What is left against this condition is narrower than the condition sounds:
   under 3.13 so the build must *search* for the 3.14 it ships, and a 3.15
   pre-release installed as the only 3.15 must be rejected by a real `py`
   launcher (`tests/bundle/test_resolver_live.py`; test-matrix §5.2).
+- ~~**§5.6, host-dependent cases with no test at all**~~ — **done:**
+  case-insensitive staging collisions 2026-09-23 (the stagers refuse up front
+  instead of dying in `copytree` or merging silently), path length
+  2026-09-24. The `longPathAware` suspicion was aimed at the wrong component:
+  the real limit is install folder + deepest bundle path with long paths off.
+  `package -p windows` now reports it (`KF-PATH-DEPTH`), and `windows_onedir`
+  reproduces it on a runner with long paths switched off, exact to the
+  character.
 - **The hardware pass** (the second half) still has no runnable checklist —
   item 5's "manual checklist becomes runnable" bullet.
 
