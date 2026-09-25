@@ -122,6 +122,16 @@ class TestBuildOrchestration:
             tags = [s.platform_tag for s in mock_collect[0]["slices"]]
             assert tags == ["ios_13_0_x86_64_iphonesimulator"]
 
+    def test_linux_only_arch_rejected(self, runner, tmp_path, mock_collect):
+        # --arch is a union across platforms; aarch64 is a Linux name and must
+        # not become an iOS platform tag.
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(build, ["--simulator", "--arch", "aarch64"])
+            assert result.exit_code != 0
+            assert "not an iOS simulator arch" in result.output
+            assert mock_collect == []
+
     def test_intel_host_collects_x86_64_simulator(
         self, runner, tmp_path, mock_collect, monkeypatch
     ):

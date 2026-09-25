@@ -26,10 +26,13 @@ from ._platform import platform_option, reject_android_only, resolve_target
 )
 @click.option(
     "--arch",
-    # x86_64 stays: it is the Linux arch and an Android ABI, not a macOS one.
-    type=click.Choice(["arm64", "x86_64"]),
+    # A union across platforms; each backend rejects the archs it does not
+    # support. x86_64 and aarch64 are the Linux archs (x86_64 is also an
+    # Android ABI); arm64 is macOS.
+    type=click.Choice(["arm64", "x86_64", "aarch64"]),
     default=None,
-    help="macOS: assemble a subset of the locked archs.",
+    help="macOS: assemble a subset of the locked archs. Linux: which locked arch "
+    "to package (default: the first).",
 )
 @click.option(
     "--team-id", default=None, help="Override [tool.kivy.ios.signing].team_id."

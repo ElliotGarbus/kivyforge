@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Linux: `--arch aarch64` is accepted
+
+- **Fixed:** `build` and `package` rejected `--arch aarch64` as a usage error,
+  although the Linux spec documents `package -p linux --arch aarch64`. With
+  `archs = ["x86_64", "aarch64"]` the Raspberry Pi AppImage could only be
+  produced by reordering the list. The shared `--arch` choices now include
+  `aarch64`; with no `--arch`, the first locked arch is still the default.
+- `run` still does not accept `aarch64`: that arch is cross-built only, and
+  `run` launches the result on the build host.
+- `build -p ios --arch aarch64` now fails with a clear message instead of
+  deriving a nonexistent iOS platform tag.
+
 ### Install: pip is now a dependency
 
 - **Fixed:** `uv tool install kivyforge` produced an install where every

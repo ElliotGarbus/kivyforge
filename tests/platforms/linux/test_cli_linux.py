@@ -37,7 +37,9 @@ PYPROJECT = (
 )
 
 
-def _write_project(fs: str, *, in_sync: bool = True) -> Path:
+def _write_project(
+    fs: str, *, in_sync: bool = True, archs: tuple[str, ...] = ("x86_64",)
+) -> Path:
     root = Path(fs)
     (root / "pyproject.toml").write_text(PYPROJECT)
     (root / "src").mkdir()
@@ -49,10 +51,12 @@ def _write_project(fs: str, *, in_sync: bool = True) -> Path:
         python_runtime=PythonRuntime(
             provider="python-build-standalone",
             version="3.15.0",
-            artifacts=(RuntimeArtifact(arch="x86_64", url="https://e/a", sha256="x"),),
+            artifacts=tuple(
+                RuntimeArtifact(arch=a, url=f"https://e/{a}", sha256="x") for a in archs
+            ),
             floor="2.17",
         ),
-        archs=("x86_64",),
+        archs=archs,
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256=(compute_pyproject_sha256(PYPROJECT) if in_sync else "0" * 64),
@@ -127,6 +131,15 @@ class TestBuild:
             assert result.exit_code == 0, result.output
             assert fake_bundler["arch"] == ["x86_64"]
 
+    def test_aarch64_accepted_and_reaches_bundler(self, runner, tmp_path, fake_bundler):
+        # aarch64 was missing from the shared --arch Choice, so click rejected
+        # the flag the Linux spec documents before the backend ever saw it.
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, archs=("x86_64", "aarch64"))
+            result = runner.invoke(build, ["-p", "linux", "--arch", "aarch64"])
+            assert result.exit_code == 0, result.output
+            assert fake_bundler["arch"] == ["aarch64"]
+
     def test_no_cache_flows_to_bundler(self, runner, tmp_path, fake_bundler):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
@@ -155,6 +168,14 @@ class TestRun:
             result = runner.invoke(run, ["-p", "linux"])
             assert result.exit_code == 0, result.output
             assert launched and launched[0][0].replace("\\", "/").endswith("/AppRun")
+
+    def test_run_rejects_cross_only_aarch64(self, runner, tmp_path, fake_bundler):
+        # run execs the build on this host, and aarch64 is cross-only.
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, archs=("x86_64", "aarch64"))
+            result = runner.invoke(run, ["-p", "linux", "--arch", "aarch64"])
+            assert result.exit_code == 2
+            assert fake_bundler["arch"] == []
 
     def test_run_no_build_requires_existing(self, runner, tmp_path, fake_bundler):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
@@ -274,6 +295,29 @@ class TestPackage:
             result = runner.invoke(package, ["-p", "linux", "-f", "deb"])
             assert result.exit_code != 0
             assert "unknown package format" in result.output
+
+    def test_package_second_locked_arch_selectable(
+        self, runner, tmp_path, fake_bundler, monkeypatch
+    ):
+        # With both archs locked, the default is the first; --arch aarch64 is the
+        # only way to package the other one.
+        built = {}
+
+        def fake_appimage(appdir, output, arch, **k):
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text("APPIMAGE")
+            built["arch"] = arch
+            return output
+
+        monkeypatch.setattr(_linux, "build_appimage", fake_appimage)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs, archs=("x86_64", "aarch64"))
+            result = runner.invoke(package, ["-p", "linux", "--arch", "aarch64"])
+            assert result.exit_code == 0, result.output
+            expected = Path(fs) / "dist" / "linux" / "myapp-1.0.0-aarch64.AppImage"
+            assert expected.exists()
+            assert built["arch"] == "aarch64"
+            assert fake_bundler["arch"] == ["aarch64"]
 
     def test_package_arch_not_in_lock_rejected(self, runner, tmp_path, fake_bundler):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
