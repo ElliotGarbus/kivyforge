@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from kivyforge.config.model import Config
 
+from .entitlements import xcode_profile_specifier
 from .staging import StagingLayout
 
 BUILD_PYTHON_SCRIPT = (
@@ -122,7 +125,9 @@ def _header_search_paths(layout: StagingLayout | None) -> str:
     return " ".join(f'"{path}"' for path in paths)
 
 
-def signing_settings(config: Config, *, team_id: str | None = None) -> dict[str, str]:
+def signing_settings(
+    config: Config, *, team_id: str | None = None, project_root: Path | None = None
+) -> dict[str, str]:
     """Map [tool.kivy.ios.signing] to CODE_SIGN_* build settings (spec 06).
 
     *team_id*, if given, overrides ``[tool.kivy.ios.signing].team_id`` — pass
@@ -134,6 +139,10 @@ def signing_settings(config: Config, *, team_id: str | None = None) -> dict[str,
     from pyproject alone — silently ignoring both overrides — because
     ``preflight_signing`` (which resolves all three sources) validates that a
     team_id exists somewhere but the resolved value never reached here.
+
+    ``provisioning_profile`` is a name or UUID, which Xcode resolves against
+    installed profiles. A ``.mobileprovision`` path is accepted too and replaced
+    by the UUID inside the file, resolved against *project_root*.
     """
     ios = config.ios
     assert ios is not None
@@ -147,7 +156,9 @@ def signing_settings(config: Config, *, team_id: str | None = None) -> dict[str,
     if signing.identity:
         settings["CODE_SIGN_IDENTITY"] = signing.identity
     if signing.provisioning_profile:
-        settings["PROVISIONING_PROFILE_SPECIFIER"] = signing.provisioning_profile
+        settings["PROVISIONING_PROFILE_SPECIFIER"] = xcode_profile_specifier(
+            config, project_root
+        )
     return settings
 
 

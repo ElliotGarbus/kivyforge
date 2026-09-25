@@ -76,6 +76,28 @@ jobs:
     - name: Twine check
       run: twine check dist/*
 
+  # End-user documentation (roadmap item 6). --strict turns a broken internal
+  # link or a nav entry with no page into a build failure, so docs cannot merge
+  # broken. No network: mkdocs build reads only the repo, and the generated
+  # tables come from kivyforge's own code (docs/hooks/kf_generated.py). The
+  # link-checker, which does need the network, is deliberately not run here.
+  docs:
+    name: Docs (mkdocs build --strict)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install kivyforge with the docs extra
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[docs]"
+    - name: Build the site (strict)
+      run: mkdocs build --strict
+
   unit_tests:
     name: Unit tests (Ubuntu)
     runs-on: ubuntu-latest

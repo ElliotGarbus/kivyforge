@@ -1,0 +1,143 @@
+site_name: kivyforge
+site_description: >-
+  Declarative, PEP 621-aligned build toolchain for Kivy apps — build for
+  Android, iOS, macOS, Linux, and Windows from one pyproject.toml.
+# Filled in by the Pages workflow from actions/configure-pages' base_url output,
+# so nothing in the repo names the site origin (see the docs plan's transition
+# safety notes). Empty locally and in the PR strict-build check.
+site_url: !ENV [KF_SITE_URL, ""]
+
+# The source repo, used only for Material's header link. Not the docs origin.
+repo_url: https://github.com/ElliotGarbus/kivyforge
+repo_name: ElliotGarbus/kivyforge
+edit_uri: edit/main/docs/guides/
+
+# The ~50 design documents under docs/design/ are NOT end-user material and are
+# never published; only docs/guides/ is the site source.
+docs_dir: docs/guides
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - content.code.copy
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+# Build helpers live outside docs_dir so MkDocs never copies them into the site.
+hooks:
+  - docs/hooks/kf_generated.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - mkdocs-click
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Install kivyforge: get-started/install.md
+      - Which host builds which target: get-started/hosts.md
+      - "Quickstart: build a desktop app": get-started/quickstart-desktop.md
+      - "Quickstart: build an Android app": get-started/quickstart-android.md
+      - "Quickstart: build an iOS app": get-started/quickstart-ios.md
+  - Concepts:
+      - How kivyforge works: concepts/how-it-works.md
+      - Project configuration: concepts/configuration.md
+      - Lockfiles: concepts/lockfiles.md
+      - Prebuilt runtimes and wheels: concepts/runtimes-and-wheels.md
+      - Build versus package: concepts/build-vs-package.md
+      - Choose a target platform: concepts/choose-platform.md
+  - Platform guides:
+      - Android:
+          - Configure your app: guides/android/configure.md
+          - Run on a device or emulator: guides/android/run.md
+          - Add Java libraries: guides/android/java-libraries.md
+          - Call Android APIs with pyjnius: guides/android/pyjnius.md
+          - Add a background service: guides/android/services.md
+          - Sign and publish to Google Play: guides/android/signing.md
+          - Supported versions: guides/android/supported-versions.md
+      - iOS:
+          - Configure your app: guides/ios/configure.md
+          - Run on the simulator or a device: guides/ios/run.md
+          - Open the project in Xcode: guides/ios/xcode.md
+          - Add a Swift package: guides/ios/swift-packages.md
+          - Call iOS APIs with pyobjus: guides/ios/pyobjus.md
+          - Sign the app: guides/ios/signing.md
+      - macOS:
+          - Build a .app: guides/macos/build.md
+          - Sign, notarize, and staple: guides/macos/signing.md
+          - Package a .dmg: guides/macos/dmg.md
+      - Windows:
+          - Build an onedir app: guides/windows/build.md
+          - Understand the launcher: guides/windows/launcher.md
+          - Sign with Authenticode: guides/windows/signing.md
+          - Create an installer: guides/windows/installer.md
+          - Avoid file-locking problems: guides/windows/file-locking.md
+      - Linux:
+          - Build an AppImage or folder: guides/linux/build.md
+          - Meet the host requirements: guides/linux/host-requirements.md
+          - Build for Raspberry Pi: guides/linux/raspberry-pi.md
+      - Cross-platform:
+          - Handle mobile screen geometry: guides/cross-platform/mobile-geometry.md
+          - Ship native binaries: guides/cross-platform/native-binaries.md
+          - Manage dependencies and re-lock: guides/cross-platform/dependencies.md
+          - Drive kivyforge from CI or an agent: guides/cross-platform/ci-and-agents.md
+          - Migrate from buildozer, p4a, or kivy-ios: guides/cross-platform/migrate.md
+  - Reference:
+      - CLI: reference/cli.md
+      - pyproject.toml:
+          - "[tool.kivy]": reference/pyproject/tool-kivy.md
+          - Android overlay: reference/pyproject/android.md
+          - iOS overlay: reference/pyproject/ios.md
+          - macOS overlay: reference/pyproject/macos.md
+          - Windows overlay: reference/pyproject/windows.md
+          - Linux overlay: reference/pyproject/linux.md
+      - Lockfile format: reference/lockfile.md
+      - JSON output: reference/json-output.md
+      - Exit and diagnostic codes: reference/codes.md
+      - Environment variables: reference/environment.md
+  - Troubleshooting:
+      - Diagnose a failing build: troubleshooting/index.md
+      - Signing prerequisites: troubleshooting/signing-prerequisites.md
+  - Release notes: release-notes.md
+  - FAQ: faq.md
+  - Contributing:
+      - Documentation style: contributing/style.md

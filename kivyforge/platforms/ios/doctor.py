@@ -24,6 +24,8 @@ from kivyforge.lock.reader import LockError
 
 from .entitlements import (
     ProfileError,
+    find_installed_profile,
+    is_profile_path,
     missing_entitlements,
     read_profile,
     resolve_profile_path,
@@ -157,23 +159,74 @@ def check_app_icon(config: Config, project_root: Path) -> CheckResult:
     return CheckResult("App icon", Status.PASS, f"{APP_ICON_SIZE}x{APP_ICON_SIZE} PNG")
 
 
-def check_provisioning_profile(config: Config, project_root: Path) -> CheckResult:
-    profile = config.ios_required.signing.provisioning_profile
-    if not profile:
-        return CheckResult("Provisioning profile", Status.PASS, "not set")
-    path = resolve_profile_path(config, project_root)
-    assert path is not None  # non-empty provisioning_profile always resolves
+_INSTALL_HINT = (
+    "download it from developer.apple.com and double-click it to install it, or "
+    "let Xcode download it (Settings > Accounts > Download Manual Profiles)."
+)
+
+
+def check_provisioning_profile(
+    config: Config,
+    project_root: Path,
+    *,
+    search_dirs: tuple[Path, ...] | None = None,
+) -> CheckResult:
+    """A pinned profile must be findable, and installed so Xcode can sign with it.
+
+    The value is Xcode's specifier -- a profile name or UUID, looked up among
+    installed profiles -- or a path to a ``.mobileprovision``.
+    """
+    name = "Provisioning profile"
+    value = config.ios_required.signing.provisioning_profile
+    if not value:
+        return CheckResult(name, Status.PASS, "not set")
+    path = resolve_profile_path(config, project_root, search_dirs=search_dirs)
+
+    if not is_profile_path(value):
+        if path is None:
+            return CheckResult(
+                name,
+                Status.FAIL,
+                f"no installed profile has the name or UUID {value!r}",
+                hint=f"check the spelling, or {_INSTALL_HINT}",
+            )
+        return CheckResult(name, Status.PASS, f"{value} (installed)")
+
+    assert path is not None  # a path value always resolves to a path
     if not path.exists():
         return CheckResult(
-            "Provisioning profile",
+            name,
             Status.FAIL,
-            f"{profile} not found",
-            hint="point provisioning_profile at an existing .mobileprovision.",
+            f"{value} not found",
+            hint="point provisioning_profile at an existing .mobileprovision, "
+            "or set it to the profile's name or UUID.",
         )
-    return CheckResult("Provisioning profile", Status.PASS, profile)
+    try:
+        profile = read_profile(path)
+    except ProfileError as exc:
+        return CheckResult(
+            name,
+            Status.FAIL,
+            str(exc),
+            hint="re-download the profile from developer.apple.com.",
+        )
+    if not profile.uuid or find_installed_profile(profile.uuid, search_dirs) is None:
+        return CheckResult(
+            name,
+            Status.WARN,
+            f"{profile.name} ({path.name}) is not installed",
+            hint="Xcode signs only with installed profiles; double-click "
+            f"{path.name} to install it.",
+        )
+    return CheckResult(name, Status.PASS, f"{profile.name} ({path.name})")
 
 
-def check_entitlements_vs_profile(config: Config, project_root: Path) -> CheckResult:
+def check_entitlements_vs_profile(
+    config: Config,
+    project_root: Path,
+    *,
+    search_dirs: tuple[Path, ...] | None = None,
+) -> CheckResult:
     """Declared entitlements must be a subset of what the pinned profile grants.
 
     FAIL under manual signing (the pinned profile is the one that will sign, so a
@@ -185,12 +238,12 @@ def check_entitlements_vs_profile(config: Config, project_root: Path) -> CheckRe
     if not declared:
         return CheckResult(name, Status.SKIP, "no entitlements declared")
 
-    path = resolve_profile_path(config, project_root)
-    if path is None:
+    if not config.ios_required.signing.provisioning_profile:
         return CheckResult(name, Status.SKIP, "no provisioning_profile pinned")
-    if not path.exists():
-        # The Provisioning profile check already FAILs on a missing file.
-        return CheckResult(name, Status.SKIP, f"{path.name} not found")
+    path = resolve_profile_path(config, project_root, search_dirs=search_dirs)
+    if path is None or not path.exists():
+        # The Provisioning profile check already FAILs on a profile it cannot find.
+        return CheckResult(name, Status.SKIP, "pinned profile not found")
 
     try:
         profile = read_profile(path)

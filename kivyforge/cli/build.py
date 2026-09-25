@@ -34,11 +34,14 @@ from ._platform import platform_option, reject_android_only, resolve_target
 )
 @click.option(
     "--arch",
-    # x86_64 stays: it is the Linux arch and an Android ABI. It is not a macOS
-    # or iOS-simulator arch any more -- those backends reject it themselves.
-    type=click.Choice(["arm64", "x86_64"]),
+    # A union across platforms; each backend rejects the archs it does not
+    # support. x86_64 and aarch64 are the Linux archs (x86_64 is also an
+    # Android ABI). x86_64 is not a macOS or iOS-simulator arch any more --
+    # those backends reject it themselves.
+    type=click.Choice(["arm64", "x86_64", "aarch64"]),
     default=None,
-    help="iOS: simulator arch. macOS: assemble a subset of the locked archs.",
+    help="iOS: simulator arch. macOS: assemble a subset of the locked archs. "
+    "Linux: which locked arch to assemble (default: the first).",
 )
 @click.option(
     "--no-verify-lock", is_flag=True, help="Skip the pyproject drift check (CI only)."

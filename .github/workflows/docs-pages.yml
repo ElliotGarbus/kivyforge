@@ -1,0 +1,69 @@
+name: Docs (GitHub Pages)
+
+# Publishes the MkDocs Material site on every merge to the default branch
+# (roadmap item 6). The PR check that gates merges is the `docs` job in
+# kivyforge.yml (mkdocs build --strict); this workflow only deploys.
+#
+# The site's base_url comes from configure-pages at build time and is passed to
+# mkdocs as KF_SITE_URL, so nothing in the repo hardcodes the site origin. That
+# is what lets the site move from elliotgarbus.github.io to kivy.github.io after
+# the repo transfer (roadmap item 7) without editing mkdocs.yml.
+#
+# One-time manual step: set the repository's Pages source to "GitHub Actions"
+# (Settings -> Pages -> Build and deployment -> Source).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only one concurrent deploy; a newer push supersedes an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Install kivyforge with the docs extra
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[docs]"
+    - name: Configure Pages
+      id: pages
+      uses: actions/configure-pages@v5
+    - name: Build the site (strict)
+      env:
+        # Where Pages will serve this site; fed to mkdocs.yml's site_url via
+        # !ENV so no origin is committed to the repo.
+        KF_SITE_URL: ${{ steps.pages.outputs.base_url }}
+      run: mkdocs build --strict
+    - name: Upload the site artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Deploy
+      id: deployment
+      uses: actions/deploy-pages@v4

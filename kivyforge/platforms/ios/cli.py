@@ -357,6 +357,9 @@ def _require_product(path: Path, xb: XcodeBuild) -> Path:
     return path
 
 
+_SIMULATOR_ARCH_CHOICES = ("arm64", "x86_64")
+
+
 def _resolve_slices(
     target: str | None, arch: str | None, deployment_target: str
 ) -> list[BuildSlice]:
@@ -374,6 +377,14 @@ def _resolve_slices(
     runs — ``x86_64`` on Intel, ``arm64`` on Apple Silicon. The lock pins both
     simulator arches; the build picks the host's.
     """
+    if arch is not None and arch not in _SIMULATOR_ARCH_CHOICES:
+        # The shared --arch Choice is a union across platforms, so a Linux-only
+        # name reaches here; without this it would become a bogus platform tag.
+        raise ToolchainError(
+            f"--arch {arch} is not an iOS simulator arch.\n"
+            f"  Use one of: {', '.join(_SIMULATOR_ARCH_CHOICES)}, or omit --arch "
+            "to use the host's."
+        )
     sim_arch = arch or default_simulator_arch()
     if target is None:
         return [

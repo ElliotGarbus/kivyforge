@@ -38,6 +38,11 @@ dependencies = [
     "pbxproj>=3.5",
     # TOML writing for pylock.ios.toml; tomllib (reading) is stdlib since 3.11
     "tomli-w>=1.1",
+    # Locking and wheel staging run `sys.executable -m pip`, and tool installers
+    # (uv tool, pipx) do not guarantee pip in the tool's environment. The floor
+    # is the highest resolver floor: MIN_ANDROID_PIP_VERSION (PEP 738 tags);
+    # iOS needs >= 24.3 (MIN_PIP_VERSION).
+    "pip>=25.1",
 ]
 
 [project.urls]
@@ -75,6 +80,13 @@ windows = [
 # configured; without it the build emits the plain default launcher icon.
 android = [
     "Pillow>=10",
+]
+# End-user documentation site (MkDocs Material -> GitHub Pages; roadmap item 6).
+# Installing this extra also installs kivyforge itself, which both mkdocs-click
+# (for the generated CLI reference) and docs/hooks/kf_generated.py import.
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocs-click>=0.8",
 ]
 
 # ---------------------------------------------------------------------------

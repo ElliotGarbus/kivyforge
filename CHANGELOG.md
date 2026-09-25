@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+### iOS: `provisioning_profile` works as documented
+
+- **Fixed:** `[tool.kivy.ios.signing].provisioning_profile` was read two
+  incompatible ways. Xcode received it as a profile name or UUID (the
+  documented form), but `doctor` and the entitlements pre-flight treated it as
+  a file path. A name or UUID made `doctor` FAIL ("not found") and silently
+  skipped the entitlements check; a path passed `doctor` and then failed the
+  Xcode build.
+- A name or UUID is now looked up among the profiles installed on the Mac, so
+  `doctor` and the entitlements check use the same profile Xcode signs with.
+- A path to a `.mobileprovision` is also accepted: kivyforge reads the file and
+  passes its UUID to Xcode. `doctor` warns if that profile is not installed,
+  since Xcode signs only with installed profiles.
+- **Migration:** none for the documented name/UUID form. If you set a path,
+  it keeps working, and now also reaches Xcode correctly.
+
+### Linux: `--arch aarch64` is accepted
+
+- **Fixed:** `build` and `package` rejected `--arch aarch64` as a usage error,
+  although the Linux spec documents `package -p linux --arch aarch64`. With
+  `archs = ["x86_64", "aarch64"]` the Raspberry Pi AppImage could only be
+  produced by reordering the list. The shared `--arch` choices now include
+  `aarch64`; with no `--arch`, the first locked arch is still the default.
+- `run` still does not accept `aarch64`: that arch is cross-built only, and
+  `run` launches the result on the build host.
+- `build -p ios --arch aarch64` now fails with a clear message instead of
+  deriving a nonexistent iOS platform tag.
+
+### Install: pip is now a dependency
+
+- **Fixed:** `uv tool install kivyforge` produced an install where every
+  `kivyforge lock` failed. kivyforge runs `python -m pip` to resolve and stage
+  wheels, and uv tool environments ship without pip. The failure was also
+  misleading: it reported that a dependency had no wheel upstream.
+- kivyforge now depends on `pip>=25.1` (the Android resolver's floor, which
+  also covers iOS's 24.3), so every installer, including uv and pipx, gets a
+  pip new enough for every target.
+
+### Docs: end-user documentation site (MkDocs Material)
+
+- **Added:** a task-based user guide — installation, per-platform quickstarts,
+  concepts, per-platform how-to guides, a full configuration/CLI reference, and
+  troubleshooting — built with MkDocs Material and published to GitHub Pages
+  (roadmap item 6). Sources live in `docs/guides/`; the design documents under
+  `docs/design/` stay unpublished.
+- The host matrix, exit codes, and `KF-*` diagnostic vocabulary are generated at
+  build time from kivyforge's own `capabilities`/`report` modules, and the CLI
+  reference from the click command tree, so the site cannot drift from the tool.
+  `mkdocs build --strict` runs in CI and fails on a broken internal link, a
+  missing nav page, or a `KF-*` code the reference does not document.
+
 ### Desktop: clear error when the runtime can't be staged on a case-insensitive filesystem
 
 - **Fixed:** every python-build-standalone Linux runtime ships 25 pairs of

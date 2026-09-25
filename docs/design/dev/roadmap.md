@@ -1744,9 +1744,21 @@ Android and desktop checkers bought.
 
 ---
 
-### 6. End-user docs (MkDocs Material → GitHub Pages)
+### 6. End-user docs (MkDocs Material → GitHub Pages) — **done 2026-09-23**
 
 *Was P4.*
+
+**Done.** `mkdocs.yml` at the repo root with `docs_dir: docs/guides` (the
+layout decision below); the design docs under `docs/design/` stay unpublished.
+The site covers getting started, per-platform quickstarts and guides (Raspberry
+Pi as a Linux section), the configuration and CLI reference, the host matrix,
+the JSON/exit-code/diagnostic vocabularies for agents and CI, and
+troubleshooting with signing prerequisites. The host matrix, exit codes, and
+`KF-*` codes are generated from `kivyforge.capabilities`/`kivyforge.report`, and
+the CLI reference from the click tree, so nothing can drift. `mkdocs build
+--strict` runs in CI (`docs` job) and a Pages workflow publishes on push to the
+default branch. Per transition-safety below, `site_url` comes from the Pages
+build (no hardcoded origin) and there is no `CNAME`.
 
 **Current state.** `docs/guides/` is an intentional placeholder whose README
 says guides will be *derived* from `docs/design/` — design docs are the source
