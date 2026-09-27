@@ -18,6 +18,17 @@ def test_find_pyproject_missing_raises(tmp_path):
     assert "no pyproject.toml" in str(exc.value)
 
 
+def test_missing_pyproject_hint_matches_what_init_does(tmp_path):
+    """init refuses to author [project], so the hint must not send the user to
+    it to create the file."""
+    with pytest.raises(ToolchainError) as exc:
+        find_pyproject(tmp_path)
+    message = str(exc.value)
+    assert "[project] table" in message
+    assert "kivyforge init -p <platform>" in message
+    assert "to create one" not in message
+
+
 def test_find_pyproject_no_parent_traversal(tmp_path):
     # A pyproject in the parent must NOT be discovered from a child dir.
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")

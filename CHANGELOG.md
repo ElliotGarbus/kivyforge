@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### The missing-`pyproject.toml` hint no longer points at `init` to create one
+
+- **Fixed:** a verb run without a `pyproject.toml` suggested running
+  `kivyforge init` to create one, but `init` does not create one: it stops
+  and asks for a `[project]` table first. The hint now says to write the
+  `[project]` table, then run `kivyforge init -p <platform>`.
+
 ### The dice-roller example no longer names the author's Developer ID
 
 - **Changed:** `examples/desktop/dice-roller` no longer has a
