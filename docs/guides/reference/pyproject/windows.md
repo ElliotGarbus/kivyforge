@@ -38,7 +38,7 @@ Required.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `source` | string | None | Project-relative path to a 1024x1024 PNG. kivyforge renders it into a multi-resolution `.ico` for the launcher. Needs the `kivyforge[windows]` extra. |
+| `source` | string | None | Project-relative path to a 1024x1024 PNG. kivyforge renders it into a multi-resolution `.ico` for the launcher. |
 
 ### `[tool.kivy.windows.signing]`
 

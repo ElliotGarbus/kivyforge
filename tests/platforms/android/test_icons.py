@@ -11,6 +11,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 import pytest
+from PIL import Image
 
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.platforms.android.generate.manifest import generate_manifest
@@ -26,7 +27,12 @@ from kivyforge.platforms.android.icons import (
     write_icons,
 )
 
-Image = pytest.importorskip("PIL.Image", reason="icon generation needs Pillow")
+
+def _alpha(image, xy) -> int:
+    pixel = image.getpixel(xy)
+    assert isinstance(pixel, tuple)
+    return pixel[3]
+
 
 BASE = """
 [project]
@@ -94,9 +100,9 @@ class TestConfiguredSource:
         scaled edge to edge loses ~28% of itself; the corners must be clear."""
         res, _ = self._generate(tmp_path)
         layer = Image.open(res / "mipmap-xxxhdpi" / "ic_launcher_foreground.png")
-        assert layer.getpixel((0, 0))[3] == 0  # transparent corner
+        assert _alpha(layer, (0, 0)) == 0  # transparent corner
         center = layer.size[0] // 2
-        assert layer.getpixel((center, center))[3] == 255
+        assert _alpha(layer, (center, center)) == 255
 
     def test_hex_background_becomes_a_color_resource(self, tmp_path):
         res, _ = self._generate(tmp_path, "background = '#123456'\n")

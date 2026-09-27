@@ -20,8 +20,7 @@ that runs the app for the C library, OpenGL, and a display server. See
 
 - An `x86_64` Linux host. Linux apps build only on Linux. WSL2 works; keep the
   project on the Linux file system, not under `/mnt/c`.
-- [Install kivyforge](../../get-started/install.md). To render an app icon,
-  install the `kivyforge[linux]` extra, which adds Pillow.
+- [Install kivyforge](../../get-started/install.md).
 
 You do not need to install `appimagetool`. kivyforge downloads a pinned copy
 the first time you package an AppImage.

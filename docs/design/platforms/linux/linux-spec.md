@@ -126,8 +126,7 @@ strip_source = "release"   # "release" | true | false — drop .py once byte-com
 
 Icons: `[tool.kivy.linux.icons].source` (1024×1024 PNG) is resized into the
 freedesktop **hicolor** size set plus the root `<app_id>.png` AppImage requires.
-Resizing uses [Pillow](https://python-pillow.org/) (the `kivyforge[linux]`
-extra); it is pure-manylinux and ubiquitous. Splash screens are not a desktop
+Resizing uses [Pillow](https://python-pillow.org/), a core dependency. Splash screens are not a desktop
 concept and have no subtable.
 
 > **Implementation note — default icon when `source` is unset.** `appimagetool`

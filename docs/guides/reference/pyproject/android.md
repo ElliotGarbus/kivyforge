@@ -56,7 +56,7 @@ stale; run `kivyforge lock -p android` afterward.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `source` | string | — | Project-relative path to a 1024x1024 PNG. kivyforge generates the adaptive icon set from it, which needs the `kivyforge[android]` extra (Pillow). Without it, a plain default icon is generated. |
+| `source` | string | — | Project-relative path to a 1024x1024 PNG. kivyforge generates the adaptive icon set from it. If unset, a plain default icon is generated. |
 | `background` | string | white | `#rrggbb` color or project-relative image path for the adaptive icon background layer. |
 | `monochrome` | string | — | Project-relative path to a monochrome layer for themed icons. Requires `compile_sdk` 33 or higher. |
 

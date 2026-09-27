@@ -12,6 +12,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 import pytest
+from PIL import Image
 
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.platforms.android.generate.project import (
@@ -26,7 +27,12 @@ from kivyforge.platforms.android.splash import (
     write_splash,
 )
 
-Image = pytest.importorskip("PIL.Image", reason="splash generation needs Pillow")
+
+def _alpha(image, xy) -> int:
+    pixel = image.getpixel(xy)
+    assert isinstance(pixel, tuple)
+    return pixel[3]
+
 
 BASE = """
 [project]
@@ -106,9 +112,9 @@ class TestGeneratedSplash:
         write_splash(res, android, tmp_path)
         icon = Image.open(res / "drawable-mdpi" / "kf_splash_icon.png")
         # The outer ring must be fully transparent.
-        assert icon.getpixel((0, 0))[3] == 0
-        assert icon.getpixel((icon.width - 1, 0))[3] == 0
-        assert icon.getpixel((icon.width // 2, icon.height // 2))[3] == 255
+        assert _alpha(icon, (0, 0)) == 0
+        assert _alpha(icon, (icon.width - 1, 0)) == 0
+        assert _alpha(icon, (icon.width // 2, icon.height // 2)) == 255
 
     def test_icon_background_shrinks_the_canvas(self, tmp_path):
         """With a colored disc behind it the platform's canvas is 240dp, not

@@ -111,8 +111,6 @@ formats. You point at one source image and kivyforge renders the required set:
 source = "assets/icon.png"
 ```
 
-Rendering icons for Linux, Windows, and Android needs Pillow, which comes with
-the matching kivyforge extra; see [Install kivyforge](../get-started/install.md).
 iOS and Android also accept a splash screen in `[tool.kivy.<platform>.splash]`.
 
 ## Validation

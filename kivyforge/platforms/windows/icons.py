@@ -2,14 +2,13 @@
 
 When the project supplies ``[tool.kivy.windows.icons].source`` (a 1024×1024 PNG,
 validated like the other platforms) kivyforge renders it into a multi-resolution
-Windows ``.ico`` (256/48/32/16 px) with [Pillow](https://python-pillow.org/) —
-the optional ``kivyforge[windows]`` extra. The ``.ico`` is then patched into the
-launcher's resources with ``rcedit`` at assembly time.
+Windows ``.ico`` (256/48/32/16 px) with [Pillow](https://python-pillow.org/).
+The ``.ico`` is then patched into the launcher's resources with ``rcedit`` at
+assembly time.
 
 Unlike Linux (whose ``appimagetool`` requires an icon and so always gets a
 generated default), Windows needs none: an app with no configured icon simply
-keeps the executable's default shell icon, and Pillow is only needed when an
-icon *is* configured.
+keeps the executable's default shell icon.
 """
 
 from __future__ import annotations
@@ -45,20 +44,9 @@ def stage_icon(config: Config, project_root: Path, dest: Path) -> Path | None:
 
 
 def _open(src: Path):
-    image_module = _pillow()
+    from PIL import Image
+
     try:
-        return image_module.open(src).convert("RGBA")
+        return Image.open(src).convert("RGBA")
     except OSError as exc:
         raise WindowsBundleError(f"cannot read app icon {src}: {exc}") from exc
-
-
-def _pillow():
-    try:
-        from PIL import Image
-    except ModuleNotFoundError as exc:
-        raise WindowsBundleError(
-            "generating the Windows icon needs Pillow, which is not installed.\n"
-            "  Install the Windows extra: pip install 'kivyforge[windows]'\n"
-            "  (or unset [tool.kivy.windows.icons].source to build without an icon)."
-        ) from exc
-    return Image
