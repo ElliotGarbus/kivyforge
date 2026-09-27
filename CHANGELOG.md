@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### iOS: `run --device` finds the phone on Xcode 27
+
+- **Fixed:** with Xcode 27, `run -p ios --device` refused a single connected
+  phone with "multiple paired iOS devices found", because Xcode 27's
+  `devicectl` also lists simulators as paired iOS devices. `--device` now
+  ignores simulators, so one connected phone is picked without
+  `--destination`.
+- **Fixed:** `--destination` rejected the UDID that `run --list-devices`
+  prints. It now accepts the UDID, as well as the name and devicectl's own
+  identifier.
+- `--device --destination` matches only iOS devices, so a name fragment such
+  as your first name no longer picks a paired Apple Watch. A destination that
+  names a simulator now says to use `--simulator` instead of "no device
+  matches".
+
 ### iOS: a pinned profile Xcode will refuse stops the build up front
 
 - **Changed:** a device or release build, `run --device`, and `package` now

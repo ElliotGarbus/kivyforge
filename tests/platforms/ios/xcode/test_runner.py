@@ -355,6 +355,114 @@ class TestDeviceSelection:
         with pytest.raises(CommandError, match="multiple paired"):
             pick_device(devices)
 
+    # Shaped like Xcode 27's `devicectl list devices -j` (2026-09-26 Mac run):
+    # the Watch has no `reality`, and simulators are paired iOS devices.
+    _XCODE27_PAYLOAD = {
+        "result": {
+            "devices": [
+                {
+                    "identifier": "WATCH-COREDEVICE",
+                    "deviceProperties": {"name": "Elliot’s Apple Watch"},
+                    "hardwareProperties": {
+                        "platform": "watchOS",
+                        "udid": "00008301-WATCH",
+                    },
+                    "connectionProperties": {
+                        "tunnelState": "unavailable",
+                        "pairingState": "paired",
+                    },
+                },
+                {
+                    "identifier": "0F7D0110-COREDEVICE",
+                    "deviceProperties": {"name": "Elliot’s iPhone"},
+                    "hardwareProperties": {
+                        "platform": "iOS",
+                        "reality": "physical",
+                        "udid": "00008160-0001192601A0000A",
+                    },
+                    "connectionProperties": {
+                        "tunnelState": "connected",
+                        "pairingState": "paired",
+                    },
+                },
+                {
+                    "identifier": "0425D5E4-SIM",
+                    "deviceProperties": {"name": "iPhone 17"},
+                    "hardwareProperties": {
+                        "platform": "iOS",
+                        "reality": "simulated",
+                        "udid": "0425D5E4-SIM",
+                    },
+                    "connectionProperties": {
+                        "tunnelState": "disconnected",
+                        "pairingState": "paired",
+                    },
+                },
+                {
+                    "identifier": "8C884479-SIM",
+                    "deviceProperties": {"name": "iPhone Air"},
+                    "hardwareProperties": {
+                        "platform": "iOS",
+                        "reality": "simulated",
+                        "udid": "8C884479-SIM",
+                    },
+                    "connectionProperties": {
+                        "tunnelState": "connected",
+                        "pairingState": "paired",
+                    },
+                },
+            ]
+        }
+    }
+
+    def test_parse_reads_udid_and_reality(self):
+        devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)
+        assert devices[0].reality == ""
+        assert not devices[0].is_simulator
+        assert devices[1].udid == "00008160-0001192601A0000A"
+        assert devices[2].is_simulator
+
+    def test_pick_sole_phone_despite_paired_simulators(self):
+        devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)
+        assert pick_device(devices).identifier == "0F7D0110-COREDEVICE"
+
+    def test_pick_by_udid_from_list_devices(self):
+        devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)
+        picked = pick_device(devices, "00008160-0001192601a0000a")
+        assert picked.identifier == "0F7D0110-COREDEVICE"
+
+    def test_pick_by_coredevice_identifier_still_works(self):
+        devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)
+        assert pick_device(devices, "0F7D0110-COREDEVICE").name == "Elliot’s iPhone"
+
+    def test_pick_name_fragment_skips_the_watch(self):
+        # The Watch is listed first and its name also contains "Elliot".
+        devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)
+        assert pick_device(devices, "Elliot").identifier == "0F7D0110-COREDEVICE"
+
+    def test_pick_destination_naming_a_simulator_points_at_simulator(self):
+        devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)
+        with pytest.raises(CommandError, match=r"is a simulator.*--simulator"):
+            pick_device(devices, "iPhone Air")
+
+    def test_pick_only_simulators_is_no_paired_device(self):
+        payload = {
+            "result": {
+                "devices": [
+                    d
+                    for d in self._XCODE27_PAYLOAD["result"]["devices"]
+                    if d["hardwareProperties"].get("reality") == "simulated"
+                ]
+            }
+        }
+        with pytest.raises(CommandError, match="no paired iOS device"):
+            pick_device(parse_devicectl_devices(payload))
+
+    def test_pick_unknown_destination_still_says_no_match(self):
+        devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)
+        with pytest.raises(CommandError, match="no device matches"):
+            pick_device(devices, "Pixel 9")
+
     def test_resolve_device_destination_writes_and_reads_json(self):
         import json
 

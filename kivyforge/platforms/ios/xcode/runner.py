@@ -221,6 +221,12 @@ class Device:
     platform: str
     tunnel_state: str
     pairing_state: str
+    udid: str = ""
+    reality: str = ""
+
+    @property
+    def is_simulator(self) -> bool:
+        return self.reality == "simulated"
 
 
 def parse_devicectl_devices(payload: dict) -> list[Device]:
@@ -237,6 +243,8 @@ def parse_devicectl_devices(payload: dict) -> list[Device]:
                 platform=hardware.get("platform", "unknown"),
                 tunnel_state=connection.get("tunnelState", "disconnected"),
                 pairing_state=connection.get("pairingState", "unpaired"),
+                udid=hardware.get("udid", ""),
+                reality=hardware.get("reality", ""),
             )
         )
     return devices
@@ -251,19 +259,38 @@ def pick_device(devices: list[Device], destination: str | None = None) -> Device
     e.g. when Xcode isn't running. ``devicectl install``/``launch`` establish
     the tunnel themselves on demand, so a paired device is a valid target
     regardless of ``tunnelState``.
+
+    Only iOS devices are candidates, so a name fragment cannot land on a paired
+    Apple Watch. Xcode 27's devicectl also lists simulators, as paired iOS
+    devices marked ``reality: "simulated"``; ``--device`` never targets one.
+    Output without a ``reality`` field (older devicectl) counts as physical.
     """
+    ios = [d for d in devices if d.platform == "iOS"]
+    simulators = [d for d in ios if d.is_simulator]
+    devices = [d for d in ios if not d.is_simulator]
     if destination:
-        if not devices:
+        if not devices and not simulators:
             raise CommandError(
                 ["devicectl"],
                 1,
                 "no iOS devices found (connect one via USB/Wi-Fi and trust "
                 "this Mac, then run `kivyforge run --list-devices`)",
             )
-        return _match_device(devices, destination)
-    # No explicit destination: only consider paired iOS devices — unpaired
-    # accessories or devices that are merely discoverable don't qualify.
-    paired = [d for d in devices if d.platform == "iOS" and d.pairing_state == "paired"]
+        try:
+            return _match_device(devices, destination)
+        except CommandError:
+            if _find_device(simulators, destination) is not None:
+                raise CommandError(
+                    ["devicectl"],
+                    1,
+                    f"{destination!r} is a simulator; run it with "
+                    f"`kivyforge run -p ios --simulator --destination "
+                    f"{destination!r}`",
+                ) from None
+            raise
+    # No explicit destination: only consider paired devices — ones that are
+    # merely discoverable don't qualify.
+    paired = [d for d in devices if d.pairing_state == "paired"]
     if len(paired) == 1:
         return paired[0]
     if not paired:
@@ -282,10 +309,15 @@ def pick_device(devices: list[Device], destination: str | None = None) -> Device
     )
 
 
-def _match_device(devices: list[Device], destination: str) -> Device:
+def _find_device(devices: list[Device], destination: str) -> Device | None:
+    """Match by CoreDevice identifier or UDID, then exact name, then substring.
+
+    ``--list-devices`` prints the UDID; the CoreDevice identifier is what
+    devicectl's JSON calls ``identifier``. Accept either.
+    """
     dest = destination.lower()
     for device in devices:
-        if device.identifier.lower() == dest:
+        if dest in (device.identifier.lower(), device.udid.lower()):
             return device
     for device in devices:
         if device.name.lower() == dest:
@@ -293,6 +325,13 @@ def _match_device(devices: list[Device], destination: str) -> Device:
     for device in devices:
         if dest in device.name.lower():
             return device
+    return None
+
+
+def _match_device(devices: list[Device], destination: str) -> Device:
+    device = _find_device(devices, destination)
+    if device is not None:
+        return device
     raise CommandError(
         ["devicectl"],
         1,
