@@ -16,7 +16,7 @@ from pathlib import Path
 
 import click
 
-from ..config import ConfigError, load_config
+from ..config import ConfigError, load_config, read_pyproject_text
 from ..lock.reader import LockError, is_in_sync
 from ..platforms.base import HostCapabilityError
 from ..platforms.ios.lock import (
@@ -177,7 +177,7 @@ def lock(
             _require_host_toolchain(backend)
 
         pyproject = project_root / "pyproject.toml"
-        pyproject_text = pyproject.read_text(encoding="utf-8")
+        pyproject_text = read_pyproject_text(pyproject)
         out_path = lockfile_path_for(backend.name, project_root)
         # Recorded before anything can fail, so even a drift or resolution
         # failure names the file it was talking about (agent-friendliness point

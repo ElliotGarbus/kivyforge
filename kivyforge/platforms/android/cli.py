@@ -22,7 +22,7 @@ from kivyforge.build_outcome import (
 )
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
 from kivyforge.cli._common import ECHO_EVENTS, ToolchainError
-from kivyforge.config import ConfigError, load_config
+from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics
@@ -970,7 +970,7 @@ def android_status(project_root: Path) -> StatusReport:
             state = (
                 LockState.IN_SYNC
                 if is_in_sync(
-                    lock, (project_root / "pyproject.toml").read_text("utf-8")
+                    lock, read_pyproject_text(project_root / "pyproject.toml")
                 )
                 else LockState.OUT_OF_DATE
             )
@@ -1112,9 +1112,7 @@ def _load(project_root: Path, *, no_verify_lock: bool):
         lock = lock_reader.load(lock_path)
     except LockError as exc:
         raise LockUnreadable(str(exc)) from exc
-    if not no_verify_lock and not is_in_sync(
-        lock, pyproject.read_text(encoding="utf-8")
-    ):
+    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
         raise LockDrift(
             "pyproject.toml has changed since pylock.android.toml was "
             "generated.\n  Run: kivyforge lock -p android\n"

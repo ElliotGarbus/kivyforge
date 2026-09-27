@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .errors import ConfigError
-from .loader import load_config, load_config_from_text
+from .loader import load_config, load_config_from_text, read_pyproject_text
 from .model import (
     Author,
     Config,
@@ -27,6 +27,7 @@ __all__ = [
     "ConfigError",
     "load_config",
     "load_config_from_text",
+    "read_pyproject_text",
     "Author",
     "Config",
     "DesktopConfig",

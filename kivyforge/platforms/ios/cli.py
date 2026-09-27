@@ -28,7 +28,7 @@ from kivyforge.cli._common import (
     ToolchainError,
     lockfile_path,
 )
-from kivyforge.config import ConfigError, load_config
+from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.config.icons import IconSourceError
 from kivyforge.config.model import VALID_SIMULATOR_ARCHS
 from kivyforge.lock import LockError, is_in_sync
@@ -177,7 +177,7 @@ def prepare_build(
     """
     pyproject = project_root / "pyproject.toml"
     lock = _load_lock(project_root)
-    if not no_verify_lock and not is_in_sync(lock, pyproject.read_text("utf-8")):
+    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
         raise ToolchainError(
             f"{LOCKFILE_NAME} is out of date with pyproject.toml.\n"
             "  Run `kivyforge lock` to regenerate it (or pass --no-verify-lock "
@@ -685,5 +685,5 @@ def _lock_status(project_root: Path, pyproject: Path) -> LockStatus:
         lock = load(lockfile)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    in_sync = is_in_sync(lock, pyproject.read_text("utf-8"))
+    in_sync = is_in_sync(lock, read_pyproject_text(pyproject))
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)

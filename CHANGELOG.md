@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### A `pyproject.toml` saved with a byte-order mark loads
+
+- **Fixed:** a `pyproject.toml` that starts with a UTF-8 byte-order mark
+  failed with "invalid TOML: Invalid statement (at line 1, column 1)". Some
+  editors write one, and so does PowerShell's `-Encoding utf8`. kivyforge
+  now ignores it.
+- Adding or removing the mark does not make an existing lock stale.
+
 ### `init`: the buildozer.spec key map names real keys
 
 - **Fixed:** when `init` finds a `buildozer.spec` and no `pyproject.toml`,

@@ -15,6 +15,7 @@ from pathlib import Path
 import click
 from click.core import ParameterSource
 
+from ..config import read_pyproject_text
 from ..platforms import (
     Platform,
     PlatformResolutionError,
@@ -38,7 +39,7 @@ platform_option = click.option(
 def configured_platforms(pyproject: Path) -> set[str]:
     """Platform names whose ``[tool.kivy.<name>]`` overlay this project declares."""
     try:
-        raw = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        raw = tomllib.loads(read_pyproject_text(pyproject))
     except (OSError, tomllib.TOMLDecodeError):
         return set()
     kivy = raw.get("tool", {}).get("kivy", {})
