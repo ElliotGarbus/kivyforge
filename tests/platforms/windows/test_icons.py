@@ -1,11 +1,11 @@
-"""Windows .ico generation (hermetic; needs Pillow, in the dev extra)."""
+"""Windows .ico generation (hermetic)."""
 
 from __future__ import annotations
 
 import pytest
 
 from kivyforge.config import load_config
-from kivyforge.platforms.windows import WindowsBundleError, icons
+from kivyforge.platforms.windows import icons
 
 PIL = pytest.importorskip("PIL")
 
@@ -70,24 +70,4 @@ class TestStageIcon:
             icon_line='\n[tool.kivy.windows.icons]\nsource = "icon.png"\n',
         )
         with pytest.raises(Exception):  # noqa: B017 — Config/validation error
-            icons.stage_icon(config, tmp_path, tmp_path / "app.ico")
-
-
-class TestPillowMissing:
-    def test_actionable_error(self, tmp_path, monkeypatch):
-        _write_png(tmp_path / "icon.png")
-        config = _config(
-            tmp_path,
-            icon_line='\n[tool.kivy.windows.icons]\nsource = "icon.png"\n',
-        )
-
-        real_import = __import__
-
-        def _no_pil(name, *args, **kwargs):
-            if name == "PIL" or name.startswith("PIL."):
-                raise ModuleNotFoundError("No module named 'PIL'")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.__import__", _no_pil)
-        with pytest.raises(WindowsBundleError, match="needs Pillow"):
             icons.stage_icon(config, tmp_path, tmp_path / "app.ico")

@@ -75,34 +75,6 @@ it does not collide with other projects:
 With this method, `kivyforge` is available only while the virtual environment is
 active.
 
-## Add the icon extras
-
-Rendering app icons for Linux, Windows, and Android needs
-[Pillow](https://python-pillow.org/), which kivyforge ships as optional extras.
-If your project sets `[tool.kivy.<platform>.icons].source` for one of these
-targets, install the matching extra (`linux`, `windows`, or `android`). Without
-it, the build stops with an error that names the missing extra. macOS and iOS
-icons need no extra.
-
-For example, to install kivyforge with the Windows extra:
-
-=== "uv"
-    ```bash
-    uv tool install "kivyforge[windows]"
-    ```
-
-=== "pipx"
-    ```bash
-    pipx install "kivyforge[windows]"
-    ```
-
-=== "pip"
-    ```bash
-    pip install "kivyforge[windows]"
-    ```
-
-To combine extras, list them together, for example `kivyforge[linux,android]`.
-
 ## Verify
 
 Check the version and ask the tool what it can do:

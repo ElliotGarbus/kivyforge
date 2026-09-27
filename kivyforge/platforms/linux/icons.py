@@ -3,8 +3,7 @@
 Linux has no guaranteed host icon tool (the macOS ``sips``/``iconutil`` analog),
 so when the project supplies ``[tool.kivy.linux.icons].source`` (a 1024×1024
 PNG, validated like iOS/macOS) kivyforge resizes it with
-[Pillow](https://python-pillow.org/) — the optional ``kivyforge[linux]`` extra —
-into the freedesktop **hicolor** size set plus the root ``<app_id>.png``.
+[Pillow](https://python-pillow.org/) into the freedesktop **hicolor** size set plus the root ``<app_id>.png``.
 
 When no source is configured, a plain generated default icon is written instead
 (using only the standard library) so ``appimagetool`` — which requires the icon
@@ -104,9 +103,10 @@ def _solid_png(size: int, rgba: tuple[int, int, int, int]) -> bytes:
 
 
 def _open(src: Path):
-    image_module = _pillow()
+    from PIL import Image
+
     try:
-        return image_module.open(src).convert("RGBA")
+        return Image.open(src).convert("RGBA")
     except OSError as exc:
         raise AppDirError(f"cannot read app icon {src}: {exc}") from exc
 
@@ -115,15 +115,3 @@ def _resize(image, size: int):
     from PIL import Image
 
     return image.resize((size, size), Image.Resampling.LANCZOS)
-
-
-def _pillow():
-    try:
-        from PIL import Image
-    except ModuleNotFoundError as exc:
-        raise AppDirError(
-            "generating Linux icons needs Pillow, which is not installed.\n"
-            "  Install the Linux extra: pip install 'kivyforge[linux]'\n"
-            "  (or unset [tool.kivy.linux.icons].source to build without an icon)."
-        ) from exc
-    return Image

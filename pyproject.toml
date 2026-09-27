@@ -43,6 +43,11 @@ dependencies = [
     # is the highest resolver floor: MIN_ANDROID_PIP_VERSION (PEP 738 tags);
     # iOS needs >= 24.3 (MIN_PIP_VERSION).
     "pip>=25.1",
+    # Icon and splash rendering for Android, Linux and Windows. Required rather
+    # than an extra: a configured icon source must not depend on remembering to
+    # install one, and it weighs about what pip does. macOS and iOS use the
+    # host's sips/iconutil and Xcode instead.
+    "Pillow>=10",
 ]
 
 [project.urls]
@@ -63,23 +68,6 @@ dev = [
     # a Node runtime on first run, which is why it is a dev extra rather than a
     # runtime one.
     "pyright>=1.1.400",
-    "Pillow>=10",
-]
-# Linux backend icon resizing (hicolor size set + AppImage root icon). Pillow is
-# pure-manylinux and ubiquitous; kept optional so the core install stays lean.
-linux = [
-    "Pillow>=10",
-]
-# Windows backend icon rendering (1024×1024 PNG → multi-size .ico). Same opt-in
-# Pillow dependency as the Linux icons extra; kept optional to stay lean.
-windows = [
-    "Pillow>=10",
-]
-# Android backend adaptive-icon generation (1024×1024 PNG → the mipmap density
-# set + adaptive layers). Only needed when [tool.kivy.android.icons].source is
-# configured; without it the build emits the plain default launcher icon.
-android = [
-    "Pillow>=10",
 ]
 # End-user documentation site (MkDocs Material -> GitHub Pages; roadmap item 6).
 # Installing this extra also installs kivyforge itself, which both mkdocs-click

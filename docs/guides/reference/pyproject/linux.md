@@ -37,7 +37,7 @@ Required.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `source` | string | None | Project-relative path to a 1024x1024 PNG. kivyforge resizes it into the freedesktop `hicolor` icon set. Needs the `kivyforge[linux]` extra. |
+| `source` | string | None | Project-relative path to a 1024x1024 PNG. kivyforge resizes it into the freedesktop `hicolor` icon set. |
 
 ### `[tool.kivy.linux.desktop]`
 

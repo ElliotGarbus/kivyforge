@@ -18,8 +18,7 @@ kivyforge produces.
 ## Before you begin
 
 - A Windows host. Windows apps build only on Windows.
-- [Install kivyforge](../../get-started/install.md). To render an app icon,
-  install the `kivyforge[windows]` extra, which adds Pillow.
+- [Install kivyforge](../../get-started/install.md).
 
 ## Step 1: Configure the overlay
 

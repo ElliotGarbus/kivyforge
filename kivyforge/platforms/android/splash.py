@@ -268,26 +268,13 @@ def _contain(image, max_w: int, max_h: int):
 
 
 def _open(path: Path):
-    image_module = _pillow()
+    from PIL import Image
+
     try:
-        return image_module.open(path).convert("RGBA")
+        return Image.open(path).convert("RGBA")
     except OSError as exc:
         raise SplashError(f"cannot read splash image {path}: {exc}") from exc
 
 
 def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
-
-
-def _pillow():
-    try:
-        from PIL import Image
-    except ModuleNotFoundError as exc:
-        raise SplashError(
-            "generating the splash resources needs Pillow, which is not "
-            "installed.\n"
-            "  Install the Android extra: pip install 'kivyforge[android]'\n"
-            "  (or use an AnimatedVectorDrawable XML source, which needs no "
-            "image processing, or drop [tool.kivy.android.splash])."
-        ) from exc
-    return Image
