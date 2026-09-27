@@ -29,6 +29,7 @@ from pathlib import Path
 
 import click
 
+from ..config import keys
 from ..config.model import (
     DEFAULT_ANDROID_KEY_PASSWORD_ENV,
     DEFAULT_ANDROID_STORE_PASSWORD_ENV,
@@ -61,35 +62,90 @@ from .init_writer import (
 REQUIREMENTS_NAME = "requirements.txt"
 BUILDOZER_SPEC_NAME = "buildozer.spec"
 
-# buildozer.spec `[app]` key -> the kivyforge key that replaces it. The value is
-# the destination table and key; `None` means the setting has no counterpart
-# because kivyforge does the thing differently (see _BUILDOZER_DROPPED).
-_BUILDOZER_MAP: tuple[tuple[str, str], ...] = (
-    ("title", "[tool.kivy].display_name"),
-    ("package.name", "[tool.kivy.android].package  (with package.domain)"),
-    ("package.domain", "[tool.kivy.android].package  (with package.name)"),
-    ("version", "[project].version"),
-    ("source.dir", "[tool.kivy].app_dir"),
-    ("requirements", "[project].dependencies  (as PEP 508 requirements)"),
-    ("orientation", "[tool.kivy].orientation"),
-    ("icon.filename", "[tool.kivy.android.icons].source"),
-    ("presplash.filename", "[tool.kivy.android.splash].source"),
-    ("android.api", "[tool.kivy.android].target_sdk / compile_sdk"),
-    ("android.minapi", "[tool.kivy.android].min_sdk  (kivyforge's floor is 24)"),
+# buildozer.spec `[app]` key -> what replaces it: dotted key paths (rendered as
+# `[table].key` from the loader's own schema in config/keys.py, so a path the
+# loader does not read fails the message rather than misleading the user) or a
+# backticked command, plus an optional note. Settings with no counterpart at
+# all are in _BUILDOZER_DROPPED.
+_BUILDOZER_MAP: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("title", ("tool.kivy.display_name",), ""),
+    ("package.name", ("tool.kivy.android.package",), "with package.domain"),
+    ("package.domain", ("tool.kivy.android.package",), "with package.name"),
+    ("version", ("project.version",), ""),
+    ("source.dir", ("tool.kivy.app_dir",), ""),
+    ("requirements", ("project.dependencies",), "as PEP 508 requirements"),
+    ("orientation", ("tool.kivy.orientation",), ""),
+    ("icon.filename", ("tool.kivy.android.icons.source",), ""),
+    ("icon.adaptive_icon_foreground", ("tool.kivy.android.icons.source",), ""),
+    ("icon.adaptive_icon_background", ("tool.kivy.android.icons.background",), ""),
+    ("presplash.filename", ("tool.kivy.android.splash.source",), ""),
+    ("android.presplash_color", ("tool.kivy.android.splash.background",), ""),
+    ("android.numeric_version", ("tool.kivy.android.version_code",), ""),
+    (
+        "android.api",
+        ("tool.kivy.android.target_sdk", "tool.kivy.android.compile_sdk"),
+        "",
+    ),
+    ("android.minapi", ("tool.kivy.android.min_sdk",), "kivyforge's floor is 24"),
     (
         "android.archs",
-        "[tool.kivy.android].abis  (arm64-v8a -> arm64_v8a; the 32-bit ABIs "
-        "armeabi-v7a and x86 are not supported)",
+        ("tool.kivy.android.abis",),
+        "arm64-v8a -> arm64_v8a; the 32-bit ABIs armeabi-v7a and x86 are not supported",
     ),
-    ("android.permissions", "[tool.kivy.android.permissions].uses"),
-    ("android.features", "[[tool.kivy.android.permissions.features]]"),
-    ("services", "[[tool.kivy.android.services]]"),
-    ("android.meta_data", "[tool.kivy.android.manifest].extra_application_xml"),
-    ("android.add_activities", "[tool.kivy.android.manifest].extra_manifest_xml"),
-    ("android.gradle_dependencies", "[tool.kivy.android].gradle_dependencies"),
-    ("android.add_jars", "[[tool.kivy.android.android_libs]]"),
-    ("android.release_artifact", "`kivyforge package -f apk|aab`"),
-    ("android.debug_artifact", "`kivyforge build --debug -f apk|aab`"),
+    ("android.apptheme", ("tool.kivy.android.base_theme",), ""),
+    ("android.permissions", ("tool.kivy.android.permissions.uses",), ""),
+    ("android.features", ("tool.kivy.android.permissions.features",), ""),
+    (
+        "services",
+        ("tool.kivy.android.services",),
+        "NAME:ENTRYPOINT becomes name and entry_point",
+    ),
+    (
+        "android.add_src",
+        ("tool.kivy.android.src.java",),
+        "Kotlin sources go in src.kotlin",
+    ),
+    (
+        "android.add_activities",
+        ("tool.kivy.android.activities",),
+        "the classes themselves come from src.java",
+    ),
+    ("android.add_jars", ("tool.kivy.android.native.jars",), ""),
+    ("android.add_aars", ("tool.kivy.android.native.aars",), ""),
+    ("android.gradle_dependencies", ("tool.kivy.android.gradle.dependencies",), ""),
+    (
+        "android.add_gradle_repositories",
+        ("tool.kivy.android.gradle.repositories",),
+        "",
+    ),
+    ("android.add_assets", ("tool.kivy.android.include_files",), ""),
+    ("android.add_resources", ("tool.kivy.android.include_files",), ""),
+    (
+        "android.manifest.intent_filters",
+        ("tool.kivy.android.intent_filters",),
+        "one table per <intent-filter>",
+    ),
+    (
+        "android.manifest_placeholders",
+        ("tool.kivy.android.manifest.placeholders",),
+        "",
+    ),
+    (
+        "android.meta_data",
+        ("tool.kivy.android.manifest.extra_application_xml",),
+        "as <meta-data> elements",
+    ),
+    (
+        "android.allow_backup",
+        ("tool.kivy.android.manifest.application",),
+        'as "android:allowBackup"',
+    ),
+    ("android.release_artifact", ("`kivyforge package -p android -f apk|aab`",), ""),
+    (
+        "android.debug_artifact",
+        ("`kivyforge build -p android --debug -f apk|aab`",),
+        "",
+    ),
 )
 
 # Settings with no kivyforge counterpart, and why — these are the migration's
@@ -109,11 +165,6 @@ _BUILDOZER_DROPPED: tuple[tuple[str, str], ...] = (
         "android.ndk, android.sdk, android.ndk_api, android.gradle_version",
         "kivyforge pins the toolchain itself; `kivyforge doctor -p android` "
         "checks the host against those pins.",
-    ),
-    (
-        "android.add_src",
-        "app-side Java is not a kivyforge concept; the bootstrap's Java is "
-        "generated, and `include_files` covers extra assets.",
     ),
     (
         "android.entrypoint, android.activity_class_name",
@@ -225,20 +276,49 @@ def _buildozer_migration_message(path: Path) -> str:
     """
     spec = _read_buildozer_spec(path)
     lines = [_BUILDOZER_MSG_HEAD, "  Your buildozer.spec maps onto these keys:\n"]
-    width = max(len(key) for key, _ in _BUILDOZER_MAP)
-    for key, target in _BUILDOZER_MAP:
-        value = spec.get(key)
+    width = max(len(key) for key, _, _ in _BUILDOZER_MAP)
+    for key, targets, note in _BUILDOZER_MAP:
+        target = " / ".join(_render_destination(t) for t in targets)
         shown = f"    {key.ljust(width)}  ->  {target}"
+        if note:
+            shown += f"  ({note})"
+        value = spec.get(key)
         if value:
             shown += f"\n    {' ' * width}      currently: {_ellipsize(value)}"
         lines.append(shown)
     lines.append("\n  No kivyforge counterpart:\n")
-    for keys, why in _BUILDOZER_DROPPED:
-        lines.append(f"    {keys}\n      {why}")
-    lines.append(
-        "\n  Full reference: docs/design/platforms/android/01-pyproject-android.md"
-    )
+    for names, why in _BUILDOZER_DROPPED:
+        lines.append(f"    {names}\n      {why}")
+    lines.append("\n  Full reference: docs/guides/reference/pyproject/android.md")
     return "\n".join(lines)
+
+
+def _render_destination(target: str) -> str:
+    """A `_BUILDOZER_MAP` destination as the user writes it in pyproject.toml.
+
+    Raises ``ValueError`` for a ``tool.kivy`` path the loader does not read.
+    """
+    if target.startswith("`"):
+        return target
+    parts = target.split(".")
+    if parts[0] == "project" and len(parts) == 2:
+        return f"[project].{parts[1]}"
+    if parts[:2] != ["tool", "kivy"]:
+        raise ValueError(f"not a pyproject key path: {target}")
+    parent: keys.Spec = None
+    node: keys.Spec = keys.TOOL_KIVY
+    for part in parts[2:]:
+        table = node.entry if isinstance(node, keys.ArrayOf | keys.Each) else node
+        if not isinstance(table, dict) or part not in table:
+            raise ValueError(f"kivyforge does not read {target}")
+        parent, node = node, table[part]
+    if isinstance(node, keys.ArrayOf):
+        return f"[[{target}]]"
+    if isinstance(node, dict | keys.Each):
+        return f"[{target}]"
+    head = ".".join(parts[:-1])
+    table = f"[[{head}]]" if isinstance(parent, keys.ArrayOf) else f"[{head}]"
+    return f"{table}.{parts[-1]}"
 
 
 def _ellipsize(value: str, limit: int = 70) -> str:
