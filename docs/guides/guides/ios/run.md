@@ -57,7 +57,7 @@ needs no signing, and on a connected iPhone or iPad, which does.
     ```
 
     To choose between several connected devices, pass `--destination` with a
-    device name or identifier from `kivyforge run -p ios --list-devices`.
+    device name or UDID from `kivyforge run -p ios --list-devices`.
 
 To install an app you already built, add `--no-build`.
 
