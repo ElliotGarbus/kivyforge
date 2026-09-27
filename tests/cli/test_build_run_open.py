@@ -91,6 +91,46 @@ _SIMCTL_JSON = json.dumps(
     }
 )
 
+# One phone plus a simulator, as Xcode 27's `devicectl list devices -j` reports.
+_DEVICECTL_PAYLOAD = {
+    "result": {
+        "devices": [
+            {
+                "identifier": "PHONE-COREDEVICE",
+                "deviceProperties": {"name": "Test iPhone"},
+                "hardwareProperties": {
+                    "platform": "iOS",
+                    "reality": "physical",
+                    "udid": "00008160-PHONE",
+                },
+                "connectionProperties": {
+                    "tunnelState": "connected",
+                    "pairingState": "paired",
+                },
+            },
+            {
+                "identifier": "SIM-COREDEVICE",
+                "deviceProperties": {"name": "iPhone 17"},
+                "hardwareProperties": {
+                    "platform": "iOS",
+                    "reality": "simulated",
+                    "udid": "SIM-UDID",
+                },
+                "connectionProperties": {
+                    "tunnelState": "disconnected",
+                    "pairingState": "paired",
+                },
+            },
+        ]
+    }
+}
+
+
+@pytest.fixture
+def devicectl_devices():
+    """What the faked `devicectl list devices -j` reports; tests may replace it."""
+    return dict(_DEVICECTL_PAYLOAD)
+
 
 @pytest.fixture
 def runner():
@@ -106,7 +146,7 @@ def stub_collect(monkeypatch):
 
 
 @pytest.fixture
-def record_xcodebuild(monkeypatch, launches):
+def record_xcodebuild(monkeypatch, launches, devicectl_devices):
     """Record every run_command argv across build/run/open."""
     calls = []
 
@@ -119,6 +159,8 @@ def record_xcodebuild(monkeypatch, launches):
             and "-j" in argv
         ):
             proc.stdout = _SIMCTL_JSON
+        if argv[:4] == ["xcrun", "devicectl", "list", "devices"] and "-j" in argv:
+            Path(argv[-1]).write_text(json.dumps(devicectl_devices), encoding="utf-8")
         return proc
 
     def fake_foreground(argv, *, runner=None):
@@ -296,6 +338,58 @@ class TestRun:
             # Captured output would show the app's console only after it exits.
             assert [c[:3] for c in launches] == [["xcrun", "simctl", "launch"]]
             assert "--console-pty" in launches[0]
+
+    def test_run_device_builds_for_the_chosen_phone(
+        self, runner, tmp_path, record_xcodebuild, launches
+    ):
+        """Regression: the device build targeted any iOS device, so automatic
+        signing kept a managed profile that did not include the phone, and
+        install then failed. Found on the Mac, 2026-09-26
+        (mac-findings-fixes-findings.md, defect 4).
+        """
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            app = Path(fs) / "myapp-ios/build/DerivedData/Build/Products"
+            (app / "Debug-iphoneos" / "myapp.app").mkdir(parents=True)
+            result = runner.invoke(run_cmd, ["--device"])
+            assert result.exit_code == 0, result.output
+            builds = [c for c in record_xcodebuild if c[0] == "xcodebuild"]
+            assert len(builds) == 1
+            assert builds[0][-3:] == ["-destination", "id=00008160-PHONE", "build"]
+            lists = [
+                c for c in record_xcodebuild if c[:3] == ["xcrun", "devicectl", "list"]
+            ]
+            assert len(lists) == 1
+            assert record_xcodebuild.index(lists[0]) < record_xcodebuild.index(
+                builds[0]
+            )
+            installs = [
+                c for c in record_xcodebuild if "install" in c and "devicectl" in c
+            ]
+            assert installs and "PHONE-COREDEVICE" in installs[0]
+            assert "PHONE-COREDEVICE" in launches[0]
+
+    def test_run_device_with_no_phone_fails_before_building(
+        self, runner, tmp_path, record_xcodebuild, devicectl_devices
+    ):
+        devicectl_devices["result"] = {"devices": []}
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(run_cmd, ["--device"])
+            assert result.exit_code != 0
+            assert "no paired iOS device" in result.output
+            assert not [c for c in record_xcodebuild if c[0] == "xcodebuild"]
+
+    def test_run_device_no_build_still_finds_the_phone(
+        self, runner, tmp_path, record_xcodebuild, launches
+    ):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            app = Path(fs) / "myapp-ios/build/DerivedData/Build/Products"
+            (app / "Debug-iphoneos" / "myapp.app").mkdir(parents=True)
+            result = runner.invoke(run_cmd, ["--device", "--no-build"])
+            assert result.exit_code == 0, result.output
+            assert "PHONE-COREDEVICE" in launches[0]
 
     def test_run_no_build_missing_app_errors(self, runner, tmp_path, record_xcodebuild):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

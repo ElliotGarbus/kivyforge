@@ -168,8 +168,15 @@ def build_command(
     signing_identity: str | None = None,
     team_id: str | None = None,
     allow_provisioning_updates: bool = False,
+    device_udid: str | None = None,
 ) -> list[str]:
     """`xcodebuild build` argv for --simulator/--device (Debug).
+
+    ``device_udid`` names the phone a device build is for. Without it the
+    build targets any iOS device, and automatic signing accepts a managed
+    profile that does not include the phone, so install fails afterwards
+    ("This provisioning profile cannot be installed on this device"). With it,
+    Xcode adds the phone to the managed profile, or fails the build naming it.
 
     ``derived_data_path`` pins where the ``.app`` is written so ``kivyforge run``
     can locate the product deterministically. ``signing_identity`` overrides the
@@ -219,6 +226,8 @@ def build_command(
             cmd.append(f"DEVELOPMENT_TEAM={team_id}")
         if allow_provisioning_updates:
             cmd.append("-allowProvisioningUpdates")
+        if device_udid:
+            cmd += ["-destination", f"id={device_udid}"]
     cmd.append("build")
     return cmd
 

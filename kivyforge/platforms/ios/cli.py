@@ -42,6 +42,7 @@ from .materialize import materialize_project
 from .staging import StagingError, create_staging
 from .xcode import (
     CommandError,
+    Device,
     SigningError,
     XcodeBuild,
     archive_command,
@@ -474,6 +475,7 @@ def ios_run(
     derived_data = xb.build_dir / "DerivedData"
 
     try:
+        device: Device | None = None
         if not no_build:
             resolved_team_id: str | None = None
             if target == "device":
@@ -482,6 +484,8 @@ def ios_run(
                 # through ios_build, so the profile checks must repeat here.
                 # --no-build installs an already-signed .app: nothing to pre-empt.
                 preflight_profile(config, project_root, "device")
+                # Chosen before the build, so the build signs for this phone.
+                device = resolve_device_destination(destination)
             prepare_build(
                 config,
                 project_root,
@@ -504,6 +508,7 @@ def ios_run(
                     allow_provisioning_updates=(
                         config.ios_required.signing.auto_signing and target == "device"
                     ),
+                    device_udid=device.udid if device is not None else None,
                 )
             )
 
@@ -519,7 +524,9 @@ def ios_run(
         if target == "simulator":
             _run_simulator(destination, app, bundle_id)
         else:
-            _run_device(destination, app, bundle_id)
+            _run_device(
+                device or resolve_device_destination(destination), app, bundle_id
+            )
     except SigningError as exc:
         raise ToolchainError.wrap(exc) from exc
     except CommandError as exc:
@@ -542,8 +549,7 @@ def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     run_foreground(simctl_launch(device.udid, bundle_id))
 
 
-def _run_device(destination: str | None, app: Path, bundle_id: str) -> None:
-    device = resolve_device_destination(destination)
+def _run_device(device: Device, app: Path, bundle_id: str) -> None:
     label = f"{device.name} ({device.identifier})"
     click.echo(f"Installing on device {label} ...")
     run_command(devicectl_install(device.identifier, app))
