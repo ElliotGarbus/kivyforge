@@ -257,6 +257,75 @@ class TestPbxprojGeneration:
         debug = _project_settings_for(project, "Debug")
         assert debug["DEVELOPMENT_TEAM"] == "OVERRIDE99"
 
+    def test_unpinning_a_profile_removes_it_from_the_project(
+        self, config, make_config, project_root
+    ):
+        """Regression: regeneration updates the project in place, so unpinning
+        left ``PROVISIONING_PROFILE_SPECIFIER`` behind and Xcode refused the
+        build ("conflicting provisioning settings") under automatic signing.
+        Found on the Mac, 2026-09-26 (mac-findings-fixes-findings.md, defect 1).
+        """
+        pinned = make_config('provisioning_profile = "hello-kivy manual dev"')
+        layout = materialize_project(pinned, project_root)
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        assert (
+            _settings_for(project, "touchtracer", "Debug")[
+                "PROVISIONING_PROFILE_SPECIFIER"
+            ]
+            == "hello-kivy manual dev"
+        )
+
+        layout = materialize_project(config, project_root)
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        for configuration in ("Debug", "Release"):
+            target = _settings_for(project, "touchtracer", configuration)
+            proj = _project_settings_for(project, configuration)
+            assert "PROVISIONING_PROFILE_SPECIFIER" not in target
+            assert "PROVISIONING_PROFILE_SPECIFIER" not in proj
+            assert target["CODE_SIGN_STYLE"] == "Automatic"
+
+    def test_dropping_the_team_removes_it_from_the_project(self, config, project_root):
+        materialize_project(config, project_root, team_id="OVERRIDE99")
+        layout = materialize_project(config, project_root, team_id="")
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        assert "DEVELOPMENT_TEAM" not in _settings_for(project, "touchtracer", "Debug")
+        assert "DEVELOPMENT_TEAM" not in _project_settings_for(project, "Debug")
+
+    def test_regeneration_keeps_settings_kivyforge_does_not_own(
+        self, config, project_root
+    ):
+        # Anything outside RESERVED_BUILD_SETTINGS may have been set in Xcode's
+        # editor; only the toolchain's own stale keys are removed.
+        layout = materialize_project(config, project_root)
+        pbxproj = str(layout.xcodeproj / "project.pbxproj")
+        project = XcodeProject.load(pbxproj)
+        project.set_flags("SWIFT_VERSION", "5.0", target_name="touchtracer")
+        for cfg in _objects(project).get_project_configurations():
+            cfg.set_flags("SWIFT_VERSION", "5.0")
+        project.save()
+
+        materialize_project(config, project_root)
+        project = XcodeProject.load(pbxproj)
+        assert _settings_for(project, "touchtracer", "Debug")["SWIFT_VERSION"] == "5.0"
+        assert _project_settings_for(project, "Debug")["SWIFT_VERSION"] == "5.0"
+
+    def test_signing_keys_are_all_reserved(self, config, make_config, project_root):
+        # A signing key outside RESERVED_BUILD_SETTINGS could come from the
+        # user's build_settings, and would then be deleted from under them.
+        from kivyforge.config.model import RESERVED_BUILD_SETTINGS
+        from kivyforge.platforms.ios.buildsettings import (
+            SIGNING_SETTING_KEYS,
+            signing_settings,
+        )
+
+        assert SIGNING_SETTING_KEYS <= RESERVED_BUILD_SETTINGS
+        every = make_config(
+            'provisioning_profile = "P"\nidentity = "Apple Development"'
+        )
+        assert set(signing_settings(every, project_root=project_root)) == (
+            SIGNING_SETTING_KEYS
+        )
+
     def test_last_upgrade_check_current(self, config, project_root):
         # Xcode prompts "Update to recommended settings" when LastUpgradeCheck
         # is stale; the generator keeps it current on every build.

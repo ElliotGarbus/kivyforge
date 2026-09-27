@@ -15,10 +15,11 @@ from typing import Any, cast
 from pbxproj import XcodeProject
 from pbxproj.pbxextensions.ProjectFiles import FileOptions, ProjectFiles, TreeType
 
-from kivyforge.config.model import Config
+from kivyforge.config.model import RESERVED_BUILD_SETTINGS, Config
 
 from .buildsettings import (
     BUILD_PYTHON_SCRIPT,
+    SIGNING_SETTING_KEYS,
     managed_settings,
     signing_settings,
     user_build_settings,
@@ -149,7 +150,34 @@ class XcodeProjectGenerator:
                     target_name=self.app_name,
                     configuration_name=configuration,
                 )
+            self._drop_stale(
+                cast(Any, project).objects.get_configurations_on_targets(
+                    self.app_name, configuration
+                ),
+                owned=RESERVED_BUILD_SETTINGS,
+                keep=merged,
+            )
             self._apply_project_level_signing(project, signing, configuration)
+
+    @staticmethod
+    def _drop_stale(
+        config_objs: Any, *, owned: frozenset[str], keep: dict[str, str]
+    ) -> None:
+        """Delete *owned* settings that this run no longer emits.
+
+        The project is loaded and updated in place, so a setting written by an
+        earlier run survives unless removed. Only toolchain-owned keys qualify:
+        anything else may have been set in Xcode's editor. Without this,
+        unpinning ``provisioning_profile`` left ``PROVISIONING_PROFILE_SPECIFIER``
+        behind, and Xcode refused it under automatic signing.
+        """
+        for config_obj in config_objs:
+            settings = config_obj["buildSettings"]
+            if settings is None:
+                continue
+            for key in owned - keep.keys():
+                if settings[key] is not None:
+                    del settings[key]
 
     def _apply_project_level_signing(
         self,
@@ -174,11 +202,13 @@ class XcodeProjectGenerator:
         Firebase SPM package failed this way (`Firebase_FirebaseCore`).
         """
         objects = cast(Any, project).objects
+        project_configs = list(
+            objects.get_project_configurations(configuration_name=configuration)
+        )
         for key, value in signing.items():
-            for config_obj in objects.get_project_configurations(
-                configuration_name=configuration
-            ):
+            for config_obj in project_configs:
                 config_obj.set_flags(key, value)
+        self._drop_stale(project_configs, owned=SIGNING_SETTING_KEYS, keep=signing)
 
     # -- run script --------------------------------------------------------- #
     def _sync_run_script(self, project: XcodeProject) -> None:
