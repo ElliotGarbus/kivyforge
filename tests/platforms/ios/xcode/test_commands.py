@@ -143,6 +143,18 @@ class TestBuildCommand:
         cmd = build_command(xb, "device")
         assert "-allowProvisioningUpdates" not in cmd
 
+    def test_device_destination_names_the_phone(self, xb):
+        cmd = build_command(xb, "device", device_udid="00008160-PHONE")
+        assert cmd[-3:] == ["-destination", "id=00008160-PHONE", "build"]
+
+    def test_device_no_destination_by_default(self, xb):
+        assert "-destination" not in build_command(xb, "device")
+        assert "-destination" not in build_command(xb, "device", device_udid="")
+
+    def test_simulator_ignores_device_udid(self, xb):
+        cmd = build_command(xb, "simulator", device_udid="00008160-PHONE")
+        assert "-destination" not in cmd
+
     def test_simulator_ignores_allow_provisioning_updates(self, xb):
         # Simulator builds are unsigned; the flag would be meaningless there.
         cmd = build_command(xb, "simulator", allow_provisioning_updates=True)

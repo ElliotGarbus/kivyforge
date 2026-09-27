@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### iOS: `run --device` builds for the phone it installs on
+
+- **Fixed:** with automatic signing, `run -p ios --device` could build and
+  sign successfully, then fail to install with "This provisioning profile
+  cannot be installed on this device". This happened on any phone added
+  after Xcode last created the managed profile. The build targeted any iOS
+  device, so Xcode kept the old profile. `run --device` now chooses the phone
+  before building and passes it to `xcodebuild` as `-destination`, so Xcode
+  adds the phone to the managed profile, or stops the build with an error
+  naming the phone.
+- A missing phone is now reported before the build instead of after it.
+  `build --device` has no target phone and is unchanged.
+- Adding a phone to the profile requires an Apple account signed in to
+  Xcode (**Xcode > Settings > Accounts**). Without one, the build now fails
+  with Xcode's "No Accounts" error instead of producing an app the phone
+  refuses.
+
 ### iOS: unpinning a provisioning profile takes effect
 
 - **Fixed:** after removing `provisioning_profile` (or clearing `team_id`),
