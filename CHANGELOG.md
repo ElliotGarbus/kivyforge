@@ -13,6 +13,25 @@
   `pip install "kivyforge[android]"` still works: pip warns that the extra
   does not exist and installs kivyforge with Pillow.
 
+### `init`: the buildozer.spec key map names real keys
+
+- **Fixed:** when `init` finds a `buildozer.spec` and no `pyproject.toml`,
+  it prints how each buildozer setting maps onto kivyforge. Several entries
+  pointed at keys kivyforge does not read:
+  - `android.gradle_dependencies` now maps to `[tool.kivy.android.gradle].dependencies`.
+  - `android.add_jars` now maps to `[tool.kivy.android.native.jars]`.
+  - `android.add_activities` now maps to `[[tool.kivy.android.activities]]`.
+- `android.add_src` is no longer listed as unsupported. It maps to
+  `[tool.kivy.android.src].java`.
+- The map now also covers `android.add_aars`,
+  `android.add_gradle_repositories`, `android.add_assets`,
+  `android.add_resources`, `android.manifest.intent_filters`,
+  `android.manifest_placeholders`, `android.allow_backup`,
+  `android.apptheme`, `android.numeric_version`,
+  `android.presplash_color` and the adaptive icon layers.
+- The closing reference link now points at the user reference,
+  `docs/guides/reference/pyproject/android.md`.
+
 ### iOS: `run --device` builds for the phone it installs on
 
 - **Fixed:** with automatic signing, `run -p ios --device` could build and

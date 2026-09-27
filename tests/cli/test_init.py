@@ -414,6 +414,60 @@ class TestNoManifest:
         # Raw read: buildozer's %(...)s interpolation is not resolved here.
         assert "%(source.dir)s/data/icon.png" in out
 
+    @pytest.mark.parametrize(
+        "target",
+        sorted({t for _, targets, _ in init_mod._BUILDOZER_MAP for t in targets}),
+    )
+    def test_every_buildozer_destination_is_a_key_the_loader_reads(self, target):
+        """The map once named keys the loader never read; resolving each against
+        config/keys.py keeps it from drifting again."""
+        init_mod._render_destination(target)
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "tool.kivy.android.gradle_dependencies",
+            "tool.kivy.android.android_libs",
+            "tool.kivy.android.gradle.dependencies.extra",
+            "tool.android.package",
+        ],
+    )
+    def test_a_destination_the_loader_does_not_read_is_rejected(self, target):
+        with pytest.raises(ValueError):
+            init_mod._render_destination(target)
+
+    @pytest.mark.parametrize(
+        ("target", "rendered"),
+        [
+            ("project.version", "[project].version"),
+            ("tool.kivy.app_dir", "[tool.kivy].app_dir"),
+            (
+                "tool.kivy.android.gradle.dependencies",
+                "[tool.kivy.android.gradle].dependencies",
+            ),
+            ("tool.kivy.android.services", "[[tool.kivy.android.services]]"),
+            ("tool.kivy.android.native.jars", "[tool.kivy.android.native.jars]"),
+            (
+                "tool.kivy.android.services.entry_point",
+                "[[tool.kivy.android.services]].entry_point",
+            ),
+            ("`kivyforge lock`", "`kivyforge lock`"),
+        ],
+    )
+    def test_destinations_render_as_pyproject_spells_them(self, target, rendered):
+        assert init_mod._render_destination(target) == rendered
+
+    def test_app_side_java_maps_rather_than_being_dropped(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            (init_mod.Path(fs) / "buildozer.spec").write_text(
+                self.SPEC + "android.add_src = java\n"
+            )
+            result = runner.invoke(init, [])
+        out = result.output
+        assert "[tool.kivy.android.src].java" in out
+        assert "currently: java" in out
+        assert "not a kivyforge concept" not in out
+
     def test_unparseable_buildozer_spec_still_maps(self, runner, tmp_path):
         """This is already an error path — a spec kivyforge cannot read must not
         turn into a traceback."""
