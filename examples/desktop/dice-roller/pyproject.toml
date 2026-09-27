@@ -39,10 +39,8 @@ source = "assets/icon.png"
 [tool.kivy.macos.python]
 version = "3.13.14"
 
-[tool.kivy.macos.signing]
-identity = "Developer ID Application: ELLIOT DREW GARBUS (R5PKSQLUZY)"
-team_id = "R5PKSQLUZY"
-notary_profile = "kivyforge-notary"
+# No [tool.kivy.macos.signing]: the app is ad-hoc signed. To sign with your own
+# Developer ID and notarize, see docs/guides/guides/macos/signing.md.
 
 # One pyproject.toml, two desktop lockfiles: the same [project]/[tool.kivy] now
 # also targets Linux (AppImage/AppDir) from the same PyPI Kivy 2.3.1 wheels.

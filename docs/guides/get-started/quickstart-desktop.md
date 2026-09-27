@@ -39,18 +39,12 @@ the current directory and does not search parent directories.
 
 ## Step 2: Adjust the example for your machine
 
-The example carries two settings that match its author's machine. Edit
+Only Linux on an ARM machine (for example a Raspberry Pi) needs a change: in
+`[tool.kivy.linux]`, change `archs = ["x86_64"]` to `archs = ["aarch64"]`. Edit
 `pyproject.toml` now, before you lock, because any later edit makes the
-lockfile out of date:
+lockfile out of date.
 
-- **macOS:** delete the whole `[tool.kivy.macos.signing]` table (the
-  `identity`, `team_id`, and `notary_profile` lines). It names the author's
-  Developer ID certificate, which is not in your keychain. Without it,
-  kivyforge ad-hoc signs the app.
-- **Linux on an ARM machine** (for example a Raspberry Pi): in
-  `[tool.kivy.linux]`, change `archs = ["x86_64"]` to `archs = ["aarch64"]`.
-
-On Windows, and on x86_64 Linux, skip this step.
+On macOS, Windows, and x86_64 Linux, skip this step.
 
 ## Step 3: Check your environment
 

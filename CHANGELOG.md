@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### The dice-roller example no longer names the author's Developer ID
+
+- **Changed:** `examples/desktop/dice-roller` no longer has a
+  `[tool.kivy.macos.signing]` table, so `package -p macos` ad-hoc signs it
+  on any Mac. Before, the table named the author's certificate, and the
+  desktop quickstart told readers to delete it before locking. That step is
+  gone.
+
 ### A `pyproject.toml` saved with a byte-order mark loads
 
 - **Fixed:** a `pyproject.toml` that starts with a UTF-8 byte-order mark
