@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from PIL import Image
 
 from kivyforge.config.icons import IconSourceError
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.platforms.linux import icons
-
-pytest.importorskip("PIL")
-
-from PIL import Image  # noqa: E402
 
 _BASE = (
     "[project]\nname='myapp'\nversion='1.0.0'\nrequires-python='>=3.15'\n"

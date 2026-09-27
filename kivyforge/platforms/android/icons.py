@@ -7,8 +7,7 @@ paths lead there:
 - **No configured source** — a plain generated default icon (standard library
   only, no Pillow), so a freshly-``init``-ed project builds out of the box.
 - **A configured 1024x1024 source** — the full **adaptive icon** set, resized
-  with [Pillow](https://python-pillow.org/) (the optional ``kivyforge[android]``
-  extra): a per-density legacy ``ic_launcher`` for API 24/25 launchers, the
+  with [Pillow](https://python-pillow.org/): a per-density legacy ``ic_launcher`` for API 24/25 launchers, the
   ``mipmap-anydpi-v26`` adaptive-icon pair for API 26+, and the round variants.
 
 **Safe zone.** An adaptive icon's outer ring is cropped by whatever mask the
@@ -183,9 +182,10 @@ def _open(path: Path):
         validate_icon_source(path)
     except IconSourceError as exc:
         raise IconError(str(exc)) from exc
-    image_module = _pillow()
+    from PIL import Image
+
     try:
-        return image_module.open(path).convert("RGBA")
+        return Image.open(path).convert("RGBA")
     except OSError as exc:
         raise IconError(f"cannot read icon layer {path}: {exc}") from exc
 
@@ -221,17 +221,3 @@ def _circular(image):
 
 def _save(image, dest: Path) -> None:
     image.save(dest, format="PNG")
-
-
-def _pillow():
-    try:
-        from PIL import Image
-    except ModuleNotFoundError as exc:
-        raise IconError(
-            "generating the Android adaptive icon needs Pillow, which is not "
-            "installed.\n"
-            "  Install the Android extra: pip install 'kivyforge[android]'\n"
-            "  (or unset [tool.kivy.android.icons].source to build with the "
-            "default launcher icon)."
-        ) from exc
-    return Image

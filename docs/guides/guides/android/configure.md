@@ -81,8 +81,7 @@ required. The other keys shown have defaults, listed in the reference.
 ## Add an icon and a splash screen
 
 Point `[tool.kivy.android.icons]` at a 1024x1024 PNG. kivyforge generates the
-adaptive icon set from it. Icon and splash generation need Pillow, which the
-`kivyforge[android]` extra installs.
+adaptive icon set from it.
 
 ```toml
 [tool.kivy.android.icons]

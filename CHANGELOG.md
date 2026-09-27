@@ -25,6 +25,17 @@
   now ignores it.
 - Adding or removing the mark does not make an existing lock stale.
 
+### Pillow is a core dependency; the `linux`, `windows` and `android` extras are gone
+
+- **Changed:** Pillow is now installed with kivyforge. Before, a project that
+  set an icon or splash image for Android, Linux or Windows needed the
+  matching extra, and without it the build stopped partway through.
+- **Removed:** the `linux`, `windows` and `android` extras. Their only
+  content was Pillow.
+- **Migration:** install plain `kivyforge`. An old command such as
+  `pip install "kivyforge[android]"` still works: pip warns that the extra
+  does not exist and installs kivyforge with Pillow.
+
 ### `init`: the buildozer.spec key map names real keys
 
 - **Fixed:** when `init` finds a `buildozer.spec` and no `pyproject.toml`,
