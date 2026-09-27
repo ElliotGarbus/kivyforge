@@ -125,6 +125,17 @@ def _header_search_paths(layout: StagingLayout | None) -> str:
     return " ".join(f'"{path}"' for path in paths)
 
 
+SIGNING_SETTING_KEYS = frozenset(
+    {
+        "CODE_SIGN_STYLE",
+        "CODE_SIGN_IDENTITY",
+        "DEVELOPMENT_TEAM",
+        "PROVISIONING_PROFILE_SPECIFIER",
+    }
+)
+"""Every key :func:`signing_settings` can emit."""
+
+
 def signing_settings(
     config: Config, *, team_id: str | None = None, project_root: Path | None = None
 ) -> dict[str, str]:

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### iOS: unpinning a provisioning profile takes effect
+
+- **Fixed:** after removing `provisioning_profile` (or clearing `team_id`),
+  the next build still carried the old value in the generated `.xcodeproj`,
+  which kivyforge updates in place rather than recreating. With
+  `auto_signing = true`, Xcode then failed with "conflicting provisioning
+  settings". This is the fix kivyforge itself suggests when it refuses an
+  Xcode-managed profile. Build settings kivyforge owns are now removed from
+  the project when the configuration no longer sets them. Settings kivyforge
+  does not own, including any set in Xcode's editor, are left alone.
+- **Migration:** none. A project left in this state is repaired by the next
+  `build`; deleting `<app>-ios/` is no longer needed.
+
 ### iOS: `run --device` finds the phone on Xcode 27
 
 - **Fixed:** with Xcode 27, `run -p ios --device` refused a single connected
