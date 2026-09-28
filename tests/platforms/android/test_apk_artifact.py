@@ -60,7 +60,10 @@ def _expected_magic(apk: Path) -> bytes:
 
 
 def test_the_apk_is_internally_consistent(apk, pytestconfig):
+    # Comma-separated for a package built without --abi, which carries every
+    # ABI in [tool.kivy.android].abis.
     abi = pytestconfig.getoption("--android-abi")
+    abis = tuple(a.strip() for a in abi.split(",") if a.strip())
     stripped = pytestconfig.getoption("--android-stripped")
 
     # The runner's Python only has to match when there is bytecode to judge; an
@@ -69,7 +72,7 @@ def test_the_apk_is_internally_consistent(apk, pytestconfig):
 
     problems = android_apk_problems(
         apk,
-        abi=abi,
+        abis=abis,
         stripped=stripped,
         expected_magic=expected_magic,
     )

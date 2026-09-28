@@ -55,10 +55,13 @@ from tests.artifact_checks import (
     BUNDLE_ROOT,
     ELFCLASS64,
     android_apk_problems,
+    android_bundle_problems,
     android_manifest_problems,
     apksigner_report_problems,
+    bundle_uncompresses_native_libs,
     ios_app_problems,
     ios_expected_plist,
+    jarsigner_report_problems,
     linux_appdir_problems,
     linux_appimage_file_problems,
     macos_app_problems,
@@ -109,7 +112,7 @@ def _stripped_entries(abi: str = "arm64-v8a") -> dict[str, bytes]:
 def _check(tmp_path, entries, *, abi="arm64-v8a", stripped=True, magic=MAGIC_314):
     return android_apk_problems(
         _apk(tmp_path, entries),
-        abi=abi,
+        abis=abi,
         stripped=stripped,
         expected_magic=magic,
     )
@@ -254,7 +257,217 @@ class TestRequiredEntries:
     def test_an_unknown_abi_fails_fast(self, tmp_path):
         problems = _check(tmp_path, _stripped_entries(), abi="armeabi-v7a")
         assert problems == [
-            "unknown ABI 'armeabi-v7a'; expected one of ['arm64-v8a', 'x86_64']"
+            "unknown ABI(s) ['armeabi-v7a']; expected any of ['arm64-v8a', 'x86_64']"
+        ]
+
+
+def _two_abi_entries() -> dict[str, bytes]:
+    """A well-formed stripped package carrying both default ABIs."""
+    entries = _stripped_entries("arm64-v8a")
+    entries.update(
+        {n: b for n, b in _stripped_entries("x86_64").items() if n.startswith("lib/")}
+    )
+    return entries
+
+
+class TestMultipleAbis:
+    """A build without ``--abi`` packages every ABI in the config.
+
+    Before these checks existed a correct two-ABI package failed T3 twice over
+    (two ``libpython`` files read as "2 CPython runtimes", and the second ABI
+    as a stray), which is why every CI job passed ``--abi``.
+    """
+
+    ABIS = ("arm64-v8a", "x86_64")
+
+    def _check2(self, tmp_path, entries, abis=ABIS):
+        return android_apk_problems(
+            _apk(tmp_path, entries), abis=abis, stripped=True, expected_magic=MAGIC_314
+        )
+
+    def test_a_well_formed_two_abi_package_has_no_problems(self, tmp_path):
+        assert self._check2(tmp_path, _two_abi_entries()) == []
+
+    def test_one_runtime_per_abi_is_not_two_runtimes(self, tmp_path):
+        assert shipped_python_tags(_apk(tmp_path, _two_abi_entries())) == ["3.14"]
+
+    def test_checked_as_single_abi_the_second_is_a_stray(self, tmp_path):
+        problems = self._check2(tmp_path, _two_abi_entries(), abis=("arm64-v8a",))
+        assert any("unrequested ABI(s) ['x86_64']" in p for p in problems)
+
+    def test_a_requested_abi_that_is_absent_is_reported(self, tmp_path):
+        problems = self._check2(tmp_path, _stripped_entries("arm64-v8a"))
+        assert "lib/x86_64/libmain.so is missing from the APK" in problems
+        assert any(
+            "under lib/x86_64/ — that ABI ships no runtime" in p for p in problems
+        )
+
+    def test_an_extension_missing_from_one_abi_is_reported(self, tmp_path):
+        entries = _two_abi_entries()
+        del entries["lib/x86_64/libpy._socket.so"]
+        problems = self._check2(tmp_path, entries)
+        assert problems == [
+            "lib/x86_64/ lacks 1 shared object(s) other ABIs ship, e.g. "
+            "['libpy._socket.so'] — they would fail to import only on x86_64 devices"
+        ]
+
+    def test_different_cpython_versions_across_abis_are_reported(self, tmp_path):
+        entries = _two_abi_entries()
+        del entries["lib/x86_64/libpython3.14.so"]
+        entries["lib/x86_64/libpython3.13.so"] = _elf(EM_X86_64)
+        problems = self._check2(tmp_path, entries)
+        assert any("different CPython versions ['3.13', '3.14']" in p for p in problems)
+
+    def test_each_abi_is_checked_against_its_own_machine(self, tmp_path):
+        entries = _two_abi_entries()
+        entries["lib/x86_64/libpy._socket.so"] = _elf(EM_AARCH64)
+        problems = self._check2(tmp_path, entries)
+        assert any(
+            p.startswith("lib/x86_64/libpy._socket.so is") and "x86_64 requires" in p
+            for p in problems
+        )
+
+    def test_an_empty_abi_list_is_refused(self, tmp_path):
+        assert self._check2(tmp_path, _two_abi_entries(), abis=()) == [
+            "no ABI given; the check needs to know what the build was asked for"
+        ]
+
+    def test_a_repeated_abi_is_refused(self, tmp_path):
+        problems = self._check2(tmp_path, _two_abi_entries(), abis=("x86_64", "x86_64"))
+        assert problems == ["ABI list ['x86_64', 'x86_64'] names an ABI twice"]
+
+
+# --- Android App Bundles ----------------------------------------------------
+
+# The first bytes of the BundleConfig.pb AGP wrote into a real two-ABI
+# hello-android bundle (2026-09-28): bundletool 1.18.0, then optimizations
+# {splits_config {}, uncompress_native_libraries {alignment: 16K}, ...}, with
+# uncompress_native_libraries.enabled absent, i.e. false. Truncated after the
+# optimizations message, which is all the reader looks at.
+REAL_BUNDLE_CONFIG = b"\n\x08\x12\x061.18.0\x12\n\n\x00\x12\x02\x10\x022\x02\x08\x01"
+
+
+def _bundle_config(*, uncompress_native_libs: bool) -> bytes:
+    native = (b"\x08\x01" if uncompress_native_libs else b"") + b"\x10\x02"
+    optimizations = b"\x0a\x00" + b"\x12" + bytes([len(native)]) + native
+    return (
+        b"\x0a\x08\x12\x061.18.0"
+        + b"\x12"
+        + bytes([len(optimizations)])
+        + optimizations
+    )
+
+
+def _aab(
+    tmp_path: Path,
+    module: dict[str, bytes],
+    *,
+    config: bytes | None = REAL_BUNDLE_CONFIG,
+    dex: bool = True,
+) -> Path:
+    entries = {f"base/{n}": b for n, b in module.items()}
+    entries["base/manifest/AndroidManifest.xml"] = b"\x0a\x00"
+    if dex:
+        entries["base/dex/classes.dex"] = b"dex\n035\x00"
+    if config is not None:
+        entries["BundleConfig.pb"] = config
+    return _apk(tmp_path, entries, name="app.aab")
+
+
+def _bcheck(path: Path, abis=("arm64-v8a", "x86_64")) -> list[str]:
+    return android_bundle_problems(
+        path, abis=abis, stripped=True, expected_magic=MAGIC_314
+    )
+
+
+class TestAndroidBundles:
+    """Google Play requires an App Bundle; these check what Play will deliver."""
+
+    def test_a_well_formed_two_abi_bundle_has_no_problems(self, tmp_path):
+        assert _bcheck(_aab(tmp_path, _two_abi_entries())) == []
+
+    def test_the_real_agp_config_keeps_native_libs_compressed(self):
+        assert bundle_uncompresses_native_libs(REAL_BUNDLE_CONFIG) is False
+
+    def test_uncompressed_native_libs_are_reported(self, tmp_path):
+        config = _bundle_config(uncompress_native_libs=True)
+        assert bundle_uncompresses_native_libs(config) is True
+        problems = _bcheck(_aab(tmp_path, _two_abi_entries(), config=config))
+        assert len(problems) == 1
+        assert problems[0].startswith(
+            "BundleConfig.pb enables uncompress_native_libraries"
+        )
+
+    def test_an_absent_optimizations_message_means_compressed(self):
+        assert bundle_uncompresses_native_libs(b"\x0a\x08\x12\x061.18.0") is False
+
+    def test_an_unreadable_config_is_reported_not_passed(self, tmp_path):
+        garbage = b"\x12\x7f\x01"  # a length that runs past the end
+        assert bundle_uncompresses_native_libs(garbage) is None
+        problems = _bcheck(_aab(tmp_path, _two_abi_entries(), config=garbage))
+        assert problems == [
+            "BundleConfig.pb could not be read, so whether Play will extract "
+            "native libraries is unknown"
+        ]
+
+    def test_a_submessage_of_the_wrong_type_is_unreadable(self):
+        # optimizations (field 2) as a varint instead of a message
+        assert bundle_uncompresses_native_libs(b"\x10\x01") is None
+
+    def test_an_apk_is_not_a_bundle(self, tmp_path):
+        apk = _apk(tmp_path, _two_abi_entries())
+        assert _bcheck(apk) == [
+            "BundleConfig.pb is missing; this is not an App Bundle",
+            "base/manifest/AndroidManifest.xml is missing; this is not an App Bundle",
+            "base/dex/ has no .dex file; the app has no code",
+        ]
+
+    def test_a_bundle_without_code_is_reported(self, tmp_path):
+        problems = _bcheck(_aab(tmp_path, _two_abi_entries(), dex=False))
+        assert problems == ["base/dex/ has no .dex file; the app has no code"]
+
+    def test_content_checks_read_the_base_module(self, tmp_path):
+        # The same multi-ABI check as for an APK, found under base/.
+        module = _two_abi_entries()
+        del module["lib/x86_64/libpy._socket.so"]
+        problems = _bcheck(_aab(tmp_path, module))
+        assert problems == [
+            "lib/x86_64/ lacks 1 shared object(s) other ABIs ship, e.g. "
+            "['libpy._socket.so'] — they would fail to import only on x86_64 devices"
+        ]
+
+    def test_stale_bytecode_in_a_bundle_is_reported(self, tmp_path):
+        module = _two_abi_entries()
+        module[f"{BUNDLE_ROOT}app/main.pyc"] = MAGIC_314_ALPHA + b"body"
+        problems = _bcheck(_aab(tmp_path, module))
+        assert any("carry magic 3621" in p for p in problems)
+
+    def test_shipped_python_tags_reads_a_bundle(self, tmp_path):
+        assert shipped_python_tags(_aab(tmp_path, _two_abi_entries())) == ["3.14"]
+
+
+class TestJarsignerReport:
+    def test_a_verified_bundle_passes(self):
+        output = "jar verified.\n\nWarning: \nThis jar contains entries whose signer certificate is self-signed.\n"
+        assert jarsigner_report_problems(0, output) == []
+
+    def test_a_digest_error_is_reported(self):
+        output = "jarsigner: java.lang.SecurityException: SHA-256 digest error for base/assets/_python_bundle/app/main.pyc\n"
+        assert jarsigner_report_problems(1, output) == [
+            "jarsigner -verify failed: jarsigner: java.lang.SecurityException: "
+            "SHA-256 digest error for base/assets/_python_bundle/app/main.pyc"
+        ]
+
+    def test_exit_zero_without_verification_is_reported(self):
+        # jarsigner exits 0 on an unsigned jar and says so instead.
+        assert jarsigner_report_problems(0, "jar is unsigned.\n") == [
+            "jarsigner -verify exited 0 without reporting 'jar verified.'; the "
+            "bundle may be unsigned"
+        ]
+
+    def test_a_failure_without_a_jarsigner_line_names_the_exit(self):
+        assert jarsigner_report_problems(4, "") == [
+            "jarsigner -verify failed: exit status 4"
         ]
 
 

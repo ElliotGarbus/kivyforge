@@ -748,6 +748,84 @@ jobs:
           ${{ env.APP_DIR }}/hello-android-android/app/build/reports/
           ${{ env.APP_DIR }}/hello-android-android/app/build/kivyforge/
 
+  # App Bundle coverage (test-matrix.md §5, added 2026-09-28). Google Play
+  # requires an .aab for new apps, but until now every Android job packaged an
+  # APK, and always with --abi, because the T3 checks assumed one ABI per
+  # package. This job builds the bundle Play would receive: `package -f aab`
+  # with no --abi, so both of hello-android's ABIs, then checks what Play will
+  # deliver from it: the APK content checks read from the bundle's base/
+  # module (every ABI complete, and all ABIs shipping the same libraries),
+  # whether Play will extract native libraries (BundleConfig.pb), the merged
+  # manifest, and the bundle's JAR signature. Build-and-inspect only: nothing
+  # here installs the bundle on a device.
+  android_bundle:
+    name: Android App Bundle (both ABIs, T3)
+    runs-on: ubuntu-latest
+    env:
+      APP_DIR: examples/mobile/hello-android
+      # hello-android's [tool.kivy.android].abis, in the dashed spelling.
+      ANDROID_ABIS: arm64-v8a,x86_64
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python 3.14
+      # The T3 magic check compares the bundle's .pyc headers against this
+      # runner's own MAGIC_NUMBER, so it must be the minor the app ships.
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.14'
+    - name: Set up JDK 17
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Set up the Android SDK
+      uses: android-actions/setup-android@v4
+      with:
+        packages: platform-tools
+    - name: Install kivyforge
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    - name: Install the pinned NDK, CMake, platform, and build-tools
+      run: |
+        ndk="$(python -c 'from kivyforge.platforms.android.toolchain import NDK_VERSION; print(NDK_VERSION)')"
+        sdkmanager --install "ndk;${ndk}" "cmake;3.22.1" "platforms;android-35" \
+          "build-tools;35.0.0"
+    - name: Package the release App Bundle, every ABI (bundleRelease)
+      working-directory: ${{ env.APP_DIR }}
+      env:
+        KIVYFORGE_KEYSTORE_PASSWORD: ci-not-a-secret
+      run: |
+        keytool -genkeypair -noprompt -keystore ci.keystore -alias ci \
+          -storepass "$KIVYFORGE_KEYSTORE_PASSWORD" \
+          -keypass "$KIVYFORGE_KEYSTORE_PASSWORD" \
+          -keyalg RSA -keysize 2048 -validity 30 -dname "CN=kivyforge CI"
+        kivyforge package -p android -f aab --keystore ci.keystore --key-alias ci
+    - name: Assert the bundle is what Play should receive (T3)
+      # Content, BundleConfig.pb and signature (test_bundle_artifact.py), plus
+      # the merged release manifest, which the release build exports for a
+      # bundle exactly as for an APK. KIVYFORGE_REQUIRE_TOOLCHAIN turns a
+      # missing jarsigner into a failure rather than a skip.
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: |
+        aab="$APP_DIR/hello-android-android/app/build/outputs/bundle/release/app-release.aab"
+        manifest="$APP_DIR/hello-android-android/app/build/kivyforge/AndroidManifest-merged-release.xml"
+        pytest tests/platforms/android/test_bundle_artifact.py \
+               tests/platforms/android/test_merged_manifest.py \
+          -v --no-cov \
+          --android-aab "$aab" --android-abi "$ANDROID_ABIS" --android-stripped \
+          --android-merged-manifest "$manifest" --android-project "$APP_DIR"
+    - name: Upload the generated project on failure (for triage)
+      if: failure()
+      uses: actions/upload-artifact@v6
+      with:
+        name: android-bundle-project
+        path: |
+          ${{ env.APP_DIR }}/hello-android-android/app/build.gradle
+          ${{ env.APP_DIR }}/hello-android-android/app/build/kivyforge/
+
   # The macOS desktop gate: `kivyforge package -p macos` end to end against a
   # real ad-hoc signature, then the T3 artifact pass over what it produced.
   # Until this job existed, no CI job ran `kivyforge build`/`package` for ANY
