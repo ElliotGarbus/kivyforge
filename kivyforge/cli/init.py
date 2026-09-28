@@ -29,7 +29,7 @@ from pathlib import Path
 
 import click
 
-from ..config import keys
+from ..config import keys, read_pyproject_text
 from ..config.model import (
     DEFAULT_ANDROID_KEY_PASSWORD_ENV,
     DEFAULT_ANDROID_STORE_PASSWORD_ENV,
@@ -421,7 +421,7 @@ def _run_update_path(
     document, so per-platform results are accumulated and emitted together
     rather than once per platform.
     """
-    raw = _safe_parse(pyproject.read_text(encoding="utf-8"), pyproject)
+    raw = _safe_parse(read_pyproject_text(pyproject), pyproject)
     if "project" not in raw:
         raise ToolchainError(
             f"{PYPROJECT_NAME} has no [project] table.\n"
@@ -439,9 +439,7 @@ def _run_update_path(
         for platform_name in platform_names
     ]
 
-    _maybe_warn_drift(
-        report, _safe_parse(pyproject.read_text(encoding="utf-8"), pyproject)
-    )
+    _maybe_warn_drift(report, _safe_parse(read_pyproject_text(pyproject), pyproject))
 
     if len(results) == 1:
         report.platform = str(results[0]["platform"])
@@ -465,7 +463,7 @@ def _update_one_platform(
     Re-reads ``pyproject`` fresh so a prior platform's write (in a multi-``-p``
     run) is what this one builds on. Returns ``{"action", "tables"}``.
     """
-    text = pyproject.read_text(encoding="utf-8")
+    text = read_pyproject_text(pyproject)
     raw = _safe_parse(text, pyproject)
 
     table_key = f"tool.kivy.{platform_name}"

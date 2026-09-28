@@ -20,7 +20,7 @@ from kivyforge.build_outcome import (
     OutcomeBuilder,
 )
 from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
-from kivyforge.config import ConfigError, load_config
+from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -51,7 +51,7 @@ def macos_build(
     lock = _load_lock(project_root)
 
     pyproject = project_root / "pyproject.toml"
-    if not no_verify_lock and not is_in_sync(lock, pyproject.read_text("utf-8")):
+    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
         raise ToolchainError(
             f"{lockfile_path_for('macos').name} is out of date with "
             "pyproject.toml.\n"
@@ -260,7 +260,7 @@ def _lock_status(project_root: Path) -> LockStatus:
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
     pyproject = project_root / "pyproject.toml"
-    in_sync = is_in_sync(lock, pyproject.read_text("utf-8"))
+    in_sync = is_in_sync(lock, read_pyproject_text(pyproject))
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
 
 

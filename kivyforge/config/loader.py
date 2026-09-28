@@ -122,6 +122,17 @@ def _posix_normpath(value: str) -> str:
     return posixpath.normpath(value.replace("\\", "/"))
 
 
+def read_pyproject_text(path: str | Path) -> str:
+    """``pyproject.toml`` as text, without a leading byte-order mark.
+
+    tomllib rejects a BOM, and some editors and PowerShell's ``-Encoding utf8``
+    write one. Every reader goes through here because the lock's
+    ``pyproject_sha256`` hashes this text: a site that kept the BOM would see a
+    freshly locked file as drifted.
+    """
+    return Path(path).read_text(encoding="utf-8-sig")
+
+
 def load_config(
     path: str | Path,
     *,
@@ -139,7 +150,7 @@ def load_config(
     contexts that only inspect the cross-platform tables set them all False.
     """
     path = Path(path)
-    text = path.read_text(encoding="utf-8")
+    text = read_pyproject_text(path)
     return load_config_from_text(
         text,
         require_ios=require_ios,

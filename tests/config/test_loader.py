@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import pathlib
+import re
 import textwrap
 
 import pytest
 
-from kivyforge.config import ConfigError, load_config, load_config_from_text
+import kivyforge
+from kivyforge.config import (
+    ConfigError,
+    load_config,
+    load_config_from_text,
+    read_pyproject_text,
+)
 from kivyforge.config.model import NativeBinaryDep, SwiftPackageDep, XcframeworkDep
+from kivyforge.lock import compute_pyproject_sha256
 
 
 def load(toml: str, **kw):
@@ -104,6 +113,40 @@ def load_swift(body: str):
         """
     )
     return load_config_from_text((header + textwrap.dedent(body)).strip())
+
+
+class TestByteOrderMark:
+    """Some editors and PowerShell's ``-Encoding utf8`` write a BOM, which
+    tomllib rejects as "Invalid statement (at line 1, column 1)"."""
+
+    def test_a_bom_prefixed_pyproject_loads(self, valid_toml, tmp_path):
+        path = tmp_path / "pyproject.toml"
+        path.write_bytes(b"\xef\xbb\xbf" + valid_toml.encode("utf-8"))
+        assert load_config(path).project.name == "touchtracer"
+
+    def test_adding_a_bom_is_not_drift(self, valid_toml, tmp_path):
+        """The lock hashes the decoded text, so re-saving the file with or
+        without a BOM must not make a fresh lock read as stale."""
+        plain = tmp_path / "plain.toml"
+        plain.write_bytes(valid_toml.encode("utf-8"))
+        bom = tmp_path / "bom.toml"
+        bom.write_bytes(b"\xef\xbb\xbf" + valid_toml.encode("utf-8"))
+        assert compute_pyproject_sha256(
+            read_pyproject_text(bom)
+        ) == compute_pyproject_sha256(read_pyproject_text(plain))
+
+    def test_every_pyproject_read_goes_through_the_helper(self):
+        """A site that reads pyproject.toml itself would keep the BOM, and hash
+        different text from the one that wrote the lock."""
+        package = pathlib.Path(kivyforge.__file__).parent
+        direct = re.compile(r"pyproject[\w\"'./ )]*\.read_(text|bytes)\(")
+        offenders = [
+            f"{path.relative_to(package)}:{n}"
+            for path in package.rglob("*.py")
+            for n, line in enumerate(path.read_text("utf-8").splitlines(), 1)
+            if direct.search(line)
+        ]
+        assert offenders == []
 
 
 class TestSwiftPackages:
