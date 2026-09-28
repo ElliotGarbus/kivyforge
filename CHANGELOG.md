@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### The missing-`pyproject.toml` hint no longer points at `init` to create one
+
+- **Fixed:** a verb run without a `pyproject.toml` suggested running
+  `kivyforge init` to create one, but `init` does not create one: it stops
+  and asks for a `[project]` table first. The hint now says to write the
+  `[project]` table, then run `kivyforge init -p <platform>`.
+
+### The dice-roller example no longer names the author's Developer ID
+
+- **Changed:** `examples/desktop/dice-roller` no longer has a
+  `[tool.kivy.macos.signing]` table, so `package -p macos` ad-hoc signs it
+  on any Mac. Before, the table named the author's certificate, and the
+  desktop quickstart told readers to delete it before locking. That step is
+  gone.
+
+### A `pyproject.toml` saved with a byte-order mark loads
+
+- **Fixed:** a `pyproject.toml` that starts with a UTF-8 byte-order mark
+  failed with "invalid TOML: Invalid statement (at line 1, column 1)". Some
+  editors write one, and so does PowerShell's `-Encoding utf8`. kivyforge
+  now ignores it.
+- Adding or removing the mark does not make an existing lock stale.
+
 ### Pillow is a core dependency; the `linux`, `windows` and `android` extras are gone
 
 - **Changed:** Pillow is now installed with kivyforge. Before, a project that

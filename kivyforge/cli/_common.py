@@ -131,7 +131,10 @@ def find_pyproject(start: Path | None = None) -> Path:
         raise ToolchainError(
             f"no {PYPROJECT_NAME} found in the current directory ({base}).\n"
             f"  Run kivyforge commands from the directory that contains your "
-            f"{PYPROJECT_NAME}, or run `kivyforge init` to create one."
+            f"{PYPROJECT_NAME}.\n"
+            f"  New project? Write a {PYPROJECT_NAME} with a [project] table "
+            f"(name, version, dependencies), then run `kivyforge init -p <platform>` "
+            f"to add the kivyforge tables."
         )
     return candidate
 
