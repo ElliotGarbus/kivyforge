@@ -11,6 +11,8 @@ import pytest
 from kivyforge.config.loader import load_config, load_config_from_text
 from kivyforge.doctor.result import Status
 from kivyforge.lock.model import LockedPackage, LockedWheel
+from kivyforge.platforms.android import doctor as doctor_mod
+from kivyforge.platforms.android import toolchain
 from kivyforge.platforms.android.doctor import (
     RealAndroidProbe,
     _check_16k_alignment,
@@ -20,6 +22,7 @@ from kivyforge.platforms.android.doctor import (
     _check_gradle_wrapper,
     _check_icon,
     _check_include_files,
+    _check_jdk,
     _check_lock_hosts,
     _check_pyjnius_contract,
     _check_sdk,
@@ -27,6 +30,7 @@ from kivyforge.platforms.android.doctor import (
     _check_signing,
     _check_splash,
     android_doctor,
+    java_major,
 )
 from kivyforge.platforms.android.elf import PAGE_16K, ElfError, read_elf, scan_alignment
 from kivyforge.platforms.android.lock.model import (
@@ -51,12 +55,20 @@ class FakeProbe:
         self._devices = kw.get("devices", ["emulator-5554"])
         self._byte_compiler = kw.get("byte_compiler", ())
         self._latest = kw.get("latest")
+        self._java_banner = kw.get(
+            "java_banner", 'openjdk version "17.0.20" 2026-08-18'
+        )
+        self.java_run = None
 
     def which(self, name):
         return self._which.get(name)
 
     def java_home(self):
         return self._java_home
+
+    def java_version(self, java):
+        self.java_run = java
+        return self._java_banner
 
     def sdk_root(self):
         return self._sdk
@@ -269,6 +281,63 @@ class TestSdkCheck:
         assert _check_sdk(None).status is Status.FAIL
 
 
+class TestJdkCheck:
+    """Gradle runs the JDK, so doctor must run it too: a file named java that
+    exists proves nothing (macOS's stub), and a JDK too new for the pinned
+    Gradle fails the build with "Unsupported class file major version"."""
+
+    def test_a_java_that_will_not_run_fails(self):
+        probe = FakeProbe(which={"java": "/usr/bin/java"}, java_banner=None)
+        result = _check_jdk(probe)
+        assert result.status is Status.FAIL
+        assert "did not run" in result.detail
+
+    def test_a_jdk_newer_than_gradle_supports_fails(self):
+        probe = FakeProbe(
+            java_home="/jbr", java_banner='openjdk version "25.0.3" 2026-04-21'
+        )
+        result = _check_jdk(probe)
+        assert result.status is Status.FAIL
+        assert "JDK 25" in result.detail
+        assert f"{toolchain.MIN_JDK} to {toolchain.MAX_JDK}" in result.detail
+
+    def test_a_jdk_older_than_agp_needs_fails(self):
+        probe = FakeProbe(
+            which={"java": "/j/bin/java"}, java_banner='java version "1.8.0_402"'
+        )
+        assert _check_jdk(probe).status is Status.FAIL
+
+    @pytest.mark.parametrize("major", [toolchain.MIN_JDK, toolchain.MAX_JDK])
+    def test_the_supported_range_passes(self, major):
+        probe = FakeProbe(
+            java_home="/jdk", java_banner=f'openjdk version "{major}.0.1"'
+        )
+        result = _check_jdk(probe)
+        assert result.status is Status.PASS
+        assert f"JDK {major}" in result.detail
+
+    def test_an_unreadable_banner_warns(self):
+        probe = FakeProbe(which={"java": "/j"}, java_banner="something else")
+        assert _check_jdk(probe).status is Status.WARN
+
+    def test_java_home_wins_over_path_as_it_does_for_gradlew(self):
+        probe = FakeProbe(java_home="/jdk", which={"java": "/usr/bin/java"})
+        _check_jdk(probe)
+        assert probe.java_run == str(Path("/jdk") / "bin" / f"java{doctor_mod._EXE}")
+
+    @pytest.mark.parametrize(
+        ("banner", "major"),
+        [
+            ('openjdk version "17.0.20" 2026-08-18', 17),
+            ('openjdk version "25" 2025-09-16', 25),
+            ('java version "1.8.0_402"', 8),
+            ("no version here", None),
+        ],
+    )
+    def test_java_major(self, banner, major):
+        assert java_major(banner) == major
+
+
 class TestBuildToolsCheckDirect:
     def test_skip_when_no_sdk(self):
         assert _check_build_tools(FakeProbe(), None, None).status is Status.SKIP
@@ -307,6 +376,35 @@ class TestRealAndroidProbe:
             sdk = tmp_path / "Android" / "Sdk"
         sdk.mkdir(parents=True)
         assert RealAndroidProbe().sdk_root() == sdk
+
+    @pytest.mark.requires_posix
+    def test_sdk_root_finds_android_studios_macos_location(self, tmp_path, monkeypatch):
+        """Android Studio on macOS installs to ~/Library/Android/sdk; without it
+        a Mac with no ANDROID_HOME failed doctor and wrote no sdk.dir."""
+        monkeypatch.delenv("ANDROID_HOME", raising=False)
+        monkeypatch.delenv("ANDROID_SDK_ROOT", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.setattr(doctor_mod.sys, "platform", "darwin")
+        sdk = tmp_path / "Library" / "Android" / "sdk"
+        sdk.mkdir(parents=True)
+        assert RealAndroidProbe().sdk_root() == sdk
+
+    @pytest.mark.requires_posix
+    def test_java_version_is_none_when_java_will_not_run(self, tmp_path):
+        """macOS's /usr/bin/java stub exists and exits 1 without a JDK."""
+        stub = tmp_path / "java"
+        stub.write_text(
+            "#!/bin/sh\necho 'Unable to locate a Java Runtime.' >&2\nexit 1\n"
+        )
+        stub.chmod(0o755)
+        assert RealAndroidProbe().java_version(str(stub)) is None
+
+    @pytest.mark.requires_posix
+    def test_java_version_returns_the_stderr_banner(self, tmp_path):
+        java = tmp_path / "java"
+        java.write_text("#!/bin/sh\necho 'openjdk version \"21.0.4\" 2024-07-16' >&2\n")
+        java.chmod(0o755)
+        assert java_major(RealAndroidProbe().java_version(str(java)) or "") == 21
 
     def test_sdk_root_none_when_nothing_found(self, tmp_path, monkeypatch):
         monkeypatch.delenv("ANDROID_HOME", raising=False)

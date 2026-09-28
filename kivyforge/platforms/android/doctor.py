@@ -13,7 +13,9 @@ Each check reports PASS / WARN / FAIL / SKIP; exit is non-zero only on FAIL.
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Protocol
 
@@ -40,6 +42,7 @@ _BAT = ".bat" if os.name == "nt" else ""
 class AndroidProbe(Protocol):
     def which(self, name: str) -> str | None: ...
     def java_home(self) -> str | None: ...
+    def java_version(self, java: str) -> str | None: ...
     def sdk_root(self) -> Path | None: ...
     def ndk_versions(self, sdk: Path) -> list[str]: ...
     def build_tools_versions(self, sdk: Path) -> list[str]: ...
@@ -71,6 +74,29 @@ class RealAndroidProbe:
             return jh
         return None
 
+    def java_version(self, java: str) -> str | None:
+        """``java -version``'s banner, or ``None`` if it would not run.
+
+        Running it is the point: macOS ships a ``/usr/bin/java`` stub that
+        exists on every Mac and exits non-zero when no JDK is installed.
+        """
+        import subprocess
+
+        try:
+            proc = subprocess.run(
+                [java, "-version"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if proc.returncode != 0:
+            return None
+        # The banner goes to stderr on every JDK.
+        return proc.stderr or proc.stdout
+
     def sdk_root(self) -> Path | None:
         for var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
             value = os.environ.get(var)
@@ -83,6 +109,9 @@ class RealAndroidProbe:
                 candidates.append(Path(local) / "Android" / "Sdk")
         else:
             home = Path.home()
+            if sys.platform == "darwin":
+                # Where Android Studio installs it on macOS.
+                candidates.append(home / "Library" / "Android" / "sdk")
             candidates += [home / "Android" / "Sdk", home / "android-sdk"]
         return next((c for c in candidates if c.is_dir()), None)
 
@@ -177,19 +206,61 @@ def _check_kivyforge_version(
     return CheckResult("kivyforge", Status.PASS, current)
 
 
+_JDK_RANGE = f"JDK {toolchain.MIN_JDK} to {toolchain.MAX_JDK}"
+_JDK_HINT = (
+    f"install a {_JDK_RANGE} (Gradle {toolchain.GRADLE_VERSION} runs on no other) "
+    "and point JAVA_HOME at it."
+)
+
+
+def java_major(banner: str) -> int | None:
+    """The major version in a ``java -version`` banner (``1.8.0`` is 8)."""
+    match = re.search(r'version "(\d+)(?:\.(\d+))?', banner)
+    if match is None:
+        return None
+    major = int(match.group(1))
+    return int(match.group(2) or 0) if major == 1 else major
+
+
 def _check_jdk(probe: AndroidProbe) -> CheckResult:
+    """Run the java Gradle will run, and check it is one Gradle can run on.
+
+    ``gradlew`` uses ``$JAVA_HOME/bin/java`` when JAVA_HOME is set and ``java``
+    on PATH otherwise, so this resolves it the same way.
+    """
     jh = probe.java_home()
-    if jh:
-        return CheckResult("JDK", Status.PASS, f"JAVA_HOME={jh}")
-    java = probe.which("java")
-    if java:
-        return CheckResult("JDK", Status.PASS, java)
-    return CheckResult(
-        "JDK",
-        Status.FAIL,
-        "no java on PATH and JAVA_HOME unset",
-        hint="install a JDK 17+ (AGP requires it) and set JAVA_HOME.",
-    )
+    java = str(Path(jh) / "bin" / f"java{_EXE}") if jh else probe.which("java")
+    where = f"JAVA_HOME={jh}" if jh else java
+    if not java:
+        return CheckResult(
+            "JDK", Status.FAIL, "no java on PATH and JAVA_HOME unset", hint=_JDK_HINT
+        )
+    banner = probe.java_version(java)
+    if banner is None:
+        return CheckResult(
+            "JDK",
+            Status.FAIL,
+            f"{where} did not run (`java -version` failed; on macOS, /usr/bin/java "
+            "is a stub until a JDK is installed)",
+            hint=_JDK_HINT,
+        )
+    major = java_major(banner)
+    if major is None:
+        return CheckResult(
+            "JDK",
+            Status.WARN,
+            f"{where}: cannot read the version from `java -version`",
+            hint=f"Gradle {toolchain.GRADLE_VERSION} needs a {_JDK_RANGE}.",
+        )
+    if not toolchain.MIN_JDK <= major <= toolchain.MAX_JDK:
+        return CheckResult(
+            "JDK",
+            Status.FAIL,
+            f"{where} is JDK {major}; Gradle {toolchain.GRADLE_VERSION} needs a "
+            f"{_JDK_RANGE}",
+            hint=_JDK_HINT,
+        )
+    return CheckResult("JDK", Status.PASS, f"JDK {major} ({where})")
 
 
 def _check_sdk(sdk: Path | None) -> CheckResult:

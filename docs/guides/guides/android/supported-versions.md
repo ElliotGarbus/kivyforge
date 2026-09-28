@@ -73,13 +73,17 @@ releases.
 
 | Tool | Version |
 |---|---|
-| JDK | 17 or later (you install it) |
+| JDK | 17 to 23 (you install it) |
 | Android NDK | 27.3.13750724 |
 | Android Gradle Plugin | 8.10.0 |
 | Gradle | 8.11.1 (downloaded by the Gradle wrapper) |
 
-`kivyforge doctor -p android` checks for a JDK, the Android SDK, build tools,
-and an NDK.
+The JDK range comes from Gradle 8.11.1, which does not run on a newer JDK. The
+JDK bundled with recent Android Studio releases is newer, so install a separate
+JDK and point `JAVA_HOME` at it.
+
+`kivyforge doctor -p android` checks the JDK's version, the Android SDK, build
+tools, and an NDK.
 
 ## Check a combination on your device
 

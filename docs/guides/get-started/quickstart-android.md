@@ -15,8 +15,10 @@ from Windows, macOS, or Linux. Android does not require a Mac.
 ## Before you begin
 
 - kivyforge, installed as described in [Install kivyforge](install.md).
-- A JDK (Java Development Kit), version 17 or newer, on your `PATH` or in
-  `JAVA_HOME`.
+- A JDK (Java Development Kit), version 17 to 23, in `JAVA_HOME` or on your
+  `PATH`. The JDK bundled with recent Android Studio releases is too new for the
+  pinned Gradle; install a separate one, such as
+  [Eclipse Temurin](https://adoptium.net/) 17.
 - The Android SDK with command-line tools, build-tools, platform-tools, and the
   Android NDK. [Android Studio](https://developer.android.com/studio) installs
   the SDK. Add the NDK and command-line tools from its SDK Manager, then accept

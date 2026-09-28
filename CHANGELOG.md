@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Android `doctor` checks the JDK's version and finds the SDK on macOS
+
+- **Fixed:** `doctor -p android` passed any `java` that existed. On a Mac
+  with no JDK, Apple's `/usr/bin/java` stub passed, and so did Android
+  Studio's bundled JDK 25, which the pinned Gradle 8.11.1 cannot run on. The
+  build then failed with "Unsupported class file major version". `doctor` now
+  runs `java -version` and requires a JDK from 17 to 23.
+- **Fixed:** with `ANDROID_HOME` unset, kivyforge did not look in
+  `~/Library/Android/sdk`, where Android Studio installs the SDK on macOS.
+  `doctor`, the build's `sdk.dir` and `run`'s `adb` lookup now find it.
+- The docs said "JDK 17 or later". They now say 17 to 23 and warn that
+  Android Studio's bundled JDK is too new.
+
 ### Pillow is a core dependency; the `linux`, `windows` and `android` extras are gone
 
 - **Changed:** Pillow is now installed with kivyforge. Before, a project that

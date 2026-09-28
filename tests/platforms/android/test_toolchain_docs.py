@@ -1,0 +1,47 @@
+"""The published Android toolchain table says what toolchain.py pins.
+
+The page is hand-written and the pins move with releases; the JDK row said
+"17 or later" while the pinned Gradle could not run on anything past 23, which
+is how a Mac with Android Studio's bundled JDK 25 got a green doctor and a
+failed build.
+"""
+
+from __future__ import annotations
+
+import pathlib
+
+import pytest
+
+from kivyforge.platforms.android import toolchain
+
+PAGE = (
+    pathlib.Path(__file__).parents[3]
+    / "docs"
+    / "guides"
+    / "guides"
+    / "android"
+    / "supported-versions.md"
+)
+
+
+def _row(tool: str) -> str:
+    rows = [
+        line
+        for line in PAGE.read_text(encoding="utf-8").splitlines()
+        if line.startswith(f"| {tool} |")
+    ]
+    assert len(rows) == 1, f"expected one '{tool}' row in {PAGE.name}"
+    return rows[0]
+
+
+@pytest.mark.parametrize(
+    ("tool", "pinned"),
+    [
+        ("JDK", f"{toolchain.MIN_JDK} to {toolchain.MAX_JDK}"),
+        ("Android NDK", toolchain.NDK_VERSION),
+        ("Android Gradle Plugin", toolchain.AGP_VERSION),
+        ("Gradle", toolchain.GRADLE_VERSION),
+    ],
+)
+def test_the_table_states_the_pinned_version(tool, pinned):
+    assert pinned in _row(tool)

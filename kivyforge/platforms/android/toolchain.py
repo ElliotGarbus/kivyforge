@@ -16,6 +16,13 @@ GRADLE_DISTRIBUTION_URL = (
     f"https\\://services.gradle.org/distributions/gradle-{GRADLE_VERSION}-bin.zip"
 )
 
+# The JDKs the pinned Gradle can run on, checked by `doctor`. AGP 8 needs 17;
+# Gradle 8.11 cannot run on anything newer than 23 (Gradle's compatibility
+# matrix), and fails with "Unsupported class file major version" -- which is
+# what Android Studio's bundled JDK 25 produces. Move MAX_JDK with GRADLE_VERSION.
+MIN_JDK = 17
+MAX_JDK = 23
+
 # Android Gradle Plugin version emitted into the root build.gradle.
 AGP_VERSION = "8.10.0"
 
