@@ -55,14 +55,30 @@ Backends:
   configured thumbprint (`/sha1 <thumbprint> /fd SHA256 /tr <timestamp_url>
   /td SHA256`), adding **`/sm`** when `store_scope = "machine"` so signtool
   reads the `LocalMachine\My` store (default reads `CurrentUser\My`). Covers
-  store-imported pfx certs *and* hardware tokens *and* Azure-backed certs
-  transparently, because all of them surface as cert-store entries (see
-  "Identity" below).
+  store-imported pfx certs, hardware tokens, and cloud key services **that
+  install the certificate into the Windows store** (DigiCert KeyLocker and
+  SSL.com eSigner's cloud key adapter work this way), because all of them
+  surface as cert-store entries (see "Identity" below). It does **not** cover
+  Azure Artifact Signing, which never puts a certificate in the store; see
+  `ArtifactSigningSigner` below. *(Corrected 2026-09-28: this said "Azure-backed
+  certs" were covered, which contradicted the next bullet.)*
 - **`NullSigner`** — the unconfigured default; `package` produces the
   unsigned artifact.
 - A future **`ArtifactSigningSigner`** (Azure Artifact Signing's dlib-based
   signtool invocation) slots in behind the same protocol to sign **user**
   output with an Azure-held cert — deferred pending demand.
+  **Reviewed 2026-09-28, still deferred.** It needs its own signer because
+  the service works differently from everything `SigntoolSigner` covers:
+  Microsoft states the certificate "is never given to you", and signing runs
+  through signtool's plugin interface (`signtool sign /dlib
+  Azure.CodeSigning.Dlib.dll /dmdf metadata.json`) with a certificate that is
+  valid for three days, so a timestamp is mandatory. It is also not open to
+  everyone: individual developers must be in the US or Canada, organizations
+  in a listed set of countries, and a paid Azure subscription is required.
+  So it could only ever be an *option* beside the thumbprint route, which
+  works with a CA-issued certificate anywhere. kivyforge's own releases do
+  not need it either: kivyforge installs through pip and is not signed (see
+  "Policy").
 
 The protocol keeps credential mess out of the pipeline core: `bundle.py` and
 `cli.py` ask for "the configured signer" and call `sign`; which backend and
@@ -80,8 +96,10 @@ the `doctor` certificate check enumerates the *same* store — so a cert found b
 signed against the other" mismatch.
 
 - The *same* configuration works whether the credential behind the cert is an
-  imported `.pfx`, a hardware token (EV certs), or a cloud-held key — the
-  store abstracts the key location.
+  imported `.pfx`, a hardware token, or a cloud-held key whose service installs
+  the certificate into the store — the store abstracts the key location.
+  (Azure Artifact Signing is the exception: no certificate ever reaches the
+  store.)
 - **No passwords ever touch the pipeline** — no `.pfx` path in
   `pyproject.toml`, no password prompt/env var plumbing, nothing committed
   that shouldn't be. (Contrast PyInstaller's canonical recipe, which still

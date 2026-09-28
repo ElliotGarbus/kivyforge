@@ -19,7 +19,14 @@ Complete these on the Windows build host before signing.
 1. **A code-signing certificate (with its private key).**
    - *For distribution:* a publicly-trusted code-signing certificate. Since 2023
      the CA/Browser Forum requires the private key in hardware/HSM, so in
-     practice this is an EV/OV hardware token or a cloud-held key.
+     practice this is a hardware token or a cloud-held key. A cloud key works
+     **only if its service installs the certificate into the Windows
+     certificate store** (for example DigiCert KeyLocker or SSL.com eSigner's
+     cloud key adapter). Azure Artifact Signing does not, and kivyforge does
+     not support it yet.
+   - *OV or EV:* since August 2024 an EV certificate no longer gives an app
+     immediate SmartScreen reputation; Microsoft treats OV and EV the same.
+     Either way, SmartScreen may warn until downloads build reputation.
    - *For development / testing:* a self-signed certificate is enough to exercise
      the whole pipeline (it just won't satisfy SmartScreen) — see
      [Development & test with a self-signed cert](#development--test-with-a-self-signed-cert).

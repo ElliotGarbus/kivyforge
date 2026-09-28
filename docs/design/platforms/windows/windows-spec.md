@@ -185,7 +185,9 @@ Signing: `[tool.kivy.windows.signing]` is optional; without it `package`
 ships the artifact unsigned (the documented v1 default). `thumbprint`
 references a certificate **in the Windows certificate store** — never a
 `.pfx` path or password — so the same configuration works whether the
-credential is an imported pfx, a hardware token, or a cloud signer.
+credential is an imported pfx, a hardware token, or a cloud key service that
+installs the certificate into the store. Azure Artifact Signing, which does
+not, is not supported yet ([signing-windows.md](signing-windows.md)).
 `store_scope` selects which store both `signtool` **and** the `doctor`
 certificate lookup inspect: `current_user` (the default → `Cert:\CurrentUser\My`)
 or `machine` (→ `Cert:\LocalMachine\My`, which also adds `signtool /sm`). Keeping

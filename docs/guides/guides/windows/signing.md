@@ -21,6 +21,14 @@ timestamps the launcher with Authenticode, Microsoft's code-signing format.
   (Organization Validation) or EV (Extended Validation) certificate. To test,
   a self-signed certificate exercises the whole pipeline. See
   [Test with a self-signed certificate](#test-with-a-self-signed-certificate).
+    - The private key must be on a hardware token or in a cloud key service.
+      A cloud service works only if it installs the certificate into the
+      Windows certificate store (for example DigiCert KeyLocker, or SSL.com
+      eSigner's cloud key adapter). Azure Artifact Signing does not, and is not
+      supported yet.
+    - EV no longer skips SmartScreen's reputation check: since August 2024
+      Microsoft treats OV and EV certificates the same. A newly signed app may
+      still show a SmartScreen warning until it has built up reputation.
 - `signtool.exe` on `PATH`. It ships with the Windows SDK and is on `PATH` in a
   Developer Command Prompt.
 
