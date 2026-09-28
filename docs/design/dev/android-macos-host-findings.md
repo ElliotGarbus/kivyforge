@@ -223,8 +223,11 @@ None of these is a macOS-host defect; they would show on any host.
   RECEIVER_NOT_EXPORTED should be specified` (SDL2's HID support on Android
   14+; not fatal), `Failed to import "android" module. Could not remove android
   presplash.` and `Unknown <android> provider`.
-- **`doctor`'s adb check passed and listed the phone while it was
-  `unauthorized`**, before the USB debugging prompt was accepted.
+- An earlier draft said `doctor`'s adb check passed the phone while it was
+  `unauthorized`. **That was wrong.** `adb.connected_devices()` keeps only
+  devices in the `device` state, so an unauthorized phone is dropped, and
+  `doctor` WARNs "no device or emulator attached". The phone had been
+  authorized by the time `doctor` ran; `adb devices` was not re-checked.
 - Byte-compiling Kivy on CPython 3.14 prints
   `kivy/uix/codeinput.py:204: SyntaxWarning: 'return' in a 'finally' block`.
 
