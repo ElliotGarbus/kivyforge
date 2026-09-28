@@ -96,6 +96,12 @@ and its results come back as a *findings* doc. See
 `build-package-output-{mac,linux}-prompt.md` and their findings files for the
 shape: environment table, per-step commands and verbatim output, defects first.
 
+Checks that need real hardware (a phone, a Pi, a signing account) are listed
+in `docs/design/dev/hardware-checklist.toml`. `python scripts/hardware_pass.py
+list` shows what can run on this host, `show <id>` gives the exact commands and
+pass criteria, and `record <id> --result ... --device ...` writes the dated
+result into `test-matrix.md` §7. Commit that row with the pass.
+
 ## Committing
 
 - Work on the current feature branch; **ask before pushing**.
