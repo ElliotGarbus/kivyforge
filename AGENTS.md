@@ -79,8 +79,8 @@ user's program and keeps the user's stdin.
 **A test that skips silently is indistinguishable from one that passed.** That
 is how a two-release bug survived (roadmap item 1). Host- and toolchain-dependent
 tests use the markers registered in `tests/conftest.py` — `requires_symlinks`,
-`requires_windows`, `requires_posix`, `requires_toolchain`, `requires_device`,
-`integration` — and the CI job that exists to run them sets the matching
+`requires_windows`, `requires_posix`, `requires_toolchain`, `integration` —
+and the CI job that exists to run them sets the matching
 `KIVYFORGE_REQUIRE_*` variable, so on that runner absence fails instead of
 skipping.
 
