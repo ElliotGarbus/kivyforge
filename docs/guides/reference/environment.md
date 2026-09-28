@@ -51,7 +51,7 @@ variables, set `store_password_env` and `key_password_env` in
 | Variable | Platform | Effect |
 |---|---|---|
 | `ANDROID_HOME` | Android | Root of the Android SDK. Checked first. |
-| `ANDROID_SDK_ROOT` | Android | Root of the Android SDK, used when `ANDROID_HOME` is unset or not a directory. If neither is set, kivyforge looks in `%LOCALAPPDATA%\Android\Sdk` on Windows, or `~/Android/Sdk` and `~/android-sdk` elsewhere. |
+| `ANDROID_SDK_ROOT` | Android | Root of the Android SDK, used when `ANDROID_HOME` is unset or not a directory. If neither is set, kivyforge looks in `%LOCALAPPDATA%\Android\Sdk` on Windows, `~/Library/Android/sdk` on macOS, and `~/Android/Sdk` and `~/android-sdk` on macOS and Linux. |
 | `JAVA_HOME` | Android | JDK location that `doctor` checks when `java` is not on `PATH`. |
 
 ## Network

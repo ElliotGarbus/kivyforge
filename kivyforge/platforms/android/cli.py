@@ -185,6 +185,7 @@ def android_build(
     project_root: Path,
     *,
     debug: bool = False,
+    assemble: bool = True,
     fmt: str = "apk",
     abi: str | None = None,
     no_verify_lock: bool = False,
@@ -200,7 +201,8 @@ def android_build(
     staged bundle gets: the payload is baked into ``assets/`` at generate time,
     so the tri-state has to be resolved here rather than per Gradle build type.
     Generating without ``--debug`` stages the release payload, which is what
-    ``kivyforge package`` then assembles.
+    ``kivyforge package`` then assembles. ``assemble=False`` stages the debug
+    payload without step 8, for a caller whose own Gradle task builds the APK.
     """
     outcome = OutcomeBuilder(events.on_artifact)
     config, lock = _load(project_root, no_verify_lock=no_verify_lock)
@@ -473,7 +475,7 @@ def android_build(
     outcome.add(project_rel, ArtifactKind.PROJECT)
 
     # --- Step 8: assembleDebug (only with --debug) ---
-    if debug:
+    if debug and assemble:
         task = "assembleDebug" if fmt == "apk" else "bundleDebug"
         events.on_progress(f"[gradle] {task}")
         try:
@@ -806,9 +808,12 @@ def android_smoke(
         if release
         else ("", None)
     )
+    # The payload must match the variant under test: connected<Variant>AndroidTest
+    # builds the APK, but the Python is staged here, at generate time.
     android_build(
         project_root,
-        debug=False,
+        debug=not release,
+        assemble=False,
         abi=abi,
         signing_config_block=signing_block,
         release_signing_config=signing_name,

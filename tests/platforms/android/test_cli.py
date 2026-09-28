@@ -1291,6 +1291,27 @@ class TestAndroidSmoke:
         assert gradle_kwargs["test_build_type"] is None
         assert gradle_kwargs["release_signing_config"] is None
 
+    @pytest.mark.parametrize(
+        ("release", "compiled"), [(False, None), (True, ("python3.14",))]
+    )
+    def test_smoke_stages_the_payload_of_the_variant_it_tests(
+        self, build_env, monkeypatch, release, compiled
+    ):
+        """The Python is staged at generate time, not per Gradle variant, so a
+        debug smoke that staged the release payload tested byte-compiled,
+        stripped code inside a debug APK: neither what `run` installs nor what
+        `--release` checks. The connected test builds the APK itself, so no
+        assemble task runs either way."""
+        project, calls = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
+        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        cli.android_smoke(project, release=release)
+        (bundle,) = calls["assemble_bundle"]
+        assert bundle["byte_compile"] == compiled
+        assert bundle["strip_source"] is release
+        assert calls["run_gradle"] == []
+
     def test_release_smoke_configures_the_release_test_variant(
         self, build_env, monkeypatch, capsys
     ):

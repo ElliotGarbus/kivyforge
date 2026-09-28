@@ -73,13 +73,17 @@ releases.
 
 | Tool | Version |
 |---|---|
-| JDK | 17 or later (you install it) |
+| JDK | 17 to 23 (you install it) |
 | Android NDK | 27.3.13750724 |
 | Android Gradle Plugin | 8.10.0 |
 | Gradle | 8.11.1 (downloaded by the Gradle wrapper) |
 
-`kivyforge doctor -p android` checks for a JDK, the Android SDK, build tools,
-and an NDK.
+The JDK range is what the pinned Gradle can run on. Android Studio bundles its
+own JDK, which may be newer than that; if it is, install a separate JDK in the
+range and point `JAVA_HOME` at it.
+
+`kivyforge doctor -p android` checks the JDK you actually have, the Android
+SDK, build tools, and an NDK.
 
 ## Check a combination on your device
 
