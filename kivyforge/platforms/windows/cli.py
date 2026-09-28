@@ -21,7 +21,12 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
-from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
+from kivyforge.cli._common import (
+    ECHO_EVENTS,
+    PROGRESS_ONLY_EVENTS,
+    ToolchainError,
+    lockfile_path_for,
+)
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.config.model import Config
 from kivyforge.lock.reader import LockError, is_in_sync
@@ -232,11 +237,14 @@ def windows_run(
             no_verify_lock=False,
             no_cache=False,
             release=release,
+            events=PROGRESS_ONLY_EVENTS,
         )
         bundle = project_root / built.artifacts[0].path
 
     exe = bundle / launcher_name(config)
-    click.echo(f"Launching {bundle.name} ...")
+    # Progress, so stderr: stdout belongs to the app launched below, whose
+    # output is `run`'s product (AGENTS.md).
+    click.echo(f"Launching {bundle.name} ...", err=True)
     # Foreground: the launcher attaches to this console so the dev sees
     # stdout/stderr + tracebacks (the Phase 3 console handoff).
     proc = subprocess.run([str(exe)])

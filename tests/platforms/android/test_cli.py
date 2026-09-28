@@ -1059,6 +1059,34 @@ class TestAndroidRun:
         assert ("install", "emulator-5554") in events
         assert "booted" in log
 
+    @pytest.mark.parametrize("release", [False, True])
+    def test_stdout_is_only_the_apps_output(
+        self, build_env, monkeypatch, capsys, release
+    ):
+        """`run`'s product is the app's own output (its filtered logcat), so
+        that alone goes to stdout; the [run] lines and the nested build's lines
+        are progress and go to stderr (AGENTS.md)."""
+        project, _ = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
+        for name in ("install_apk", "launch", "logcat_clear"):
+            monkeypatch.setattr(adb_mod, name, lambda *a: None)
+        monkeypatch.setattr(
+            adb_mod, "logcat_dump", lambda dev: "I/kivyforge: booted\nI/other: noise\n"
+        )
+        if release:
+            # --release runs assembleRelease itself; give it an APK to find.
+            apk = cli._release_output(project / "demoapp-android", "apk")
+            apk.parent.mkdir(parents=True, exist_ok=True)
+            apk.write_bytes(b"PK")
+        cli.android_run(project, wait_sec=0, release=release)
+        captured = capsys.readouterr()
+        assert captured.out == "I/kivyforge: booted\n"
+        assert "[run] device" in captured.err
+        assert "[run] building for" in captured.err
+        assert "Generated demoapp-android" in captured.err
+        assert "[run] launched" in captured.err
+
     def test_no_build_uses_existing_apk(self, build_env, monkeypatch):
         project, calls = build_env
         apk = (
@@ -1201,7 +1229,7 @@ class TestAndroidRun:
         cli.android_run(project, release=True, wait_sec=0)
         assert calls["write_app_build_gradle"][-1]["signing_config_block"] == ""
         assert (
-            "signing the release app with the debug keystore" in capsys.readouterr().out
+            "signing the release app with the debug keystore" in capsys.readouterr().err
         )
 
     def test_release_prefers_the_configured_release_identity(
@@ -1260,6 +1288,29 @@ class TestAndroidSmoke:
         monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
         cli.android_smoke(project)
         assert "PASSED" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("release", [False, True])
+    def test_stdout_is_only_the_verdict(self, build_env, monkeypatch, capsys, release):
+        """AGENTS.md: product to stdout, everything else to stderr.
+
+        `run --smoke`'s product is the verdict. It used to print its own
+        progress, and the whole nested build's (``[collect]``, ``[stage]``,
+        ``Generated ...``), to stdout, where `build`/`package` send progress to
+        stderr. The nested build here is the real ``android_build``, so its real
+        lines are what is being routed.
+        """
+        project, _ = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
+        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        cli.android_smoke(project, release=release)
+        captured = capsys.readouterr()
+        assert captured.out == "Contract smoke test PASSED.\n"
+        assert "[smoke] device" in captured.err
+        assert "[smoke] running the contract test" in captured.err
+        assert "Generated demoapp-android" in captured.err
+        if release:
+            assert "debug keystore" in captured.err
 
     def test_smoke_error_is_wrapped(self, build_env, monkeypatch):
         project, _ = build_env
@@ -1331,7 +1382,7 @@ class TestAndroidSmoke:
         assert gradle_kwargs["test_build_type"] == "release"
         assert gradle_kwargs["release_signing_config"] == "debug"
         assert seen["release"] is True
-        assert "debug keystore" in capsys.readouterr().out
+        assert "debug keystore" in capsys.readouterr().err
 
     def test_release_smoke_prefers_the_configured_release_identity(
         self, project, monkeypatch, tmp_path

@@ -167,6 +167,27 @@ class TestRun:
         )
         assert seen == {"release": release}
 
+    def test_stdout_is_left_to_the_app(self, project, monkeypatch, capsys):
+        # As for Linux/macOS: "Launching ..." and the nested build's "Built ..."
+        # are progress; stdout belongs to the launched app (faked, silent).
+        def _fake_build(config, lock, project_root, **kw):
+            bundle = project_root / "build" / "windows" / "My App"
+            bundle.mkdir(parents=True, exist_ok=True)
+            return bundle
+
+        class _Proc:
+            returncode = 0
+
+        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
+        monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: ("cfg", "lock"))
+        monkeypatch.setattr(cli, "build_onedir", _fake_build)
+        monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: _Proc())
+        cli.windows_run(project, arch=None, no_build=False)
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "Built build" in captured.err
+        assert "Launching My App" in captured.err
+
     def test_release_with_no_build_rejected(self, project, monkeypatch):
         monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         with pytest.raises(ToolchainError, match="--release applies to the build"):

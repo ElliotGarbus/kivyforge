@@ -355,8 +355,12 @@ known-unverified list.
     `requires_device` was dropped from `AGENTS.md`.
   - **Still waiting:** iOS `strip_source`, which needs CPython 3.15.0 final
     (due 2026-10-01; handoff task 3).
-  - **Noted, not fixed:** `run --smoke` prints progress to stdout, which
-    `AGENTS.md` rules out (android-macos-host findings, "Observations").
+  - ~~**Noted, not fixed:** `run --smoke` prints progress to stdout, which
+    `AGENTS.md` rules out (android-macos-host findings, "Observations").~~
+    **Fixed 2026-09-28** for `run --smoke` and for plain `run` on Android,
+    Linux, macOS and Windows: progress goes to stderr, and stdout carries only
+    the app's output (or the smoke verdict). iOS `run` is unchanged; see
+    `build-package-output-proposal.md`, "`run` is out of scope".
 
 ## Execution order
 

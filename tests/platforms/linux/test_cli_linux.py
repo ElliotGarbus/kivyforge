@@ -177,6 +177,24 @@ class TestRun:
             assert result.exit_code == 2
             assert fake_bundler["arch"] == []
 
+    def test_stdout_is_left_to_the_app(
+        self, runner, tmp_path, fake_bundler, monkeypatch
+    ):
+        # AGENTS.md: product to stdout, everything else to stderr. `run`'s
+        # product is the launched app's own output, so kivyforge's
+        # "Launching ..." and the nested build's "Built ..." go to stderr.
+        # The app is faked and prints nothing, so stdout must stay empty.
+        monkeypatch.setattr(
+            _linux.subprocess, "run", lambda cmd: subprocess.CompletedProcess(cmd, 0)
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            result = runner.invoke(run, ["-p", "linux"])
+            assert result.exit_code == 0, result.output
+            assert result.stdout == ""
+            assert "Built build" in result.stderr
+            assert "Launching" in result.stderr
+
     def test_run_no_build_requires_existing(self, runner, tmp_path, fake_bundler):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)

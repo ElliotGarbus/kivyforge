@@ -98,6 +98,23 @@ ECHO_EVENTS = BuildEvents(
 )
 
 
+def _echo_err(text: str) -> None:
+    click.echo(text, err=True)
+
+
+#: For a verb whose own product is something other than the build it runs on
+#: the way: ``run --smoke``, whose product is the verdict. From that verb's
+#: point of view even the nested build's product lines ("Generated ...") are
+#: progress, so everything goes to stderr and stdout carries only the verb's
+#: own result (AGENTS.md: product to stdout, everything else to stderr).
+PROGRESS_ONLY_EVENTS = BuildEvents(
+    on_line=_echo_err,
+    on_progress=_echo_err,
+    on_artifact=discard_artifact,
+    on_note=discard_note,
+)
+
+
 def _extract_fix(message: str) -> str:
     """Pull the trailing ``Fix:`` line out of a message, if it has one.
 
