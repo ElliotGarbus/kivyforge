@@ -279,6 +279,12 @@ embeddable package publishes only `aarch64` and `x86_64` runtimes; there is no
 rejected at validation. This is a hard consequence of the runtime source (see
 [artifact-distribution-android §"Distribution channel 2"](03-artifact-distribution-android.md#distribution-channel-2-the-pythonorg-android-runtime)), not a deferral.
 
+What it would take to change that, what upstream offers today, and what would
+make it reasonable (a 32-bit CPython 3.12+ returning in Chaquopy,
+chaquopy#1476) are recorded in
+[`android-32bit-findings.md`](../../dev/android-32bit-findings.md)
+(2026-09-27).
+
 ### Excluding unused transitive dependencies (`exclude`)
 
 Identical in mechanism and rationale to the [iOS `exclude` field](../ios/01-pyproject-ios.md#excluding-unused-transitive-dependencies-exclude): resolution-graph pruning (not per-file bundle exclusion), direct deps always win, canonical-name matching. `kivyforge init` seeds a documented block when `kivy` is a direct dependency (e.g. `kivy-garden`, `docutils`, `pygments` — features a bundled app can't use).
