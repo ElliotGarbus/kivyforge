@@ -71,12 +71,19 @@ def pytest_addoption(parser):
     group.addoption(
         "--android-abi",
         default="x86_64",
-        help="Dashed Android ABI the APK was built for (default: x86_64).",
+        help="Dashed Android ABI the APK was built for (default: x86_64), or a "
+        "comma-separated list for a package built without --abi.",
     )
     group.addoption(
         "--android-stripped",
         action="store_true",
         help="Assert the payload is bytecode-only (strip_source applied).",
+    )
+    group.addoption(
+        "--android-aab",
+        default=None,
+        help="Path to a built App Bundle (.aab) to run the T3 assertions "
+        "against. --android-abi names its ABIs, comma-separated.",
     )
     group.addoption(
         "--android-merged-manifest",

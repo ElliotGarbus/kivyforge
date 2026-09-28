@@ -52,6 +52,7 @@ import shlex
 import struct
 import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
 
 from kivyforge.config.model import AndroidConfig, Config
@@ -96,7 +97,7 @@ from kivyforge.platforms.windows.petools import machine_name as pe_machine_name
 
 BUNDLE_ROOT = "assets/_python_bundle/"
 
-_LIBPYTHON = re.compile(r"^lib/[^/]+/libpython(\d+\.\d+)\.so$")
+_LIBPYTHON = re.compile(r"^lib/([^/]+)/libpython(\d+\.\d+)\.so$")
 
 # Android's dashed ABI directory names (the wheel-tag spelling with underscores
 # is what pyproject uses; the generator maps between them) to the ELF e_machine
@@ -107,6 +108,33 @@ ABI_MACHINES = {"arm64-v8a": EM_AARCH64, "x86_64": EM_X86_64}
 ELFCLASS64 = 2
 
 
+class _ZipView:
+    """A zip seen from inside one module directory.
+
+    An APK's ``lib/`` and ``assets/`` sit at the root; an App Bundle keeps the
+    same tree under ``base/`` (``base/lib/<abi>/``, ``base/assets/``). Every
+    content check below is written against the APK spelling, and this lets the
+    bundle checker reuse all of them unchanged rather than keeping a second copy
+    that would drift.
+    """
+
+    def __init__(self, zf: zipfile.ZipFile, prefix: str = "") -> None:
+        self._zf = zf
+        self._prefix = prefix
+
+    def namelist(self) -> list[str]:
+        n = len(self._prefix)
+        return [m[n:] for m in self._zf.namelist() if m.startswith(self._prefix)]
+
+    def open(self, name: str):
+        return self._zf.open(self._prefix + name)
+
+
+def _module_prefix(zf: zipfile.ZipFile) -> str:
+    """``"base/"`` for an App Bundle (it has ``BundleConfig.pb``), else ``""``."""
+    return "base/" if "BundleConfig.pb" in zf.namelist() else ""
+
+
 def shipped_python_tags(apk: Path) -> list[str]:
     """The CPython minor(s) whose runtime *apk* actually ships, e.g. ``["3.14"]``.
 
@@ -114,54 +142,109 @@ def shipped_python_tags(apk: Path) -> list[str]:
     magic is anchored to the runtime that will do the importing. Passing the
     version in would let a caller assert an APK against the wrong runtime and
     get a green result, which is the shape of bug these checks exist to catch.
+    Accepts an App Bundle too, reading its ``base/`` module.
     """
     with zipfile.ZipFile(apk) as zf:
-        found = {m.group(1) for m in map(_LIBPYTHON.match, zf.namelist()) if m}
+        view = _ZipView(zf, _module_prefix(zf))
+        found = {m.group(2) for m in map(_LIBPYTHON.match, view.namelist()) if m}
     return sorted(found)
 
 
 def android_apk_problems(
     apk: Path,
     *,
-    abi: str,
+    abis: str | Sequence[str],
     stripped: bool,
     expected_magic: bytes,
 ) -> list[str]:
     """Every way *apk* fails to be the artifact the build promised.
 
-    ``abi`` is the dashed Android name (``arm64-v8a``), ``stripped`` whether
-    ``strip_source`` applied to this build, and ``expected_magic`` the first four
-    bytes a ``.pyc`` the shipped runtime can import must carry — see
+    ``abis`` is the dashed Android name (``arm64-v8a``) of every ABI the build
+    was asked for, or one such name. A package built without ``--abi`` carries
+    every ABI in ``[tool.kivy.android].abis``, and each has to be complete on
+    its own: a phone only ever loads its own ABI's directory. ``stripped`` is
+    whether ``strip_source`` applied to this build, and ``expected_magic`` the
+    first four bytes a ``.pyc`` the shipped runtime can import must carry — see
     :func:`shipped_python_tags` for choosing it.
     """
-    if abi not in ABI_MACHINES:
-        return [f"unknown ABI {abi!r}; expected one of {sorted(ABI_MACHINES)}"]
+    wanted, refused = _normalise_abis(abis)
+    if refused:
+        return refused
 
     with zipfile.ZipFile(apk) as zf:
-        names = zf.namelist()
-        problems = _required_entry_problems(names, abi=abi)
-        problems += _payload_problems(names, stripped=stripped)
-        problems += _native_lib_problems(zf, names, abi=abi)
-        if stripped:
-            problems += _pyc_magic_problems(zf, names, expected_magic=expected_magic)
-        return problems
-
-
-def _required_entry_problems(names: list[str], *, abi: str) -> list[str]:
-    """The three things without which the app cannot start at all."""
-    problems = []
-    if f"lib/{abi}/libmain.so" not in names:
-        problems.append(f"lib/{abi}/libmain.so is missing from the APK")
-
-    runtimes = sorted(n for n in names if _LIBPYTHON.match(n))
-    if not runtimes:
-        problems.append(
-            f"no libpython3.X.so under lib/{abi}/ — the APK ships no runtime"
+        return _package_content_problems(
+            _ZipView(zf),
+            abis=wanted,
+            stripped=stripped,
+            expected_magic=expected_magic,
         )
-    elif len(runtimes) > 1:
+
+
+def _normalise_abis(abis: str | Sequence[str]) -> tuple[tuple[str, ...], list[str]]:
+    """``(abis, problems)``: the requested ABIs, or why they cannot be checked."""
+    wanted = (abis,) if isinstance(abis, str) else tuple(abis)
+    if not wanted:
+        return wanted, [
+            "no ABI given; the check needs to know what the build was asked for"
+        ]
+    unknown = [a for a in wanted if a not in ABI_MACHINES]
+    if unknown:
+        return wanted, [
+            f"unknown ABI(s) {unknown}; expected any of {sorted(ABI_MACHINES)}"
+        ]
+    if len(set(wanted)) != len(wanted):
+        return wanted, [f"ABI list {list(wanted)} names an ABI twice"]
+    return wanted, []
+
+
+def _package_content_problems(
+    view: _ZipView,
+    *,
+    abis: tuple[str, ...],
+    stripped: bool,
+    expected_magic: bytes,
+) -> list[str]:
+    """Everything an APK and a bundle's ``base/`` module must both satisfy."""
+    names = view.namelist()
+    problems = _required_entry_problems(names, abis=abis)
+    problems += _payload_problems(names, stripped=stripped)
+    problems += _native_lib_problems(view, names, abis=abis)
+    if stripped:
+        problems += _pyc_magic_problems(view, names, expected_magic=expected_magic)
+    return problems
+
+
+def _required_entry_problems(names: list[str], *, abis: tuple[str, ...]) -> list[str]:
+    """The things without which the app cannot start at all, per ABI."""
+    problems = []
+    runtimes_by_abi: dict[str, list[str]] = {}
+    for name in names:
+        match = _LIBPYTHON.match(name)
+        if match:
+            runtimes_by_abi.setdefault(match.group(1), []).append(match.group(2))
+
+    for abi in abis:
+        if f"lib/{abi}/libmain.so" not in names:
+            problems.append(f"lib/{abi}/libmain.so is missing from the APK")
+        runtimes = sorted(runtimes_by_abi.get(abi, []))
+        if not runtimes:
+            problems.append(
+                f"no libpython3.X.so under lib/{abi}/ — that ABI ships no runtime"
+            )
+        elif len(runtimes) > 1:
+            problems.append(
+                f"lib/{abi}/ ships {len(runtimes)} CPython runtimes "
+                f"({['libpython' + r + '.so' for r in runtimes]}); the bootstrap "
+                "loads exactly one and the rest are dead weight"
+            )
+
+    # One payload serves every ABI (assets/ is not split by architecture), so
+    # its bytecode can only match one CPython version.
+    versions = sorted({v for a in abis for v in runtimes_by_abi.get(a, [])})
+    if len(versions) > 1:
         problems.append(
-            f"APK ships {len(runtimes)} CPython runtimes ({runtimes}); the "
-            "bootstrap loads exactly one and the rest are dead weight"
+            f"the ABIs ship different CPython versions {versions}, but they "
+            f"share one {BUNDLE_ROOT} whose bytecode fits only one of them"
         )
 
     if not any(n.startswith(BUNDLE_ROOT) for n in names):
@@ -230,7 +313,7 @@ def _payload_problems(names: list[str], *, stripped: bool) -> list[str]:
 
 
 def _pyc_magic_problems(
-    zf: zipfile.ZipFile, names: list[str], *, expected_magic: bytes
+    zf: _ZipView, names: list[str], *, expected_magic: bytes
 ) -> list[str]:
     """Every ``.pyc`` must carry the magic the shipped runtime imports.
 
@@ -267,29 +350,38 @@ def _magic_int(magic: bytes) -> int:
 
 
 def _native_lib_problems(
-    zf: zipfile.ZipFile, names: list[str], *, abi: str
+    zf: _ZipView, names: list[str], *, abis: tuple[str, ...]
 ) -> list[str]:
-    """Every shared object under ``lib/`` must be 64-bit ELF for exactly *abi*.
+    """Every shared object under ``lib/<abi>/`` must be 64-bit ELF for that ABI.
 
     The failure this exists for is a cross-build that picked up a host-arch
     binary — it installs, and then dlopen fails on device with a message that
-    names the file but not the reason. A stray *second* ABI directory is the
-    related bug: it doubles the APK and ships code the manifest never claimed.
+    names the file but not the reason. A stray ABI directory the build was not
+    asked for is the related bug: it grows the package and ships code the
+    manifest never claimed.
+
+    With more than one ABI, each must also carry **the same set** of shared
+    objects. A phone loads only its own ABI's directory, so an extension module
+    missing from one of them fails with an ImportError on that architecture
+    alone, which no single-ABI check can see.
     """
-    expected = ABI_MACHINES[abi]
     libs = [n for n in names if n.startswith("lib/") and n.endswith(".so")]
     problems = []
 
-    strays = sorted({n.split("/")[1] for n in libs} - {abi})
+    strays = sorted({n.split("/")[1] for n in libs} - set(abis))
     if strays:
         problems.append(
             f"APK carries shared objects for unrequested ABI(s) {strays}; "
-            f"only {abi} was built"
+            f"only {list(abis)} were built"
         )
 
+    by_abi: dict[str, set[str]] = {abi: set() for abi in abis}
     for name in libs:
-        if name.split("/")[1] != abi:
+        abi = name.split("/")[1]
+        if abi not in by_abi:
             continue  # already reported as a stray ABI
+        by_abi[abi].add(posixpath.basename(name))
+        expected = ABI_MACHINES[abi]
         with zf.open(name) as handle:
             header = handle.read(20)
         if header[:4] != b"\x7fELF":
@@ -304,6 +396,184 @@ def _native_lib_problems(
                 f"{machine_name(expected)} — a host binary leaked into a "
                 "cross-build"
             )
+
+    if len(abis) > 1:
+        union = set().union(*by_abi.values())
+        for abi in abis:
+            missing = sorted(union - by_abi[abi])
+            if missing:
+                problems.append(
+                    f"lib/{abi}/ lacks {len(missing)} shared object(s) other "
+                    f"ABIs ship, e.g. {missing[:3]} — they would fail to "
+                    f"import only on {abi} devices"
+                )
+    return problems
+
+
+# --- Android: App Bundles ----------------------------------------------------
+#
+# Google Play requires an App Bundle for new apps, and never installs it as-is:
+# it generates per-device APKs from it. So what a bundle has to get right is
+# what those APKs will contain (the same content checks as an APK, read from
+# the bundle's ``base/`` module) plus one thing an APK carries in its manifest
+# and a bundle carries in ``BundleConfig.pb``: whether the generated APKs keep
+# native libraries compressed, so the platform extracts them to real paths.
+# kivyforge's load model dlopen()s extension modules by path
+# (``useLegacyPackaging = true``, android/04 §load model); a bundle that asked
+# Play to leave them uncompressed would install fine and fail on import.
+
+BUNDLE_REQUIRED = ("BundleConfig.pb", "base/manifest/AndroidManifest.xml")
+
+
+def android_bundle_problems(
+    aab: Path,
+    *,
+    abis: str | Sequence[str],
+    stripped: bool,
+    expected_magic: bytes,
+) -> list[str]:
+    """Every way the App Bundle *aab* fails to be the artifact the build promised.
+
+    Same arguments as :func:`android_apk_problems`.
+    """
+    wanted, refused = _normalise_abis(abis)
+    if refused:
+        return refused
+
+    with zipfile.ZipFile(aab) as zf:
+        names = zf.namelist()
+        problems = [
+            f"{entry} is missing; this is not an App Bundle"
+            for entry in BUNDLE_REQUIRED
+            if entry not in names
+        ]
+        if not any(n.startswith("base/dex/") and n.endswith(".dex") for n in names):
+            problems.append("base/dex/ has no .dex file; the app has no code")
+        if problems:
+            return problems  # not a bundle: the rest would only repeat it
+
+        uncompressed = bundle_uncompresses_native_libs(zf.read("BundleConfig.pb"))
+        if uncompressed is None:
+            problems.append(
+                "BundleConfig.pb could not be read, so whether Play will extract "
+                "native libraries is unknown"
+            )
+        elif uncompressed:
+            problems.append(
+                "BundleConfig.pb enables uncompress_native_libraries, so the APKs "
+                "Play generates will not extract native libraries to real paths; "
+                "kivyforge's load model dlopen()s extension modules by path "
+                "(useLegacyPackaging = true)"
+            )
+
+        problems += _package_content_problems(
+            _ZipView(zf, "base/"),
+            abis=wanted,
+            stripped=stripped,
+            expected_magic=expected_magic,
+        )
+        return problems
+
+
+def bundle_uncompresses_native_libs(bundle_config: bytes) -> bool | None:
+    """``Optimizations.uncompress_native_libraries.enabled`` from ``BundleConfig.pb``.
+
+    ``None`` when the bytes do not parse. A minimal protobuf read rather than a
+    ``protobuf`` dependency, because the path is three fields deep and fixed by
+    bundletool's schema: ``BundleConfig.optimizations`` (2) >
+    ``Optimizations.uncompress_native_libraries`` (2) >
+    ``UncompressNativeLibraries.enabled`` (1). An absent field is ``false``,
+    which is what AGP writes when ``useLegacyPackaging = true``.
+    """
+    try:
+        optimizations = _pb_message(bundle_config, 2)
+        native = _pb_message(optimizations, 2) if optimizations is not None else None
+        enabled = _pb_field(native, 1) if native is not None else None
+    except ValueError:
+        return None
+    return bool(enabled)
+
+
+def _pb_message(data: bytes, number: int) -> bytes | None:
+    """Field *number* of *data* as an embedded message, or ``None`` if absent.
+
+    Anything but length-delimited bytes there means the input is not the
+    schema this reader assumes, which the caller reports as unreadable.
+    """
+    value = _pb_field(data, number)
+    if value is not None and not isinstance(value, bytes):
+        raise ValueError(f"field {number} is not an embedded message")
+    return value
+
+
+def _pb_field(data: bytes, number: int):
+    """The last value of field *number* in protobuf *data*, or ``None``.
+
+    Handles the four wire types proto3 uses; raises ``ValueError`` on bytes
+    that are not a well-formed message.
+    """
+    found = None
+    pos = 0
+    while pos < len(data):
+        key, pos = _pb_varint(data, pos)
+        field, wire = key >> 3, key & 7
+        if wire == 0:
+            value, pos = _pb_varint(data, pos)
+        elif wire == 2:
+            length, pos = _pb_varint(data, pos)
+            if pos + length > len(data):
+                raise ValueError("length runs past the end of the message")
+            value, pos = data[pos : pos + length], pos + length
+        elif wire == 1:
+            value, pos = data[pos : pos + 8], pos + 8
+        elif wire == 5:
+            value, pos = data[pos : pos + 4], pos + 4
+        else:
+            raise ValueError(f"unsupported wire type {wire}")
+        if pos > len(data):
+            raise ValueError("field runs past the end of the message")
+        if field == number:
+            found = value
+    return found
+
+
+def _pb_varint(data: bytes, pos: int) -> tuple[int, int]:
+    result = shift = 0
+    while True:
+        if pos >= len(data):
+            raise ValueError("truncated varint")
+        byte = data[pos]
+        pos += 1
+        result |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return result, pos
+        shift += 7
+        if shift > 63:
+            raise ValueError("varint too long")
+
+
+def jarsigner_report_problems(returncode: int, output: str) -> list[str]:
+    """What ``jarsigner -verify <bundle>`` said was wrong, from its exit and text.
+
+    An App Bundle is JAR-signed (android/06 §"APK vs AAB signing"), so
+    ``apksigner`` does not apply to it. ``-strict`` is deliberately not used:
+    Android upload keys are normally self-signed, and ``-strict`` turns the
+    resulting "certificate chain is invalid" warning into a failure for every
+    correctly signed bundle. What must hold is a zero exit and "jar verified.";
+    a tampered entry exits 1 with a digest error.
+    """
+    problems = []
+    if returncode != 0:
+        detail = next(
+            (ln.strip() for ln in output.splitlines() if "jarsigner:" in ln),
+            f"exit status {returncode}",
+        )
+        problems.append(f"jarsigner -verify failed: {detail}")
+    elif "jar verified." not in output:
+        problems.append(
+            "jarsigner -verify exited 0 without reporting 'jar verified.'; the "
+            "bundle may be unsigned"
+        )
     return problems
 
 

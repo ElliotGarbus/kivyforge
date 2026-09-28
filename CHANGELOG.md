@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Android: App Bundles are now checked in CI
+
+- Google Play requires an App Bundle (`.aab`) for new apps, but no CI job
+  built one: every Android job packaged an APK, one ABI at a time. A new
+  `android_bundle` job now runs `kivyforge package -p android -f aab` with both
+  default ABIs and checks the result: every ABI complete and shipping the same
+  native libraries, the byte-compiled payload, the merged manifest, the
+  bundle's signature (`jarsigner -verify`), and that the APKs Play generates
+  will still extract native libraries, which kivyforge's Python loader
+  requires.
+- The post-build checks now understand packages with more than one ABI. A
+  correct two-ABI package used to fail them.
+- Test-only; no change to what kivyforge builds.
+
 ### Android `doctor` checks the JDK's version and finds the SDK on macOS
 
 - **Fixed:** `doctor -p android` passed any `java` that existed. On a Mac
