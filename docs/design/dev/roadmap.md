@@ -334,6 +334,30 @@ known-unverified list.
   case-insensitive filesystem merges the pair **silently**. See test-matrix
   §5.6.)*
 
+- **The Mac handoff, 2026-09-25 to 2026-09-28: PRs #18–#30.** Worked from
+  [`handoff-2026-09-25.md`](handoff-2026-09-25.md), which now carries a status
+  table. All of it that could be done was done:
+  - **PR #20 validated on a real iPhone** (#22,
+    [`mac-findings-fixes-findings.md`](mac-findings-fixes-findings.md)). It
+    found four older device-run and signing defects, fixed in #23–#25.
+  - **The rest of the 2026-09-23 docs review:** `init`'s `buildozer.spec` map
+    is now derived from the loader's key schema (#26); `pyproject.toml` reads
+    tolerate a byte-order mark, dice-roller no longer ships a Developer ID,
+    and `init`'s hint is corrected (#28); Pillow became a core dependency
+    rather than a doctor check (#27).
+  - **Android on a macOS host, for the first time** (#29,
+    [`android-macos-host-findings.md`](android-macos-host-findings.md)):
+    build, package, T3 and a run on a Pixel 8a. It found and fixed three
+    `doctor` host-detection defects, and a `run --smoke` that staged the
+    release payload for a debug test.
+  - **The macOS runtimes were scanned directly for case collisions** (#30),
+    replacing the "inferred from CI" note in test-matrix §5.6, and
+    `requires_device` was dropped from `AGENTS.md`.
+  - **Still waiting:** iOS `strip_source`, which needs CPython 3.15.0 final
+    (due 2026-10-01; handoff task 3).
+  - **Noted, not fixed:** `run --smoke` prints progress to stdout, which
+    `AGENTS.md` rules out (android-macos-host findings, "Observations").
+
 ## Execution order
 
 | # | Item | Size | Gate |
