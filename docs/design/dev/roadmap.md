@@ -370,7 +370,7 @@ known-unverified list.
 | ~~2~~ | ~~Test matrix + test plan~~ → [`test-matrix.md`](test-matrix.md) | S–M | **done 2026-09-13** |
 | ~~3~~ | ~~Output layer: `rich` rendering + `--json`~~ | M | **done 2026-09-17** |
 | ~~4~~ | ~~Linux aarch64 → Raspberry Pi target *(was P3)*~~ | L | **done 2026-09-17** on Pi 5; Pi 4 untested |
-| 5 | E2E automation against the matrix — *T0–T3 all run in CI for every platform as of 2026-09-23, including Android T3 from a Windows host (§5.2) and the iOS T3 harness. Remaining: only a runnable hardware checklist* | M–L | items 2, 3 |
+| 5 | E2E automation against the matrix — *T0–T3 all run in CI for every platform as of 2026-09-23, including Android T3 from a Windows host (§5.2) and the iOS T3 harness. The runnable hardware checklist landed 2026-09-28 (`scripts/hardware_pass.py`), which was the last piece* | M–L | items 2, 3 |
 | 6 | End-user docs *(was P4)* | M | items 3, 4 (settled surface) |
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
@@ -1759,13 +1759,21 @@ What is left against this condition is narrower than the condition sounds:
   `package -p windows` now reports it (`KF-PATH-DEPTH`), and `windows_onedir`
   reproduces it on a runner with long paths switched off, exact to the
   character.
-- **The hardware pass** (the second half) still has no runnable checklist —
-  item 5's "manual checklist becomes runnable" bullet.
+- ~~**The hardware pass** (the second half) still has no runnable checklist —
+  item 5's "manual checklist becomes runnable" bullet.~~ — **done
+  2026-09-28.** [`hardware-checklist.toml`](hardware-checklist.toml) holds
+  each check's commands and pass criteria (13 items: 8 runnable with hardware
+  we have, 3 needing credentials the owner does not hold, 1 blocked on
+  CPython 3.15.0 final, 1 with no hardware), and `scripts/hardware_pass.py`
+  prints them and records the result as a dated row in test-matrix §7.
+  test-matrix §6 is now that list.
 
 So item 5 is blocked on nothing and has no large piece left. After
 2026-09-23 the iOS T3 harness above is also done, so what remains is
 **only the runnable hardware checklist** — the "done when" clause's other
-half.
+half. *(2026-09-28: that checklist has landed, so both halves of "done when"
+are now met. What is left is running it: the hardware passes themselves,
+recorded in test-matrix §7.)*
 
 The iOS harness that closed the bullet above was spec'd for the Mac in
 [`ios-t3-checks-prompt.md`](ios-t3-checks-prompt.md) and built the same day

@@ -1287,34 +1287,42 @@ makes every launch permanently slow with nothing to show for it. *(Done
 These need a human, credentials, or hardware CI cannot have. Every one of them
 should produce a dated line in §7 — an unlogged manual test did not happen.
 
-- [x] **iOS device install + launch** on real hardware — 2026-09-14, iPhone14,3,
-      `build`/`run`/`package --device`, `hello-kivy` rendered on-screen. Found
-      and fixed a `--team-id` propagation bug along the way (§3.2, §7). Not
-      re-proven anywhere, so treat as a point-in-time result, not standing
-      coverage.
-- [ ] **iOS `strip_source`** — still unverified, and now known to be
-      structurally unrunnable rather than merely untried: every iOS example
-      pins `3.15.0b4`, and `package -p ios` requires a *final* CPython to
-      byte-compile. Item 1 proved the Android half; the iOS half stays open
-      until either 3.15 ships or some example is pinned to an already-final
-      minor.
-- [x] **Notarization** — five `notarytool` submissions since 2026-07-07, all
-      `Accepted` (`dice-roller`, §7). This item was wrongly marked open; nobody
-      had run `notarytool history` before 2026-09-14.
-- [ ] **Authenticode with a real certificate.** `windows_signing`'s self-signed
-      loop proves the `SigntoolSigner` plumbing, not timestamping against a real
-      CA chain or SmartScreen behaviour.
-- [x] **Raspberry Pi 5**: cross-build T2+T3 on WSL2, launch T4/T5 2026-09-17
-      (item 4). Pi 4 untested. See
-      [`aarch64-pi-target-findings.md`](aarch64-pi-target-findings.md).
-- [ ] **Physical Android device**, both ABIs — CI can only reach `x86_64`.
-- [ ] **Windows interactive matrix** that `test_launcher_exe.py` documents as out
-      of scope: >260-char paths, shortcut launches, Ctrl-C, no-console-flash.
-      Partly automatable as §5.6; the rest is genuinely interactive.
-- [ ] **Desktop launch smoke on each desktop target** — the T5 cells the first
-      revision marked `n/a`, which wrongly implied out-of-scope rather than
-      unproven. `examples/verify-*` scripts (§3.1) drive most of it.
-- [ ] **Store submission** — Play Console and App Store Connect.
+**Runnable since 2026-09-28** (roadmap item 5's last piece). Each check's exact
+commands and pass criteria live in
+[`hardware-checklist.toml`](hardware-checklist.toml), and
+`scripts/hardware_pass.py` prints them and writes the result into §7:
+
+```bash
+python scripts/hardware_pass.py list                  # grouped by what can run on this host
+python scripts/hardware_pass.py show android-device   # commands + pass criteria
+python scripts/hardware_pass.py record android-device --result pass --device "Pixel 8a, Android 17" --note "..."
+```
+
+`record` fills in the date, the host (and whether Linux is WSL2 or bare metal,
+§4) and the kivyforge commit, and appends the row to §7's table. Nothing
+prompts, so an agent can run a pass too. `tests/test_hardware_pass.py` keeps
+this table and the TOML listing the same items.
+
+| Item | Status | Runs on | Last known result |
+|---|---|---|---|
+| `android-device` | runnable | any host | 2026-09-27: `run --device --smoke` passed on a Pixel 8a, from a macOS host |
+| `ios-device` | runnable | macOS | 2026-09-27: PR #20 validated on an iPhone 18 Pro Max; first device run 2026-09-14 |
+| `ios-strip-source` | blocked | macOS | never: every iOS example pins `3.15.0b4`; waits on CPython 3.15.0 final |
+| `macos-notarize` | runnable | macOS | 2026-09-14: `notarytool history` shows five Accepted submissions since 2026-07-07 |
+| `windows-authenticode` | needs credentials | Windows | never with a public certificate; the self-signed loop runs in CI (`windows_signing`) |
+| `windows-interactive` | runnable | Windows | never; paths over MAX_PATH moved to CI 2026-09-24 (§5.6) |
+| `desktop-windows` | runnable | Windows | no logged run of `verify-windows-examples.ps1` |
+| `desktop-macos` | runnable | macOS | no logged run of `verify-desktop-examples.sh` |
+| `desktop-linux` | runnable | Linux / WSL2 | no logged run of `verify-desktop-examples.sh`; single-example launches are in §7 |
+| `pi5-appimage` | runnable | Linux build + Pi 5 | 2026-09-17: Dice Roller rendered on a Pi 5 (roadmap item 4) |
+| `pi4-appimage` | no hardware | Linux build + Pi 4 | never: no Pi 4 available |
+| `store-play` | needs credentials | any host | never |
+| `store-appstore` | needs credentials | macOS | never |
+
+**Needs credentials** means the steps are written for someone who holds them:
+kivyforge itself is distributed through pip and is not signed, so the owner is
+not buying a Windows code-signing certificate
+([signing-windows.md](../platforms/windows/signing-windows.md), "Policy").
 
 ---
 

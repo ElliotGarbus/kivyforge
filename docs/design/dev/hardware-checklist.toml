@@ -1,0 +1,307 @@
+# The hardware pass: every check CI cannot run, with the exact commands and
+# what counts as a pass (roadmap item 5, "the manual checklist becomes
+# runnable"; test-matrix.md section 6).
+#
+# Driven by scripts/hardware_pass.py:
+#   python scripts/hardware_pass.py list            # what applies to this host
+#   python scripts/hardware_pass.py show <id>        # commands + pass criteria
+#   python scripts/hardware_pass.py record <id> --result pass --device "..."
+# `record` appends a dated row to test-matrix.md section 7, because an
+# unlogged manual test did not happen.
+#
+# Fields:
+#   id        stable key; the test-matrix section 6 list names every one
+#   title     one line
+#   status    runnable          - can be run with hardware we have
+#             needs-credentials - needs an account or certificate the owner
+#                                 does not hold (steps kept for whoever does)
+#             blocked           - waits on something external; `blocked_on`
+#             no-hardware       - needs hardware we do not have
+#   hosts     where the commands run: windows, macos, linux (WSL2 counts as
+#             linux; record says which)
+#   target    the test-matrix section 7 "Target" column
+#   tier      the section 7 "Tier" column
+#   needs     hardware, accounts and setup, in order
+#   commands  run in order from the repo root unless a command says otherwise
+#   pass      what must be observed; every line must hold for a pass
+#   record    optional: what else to write into the note (recorded, not
+#             required)
+#   previous  where the last manual result lives, if one predates this file
+
+schema_version = 1
+
+[[item]]
+id = "android-device"
+title = "Android: contract smoke test and launch on a physical arm64 phone"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device)"
+tier = "T4 + T5"
+needs = [
+    "An arm64 Android phone with USB debugging on, authorized for this host (`adb devices` shows `device`, not `unauthorized`).",
+    "The phone unlocked with the screen on and no notification shade open: a locked screen or raised shade holds focus and SDL never gets a surface.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/hello-android",
+    "kivyforge doctor -p android",
+    "kivyforge run -p android --device --smoke --release",
+    "kivyforge run -p android --device",
+]
+pass = [
+    "`run --device --smoke --release` prints exactly `Contract smoke test PASSED.` on stdout and exits 0.",
+    "Plain `run --device` shows the app on the phone, and the logcat it prints includes Kivy's `Start application main loop`.",
+]
+record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
+previous = "test-matrix section 7: 2026-09-27 (Pixel 8a, macOS host), 2026-09-13 (Pixel 8a, T5)"
+
+[[item]]
+id = "ios-device"
+title = "iOS: build, sign, install and launch on a physical iPhone"
+status = "runnable"
+hosts = ["macos"]
+target = "iOS device `arm64`"
+tier = "T4 + T5"
+needs = [
+    "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`.",
+    "An Apple ID signed into Xcode whose team matches `[tool.kivy.ios.signing].team_id` in the example.",
+    "The phone unlocked when the app launches.",
+]
+commands = [
+    "cd examples",
+    "./verify-ios-device.sh hello-kivy",
+]
+pass = [
+    "The script's build, run and package steps all succeed for `hello-kivy`.",
+    "The app opens on the phone and shows its label; the console streams Kivy's log, including `Start application main loop`.",
+]
+record = ["iPhone model and iOS version.", "Xcode version."]
+previous = "test-matrix section 7: 2026-09-27 (PR #20 validation), 2026-09-14 (first device run)"
+
+[[item]]
+id = "ios-strip-source"
+title = "iOS: a byte-compiled, source-stripped release build runs on device"
+status = "blocked"
+blocked_on = "CPython 3.15.0 final and python.org's iOS Python.xcframework for it. Every iOS example pins 3.15.0b4, and `package -p ios` only byte-compiles with a final CPython (handoff-2026-09-25.md, task 3)."
+hosts = ["macos"]
+target = "iOS device `arm64`"
+tier = "T3 + T5"
+needs = [
+    "A final CPython 3.15 on the Mac and its iOS xcframework on python.org.",
+    "An example re-pinned to it (`hello-kivy` tracks its lock: diff and report a changed lock, do not commit it).",
+]
+commands = [
+    "cd examples/mobile/hello-kivy",
+    "kivyforge package -p ios",
+    "kivyforge run -p ios --device",
+]
+pass = [
+    "`package` byte-compiles instead of printing `no final CPython 3.15 found`.",
+    "The app launches on the phone from the stripped build.",
+]
+
+[[item]]
+id = "macos-notarize"
+title = "macOS: Developer ID signing, notarization and stapling"
+status = "runnable"
+hosts = ["macos"]
+target = "macOS `arm64` (`dice-roller`)"
+tier = "T5 (signing)"
+needs = [
+    "A `Developer ID Application` certificate in the login keychain.",
+    "A notarytool keychain profile (`xcrun notarytool store-credentials <profile>`).",
+]
+commands = [
+    "cd examples/desktop/dice-roller",
+    "kivyforge package -p macos --signing-identity \"Developer ID Application: <name> (<team>)\" --notarize --notary-profile <profile>",
+    "spctl -a -vvv -t exec build/macos/*.app",
+    "xcrun stapler validate build/macos/*.app",
+]
+pass = [
+    "`package` reports the notarization accepted and the ticket stapled.",
+    "`spctl` reports `accepted` with `source=Notarized Developer ID`.",
+    "`stapler validate` reports `The validate action worked!`.",
+]
+previous = "test-matrix section 7: 2026-09-14 (notarytool history: five Accepted submissions since 2026-07-07)"
+
+[[item]]
+id = "windows-authenticode"
+title = "Windows: Authenticode with a publicly trusted certificate"
+status = "needs-credentials"
+hosts = ["windows"]
+target = "Windows `amd64` (`dice-roller`)"
+tier = "T5 (signing)"
+needs = [
+    "A publicly trusted code-signing certificate whose key is on a hardware token, or in a cloud key service that installs the certificate into the Windows store (for example DigiCert KeyLocker or SSL.com eSigner). Azure Artifact Signing is not supported (signing-windows.md).",
+    "`signtool.exe` on PATH (Windows SDK).",
+    "`[tool.kivy.windows.signing].thumbprint` set to the certificate's SHA-1 thumbprint.",
+]
+commands = [
+    "cd examples/desktop/dice-roller",
+    "kivyforge doctor -p windows",
+    "kivyforge package -p windows",
+    "signtool verify /pa /v \"dist\\windows\\<bundle>\\<App>.exe\"",
+    "powershell -Command \"Get-AuthenticodeSignature 'dist\\windows\\<bundle>\\<App>.exe' | Format-List Status,SignerCertificate,TimeStamperCertificate\"",
+]
+pass = [
+    "`doctor` passes the certificate checks.",
+    "`signtool verify /pa` succeeds and shows a timestamp.",
+    "`Get-AuthenticodeSignature` reports `Status: Valid`, the signer is the certificate's subject, and a timestamper certificate is present.",
+]
+record = ["What SmartScreen shows when the zipped bundle is downloaded through a browser on another machine. A new certificate may still warn until reputation builds, so this is recorded, not required."]
+
+[[item]]
+id = "windows-interactive"
+title = "Windows: double-click, shortcut and Ctrl+C behaviour of the launcher"
+status = "runnable"
+hosts = ["windows"]
+target = "Windows `amd64` (`dice-roller`)"
+tier = "T5 (interactive)"
+needs = ["An interactive desktop session (not SSH or a service)."]
+commands = [
+    "cd examples/desktop/dice-roller",
+    "kivyforge package -p windows",
+    "Double-click the launcher in `dist\\windows\\<bundle>\\` in Explorer.",
+    "Create a shortcut (.lnk) to the launcher on the desktop and start the app from it.",
+    "kivyforge run -p windows, then press Ctrl+C in that terminal.",
+]
+pass = [
+    "Double-click: the app window opens and no console window appears, not even briefly.",
+    "Shortcut: the app opens the same way.",
+    "Ctrl+C: the app closes and the terminal gets its prompt back; no python.exe is left running (Task Manager).",
+]
+record = ["Paths longer than MAX_PATH are covered in CI since 2026-09-24 (test-matrix section 5.6) and need no manual check."]
+
+[[item]]
+id = "desktop-windows"
+title = "Windows: every desktop example builds, runs and packages"
+status = "runnable"
+hosts = ["windows"]
+target = "Windows `amd64` (desktop examples)"
+tier = "T4 + T5"
+needs = ["An interactive desktop session."]
+commands = [
+    "cd examples",
+    ".\\verify-windows-examples.ps1 -NoPause",
+]
+pass = [
+    "Every example completes its steps without an error.",
+    "Each `run` and packaged launch opens a window showing the example's UI.",
+]
+
+[[item]]
+id = "desktop-macos"
+title = "macOS: every desktop example builds, runs and packages"
+status = "runnable"
+hosts = ["macos"]
+target = "macOS `arm64` (desktop examples)"
+tier = "T4 + T5"
+needs = ["A logged-in desktop session."]
+commands = [
+    "cd examples",
+    "./verify-desktop-examples.sh -p macos --no-pause",
+]
+pass = [
+    "Every example with a macOS overlay completes its steps without an error.",
+    "Each `run` and packaged launch opens a window showing the example's UI.",
+]
+
+[[item]]
+id = "desktop-linux"
+title = "Linux: every desktop example builds, runs and packages"
+status = "runnable"
+hosts = ["linux"]
+target = "Linux `x86_64` (desktop examples)"
+tier = "T4 + T5"
+needs = [
+    "An X11 or Wayland session (WSLg works; record says whether this was WSL2).",
+    "Under WSL2, the repo on the Linux filesystem (for example under ~), not /mnt/c: the runtime cannot be staged onto a case-insensitive filesystem (test-matrix section 5.6).",
+]
+commands = [
+    "cd examples",
+    "./verify-desktop-examples.sh -p linux --no-pause",
+]
+pass = [
+    "Every example with a Linux overlay completes its steps without an error.",
+    "Each `run` and AppImage launch opens a window showing the example's UI.",
+]
+
+[[item]]
+id = "pi5-appimage"
+title = "Raspberry Pi 5: an aarch64 AppImage cross-built on x86_64 runs on the Pi"
+status = "runnable"
+hosts = ["linux"]
+target = "Linux `aarch64` (Raspberry Pi 5)"
+tier = "T2 + T5"
+needs = [
+    "An x86_64 Linux build host (WSL2 works, on the Linux filesystem).",
+    "A Raspberry Pi 5 with a desktop session, reachable by scp.",
+    "`examples/desktop/dice-roller` temporarily set to `[tool.kivy.linux].archs = [\"aarch64\"]`. Do not commit that edit.",
+]
+commands = [
+    "cd examples/desktop/dice-roller",
+    "kivyforge lock -p linux",
+    "kivyforge package -p linux --arch aarch64",
+    "scp dist/linux/dice-roller-*-aarch64.AppImage <user>@<pi>:~/",
+    "On the Pi, in its desktop session: ~/dice-roller-*-aarch64.AppImage",
+]
+pass = [
+    "The AppImage starts on the Pi and the Dice Roller window renders on its display.",
+]
+record = ["Pi model and revision, OS, compositor (for example labwc), display output."]
+previous = "aarch64-pi-target-findings.md; test-matrix section 7, 2026-09-17"
+
+[[item]]
+id = "pi4-appimage"
+title = "Raspberry Pi 4: the same aarch64 AppImage runs"
+status = "no-hardware"
+hosts = ["linux"]
+target = "Linux `aarch64` (Raspberry Pi 4)"
+tier = "T5"
+needs = ["A Raspberry Pi 4. None is available; the Pi 5 is proven (pi5-appimage)."]
+commands = ["As for pi5-appimage, run on a Pi 4."]
+pass = ["The AppImage starts on the Pi 4 and the window renders."]
+
+[[item]]
+id = "store-play"
+title = "Google Play: a kivyforge App Bundle is accepted and installs from Play"
+status = "needs-credentials"
+hosts = ["windows", "macos", "linux"]
+target = "Android (Google Play)"
+tier = "T5 (store)"
+needs = [
+    "A Google Play Console developer account and an app entry for the package name.",
+    "Release signing configured in `[tool.kivy.android.signing]` (the upload key).",
+]
+commands = [
+    "cd <your project>",
+    "kivyforge package -p android -f aab",
+    "Upload app/build/outputs/bundle/release/app-release.aab to an internal testing track in Play Console.",
+    "Install the release on a phone from the Play Store link for testers.",
+]
+pass = [
+    "Play Console accepts the bundle with no errors.",
+    "The app installs from Play and launches on the phone.",
+]
+record = ["Anything the pre-launch report flags."]
+
+[[item]]
+id = "store-appstore"
+title = "App Store: a kivyforge .ipa is accepted by App Store Connect and runs from TestFlight"
+status = "needs-credentials"
+hosts = ["macos"]
+target = "iOS (App Store Connect)"
+tier = "T5 (store)"
+needs = [
+    "An App Store Connect app record for the bundle ID, and distribution signing for the team.",
+]
+commands = [
+    "cd <your project>",
+    "kivyforge package -p ios --export-method app-store",
+    "Upload the exported .ipa with Transporter (or `xcrun altool --upload-app`).",
+    "Install the build from TestFlight on an iPhone.",
+]
+pass = [
+    "App Store Connect processes the build with no errors.",
+    "The TestFlight build installs and launches on the phone.",
+]
