@@ -2,18 +2,21 @@
 
 ## [Unreleased]
 
-### `run`: progress goes to stderr (Android, Linux, macOS, Windows)
+### `run`: progress goes to stderr
 
 - **Changed:** `kivyforge run` printed its own progress (`[run]`/`[smoke]`
-  lines, `Launching ...`, and every line of the build it runs first) to
-  stdout. That now goes to stderr, as it does for `build` and `package`.
-  stdout carries only what the command produces: the app's own output on
-  desktop, the app's filtered logcat on Android, and "Contract smoke test
-  PASSED." for `--smoke`.
+  lines, `Installing on ...`, `Launching ...`, and every line of the build it
+  runs first) to stdout. That now goes to stderr, as it does for `build` and
+  `package`. stdout carries only what the command produces: the app's own
+  output on desktop, the app's filtered logcat on Android, the app console on
+  iOS, and "Contract smoke test PASSED." for `--smoke`. On iOS the app's
+  output arrives as Apple's launch tool delivers it: the simulator merges the
+  app's stdout and stderr onto stdout, while a device keeps them apart, so
+  Kivy's log (which Kivy writes to stderr) shows on stderr, and `devicectl`
+  adds two lines of its own to stdout.
 - **Migration:** a script that captured `run`'s stdout to read build progress
   should read stderr instead. One that only checked the exit status, or read
   the app's output or the smoke verdict, is unaffected.
-- iOS `run` is unchanged.
 
 ### Android: App Bundles are now checked in CI
 

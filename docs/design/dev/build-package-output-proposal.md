@@ -917,10 +917,15 @@ part of this item.
 - **`run` is out of scope.** It inherits stdout on purpose, so the app's own output
   passes through untouched, and that is correct behaviour a `--json` conversion
   should not disturb. Worth a separate, smaller decision later.
-  *(Decided 2026-09-28 for Android, Linux, macOS and Windows: `run` and
-  `run --smoke` send their own progress, and the nested build's, to stderr,
-  leaving stdout to the app's own output or the smoke verdict. iOS `run` is
-  not yet changed.)*
+  *(Decided 2026-09-28 for every platform: `run` and `run --smoke` send their
+  own progress, and the nested build's, to stderr, leaving stdout to the app's
+  own output or the smoke verdict. iOS followed the other four the same day.
+  There the app's streams are whatever Apple's launch tool makes of them:
+  `simctl launch --console-pty` merges them onto stdout; `devicectl
+  --console` keeps the app's stdout and stderr apart (so Kivy's log is on
+  stderr) and prints "Launched application..." and "Waiting for the
+  application to terminate..." to stdout. Re-routing either would mean piping
+  the console, which breaks live streaming and Ctrl+C.)*
 - **Nothing else is deleted.** The human output is well judged; the problem is
   that it is the *only* output.
 

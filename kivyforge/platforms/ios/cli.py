@@ -25,6 +25,7 @@ from kivyforge.build_outcome import (
 from kivyforge.cli._common import (
     ECHO_EVENTS,
     LOCKFILE_NAME,
+    PROGRESS_ONLY_EVENTS,
     ToolchainError,
     lockfile_path,
 )
@@ -494,8 +495,9 @@ def ios_run(
                 no_verify_lock=False,
                 no_cache=False,
                 team_id=resolved_team_id,
+                events=PROGRESS_ONLY_EVENTS,
             )
-            click.echo(f"xcodebuild build ({target}) ...")
+            click.echo(f"xcodebuild build ({target}) ...", err=True)
             run_command(
                 build_command(
                     xb,
@@ -543,17 +545,19 @@ def ios_list_devices() -> None:
 def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     device = resolve_simulator_destination(destination)
     label = f"{device.name} ({device.udid})"
-    click.echo(f"Installing on simulator {label} ...")
+    # Progress, so stderr: stdout belongs to the app console launched below,
+    # which is `run`'s product (AGENTS.md).
+    click.echo(f"Installing on simulator {label} ...", err=True)
     run_command(simctl_install(device.udid, app))
-    click.echo(f"Launching {bundle_id} ...")
+    click.echo(f"Launching {bundle_id} ...", err=True)
     run_foreground(simctl_launch(device.udid, bundle_id))
 
 
 def _run_device(device: Device, app: Path, bundle_id: str) -> None:
     label = f"{device.name} ({device.identifier})"
-    click.echo(f"Installing on device {label} ...")
+    click.echo(f"Installing on device {label} ...", err=True)
     run_command(devicectl_install(device.identifier, app))
-    click.echo(f"Launching {bundle_id} ...")
+    click.echo(f"Launching {bundle_id} ...", err=True)
     run_foreground(devicectl_launch(device.identifier, bundle_id))
 
 

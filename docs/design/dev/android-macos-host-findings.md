@@ -224,9 +224,8 @@ None of these is a macOS-host defect; they would show on any host.
   `build --debug`'s (before the fix it was `package`'s `cfa2402418362df7`).
 - **`run --smoke` prints progress to stdout** with `click.echo`, where `build`
   and `package` send it to stderr. `AGENTS.md` says backends never print.
-  *(Fixed 2026-09-28 for `--smoke`, and for plain `run` on Android and the
-  desktop platforms: progress to stderr, stdout only the verdict or the
-  app's output.)*
+  *(Fixed 2026-09-28 for `--smoke`, and for plain `run` on every platform:
+  progress to stderr, stdout only the verdict or the app's output.)*
 - **Kivy/SDL warnings on Android 17**, from the app, not the build:
   `hidapi: hid_init threw an exception … RECEIVER_EXPORTED or
   RECEIVER_NOT_EXPORTED should be specified` (SDL2's HID support on Android
