@@ -201,7 +201,8 @@ the Gradle log; exit 0 in 34 s.)
 
 `run -p android --device --abi arm64_v8a` installed and launched the app; the
 log reached `[Base] Start application main loop` on `Mali-G715`, OpenGL ES
-3.2, and the process was still alive afterwards.
+3.2, and the process was still alive afterwards. The maintainer confirmed the
+app visibly ran on the phone.
 
 ## Observations, not macOS-specific
 
