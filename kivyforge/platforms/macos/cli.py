@@ -19,7 +19,12 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
-from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
+from kivyforge.cli._common import (
+    ECHO_EVENTS,
+    PROGRESS_ONLY_EVENTS,
+    ToolchainError,
+    lockfile_path_for,
+)
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics, failures
@@ -114,11 +119,14 @@ def macos_run(
             no_verify_lock=False,
             no_cache=False,
             release=release,
+            events=PROGRESS_ONLY_EVENTS,
         )
         app = project_root / built.artifacts[0].path
 
     executable = app / "Contents" / "MacOS" / _executable_name(app)
-    click.echo(f"Launching {app.name} ...")
+    # Progress, so stderr: stdout belongs to the app launched below, whose
+    # output is `run`'s product (AGENTS.md).
+    click.echo(f"Launching {app.name} ...", err=True)
     # Foreground exec (not `open`) so the dev sees stdout/stderr + tracebacks,
     # the desktop analog of the simulator console.
     proc = subprocess.run([str(executable)])

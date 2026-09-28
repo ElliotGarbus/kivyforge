@@ -19,7 +19,12 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
-from kivyforge.cli._common import ECHO_EVENTS, ToolchainError, lockfile_path_for
+from kivyforge.cli._common import (
+    ECHO_EVENTS,
+    PROGRESS_ONLY_EVENTS,
+    ToolchainError,
+    lockfile_path_for,
+)
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.config.model import Config
 from kivyforge.lock.reader import LockError, is_in_sync
@@ -205,11 +210,14 @@ def linux_run(
             no_verify_lock=False,
             no_cache=False,
             release=release,
+            events=PROGRESS_ONLY_EVENTS,
         )
         appdir = project_root / built.artifacts[0].path
 
     apprun = appdir / "AppRun"
-    click.echo(f"Launching {appdir.name} ...")
+    # Progress, so stderr: stdout belongs to the app launched below, whose
+    # output is `run`'s product (AGENTS.md).
+    click.echo(f"Launching {appdir.name} ...", err=True)
     # Foreground exec so the dev sees stdout/stderr + tracebacks.
     proc = subprocess.run([str(apprun)])
     if proc.returncode != 0:

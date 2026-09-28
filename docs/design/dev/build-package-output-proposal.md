@@ -917,6 +917,10 @@ part of this item.
 - **`run` is out of scope.** It inherits stdout on purpose, so the app's own output
   passes through untouched, and that is correct behaviour a `--json` conversion
   should not disturb. Worth a separate, smaller decision later.
+  *(Decided 2026-09-28 for Android, Linux, macOS and Windows: `run` and
+  `run --smoke` send their own progress, and the nested build's, to stderr,
+  leaving stdout to the app's own output or the smoke verdict. iOS `run` is
+  not yet changed.)*
 - **Nothing else is deleted.** The human output is well judged; the problem is
   that it is the *only* output.
 

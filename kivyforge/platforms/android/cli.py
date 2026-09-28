@@ -21,7 +21,7 @@ from kivyforge.build_outcome import (
     discard_note,
 )
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
-from kivyforge.cli._common import ECHO_EVENTS, ToolchainError
+from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.reader import LockError, is_in_sync
@@ -683,7 +683,7 @@ def android_run(
         )
     except adb_mod.AdbError as exc:
         raise AndroidBuildError(str(exc)) from exc
-    click.echo(f"[run] device {device}")
+    click.echo(f"[run] device {device}", err=True)
     dest = project_dir_for(project_root, config)
     if not no_build:
         target_abi = abi or _abi_for_device(device, android)
@@ -702,8 +702,9 @@ def android_run(
                 fmt="apk",
                 abi=target_abi,
                 signing_config_block=signing_block,
+                events=PROGRESS_ONLY_EVENTS,
             )
-            click.echo("[run] assembleRelease")
+            click.echo("[run] assembleRelease", err=True)
             try:
                 run_gradle(dest, ["assembleRelease"])
             except GradleError as exc:
@@ -714,6 +715,7 @@ def android_run(
                 debug=True,
                 fmt="apk",
                 abi=target_abi,
+                events=PROGRESS_ONLY_EVENTS,
             )
     apk = _release_output(dest, "apk") if release else _debug_output(dest, "apk")
     if not apk.is_file():
@@ -726,11 +728,13 @@ def android_run(
         adb_mod.install_apk(device, apk)
         adb_mod.logcat_clear(device)
         adb_mod.launch(device, android.package, "org.kivy.android.PythonActivity")
-        click.echo(f"[run] launched {android.package}; capturing logcat...")
+        click.echo(f"[run] launched {android.package}; capturing logcat...", err=True)
         import time as _time
 
         _time.sleep(wait_sec)
         log = adb_mod.logcat_dump(device)
+        # The app's own output is `run`'s product, so it alone goes to stdout;
+        # every [run] line above is progress (AGENTS.md).
         for line in log.splitlines():
             if any(tag in line for tag in ("kivyforge", "python.std", "SDL")):
                 click.echo(line)
@@ -754,7 +758,8 @@ def _abi_for_device(device: str, android: AndroidConfig) -> str:
         abi = adb_mod.host_abi()
         click.echo(
             f"[run] {device} reports no ABI kivyforge builds for; assuming the "
-            f"host's {abi}."
+            f"host's {abi}.",
+            err=True,
         )
     if abi not in android.abis:
         raise AndroidBuildError(
@@ -765,7 +770,7 @@ def _abi_for_device(device: str, android: AndroidConfig) -> str:
             "locked ABI. Installing the wrong ABI fails as "
             "INSTALL_FAILED_NO_MATCHING_ABIS."
         )
-    click.echo(f"[run] building for {abi} (the target's ABI)")
+    click.echo(f"[run] building for {abi} (the target's ABI)", err=True)
     return abi
 
 
@@ -796,7 +801,7 @@ def android_smoke(
         )
     except adb_mod.AdbError as exc:
         raise AndroidBuildError(str(exc)) from exc
-    click.echo(f"[smoke] device {device}; building the probe...")
+    click.echo(f"[smoke] device {device}; building the probe...", err=True)
     abi = abi or _abi_for_device(device, config.android_required)
     # The release probe exists to exercise byte-compilation, stripping and R8,
     # so it must build the *release* variant — which needs both a signing config
@@ -818,10 +823,11 @@ def android_smoke(
         signing_config_block=signing_block,
         release_signing_config=signing_name,
         test_build_type="release" if release else None,
+        events=PROGRESS_ONLY_EVENTS,
     )
     dest = project_dir_for(project_root, config)
 
-    click.echo(f"[smoke] running the contract test on {device}...")
+    click.echo(f"[smoke] running the contract test on {device}...", err=True)
     try:
         run_smoke(dest, release=release)
     except (adb_mod.AdbError, SmokeError) as exc:
@@ -852,11 +858,12 @@ def _release_dev_signing(
         except SigningError as exc:
             click.echo(
                 f"{tag} release signing is configured but unusable ({exc}); "
-                f"falling back to the debug keystore for the {label}."
+                f"falling back to the debug keystore for the {label}.",
+                err=True,
             )
         else:
             return signing_config_gradle(signing), "release"
-    click.echo(f"{tag} signing the release {label} with the debug keystore.")
+    click.echo(f"{tag} signing the release {label} with the debug keystore.", err=True)
     return "", "debug"
 
 
