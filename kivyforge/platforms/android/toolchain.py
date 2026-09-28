@@ -18,8 +18,8 @@ GRADLE_DISTRIBUTION_URL = (
 
 # The JDKs the pinned Gradle can run on, checked by `doctor`. AGP 8 needs 17;
 # Gradle 8.11 cannot run on anything newer than 23 (Gradle's compatibility
-# matrix), and fails with "Unsupported class file major version" -- which is
-# what Android Studio's bundled JDK 25 produces. Move MAX_JDK with GRADLE_VERSION.
+# matrix), and fails with "Unsupported class file major version" on a newer one.
+# Move MAX_JDK with GRADLE_VERSION; test_toolchain_docs.py pins the pair.
 MIN_JDK = 17
 MAX_JDK = 23
 

@@ -78,12 +78,12 @@ releases.
 | Android Gradle Plugin | 8.10.0 |
 | Gradle | 8.11.1 (downloaded by the Gradle wrapper) |
 
-The JDK range comes from Gradle 8.11.1, which does not run on a newer JDK. The
-JDK bundled with recent Android Studio releases is newer, so install a separate
-JDK and point `JAVA_HOME` at it.
+The JDK range is what the pinned Gradle can run on. Android Studio bundles its
+own JDK, which may be newer than that; if it is, install a separate JDK in the
+range and point `JAVA_HOME` at it.
 
-`kivyforge doctor -p android` checks the JDK's version, the Android SDK, build
-tools, and an NDK.
+`kivyforge doctor -p android` checks the JDK you actually have, the Android
+SDK, build tools, and an NDK.
 
 ## Check a combination on your device
 

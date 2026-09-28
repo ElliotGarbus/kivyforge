@@ -12,8 +12,10 @@
 - **Fixed:** with `ANDROID_HOME` unset, kivyforge did not look in
   `~/Library/Android/sdk`, where Android Studio installs the SDK on macOS.
   `doctor`, the build's `sdk.dir` and `run`'s `adb` lookup now find it.
-- The docs said "JDK 17 or later". They now say 17 to 23 and warn that
-  Android Studio's bundled JDK is too new.
+- The docs said "JDK 17 or later". The range is now stated once, in the
+  Android supported-versions table, which the other pages link to. Those
+  pages note that Android Studio's bundled JDK may fall outside it and that
+  `doctor` checks.
 
 ### The missing-`pyproject.toml` hint no longer points at `init` to create one
 

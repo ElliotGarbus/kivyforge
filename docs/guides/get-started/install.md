@@ -97,7 +97,8 @@ which targets.
 Each target needs its own toolchain on the build host. Install these when you
 start building for a target:
 
-- **Android** (build from Windows, macOS, or Linux): a JDK from 17 to 23, the
+- **Android** (build from Windows, macOS, or Linux): a JDK in the
+  [supported range](../guides/android/supported-versions.md#build-tools), the
   Android SDK, and the Android NDK. See
   [Configure your Android app](../guides/android/configure.md).
 - **iOS** (build from macOS only): Xcode 15 or newer. See

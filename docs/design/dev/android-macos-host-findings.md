@@ -101,10 +101,14 @@ doctor-only.
   `toolchain.MIN_JDK`..`toolchain.MAX_JDK` (17..23). `MAX_JDK` sits next to
   `GRADLE_VERSION` because it moves with it. An unreadable banner WARNs.
 - `sdk_root()` tries `~/Library/Android/sdk` first on macOS.
-- The four pages that said "17 or later" say "17 to 23", and the Android
-  quickstart and supported-versions page say Android Studio's bundled JDK is
-  too new. `tests/platforms/android/test_toolchain_docs.py` pins the
-  supported-versions table to `toolchain.py`.
+- Of the four pages that said "17 or later", only the supported-versions
+  table states the range now; the other three link to it. None names the
+  JDK version Android Studio bundles, which changes with Android Studio's
+  releases, not ours; they say it may be too new and that `doctor` checks.
+  `tests/platforms/android/test_toolchain_docs.py` pins the table to
+  `toolchain.py`, fails if another guide restates the range, and pins the
+  (`GRADLE_VERSION`, `MAX_JDK`) pair so a Gradle bump forces a look at the
+  ceiling.
 
 Re-verified on this Mac after the fix:
 

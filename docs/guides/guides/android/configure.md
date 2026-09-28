@@ -15,8 +15,8 @@ key, see the [Android overlay reference](../../reference/pyproject/android.md).
 ## Before you begin
 
 - [Install kivyforge](../../get-started/install.md) and the Android toolchain:
-  a JDK from 17 to 23, the Android SDK, and the Android NDK (Native Development
-  Kit).
+  a JDK in the [supported range](supported-versions.md#build-tools), the
+  Android SDK, and the Android NDK (Native Development Kit).
 - Have a project with `[project]` and `[tool.kivy]` sections. See
   [Project configuration](../../concepts/configuration.md).
 
