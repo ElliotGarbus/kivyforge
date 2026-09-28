@@ -215,7 +215,13 @@ None of these is a macOS-host defect; they would show on any host.
 - **`run --smoke` without `--release` stages the release payload.**
   `android_smoke` calls `android_build(debug=False)`, so the debug smoke test
   byte-compiles and reuses the release stamp (`cfa24…`), although
-  `byte_compile = "release"`. Probably deliberate; its effect is undocumented.
+  `byte_compile = "release"`. **Fixed on this branch:** `debug=False` was the
+  only way to skip `assembleDebug`, which the connected test does not need, and
+  the release staging came with it. `android_build(assemble=False)` now skips
+  that step alone, and the smoke test stages the payload of the variant it
+  tests. Re-run on the Pixel 8a with the fix: `run -p android --smoke
+  --device` PASSED, staging stamp `a059c68209b9e3f5`, the same as
+  `build --debug`'s (before the fix it was `package`'s `cfa2402418362df7`).
 - **`run --smoke` prints progress to stdout** with `click.echo`, where `build`
   and `package` send it to stderr. `AGENTS.md` says backends never print.
 - **Kivy/SDL warnings on Android 17**, from the app, not the build:
