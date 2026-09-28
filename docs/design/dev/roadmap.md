@@ -357,9 +357,9 @@ known-unverified list.
     (due 2026-10-01; handoff task 3).
   - ~~**Noted, not fixed:** `run --smoke` prints progress to stdout, which
     `AGENTS.md` rules out (android-macos-host findings, "Observations").~~
-    **Fixed 2026-09-28** for `run --smoke` and for plain `run` on Android,
-    Linux, macOS and Windows: progress goes to stderr, and stdout carries only
-    the app's output (or the smoke verdict). iOS `run` is unchanged; see
+    **Fixed 2026-09-28** for `run --smoke` and for plain `run` on every
+    platform, iOS in a follow-up PR the same day: progress goes to stderr, and
+    stdout carries only the app's output (or the smoke verdict). See
     `build-package-output-proposal.md`, "`run` is out of scope".
 
 ## Execution order

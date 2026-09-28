@@ -369,6 +369,27 @@ class TestRun:
             assert installs and "PHONE-COREDEVICE" in installs[0]
             assert "PHONE-COREDEVICE" in launches[0]
 
+    @pytest.mark.parametrize(
+        ("flag", "products"),
+        [("--simulator", "Debug-iphonesimulator"), ("--device", "Debug-iphoneos")],
+    )
+    def test_stdout_is_left_to_the_app(
+        self, runner, tmp_path, record_xcodebuild, flag, products
+    ):
+        """AGENTS.md: product to stdout, everything else to stderr. `run`'s
+        product is the app console that simctl/devicectl stream; the launch is
+        faked and prints nothing, so stdout must stay empty."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            app = Path(fs) / "myapp-ios/build/DerivedData/Build/Products"
+            (app / products / "myapp.app").mkdir(parents=True)
+            result = runner.invoke(run_cmd, [flag])
+            assert result.exit_code == 0, result.output
+            assert result.stdout == ""
+            for line in ("Generated myapp-ios", "xcodebuild build", "Installing on"):
+                assert line in result.stderr
+            assert "Launching org." in result.stderr
+
     def test_run_device_with_no_phone_fails_before_building(
         self, runner, tmp_path, record_xcodebuild, devicectl_devices
     ):
