@@ -32,9 +32,11 @@
 # resolver, verifies it still matches the committed lock (ignoring the volatile
 # generated_at timestamp), then RESTORES the committed lock so your git tree
 # stays clean. A semantic difference is reported as "lock drift" (non-fatal).
-# Examples with no committed lock (e.g. hello-native, whose lock is gitignored)
-# simply keep the freshly generated one. Pass --keep-lock to leave regenerated
-# locks in place.
+# Examples with no committed lock (most desktop examples gitignore theirs)
+# simply keep the freshly generated one — including over an untracked lock left
+# on disk by an earlier run, which is not a reference: restoring it would put
+# back whatever that run locked (e.g. aarch64 after a Pi cross-build) and fail
+# the build step. Pass --keep-lock to leave regenerated locks in place.
 #
 # GUI steps open a real window. On Linux `run` and the AppImage BLOCK until you
 # close the window (that IS the visual check). On macOS `run` blocks
@@ -167,7 +169,9 @@ verify_lock_step() {
     # Sets DRIFT_THIS=1 when the regenerated lock differs semantically.
     DRIFT_THIS=0
     local backup=""
-    if [[ -f "$LOCK" ]]; then
+    # Only a lock git tracks is a reference. An untracked one is a leftover
+    # from an earlier run and is overwritten, not restored.
+    if [[ -f "$LOCK" ]] && git ls-files --error-unmatch -- "$LOCK" >/dev/null 2>&1; then
         backup="$(mktemp)"
         cp "$LOCK" "$backup"
     fi

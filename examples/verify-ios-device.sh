@@ -137,7 +137,9 @@ verify_lock_step() {
     # semantically.
     DRIFT_THIS=0
     local backup=""
-    if [[ -f "$LOCK" ]]; then
+    # Only a lock git tracks is a reference. An untracked one is a leftover
+    # from an earlier run and is overwritten, not restored.
+    if [[ -f "$LOCK" ]] && git ls-files --error-unmatch -- "$LOCK" >/dev/null 2>&1; then
         backup="$(mktemp)"
         cp "$LOCK" "$backup"
     fi
