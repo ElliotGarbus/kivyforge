@@ -1314,7 +1314,7 @@ this table and the TOML listing the same items.
 | `desktop-windows` | runnable | Windows | 2026-09-29: `verify-windows-examples.ps1` passed all three examples |
 | `desktop-macos` | runnable | macOS | no logged run of `verify-desktop-examples.sh` |
 | `desktop-linux` | runnable | Linux / WSL2 | 2026-09-28: `verify-desktop-examples.sh` passed all three examples on WSL2 (WSLg) |
-| `pi5-appimage` | runnable | Linux build + Pi 5 | 2026-09-17: Dice Roller rendered on a Pi 5 (roadmap item 4) |
+| `pi5-appimage` | runnable | Linux build + Pi 5 | 2026-09-30: Dice Roller rendered on a Pi 5, cross-built on WSL2; first 2026-09-17 (roadmap item 4) |
 | `pi4-appimage` | no hardware | Linux build + Pi 4 | never: no Pi 4 available |
 | `store-play` | needs credentials | any host | never |
 | `store-appstore` | needs credentials | macOS | never |
@@ -1421,6 +1421,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-29 | Windows `amd64` (desktop examples) | T4 + T5, hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Windows 11 Home 26200. dice-roller, notes, hello-native pass. Checklist item `desktop-windows`; kivyforge `10165779`. |
 | 2026-09-29 | Windows `amd64` (`dice-roller`) | T5 (interactive), hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Windows 11 Home 26200. Double-click and a desktop shortcut each opened the app window with no console window, not even briefly; Ctrl+C on `run -p windows` closed the app, returned the prompt and left no `python.exe` running. Checklist item `windows-interactive`; kivyforge `3c02539b`. |
 | 2026-09-29 | Android `arm64_v8a` (physical device) | T4 + T5, hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Pixel 8a, Android 17. From a Windows 11 host. Smoke test (release) printed exactly 'Contract smoke test PASSED.' and exited 0; plain run showed the app and logcat reached 'Start application main loop'. Checklist item `android-device`; kivyforge `3c02539b`. |
+| 2026-09-30 | Linux `aarch64` (Raspberry Pi 5) | T2 + T5, hardware pass | Ubuntu 26.04 LTS, kernel 6.18.33.2-microsoft-standard-WSL2 (WSL2, x86_64) | **PASS** on Raspberry Pi 5 Model B Rev 1.1, Debian 13 (trixie), labwc. aarch64 AppImage cross-built on WSL2 x86_64; on the Pi it self-mounted (/dev/fuse), SDL2 on Wayland, Broadcom V3D 7.1.10.2 (Mesa 26.2.2), main loop reached, window rendered on HDMI. Checklist item `pi5-appimage`; kivyforge `a61af649`. |
 
 ### Known-unverified, stated plainly
 
