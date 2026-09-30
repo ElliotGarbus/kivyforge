@@ -1305,7 +1305,7 @@ this table and the TOML listing the same items.
 
 | Item | Status | Runs on | Last known result |
 |---|---|---|---|
-| `android-device` | runnable | any host | 2026-09-27: `run --device --smoke` passed on a Pixel 8a, from a macOS host |
+| `android-device` | runnable | any host | 2026-09-29: smoke test and launch passed on a Pixel 8a (Android 17), from a Windows host; 2026-09-27 from a macOS host |
 | `ios-device` | runnable | macOS | 2026-09-27: PR #20 validated on an iPhone 18 Pro Max; first device run 2026-09-14 |
 | `ios-strip-source` | blocked | macOS | never: every iOS example pins `3.15.0b4`; waits on CPython 3.15.0 final |
 | `macos-notarize` | runnable | macOS | 2026-09-14: `notarytool history` shows five Accepted submissions since 2026-07-07 |
@@ -1420,6 +1420,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-28 | Linux `x86_64` (desktop examples) | T4 + T5, hardware pass | Ubuntu 26.04 LTS, kernel 6.18.33.2-microsoft-standard-WSL2 (WSL2, x86_64) | **PASS** on Ubuntu on WSL2 (WSLg), Windows 11. notes, hello-native, dice-roller pass; dice-roller first failed on a stale aarch64 lock from the Pi 5 pass, fixed in #35. Checklist item `desktop-linux`; kivyforge `b1a4e84b`. |
 | 2026-09-29 | Windows `amd64` (desktop examples) | T4 + T5, hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Windows 11 Home 26200. dice-roller, notes, hello-native pass. Checklist item `desktop-windows`; kivyforge `10165779`. |
 | 2026-09-29 | Windows `amd64` (`dice-roller`) | T5 (interactive), hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Windows 11 Home 26200. Double-click and a desktop shortcut each opened the app window with no console window, not even briefly; Ctrl+C on `run -p windows` closed the app, returned the prompt and left no `python.exe` running. Checklist item `windows-interactive`; kivyforge `3c02539b`. |
+| 2026-09-29 | Android `arm64_v8a` (physical device) | T4 + T5, hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Pixel 8a, Android 17. From a Windows 11 host. Smoke test (release) printed exactly 'Contract smoke test PASSED.' and exited 0; plain run showed the app and logcat reached 'Start application main loop'. Checklist item `android-device`; kivyforge `3c02539b`. |
 
 ### Known-unverified, stated plainly
 
