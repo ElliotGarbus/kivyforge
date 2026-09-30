@@ -1310,7 +1310,7 @@ this table and the TOML listing the same items.
 | `ios-strip-source` | blocked | macOS | never: every iOS example pins `3.15.0b4`; waits on CPython 3.15.0 final |
 | `macos-notarize` | runnable | macOS | 2026-09-14: `notarytool history` shows five Accepted submissions since 2026-07-07 |
 | `windows-authenticode` | needs credentials | Windows | never with a public certificate; the self-signed loop runs in CI (`windows_signing`) |
-| `windows-interactive` | runnable | Windows | never; paths over MAX_PATH moved to CI 2026-09-24 (§5.6) |
+| `windows-interactive` | runnable | Windows | 2026-09-29: double-click, shortcut and Ctrl+C passed on `dice-roller`; paths over MAX_PATH moved to CI 2026-09-24 (§5.6) |
 | `desktop-windows` | runnable | Windows | 2026-09-29: `verify-windows-examples.ps1` passed all three examples |
 | `desktop-macos` | runnable | macOS | no logged run of `verify-desktop-examples.sh` |
 | `desktop-linux` | runnable | Linux / WSL2 | 2026-09-28: `verify-desktop-examples.sh` passed all three examples on WSL2 (WSLg) |
@@ -1419,6 +1419,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-28 | iOS simulator + device `arm64` (`hello-kivy`) | `run` stream routing (local, before PR) | macOS 26.6.2, Xcode 27.0; iPhone Air simulator; iPhone 18 Pro Max (iPhone19,3), iOS 27.0, wired; automatic signing | `run -p ios` with stdout and stderr redirected to separate files, on a `/tmp` copy of `hello-kivy`. **Simulator:** stderr was exactly kivyforge's five lines (`Collecting artifacts …`, `Generated hello-kivy-ios`, `xcodebuild build (simulator) ...`, `Installing on simulator …`, `Launching org.kivy.hello-kivy ...`); stdout was only the app's console through `Start application main loop` — `simctl --console-pty` merges the app's two streams and added no line of its own. **Device:** the same five kivyforge lines on stderr, followed by Kivy's log, because `devicectl --console` keeps the app's stdout and stderr apart and Kivy logs to stderr; stdout held only `devicectl`'s "Launched application with org.kivy.hello-kivy bundle identifier." and "Waiting for the application to terminate…". Interrupt gave `Aborted!` on stderr in both. `pylock.ios.toml` untouched. |
 | 2026-09-28 | Linux `x86_64` (desktop examples) | T4 + T5, hardware pass | Ubuntu 26.04 LTS, kernel 6.18.33.2-microsoft-standard-WSL2 (WSL2, x86_64) | **PASS** on Ubuntu on WSL2 (WSLg), Windows 11. notes, hello-native, dice-roller pass; dice-roller first failed on a stale aarch64 lock from the Pi 5 pass, fixed in #35. Checklist item `desktop-linux`; kivyforge `b1a4e84b`. |
 | 2026-09-29 | Windows `amd64` (desktop examples) | T4 + T5, hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Windows 11 Home 26200. dice-roller, notes, hello-native pass. Checklist item `desktop-windows`; kivyforge `10165779`. |
+| 2026-09-29 | Windows `amd64` (`dice-roller`) | T5 (interactive), hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Windows 11 Home 26200. Double-click and a desktop shortcut each opened the app window with no console window, not even briefly; Ctrl+C on `run -p windows` closed the app, returned the prompt and left no `python.exe` running. Checklist item `windows-interactive`; kivyforge `3c02539b`. |
 
 ### Known-unverified, stated plainly
 
