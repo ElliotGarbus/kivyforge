@@ -25,8 +25,11 @@
     resolver, verifies it still matches the committed lock (ignoring the volatile
     generated_at line), then RESTORES the committed lock so your git tree stays
     clean. A semantic difference is reported as "lock drift" (non-fatal).
-    Examples with no committed lock (e.g. hello-native, whose lock is gitignored)
-    keep the freshly generated one. Pass -KeepLock to leave regenerated locks.
+    Examples with no committed lock (most desktop examples gitignore theirs)
+    keep the freshly generated one - including over an untracked lock left on
+    disk by an earlier run, which is not a reference: restoring it would put back
+    whatever that run locked and fail the build step. Pass -KeepLock to leave
+    regenerated locks.
 
 .PARAMETER Examples
     One or more example names to run (default: dice-roller, notes, hello-native).
@@ -104,7 +107,11 @@ function Lock-Body {
 function Verify-Lock {
     $script:DriftThis = $false
     $backup = $null
-    if (Test-Path $Lock) {
+    # Only a lock git tracks is a reference. An untracked one is a leftover
+    # from an earlier run and is overwritten, not restored.
+    # (`git ls-files` prints the path only when tracked and writes no stderr,
+    # which matters under $ErrorActionPreference = "Stop" on PowerShell 5.1.)
+    if ((Test-Path $Lock) -and (git ls-files -- $Lock)) {
         $backup = [System.IO.Path]::GetTempFileName()
         Copy-Item $Lock $backup -Force
     }
