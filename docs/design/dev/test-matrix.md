@@ -1312,7 +1312,7 @@ this table and the TOML listing the same items.
 | `windows-authenticode` | needs credentials | Windows | never with a public certificate; the self-signed loop runs in CI (`windows_signing`) |
 | `windows-interactive` | runnable | Windows | 2026-09-29: double-click, shortcut and Ctrl+C passed on `dice-roller`; paths over MAX_PATH moved to CI 2026-09-24 (§5.6) |
 | `desktop-windows` | runnable | Windows | 2026-09-29: `verify-windows-examples.ps1` passed all three examples |
-| `desktop-macos` | runnable | macOS | no logged run of `verify-desktop-examples.sh` |
+| `desktop-macos` | runnable | macOS | 2026-09-30: `verify-desktop-examples.sh` passed all four examples on a MacBook Pro (M5 Pro), macOS 26.6.2 |
 | `desktop-linux` | runnable | Linux / WSL2 | 2026-09-28: `verify-desktop-examples.sh` passed all three examples on WSL2 (WSLg) |
 | `pi5-appimage` | runnable | Linux build + Pi 5 | 2026-09-30: Dice Roller rendered on a Pi 5, cross-built on WSL2; first 2026-09-17 (roadmap item 4) |
 | `pi4-appimage` | no hardware | Linux build + Pi 4 | never: no Pi 4 available |
@@ -1422,6 +1422,7 @@ Linux say whether it was WSL2 or bare metal (§4).
 | 2026-09-29 | Windows `amd64` (`dice-roller`) | T5 (interactive), hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Windows 11 Home 26200. Double-click and a desktop shortcut each opened the app window with no console window, not even briefly; Ctrl+C on `run -p windows` closed the app, returned the prompt and left no `python.exe` running. Checklist item `windows-interactive`; kivyforge `3c02539b`. |
 | 2026-09-29 | Android `arm64_v8a` (physical device) | T4 + T5, hardware pass | Windows 11 (10.0.26200, AMD64) | **PASS** on Pixel 8a, Android 17. From a Windows 11 host. Smoke test (release) printed exactly 'Contract smoke test PASSED.' and exited 0; plain run showed the app and logcat reached 'Start application main loop'. Checklist item `android-device`; kivyforge `3c02539b`. |
 | 2026-09-30 | Linux `aarch64` (Raspberry Pi 5) | T2 + T5, hardware pass | Ubuntu 26.04 LTS, kernel 6.18.33.2-microsoft-standard-WSL2 (WSL2, x86_64) | **PASS** on Raspberry Pi 5 Model B Rev 1.1, Debian 13 (trixie), labwc. aarch64 AppImage cross-built on WSL2 x86_64; on the Pi it self-mounted (/dev/fuse), SDL2 on Wayland, Broadcom V3D 7.1.10.2 (Mesa 26.2.2), main loop reached, window rendered on HDMI. Checklist item `pi5-appimage`; kivyforge `a61af649`. |
+| 2026-09-30 | macOS `arm64` (desktop examples) | T4 + T5, hardware pass | macOS 26.6.2 (arm64) | **PASS** on MacBook Pro (Mac17,9), Apple M5 Pro, macOS 26.6.2. verify-desktop-examples.sh -p macos --no-pause, run by the owner on 2026-09-30: dice-roller, notes, desktop-viewer and hello-native passed; each run and packaged app showed its UI (confirmed by the owner). Checklist item `desktop-macos`; kivyforge `c8c0f94c`. |
 | 2026-09-30 | iOS device `arm64` | T4 + T5, hardware pass | macOS 26.6.2 (arm64) | **PASS** on iPhone 18 Pro Max (iPhone19,3), iOS 27.0. verify-ios-device.sh hello-kivy with the Team ID in KIVYFORGE_TEAM_ID (team_id left blank), 2026-09-30: lock matched the committed pylock.ios.toml; build and package (development export, hello-kivy.ipa) succeeded; app showed its label (confirmed by the owner); log reached 'Start application main loop'; run exited 1 after the owner closed the app from the app switcher ('App terminated due to signal 9.'), which the script now prints and does not count. Earlier attempts the same evening: one stopped at the lock step on a pip SSL error, one could not launch because the phone was locked. Xcode 27.0. Checklist item `ios-device`; kivyforge `61887a1c` (package code as `main` at `c8c0f94c`; the commit changes the script and docs only). |
 
 ### Known-unverified, stated plainly
@@ -1525,6 +1526,9 @@ Linux say whether it was WSL2 or bare metal (§4).
   manual, since the emulator is x86_64.
 - ~~Android T3 from a Windows host: once, by hand, 2026-09-13 (§5.2).~~ — **in CI since 2026-09-23** via `android_windows_host`. **But not the part item 1 broke:** that job's own log line shows the resolver taking the "interpreter already running" fast path, so the Windows `py`-launcher *search* is still covered only by the 2026-09-23 local measurement and by `tests/bundle/test_pycompile.py`. See §5.2.
 - ~~Android T4 in CI: never; the emulator runs above are local and unrepeated.~~ — **in CI since 2026-09-23**: `android_emulator` runs `run --smoke --release` on an API-35 x86_64 AVD every push (§5.4). `arm64_v8a` T4 stays manual — the emulator is x86_64, so that ABI needs a device.
-- Every `examples/verify-*` script except `verify-ios-device.sh`: no logged run.
-  `verify-ios-device.sh` got its first logged run 2026-09-14 (§7).
+- ~~Every `examples/verify-*` script except `verify-ios-device.sh`: no logged run.
+  `verify-ios-device.sh` got its first logged run 2026-09-14 (§7).~~ —
+  **all but `verify-android.ps1` now have logged runs** (§7):
+  `verify-desktop-examples.sh` on Linux (WSL2) 2026-09-28 and macOS
+  2026-09-30, `verify-windows-examples.ps1` 2026-09-29.
 - ~~`requires_device` / `KIVYFORGE_DEVICE_TESTS`: enable nothing today.~~ — **both removed 2026-09-23** (§5.7), rather than left as an opt-in that enabled nothing.
