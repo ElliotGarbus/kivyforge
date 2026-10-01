@@ -3,7 +3,7 @@
 
 [![Backers on Open Collective](https://opencollective.com/kivy/backers/badge.svg)](https://opencollective.com/kivy)
 [![Sponsors on Open Collective](https://opencollective.com/kivy/sponsors/badge.svg)](https://opencollective.com/kivy)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](code_of_conduct.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 ![PyPI - Version](https://img.shields.io/pypi/v/kivyforge)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/kivyforge)
@@ -18,14 +18,14 @@ successor to **kivy-ios**, **python-for-android**, and **buildozer**, unifying
 their per-platform workflows behind a single declarative configuration.
 
 The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
-Linux, macOS, and Windows**.
+Linux (including **Raspberry Pi**), macOS, and Windows**.
 
 📖 **Documentation:** <https://elliotgarbus.github.io/kivyforge/> — installation,
 quickstarts for every platform, the configuration and CLI reference, and
 troubleshooting. Build it locally with `pip install -e ".[docs]"` then
 `mkdocs serve`.
 
-> **Status: early development — iOS + macOS + Linux + Windows + Android.**
+> **Status: early development — iOS + macOS + Linux (x86_64 and Raspberry Pi) + Windows + Android.**
 > kivyforge targets **iOS** (resolve into `pylock.ios.toml`, download the official
 > [`Python.xcframework`](https://www.python.org/downloads/) + prebuilt iOS
 > wheels, generate an [Xcode](https://developer.apple.com/xcode/) project),
@@ -33,7 +33,9 @@ troubleshooting. Build it locally with `pip install -e ".[docs]"` then
 > [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
 > CPython + wheels into a signed, double-clickable `.app`), **Linux** (resolve
 > into `pylock.linux.toml`, bundle a PBS gnu/glibc CPython + manylinux wheels into
-> an [AppImage](https://appimage.org/) — with a run-from-folder AppDir substrate),
+> an [AppImage](https://appimage.org/) — with a run-from-folder AppDir substrate;
+> `x86_64` PCs and `aarch64` **Raspberry Pi** boards, the latter cross-built from
+> an x86_64 host),
 > **Windows** (resolve into `pylock.windows.toml`, bundle a PBS MSVC CPython +
 > `win_amd64` wheels into a run-from-folder `onedir` with a windowed launcher
 > `.exe`, optionally Authenticode-signed), and **Android** (resolve into
@@ -52,11 +54,15 @@ troubleshooting. Build it locally with `pip install -e ".[docs]"` then
 | iOS Simulator | arm64 | generated Xcode project → `.app` | none required | macOS + Xcode |
 | [Android](https://www.android.com/) device / emulator | `arm64_v8a`, `x86_64` | generated Gradle/AGP project → `.apk` / `.aab` | auto debug keystore, or release keystore (v1–v4 schemes) | Windows, macOS, or Linux + JDK/Android SDK/NDK |
 | [macOS](https://www.apple.com/macos/) | arm64 (Apple Silicon) | `.app` | ad-hoc (default) **or** Developer ID sign + notarize + staple | macOS (Apple Silicon) |
-| [Linux](https://appimage.org/) | x86_64 (glibc ≥ 2.17) | `.AppImage` / AppDir | none | Linux |
+| [Linux](https://appimage.org/) | x86_64 (glibc ≥ 2.17), aarch64 | `.AppImage` / AppDir | none | Linux |
+| [Raspberry Pi](https://www.raspberrypi.com/) (Pi 4 / Pi 5, 64-bit Raspberry Pi OS) | aarch64 | `.AppImage` (a Linux target — see [Build for Raspberry Pi](docs/guides/guides/linux/raspberry-pi.md)) | none | x86_64 Linux (cross-build; WSL2 works) |
 | [Windows](https://learn.microsoft.com/windows/) | amd64 | `onedir` folder + windowed launcher `.exe` | optional Authenticode (unsigned by default) | Windows |
 
 Desktop targets (macOS / Linux / Windows) bundle a self-contained runtime +
-wheels; on Linux, libGL/EGL and X11/Wayland come from the host. Building for iOS
+wheels; on Linux (including Raspberry Pi), libGL/EGL and X11/Wayland come from
+the host. Raspberry Pi is built as `archs = ["aarch64"]` on the Linux backend;
+you do not install kivyforge on the Pi. It is tested on a Raspberry Pi 5; the
+Pi 4 is supported but untested, and 32-bit Raspberry Pi OS is not supported. Building for iOS
 requires a Mac with Xcode; Android builds on any of the three desktop hosts.
 
 **Apple targets are Apple Silicon only.** kivyforge does not build Intel (`x86_64`)
@@ -72,7 +78,7 @@ kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 Each target platform has its own host requirements. **Building for iOS requires
 macOS** (Xcode-based), so the iOS workflow below is useful only on a Mac:
 
-- macOS with the full [Xcode](https://developer.apple.com/xcode/) app installed
+- macOS with the full [Xcode](https://developer.apple.com/xcode/) 15 or newer installed
   from the [Mac App Store](https://apps.apple.com/app/xcode/id497799835).
   (`xcode-select --install` installs only the command-line tools, which are
   not enough for iOS.) Point the tools at it:
@@ -87,7 +93,8 @@ macOS** (Xcode-based), so the iOS workflow below is useful only on a Mac:
 user-installed prerequisites (kivyforge never installs a host toolchain — it only
 detects one):
 
-- A **JDK 17+** on `PATH` or `JAVA_HOME`.
+- A **JDK 17 to 23** on `PATH` or `JAVA_HOME` (the range the pinned Gradle can
+  run on; Android Studio's bundled JDK may be newer than that).
 - The **Android SDK** (`ANDROID_HOME`/`ANDROID_SDK_ROOT`), with the `compile_sdk`
   platform, build-tools, platform-tools, and accepted licenses
   (`sdkmanager --licenses`). Android Studio's SDK Manager covers all of it.
@@ -100,16 +107,32 @@ enabled) before `kivyforge run`.
 
 ## Installation
 
-Use a Python virtual environment (host Python 3.13+). This is required: it
-isolates the toolchain and keeps its lockfile resolution from being polluted by
-packages in your system Python.
+kivyforge is a command-line tool and needs Python 3.13 or newer. It is on PyPI,
+but every release so far is a **pre-release** (currently `3.0.0.dev0`), and
+installers skip pre-releases unless you opt in — so each command below carries a
+pre-release flag. The recommended installer is [uv](https://docs.astral.sh/uv/),
+which installs it into its own isolated environment and puts `kivyforge` on your
+`PATH`:
+
+      uv tool install --prerelease allow kivyforge
+
+If your shell reports that `kivyforge` is not found, run `uv tool update-shell`
+and open a new terminal. Upgrade or remove it later with
+`uv tool upgrade --prerelease allow kivyforge` / `uv tool uninstall kivyforge`.
+Once a stable release is published, the pre-release flags are no longer needed.
+
+Alternatives: [pipx](https://pipx.pypa.io/)
+(`pipx install --pip-args="--pre" kivyforge`), or pip inside a virtual
+environment so it does not collide with other projects:
 
       python3 -m venv .venv
-      . .venv/bin/activate
+      . .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
+      pip install --pre kivyforge
 
-Install kivyforge from this repository (it is not yet published to PyPI):
-
-      pip install -e ".[dev]"
+Check the install with `kivyforge --version` and `kivyforge capabilities`. The
+install also provides a short alias, `kf`. For the full walk-through, see
+[Install kivyforge](https://elliotgarbus.github.io/kivyforge/get-started/install/).
+To work on kivyforge itself, see [Development](#development).
 
 > **Mobile examples need no local wheel-building.** Kivy (2.3.1 and 3.0),
 > pyobjus, and pyjnius resolve from the
@@ -223,6 +246,21 @@ display server, so the host must provide glibc ≥ the artifact's effective floo
 host, GL libraries, display session, glibc floor, arch coverage, generated
 `.desktop` validity, reachable hosts).
 
+### Raspberry Pi
+
+Raspberry Pi is a first-class **Linux** target, not a separate platform. Set
+`archs = ["aarch64"]` in `[tool.kivy.linux]`, then cross-build the AppImage on
+an x86_64 Linux machine (WSL2 works) and copy it to a Pi 4 or Pi 5 running
+64-bit Raspberry Pi OS with a desktop:
+
+      kivyforge lock -p linux
+      kivyforge package -p linux -f appimage --arch aarch64   # -> dist/linux/<app>-<ver>-aarch64.AppImage
+
+On the Pi: `chmod +x <app>.AppImage && ./<app>.AppImage`. An `aarch64` build
+cannot be launched with `kivyforge run` on the x86_64 host. See
+[Build for Raspberry Pi](docs/guides/guides/linux/raspberry-pi.md) for the full
+guide and scope.
+
 ## Quick start (Windows)
 
 The Windows backend bundles a relocatable CPython + your `win_amd64` wheels into
@@ -311,7 +349,8 @@ index**:
 **Desktop** ([`examples/desktop/`](examples/desktop/)) — macOS/Linux/Windows:
 
 - [`dice-roller`](examples/desktop/dice-roller/) — minimal Kivy UI that **builds &
-  runs on macOS, Linux, and Windows today** from PyPI (Kivy 2.3.1).
+  runs on macOS, Linux (x86_64 and Raspberry Pi), and Windows today** from PyPI
+  (Kivy 2.3.1).
 - [`notes`](examples/desktop/notes/) — Kivy app with a pure-Python dependency
   (`platformdirs`); builds on macOS, Linux, and Windows from PyPI.
 - [`desktop-viewer`](examples/desktop/desktop-viewer/) — a **macOS-only** Kivy app
@@ -365,7 +404,8 @@ Your app is described declaratively in `pyproject.toml`. Standard
 [PEP 621](https://peps.python.org/pep-0621/) `[project]` metadata supplies the
 name, version, and runtime `dependencies`; shared, platform-neutral settings live
 under `[tool.kivy]`, and iOS-specific settings live under `[tool.kivy.ios]`
-(other platforms will add their own `[tool.kivy.<platform>]` tables):
+(each other platform has its own `[tool.kivy.<platform>]` table — `macos`,
+`linux`, `windows`, `android`):
 
 ```toml
 [project]
