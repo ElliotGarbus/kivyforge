@@ -72,7 +72,7 @@ commands = [
     "./verify-ios-device.sh hello-kivy",
 ]
 pass = [
-    "The script's build and package steps succeed for `hello-kivy`. Its run step's exit status is printed, not counted: closing the app from the app switcher often ends it with signal 9, which `devicectl` reports as exit 1.",
+    "The script's build, launch and package steps succeed for `hello-kivy`. The run step fails only if the app never launched; after a launch its exit status is printed, not counted: closing the app from the app switcher often ends it with signal 9, which `devicectl` reports as exit 1.",
     "The app opens on the phone and shows its label; the console streams Kivy's log, including `Start application main loop`.",
 ]
 record = ["iPhone model and iOS version.", "Xcode version."]
