@@ -59,6 +59,13 @@ needs no signing, and on a connected iPhone or iPad, which does.
     To choose between several connected devices, pass `--destination` with a
     device name or UDID from `kivyforge run -p ios --list-devices`.
 
+`run` streams the app's console to your terminal until the app ends. To end
+it on the device, close it from the app switcher; going to the Home Screen
+only suspends it. iOS often ends a closed app with SIGKILL, which `devicectl`
+reports as "App terminated due to signal 9.", so `run` then exits with an
+error even though the app ran normally. Pressing Ctrl+C in the terminal stops
+`run` instead.
+
 To install an app you already built, add `--no-build`.
 
 ## Build without running
