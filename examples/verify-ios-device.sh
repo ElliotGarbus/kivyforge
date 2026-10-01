@@ -13,8 +13,11 @@
 # below) but some of these require your judgment:
 #
 #   1. An Apple ID is signed into Xcode -> Settings -> Accounts, and that
-#      account's team matches [tool.kivy.ios.signing].team_id in the
-#      example's pyproject.toml. Missing this fails xcodebuild with:
+#      account's team is the one kivyforge signs with. Pass it as
+#      KIVYFORGE_TEAM_ID=... rather than editing team_id in the example's
+#      pyproject.toml: an edit changes the lock's pyproject hash, and the
+#      lock step below restores the committed lock, which the build then
+#      refuses as stale. A missing account fails xcodebuild with:
 #        "error: No Account for Team \"<TEAM_ID>\". Add a new account in
 #         Accounts settings or verify that your accounts have valid
 #         credentials."
@@ -38,7 +41,8 @@
 #   2. clean     — kivyforge clean
 #   3. lock      — kivyforge lock -p ios --update         (regenerate + verify, then restore)
 #   4. build     — kivyforge build -p ios --device        (Debug, on-device signing)
-#   5. run       — kivyforge run   -p ios --device        (install + launch; visual check)
+#   5. run       — kivyforge run   -p ios --device        (install + launch; visual check;
+#                                                          exit status shown, not counted)
 #   6. package   — kivyforge package -p ios --export-method development
 #                                                          (archive + export a .ipa; skip with --no-release)
 #
@@ -241,12 +245,20 @@ for ex in "${EXAMPLES[@]}"; do
     # 4. build --device (Debug, on-device signing)
     [[ $ok -eq 1 ]] && { run_step "build" kivyforge build -p ios --device || ok=0; }
     # 5. run --device (install + launch; visual check — unlock the phone!)
+    #    run stays attached until the app ends: close it from the app
+    #    switcher. The Home Screen only suspends it. iOS often ends a closed
+    #    app with SIGKILL, which devicectl reports as "App terminated due to
+    #    signal 9." and exit 1, so run's exit status cannot say whether the
+    #    app worked. It is printed, not counted: the visual check decides.
+    RUN_RC=""
     if [[ $ok -eq 1 ]]; then
-        if [[ -n "$DESTINATION" ]]; then
-            run_step "run" kivyforge run -p ios --device --destination "$DESTINATION" || ok=0
-        else
-            run_step "run" kivyforge run -p ios --device || ok=0
-        fi
+        run_args=(kivyforge run -p ios --device)
+        [[ -n "$DESTINATION" ]] && run_args+=(--destination "$DESTINATION")
+        echo
+        echo ">>> run: ${run_args[*]}"
+        "${run_args[@]}"
+        RUN_RC=$?
+        echo ">>> run exited $RUN_RC (not counted; did the app open and behave?)"
     fi
     # 6. package --release (archive + export a .ipa)
     if [[ $ok -eq 1 && $RELEASE -eq 1 ]]; then
@@ -259,7 +271,7 @@ for ex in "${EXAMPLES[@]}"; do
 
     if [[ $ok -eq 1 ]]; then
         echo
-        echo "+++ $ex: OK"
+        echo "+++ $ex: OK${RUN_RC:+ (run exited $RUN_RC; confirm on the phone)}"
         PASSED+=("$ex")
     else
         echo

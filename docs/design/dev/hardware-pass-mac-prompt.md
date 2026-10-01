@@ -53,7 +53,7 @@ cannot see them. Ask the owner, and record only what they confirm.
 ### Rules
 
 - **Never commit an edit made to an example to get a pass through.** The iOS
-  item needs a temporary `team_id` (Step 2); revert it before committing. If
+  item takes its Team ID from `KIVYFORGE_TEAM_ID`, not an edit (Step 2). If
   re-locking `hello-kivy` reports **lock drift**, diff and report it — do not
   commit the regenerated lock (`AGENTS.md`, "Committing").
 - **Check every `record` note before committing.** A placeholder such as
@@ -106,34 +106,40 @@ Pre-flight (the script's header explains each one):
 1. Exactly one iPhone is listed as connected or available (paired). If an
    Apple Watch or a second phone is paired, use `--destination 'NAME'`.
 2. The Apple ID in Xcode → Settings → Accounts belongs to the team that will
-   sign. `examples/mobile/hello-kivy/pyproject.toml` commits `team_id = ""`.
-   **Temporarily** set it to the owner's Team ID (Xcode → Settings → Accounts,
-   or the earlier device-run findings). This edit is reverted at the end of the
-   step.
+   sign. `examples/mobile/hello-kivy/pyproject.toml` commits `team_id = ""`;
+   pass the owner's Team ID (Xcode → Settings → Accounts, or the earlier
+   device-run findings) in `KIVYFORGE_TEAM_ID`. Do not edit `team_id`: the
+   script re-locks, the edit changes the lock's `pyproject_sha256`, and the
+   script then restores the committed lock, which the build refuses as stale.
 3. The phone is **unlocked** when `run` launches the app. A locked phone fails
    late, after a successful install.
 
 ```bash
 cd examples
-./verify-ios-device.sh hello-kivy 2>&1 | tee /tmp/ios-pass.log
+KIVYFORGE_TEAM_ID=<team id> ./verify-ios-device.sh hello-kivy 2>&1 | tee /tmp/ios-pass.log
 cd ..
-git restore -- examples/mobile/hello-kivy/pyproject.toml
 git status --porcelain examples/mobile/hello-kivy      # must be empty
 ```
 
 The `run` step is the visual check: it stays attached to the app's console
 (`devicectl --console`) until the app exits. While it streams, ask the owner
 whether the app opened on the phone and shows its label, then have them close
-the app on the phone (swipe it away) so `run` returns and the script continues
-to `package`. Interrupting with Ctrl+C instead ends `run` with `Aborted!`,
-which the script would likely count as a failed step.
+the app **from the app switcher** (swipe up and pause, then swipe the app's
+card away) so `run` returns and the script continues to `package`. Going to
+the Home Screen only suspends the app, and `run` keeps waiting. iOS often ends
+a closed app with SIGKILL: `devicectl` prints "App terminated due to signal
+9." and `run` exits 1. That is iOS behaviour, not a failure. The script prints
+`run`'s exit status and does not count it, so the run step passes or fails on
+the owner's confirmation alone; put the exit status and that confirmation in
+the note. Ctrl+C also ends `run` (`Aborted!`) without failing the script.
 
 Pass only if all of these hold:
 
-- The script's build, run and package steps all succeed for `hello-kivy`
+- The script's build and package steps succeed for `hello-kivy`
   (`+++ hello-kivy: OK`).
-- The app opens on the phone and shows its label; the console streams Kivy's
-  log, including `Start application main loop` (grep `/tmp/ios-pass.log`).
+- The owner confirms the app opened on the phone and showed its label, and
+  the console streamed Kivy's log, including `Start application main loop`
+  (grep `/tmp/ios-pass.log`).
 
 If the lock step reports `lock DRIFT` on `pylock.ios.toml`, the script restores
 the committed lock; record the drift in the note and in your report, and leave
@@ -142,7 +148,7 @@ the lock alone.
 ```bash
 python scripts/hardware_pass.py record ios-device --result pass \
   --device "<iPhone model>, iOS <version>" \
-  --note "verify-ios-device.sh hello-kivy: build, run and package (development export) succeeded; app showed its label; log reached 'Start application main loop'. Xcode <version>."
+  --note "verify-ios-device.sh hello-kivy: build and package (development export) succeeded; app showed its label (confirmed by the owner); log reached 'Start application main loop'; run exited <status> after the owner closed the app from the app switcher (<devicectl's last line>). Xcode <version>."
 ```
 
 ### Step 3 — `macos-notarize`
