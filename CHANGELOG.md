@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Android: compile Java at level 17
+
+- **Changed:** the generated `app/build.gradle` now sets `sourceCompatibility` and
+  `targetCompatibility` to `VERSION_17` (was `VERSION_1_8`). JDK 21+ reports
+  source/target 8 as obsolete on every build; kivyforge already requires JDK 17+,
+  so no new JDK is needed.
+- **Migration:** none needed. Regenerate the project (`kivyforge build`) to pick it up.
+
 ### Android: accept pyjnius 1.8
 
 - **Changed:** the bootstrap's pyjnius `invoke0` range is now `>=1.7.0,<1.9`
