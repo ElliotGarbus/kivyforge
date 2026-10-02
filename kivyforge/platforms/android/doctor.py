@@ -435,27 +435,20 @@ def _check_sdl_kivy_match(config: Config, lock) -> CheckResult:
     kivy = next((p for p in lock.packages if p.name.lower() == "kivy"), None)
     if kivy is None:
         return CheckResult("SDL / Kivy match", Status.SKIP, "kivy not in the lock")
-    from packaging.version import InvalidVersion, Version
+    from .lock.generation import expected_generation, mismatch_hint
 
-    try:
-        # ``.major`` reads only the release segment's leading number, so a
-        # pre-release like "3.0.0.dev202606221936" still counts as major 3 --
-        # a direct ``Version(...) >= Version("3.0")`` comparison would not:
-        # PEP 440 dev-releases sort *before* their final release, so that
-        # comparison is False for every Kivy 3.0 dev build.
-        is_sdl3 = Version(kivy.version).major >= 3
-    except InvalidVersion:
+    expected = expected_generation(kivy.version)
+    if expected is None:
         return CheckResult(
             "SDL / Kivy match", Status.WARN, f"unparseable kivy {kivy.version!r}"
         )
-    expected = 3 if is_sdl3 else 2
     if android.kivy_generation != expected:
         return CheckResult(
             "SDL / Kivy match",
             Status.WARN,
             f"kivy_generation = {android.kivy_generation} but kivy {kivy.version} "
             f"is SDL{expected}",
-            hint=f"set kivy_generation = {expected} and re-lock.",
+            hint=mismatch_hint(android.kivy_generation, expected),
         )
     return CheckResult(
         "SDL / Kivy match",
@@ -478,7 +471,9 @@ def _check_pyjnius_contract(lock) -> CheckResult:
             Status.FAIL,
             f"locked pyjnius {pyjnius.version} is outside the bootstrap template's "
             f"invoke0 range ({COMPATIBLE_PYJNIUS})",
-            hint="re-lock to a compatible pyjnius or upgrade kivyforge.",
+            hint=f'require "pyjnius{COMPATIBLE_PYJNIUS}" in [project].dependencies '
+            "and re-lock (a bare `pyjnius` floats to the newest release), "
+            "or upgrade kivyforge.",
         )
     return CheckResult(
         "pyjnius / bootstrap match",

@@ -104,6 +104,54 @@ def _build(config_text=PYPROJECT, packages=None, min_api=24, **kwargs):
     )
 
 
+class TestGenerationMismatchWarning:
+    """``kivy_generation`` never reaches the resolver, so `lock` must say when
+    the Kivy it resolved belongs to the other generation."""
+
+    @staticmethod
+    def _text(generation: int) -> str:
+        return PYPROJECT.replace(
+            'package = "org.example.lockapp"',
+            f'package = "org.example.lockapp"\nkivy_generation = {generation}',
+        )
+
+    def _warnings(self, generation: int, kivy_version: str | None) -> list[str]:
+        packages = [_pkg()]
+        if kivy_version is not None:
+            packages.append(_pkg("kivy", kivy_version))
+        warnings: list[str] = []
+        _build(self._text(generation), packages, on_warning=warnings.append)
+        return warnings
+
+    def test_generation_3_with_kivy_2_warns_and_points_at_dependencies(self):
+        (message,) = self._warnings(3, "2.3.1")
+        assert "kivy_generation = 3" in message
+        assert "kivy 2.3.1" in message
+        assert "[project].dependencies" in message
+        assert "kivy>=3.0.0.dev0" in message
+
+    def test_generation_2_with_kivy_3_warns(self):
+        (message,) = self._warnings(2, "3.0.0")
+        assert "kivy_generation = 2" in message
+        assert "Set kivy_generation = 3" in message
+
+    def test_dev_build_of_kivy_3_counts_as_generation_3(self):
+        assert self._warnings(3, "3.0.0.dev202606221936") == []
+
+    @pytest.mark.parametrize(
+        ("generation", "kivy_version"), [(2, "2.3.1"), (3, "3.0.0"), (2, None)]
+    )
+    def test_no_warning_when_consistent_or_kivy_absent(self, generation, kivy_version):
+        assert self._warnings(generation, kivy_version) == []
+
+    def test_mismatch_does_not_fail_the_lock(self):
+        lock = _build(self._text(3), [_pkg(), _pkg("kivy", "2.3.1")])
+        assert lock.kivy_generation == 3
+
+    def test_callback_is_optional(self):
+        _build(self._text(3), [_pkg(), _pkg("kivy", "2.3.1")])
+
+
 class TestBuilder:
     def test_minimal_lock(self):
         lock = _build()

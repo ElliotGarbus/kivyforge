@@ -250,11 +250,11 @@ class TestContract:
         assert INVOKE0_CONTRACT_VERSION == 1
         assert "1.7" in str(COMPATIBLE_PYJNIUS)
 
-    @pytest.mark.parametrize("version", ["1.7.0", "1.7.1", "1.7.99"])
+    @pytest.mark.parametrize("version", ["1.7.0", "1.7.1", "1.7.99", "1.8.0", "1.8.99"])
     def test_in_range(self, version):
         check_pyjnius_contract(version)  # must not raise
 
-    @pytest.mark.parametrize("version", ["1.6.1", "1.8.0", "2.0.0"])
+    @pytest.mark.parametrize("version", ["1.6.1", "1.9.0", "2.0.0"])
     def test_out_of_range(self, version):
         with pytest.raises(ContractError, match="invoke0"):
             check_pyjnius_contract(version)

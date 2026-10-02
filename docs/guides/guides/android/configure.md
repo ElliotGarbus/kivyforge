@@ -66,6 +66,15 @@ required. The other keys shown have defaults, listed in the reference.
     matching SDL bootstrap and must match the Kivy version in your
     dependencies.
 
+    !!! note "It does not choose the Kivy version"
+        `kivy_generation` is not an input to dependency resolution. The Kivy
+        that gets locked comes only from `[project].dependencies`. With
+        `kivy_generation = 3` and a plain `kivy` requirement, `kivyforge lock`
+        still pins 2.3.1, because pip skips pre-releases. Require Kivy 3.0
+        yourself, for example `"kivy>=3.0.0.dev0,<4"`, with an index that hosts
+        it. `kivyforge lock` and `kivyforge doctor` both warn when the two
+        disagree.
+
 `abis`
 :   The ABIs (application binary interfaces) to build. Physical phones use
     `arm64_v8a`. Most emulators on an x86_64 computer use `x86_64`. Keep both
