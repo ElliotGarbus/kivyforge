@@ -26,6 +26,7 @@ from ..resolver import (
     abi_tags,
     pip_python_version,
     pip_version,
+    unresolved_requirement,
     version_str,
 )
 
@@ -228,11 +229,17 @@ class PipWheelResolver:
             )
             if proc.returncode != 0:
                 tags = ", ".join(platform_tags)
+                output = proc.stderr or proc.stdout
+                culprit = unresolved_requirement(output)
+                what = (
+                    f"no wheel for {culprit!r}"
+                    if culprit
+                    else "a dependency has no wheel for that variant upstream"
+                )
                 raise WheelResolverError(
-                    f"pip could not resolve wheels for platform tag(s) {tags}.\n"
-                    f"  This usually means a dependency has no wheel for that "
-                    f"variant upstream.\n"
-                    f"  pip said:\n{_indent(proc.stderr or proc.stdout)}"
+                    f"pip could not resolve wheels for platform tag(s) {tags}: "
+                    f"{what}.\n"
+                    f"  pip said:\n{_indent(output)}"
                 )
             try:
                 return json.loads(report_path.read_text(encoding="utf-8"))

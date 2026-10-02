@@ -649,7 +649,7 @@ def render_android_tables(
         "# TODO: a local wheelhouse, for wheels you cross-build yourself",
         "# extra_index_urls = "
         '["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]  '
-        "# TODO: the first-party kivy/pyjnius android wheels, until they are on PyPI",
+        "# TODO: uncomment for kivy/pyjnius: the first-party Android wheels",
     ]
     if has_kivy:
         lines += [""] + _KIVY_EXCLUDE_LINES

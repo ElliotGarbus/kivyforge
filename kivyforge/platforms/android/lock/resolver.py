@@ -39,6 +39,7 @@ from kivyforge.lock.resolver import (
     dep_names_for_environment,
     pip_python_version,
     pip_version,
+    unresolved_requirement,
     version_str,
 )
 
@@ -255,11 +256,30 @@ class PipResolver:
                 cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
             )
             if proc.returncode != 0:
+                output = proc.stderr or proc.stdout
+                culprit = unresolved_requirement(output)
+                what = (
+                    f"no {platform_tag} wheel for {culprit!r}"
+                    if culprit
+                    else "a dependency has no android_* wheel for that ABI"
+                )
+                hints = []
+                if not any("kivy-mobile-wheels" in u for u in extra_index_urls):
+                    hints.append(
+                        "  - If it is kivy or pyjnius, add the first-party mobile "
+                        "wheel index under [tool.kivy.android]:\n"
+                        "      extra_index_urls = "
+                        '["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]'
+                    )
+                hints.append(
+                    "  - Any other package needs an Android build: a wheel in a "
+                    "directory listed in find_links (android/03), or drop the "
+                    "dependency."
+                )
                 raise ResolverError(
-                    f"pip could not resolve the Android ABI {platform_tag!r}.\n"
-                    f"  This usually means a dependency has no android_* wheel "
-                    f"for that ABI (vendor one via find_links, android/03).\n"
-                    f"  pip said:\n{_indent(proc.stderr or proc.stdout)}"
+                    f"pip could not resolve the Android ABI {platform_tag!r}: "
+                    f"{what}.\n" + "\n".join(hints) + "\n"
+                    f"  pip said:\n{_indent(output)}"
                 )
             try:
                 # pip writes the report as UTF-8; never trust the locale codec

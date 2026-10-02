@@ -42,6 +42,7 @@ from kivyforge.lock.resolver import (
     dep_names_for_environment,
     pip_python_version,
     pip_version,
+    unresolved_requirement,
     version_str,
 )
 
@@ -284,10 +285,25 @@ class PipResolver:
                 cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
             )
             if proc.returncode != 0:
+                output = proc.stderr or proc.stdout
+                culprit = unresolved_requirement(output)
+                what = (
+                    f"no wheel for {culprit!r}"
+                    if culprit
+                    else "a dependency has no wheel for that slice upstream"
+                )
+                hint = ""
+                if not any("kivy-mobile-wheels" in u for u in extra_index_urls):
+                    hint = (
+                        "  If it is kivy or pyobjus, add the first-party mobile "
+                        "wheel index under [tool.kivy.ios]:\n"
+                        "      extra_index_urls = "
+                        '["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]\n'
+                    )
                 raise ResolverError(
-                    f"pip could not resolve the iOS slice {platform_tag!r}.\n"
-                    f"  This usually means a dependency has no wheel for that "
-                    f"slice upstream.\n  pip said:\n{_indent(proc.stderr or proc.stdout)}"
+                    f"pip could not resolve the iOS slice {platform_tag!r}: "
+                    f"{what}.\n{hint}"
+                    f"  pip said:\n{_indent(output)}"
                 )
             try:
                 # pip writes the report as UTF-8; never trust the locale codec

@@ -9,6 +9,7 @@ name parsing are identical and live here.
 
 from __future__ import annotations
 
+import re
 import subprocess
 
 from packaging.requirements import InvalidRequirement, Requirement
@@ -19,6 +20,22 @@ from packaging.requirements import InvalidRequirement, Requirement
 # missing. kivyforge targets Python that ships iOS support, so requiring a current
 # pip is simpler — and far less surprising — than reimplementing tag expansion.
 MIN_PIP_VERSION = (24, 3)
+
+
+_UNRESOLVED_RE = re.compile(
+    r"(?:No matching distribution found for|"
+    r"Could not find a version that satisfies the requirement)\s+(\S+)"
+)
+
+
+def unresolved_requirement(pip_output: str) -> str | None:
+    """The requirement pip reports it could not satisfy, or ``None``.
+
+    pip names it in the last lines of a long failure. Surfacing it in our own
+    headline keeps the user from reading the wrong package into the error.
+    """
+    match = _UNRESOLVED_RE.search(pip_output or "")
+    return match.group(1) if match else None
 
 
 def version_str(version: tuple[int, ...]) -> str:
