@@ -24,6 +24,14 @@ its wheels, so it runs on a Mac that has no Python installed.
     `universal2` wheel is still accepted as a dependency, because it contains an
     `arm64` slice.
 
+!!! tip "Start from a template"
+    Run `kivyforge init -p macos` in the folder that holds your
+    `pyproject.toml`. It adds `[tool.kivy]` and a `[tool.kivy.macos]` overlay with
+    comments and `TODO` markers on the values you need to change, so you edit a
+    working file instead of typing the macOS overlay by hand. To
+    regenerate an overlay that already exists, add `--force`. See
+    [Seed overlays with `init`](../../concepts/configuration.md#seed-overlays-with-init).
+
 ## Build and run the app
 
 1. Add the macOS overlay to your `pyproject.toml`:

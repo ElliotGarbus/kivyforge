@@ -17,8 +17,16 @@ key, see the [Android overlay reference](../../reference/pyproject/android.md).
 - [Install kivyforge](../../get-started/install.md) and the Android toolchain:
   a JDK in the [supported range](supported-versions.md#build-tools), the
   Android SDK, and the Android NDK (Native Development Kit).
-- Have a project with `[project]` and `[tool.kivy]` sections. See
+- Have a project with `[project]` section (`kivyforge init` adds `[tool.kivy]`, below). See
   [Project configuration](../../concepts/configuration.md).
+
+!!! tip "Start from a template"
+    Run `kivyforge init -p android` in the folder that holds your
+    `pyproject.toml`. It adds `[tool.kivy]` and a `[tool.kivy.android]` overlay with
+    comments and `TODO` markers on the values you need to change, so you edit a
+    working file instead of typing the Android overlay by hand. To
+    regenerate an overlay that already exists, add `--force`. See
+    [Seed overlays with `init`](../../concepts/configuration.md#seed-overlays-with-init).
 
 ## Start from a minimal overlay
 

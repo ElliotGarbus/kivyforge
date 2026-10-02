@@ -16,8 +16,16 @@ full key list, see the [iOS overlay reference](../../reference/pyproject/ios.md)
 - A Mac with [Xcode](https://developer.apple.com/xcode/) installed. iOS builds
   run only on macOS.
 - [Install kivyforge](../../get-started/install.md).
-- A project with `[project]` and `[tool.kivy]` sections. See
+- A project with `[project]` section (`kivyforge init` adds `[tool.kivy]`, below). See
   [Project configuration](../../concepts/configuration.md).
+
+!!! tip "Start from a template"
+    Run `kivyforge init -p ios` in the folder that holds your
+    `pyproject.toml`. It adds `[tool.kivy]` and a `[tool.kivy.ios]` overlay with
+    comments and `TODO` markers on the values you need to change, so you edit a
+    working file instead of typing the iOS overlay by hand. To
+    regenerate an overlay that already exists, add `--force`. See
+    [Seed overlays with `init`](../../concepts/configuration.md#seed-overlays-with-init).
 
 ## Add the overlay
 

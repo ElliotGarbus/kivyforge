@@ -20,6 +20,14 @@ kivyforge produces.
 - A Windows host. Windows apps build only on Windows.
 - [Install kivyforge](../../get-started/install.md).
 
+!!! tip "Start from a template"
+    Run `kivyforge init -p windows` in the folder that holds your
+    `pyproject.toml`. It adds `[tool.kivy]` and a `[tool.kivy.windows]` overlay with
+    comments and `TODO` markers on the values you need to change, so you edit a
+    working file instead of typing the Windows overlay by hand. To
+    regenerate an overlay that already exists, add `--force`. See
+    [Seed overlays with `init`](../../concepts/configuration.md#seed-overlays-with-init).
+
 ## Step 1: Configure the overlay
 
 Add a `[tool.kivy.windows]` table to `pyproject.toml`:
