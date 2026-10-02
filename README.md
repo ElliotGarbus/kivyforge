@@ -307,6 +307,8 @@ Windows, macOS, or Linux. 64-bit only (`arm64_v8a`, `x86_64`).
 
       # 1. Seed [tool.kivy] + [tool.kivy.android] into pyproject.toml
       kivyforge init -p android               # then set `package`, kivy_generation, ...
+      #    If your app depends on kivy or pyjnius, uncomment `extra_index_urls`
+      #    in [tool.kivy.android] (see "Android wheels" below).
 
       # 2. Resolve dependencies + pin the runtime into pylock.android.toml
       kivyforge lock -p android
@@ -320,6 +322,21 @@ Windows, macOS, or Linux. 64-bit only (`arm64_v8a`, `x86_64`).
       # 4b. ...or produce the signed release distributable
       kivyforge package -p android            # -> <app>-android/app/build/outputs/apk/release/
       kivyforge package -p android -f aab     # -> .../outputs/bundle/release/ (Play upload)
+
+**Android wheels.** Kivy has no Android wheel on PyPI, so `kivyforge lock -p android`
+fails with "pip could not resolve the Android ABI" until you point it at the
+first-party [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels)
+index. `kivyforge init -p android` writes the line commented out; uncomment it
+(this is the recommended route, and needs no wheel-building):
+
+      [tool.kivy.android]
+      extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+
+The index carries Kivy and pyjnius only. Every other dependency must already
+publish an `android_*` wheel, or you supply one in a directory listed in
+`find_links` (cross-building your own wheel). The error names the package pip
+could not find, so check it before changing anything else. `lock` uses the pip
+that ships inside kivyforge, not the one in your app's virtual environment.
 
 Without `--debug`, step 3 stops after generating the project — ready to open in
 Android Studio (`kivyforge open -p android`) or to drive `gradlew` by hand.

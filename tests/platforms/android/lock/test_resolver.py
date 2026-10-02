@@ -346,6 +346,41 @@ class TestPipResolverRunReport:
                 marker_environment=_TARGET_ENV,
             )
 
+    @pytest.mark.parametrize(
+        ("index", "suggests_index"),
+        [([], True), (["https://x.github.io/kivy-mobile-wheels/simple/"], False)],
+    )
+    def test_failure_names_package_and_suggests_index(
+        self, monkeypatch, index, suggests_index
+    ):
+        def fake_run(cmd, **kw):
+            result = MagicMock()
+            result.returncode = 1
+            result.stderr = (
+                "ERROR: Could not find a version that satisfies the requirement "
+                "numpy (from versions: none)\n"
+                "ERROR: No matching distribution found for numpy"
+            )
+            result.stdout = ""
+            return result
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        with pytest.raises(ResolverError) as excinfo:
+            PipResolver()._run_report(
+                ["numpy"],
+                python_version="3.14.0",
+                platform_tag="android_24_arm64_v8a",
+                abis=("cp314",),
+                extra_index_urls=index,
+                find_links=[],
+                offline=False,
+                marker_environment=_TARGET_ENV,
+            )
+        message = str(excinfo.value)
+        assert "no android_24_arm64_v8a wheel for 'numpy'" in message
+        assert ("add the first-party mobile wheel index" in message) is suggests_index
+        assert "find_links" in message
+
     def test_json_parse_error_raises(self, monkeypatch):
         def fake_run(cmd, **kw):
             report_path = Path(next(a for a in cmd if a.endswith("report.json")))

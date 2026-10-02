@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### `lock`: the resolver error names the package and says what to do
+
+- **Changed:** when pip cannot resolve a dependency for a mobile or desktop
+  target, `kivyforge lock` now names the package in its own headline (for
+  example `no android_24_arm64_v8a wheel for 'numpy'`) instead of leaving it in
+  pip's output further down. For Android it first suggests the first-party
+  kivy-mobile-wheels index (`extra_index_urls`) when it is not configured, and
+  otherwise `find_links` or dropping the dependency. The iOS error gives the
+  same index hint. Error codes are unchanged.
+- **Docs:** the README's Android quick start now explains that Kivy has no
+  Android wheel on PyPI, shows the `extra_index_urls` line, and says `lock` uses
+  kivyforge's own pip, not the app environment's. The `init` template comment
+  for that line no longer says "until they are on PyPI".
+
 ### `run`: progress goes to stderr
 
 - **Changed:** `kivyforge run` printed its own progress (`[run]`/`[smoke]`
