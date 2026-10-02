@@ -39,6 +39,7 @@ def _row(tool: str) -> str:
     [
         ("JDK", f"{toolchain.MIN_JDK} to {toolchain.MAX_JDK}"),
         ("Android NDK", toolchain.NDK_VERSION),
+        ("CMake", toolchain.CMAKE_VERSION),
         ("Android Gradle Plugin", toolchain.AGP_VERSION),
         ("Gradle", toolchain.GRADLE_VERSION),
     ],

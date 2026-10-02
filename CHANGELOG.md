@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Android: doctor checks CMake
+
+- **Added:** `kivyforge doctor` now checks for the CMake the native launcher
+  compile needs. It used to be missing from the checks, so Gradle downloaded it
+  silently during the first build. A missing CMake is a warning with the exact
+  `sdkmanager 'cmake;3.22.1'` command.
+- **Changed:** the generated `app/build.gradle` pins `externalNativeBuild.cmake.version`
+  to `3.22.1` (AGP's own default), so the build and `doctor` ask for the same package.
+- **Migration:** none needed. A build still downloads CMake itself when it is missing
+  and the SDK licenses are accepted.
+
 ### Android: compile Java at level 17
 
 - **Changed:** the generated `app/build.gradle` now sets `sourceCompatibility` and

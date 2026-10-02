@@ -47,6 +47,7 @@ class FakeProbe:
         self._sdk = kw.get("sdk")
         self._ndk = kw.get("ndk", [])
         self._build_tools = kw.get("build_tools", [])
+        self._cmake = kw.get("cmake", [])
         self._platforms = kw.get("platforms", set())
         self._avds = kw.get("avds", [])
         self._accel = kw.get("accel", True)
@@ -78,6 +79,9 @@ class FakeProbe:
 
     def build_tools_versions(self, sdk):
         return list(self._build_tools)
+
+    def cmake_versions(self, sdk):
+        return list(self._cmake)
 
     def platform_installed(self, sdk, api):
         return api in self._platforms
@@ -111,6 +115,7 @@ def _healthy_probe(sdk: Path):
         java_home="/jdk",
         sdk=sdk,
         ndk=["27.3.13750724"],
+        cmake=[toolchain.CMAKE_VERSION],
         build_tools=["35.0.0"],
         platforms={35},
         avds=["kivyforge_x86_64"],
@@ -133,7 +138,34 @@ class TestEnvironmentChecks:
         by = _by_name(results)
         assert by["JDK"].status is Status.PASS
         assert by["NDK"].status is Status.PASS
+        assert by["CMake"].status is Status.PASS
         assert by["Emulator / virtualization"].status is Status.PASS
+
+    def test_no_cmake_warns_with_the_pinned_package_in_the_hint(self, tmp_path):
+        probe = _healthy_probe(tmp_path)
+        probe._cmake = []
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["CMake"].status is Status.WARN
+        assert "download" in by["CMake"].detail
+        assert f"cmake;{toolchain.CMAKE_VERSION}" in by["CMake"].hint
+
+    def test_other_cmake_version_does_not_satisfy_the_pin(self, tmp_path):
+        probe = _healthy_probe(tmp_path)
+        probe._cmake = ["3.18.1"]
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["CMake"].status is Status.WARN
+        assert "3.18.1" in by["CMake"].detail
+
+    def test_no_sdk_skips_cmake(self, tmp_path):
+        probe = FakeProbe(which={"java": "/j"}, sdk=None)
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["CMake"].status is Status.SKIP
 
     def test_no_jdk_fails(self, tmp_path):
         probe = FakeProbe(sdk=tmp_path, ndk=["27"], build_tools=["35.0.0"])
@@ -422,6 +454,15 @@ class TestRealAndroidProbe:
 
     def test_ndk_versions_empty_when_absent(self, tmp_path):
         assert RealAndroidProbe().ndk_versions(tmp_path) == []
+
+    def test_cmake_versions_lists_sorted_dirs(self, tmp_path):
+        (tmp_path / "cmake" / "3.22.1").mkdir(parents=True)
+        (tmp_path / "cmake" / "3.18.1").mkdir()
+        (tmp_path / "cmake" / "stray-file").write_text("x")
+        assert RealAndroidProbe().cmake_versions(tmp_path) == ["3.18.1", "3.22.1"]
+
+    def test_cmake_versions_empty_when_absent(self, tmp_path):
+        assert RealAndroidProbe().cmake_versions(tmp_path) == []
 
     def test_build_tools_versions_lists_sorted_dirs(self, tmp_path):
         (tmp_path / "build-tools" / "35.0.0").mkdir(parents=True)
