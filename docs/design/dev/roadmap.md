@@ -375,6 +375,7 @@ known-unverified list.
 | 7 | Real 3.0.0 + Kivy transition *(was P5)* | M | GitHub repo transfer |
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
 | ~~9~~ | ~~Byte-compile the embedded stdlib at build time (desktop)~~ | S | **done 2026-09-17**; measured on Windows, Linux, and macOS |
+| 10 | Dynamic `[project].version` (setuptools-scm and friends) | S–M | none |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -2039,3 +2040,42 @@ what removes it.
 **Done when** a freshly built desktop artifact contains no `.py`-only stdlib,
 launching it writes nothing, and the measured `import kivy` cost is at parity
 with the warm number above on all three desktop targets.
+
+---
+
+### 10. Dynamic `[project].version`
+
+**New 2026-10-01** (user report). Target: before or with 3.0.0.
+
+`kivyforge` requires a literal `[project].version`: `_parse_project` in
+`kivyforge/config/loader.py` fails with "missing or empty [project].version" and
+never looks at `[project].dynamic`. A project that takes its version from git
+(`setuptools-scm`, `hatch-vcs`, ...) with `dynamic = ["version"]` cannot build.
+
+The version feeds the iOS and macOS `Info.plist` (`CFBundleShortVersionString`),
+Android `versionName` and `version_code = "auto"`, the Linux and Windows
+artifact names, and the Windows bundle metadata and `doctor` check.
+
+**Work**
+
+- When `version` is listed in `[project].dynamic`, resolve it through the
+  project's build backend: the PEP 517 `prepare_metadata_for_build_wheel` hook,
+  reading `Version` from the result. This works for any backend and needs the
+  project's `[build-system].requires` in an isolated environment.
+- Provide an override for CI and for offline use (an environment variable, for
+  example `KIVYFORGE_VERSION`, and honour `SETUPTOOLS_SCM_PRETEND_VERSION`).
+- Resolve once per invocation and use the result everywhere `project.version`
+  is read today, so no consumer has to know the version was dynamic.
+- Fail clearly if `version` is neither literal nor dynamic, and if the backend
+  cannot produce one.
+- Android `version_code = "auto"` rejects pre-release, dev and local versions
+  (correct, since a version code must be a stable integer), and a
+  setuptools-scm version between tags is `1.2.3.devN+gHASH`. Make that error
+  point at an explicit `version_code`.
+- Check that the lock does not record the version, so a version that changes
+  with git state does not stale the lock. `pyproject_sha256` hashes the file,
+  not the resolved version.
+
+**Done when** a project with `dynamic = ["version"]` and `setuptools-scm`
+locks, builds and packages on at least one desktop target and one mobile
+target, with the git-derived version in the artifact name and metadata.
