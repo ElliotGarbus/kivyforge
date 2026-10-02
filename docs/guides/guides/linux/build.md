@@ -25,6 +25,14 @@ that runs the app for the C library, OpenGL, and a display server. See
 You do not need to install `appimagetool`. kivyforge downloads a pinned copy
 the first time you package an AppImage.
 
+!!! tip "Start from a template"
+    Run `kivyforge init -p linux` in the folder that holds your
+    `pyproject.toml`. It adds `[tool.kivy]` and a `[tool.kivy.linux]` overlay with
+    comments and `TODO` markers on the values you need to change, so you edit a
+    working file instead of typing the Linux overlay by hand. The template also notes the `aarch64` option for a Raspberry Pi. To
+    regenerate an overlay that already exists, add `--force`. See
+    [Seed overlays with `init`](../../concepts/configuration.md#seed-overlays-with-init).
+
 ## Step 1: Configure the overlay
 
 Add a `[tool.kivy.linux]` table to `pyproject.toml`:
