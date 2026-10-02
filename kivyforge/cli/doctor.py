@@ -1,7 +1,8 @@
 """``kivyforge doctor`` — environment + project health check (spec 05).
 
 Platform-aware: resolves the target (``-p`` / ``KIVYFORGE_PLATFORM`` / host,
-falling back to iOS for a bare environment check) and dispatches to that
+falling back to the project's only platform, else the host's own, else iOS on a
+Mac) and dispatches to that
 backend's ``doctor`` over its ``pyproject.toml`` + ``pylock.<platform>.toml``.
 
 First consumer of :mod:`kivyforge.report` (roadmap item 3), and first by design:
@@ -13,13 +14,19 @@ close to free, and it is the most useful verb for an agent to have -- it answers
 from __future__ import annotations
 
 import os
+import platform as _platform
 from pathlib import Path
 
 import click
 
 from .. import __version__
 from ..doctor import CheckResult, Status, worst_status
-from ..platforms import Platform, PlatformResolutionError, get_platform
+from ..platforms import (
+    Platform,
+    PlatformResolutionError,
+    available_platform_names,
+    get_platform,
+)
 from ..platforms import resolve_target as _resolve_platform
 from ..report import Diagnostic, diagnostics, exit_codes
 from ._common import PYPROJECT_NAME
@@ -106,13 +113,28 @@ def _summary(results: list[CheckResult]) -> dict[str, int]:
     return counts
 
 
-def _resolve_doctor_backend(cli_platform: str | None, cwd: Path) -> Platform:
+def _resolve_doctor_backend(
+    cli_platform: str | None, cwd: Path, *, host_system: str | None = None
+) -> Platform:
     pyproject = cwd / PYPROJECT_NAME
     configured = configured_platforms(pyproject) if pyproject.is_file() else set()
+    host = host_system if host_system is not None else _platform.system()
     try:
-        return _resolve_platform(cli_platform, configured=configured, env=os.environ)
+        return _resolve_platform(
+            cli_platform, configured=configured, env=os.environ, host_system=host
+        )
     except PlatformResolutionError:
-        # Environment-mode fallback: no project/target to infer from.
+        # The host's own platform is not configured, or nothing is. Doctor must
+        # still pick something, and a platform the machine cannot build for
+        # (iOS off a Mac) only fails checks nobody can act on.
+        if len(configured) == 1:
+            return get_platform(next(iter(configured)))
+        if host == "Darwin":
+            return get_platform("ios")
+        for name in available_platform_names():
+            backend = get_platform(name)
+            if backend.host_system == host:
+                return backend
         return get_platform("ios")
 
 
