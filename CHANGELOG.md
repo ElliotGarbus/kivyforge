@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### `init`: documented `[tool.kivy]`, and templates that fit each platform
+
+- **Changed:** `[tool.kivy]` now carries a comment on every key.
+  `orientation` is written only when a mobile platform is being seeded, since
+  only the iOS and Android backends read it. Seeding several platforms at once
+  now writes iOS and Android first, so the shared table keeps `orientation`.
+- **Changed:** the `exclude` list in the desktop (macOS, Linux, Windows)
+  templates is now an optional, commented-out size trim. It used to be active
+  and dropped `requests` and its dependencies, which breaks `UrlRequest`. iOS
+  and Android keep the active list.
+- **Changed:** the iOS and Android templates write `extra_index_urls` for the
+  kivy-mobile-wheels index uncommented. Without it `kivyforge lock` cannot find
+  a Kivy wheel. `init` now assumes Kivy is a dependency: the `exclude` list and
+  this line are always written, instead of only when `[project].dependencies`
+  names `kivy`. The Linux template notes that `archs = ["aarch64"]` targets a
+  Raspberry Pi.
+- **Fixed:** the "no pyproject.toml" and "found requirements.txt" messages
+  suggested `kivy>=3.0`, which has no desktop wheel yet. They now suggest
+  `kivy>=2.3.1` and say an iOS app needs Kivy 3.0.
+- **Migration:** existing projects are untouched. A project that relied on the
+  desktop `exclude` default should add it back by hand.
+
 ### `lock`: the resolver error names the package and says what to do
 
 - **Changed:** when pip cannot resolve a dependency for a mobile or desktop

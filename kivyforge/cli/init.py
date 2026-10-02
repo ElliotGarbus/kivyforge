@@ -47,7 +47,6 @@ from ._output import output_options, reporting
 from ._platform import configured_platforms
 from .init_writer import (
     append_block,
-    has_kivy_dep,
     has_platform_overlay,
     has_shared_table,
     normalize_package_name,
@@ -188,7 +187,7 @@ _REQUIREMENTS_MSG = (
     '    name = "myapp"  # your app name\n'
     '    version = "0.1.0"\n'
     "    dependencies = [\n"
-    '        "kivy>=3.0",\n'
+    '        "kivy>=2.3.1",\n'
     "        # ... paste your other requirements here\n"
     "    ]\n\n"
     "  Then re-run kivyforge init."
@@ -240,8 +239,9 @@ def _init(report: Report, cli_platforms: tuple[str, ...], *, force: bool) -> Non
             f'    name = "myapp"\n'
             f'    version = "0.1.0"\n'
             f"    dependencies = [\n"
-            f'        "kivy>=3.0",\n'
+            f'        "kivy>=2.3.1",\n'
             f"    ]\n\n"
+            f"  (An iOS app needs Kivy 3.0; see the iOS guide.)\n"
             f"  See https://packaging.python.org/tutorials/packaging-projects/ for details."
         )
 
@@ -405,6 +405,16 @@ def _resolve_single_init_platform(
     )
 
 
+def _mobile_first(platform_names: list[str]) -> list[str]:
+    """Seed iOS and Android before the desktop platforms.
+
+    The first platform seeded writes the shared ``[tool.kivy]`` table, and only
+    the mobile backends read ``orientation``; seeding a desktop platform first
+    would leave a later mobile one without it.
+    """
+    return sorted(platform_names, key=lambda name: name not in ("ios", "android"))
+
+
 def _run_update_path(
     report: Report, pyproject: Path, *, force: bool, platform_names: list[str]
 ) -> None:
@@ -436,7 +446,7 @@ def _run_update_path(
                 report, pyproject, force=force, platform_name=platform_name
             ),
         }
-        for platform_name in platform_names
+        for platform_name in _mobile_first(platform_names)
     ]
 
     _maybe_warn_drift(report, _safe_parse(read_pyproject_text(pyproject), pyproject))
@@ -475,8 +485,6 @@ def _update_one_platform(
         )
 
     app_slug = _project_slug(raw)
-    deps = raw.get("project", {}).get("dependencies", [])
-    kivy = has_kivy_dep(deps) if isinstance(deps, list) else False
     include_shared = not has_shared_table(text)
     table = _platform_table(raw, platform_name)
 
@@ -486,7 +494,6 @@ def _update_one_platform(
             platform_name,
             app_slug,
             table,
-            has_kivy=kivy,
             include_shared=include_shared,
             preserve=True,
         )
@@ -502,7 +509,6 @@ def _update_one_platform(
             platform_name,
             app_slug,
             table,
-            has_kivy=kivy,
             include_shared=include_shared,
             preserve=False,
         )
@@ -526,7 +532,6 @@ def _render_overlay(
     app_slug: str,
     table: dict,
     *,
-    has_kivy: bool,
     include_shared: bool,
     preserve: bool,
 ) -> str:
@@ -539,7 +544,6 @@ def _render_overlay(
             app_slug,
             signing=_read_signing(table) if preserve else None,
             python_version=_read_python_version(table) if preserve else None,
-            has_kivy=has_kivy,
             simulator_archs=_read_str_list(table, "simulator_archs")
             if preserve
             else None,
@@ -553,7 +557,6 @@ def _render_overlay(
             app_slug,
             signing=_read_macos_signing(table) if preserve else None,
             python_version=_read_python_version(table) if preserve else None,
-            has_kivy=has_kivy,
             archs=_read_str_list(table, "archs") if preserve else None,
             icon_source=_read_icon_source(table) if preserve else None,
             include_shared=include_shared,
@@ -562,7 +565,6 @@ def _render_overlay(
         return render_linux_tables(
             app_slug,
             python_version=_read_python_version(table) if preserve else None,
-            has_kivy=has_kivy,
             archs=_read_str_list(table, "archs") if preserve else None,
             icon_source=_read_icon_source(table) if preserve else None,
             categories=_read_categories(table) if preserve else None,
@@ -573,7 +575,6 @@ def _render_overlay(
             app_slug,
             signing=_read_windows_signing(table) if preserve else None,
             python_version=_read_python_version(table) if preserve else None,
-            has_kivy=has_kivy,
             archs=_read_str_list(table, "archs") if preserve else None,
             icon_source=_read_icon_source(table) if preserve else None,
             include_shared=include_shared,
@@ -588,7 +589,6 @@ def _render_overlay(
             app_slug,
             signing=_read_android_signing(table) if preserve else None,
             python_version=_read_python_version(table) if preserve else None,
-            has_kivy=has_kivy,
             package=package if isinstance(package, str) and package else None,
             abis=_read_str_list(table, "abis") if preserve else None,
             kivy_generation=kivy_generation

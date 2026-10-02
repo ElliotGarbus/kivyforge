@@ -13,7 +13,6 @@ from kivyforge.cli import init as init_mod
 from kivyforge.cli.init import init
 from kivyforge.cli.init_writer import (
     bundle_id_segment,
-    has_kivy_dep,
     has_platform_overlay,
     has_shared_table,
     normalize_package_name,
@@ -70,8 +69,8 @@ class TestWriterUnits:
         assert "auto_signing = true" in block
         # template (no signing) must invite team_id, not hardcode it
         assert "TODO: set your Apple Developer Team ID" in block
-        # without has_kivy there must be no exclude block
-        assert "exclude" not in block
+        # Kivy is assumed to be a dependency: the exclude block is always there
+        assert "exclude = [" in block
 
     def test_render_kivy_tables_seeds_icons_and_splash(self):
         block = render_kivy_tables("myapp")
@@ -101,8 +100,7 @@ class TestWriterUnits:
         )
         assert cfg.ios_required.swift_packages == ()
 
-    @pytest.mark.parametrize("has_kivy", [False, True])
-    def test_render_kivy_tables_roundtrips_through_loader(self, has_kivy):
+    def test_render_kivy_tables_roundtrips_through_loader(self):
         from kivyforge.config import load_config_from_text
 
         project = (
@@ -111,7 +109,7 @@ class TestWriterUnits:
             'version = "1.0.0"\n'
             'dependencies = ["kivy>=3.0"]\n\n'
         )
-        block = render_kivy_tables("myapp", has_kivy=has_kivy)
+        block = render_kivy_tables("myapp")
         cfg = load_config_from_text(project + block)
         ios = cfg.ios_required
         # commented entries leave defaults in place
@@ -120,7 +118,7 @@ class TestWriterUnits:
         assert ios.splash.source is None
 
     def test_render_kivy_tables_with_kivy_exclude(self):
-        block = render_kivy_tables("myapp", has_kivy=True)
+        block = render_kivy_tables("myapp")
         assert "exclude = [" in block
         assert '"kivy-garden"' in block
         assert '"requests"' in block
@@ -136,19 +134,6 @@ class TestWriterUnits:
         data = tomllib.loads(block)
         assert "kivy-garden" in data["tool"]["kivy"]["ios"]["exclude"]
         assert "docutils" in data["tool"]["kivy"]["ios"]["exclude"]
-
-    @pytest.mark.parametrize(
-        "dep,expected",
-        [
-            ("kivy>=3.0", True),
-            ("Kivy==3.0.0", True),
-            ("kivy[base]>=3.0", True),
-            ("numpy>=2", False),
-            ("kivy-garden>=0.1", False),  # kivy-garden is not kivy
-        ],
-    )
-    def test_has_kivy_dep(self, dep, expected):
-        assert has_kivy_dep([dep]) is expected
 
     def test_render_kivy_tables_preserves_signing(self):
         signing = SigningConfig(team_id="ABCDE12345", auto_signing=False)
@@ -187,7 +172,8 @@ class TestWriterUnits:
         assert 'bundle_id = "org.example.myapp"' in block
         assert "[tool.kivy.macos.python]" in block
         assert "[tool.kivy.macos.signing]" in block
-        assert "exclude" not in block
+        # the desktop exclude list is offered commented out, never applied
+        assert "\nexclude" not in block
         # valid, loadable TOML
         from kivyforge.config import load_config_from_text
 
@@ -216,9 +202,9 @@ class TestWriterUnits:
         assert 'team_id = "TEAM123456"' in block
         assert 'notary_profile = "my-profile"' in block
 
-    def test_render_macos_tables_with_kivy_exclude(self):
-        block = render_macos_tables("myapp", has_kivy=True)
-        assert "exclude = [" in block
+    def test_render_macos_tables_offers_optional_kivy_exclude(self):
+        block = render_macos_tables("myapp")
+        assert "# exclude = [" in block
         assert '"kivy-garden"' in block
 
     def test_render_macos_tables_seeds_commented_native_binaries(self):
