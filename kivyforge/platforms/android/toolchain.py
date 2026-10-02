@@ -34,3 +34,8 @@ KOTLIN_VERSION = "1.9.22"
 # deterministic across hosts (android/04 §native launcher). r27.3 is the
 # proven prototype pin; cibuildwheel's wheels pin the same family.
 NDK_VERSION = "27.3.13750724"
+
+# CMake version emitted into app/build.gradle (externalNativeBuild.cmake.version).
+# It is AGP's own default, pinned explicitly so `doctor` checks the same package
+# the build asks for; the SDK package is ``cmake;<version>``.
+CMAKE_VERSION = "3.22.1"

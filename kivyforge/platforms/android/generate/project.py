@@ -251,7 +251,10 @@ android {{
     }}
 
     externalNativeBuild {{
-        cmake {{ path 'src/main/cpp/CMakeLists.txt' }}
+        cmake {{
+            path 'src/main/cpp/CMakeLists.txt'
+            version '{toolchain.CMAKE_VERSION}'
+        }}
     }}
 
     // AAPT's default ignore pattern drops asset dirs starting with '_', which

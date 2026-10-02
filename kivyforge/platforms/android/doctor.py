@@ -1,6 +1,6 @@
 """``kivyforge doctor`` — Android checks (android/06 §doctor).
 
-Environment checks (JDK, SDK, build-tools, NDK, emulator, adb) touch the host
+Environment checks (JDK, SDK, build-tools, NDK, CMake, emulator, adb) touch the host
 only through an injectable ``AndroidProbe`` so the check logic is unit-testable
 with a fake. Project checks assert against real seams (the config, the lock,
 staged ``.so``s, the generated manifest) and are exercised on a real project.
@@ -46,6 +46,7 @@ class AndroidProbe(Protocol):
     def sdk_root(self) -> Path | None: ...
     def ndk_versions(self, sdk: Path) -> list[str]: ...
     def build_tools_versions(self, sdk: Path) -> list[str]: ...
+    def cmake_versions(self, sdk: Path) -> list[str]: ...
     def platform_installed(self, sdk: Path, api: int) -> bool: ...
     def accepted_licenses(self, sdk: Path) -> list[str]: ...
     def avds(self) -> list[str]: ...
@@ -125,6 +126,14 @@ class RealAndroidProbe:
 
     def build_tools_versions(self, sdk: Path) -> list[str]:
         root = sdk / "build-tools"
+        return (
+            sorted(p.name for p in root.iterdir() if p.is_dir())
+            if root.is_dir()
+            else []
+        )
+
+    def cmake_versions(self, sdk: Path) -> list[str]:
+        root = sdk / "cmake"
         return (
             sorted(p.name for p in root.iterdir() if p.is_dir())
             if root.is_dir()
@@ -322,6 +331,27 @@ def _check_ndk(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
             hint="sdkmanager 'ndk;<version>' (r27+ recommended for 16 KB).",
         )
     return CheckResult("NDK", Status.PASS, ", ".join(versions))
+
+
+def _check_cmake(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
+    """The pinned CMake, which the native launcher compile needs on every build.
+
+    A missing one is a WARN, not a FAIL: with licenses accepted, AGP downloads it
+    mid-build. Reporting it here keeps that download from being a surprise.
+    """
+    if sdk is None:
+        return CheckResult("CMake", Status.SKIP, "no SDK root to look in")
+    versions = probe.cmake_versions(sdk)
+    if toolchain.CMAKE_VERSION in versions:
+        return CheckResult("CMake", Status.PASS, toolchain.CMAKE_VERSION)
+    found = f"found {', '.join(versions)}" if versions else "none installed"
+    return CheckResult(
+        "CMake",
+        Status.WARN,
+        f"the pinned CMake {toolchain.CMAKE_VERSION} is not installed ({found}); "
+        "the first build will download it",
+        hint=f"sdkmanager 'cmake;{toolchain.CMAKE_VERSION}'.",
+    )
 
 
 def _check_sdk_licenses(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
@@ -902,6 +932,7 @@ def android_doctor(
         _check_sdk_licenses(probe, sdk),
         _check_build_tools(probe, sdk, android),
         _check_ndk(probe, sdk),
+        _check_cmake(probe, sdk),
         _check_adb(probe, sdk),
         _check_emulator(probe, sdk),
     ]

@@ -75,6 +75,7 @@ releases.
 |---|---|
 | JDK | 17 to 23 (you install it) |
 | Android NDK | 27.3.13750724 |
+| CMake | 3.22.1 |
 | Android Gradle Plugin | 8.10.0 |
 | Gradle | 8.11.1 (downloaded by the Gradle wrapper) |
 
@@ -83,7 +84,9 @@ own JDK, which may be newer than that; if it is, install a separate JDK in the
 range and point `JAVA_HOME` at it.
 
 `kivyforge doctor -p android` checks the JDK you actually have, the Android
-SDK, build tools, and an NDK.
+SDK, build tools, an NDK, and CMake. Install the NDK and CMake with
+`sdkmanager` (accepting the SDK licenses first); a missing CMake is downloaded
+by the first build.
 
 ## Check a combination on your device
 
