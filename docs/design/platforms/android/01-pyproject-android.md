@@ -239,11 +239,18 @@ See [bootstrap-android §"SDL generation and the pyjnius contract"](05-bootstrap
 > emits governs Java sources and native load order that must be fixed at project-
 > generation time. An explicit key keeps that decision declarative and auditable,
 > and lets a non-Kivy SDL app (or a forked Kivy) state its generation directly.
-> `kivyforge doctor` warns if `kivy_generation` and the resolved `kivy` version
-> disagree (SDL2 Kivy is `< 3.0`; SDL3 Kivy is `>= 3.0`).
+> `kivyforge lock` (at resolve time) and `kivyforge doctor` warn if
+> `kivy_generation` and the resolved `kivy` version disagree (SDL2 Kivy is
+> `< 3.0`; SDL3 Kivy is `>= 3.0`).
+>
+> **The key is declarative only.** It is never passed to the resolver: the Kivy
+> that locks is whatever `[project].dependencies` resolves to, so
+> `kivy_generation = 3` with a bare `kivy` requirement still locks 2.3.1 (pip
+> skips pre-releases). Say which Kivy you want in the requirement, e.g.
+> `"kivy>=3.0.0.dev0,<4"`.
 >
 > **Why `kivy_generation` and not `sdl`?** The key is named after what you're
-> actually choosing — which Kivy major version to build — not the windowing
+> actually choosing — which Kivy major version the app targets — not the windowing
 > library that version happens to be built on. kivyforge translates that choice
 > into the matching SDL generation internally; configuring a build should never
 > require knowing that Kivy 2.x pairs with SDL2 and Kivy 3.x pairs with SDL3.

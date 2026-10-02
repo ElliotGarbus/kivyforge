@@ -35,9 +35,10 @@ from packaging.version import InvalidVersion, Version
 INVOKE0_CONTRACT_VERSION = 1
 
 # pyjnius releases whose invoke0 implementation matches contract v1. 1.7.x is
-# the spike-validated series; anything newer must be revalidated (and this
+# the spike-validated series; 1.8.x is the first release to ship Android wheels
+# on PyPI (same invoke0 contract). Anything newer must be revalidated (and this
 # range widened) before it is accepted.
-COMPATIBLE_PYJNIUS = SpecifierSet(">=1.7.0,<1.8")
+COMPATIBLE_PYJNIUS = SpecifierSet(">=1.7.0,<1.9")
 
 
 class ContractError(Exception):
@@ -62,8 +63,11 @@ def check_pyjnius_contract(locked_version: str) -> None:
             "the pyjnius wheel and the generated "
             "org.jnius.NativeInvocationHandler; a mismatch crashes at first "
             "proxy use.\n"
-            "  Fix: re-lock to a compatible pyjnius, or upgrade kivyforge for "
-            "a newer bootstrap template (android/05 §matched pair)."
+            "  Fix: constrain pyjnius in [project].dependencies "
+            f'(e.g. "pyjnius{COMPATIBLE_PYJNIUS}") and re-lock; a bare '
+            "`pyjnius` floats to the newest release, so re-locking alone "
+            "picks the same version again. Or upgrade kivyforge for a newer "
+            "bootstrap template (android/05 §matched pair)."
         )
 
 

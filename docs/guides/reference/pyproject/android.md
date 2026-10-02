@@ -30,7 +30,7 @@ stale; run `kivyforge lock -p android` afterward.
 | `min_sdk` | integer | `24` | Minimum Android API level. Values below `24` are rejected. |
 | `target_sdk` | integer | `35` | Target API level. Must be at least `min_sdk`. |
 | `compile_sdk` | integer | value of `target_sdk` | API level the project compiles against. Must be at least `target_sdk`. |
-| `kivy_generation` | integer | `2` | `2` for Kivy 2.3.1 on SDL2, `3` for Kivy 3.0 on SDL3. |
+| `kivy_generation` | integer | `2` | `2` for Kivy 2.3.1 on SDL2, `3` for Kivy 3.0 on SDL3. Selects the SDL bootstrap only; it does not choose the Kivy version, which comes from `[project].dependencies`. `lock` and `doctor` warn if the two disagree. |
 | `abis` | list of string | `["arm64_v8a", "x86_64"]` | ABIs (application binary interfaces) to build. Only `arm64_v8a` and `x86_64` are accepted. |
 | `extra_index_urls` | list of string | `[]` | Extra package indexes to resolve wheels from, such as the mobile wheel index. |
 | `find_links` | list of string | `[]` | Local directories of wheels. |

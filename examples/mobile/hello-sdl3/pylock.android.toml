@@ -17,13 +17,18 @@ hashes = { sha256 = "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c9929284
 
 [[packages]]
 name = "charset-normalizer"
-version = "3.4.9"
+version = "3.5.2"
 requires-python = ">=3.7"
 
 [[packages.wheels]]
-name = "charset_normalizer-3.4.9-py3-none-any.whl"
-url = "https://files.pythonhosted.org/packages/98/2b/f97f1c193fb855c345d678f5077d6926034db0722df74c8f057020e05a25/charset_normalizer-3.4.9-py3-none-any.whl"
-hashes = { sha256 = "68e5f26a1ad57ded6d1cfb85331d1c1a195314756471d97758c48498bb4dcdf5" }
+name = "charset_normalizer-3.5.2-cp314-cp314-android_24_arm64_v8a.whl"
+url = "https://files.pythonhosted.org/packages/58/ca/7aa91362a2f77ac8e9e28a9b902a74f7d0e11a851ef0d27a74308da8cd90/charset_normalizer-3.5.2-cp314-cp314-android_24_arm64_v8a.whl"
+hashes = { sha256 = "1afb975bd5d68d5ce9f6b6d44fdf2f7e34b895a35e95708a7a91b20a3b51d187" }
+
+[[packages.wheels]]
+name = "charset_normalizer-3.5.2-cp314-cp314-android_24_x86_64.whl"
+url = "https://files.pythonhosted.org/packages/a8/cf/ac8878d0322cf88a1aad4c7b147db32ca0bd806eb0060957b2e31486dbe6/charset_normalizer-3.5.2-cp314-cp314-android_24_x86_64.whl"
+hashes = { sha256 = "bbbfc8e28816f19d7c0f1816664980c0a9875d01b27cdf8eedddb639d9e108ad" }
 
 [[packages]]
 name = "filetype"
@@ -36,17 +41,17 @@ hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1
 
 [[packages]]
 name = "idna"
-version = "3.18"
+version = "3.20"
 requires-python = ">=3.9"
 
 [[packages.wheels]]
-name = "idna-3.18-py3-none-any.whl"
-url = "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl"
-hashes = { sha256 = "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2" }
+name = "idna-3.20-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl"
+hashes = { sha256 = "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c" }
 
 [[packages]]
 name = "Kivy"
-version = "3.0.0.dev0"
+version = "3.0.0.dev202607301604"
 requires-python = ">=3.11"
 dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }]
 
@@ -54,31 +59,31 @@ dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygme
 direct_requirement = true
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev0-cp314-cp314-android_24_arm64_v8a.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-android-3.0.0.dev0/kivy-3.0.0.dev0-cp314-cp314-android_24_arm64_v8a.whl"
-hashes = { sha256 = "1ef3a767dc2f4f20da5d776420a9eda02626c68abe9c29846e09c4ba7459f0a9" }
+name = "kivy-3.0.0.dev202607301604-cp314-cp314-android_24_arm64_v8a.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-android-3.0.0.dev202607301604/kivy-3.0.0.dev202607301604-cp314-cp314-android_24_arm64_v8a.whl"
+hashes = { sha256 = "f71eb7870b04c21b38df949ac2f2e076aba0097c07f129ed483c28d11fd8457c" }
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev0-cp314-cp314-android_24_x86_64.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-android-3.0.0.dev0/kivy-3.0.0.dev0-cp314-cp314-android_24_x86_64.whl"
-hashes = { sha256 = "4b7619764ae5e54c6dd28ada2787f63adccb4476d271670a5cde67986b2c5fd8" }
+name = "kivy-3.0.0.dev202607301604-cp314-cp314-android_24_x86_64.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-android-3.0.0.dev202607301604/kivy-3.0.0.dev202607301604-cp314-cp314-android_24_x86_64.whl"
+hashes = { sha256 = "ff392aa4c5d311beb3280e36b9bfec3ebbc99e33c898c8c69c3c29e0584d00c6" }
 
 [[packages]]
 name = "pyjnius"
-version = "1.7.0"
+version = "1.8.0"
 
 [packages.tool.kivyforge]
 direct_requirement = true
 
 [[packages.wheels]]
-name = "pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/pyjnius-android-1.7.0/pyjnius-1.7.0-cp314-cp314-android_24_arm64_v8a.whl"
-hashes = { sha256 = "d031b830fe8790657371a511464691e7d05e891d9fe230bc82de1e28b391711a" }
+name = "pyjnius-1.8.0-cp314-cp314-android_24_arm64_v8a.whl"
+url = "https://files.pythonhosted.org/packages/fb/37/bb406e4e5a49cbb5ecfeefc237b0624e23ae2a160694be0d6c6336578bc6/pyjnius-1.8.0-cp314-cp314-android_24_arm64_v8a.whl"
+hashes = { sha256 = "2ccc7b60bd42f4bcf9ea3435384122fc30456d620000a8a81534be00b7a9df43" }
 
 [[packages.wheels]]
-name = "pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/pyjnius-android-1.7.0/pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
-hashes = { sha256 = "95f5a0bf80629971252d95bf328f33268e278ed8b0b035fd0b8c18cd0b032575" }
+name = "pyjnius-1.8.0-cp314-cp314-android_24_x86_64.whl"
+url = "https://files.pythonhosted.org/packages/8e/d7/92a1dc41c1a3613b1f34df9f40c6a8e36393d19f975f3903230ad31bfebd/pyjnius-1.8.0-cp314-cp314-android_24_x86_64.whl"
+hashes = { sha256 = "cc59aa9d11077ce24a1d655b8113bbdffa946155c6d7ad9f17392bdb07095e20" }
 
 [[packages]]
 name = "requests"
@@ -93,18 +98,18 @@ hashes = { sha256 = "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e
 
 [[packages]]
 name = "urllib3"
-version = "2.7.0"
+version = "2.8.0"
 requires-python = ">=3.10"
 
 [[packages.wheels]]
-name = "urllib3-2.7.0-py3-none-any.whl"
-url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl"
-hashes = { sha256 = "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897" }
+name = "urllib3-2.8.0-py3-none-any.whl"
+url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl"
+hashes = { sha256 = "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3" }
 
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-07-27T14:03:03Z"
+generated_at = "2026-10-02T21:40:59Z"
 pyproject_sha256 = "952266f361a02ebeb17c8a614721de4a5798e6b19f8642f7f713d9da26e034ff"
 tool_kivy_android_schema_version = 1
 kivy_generation = 3

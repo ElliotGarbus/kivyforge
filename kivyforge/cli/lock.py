@@ -132,6 +132,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_ios=False,
             require_macos=False,
             require_android=True,
+            emits_warnings=True,
         )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."

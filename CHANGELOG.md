@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Android: accept pyjnius 1.8
+
+- **Changed:** the bootstrap's pyjnius `invoke0` range is now `>=1.7.0,<1.9`
+  (was `<1.8`). pyjnius 1.8.0 is the first release with Android wheels on PyPI, so
+  a bare `pyjnius` dependency re-locks to it, and `build` and `doctor` used to
+  reject that lock.
+- **Fixed:** the `build`/`doctor` message for an out-of-range pyjnius said to
+  re-lock, which picks the same version again. It now says to constrain pyjnius in
+  `[project].dependencies`.
+- **Migration:** none needed. Projects locked to 1.7.x keep working.
+
+### `lock` (Android): warn when `kivy_generation` disagrees with the locked Kivy
+
+- **Added:** `kivyforge lock -p android` now warns (and records a `KF-LOCK-WARNING`
+  diagnostic under `--json`) when `[tool.kivy.android].kivy_generation` does not
+  match the Kivy it resolved, for example `kivy_generation = 3` locking Kivy
+  2.3.1. Previously only `doctor` noticed, after the lock was written. The lock is
+  still written.
+- **Docs:** `kivy_generation` selects the SDL bootstrap only; it never influences
+  resolution. The Kivy version comes from `[project].dependencies`, so Kivy 3.0
+  needs a requirement that admits it, such as `"kivy>=3.0.0.dev0,<4"`.
+
 ### `init`: documented `[tool.kivy]`, and templates that fit each platform
 
 - **Changed:** `[tool.kivy]` now carries a comment on every key.

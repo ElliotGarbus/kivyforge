@@ -9,6 +9,7 @@ pins (skipped without declared coordinates), ``include_files`` hashes.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,6 +33,7 @@ from kivyforge.lock.model import (
 from kivyforge.lock.reader import compute_pyproject_sha256
 
 from .archives import ArchiveResolverError, resolve_android_libs
+from .generation import expected_generation, mismatch_hint
 from .maven import GradleMavenResolver, MavenResolverError, resolve_gradle_pins
 from .model import (
     DEFAULT_REQUIRES_PYTHON,
@@ -65,6 +67,7 @@ def build_lockfile(
     lib_downloader: Downloader | None = None,
     offline: bool = False,
     now: datetime | None = None,
+    on_warning: Callable[[str], None] | None = None,
 ) -> AndroidLockfile:
     if config.android is None:
         raise BuildError(
@@ -131,6 +134,9 @@ def build_lockfile(
             )
         )
 
+    if on_warning is not None:
+        _warn_generation_mismatch(packages, android.kivy_generation, on_warning)
+
     try:
         android_libs = resolve_android_libs(
             android.aars + android.jars,
@@ -162,6 +168,28 @@ def build_lockfile(
         android_libs=tuple(android_libs),
         gradle=gradle_pins,
         include_files=tuple(include_files),
+    )
+
+
+def _warn_generation_mismatch(
+    packages: list[LockedPackage],
+    declared: int,
+    on_warning: Callable[[str], None],
+) -> None:
+    """Warn when ``kivy_generation`` disagrees with the Kivy that resolved.
+
+    The key is never an input to resolution, so this is where the disagreement
+    first becomes visible. ``doctor`` reports the same rule from the written lock.
+    """
+    kivy = next((p for p in packages if canonical_name(p.name) == "kivy"), None)
+    if kivy is None:
+        return
+    expected = expected_generation(kivy.version)
+    if expected is None or expected == declared:
+        return
+    on_warning(
+        f"kivy_generation = {declared} but the lock resolved kivy {kivy.version}, "
+        f"which is SDL{expected}. {mismatch_hint(declared, expected)}"
     )
 
 

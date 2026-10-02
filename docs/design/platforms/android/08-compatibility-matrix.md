@@ -63,20 +63,21 @@ separately at the end.
 
 | CPython | Kivy | SDL | pyjnius (`invoke0` contract) | Bootstrap template | Status | Evidence | Revalidate on |
 |---------|------|-----|------------------------------|--------------------|--------|----------|---------------|
-| 3.14 | 2.3.1 (first-party wheel) | SDL2 (2.32.10, official) | `invoke0` contract **v1** | v1 | **Validated (x86_64 emulator + arm64 device)** | `kivyforge run --smoke` green on an x86_64 API-31 emulator **and** a Pixel 8a (Android 16 / API 36); app renders on-device; both wheels first-party cibuildwheel, 16 KB-aligned ([findings](../../dev/android-loadmodel-findings.md), [recipe](../../dev/android-wheel-build-recipe.md)) | new pyjnius release (esp. one moving the `invoke0` marker); new Kivy 2.x; CPython 3.14 point releases that change the ABI tag; new AGP/NDK major; **any SDL release change — the Java glue and `libSDL2.so` must move together** |
-| 3.14 | 3.0.0.dev0 (first-party wheel) | SDL3 (3.4.12, official) | `invoke0` contract **v1** | v1 | **Validated (x86_64 emulator + arm64 device)** | `kivyforge run --smoke` green on an x86_64 API-31 emulator **and** a Pixel 8a (Android 16 / API 36) with the [`hello-sdl3`](../../../../examples/mobile/hello-sdl3) gate; app renders on-device (Mali-G715, `Window`/`GL`/`text`/`img` all `sdl3`) ([findings](../../dev/android-loadmodel-findings.md#kivy-30--sdl3-on-device-first-run)) | **Kivy 3.0 GA** (this is a `.dev0` snapshot); any change to the SDL3 Java glue or `libSDL3.so` — **they move together**; upstream `kivy.mobile` gaining a real Android implementation |
+| 3.14 | 2.3.1 (first-party wheel) | SDL2 (2.32.10, official) | `invoke0` contract **v1** | v1 | **Validated (x86_64 emulator + arm64 device)** | `kivyforge run --smoke` green on an x86_64 API-31 emulator **and** a Pixel 8a (Android 16 / API 36); app renders on-device; both wheels first-party cibuildwheel, 16 KB-aligned ([findings](../../dev/android-loadmodel-findings.md), [recipe](../../dev/android-wheel-build-recipe.md)). 2026-10-02: re-run with pyjnius 1.8.0 (PyPI Android wheels) — release `--smoke` and a plain launch (logcat reaches `Start application main loop`) on the Pixel 8a, debug `--smoke` on the x86_64 emulator | new pyjnius release (esp. one moving the `invoke0` marker); new Kivy 2.x; CPython 3.14 point releases that change the ABI tag; new AGP/NDK major; **any SDL release change — the Java glue and `libSDL2.so` must move together** |
+| 3.14 | 3.0.0.dev0, 3.0.0.dev202607301604 (first-party wheels) | SDL3 (3.4.12, official) | `invoke0` contract **v1** | v1 | **Validated (x86_64 emulator + arm64 device)** | `kivyforge run --smoke` green on an x86_64 API-31 emulator **and** a Pixel 8a (Android 16 / API 36) with the [`hello-sdl3`](../../../../examples/mobile/hello-sdl3) gate; app renders on-device (Mali-G715, `Window`/`GL`/`text`/`img` all `sdl3`; observed on `3.0.0.dev0`) ([findings](../../dev/android-loadmodel-findings.md#kivy-30--sdl3-on-device-first-run)). 2026-10-02: the debug `--smoke` is also green on both targets for `3.0.0.dev202607301604` with pyjnius 1.8.0 (rendering not re-checked on this snapshot) | **Kivy 3.0 GA** (these are `.dev` snapshots); any change to the SDL3 Java glue or `libSDL3.so` — **they move together**; upstream `kivy.mobile` gaining a real Android implementation |
 | 3.15 | 2.3.1 / 3.0 | per Kivy | `invoke0` contract **v1** (pending wheel) | v1 | **Pending** | CPython 3.15 is pre-release; `android_*` wheels for `cp315` not yet published | CPython 3.15 GA; availability of `cp315` Kivy/pyjnius wheels |
 
 Notes:
 
 - **pyjnius `invoke0` contract v1** is the version range carried by the current
-  bootstrap template's compatibility marker. kivyforge **fails the build** (and
+  bootstrap template's compatibility marker (`>=1.7.0,<1.9`: the spike-validated
+  1.7.x series plus 1.8.x, the first release with Android wheels on PyPI). kivyforge **fails the build** (and
   `doctor` FAILs) for a locked pyjnius outside it; widening the range is a
   bootstrap-template change that adds a new contract version here.
 - **The local Kivy 2.3.1 wheel** is kivyforge-built (no dependency on third-party
   channels), per [artifact-distribution-android](03-artifact-distribution-android.md).
 - **Kivy 3.0 / SDL3** is first-class in the schema (`kivy_generation = 3`) and now exercised
-  on-device against a `3.0.0.dev0` wheel. The row returns to **Pending** on
+  on-device against `3.0.0.dev0` and `3.0.0.dev202607301604` wheels. The row returns to **Pending** on
   Kivy 3.0 GA, since a snapshot is not the released artifact.
 - **The SDL Java glue and the `libSDL*.so` are a matched pair** in both
   generations. `check_sdl_glue_contract()` fails the build on a mismatch,
