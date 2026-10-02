@@ -23,11 +23,31 @@ from Windows, macOS, or Linux. Android does not require a Mac.
 - The Android SDK with command-line tools, build-tools, platform-tools, and the
   Android NDK. [Android Studio](https://developer.android.com/studio) installs
   the SDK. Add the NDK and command-line tools from its SDK Manager, then accept
-  the SDK licenses with `sdkmanager --licenses`.
+  the SDK licenses (see [SDK licenses and `sdkmanager`](#sdk-licenses-and-sdkmanager)).
 - Somewhere to run the app: a physical device with USB debugging turned on, or
   an AVD (Android Virtual Device, an emulator image) created in Android Studio's
   Device Manager.
 - [git](https://git-scm.com/), to fetch the example app.
+
+### SDK licenses and `sdkmanager`
+
+Gradle installs missing SDK packages during a build (CMake, for one), but only
+once the SDK license is recorded under `<sdk>/licenses/`.
+
+- Older command-line tools record it when you run `sdkmanager --licenses` and
+  accept.
+- Command-line tools 23 and later replace `sdkmanager` with a wrapper around
+  Google's Android CLI. There, `sdkmanager --licenses` prints "no longer needed"
+  and does nothing; installing any package, such as `sdkmanager platform-tools`,
+  records the license without asking.
+
+Two more differences with the new wrapper. An install that fails, such as a
+mistyped package name, prints "not found" but still exits with status 0, so
+check the result with `sdkmanager --list_installed`. And the Android CLI
+collects usage data unless you run it with `--no-metrics`, which the
+`sdkmanager` wrapper does not pass; the `android` binary next to it in
+`cmdline-tools/latest/bin` accepts the flag (`android --no-metrics sdk install
+<package>`).
 
 ## Step 1: Get the example app
 

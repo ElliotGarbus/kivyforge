@@ -261,7 +261,10 @@ class TestEnvironmentChecks:
             android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
         )
         assert by["SDK licenses"].status is Status.WARN
-        assert "sdkmanager --licenses" in by["SDK licenses"].hint
+        hint = by["SDK licenses"].hint
+        assert "sdkmanager --licenses" in hint
+        # command-line tools 23+: --licenses is a no-op, an install records it.
+        assert "sdkmanager platform-tools" in hint
 
     def test_newer_kivyforge_on_pypi_warns(self, tmp_path):
         probe = FakeProbe(

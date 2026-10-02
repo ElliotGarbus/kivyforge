@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Android: SDK license guidance for command-line tools 23+
+
+- **Fixed:** the `doctor` "SDK licenses" hint, the README, and the Android quickstart
+  told you to run `sdkmanager --licenses`. In command-line tools 23 and later
+  `sdkmanager` is a wrapper around Google's Android CLI, and `--licenses` does nothing
+  (exit 0, no license recorded), so the warning never cleared. The hint now says to
+  install any package (such as `sdkmanager platform-tools`), which records the license;
+  `--licenses` is still named for older tools.
+- **Docs:** the quickstart has a new "SDK licenses and `sdkmanager`" section. It also
+  notes that the new `sdkmanager` exits 0 when an install fails, and that the Android
+  CLI collects usage data unless run with `--no-metrics`.
+- **CI:** the jobs that install the pinned NDK, CMake, platform, and build-tools now
+  assert each package landed, because a failed install no longer fails the step.
+- **Migration:** none needed.
+
 ### Android: doctor checks CMake
 
 - **Added:** `kivyforge doctor` now checks for the CMake the native launcher
