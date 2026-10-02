@@ -496,8 +496,9 @@ def render_linux_tables(
         archs_line = f"archs = [{archs_toml}]"
     else:
         archs_line = (
-            'archs = ["x86_64"]  # or ["aarch64"] for a Raspberry Pi 4/5 '
-            "(64-bit OS); list both to lock for both; each package run builds one, chosen with --arch"
+            '# "x86_64" (default), or "aarch64" for a Raspberry Pi 4/5 (64-bit OS).\n'
+            "# List both to lock for both; each package run builds one, chosen with --arch.\n"
+            'archs = ["x86_64"]'
         )
     lines: list[str] = []
     if include_shared:
