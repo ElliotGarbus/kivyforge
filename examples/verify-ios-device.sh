@@ -42,7 +42,8 @@
 #   3. lock      — kivyforge lock -p ios --update         (regenerate + verify, then restore)
 #   4. build     — kivyforge build -p ios --device        (Debug, on-device signing)
 #   5. run       — kivyforge run   -p ios --device        (install + launch; visual check;
-#                                                          exit status shown, not counted)
+#                                                          fails if the app never launched,
+#                                                          otherwise exit status shown, not counted)
 #   6. package   — kivyforge package -p ios --export-method development
 #                                                          (archive + export a .ipa; skip with --no-release)
 #
@@ -250,15 +251,26 @@ for ex in "${EXAMPLES[@]}"; do
     #    app with SIGKILL, which devicectl reports as "App terminated due to
     #    signal 9." and exit 1, so run's exit status cannot say whether the
     #    app worked. It is printed, not counted: the visual check decides.
+    #    What the script can decide is whether the app launched at all (a
+    #    locked phone refuses the launch): devicectl prints this line once
+    #    it has. tee -i so Ctrl+C reaches run, not tee, and the script goes on.
+    LAUNCHED_LINE="Launched application with"
     RUN_RC=""
     if [[ $ok -eq 1 ]]; then
         run_args=(kivyforge run -p ios --device)
         [[ -n "$DESTINATION" ]] && run_args+=(--destination "$DESTINATION")
+        run_log="$(mktemp -t verify-ios-run)"
         echo
         echo ">>> run: ${run_args[*]}"
-        "${run_args[@]}"
-        RUN_RC=$?
-        echo ">>> run exited $RUN_RC (not counted; did the app open and behave?)"
+        "${run_args[@]}" 2>&1 | tee -i "$run_log"
+        RUN_RC=${PIPESTATUS[0]}
+        if grep -q "$LAUNCHED_LINE" "$run_log"; then
+            echo ">>> run: app launched; run exited $RUN_RC (not counted; did the app open and behave?)"
+        else
+            echo "!!! run FAILED: the app never launched (no \"$LAUNCHED_LINE\" from devicectl; run exited $RUN_RC)"
+            ok=0
+        fi
+        rm -f "$run_log"
     fi
     # 6. package --release (archive + export a .ipa)
     if [[ $ok -eq 1 && $RELEASE -eq 1 ]]; then
@@ -271,7 +283,7 @@ for ex in "${EXAMPLES[@]}"; do
 
     if [[ $ok -eq 1 ]]; then
         echo
-        echo "+++ $ex: OK${RUN_RC:+ (run exited $RUN_RC; confirm on the phone)}"
+        echo "+++ $ex: OK${RUN_RC:+ (app launched; run exited $RUN_RC; confirm on the phone)}"
         PASSED+=("$ex")
     else
         echo

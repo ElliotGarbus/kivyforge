@@ -128,15 +128,18 @@ the app **from the app switcher** (swipe up and pause, then swipe the app's
 card away) so `run` returns and the script continues to `package`. Going to
 the Home Screen only suspends the app, and `run` keeps waiting. iOS often ends
 a closed app with SIGKILL: `devicectl` prints "App terminated due to signal
-9." and `run` exits 1. That is iOS behaviour, not a failure. The script prints
-`run`'s exit status and does not count it, so the run step passes or fails on
-the owner's confirmation alone; put the exit status and that confirmation in
-the note. Ctrl+C also ends `run` (`Aborted!`) without failing the script.
+9." and `run` exits 1. That is iOS behaviour, not a failure. So the script
+checks only that the app launched (`devicectl` printed "Launched application
+with ..."); it fails the run step if not, as on a locked phone. Once the app
+launched, the script prints `run`'s exit status and does not count it: whether
+the app worked is the owner's confirmation. Put the exit status and that
+confirmation in the note. Ctrl+C also ends `run` (`Aborted!`), and the script
+goes on.
 
 Pass only if all of these hold:
 
-- The script's build and package steps succeed for `hello-kivy`
-  (`+++ hello-kivy: OK`).
+- The script's build, launch and package steps succeed for `hello-kivy`
+  (`+++ hello-kivy: OK (app launched; ...)`).
 - The owner confirms the app opened on the phone and showed its label, and
   the console streamed Kivy's log, including `Start application main loop`
   (grep `/tmp/ios-pass.log`).
