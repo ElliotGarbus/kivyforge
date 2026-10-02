@@ -144,7 +144,11 @@ class RealAndroidProbe:
         return (sdk / "platforms" / f"android-{api}").is_dir()
 
     def accepted_licenses(self, sdk: Path) -> list[str]:
-        """The license hash files ``sdkmanager --licenses`` writes on accept."""
+        """The license hash files recorded under ``<sdk>/licenses``.
+
+        Older ``sdkmanager --licenses`` writes them on accept; command-line tools
+        23+ write them on the first package install instead.
+        """
         root = sdk / "licenses"
         return (
             sorted(p.name for p in root.iterdir() if p.is_file())
@@ -368,8 +372,11 @@ def _check_sdk_licenses(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
             "SDK licenses",
             Status.WARN,
             f"no accepted licenses recorded under {sdk / 'licenses'}",
-            hint="run `sdkmanager --licenses` and accept; otherwise Gradle "
-            "refuses to auto-install the SDK packages a build needs.",
+            hint="record the license, or Gradle refuses to auto-install the SDK "
+            "packages a build needs: `sdkmanager --licenses` and accept (older "
+            "command-line tools), or install any package, such as "
+            "`sdkmanager platform-tools` (command-line tools 23 and later, where "
+            "--licenses does nothing and an install records the license).",
         )
     return CheckResult("SDK licenses", Status.PASS, f"{len(accepted)} accepted")
 

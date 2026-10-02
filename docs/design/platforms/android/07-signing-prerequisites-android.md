@@ -39,7 +39,8 @@ Complete these on the build host before a signed release build. The host may be
 **Windows, macOS, or Linux**.
 
 1. **A JDK (17+), the Android SDK, and the NDK.** `kivyforge doctor` checks all
-   three, plus that `sdkmanager --licenses` have been accepted and that the
+   three, plus that the SDK licenses are recorded (`sdkmanager --licenses` on
+   older command-line tools; on 23+ the first package install does it) and that the
    `compile_sdk` platform + build-tools (which provide `apksigner`) are installed.
    The NDK is not optional even for a pure-Python app: it compiles the bootstrap's
    native launcher (`libmain.so`) on every build.

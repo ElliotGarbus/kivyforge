@@ -96,8 +96,9 @@ detects one):
 - A **JDK 17 to 23** on `PATH` or `JAVA_HOME` (the range the pinned Gradle can
   run on; Android Studio's bundled JDK may be newer than that).
 - The **Android SDK** (`ANDROID_HOME`/`ANDROID_SDK_ROOT`), with the `compile_sdk`
-  platform, build-tools, platform-tools, and accepted licenses
-  (`sdkmanager --licenses`). Android Studio's SDK Manager covers all of it.
+  platform, build-tools, platform-tools, and recorded SDK licenses (see the
+  [Android quickstart](docs/guides/get-started/quickstart-android.md#sdk-licenses-and-sdkmanager)).
+  Android Studio's SDK Manager covers all of it.
 - The **NDK** — required for *every* Android build, not just apps with native
   code: it compiles the bootstrap's native launcher (`libmain.so`).
 

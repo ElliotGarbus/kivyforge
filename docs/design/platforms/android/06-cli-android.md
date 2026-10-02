@@ -300,7 +300,7 @@ exit code is non-zero only on FAIL.
 | JDK | environment | A supported JDK (17+) on `PATH` / `JAVA_HOME`; the version AGP requires. |
 | Android SDK | environment | `ANDROID_HOME`/`ANDROID_SDK_ROOT` resolves; `sdkmanager` present. |
 | Build-tools / platform | environment | The `compile_sdk` platform + a matching build-tools version are installed. |
-| SDK licenses | environment | At least one acceptance recorded under `<sdk>/licenses/` — the hash files AGP's auto-download consults; WARN with the `sdkmanager --licenses` command if none is. |
+| SDK licenses | environment | At least one acceptance recorded under `<sdk>/licenses/` — the hash files AGP's auto-download consults; WARN if none is, with the `sdkmanager --licenses` command for older command-line tools and "install any package" for 23+, where `--licenses` is a no-op and the first install records the license. |
 | NDK | environment | **Required for every build** — AGP + the NDK compile the bootstrap's native launcher (`libmain.so`) from the emitted `cpp/` sources (a symbol-exporting release also uses the NDK to extract `native-debug-symbols.zip`). FAIL if no NDK resolves, with the `sdkmanager 'ndk;<version>'` hint. |
 | Gradle wrapper | project | Once the project is generated: `gradlew`/`gradlew.bat` and `gradle-wrapper.properties` are present (FAIL) and the `distributionUrl` is still kivyforge's pinned Gradle (WARN on drift — the project is a managed artifact, so rebuild rather than edit). SKIP before the first `build`. |
 | Emulator / virtualization | environment | For `run --emulator`: an AVD exists and the host has hardware acceleration (KVM on Linux, HAXM/Hypervisor on macOS/Windows). WARN with setup pointer if missing. |

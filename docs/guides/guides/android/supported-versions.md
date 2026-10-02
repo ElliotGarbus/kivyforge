@@ -85,8 +85,9 @@ range and point `JAVA_HOME` at it.
 
 `kivyforge doctor -p android` checks the JDK you actually have, the Android
 SDK, build tools, an NDK, and CMake. Install the NDK and CMake with
-`sdkmanager` (accepting the SDK licenses first); a missing CMake is downloaded
-by the first build.
+`sdkmanager`; a missing CMake is downloaded by the first build. See
+[SDK licenses and `sdkmanager`](../../get-started/quickstart-android.md#sdk-licenses-and-sdkmanager)
+for how the SDK licenses are recorded.
 
 ## Check a combination on your device
 
