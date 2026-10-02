@@ -188,7 +188,7 @@ _REQUIREMENTS_MSG = (
     '    name = "myapp"  # your app name\n'
     '    version = "0.1.0"\n'
     "    dependencies = [\n"
-    '        "kivy>=3.0",\n'
+    '        "kivy>=2.3.1",\n'
     "        # ... paste your other requirements here\n"
     "    ]\n\n"
     "  Then re-run kivyforge init."
@@ -240,8 +240,9 @@ def _init(report: Report, cli_platforms: tuple[str, ...], *, force: bool) -> Non
             f'    name = "myapp"\n'
             f'    version = "0.1.0"\n'
             f"    dependencies = [\n"
-            f'        "kivy>=3.0",\n'
+            f'        "kivy>=2.3.1",\n'
             f"    ]\n\n"
+            f"  (An iOS app needs Kivy 3.0; see the iOS guide.)\n"
             f"  See https://packaging.python.org/tutorials/packaging-projects/ for details."
         )
 
@@ -405,6 +406,16 @@ def _resolve_single_init_platform(
     )
 
 
+def _mobile_first(platform_names: list[str]) -> list[str]:
+    """Seed iOS and Android before the desktop platforms.
+
+    The first platform seeded writes the shared ``[tool.kivy]`` table, and only
+    the mobile backends read ``orientation``; seeding a desktop platform first
+    would leave a later mobile one without it.
+    """
+    return sorted(platform_names, key=lambda name: name not in ("ios", "android"))
+
+
 def _run_update_path(
     report: Report, pyproject: Path, *, force: bool, platform_names: list[str]
 ) -> None:
@@ -436,7 +447,7 @@ def _run_update_path(
                 report, pyproject, force=force, platform_name=platform_name
             ),
         }
-        for platform_name in platform_names
+        for platform_name in _mobile_first(platform_names)
     ]
 
     _maybe_warn_drift(report, _safe_parse(read_pyproject_text(pyproject), pyproject))

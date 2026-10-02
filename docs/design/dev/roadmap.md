@@ -376,6 +376,7 @@ known-unverified list.
 | 8 | `native_integration` support (Android + iOS) | XL | item 7; spec freeze |
 | ~~9~~ | ~~Byte-compile the embedded stdlib at build time (desktop)~~ | S | **done 2026-09-17**; measured on Windows, Linux, and macOS |
 | 10 | Dynamic `[project].version` (setuptools-scm and friends) | S–M | none |
+| 11 | CPython 3.15 on every platform | S–M | CPython 3.15.0 final released |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -2079,3 +2080,36 @@ artifact names, and the Windows bundle metadata and `doctor` check.
 **Done when** a project with `dynamic = ["version"]` and `setuptools-scm`
 locks, builds and packages on at least one desktop target and one mobile
 target, with the git-derived version in the artifact name and metadata.
+
+---
+
+### 11. CPython 3.15 on every platform
+
+**New 2026-10-02.** Gated by the CPython 3.15.0 final release (due 2026-10-01 or
+2026-10-02; the latest tag seen on 2026-09-23 was `v3.15.0rc2`).
+
+Python versions are not uniform today, and the reason is support history, not
+preference:
+
+- **iOS** first shipped in CPython 3.15 and `kivyforge init` seeds the
+  pre-release `3.15.0b4`, which has been used for testing and evaluation.
+- **Android** support first arrived in 3.14, so `init` seeds `3.14.6`.
+- **macOS, Linux and Windows** seed `3.13.14`.
+
+Once 3.15 is final, every platform can use it.
+
+- [ ] Replace the iOS `3.15.0b4` pin (`init`, the `hello-world` and
+      `pyobjus-deviceinfo` examples, the docs) with the final release.
+- [ ] Move the `init` defaults for Android and the three desktop platforms to
+      3.15 (`DEFAULT_*_PYTHON_VERSION` in `kivyforge/cli/init_writer.py`), once
+      the python.org Android runtime and python-build-standalone builds exist
+      for it.
+- [ ] Check that Kivy, pyjnius and pyobjus have wheels for `cp315` on every
+      target, including the kivy-mobile-wheels index (today it carries `cp314`
+      for Android and `cp315` for iOS).
+- [ ] Re-run the iOS `strip_source` validation that waited on a final 3.15
+      (see `test-matrix.md`'s known-unverified list).
+- [ ] Update `requires-python` in the examples and the install docs.
+
+**Done when** a freshly initialised project on each platform locks and builds
+on 3.15, and `init` writes no pre-release version.
