@@ -9,15 +9,17 @@ sources:
 # kivyforge
 
 kivyforge is a declarative, [PEP 621](https://peps.python.org/pep-0621/)-aligned
-build toolchain for [Kivy](https://kivy.org) (and other Python) apps. You
+build toolchain for [Kivy](https://kivy.org) based Python apps. You
 describe your app once in `pyproject.toml`. kivyforge resolves your dependencies
 into a per-platform lockfile, downloads prebuilt runtimes and wheels, generates a
 native project, and drives the platform's own toolchain to produce a runnable
 artifact.
 
 kivyforge is the successor to **kivy-ios**, **python-for-android**, and
-**buildozer**. One toolchain and one configuration file target every platform
-Kivy runs on: **Android, iOS, Linux, macOS, and Windows**.
+**buildozer**. It can also replace Pyinstaller for dekstop apps. 
+One toolchain and one configuration file target every platform Kivy 
+runs on: **Android, iOS, Linux (include Raspberry Pi), macOS, and Windows**.
+
 
 <div class="grid cards" markdown>
 
@@ -58,12 +60,25 @@ Every platform follows the same four-stage pipeline. Only the backend that
 implements each stage differs.
 
 ```mermaid
-flowchart LR
-    pp["pyproject.toml"] --> lock["kivyforge lock"]
-    lock --> pl["pylock.PLATFORM.toml"]
-    pl --> build["kivyforge build"]
-    build --> tc["platform toolchain"]
-    tc --> art["runnable artifact"]
+%%{init: {"flowchart": {"subGraphTitleMargin": {"top": 10, "bottom": 6}}}}%%
+flowchart TB
+    subgraph declare ["1. Declare"]
+        direction LR
+        pp["pyproject.toml"]
+    end
+    subgraph lockstage ["2. Lock"]
+        direction LR
+        lock["kivyforge lock"] --> pl["pylock.PLATFORM.toml"]
+    end
+    subgraph buildstage ["3. Build"]
+        direction LR
+        build["kivyforge build"] --> proj["native project"]
+    end
+    subgraph producestage ["4. Produce"]
+        direction LR
+        pkg["kivyforge package"] --> tc["platform toolchain"] --> dist["distributable"]
+    end
+    declare --> lockstage --> buildstage --> producestage
 ```
 
 1. **Declare** your app in one `pyproject.toml`: standard `[project]` metadata,
@@ -78,18 +93,22 @@ flowchart LR
 
 ## Supported targets
 
-This table matches the output of `kivyforge capabilities`.
+This table matches the output of `kivyforge capabilities`, plus a row for
+Raspberry Pi, which that output lists under `linux`.
 
 | Target (`-p`) | Architectures | Package formats (`-f`) | Build host |
 |---|---|---|---|
 | `ios` | `arm64` | `ipa` | macOS with Xcode |
 | `macos` | `arm64` | `app` | macOS |
 | `linux` | `aarch64`, `x86_64` | `appimage` (default), `folder` | Linux |
+| [Raspberry Pi](guides/linux/raspberry-pi.md) (`linux`) | `aarch64` | `appimage` | `x86_64` Linux (cross-build) |
 | `windows` | `amd64` | `folder` | Windows |
 | `android` | `arm64_v8a`, `x86_64` | `apk` (default), `aab` | Windows, macOS, or Linux |
 
-Apple targets are Apple Silicon (`arm64`) only. For the generated host matrix,
-see [Which host builds which target](get-started/hosts.md).
+Apple targets are Apple Silicon (`arm64`) only. Raspberry Pi is the `linux`
+target with `archs = ["aarch64"]`, for a Pi 4 or Pi 5 running 64-bit
+Raspberry Pi OS. For the generated host matrix, see
+[Which host builds which target](get-started/hosts.md).
 
 !!! note "Early development"
     kivyforge is alpha software. Configuration keys and command options can
