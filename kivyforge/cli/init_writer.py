@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import re
 
-from packaging.requirements import InvalidRequirement, Requirement
-
 from ..config.model import (
     AndroidSigningConfig,
     MacosSigningConfig,
@@ -83,18 +81,16 @@ _KIVY_DESKTOP_EXCLUDE_LINES = [
 _MOBILE_WHEEL_INDEX = "https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"
 
 
-def mobile_index_line(*, has_kivy: bool, what: str) -> str:
+def mobile_index_line(*, what: str) -> str:
     """The ``extra_index_urls`` line for a mobile overlay.
 
-    Kivy publishes no iOS or Android wheel to PyPI, so ``kivyforge lock`` fails
-    for a project that depends on it until the first-party index is listed.
-    When ``kivy`` is a direct dependency the line is active; otherwise it is
-    left as a commented hint.
+    Kivy is assumed to be a dependency, and it publishes no iOS or Android wheel
+    to PyPI, so ``kivyforge lock`` fails until the first-party index is listed.
     """
-    body = f'extra_index_urls = ["{_MOBILE_WHEEL_INDEX}"]'
-    if has_kivy:
-        return f"{body}  # {what}; Kivy has no wheel for this platform on PyPI"
-    return f"# {body}  # uncomment if you depend on kivy: {what}"
+    return (
+        f'extra_index_urls = ["{_MOBILE_WHEEL_INDEX}"]'
+        f"  # {what}; Kivy has no wheel for this platform on PyPI"
+    )
 
 
 def shared_table_lines(display: str, *, mobile: bool) -> list[str]:
@@ -154,24 +150,11 @@ def bundle_id_segment(app_slug: str) -> str:
     return seg.strip("-") or "app"
 
 
-def has_kivy_dep(dependencies: list[str]) -> bool:
-    """Return True if any entry in *dependencies* is the ``kivy`` package."""
-    for dep in dependencies:
-        try:
-            name = Requirement(dep).name
-        except InvalidRequirement:
-            name = dep.split(";", 1)[0].split("[", 1)[0].strip()
-        if _canon(name) == "kivy":
-            return True
-    return False
-
-
 def render_kivy_tables(
     app_slug: str,
     signing: SigningConfig | None = None,
     *,
     python_version: str | None = None,
-    has_kivy: bool = False,
     simulator_archs: list[str] | tuple[str, ...] | None = None,
     icon_source: str | None = None,
     splash_source: str | None = None,
@@ -183,8 +166,8 @@ def render_kivy_tables(
     When ``signing`` is provided (the ``--force`` preserve path) its concrete
     values are emitted; otherwise a commented template invites the user to fill
     in ``team_id``. ``python_version`` overrides the default xcframework pin.
-    When ``has_kivy`` is True a documented ``exclude`` block is included so
-    users know which transitive Kivy deps are safe to drop for their app.
+    A documented ``exclude`` block is always included so users know which
+    transitive Kivy deps are safe to drop for their app (Kivy is assumed).
 
     ``simulator_archs`` / ``icon_source`` / ``splash_source`` /
     ``splash_background`` are the user's existing values on the ``--force``
@@ -214,12 +197,9 @@ def render_kivy_tables(
         "build = 1",
         f'deployment_target = "{DEFAULT_DEPLOYMENT_TARGET}"',
         sim_line,
-        mobile_index_line(
-            has_kivy=has_kivy, what="first-party iOS wheels for kivy and pyobjus"
-        ),
+        mobile_index_line(what="first-party iOS wheels for kivy and pyobjus"),
     ]
-    if has_kivy:
-        lines += [""] + _KIVY_EXCLUDE_LINES
+    lines += [""] + _KIVY_EXCLUDE_LINES
     if icon_source is not None:
         icon_lines = [f'source = "{icon_source}"']
     else:
@@ -364,7 +344,6 @@ def append_kivy_tables(
     signing: SigningConfig | None = None,
     *,
     python_version: str | None = None,
-    has_kivy: bool = False,
     simulator_archs: list[str] | tuple[str, ...] | None = None,
     icon_source: str | None = None,
     splash_source: str | None = None,
@@ -376,7 +355,6 @@ def append_kivy_tables(
         app_slug,
         signing,
         python_version=python_version,
-        has_kivy=has_kivy,
         simulator_archs=simulator_archs,
         icon_source=icon_source,
         splash_source=splash_source,
@@ -404,7 +382,6 @@ def render_macos_tables(
     signing: MacosSigningConfig | None = None,
     *,
     python_version: str | None = None,
-    has_kivy: bool = False,
     archs: list[str] | tuple[str, ...] | None = None,
     icon_source: str | None = None,
     include_shared: bool = True,
@@ -427,8 +404,7 @@ def render_macos_tables(
         "build = 1",
         archs_line,
     ]
-    if has_kivy:
-        lines += [""] + _KIVY_DESKTOP_EXCLUDE_LINES
+    lines += [""] + _KIVY_DESKTOP_EXCLUDE_LINES
     if icon_source is not None:
         icon_lines = [f'source = "{icon_source}"']
     else:
@@ -483,7 +459,6 @@ def render_linux_tables(
     app_slug: str,
     *,
     python_version: str | None = None,
-    has_kivy: bool = False,
     archs: list[str] | tuple[str, ...] | None = None,
     icon_source: str | None = None,
     categories: list[str] | tuple[str, ...] | None = None,
@@ -510,8 +485,7 @@ def render_linux_tables(
         "# TODO: change to your reverse-DNS app id",
         archs_line,
     ]
-    if has_kivy:
-        lines += [""] + _KIVY_DESKTOP_EXCLUDE_LINES
+    lines += [""] + _KIVY_DESKTOP_EXCLUDE_LINES
     if icon_source is not None:
         icon_lines = [f'source = "{icon_source}"']
     else:
@@ -566,7 +540,6 @@ def render_windows_tables(
     signing: WindowsSigningConfig | None = None,
     *,
     python_version: str | None = None,
-    has_kivy: bool = False,
     archs: list[str] | tuple[str, ...] | None = None,
     icon_source: str | None = None,
     include_shared: bool = True,
@@ -588,8 +561,7 @@ def render_windows_tables(
         "# TODO: your AppUserModelID (no spaces, <=128 chars)",
         archs_line,
     ]
-    if has_kivy:
-        lines += [""] + _KIVY_DESKTOP_EXCLUDE_LINES
+    lines += [""] + _KIVY_DESKTOP_EXCLUDE_LINES
     if icon_source is not None:
         icon_lines = [f'source = "{icon_source}"']
     else:
@@ -629,7 +601,6 @@ def render_android_tables(
     signing: AndroidSigningConfig | None = None,
     *,
     python_version: str | None = None,
-    has_kivy: bool = False,
     package: str | None = None,
     abis: list[str] | tuple[str, ...] | None = None,
     kivy_generation: int | None = None,
@@ -674,12 +645,9 @@ def render_android_tables(
         abis_line,
         '# find_links = ["wheels"]  '
         "# a local wheelhouse, for wheels you cross-build yourself",
-        mobile_index_line(
-            has_kivy=has_kivy, what="first-party Android wheels for kivy and pyjnius"
-        ),
+        mobile_index_line(what="first-party Android wheels for kivy and pyjnius"),
     ]
-    if has_kivy:
-        lines += [""] + _KIVY_EXCLUDE_LINES
+    lines += [""] + _KIVY_EXCLUDE_LINES
     lines += [
         "",
         "[tool.kivy.android.python]",

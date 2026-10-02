@@ -30,40 +30,35 @@ def _active(block: str) -> list[str]:
 class TestDesktopTemplates:
     def test_orientation_is_not_written(self, render):
         # Only the iOS and Android backends read it.
-        assert "orientation" not in render("myapp", has_kivy=True)
+        assert "orientation" not in render("myapp")
 
     def test_exclude_is_optional_not_applied(self, render):
-        block = render("myapp", has_kivy=True)
+        block = render("myapp")
         assert not any(ln.startswith("exclude") for ln in _active(block))
         assert "# exclude = [" in block
         assert "UrlRequest" in block
 
     def test_parses(self, render):
-        tomllib.loads(_PROJECT + render("myapp", has_kivy=True))
+        tomllib.loads(_PROJECT + render("myapp"))
 
 
 @pytest.mark.parametrize("render", [render_kivy_tables, render_android_tables])
 class TestMobileTemplates:
     def test_orientation_is_written(self, render):
-        assert 'orientation = ["portrait"]' in render("myapp", has_kivy=True)
+        assert 'orientation = ["portrait"]' in render("myapp")
 
     def test_exclude_is_applied(self, render):
-        block = render("myapp", has_kivy=True)
-        assert "exclude = [" in _active(block)
+        assert "exclude = [" in _active(render("myapp"))
 
-    def test_index_is_active_when_kivy_is_a_dependency(self, render):
-        block = render("myapp", has_kivy=True)
+    def test_kivy_wheel_index_is_active(self, render):
+        # Kivy is assumed to be a dependency, and has no mobile wheel on PyPI.
         assert any(
-            ln.startswith("extra_index_urls") and _INDEX in ln for ln in _active(block)
+            ln.startswith("extra_index_urls") and _INDEX in ln
+            for ln in _active(render("myapp"))
         )
 
-    def test_index_is_only_a_hint_without_kivy(self, render):
-        block = render("myapp", has_kivy=False)
-        assert not any(ln.startswith("extra_index_urls") for ln in _active(block))
-        assert "# extra_index_urls" in block and _INDEX in block
-
     def test_parses(self, render):
-        tomllib.loads(_PROJECT + render("myapp", has_kivy=True))
+        tomllib.loads(_PROJECT + render("myapp"))
 
 
 def test_every_shared_key_is_documented():

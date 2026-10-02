@@ -12,10 +12,12 @@
   templates is now an optional, commented-out size trim. It used to be active
   and dropped `requests` and its dependencies, which breaks `UrlRequest`. iOS
   and Android keep the active list.
-- **Changed:** when `kivy` is a dependency, the iOS and Android templates write
-  `extra_index_urls` for the kivy-mobile-wheels index uncommented. Without it
-  `kivyforge lock` cannot find a Kivy wheel. The Linux template notes that
-  `archs = ["aarch64"]` targets a Raspberry Pi.
+- **Changed:** the iOS and Android templates write `extra_index_urls` for the
+  kivy-mobile-wheels index uncommented. Without it `kivyforge lock` cannot find
+  a Kivy wheel. `init` now assumes Kivy is a dependency: the `exclude` list and
+  this line are always written, instead of only when `[project].dependencies`
+  names `kivy`. The Linux template notes that `archs = ["aarch64"]` targets a
+  Raspberry Pi.
 - **Fixed:** the "no pyproject.toml" and "found requirements.txt" messages
   suggested `kivy>=3.0`, which has no desktop wheel yet. They now suggest
   `kivy>=2.3.1` and say an iOS app needs Kivy 3.0.
