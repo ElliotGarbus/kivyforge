@@ -2,8 +2,12 @@
 title: Add Java libraries to your Android app
 sources:
   - docs/design/platforms/android/01-pyproject-android.md
+  - docs/design/platforms/android/02-pylock-android-spec.md
   - docs/design/platforms/android/03-artifact-distribution-android.md
+  - docs/design/platforms/android/04-gradle-project-generation.md
+  - docs/design/dev/test-matrix.md
   - kivyforge/config/loader.py
+  - kivyforge/platforms/android/generate/project.py
   - examples/mobile/qr-maven/pyproject.toml
 ---
 
@@ -13,6 +17,9 @@ You can add Java or Kotlin code to your app in three ways: a Maven dependency, a
 local or downloadable archive (`.aar` or `.jar`), or your own source files.
 kivyforge adds them to the generated Gradle project, and you call them from
 Python with [pyjnius](pyjnius.md).
+
+Maven dependencies can also take their versions from a BOM, and some libraries
+need a Gradle plugin too. Firebase needs both; see [Add Firebase](#add-firebase).
 
 ## Before you begin
 
@@ -61,8 +68,10 @@ dependencies = [
 ```
 
 The BOM itself needs an exact version. A `dependencies` entry without a version
-is rejected unless a BOM is listed. `kivyforge lock` records the version that
-the BOM chose for each library, so the lock shows exactly what you ship.
+is rejected unless a BOM is listed. You can still give a library an explicit
+version alongside a BOM; Gradle then uses the higher of that version and the
+BOM's. `kivyforge lock` records the version Gradle chose for each library, and
+the BOM file itself, with their SHA-256 hashes.
 
 ## Add a Gradle plugin
 
@@ -85,26 +94,56 @@ you list them.
 
 ## Add Firebase
 
-Firebase needs a BOM, the Google Services plugin, and your Firebase project's
-`google-services.json` file in the `app/` folder of the generated project:
+Firebase needs three things: the Firebase BOM, the Google Services plugin, and
+your Firebase project's `google-services.json` file. The plugin reads that file
+during the build and turns it into resources Firebase reads when it starts.
 
-```toml
-[tool.kivy.android.gradle]
-platforms = ["com.google.firebase:firebase-bom:34.15.0"]
-dependencies = ["com.google.firebase:firebase-analytics"]
+1. In the Firebase console, add an Android app whose package name matches
+   `[tool.kivy.android].package`, and download its `google-services.json`. Save
+   it in your project, for example as `config/google-services.json`.
 
-[tool.kivy.android.gradle.plugins]
-"com.google.gms.google-services" = "4.4.2"
+2. Declare the BOM, the libraries you use, the plugin, and the file:
 
-[[tool.kivy.android.include_files]]
-dest = "app"
-sources = ["config/google-services.json"]
-```
+    ```toml
+    [tool.kivy.android.gradle]
+    platforms = ["com.google.firebase:firebase-bom:34.15.0"]
+    dependencies = ["com.google.firebase:firebase-analytics"]
 
-Download `google-services.json` from the Firebase console for an Android app
-whose package name matches `[tool.kivy.android].package`. Then lock and build.
-Firebase starts itself when your app launches. Call its APIs from Python with
-[pyjnius](pyjnius.md).
+    [tool.kivy.android.gradle.plugins]
+    "com.google.gms.google-services" = "4.4.2"
+
+    [[tool.kivy.android.include_files]]
+    dest = "app"
+    sources = ["config/google-services.json"]
+    ```
+
+    `dest = "app"` puts the file in the `app/` folder of the generated project,
+    where the plugin looks for it.
+
+3. Lock and build:
+
+    ```bash
+    kivyforge lock -p android
+    kivyforge build -p android --debug --abi x86_64
+    ```
+
+Firebase starts itself when your app launches. To confirm, run the app and look
+for `FirebaseApp initialization successful` in `adb logcat`. Call Firebase APIs
+from Python with [pyjnius](pyjnius.md).
+
+Some Firebase products need more:
+
+- **Crashlytics** needs its own plugin as well. List it after Google Services,
+  because kivyforge applies plugins in the order you list them:
+  `"com.google.firebase.crashlytics" = "VERSION"`.
+- **Cloud Messaging** delivers push messages to a subclass of
+  `FirebaseMessagingService`, which you write in Java or Kotlin. Add it with
+  [your own source files](#add-your-own-java-or-kotlin-source) and declare the
+  service with `extra_application_xml` in
+  [`[tool.kivy.android.manifest]`](../../reference/pyproject/android.md).
+
+`google-services.json` changes are lock drift like any other `include_files`
+source: after you replace the file, run `kivyforge lock -p android` again.
 
 ## Add an .aar or .jar archive
 
@@ -148,8 +187,9 @@ Build the app:
 kivyforge build -p android --debug --abi x86_64
 ```
 
-A Maven coordinate that cannot be resolved, or an archive source that cannot be
-read, fails `kivyforge lock`.
+A Maven coordinate or BOM that cannot be resolved, or an archive source that
+cannot be read, fails `kivyforge lock`. Gradle plugins are fetched only by the
+build, so a plugin ID or version that does not exist fails `kivyforge build`.
 
 ## What's next
 

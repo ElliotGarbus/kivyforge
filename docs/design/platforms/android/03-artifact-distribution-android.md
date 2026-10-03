@@ -197,6 +197,17 @@ transitive graph, and records every module + its per-artifact SHA-256 under
 fetches, and (for source-only artifacts) compiles — kivyforge writes no build
 logic, and it records (but does not re-verify) the resolved bytes.
 
+Two companions ride on this channel. **BOMs**
+(`[tool.kivy.android.gradle].platforms`) are imported with Gradle's `platform()`
+in both the scratch resolve and `app/build.gradle`, so a versionless coordinate
+gets the same version at lock time and at build time, and the BOM's `.pom` is
+hash-recorded with the rest of the graph. **Gradle plugins**
+(`[tool.kivy.android.gradle.plugins]`, any plugin id at an exact version) are
+build tooling rather than artifacts: they are pinned by version in the generated
+root `build.gradle` and fetched by Gradle like AGP, with no hash in the lock.
+Firebase is the motivating case — it needs both, plus `google-services.json`
+staged through `include_files`.
+
 This is the direct analog of the iOS **Swift Package Manager** channel, and it
 reconciles with the core invariant the same way: the invariant is *kivyforge runs
 no from-source build pipeline of its own*, and Gradle — the platform's own
@@ -229,7 +240,9 @@ source of truth.
 | Wheel-embedded `.libs/` (e.g. Kivy's SDL family) | `app/src/main/jniLibs/<abi>/` (ABI from the wheel tag) | Same. |
 | `[[tool.kivyforge.python_android]]` (per ABI) | stdlib → staged bundle; runtime `.so`s → `jniLibs/<abi>/` | Follows the embeddable package's documented layout. |
 | `[[tool.kivyforge.android_libs]]` (`.aar`/`.jar`) | `<app>-android/app/libs/` + `build.gradle` reference | Gradle links/merges. |
-| `[tool.kivyforge.gradle]` coordinates | emitted (fully versioned) into `app/build.gradle`; the resolved graph mirrored into `app/gradle.lockfile` | Gradle owns fetch/compile; versions pinned, bytes hash-*recorded* (audit, not a v1 gate). |
+| `[tool.kivyforge.gradle]` coordinates | emitted into `app/build.gradle` (fully versioned, or versionless under a BOM); the resolved graph mirrored into `app/gradle.lockfile` | Gradle owns fetch/compile; versions pinned, bytes hash-*recorded* (audit, not a v1 gate). |
+| `[tool.kivyforge.gradle].platforms` (BOMs) | `implementation platform('...')` in `app/build.gradle` | Supplies versions for versionless coordinates; same import as the lock's scratch resolve. |
+| `[tool.kivy.android.gradle.plugins]` (not in the lock) | `id '...' version '...' apply false` in the root `build.gradle`; `id '...'` in `app/build.gradle` | Build tooling, pinned by version like AGP; not hash-recorded. |
 
 `kivyforge build` keeps native libs (`jniLibs/`) and pure-Python payload (the
 asset bundle) disjoint: `.so` files are loadable only from the extracted native

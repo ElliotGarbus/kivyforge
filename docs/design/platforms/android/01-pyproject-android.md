@@ -928,7 +928,7 @@ key_alias = "upload"
 10. Sets `[tool.kivy.android].abis` to a non-list, an empty list, or a list containing any value other than `"arm64_v8a"` / `"x86_64"` (32-bit ABIs are rejected — the python.org runtime is 64-bit only).
 11. Lacks `[tool.kivy.android.python].version`, or specifies one for which no python.org Android embeddable package exists (verified at lock time), or one incompatible with `[project].requires-python`.
 12. Sets `find_links` entries that are absolute, empty, or escape the project directory.
-13. Declares a `[tool.kivy.android.gradle].dependencies` entry that is not a fully-versioned `group:artifact:version` coordinate (dynamic ranges are rejected for reproducibility).
+13. Declares a `[tool.kivy.android.gradle].dependencies` entry that is not a fully-versioned `group:artifact:version` coordinate (dynamic ranges are rejected for reproducibility). A versionless `group:artifact` entry is the one exception, and only when `platforms` is non-empty. A `platforms` entry must itself be fully versioned. A `plugins` entry must map a dotted plugin id (quoted, or TOML nests it) to an exact version string, and may not be `com.android.application` or `org.jetbrains.kotlin.android`.
 14. Declares a `native.aars`/`native.jars` `source` that is an absolute path or escapes the project directory.
 15. Sets reserved keys under `[tool.kivy.android.manifest]`, `[tool.kivy.android.gradle_properties]`, or otherwise collides with a kivyforge-managed manifest attribute; or sets `[tool.kivy.android.manifest].allow_exported` to anything other than a list of non-empty strings.
 16. Runs `kivyforge package` without a resolvable signing key (keystore/alias via `[tool.kivy.android.signing]` or CLI/env).
