@@ -12,7 +12,8 @@ from pathlib import Path
 
 import click
 
-from kivyforge.artifacts.download import fetch_artifact
+from kivyforge.artifacts.download import DownloadError, fetch_artifact
+from kivyforge.artifacts.verify import HashMismatch
 from kivyforge.build_outcome import (
     ArtifactKind,
     BuildEvents,
@@ -233,7 +234,7 @@ def android_build(
         events.on_progress(
             f"[collect] python.org runtime {runtime.version} ({runtime.abi})"
         )
-        tarball = fetch_artifact(
+        tarball = _fetch(
             name=f"python-android-{runtime.abi}",
             sha256=runtime.sha256,
             filename=(runtime.url or runtime.path or "").rsplit("/", 1)[-1],
@@ -253,7 +254,7 @@ def android_build(
     staged_libs: list[str] = []
     for lib in lock.android_libs:
         events.on_progress(f"[collect] {lib.kind} {lib.name} {lib.version}")
-        archive = fetch_artifact(
+        archive = _fetch(
             name=lib.name,
             sha256=lib.sha256,
             filename=(lib.url or lib.path or "").rsplit("/", 1)[-1],
@@ -282,16 +283,14 @@ def android_build(
         files = []
         for package in lock.packages:
             wheel = select_wheel(package, abi=abi_name, min_sdk=android.min_sdk)
-            fetched = Path(
-                fetch_artifact(
-                    name=package.name,
-                    sha256=wheel.sha256,
-                    filename=wheel.name,
-                    url=wheel.url,
-                    path=wheel.path,
-                    project_root=project_root,
-                    no_cache=no_cache,
-                )
+            fetched = _fetch(
+                name=package.name,
+                sha256=wheel.sha256,
+                filename=wheel.name,
+                url=wheel.url,
+                path=wheel.path,
+                project_root=project_root,
+                no_cache=no_cache,
             )
             staged = wheel_stage / wheel.name
             if fetched.name != wheel.name:
@@ -1131,6 +1130,14 @@ def _load(project_root: Path, *, no_verify_lock: bool):
             "  Or:  kivyforge build --no-verify-lock   (not recommended)"
         )
     return config, lock
+
+
+def _fetch(**kwargs) -> Path:
+    """``fetch_artifact``, with its failures reported rather than raised raw."""
+    try:
+        return Path(fetch_artifact(**kwargs))
+    except (DownloadError, HashMismatch) as exc:
+        raise AndroidBuildError(str(exc)) from exc
 
 
 def _stage(fn, error_type):

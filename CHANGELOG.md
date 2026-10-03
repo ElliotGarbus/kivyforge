@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Android and iOS: a failed download is reported, not a traceback
+
+- **Fixed:** when an Android or iOS build could not download a locked artifact (for
+  example, a wheel host answering `HTTP Error 503`), or the download failed its
+  SHA-256 check, kivyforge crashed with a Python traceback. Under `--json`, stdout
+  was empty instead of one envelope. Both are now reported as an ordinary error
+  naming the artifact's URL and the reason, as the desktop backends already did:
+  `KF-ERROR` and exit `1`, with a `--json` envelope.
+- **Migration:** none needed. A download error is usually transient: retry the
+  build.
+
 ### Android builds refuse to start Gradle without a JDK
 
 - **Fixed:** a `build -p android --debug` (or `package`, `run`) attempted with only a
