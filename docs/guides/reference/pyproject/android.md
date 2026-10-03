@@ -77,8 +77,10 @@ A splash screen is generated only when `source` is set. It requires `compile_sdk
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `dependencies` | list of string | `[]` | Maven coordinates in `group:artifact:version` form. Dynamic versions (`+`, ranges, `latest.*`) are rejected. |
-| `repositories` | list of string | `[]` | Extra Maven repository URLs, in addition to `google()` and `mavenCentral()`. |
+| `dependencies` | list of string | `[]` | Maven coordinates in `group:artifact:version` form. Dynamic versions (`+`, ranges, `latest.*`) are rejected. When `platforms` is set, an entry can be `group:artifact` and take its version from the BOM. |
+| `repositories` | list of string | `[]` | Extra Maven repository URLs, in addition to `google()` and `mavenCentral()`. When `plugins` is set, Gradle also looks for plugins here. |
+| `platforms` | list of string | `[]` | BOM coordinates in `group:artifact:version` form, imported with Gradle's `platform()`. The version must be exact. |
+| `plugins` | table | `{}` | Gradle plugin ID = exact version, for example `"com.google.gms.google-services" = "4.4.2"`. Quote each ID. `com.android.application` and `org.jetbrains.kotlin.android` are rejected, because kivyforge applies them. |
 
 ## `[tool.kivy.android.native.aars]` and `[tool.kivy.android.native.jars]`
 

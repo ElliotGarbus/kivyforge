@@ -156,6 +156,7 @@ def _parse_gradle(table: object) -> GradlePins:
     return GradlePins(
         dependencies=tuple(table.get("dependencies", [])),
         repositories=tuple(table.get("repositories", [])),
+        platforms=tuple(table.get("platforms", [])),
         resolved=resolved,
     )
 

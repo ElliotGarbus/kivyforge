@@ -66,7 +66,8 @@ Flags: `--update`, `--offline`, `--check` (same semantics as iOS).
 Resolves per-ABI wheels (with the missing-ABI / inconsistent-version fail-fast
 checks), the per-ABI python.org runtime, `.aar`/`.jar` SHA-256s, and — when
 `[tool.kivy.android.gradle].dependencies` is non-empty — runs Gradle dependency
-locking + hash verification against a scratch project and embeds the resolved
+locking + hash verification against a scratch project (with any declared BOMs
+imported as `platform(...)`) and embeds the resolved
 transitive graph (per-artifact SHA-256) under `[[tool.kivyforge.gradle.resolved]]`
 in the lock (`kivyforge build` later mirrors it into `app/gradle.lockfile` as the
 audit record; it is not re-verified at build time — see
@@ -78,6 +79,8 @@ with a clear error if no pyproject is present or it lacks `[tool.kivy.android]`.
 > Gradle dependency lock needs a reachable JDK/Gradle and Maven repositories. When
 > `[tool.kivy.android].gradle.dependencies` is empty (the common Kivy case), this
 > step is skipped and `lock` needs only pip resolution + python.org metadata.
+> Declaring only `gradle.plugins` does not trigger it: plugins are not resolved
+> at lock time, only by the build.
 
 ### `kivyforge build`
 

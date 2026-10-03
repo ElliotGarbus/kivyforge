@@ -470,8 +470,26 @@ dependencies = [
 
 | Field          | Type           | Required | Description                                                                                                                                                               |
 | -------------- | -------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dependencies` | list of string | no       | Gradle dependency coordinates (`group:artifact:version`). Each is emitted as an `implementation` in `app/build.gradle`. Versions must be explicit (no dynamic `+` ranges) so the build is reproducible. |
-| `repositories` | list of string | no       | Extra Maven repository URLs, in addition to the always-present `google()` and `mavenCentral()`.                                                                          |
+| `dependencies` | list of string | no       | Gradle dependency coordinates (`group:artifact:version`). Each is emitted as an `implementation` in `app/build.gradle`. Versions must be explicit (no dynamic `+` ranges) so the build is reproducible. A `group:artifact` entry with no version is accepted only when `platforms` is non-empty: the BOM supplies the version. |
+| `repositories` | list of string | no       | Extra Maven repository URLs, in addition to the always-present `google()` and `mavenCentral()`. When `plugins` is non-empty they are also searched for plugins, after `gradlePluginPortal()`. |
+| `platforms`    | list of string | no       | BOM coordinates (`group:artifact:version`, exact version), each emitted as `implementation platform('...')` in `app/build.gradle` and imported into the lock's scratch resolve, so the lock records the versions the BOM chose. |
+| `plugins`      | table          | no       | Gradle plugin id = exact version, e.g. `"com.google.gms.google-services" = "4.4.2"`. Each is declared `apply false` with its version in the root `build.gradle` and applied, in declared order, after `com.android.application` in `app/build.gradle`. `com.android.application` and `org.jetbrains.kotlin.android` are rejected: kivyforge applies and versions them. |
+
+```toml
+[tool.kivy.android.gradle]
+platforms = ["com.google.firebase:firebase-bom:34.15.0"]
+dependencies = ["com.google.firebase:firebase-analytics"]   # version from the BOM
+
+[tool.kivy.android.gradle.plugins]
+"com.google.gms.google-services" = "4.4.2"   # quoted: a bare dotted key nests
+```
+
+**Plugins are version-pinned, not hashed.** A Gradle plugin runs code during the
+build, and kivyforge resolves it the same way it resolves AGP and the Kotlin
+plugin: by exact version from the plugin repositories, with no SHA-256 in the
+lock. `pyproject_sha256` still makes any plugin change a lock drift. Rejected
+alternative: an allowlist of plugins kivyforge knows (Firebase's two, say), which
+would need a kivyforge release for every new plugin a library documents.
 
 Reproducibility for this channel records the **full resolved transitive graph with a SHA-256 per artifact** in the lock (`kivyforge lock` resolves it via Gradle) and pins fully-versioned coordinates in the generated `app/build.gradle`. Unlike the other channels the hash is an **audit record, not a build-time gate** — Gradle's own verification is whole-classpath, so it cannot be scoped to just your Maven deps. See [pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins) and the SPM-parallel rationale in [artifact-distribution-android §"Distribution channel 4"](03-artifact-distribution-android.md#distribution-channel-4-gradlemaven-dependencies).
 
@@ -910,7 +928,7 @@ key_alias = "upload"
 10. Sets `[tool.kivy.android].abis` to a non-list, an empty list, or a list containing any value other than `"arm64_v8a"` / `"x86_64"` (32-bit ABIs are rejected — the python.org runtime is 64-bit only).
 11. Lacks `[tool.kivy.android.python].version`, or specifies one for which no python.org Android embeddable package exists (verified at lock time), or one incompatible with `[project].requires-python`.
 12. Sets `find_links` entries that are absolute, empty, or escape the project directory.
-13. Declares a `[tool.kivy.android.gradle].dependencies` entry that is not a fully-versioned `group:artifact:version` coordinate (dynamic ranges are rejected for reproducibility).
+13. Declares a `[tool.kivy.android.gradle].dependencies` entry that is not a fully-versioned `group:artifact:version` coordinate (dynamic ranges are rejected for reproducibility). A versionless `group:artifact` entry is the one exception, and only when `platforms` is non-empty. A `platforms` entry must itself be fully versioned. A `plugins` entry must map a dotted plugin id (quoted, or TOML nests it) to an exact version string, and may not be `com.android.application` or `org.jetbrains.kotlin.android`.
 14. Declares a `native.aars`/`native.jars` `source` that is an absolute path or escapes the project directory.
 15. Sets reserved keys under `[tool.kivy.android.manifest]`, `[tool.kivy.android.gradle_properties]`, or otherwise collides with a kivyforge-managed manifest attribute; or sets `[tool.kivy.android.manifest].allow_exported` to anything other than a list of non-empty strings.
 16. Runs `kivyforge package` without a resolvable signing key (keystore/alias via `[tool.kivy.android.signing]` or CLI/env).

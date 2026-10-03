@@ -101,7 +101,7 @@ The rest of the table depends on the target.
 | `kivy_generation` | The Kivy generation the lock was resolved for (`2` or `3`). |
 | `[[tool.kivyforge.python_android]]` | The python.org Android runtime, one entry per ABI (application binary interface): `version`, `abi`, `url` or `path`, `sha256`, `min_api`. |
 | `[[tool.kivyforge.android_libs]]` | [`.aar` and `.jar` libraries](../guides/android/java-libraries.md): `name`, `kind`, `version`, `url` or `path`, `sha256`. |
-| `[tool.kivyforge.gradle]` | Present only when you declare Maven dependencies: the declared `dependencies` and `repositories`, plus `[[tool.kivyforge.gradle.resolved]]` entries, each with a `coordinate` and per-file SHA-256 `artifacts`. |
+| `[tool.kivyforge.gradle]` | Present only when you declare Maven dependencies: the declared `dependencies` and `repositories`, the declared BOMs as `platforms` (only when you list any), plus `[[tool.kivyforge.gradle.resolved]]` entries, each with a `coordinate` and per-file SHA-256 `artifacts`. A dependency you declared without a version appears in `resolved` with the version its BOM chose. Gradle plugins are not recorded in the lock. |
 | `[[tool.kivyforge.include_files]]` | One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
 
 ## Integrity

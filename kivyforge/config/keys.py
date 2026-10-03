@@ -160,7 +160,12 @@ ANDROID: dict[str, Spec] = {
         "branding": None,
     },
     "native": {"aars": Each(_ARTIFACT), "jars": Each(_ARTIFACT)},
-    "gradle": {"dependencies": None, "repositories": None},
+    "gradle": {
+        "dependencies": None,
+        "repositories": None,
+        "platforms": None,
+        "plugins": OPEN,
+    },
     "include_files": ArrayOf({"dest": None, "sources": None}),
     "src": {"java": None, "kotlin": None},
     "services": ArrayOf(

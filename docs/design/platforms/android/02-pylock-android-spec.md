@@ -261,7 +261,9 @@ repositories = ["https://maven.example.com/releases"]
 dependencies = [
     "androidx.work:work-runtime:2.9.1",
     "com.google.android.gms:play-services-location:21.3.0",
+    "com.google.firebase:firebase-analytics",   # version from the BOM
 ]
+platforms = ["com.google.firebase:firebase-bom:34.15.0"]
 
 # Full resolved transitive graph, recorded by content hash. This table is the
 # audit record; at build time kivyforge mirrors it into app/gradle.lockfile as
@@ -285,7 +287,16 @@ artifacts = [
 |-------|------|----------|-------------|
 | `dependencies` | array | no | The declared (direct) coordinates, carried verbatim from the overlay for auditability. |
 | `repositories` | array | no | Extra Maven repos (beyond `google()`/`mavenCentral()`). |
+| `platforms` | array | no | The declared BOM coordinates, carried verbatim from `[tool.kivy.android.gradle].platforms`. Written only when BOMs are declared, so a lock without them is byte-identical to one written before the key existed. A versionless `dependencies` entry gets its version from these; the version Gradle chose appears in `resolved`, and the BOM's own `.pom` is recorded there with its SHA-256 like any other module. |
 | `resolved` | array of tables | no | The full transitive graph Gradle resolved: one entry per module `coordinate`, each listing the downloaded `artifacts` (`name` + `sha256`). This is the committed reproducibility/audit record; `kivyforge build` mirrors it into `app/gradle.lockfile` (as comments, for reference at the location a Gradle dependency lock would live) and, when a stale strict `gradle/verification-metadata.xml` from an older kivyforge is present, deletes it. Omitted when no Maven deps are declared. |
+
+**Gradle plugins are not in this table.** `[tool.kivy.android.gradle.plugins]`
+entries are build tooling, not app dependencies: the lock's scratch resolve does
+not apply them, and no hash is recorded for the plugin jars. Each is pinned by
+exact version in the generated root `build.gradle` — the same treatment as AGP
+and the Kotlin plugin — and a change to one is still caught as lock drift by
+`pyproject_sha256`. Hashing plugins would mean resolving the build classpath,
+the same whole-classpath problem the note above defers.
 
 This is the **SPM-parallel channel**: Gradle performs the download and compile,
 and every resolved artifact is recorded by SHA-256 under `resolved`. The
@@ -349,7 +360,7 @@ This array is empty unless `include_files` is declared.
      - **Inconsistent version across ABIs.** Each ABI is a separate pip resolution; if they disagree on version (e.g. the arm64 wheel published before the x86_64 one), `lock` refuses it and names the conflicting versions, rather than merging mismatched binaries into one `version` field. Re-lock once upstream publishes the lagging slice.
    - Records direct + transitive wheels as `[[packages]]` blocks (pinning `url` for hosted, or repo-relative `path` for vendored — the Kivy/pyjnius case). Marks direct requirements.
 4. For each `[tool.kivy.android.native.*]` entry: reads the artifact (download for a URL, local read for a path), computes its SHA-256, records `[[tool.kivyforge.android_libs]]`.
-5. For `[tool.kivy.android.gradle]`: emits a scratch `build.gradle` with the declared coordinates/repos and runs Gradle with dependency locking **and** verification (`--write-locks --write-verification-metadata sha256`). It parses the resulting transitive graph and per-artifact SHA-256 and records them under `[[tool.kivyforge.gradle.resolved]]` — the values are **embedded in the lock**, not referenced as a file inside the generated project. (Requires a reachable JDK+Gradle at lock time; skipped when `dependencies` is empty.)
+5. For `[tool.kivy.android.gradle]`: emits a scratch `build.gradle` with the declared coordinates/repos (each declared BOM imported first as `platform(...)`, so versionless coordinates resolve exactly as they will in the app) and runs Gradle with dependency locking **and** verification (`--write-locks --write-verification-metadata sha256`). It parses the resulting transitive graph and per-artifact SHA-256 and records them under `[[tool.kivyforge.gradle.resolved]]` — the values are **embedded in the lock**, not referenced as a file inside the generated project. (Requires a reachable JDK+Gradle at lock time; skipped when `dependencies` is empty.)
 6. For each `[[tool.kivy.android.include_files]]` source (expanding directories): reads the file, computes its SHA-256, records `[[tool.kivyforge.include_files]]`.
 7. Writes `pylock.android.toml` atomically (tempfile, fsync, rename).
 

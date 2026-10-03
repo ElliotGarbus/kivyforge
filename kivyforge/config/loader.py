@@ -1799,39 +1799,131 @@ def _parse_android_gradle(android: dict, finder: _LineFinder) -> AndroidGradleCo
             "[tool.kivy.android.gradle] must be a table",
             key_path="tool.kivy.android.gradle",
         )
-    deps = table.get("dependencies", [])
-    if not isinstance(deps, list) or not all(isinstance(d, str) for d in deps):
-        raise ConfigError(
-            "[tool.kivy.android.gradle].dependencies must be a list of strings",
-            key_path="tool.kivy.android.gradle.dependencies",
-            line=finder.line("dependencies"),
-        )
+    platforms = _gradle_string_list(table, "platforms", finder)
+    for bom in platforms:
+        if not _is_exact_coordinate(bom):
+            raise ConfigError(
+                f"[tool.kivy.android.gradle].platforms entry {bom!r} is not a "
+                "fully-versioned group:artifact:version BOM coordinate",
+                key_path="tool.kivy.android.gradle.platforms",
+                line=finder.line("platforms"),
+                hint="dynamic versions (+, ranges, latest.*) are rejected for "
+                "reproducibility.",
+            )
+    deps = _gradle_string_list(table, "dependencies", finder)
     for dep in deps:
         parts = dep.split(":")
-        version = parts[2] if len(parts) == 3 else ""
-        dynamic = (
-            "+" in version
-            or "*" in version
-            or version.startswith(("[", "("))
-            or version.lower().startswith("latest.")
-        )
-        if len(parts) != 3 or not all(parts) or dynamic:
+        versionless = len(parts) == 2 and all(parts)
+        if versionless and platforms:
+            continue
+        if not _is_exact_coordinate(dep):
             raise ConfigError(
                 f"[tool.kivy.android.gradle].dependencies entry {dep!r} is not a "
                 "fully-versioned group:artifact:version coordinate",
                 key_path="tool.kivy.android.gradle.dependencies",
                 line=finder.line("dependencies"),
+                hint=(
+                    "a group:artifact entry with no version needs a BOM in "
+                    "[tool.kivy.android.gradle].platforms to supply it."
+                    if versionless
+                    else "dynamic versions (+, ranges, latest.*) are rejected "
+                    "for reproducibility."
+                ),
+            )
+    repos = _gradle_string_list(table, "repositories", finder)
+    plugins = _parse_android_gradle_plugins(table, finder)
+    return AndroidGradleConfig(
+        dependencies=tuple(deps),
+        repositories=tuple(repos),
+        platforms=tuple(platforms),
+        plugins=plugins,
+    )
+
+
+# Applied by the generator itself; a second declaration would conflict with the
+# version kivyforge pins.
+_MANAGED_GRADLE_PLUGINS = frozenset(
+    {"com.android.application", "org.jetbrains.kotlin.android"}
+)
+_GRADLE_PLUGIN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)+")
+
+
+def _gradle_string_list(table: dict, key: str, finder: _LineFinder) -> list[str]:
+    value = table.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ConfigError(
+            f"[tool.kivy.android.gradle].{key} must be a list of strings",
+            key_path=f"tool.kivy.android.gradle.{key}",
+            line=finder.line(key),
+        )
+    return value
+
+
+def _is_dynamic_version(version: str) -> bool:
+    return (
+        "+" in version
+        or "*" in version
+        or version.startswith(("[", "("))
+        or version.lower().startswith("latest.")
+    )
+
+
+def _is_exact_coordinate(coordinate: str) -> bool:
+    parts = coordinate.split(":")
+    return len(parts) == 3 and all(parts) and not _is_dynamic_version(parts[2])
+
+
+def _parse_android_gradle_plugins(
+    table: dict, finder: _LineFinder
+) -> tuple[tuple[str, str], ...]:
+    plugins = table.get("plugins", {})
+    key_path = "tool.kivy.android.gradle.plugins"
+    if not isinstance(plugins, dict):
+        raise ConfigError(
+            "[tool.kivy.android.gradle].plugins must be a table of "
+            'plugin id = "version"',
+            key_path=key_path,
+            line=finder.line("plugins"),
+        )
+    out: list[tuple[str, str]] = []
+    for plugin_id, version in plugins.items():
+        if isinstance(version, dict):
+            raise ConfigError(
+                f"[tool.kivy.android.gradle].plugins key {plugin_id!r} was read "
+                "as a table, not a plugin id",
+                key_path=f"{key_path}.{plugin_id}",
+                line=finder.line("plugins"),
+                hint="quote the plugin id, since TOML splits a bare key on dots: "
+                '"com.google.gms.google-services" = "4.4.2".',
+            )
+        if not _GRADLE_PLUGIN_ID.fullmatch(plugin_id):
+            raise ConfigError(
+                f"[tool.kivy.android.gradle].plugins key {plugin_id!r} is not a "
+                "Gradle plugin id",
+                key_path=f"{key_path}.{plugin_id}",
+                line=finder.line("plugins"),
+                hint='plugin ids are dotted names, e.g. "com.google.gms.google-services".',
+            )
+        if plugin_id in _MANAGED_GRADLE_PLUGINS:
+            raise ConfigError(
+                f"[tool.kivy.android.gradle].plugins entry {plugin_id!r} is "
+                "applied by kivyforge itself",
+                key_path=f"{key_path}.{plugin_id}",
+                line=finder.line("plugins"),
+                hint="kivyforge pins this plugin's version; the Kotlin plugin is "
+                "enabled by a non-empty [tool.kivy.android.src].kotlin.",
+            )
+        if not isinstance(version, str) or not version or _is_dynamic_version(version):
+            raise ConfigError(
+                f"[tool.kivy.android.gradle].plugins entry {plugin_id!r} needs an "
+                f"exact version string, got {version!r}",
+                key_path=f"{key_path}.{plugin_id}",
+                line=finder.line("plugins"),
                 hint="dynamic versions (+, ranges, latest.*) are rejected for "
                 "reproducibility.",
             )
-    repos = table.get("repositories", [])
-    if not isinstance(repos, list) or not all(isinstance(r, str) for r in repos):
-        raise ConfigError(
-            "[tool.kivy.android.gradle].repositories must be a list of strings",
-            key_path="tool.kivy.android.gradle.repositories",
-            line=finder.line("repositories"),
-        )
-    return AndroidGradleConfig(dependencies=tuple(deps), repositories=tuple(repos))
+        out.append((plugin_id, version))
+    return tuple(out)
 
 
 def _parse_android_include_files(

@@ -77,6 +77,7 @@ class GradlePins:
     dependencies: tuple[str, ...] = ()
     repositories: tuple[str, ...] = ()
     resolved: tuple[GradleResolvedModule, ...] = ()
+    platforms: tuple[str, ...] = ()
 
     @property
     def declared(self) -> bool:

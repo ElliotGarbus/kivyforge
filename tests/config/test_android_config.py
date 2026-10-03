@@ -120,6 +120,56 @@ class TestRuleRejections:
                 "fully-versioned",
             ),
             (
+                "rule13-gradle-bom-dynamic",
+                [
+                    "[tool.kivy.android.gradle]",
+                    'platforms = ["a.b:bom:1.+"]',
+                    'dependencies = ["a.b:c"]',
+                ],
+                "BOM coordinate",
+            ),
+            (
+                "rule13-gradle-bom-two-part",
+                ["[tool.kivy.android.gradle]", 'platforms = ["a.b:bom"]'],
+                "BOM coordinate",
+            ),
+            (
+                "rule13-gradle-plugins-not-table",
+                ["[tool.kivy.android.gradle]", 'plugins = ["a.b:1.0"]'],
+                "must be a table",
+            ),
+            (
+                "rule13-gradle-plugin-bare-dotted-key",
+                [
+                    "[tool.kivy.android.gradle.plugins]",
+                    'com.google.gms.google-services = "4.4.2"',
+                ],
+                "read as a table",
+            ),
+            (
+                "rule13-gradle-plugin-bad-id",
+                ["[tool.kivy.android.gradle.plugins]", 'nodots = "1.0"'],
+                "not a\\s+Gradle plugin id",
+            ),
+            (
+                "rule13-gradle-plugin-managed",
+                [
+                    "[tool.kivy.android.gradle.plugins]",
+                    '"com.android.application" = "8.10.0"',
+                ],
+                "applied by kivyforge itself",
+            ),
+            (
+                "rule13-gradle-plugin-dynamic",
+                ["[tool.kivy.android.gradle.plugins]", '"a.b" = "1.+"'],
+                "exact version",
+            ),
+            (
+                "rule13-gradle-plugin-not-string",
+                ["[tool.kivy.android.gradle.plugins]", '"a.b" = 4'],
+                "exact version",
+            ),
+            (
                 "rule15-managed-application",
                 [
                     "[tool.kivy.android.manifest]",
@@ -410,3 +460,53 @@ class TestPassthroughs:
             )
         )
         assert a.gradle.dependencies == ("com.google.zxing:core:3.5.3",)
+
+    def test_bom_allows_versionless_dependencies(self):
+        a = load_android(
+            with_lines(
+                "[tool.kivy.android.gradle]",
+                'platforms = ["com.google.firebase:firebase-bom:34.0.0"]',
+                "dependencies = [",
+                '    "com.google.firebase:firebase-analytics",',
+                '    "com.google.zxing:core:3.5.3",',
+                "]",
+            )
+        )
+        assert a.gradle.platforms == ("com.google.firebase:firebase-bom:34.0.0",)
+        assert a.gradle.dependencies == (
+            "com.google.firebase:firebase-analytics",
+            "com.google.zxing:core:3.5.3",
+        )
+
+    def test_bom_does_not_excuse_dynamic_versions(self):
+        with pytest.raises(ConfigError, match="fully-versioned"):
+            load_android(
+                with_lines(
+                    "[tool.kivy.android.gradle]",
+                    'platforms = ["com.google.firebase:firebase-bom:34.0.0"]',
+                    'dependencies = ["com.google.firebase:firebase-analytics:+"]',
+                )
+            )
+
+    def test_versionless_without_bom_hint_names_platforms(self):
+        with pytest.raises(ConfigError) as info:
+            load_android(
+                with_lines(
+                    "[tool.kivy.android.gradle]",
+                    'dependencies = ["com.google.firebase:firebase-analytics"]',
+                )
+            )
+        assert "platforms" in (info.value.hint or "")
+
+    def test_plugins_keep_declared_order(self):
+        a = load_android(
+            with_lines(
+                "[tool.kivy.android.gradle.plugins]",
+                '"com.google.gms.google-services" = "4.4.2"',
+                '"com.google.firebase.crashlytics" = "3.0.2"',
+            )
+        )
+        assert a.gradle.plugins == (
+            ("com.google.gms.google-services", "4.4.2"),
+            ("com.google.firebase.crashlytics", "3.0.2"),
+        )
