@@ -47,10 +47,16 @@ The generated Activity/service classes keep the **`org.kivy.android.*`** package
 names (`org.kivy.android.PythonActivity`, `org.kivy.android.PythonService`, …).
 This is not cosmetic: Kivy, Plyer, and app code reach Android APIs via
 `autoclass('org.kivy.android.PythonActivity')` and friends. Preserving the
-namespace means that entire body of existing Kivy-Android Python code works
-unmodified. Likewise the SDL Java glue keeps `org.libsdl.app.*`, and the pyjnius
-glue keeps `org.jnius.NativeInvocationHandler` (the class name pyjnius resolves at
-proxy-creation time).
+namespace means that existing Kivy-Android Python code that calls `autoclass` on
+these classes works unmodified. Likewise the SDL Java glue keeps `org.libsdl.app.*`,
+and the pyjnius glue keeps `org.jnius.NativeInvocationHandler` (the class name
+pyjnius resolves at proxy-creation time).
+
+> **Not covered (recorded 2026-10-02).** Code that imports the python-for-android
+> `android` Python package (`android.permissions`, `android.activity`,
+> `android.config`, `from android import mActivity`) is a separate dependency, and
+> kivyforge does not provide that package yet. plyer's Android facades import it. See
+> [the `android` compatibility package proposal](../../dev/android-compat-package-proposal.md).
 
 ## Launch sequence
 
