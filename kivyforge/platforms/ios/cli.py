@@ -15,6 +15,8 @@ from pathlib import Path
 import click
 
 from kivyforge.artifacts.collect import CollectError, collect_artifacts
+from kivyforge.artifacts.download import DownloadError
+from kivyforge.artifacts.verify import HashMismatch
 from kivyforge.artifacts.wheels import BuildSlice, WheelSelectionError
 from kivyforge.build_outcome import (
     ArtifactKind,
@@ -225,6 +227,8 @@ def prepare_build(
         )
     except (CollectError, WheelSelectionError) as exc:
         raise ToolchainError.wrap(exc) from exc
+    except (DownloadError, HashMismatch) as exc:
+        raise ToolchainError(str(exc)) from exc
     except IconSourceError as exc:
         raise ToolchainError.wrap(exc) from exc
     except StagingError as exc:

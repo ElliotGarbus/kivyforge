@@ -162,6 +162,60 @@ class TestFailure:
         assert env["ok"] is False
         assert _artifacts(env) == []
 
+    def test_android_download_failure_is_an_envelope(self, android, monkeypatch):
+        """Not a traceback with empty stdout: a 503 from the wheel host is a
+        failure the caller is told about like any other."""
+        from kivyforge.artifacts.download import DownloadError
+        from kivyforge.platforms.android import cli
+
+        url = "https://example.invalid/Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl"
+
+        def unavailable(**kw):
+            raise DownloadError(
+                f"failed to download {url}: HTTP Error 503: Service Unavailable"
+            )
+
+        monkeypatch.setattr(cli, "fetch_artifact", unavailable)
+        result, env = _run(build, ["-p", "android", "--debug"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        assert env["ok"] is False
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["code"] == diagnostics.UNSPECIFIED
+        assert "HTTP Error 503" in diagnostic["message"]
+        assert url in diagnostic["message"]
+        assert "Traceback" not in result.stderr
+        assert _artifacts(env) == []
+
+    def test_android_hash_mismatch_is_an_envelope(self, android, monkeypatch):
+        from kivyforge.artifacts.verify import HashMismatch
+        from kivyforge.platforms.android import cli
+
+        def tampered(**kw):
+            raise HashMismatch(
+                name=kw["name"], source="x", expected="a" * 64, actual="b" * 64
+            )
+
+        monkeypatch.setattr(cli, "fetch_artifact", tampered)
+        result, env = _run(package, ["-p", "android"])
+        assert env["ok"] is False
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["message"].startswith("SHA-256 mismatch for ")
+        assert "Traceback" not in result.stderr
+
+    def test_ios_download_failure_is_an_envelope(self, ios, monkeypatch):
+        from kivyforge.artifacts.download import DownloadError
+
+        def unavailable(*a, **kw):
+            raise DownloadError("failed to download https://x: HTTP Error 503")
+
+        monkeypatch.setattr(ios, "collect_artifacts", unavailable)
+        result, env = _run(build, ["-p", "ios"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        assert env["ok"] is False
+        (diagnostic,) = env["diagnostics"]
+        assert "HTTP Error 503" in diagnostic["message"]
+        assert "Traceback" not in result.stderr
+
     def test_android_build_on_a_jre_is_a_missing_tool(self, android, monkeypatch):
         from kivyforge.platforms.android import cli, doctor, gradlew
         from tests.platforms.android.test_doctor import FakeProbe
