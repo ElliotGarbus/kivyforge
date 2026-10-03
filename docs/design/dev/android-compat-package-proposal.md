@@ -181,6 +181,8 @@ about it. This looks like an unexamined gap, not a deliberate omission. Searched
 - Kivyschool's `android` wheel was not downloaded; "depends on SDL2" is the user's report.
 - p4a's generated `android/config.py` was not read. The values proposed below are inferred
   from how the modules use them and must be checked against a real p4a build.
+- p4a's `android:configChanges` value. kivyforge's (`keyboardHidden|orientation|screenSize`)
+  has no `uiMode`, which dark-mode support needs.
 - Kivy 2.3.1 itself may import `android` lazily (from memory, not checked). If so, a
   `kivy_generation = 2` app on kivyforge has the same gap for Kivy's own features. The
   `hello-android` example builds, so those imports are at least guarded.
@@ -198,7 +200,8 @@ about it. This looks like an unexamined gap, not a deliberate omission. Searched
    later.
 3. **Vendor and trim.** Copy the p4a modules we keep verbatim; write only what the
    compiled `_android` provided. Do not compile anything.
-4. **Services are in scope** (`mService`, `start`, `stop`).
+4. **Services and dark mode are in scope** (`mService`, `start`, `stop`;
+   `android.darkmode`).
 5. **Re-export `autoclass`, `cast`, `PythonJavaClass` and `java_method` from `android`**,
    without a deprecation warning, for compatibility with existing code.
 6. **Staged path** (below): ship now, then reduce deviations through small upstream PRs.
@@ -214,11 +217,13 @@ about it. This looks like an unexamined gap, not a deliberate omission. Searched
   verbatim; the lifecycle-callback part is low priority (no custom Java needed).
 - `android.runnable`: verbatim.
 - `android.broadcast`: `BroadcastReceiver`, verbatim; needs two Java types (below).
+- `android.darkmode`: `set_dark_mode_listener` and `DarkModeListener`, verbatim; needs a
+  small Java hook and a manifest change (below).
 - Package-level names: `mActivity`, `python_act`, `api_version`, `version_codes`,
   `open_url`/`AndroidBrowser`, and the four jnius re-exports.
 - Services: `PythonService.mService` and the start/stop API (below).
 
-That is about 1,000 lines of vendored Python (621 + 214 + 58 + 103) plus new
+That is about 1,050 lines of vendored Python (621 + 214 + 58 + 103 + 57) plus new
 `__init__.py` and `config.py`, with no compiled code.
 
 **Drop**
@@ -233,7 +238,6 @@ That is about 1,000 lines of vendored Python (621 + 214 + 58 + 103) plus new
 | `loadingscreen`, `remove_presplash` | The `_kivy_bootstrap` contract handles the splash; `removeLoadingScreen` is p4a-only |
 | `start_service`, `stop_service`, `AndroidService` (from `_android`) | Replaced by the declarative services and the start/stop API below; they call p4a-only Java |
 | `vibrate`, accelerometer, wifi scan, `get_dpi`, keyboard helpers, `KEYCODE_*`, `TYPE_*`, `BuildInfo` | Legacy `org.renpy.android.Hardware` paths; plyer has its own facades and `kivy.mobile` covers DPI and keyboard |
-| `darkmode` | Deferred; add if asked. Needs a custom `setDarkModeListener` hook |
 
 If a dropped name turns out to matter, adding it later is additive.
 
@@ -311,6 +315,23 @@ reference.
 
 - `GenericBroadcastReceiver` and `GenericBroadcastReceiverCallback`, in `org.kivy.android`.
 
+**Dark mode**
+
+- On `PythonActivity`: a nested interface `DarkModeListener` with
+  `void onDarkModeChanged(boolean isDarkMode)`, a `setDarkModeListener(DarkModeListener)`
+  setter, and an `onConfigurationChanged(Configuration)` override that derives
+  `isDarkMode` from `newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK ==
+  Configuration.UI_MODE_NIGHT_YES`, calls the listener if one is set, then calls `super`.
+  This is what p4a's SDL3 `PythonActivity` does (read 2026-10-02; added upstream in
+  kivy/python-for-android#3306).
+- **Manifest change.** Android only calls `onConfigurationChanged` for a theme switch if
+  the activity declares `uiMode` in `android:configChanges`; otherwise it recreates the
+  Activity. kivyforge currently declares `keyboardHidden|orientation|screenSize`
+  (`kivyforge/platforms/android/generate/manifest.py:200`). Adding `uiMode` makes the
+  listener fire, and stops a system theme change from restarting the app. That is a
+  behaviour change for every app, so it needs an on-device check. p4a's own
+  `configChanges` value was not checked.
+
 **Services**
 
 - `PythonService.mService`: a static set when the service starts, so
@@ -350,15 +371,17 @@ members, so the Python and Java halves cannot drift.
 
 ### Stage 1: ship (this repo)
 
-1. Java contract in the bootstrap (activity hooks, broadcast, service `mService`/`start`/`stop`),
-   with a contract test.
+1. Java contract in the bootstrap (activity hooks, broadcast, dark mode, service
+   `mService`/`start`/`stop`) and the `uiMode` manifest change, with a contract test.
 2. The vendored, trimmed package, the `__all__` pin test, and the sync script with its CI job.
 3. Stage it into the app bundle (below).
 4. Docs: a section in the Android guides on the `android` package (what is and is not
    provided, plyer, services); fix the overclaims in `03` and `05`; mention it in the
    migration guide and `kivyforge init`'s dropped-settings list.
 5. On-device gate: a small app that requests a permission, binds `on_activity_result`,
-   runs a `BroadcastReceiver`, starts a service via the p4a-style call, and loads plyer.
+   runs a `BroadcastReceiver`, registers a dark-mode listener and toggles the system theme
+   (the listener fires and the Activity is not recreated), starts a service via the
+   p4a-style call, and loads plyer.
 
 ### Stage 2: shrink the deviations (upstream, small PRs to p4a)
 
@@ -415,6 +438,9 @@ maintainers, since kivyschool's index already serves a package of that name.
    kivyforge. Out of scope here; worth a separate check.
 6. Conflict policy for a locked `android` distribution.
 7. Kivy 2.3.1 on kivyforge may import `android` lazily (not checked).
+8. Adding `uiMode` to `android:configChanges` changes restart behaviour for every app on a
+   system theme change. It is the right behaviour for dark-mode support, but existing apps
+   that relied on the restart (unlikely for Kivy, not checked) would notice.
 
 ## Related, not decided here
 
