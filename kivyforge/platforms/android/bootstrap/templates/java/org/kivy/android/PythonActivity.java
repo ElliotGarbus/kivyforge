@@ -40,6 +40,11 @@ public class PythonActivity extends SDLActivity {
     // SDLActivity.onCreate clears any fullscreen flag the theme set.
     private static final boolean FULLSCREEN = false;
 
+    // [tool.kivy].orientation as SDL hint names, substituted at render time.
+    // Kivy passes KIVY_ORIENTATION to SDL; with no hint, SDL requests
+    // FULL_USER for a resizable window and the manifest's orientation is lost.
+    private static final String ORIENTATION = "Portrait";
+
     // Kivy-compatibility: kivy.app / kivy.metrics reach the activity through
     // autoclass('org.kivy.android.PythonActivity').mActivity, and
     // org.renpy.android.Hardware.getDPI() reads it too. Preserving this static
@@ -74,6 +79,7 @@ public class PythonActivity extends SDLActivity {
             File bundleDir = PythonBundle.unpack(this);
             PythonBundle.setEnvironment(this, bundleDir, ENTRY_POINT);
             Os.setenv("P4A_IS_WINDOWED", FULLSCREEN ? "False" : "True", true);
+            Os.setenv("KIVY_ORIENTATION", ORIENTATION, true);
         } catch (Exception e) {
             Log.e(TAG, "bundle unpack failed", e);
             throw new RuntimeException(e);

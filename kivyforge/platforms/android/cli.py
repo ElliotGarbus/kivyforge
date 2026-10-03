@@ -53,7 +53,7 @@ from .bootstrap.render import (
     render_bootstrap,
     selftest_source,
 )
-from .generate.manifest import generate_manifest
+from .generate.manifest import generate_manifest, sdl_orientation_hint
 from .generate.project import (
     ABI_TO_TRIPLET,
     ProjectGenError,
@@ -377,6 +377,7 @@ def android_build(
         python_version=python_version,
         entry_point=config.kivy.entry_point,
         fullscreen=android.fullscreen,
+        orientation_hint=sdl_orientation_hint(config.kivy.orientation),
     ):
         out = app_main / rendered.relpath
         out.parent.mkdir(parents=True, exist_ok=True)

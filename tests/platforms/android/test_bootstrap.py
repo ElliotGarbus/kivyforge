@@ -116,6 +116,22 @@ class TestRender:
             in activity
         )
 
+    def test_orientation_substitution(self):
+        """Without KIVY_ORIENTATION, SDL requests FULL_USER for Kivy's resizable
+        window and the app rotates whatever the manifest declares."""
+        activity = _by_path(
+            render_bootstrap(
+                sdl=2, python_version="3.14.6", orientation_hint="LandscapeLeft"
+            )
+        )["java/org/kivy/android/PythonActivity.java"]
+        assert 'ORIENTATION = "LandscapeLeft";' in activity
+        assert 'Os.setenv("KIVY_ORIENTATION", ORIENTATION, true);' in activity
+
+    @pytest.mark.parametrize("bad", ['Portrait"; evil()', "Portrait\n", ""])
+    def test_orientation_injection_rejected(self, bad):
+        with pytest.raises(RenderError, match="orientation"):
+            render_bootstrap(sdl=2, python_version="3.14.6", orientation_hint=bad)
+
     def test_launcher_imports_the_configured_entry_point(self):
         main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
             "cpp/main.c"
@@ -149,7 +165,7 @@ class TestRender:
         assert "importlib.import_module" not in main_c
 
     @pytest.mark.parametrize(
-        "bad", ['main"; evil()', "main\nimport os", "1main", "pkg..mod", ""]
+        "bad", ['main"; evil()', "main\nimport os", "main\n", "1main", "pkg..mod", ""]
     )
     def test_entry_point_injection_rejected(self, bad):
         # The value lands inside a Java string literal in a generated source.

@@ -15,6 +15,7 @@ from kivyforge.platforms.android.generate.manifest import (
     implied_features,
     qualified_permissions,
     screen_orientation,
+    sdl_orientation_hint,
 )
 from kivyforge.platforms.android.generate.project import (
     ProjectGenError,
@@ -211,6 +212,29 @@ class TestManifest:
         assert (
             screen_orientation(("portrait", "landscape-left", "landscape-right"))
             == "fullSensor"
+        )
+
+    # The Android orientation SDLActivity.setOrientation requests for each hint
+    # name; the hint must ask for what the manifest declares.
+    _SDL_REQUESTS = {
+        "Portrait": "portrait",
+        "PortraitUpsideDown": "reversePortrait",
+        "LandscapeLeft": "landscape",
+        "LandscapeRight": "reverseLandscape",
+    }
+
+    @pytest.mark.parametrize(
+        "orientation",
+        ["portrait", "portrait-upside-down", "landscape-left", "landscape-right"],
+    )
+    def test_sdl_hint_matches_manifest(self, orientation):
+        hint = sdl_orientation_hint((orientation,))
+        assert self._SDL_REQUESTS[hint] == screen_orientation((orientation,))
+
+    def test_sdl_hint_lists_every_orientation(self):
+        assert (
+            sdl_orientation_hint(("portrait", "landscape-left"))
+            == "Portrait LandscapeRight"
         )
 
     def test_helpers(self):

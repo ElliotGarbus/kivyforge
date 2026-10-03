@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Android: `orientation` is honoured at runtime
+
+- **Fixed:** an Android app rotated to any orientation when the phone's
+  auto-rotate was on, whatever `[tool.kivy].orientation` said. The manifest
+  declared the right orientation, but SDL replaced it when Kivy created its window:
+  with no orientation hint and a resizable window, SDL allows every orientation.
+  The generated activity now passes `[tool.kivy].orientation` to Kivy as
+  `KIVY_ORIENTATION`, the variable python-for-android sets for buildozer apps, so
+  SDL requests what the manifest declares. Applies to Kivy 2.3.1 (SDL2) and
+  Kivy 3.0 (SDL3).
+- **Migration:** none for most apps. An app that declares `portrait` but relied on
+  rotating anyway must now list the orientations it supports.
+
 ### Android: `fullscreen` hides the system bars
 
 - **Added:** `[tool.kivy.android].fullscreen = true` runs the app with the status
