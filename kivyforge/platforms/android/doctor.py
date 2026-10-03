@@ -43,6 +43,7 @@ class AndroidProbe(Protocol):
     def which(self, name: str) -> str | None: ...
     def java_home(self) -> str | None: ...
     def java_version(self, java: str) -> str | None: ...
+    def javac_exists(self, java: str) -> bool: ...
     def sdk_root(self) -> Path | None: ...
     def ndk_versions(self, sdk: Path) -> list[str]: ...
     def build_tools_versions(self, sdk: Path) -> list[str]: ...
@@ -97,6 +98,16 @@ class RealAndroidProbe:
             return None
         # The banner goes to stderr on every JDK.
         return proc.stderr or proc.stdout
+
+    def javac_exists(self, java: str) -> bool:
+        """Whether the JDK ``java`` belongs to also ships ``javac``.
+
+        A JRE has ``java`` and no compiler, and Gradle then fails at
+        ``compileDebugJavaWithJavac`` ("does not provide the required capabilities:
+        [JAVA_COMPILER]"). ``java`` may be a symlink (Debian's ``/usr/bin/java``
+        points into ``/usr/lib/jvm``), so look beside the real file.
+        """
+        return (Path(os.path.realpath(java)).parent / f"javac{_EXE}").is_file()
 
     def sdk_root(self) -> Path | None:
         for var in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
@@ -239,7 +250,8 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
     """Run the java Gradle will run, and check it is one Gradle can run on.
 
     ``gradlew`` uses ``$JAVA_HOME/bin/java`` when JAVA_HOME is set and ``java``
-    on PATH otherwise, so this resolves it the same way.
+    on PATH otherwise, so this resolves it the same way. It must also be a JDK:
+    a JRE runs Gradle and then fails the build at the Java compile step.
     """
     jh = probe.java_home()
     java = str(Path(jh) / "bin" / f"java{_EXE}") if jh else probe.which("java")
@@ -272,6 +284,16 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
             f"{where} is JDK {major}; Gradle {toolchain.GRADLE_VERSION} needs a "
             f"{_JDK_RANGE}",
             hint=_JDK_HINT,
+        )
+    if not probe.javac_exists(java):
+        return CheckResult(
+            "JDK",
+            Status.FAIL,
+            f"{where} is a JRE, not a JDK: there is no javac beside it, so Gradle "
+            "cannot compile the app's Java",
+            hint="install a full JDK, not just a JRE (for example "
+            "`sudo apt install openjdk-21-jdk-headless` on Debian or Ubuntu, or "
+            "Eclipse Temurin from adoptium.net), and point JAVA_HOME at it.",
         )
     return CheckResult("JDK", Status.PASS, f"JDK {major} ({where})")
 

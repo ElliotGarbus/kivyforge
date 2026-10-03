@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### `doctor -p android`: fail a JRE with no `javac`
+
+- **Fixed:** with only a JRE installed (for example Debian's `openjdk-21-jre-headless`),
+  `kivyforge doctor -p android` reported the JDK check as passed, because the
+  version is in range. The build then failed at `compileDebugJavaWithJavac` with
+  "does not provide the required capabilities: [JAVA_COMPILER]". The JDK check now
+  also requires a `javac` beside the `java` Gradle will run (following symlinks, as
+  Debian's `/usr/bin/java` needs), and fails with a hint to install a full JDK.
+  (Issue #47.)
+- **Migration:** none needed. If `doctor` now fails the JDK check, install a JDK
+  (`sudo apt install openjdk-21-jdk-headless` on Debian or Ubuntu) and point
+  `JAVA_HOME` at it.
+
 ### Android: BOMs and Gradle plugins (enables Firebase)
 
 - **Added:** `[tool.kivy.android.gradle].platforms` lists BOM coordinates, such as

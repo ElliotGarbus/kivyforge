@@ -59,7 +59,9 @@ class FakeProbe:
         self._java_banner = kw.get(
             "java_banner", 'openjdk version "17.0.20" 2026-08-18'
         )
+        self._javac = kw.get("javac", True)
         self.java_run = None
+        self.javac_probed = None
 
     def which(self, name):
         return self._which.get(name)
@@ -70,6 +72,10 @@ class FakeProbe:
     def java_version(self, java):
         self.java_run = java
         return self._java_banner
+
+    def javac_exists(self, java):
+        self.javac_probed = java
+        return self._javac
 
     def sdk_root(self):
         return self._sdk
@@ -355,6 +361,50 @@ class TestJdkCheck:
         probe = FakeProbe(which={"java": "/j"}, java_banner="something else")
         assert _check_jdk(probe).status is Status.WARN
 
+    def test_a_jre_without_javac_fails(self):
+        """A supported-version java with no compiler runs Gradle, then fails the
+        build at compileDebugJavaWithJavac (issue #47); doctor must say so first."""
+        probe = FakeProbe(
+            which={"java": "/usr/bin/java"},
+            java_banner='openjdk version "21.0.12" 2026-07-21',
+            javac=False,
+        )
+        result = _check_jdk(probe)
+        assert result.status is Status.FAIL
+        assert "JRE" in result.detail
+        assert "javac" in result.detail
+        assert "jdk-headless" in result.hint
+        assert "not just a JRE" in result.hint
+
+    def test_a_jre_in_java_home_fails_and_names_it(self):
+        probe = FakeProbe(java_home="/jre", javac=False)
+        result = _check_jdk(probe)
+        assert result.status is Status.FAIL
+        assert "JAVA_HOME=/jre" in result.detail
+
+    def test_the_javac_check_looks_beside_the_java_gradle_runs(self):
+        probe = FakeProbe(java_home="/jdk", which={"java": "/usr/bin/java"})
+        _check_jdk(probe)
+        assert probe.javac_probed == str(
+            Path("/jdk") / "bin" / f"java{doctor_mod._EXE}"
+        )
+
+    def test_a_wrong_version_is_reported_before_a_missing_javac(self):
+        probe = FakeProbe(
+            java_home="/jdk",
+            java_banner='openjdk version "25.0.3" 2026-04-21',
+            javac=False,
+        )
+        assert "JDK 25" in _check_jdk(probe).detail
+
+    def test_a_jre_fails_the_whole_doctor_run(self, tmp_path):
+        probe = _healthy_probe(tmp_path)
+        probe._javac = False
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["JDK"].status is Status.FAIL
+
     def test_java_home_wins_over_path_as_it_does_for_gradlew(self):
         probe = FakeProbe(java_home="/jdk", which={"java": "/usr/bin/java"})
         _check_jdk(probe)
@@ -440,6 +490,44 @@ class TestRealAndroidProbe:
         java.write_text("#!/bin/sh\necho 'openjdk version \"21.0.4\" 2024-07-16' >&2\n")
         java.chmod(0o755)
         assert java_major(RealAndroidProbe().java_version(str(java)) or "") == 21
+
+    def test_javac_exists_for_a_jdk(self, tmp_path):
+        exe = doctor_mod._EXE
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / f"java{exe}").write_bytes(b"x")
+        (tmp_path / "bin" / f"javac{exe}").write_bytes(b"x")
+        assert RealAndroidProbe().javac_exists(str(tmp_path / "bin" / f"java{exe}"))
+
+    def test_javac_missing_for_a_jre(self, tmp_path):
+        exe = doctor_mod._EXE
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / f"java{exe}").write_bytes(b"x")
+        assert not RealAndroidProbe().javac_exists(str(tmp_path / "bin" / f"java{exe}"))
+
+    @pytest.mark.requires_symlinks
+    def test_javac_is_found_beside_the_real_java_behind_a_symlink(self, tmp_path):
+        """Debian's /usr/bin/java is a symlink into /usr/lib/jvm/..., and javac
+        sits beside the real file, not beside the link."""
+        exe = doctor_mod._EXE
+        real = tmp_path / "jvm" / "bin"
+        real.mkdir(parents=True)
+        (real / f"java{exe}").write_bytes(b"x")
+        (real / f"javac{exe}").write_bytes(b"x")
+        link = tmp_path / "usr" / "bin"
+        link.mkdir(parents=True)
+        (link / f"java{exe}").symlink_to(real / f"java{exe}")
+        assert RealAndroidProbe().javac_exists(str(link / f"java{exe}"))
+
+    @pytest.mark.requires_symlinks
+    def test_a_symlinked_jre_still_has_no_javac(self, tmp_path):
+        exe = doctor_mod._EXE
+        real = tmp_path / "jvm" / "bin"
+        real.mkdir(parents=True)
+        (real / f"java{exe}").write_bytes(b"x")
+        link = tmp_path / "usr" / "bin"
+        link.mkdir(parents=True)
+        (link / f"java{exe}").symlink_to(real / f"java{exe}")
+        assert not RealAndroidProbe().javac_exists(str(link / f"java{exe}"))
 
     def test_sdk_root_none_when_nothing_found(self, tmp_path, monkeypatch):
         monkeypatch.delenv("ANDROID_HOME", raising=False)
