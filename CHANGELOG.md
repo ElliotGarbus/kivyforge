@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Android: BOMs and Gradle plugins (enables Firebase)
+
+- **Added:** `[tool.kivy.android.gradle].platforms` lists BOM coordinates, such as
+  `com.google.firebase:firebase-bom:34.15.0`. Each is imported with Gradle's
+  `platform()`, and a `dependencies` entry may then omit its version
+  (`com.google.firebase:firebase-analytics`). `kivyforge lock` records the version
+  the BOM chose for each library, with its SHA-256. The BOM needs an exact version.
+- **Added:** `[tool.kivy.android.gradle.plugins]` maps a Gradle plugin ID to an
+  exact version, for example `"com.google.gms.google-services" = "4.4.2"`. Plugins
+  are applied after the Android plugin, in the order listed. With
+  `include_files` staging `google-services.json`, this is everything Firebase
+  needs. A plugin's version is pinned, but no hash is recorded for it, the same as
+  for the Android Gradle plugin.
+- **Migration:** none needed. Projects without these keys generate the same
+  Gradle files and the same lock as before.
+
 ### `doctor`: no more iOS failures off a Mac
 
 - **Fixed:** `kivyforge doctor` with no `-p` on a project whose only overlay is

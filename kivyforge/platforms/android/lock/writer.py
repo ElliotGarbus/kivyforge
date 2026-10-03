@@ -63,6 +63,8 @@ def dumps(lock: AndroidLockfile) -> str:
         lines.append("[tool.kivyforge.gradle]")
         lines.append(f"dependencies = {_arr(lock.gradle.dependencies)}")
         lines.append(f"repositories = {_arr(lock.gradle.repositories)}")
+        if lock.gradle.platforms:
+            lines.append(f"platforms = {_arr(lock.gradle.platforms)}")
         for module in sorted(lock.gradle.resolved, key=lambda m: m.coordinate):
             lines.append("")
             _emit_resolved_module(lines, module)

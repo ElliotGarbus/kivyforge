@@ -662,6 +662,22 @@ class TestWriterReader:
         lock = _sample_lockfile()
         assert writer.dumps(lock) == writer.dumps(lock)
 
+    def test_round_trip_with_boms(self):
+        base = _sample_lockfile()
+        lock = dataclasses.replace(
+            base,
+            gradle=dataclasses.replace(
+                base.gradle, platforms=("com.google.firebase:firebase-bom:34.0.0",)
+            ),
+        )
+        text = writer.dumps(lock)
+        assert 'platforms = ["com.google.firebase:firebase-bom:34.0.0"]' in text
+        assert reader.loads(text) == lock
+
+    def test_no_boms_writes_no_platforms_key(self):
+        # Locks written before BOM support stay byte-identical on re-lock.
+        assert "platforms =" not in writer.dumps(_sample_lockfile())
+
     def test_reader_rejects_future_lock_version(self):
         text = writer.dumps(_sample_lockfile()).replace(
             'lock-version = "1.0"', 'lock-version = "2.0"'

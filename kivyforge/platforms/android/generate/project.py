@@ -55,13 +55,24 @@ def write_settings_gradle(dest: Path, android: AndroidConfig | None = None) -> N
     to resolve in the generated build (android/01 §gradle).
     """
     extra = tuple(android.gradle.repositories) if android is not None else ()
-    repos = ["        google()", "        mavenCentral()"]
-    repos += [f"        maven {{ url = uri({_groovy_str(url)}) }}" for url in extra]
+    extra_lines = [
+        f"        maven {{ url = uri({_groovy_str(url)}) }}" for url in extra
+    ]
+    repos = ["        google()", "        mavenCentral()", *extra_lines]
+    if android is not None and android.gradle.plugins and extra_lines:
+        plugin_repos = (
+            "    repositories {\n"
+            "        google()\n"
+            "        mavenCentral()\n"
+            "        gradlePluginPortal()\n" + "\n".join(extra_lines) + "\n    }\n"
+        )
+    else:
+        plugin_repos = (
+            "    repositories { google(); mavenCentral(); gradlePluginPortal() }\n"
+        )
     _write(
         dest / "settings.gradle",
-        "pluginManagement {\n"
-        "    repositories { google(); mavenCentral(); gradlePluginPortal() }\n"
-        "}\n"
+        "pluginManagement {\n" + plugin_repos + "}\n"
         "dependencyResolutionManagement {\n"
         "    repositories {\n" + "\n".join(repos) + "\n    }\n"
         "}\n"
@@ -85,6 +96,11 @@ def write_root_build_gradle(dest: Path, android: AndroidConfig) -> None:
         lines.append(
             f"    id 'org.jetbrains.kotlin.android' version "
             f"'{toolchain.KOTLIN_VERSION}' apply false"
+        )
+    for plugin_id, version in android.gradle.plugins:
+        lines.append(
+            f"    id {_groovy_str(plugin_id)} version {_groovy_str(version)} "
+            "apply false"
         )
     lines.append("}")
     _write(dest / "build.gradle", "\n".join(lines) + "\n")
@@ -178,12 +194,17 @@ def write_app_build_gradle(
     ]
     for lib in sorted(staged_libs):
         deps.append(f"    implementation files('libs/{lib}')")
+    for bom in android.gradle.platforms:
+        deps.append(f"    implementation platform({_groovy_str(bom)})")
     for coordinate in sorted(android.gradle.dependencies):
         deps.append(f"    implementation '{coordinate}'")
 
     plugins = ["    id 'com.android.application'"]
     if android.src.kotlin:
         plugins.append("    id 'org.jetbrains.kotlin.android'")
+    plugins += [
+        f"    id {_groovy_str(plugin_id)}" for plugin_id, _ in android.gradle.plugins
+    ]
 
     src_dirs = "".join(
         f"            java.srcDirs += '{_gradle_path(Path(p))}'\n"

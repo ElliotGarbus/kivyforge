@@ -59,6 +59,7 @@ def resolve_gradle_pins(
     return GradlePins(
         dependencies=tuple(gradle.dependencies),
         repositories=tuple(gradle.repositories),
+        platforms=tuple(gradle.platforms),
         resolved=resolved,
     )
 
@@ -171,7 +172,16 @@ class ScratchProjectResolver:
                 for u in gradle.repositories
             )
             deps = "\n".join(
-                f"    kivyforgeLock {_groovy_str(c)}" for c in gradle.dependencies
+                [
+                    *(
+                        f"    kivyforgeLock platform({_groovy_str(b)})"
+                        for b in gradle.platforms
+                    ),
+                    *(
+                        f"    kivyforgeLock {_groovy_str(c)}"
+                        for c in gradle.dependencies
+                    ),
+                ]
             )
             (root / "settings.gradle").write_text(
                 _SETTINGS_GRADLE % {"extra_repos": extra}, encoding="utf-8"

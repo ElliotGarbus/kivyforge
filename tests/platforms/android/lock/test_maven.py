@@ -60,6 +60,14 @@ class TestResolveGradlePins:
         assert pins.resolved == modules
         assert backend.calls == 1
 
+    def test_declared_boms_recorded(self):
+        config = AndroidGradleConfig(
+            dependencies=("com.google.firebase:firebase-analytics",),
+            platforms=("com.google.firebase:firebase-bom:34.0.0",),
+        )
+        pins = resolve_gradle_pins(config, resolver=FakeGradle(()))
+        assert pins.platforms == ("com.google.firebase:firebase-bom:34.0.0",)
+
     def test_protocol_shape(self):
         # A fake satisfies the protocol without inheritance.
         backend: GradleMavenResolver = FakeGradle(())
@@ -180,6 +188,30 @@ class TestScratchProjectResolverResolve:
         assert "com.google.zxing:core:3.5.3" in captured["build"]
         assert "--write-verification-metadata" in captured["cmd"]
         assert "--offline" not in captured["cmd"]
+
+    def test_boms_imported_as_platforms_before_dependencies(self, monkeypatch):
+        captured = {}
+
+        def fake_run(cmd, cwd, capture_output, text, stdin=None):
+            captured["build"] = (Path(cwd) / "build.gradle").read_text(encoding="utf-8")
+            metadata_dir = Path(cwd) / "gradle"
+            metadata_dir.mkdir(parents=True, exist_ok=True)
+            (metadata_dir / "verification-metadata.xml").write_text(
+                _SAMPLE_METADATA, encoding="utf-8"
+            )
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr(maven_mod.subprocess, "run", fake_run)
+        config = AndroidGradleConfig(
+            dependencies=("com.google.firebase:firebase-analytics",),
+            platforms=("com.google.firebase:firebase-bom:34.0.0",),
+        )
+        ScratchProjectResolver(gradle_executable="fake-gradle").resolve(config)
+        build = captured["build"]
+        bom = "kivyforgeLock platform('com.google.firebase:firebase-bom:34.0.0')"
+        dep = "kivyforgeLock 'com.google.firebase:firebase-analytics'"
+        assert bom in build and dep in build
+        assert build.index(bom) < build.index(dep)
 
     def test_offline_flag_appended(self, tmp_path, monkeypatch):
         def fake_run(cmd, cwd, capture_output, text, stdin=None):

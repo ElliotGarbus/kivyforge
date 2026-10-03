@@ -45,6 +45,67 @@ Python with [pyjnius](pyjnius.md).
     kivyforge resolves the full dependency graph and records each artifact with
     its SHA-256 hash in `pylock.android.toml`.
 
+## Use a BOM
+
+A BOM (bill of materials) is a published list of library versions that are
+tested together. Firebase, Jetpack Compose, and OkHttp publish one. List the BOM
+under `platforms`, then leave the version off each library it covers:
+
+```toml
+[tool.kivy.android.gradle]
+platforms = ["com.google.firebase:firebase-bom:34.15.0"]
+dependencies = [
+    "com.google.firebase:firebase-analytics",
+    "com.google.firebase:firebase-messaging",
+]
+```
+
+The BOM itself needs an exact version. A `dependencies` entry without a version
+is rejected unless a BOM is listed. `kivyforge lock` records the version that
+the BOM chose for each library, so the lock shows exactly what you ship.
+
+## Add a Gradle plugin
+
+Some libraries need a Gradle plugin as well as a dependency. List each plugin
+under `[tool.kivy.android.gradle.plugins]` with an exact version:
+
+```toml
+[tool.kivy.android.gradle.plugins]
+"com.google.gms.google-services" = "4.4.2"
+```
+
+Quote each plugin ID. TOML splits a bare key on its dots, and kivyforge rejects
+the result. kivyforge applies the plugins after the Android plugin, in the order
+you list them.
+
+!!! warning
+    A plugin runs code during your build. kivyforge pins its version, but the
+    lock does not record a hash for it, just as for the Android Gradle plugin
+    itself. Add plugins only from sources you trust.
+
+## Add Firebase
+
+Firebase needs a BOM, the Google Services plugin, and your Firebase project's
+`google-services.json` file in the `app/` folder of the generated project:
+
+```toml
+[tool.kivy.android.gradle]
+platforms = ["com.google.firebase:firebase-bom:34.15.0"]
+dependencies = ["com.google.firebase:firebase-analytics"]
+
+[tool.kivy.android.gradle.plugins]
+"com.google.gms.google-services" = "4.4.2"
+
+[[tool.kivy.android.include_files]]
+dest = "app"
+sources = ["config/google-services.json"]
+```
+
+Download `google-services.json` from the Firebase console for an Android app
+whose package name matches `[tool.kivy.android].package`. Then lock and build.
+Firebase starts itself when your app launches. Call its APIs from Python with
+[pyjnius](pyjnius.md).
+
 ## Add an .aar or .jar archive
 
 1. Declare each archive by name under `[tool.kivy.android.native.aars]` or

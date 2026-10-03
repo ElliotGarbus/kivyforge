@@ -531,10 +531,17 @@ class AndroidArchiveDep:
 
 @dataclass(frozen=True)
 class AndroidGradleConfig:
-    """``[tool.kivy.android.gradle]`` — Maven coordinates (channel 4)."""
+    """``[tool.kivy.android.gradle]`` — Maven coordinates (channel 4).
+
+    ``platforms`` are BOM coordinates imported with ``platform(...)``; a
+    ``dependencies`` entry may omit its version only when one is declared.
+    ``plugins`` maps a Gradle plugin id to its exact version, in declared order.
+    """
 
     dependencies: tuple[str, ...] = ()
     repositories: tuple[str, ...] = ()
+    platforms: tuple[str, ...] = ()
+    plugins: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

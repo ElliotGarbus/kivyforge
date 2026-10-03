@@ -267,6 +267,34 @@ class TestProjectFiles:
         assert "useLegacyPackaging = true" in text
         assert "kivyforge-dont-ignore-anything" in text
 
+    def test_bom_and_plugins_in_app_build_gradle(self, tmp_path):
+        config, android = _android(
+            "[tool.kivy.android.gradle]\n"
+            'platforms = ["com.google.firebase:firebase-bom:34.0.0"]\n'
+            'dependencies = ["com.google.firebase:firebase-analytics"]\n'
+            "[tool.kivy.android.gradle.plugins]\n"
+            '"com.google.gms.google-services" = "4.4.2"\n'
+            '"com.google.firebase.crashlytics" = "3.0.2"\n'
+        )
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        bom = "implementation platform('com.google.firebase:firebase-bom:34.0.0')"
+        assert bom in text
+        assert "implementation 'com.google.firebase:firebase-analytics'" in text
+        # Plugins are applied after AGP, in declared order, with no version here:
+        # the version lives in the root build.gradle.
+        android_at = text.index("id 'com.android.application'")
+        gms_at = text.index("id 'com.google.gms.google-services'\n")
+        crash_at = text.index("id 'com.google.firebase.crashlytics'\n")
+        assert android_at < gms_at < crash_at
+
     def test_determinism(self, tmp_path):
         config, android = _android()
         for out in ("a", "b"):
@@ -375,6 +403,30 @@ class TestWriteSettingsGradle:
         text = (tmp_path / "settings.gradle").read_text()
         assert "maven {" not in text
 
+    def test_declared_repositories_serve_plugins_when_plugins_declared(self, tmp_path):
+        _, android = _android(
+            "[tool.kivy.android.gradle]\n"
+            "repositories = ['https://maven.example.com/releases']\n"
+            "[tool.kivy.android.gradle.plugins]\n"
+            "'com.example.plugin' = '1.0'\n"
+        )
+        write_settings_gradle(tmp_path, android)
+        text = (tmp_path / "settings.gradle").read_text()
+        plugin_block = text[: text.index("dependencyResolutionManagement")]
+        assert "gradlePluginPortal()" in plugin_block
+        assert "maven.example.com" in plugin_block
+
+    def test_declared_repositories_without_plugins_leave_plugin_repos(self, tmp_path):
+        _, android = _android(
+            "[tool.kivy.android.gradle]\n"
+            "dependencies = ['com.example:widget:1.0']\n"
+            "repositories = ['https://maven.example.com/releases']\n"
+        )
+        write_settings_gradle(tmp_path, android)
+        text = (tmp_path / "settings.gradle").read_text()
+        plugin_block = text[: text.index("dependencyResolutionManagement")]
+        assert "maven.example.com" not in plugin_block
+
 
 class TestWriteRootBuildGradle:
     def test_without_kotlin(self, tmp_path):
@@ -389,6 +441,15 @@ class TestWriteRootBuildGradle:
         write_root_build_gradle(tmp_path, android)
         text = (tmp_path / "build.gradle").read_text()
         assert "org.jetbrains.kotlin.android" in text
+
+    def test_declared_plugins_pinned_and_not_applied(self, tmp_path):
+        _, android = _android(
+            "[tool.kivy.android.gradle.plugins]\n"
+            "'com.google.gms.google-services' = '4.4.2'\n"
+        )
+        write_root_build_gradle(tmp_path, android)
+        text = (tmp_path / "build.gradle").read_text()
+        assert "id 'com.google.gms.google-services' version '4.4.2' apply false" in text
 
 
 class TestStageGradleWrapper:
