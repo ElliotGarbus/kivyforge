@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Android builds refuse to start Gradle without a JDK
+
+- **Fixed:** a `build -p android --debug` (or `package`, `run`) attempted with only a
+  JRE installed started a Gradle daemon, and that daemon outlived the failed build.
+  After installing a JDK at the same path (as Debian's `openjdk-21-jdk-headless`
+  does), the next build still failed with "does not provide the required
+  capabilities: [JAVA_COMPILER]" until `kivyforge clean` stopped the daemon.
+  Every Android verb that runs Gradle now checks first, the same way `doctor`
+  does, and fails before Gradle starts when there is no `java` or the `java` Gradle
+  would run has no `javac` beside it. (Issue #61.)
+- **Changed:** those two cases now fail with `KF-TOOLCHAIN-MISSING` and exit `3`
+  ("fix the machine"), with `context.tool` set to `java` or `javac`. Before, Gradle
+  ran and failed with `KF-BUILD-TOOL-FAILED` and exit `5`. A JDK of an unsupported
+  version is still reported by Gradle, as before.
+- **Migration:** a script that treated exit `5` as "no JDK" should check for exit
+  `3` and `KF-TOOLCHAIN-MISSING`. If a daemon from an earlier kivyforge release is
+  already stuck, run `./gradlew --stop` in `<app>-android/` once (or
+  `kivyforge clean`).
+
 ### `doctor -p android`: fail a JRE with no `javac`
 
 - **Fixed:** with only a JRE installed (for example Debian's `openjdk-21-jre-headless`),

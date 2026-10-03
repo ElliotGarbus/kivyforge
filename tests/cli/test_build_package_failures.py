@@ -191,7 +191,8 @@ class TestSpawnFailures:
     def test_gradle_wrapper_that_cannot_start(self, tmp_path, monkeypatch):
         import os
 
-        from kivyforge.platforms.android import gradlew
+        from kivyforge.platforms.android import doctor, gradlew
+        from tests.platforms.android.test_doctor import FakeProbe
 
         name = "gradlew.bat" if os.name == "nt" else "gradlew"
         (tmp_path / name).write_text("", encoding="utf-8")
@@ -199,6 +200,9 @@ class TestSpawnFailures:
         def denied(*a, **k):
             raise PermissionError(errno.EACCES, "denied")
 
+        monkeypatch.setattr(
+            doctor, "RealAndroidProbe", lambda: FakeProbe(java_home="/jdk")
+        )
         monkeypatch.setattr(gradlew.subprocess, "run", denied)
         with pytest.raises(ToolchainError) as info:
             gradlew.run_gradle(tmp_path, ["assembleDebug"])

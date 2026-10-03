@@ -162,6 +162,25 @@ class TestFailure:
         assert env["ok"] is False
         assert _artifacts(env) == []
 
+    def test_android_build_on_a_jre_is_a_missing_tool(self, android, monkeypatch):
+        from kivyforge.platforms.android import cli, doctor, gradlew
+        from tests.platforms.android.test_doctor import FakeProbe
+
+        jre = FakeProbe(which={"java": "/usr/bin/java"}, javac=False)
+        monkeypatch.setattr(doctor, "RealAndroidProbe", lambda: jre)
+        monkeypatch.setattr(
+            cli, "run_gradle", lambda dest, tasks, **kw: gradlew._require_jdk()
+        )
+        result, env = _run(build, ["-p", "android", "--debug"])
+        assert result.exit_code == exit_codes.ENVIRONMENT_ERROR
+        assert env["ok"] is False
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["code"] == diagnostics.TOOLCHAIN_MISSING
+        assert diagnostic["context"] == {"tool": "javac"}
+        assert "jdk-headless" in diagnostic["remediation"]
+        # The project was generated before Gradle was refused: still this run's.
+        assert _artifacts(env) == [("demoapp-android", "project")]
+
     def test_failed_windows_signing_does_not_name_the_old_package(
         self, windows, monkeypatch, desktop_project
     ):

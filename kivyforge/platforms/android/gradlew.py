@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from kivyforge.cli._common import ToolchainError
+from kivyforge.report import diagnostics, exit_codes
 from kivyforge.report.failures import spawn_failure
 from kivyforge.report.streams import stderr_for_child
 
@@ -31,6 +32,7 @@ def run_gradle(
             f"no Gradle wrapper at {script}; run `kivyforge build` to "
             "(re)generate the project."
         )
+    _require_jdk()
     env = dict(os.environ)
     if env_overrides:
         env.update(env_overrides)
@@ -63,6 +65,29 @@ def run_gradle(
             f"checks the JDK/SDK/NDK prerequisites.",
             returncode=proc.returncode,
         )
+
+
+def _require_jdk() -> None:
+    """Refuse to start Gradle without a ``java``, or on a JRE.
+
+    Checked before Gradle rather than left to it: a daemon started on a JRE
+    outlives the failed build and remembers that the Java at that path cannot
+    compile, so once a JDK is installed at the same path (as Debian's
+    ``-jdk-headless`` package does) the next build still fails until the daemon
+    is stopped.
+    """
+    from .doctor import RealAndroidProbe, missing_jdk_tool
+
+    missing = missing_jdk_tool(RealAndroidProbe())
+    if missing is None:
+        return
+    tool, result = missing
+    raise ToolchainError(
+        f"{result.detail}.\n  Fix: {result.hint}",
+        code=diagnostics.TOOLCHAIN_MISSING,
+        exit_code=exit_codes.ENVIRONMENT_ERROR,
+        context={"tool": tool},
+    )
 
 
 def stop_gradle_daemon(project_dir: Path) -> bool:
