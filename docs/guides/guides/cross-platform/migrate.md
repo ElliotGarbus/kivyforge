@@ -86,13 +86,19 @@ recipes, the replacement is an Apple framework that you call through
 5. Set `kivy_generation` to match your Kivy version: `2` for Kivy 2.3.1 on SDL2,
    or `3` for Kivy 3.0 on SDL3.
 
-6. Lock the dependencies:
+6. Check `fullscreen`. buildozer runs an app fullscreen unless the spec says
+   `fullscreen = 0`, but kivyforge shows the system bars unless you set
+   `fullscreen = true` in `[tool.kivy.android]`. If your spec has
+   `fullscreen = 1` or no `fullscreen` line at all, add `fullscreen = true` to
+   keep the bars hidden.
+
+7. Lock the dependencies:
 
     ```bash
     kivyforge lock -p android
     ```
 
-7. [Build and run the app](../android/run.md).
+8. [Build and run the app](../android/run.md).
 
 Only 64-bit ABIs are supported: `arm64_v8a` and `x86_64`. The 32-bit
 `armeabi-v7a` and `x86` ABIs from `android.archs` have no equivalent.
