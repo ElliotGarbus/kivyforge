@@ -253,13 +253,28 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
     on PATH otherwise, so this resolves it the same way. It must also be a JDK:
     a JRE runs Gradle and then fails the build at the Java compile step.
     """
+    return _jdk_status(probe)[0]
+
+
+def missing_jdk_tool(probe: AndroidProbe) -> tuple[str, CheckResult] | None:
+    """The tool Gradle needs and cannot find, with the JDK check's report of it.
+
+    That is ``java`` when there is none, or ``javac`` when the java Gradle would
+    run belongs to a JRE; ``None`` otherwise, including for a JDK of the wrong
+    version, which is present rather than missing.
+    """
+    result, missing = _jdk_status(probe)
+    return None if missing is None else (missing, result)
+
+
+def _jdk_status(probe: AndroidProbe) -> tuple[CheckResult, str | None]:
     jh = probe.java_home()
     java = str(Path(jh) / "bin" / f"java{_EXE}") if jh else probe.which("java")
     where = f"JAVA_HOME={jh}" if jh else java
     if not java:
         return CheckResult(
             "JDK", Status.FAIL, "no java on PATH and JAVA_HOME unset", hint=_JDK_HINT
-        )
+        ), "java"
     banner = probe.java_version(java)
     if banner is None:
         return CheckResult(
@@ -268,7 +283,7 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
             f"{where} did not run (`java -version` failed; on macOS, /usr/bin/java "
             "is a stub until a JDK is installed)",
             hint=_JDK_HINT,
-        )
+        ), None
     major = java_major(banner)
     if major is None:
         return CheckResult(
@@ -276,7 +291,7 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
             Status.WARN,
             f"{where}: cannot read the version from `java -version`",
             hint=f"Gradle {toolchain.GRADLE_VERSION} needs a {_JDK_RANGE}.",
-        )
+        ), None
     if not toolchain.MIN_JDK <= major <= toolchain.MAX_JDK:
         return CheckResult(
             "JDK",
@@ -284,7 +299,7 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
             f"{where} is JDK {major}; Gradle {toolchain.GRADLE_VERSION} needs a "
             f"{_JDK_RANGE}",
             hint=_JDK_HINT,
-        )
+        ), None
     if not probe.javac_exists(java):
         return CheckResult(
             "JDK",
@@ -294,8 +309,8 @@ def _check_jdk(probe: AndroidProbe) -> CheckResult:
             hint="install a full JDK, not just a JRE (for example "
             "`sudo apt install openjdk-21-jdk-headless` on Debian or Ubuntu, or "
             "Eclipse Temurin from adoptium.net), and point JAVA_HOME at it.",
-        )
-    return CheckResult("JDK", Status.PASS, f"JDK {major} ({where})")
+        ), "javac"
+    return CheckResult("JDK", Status.PASS, f"JDK {major} ({where})"), None
 
 
 def _check_sdk(sdk: Path | None) -> CheckResult:

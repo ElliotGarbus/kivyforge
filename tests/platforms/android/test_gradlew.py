@@ -7,12 +7,78 @@ import subprocess
 
 import pytest
 
+from kivyforge.cli._common import ToolchainError
+from kivyforge.platforms.android import doctor as doctor_mod
 from kivyforge.platforms.android import gradlew as gradlew_mod
 from kivyforge.platforms.android.gradlew import GradleError, run_gradle
+from kivyforge.report import diagnostics, exit_codes
+from tests.platforms.android.test_doctor import FakeProbe
 
 
 def _wrapper_name() -> str:
     return "gradlew.bat" if os.name == "nt" else "gradlew"
+
+
+def _use_probe(monkeypatch, probe) -> None:
+    monkeypatch.setattr(doctor_mod, "RealAndroidProbe", lambda: probe)
+
+
+@pytest.fixture(autouse=True)
+def _healthy_jdk(monkeypatch):
+    """Whether this host has a JDK must not decide what these tests see."""
+    _use_probe(monkeypatch, FakeProbe(java_home="/jdk"))
+
+
+class TestJdkPreflight:
+    """Gradle must not start without a compiler: a daemon started on a JRE keeps
+    failing builds after a JDK is installed at the same path."""
+
+    @pytest.fixture
+    def gradle_runs(self, tmp_path, monkeypatch):
+        (tmp_path / _wrapper_name()).write_text("#!/bin/sh", encoding="utf-8")
+        ran = []
+
+        def fake_run(cmd, **kw):
+            ran.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        monkeypatch.setattr(gradlew_mod.subprocess, "run", fake_run)
+        return ran
+
+    def test_a_jre_stops_gradle_starting(self, tmp_path, monkeypatch, gradle_runs):
+        _use_probe(monkeypatch, FakeProbe(which={"java": "/usr/bin/java"}, javac=False))
+        with pytest.raises(ToolchainError) as info:
+            run_gradle(tmp_path, ["assembleDebug"])
+        assert gradle_runs == []
+        assert info.value.code == diagnostics.TOOLCHAIN_MISSING
+        assert info.value.exit_code == exit_codes.ENVIRONMENT_ERROR
+        assert info.value.context == {"tool": "javac"}
+        assert "is a JRE, not a JDK" in info.value.message
+        assert "jdk-headless" in info.value.remediation
+
+    def test_no_java_at_all_names_java(self, tmp_path, monkeypatch, gradle_runs):
+        _use_probe(monkeypatch, FakeProbe())
+        with pytest.raises(ToolchainError) as info:
+            run_gradle(tmp_path, ["assembleDebug"])
+        assert gradle_runs == []
+        assert info.value.code == diagnostics.TOOLCHAIN_MISSING
+        assert info.value.context == {"tool": "java"}
+
+    def test_a_jdk_of_the_wrong_version_is_left_to_gradle(
+        self, tmp_path, monkeypatch, gradle_runs
+    ):
+        """Present, not missing: no code here says otherwise, so Gradle reports it."""
+        _use_probe(
+            monkeypatch,
+            FakeProbe(java_home="/jdk", java_banner='openjdk version "25.0.3"'),
+        )
+        run_gradle(tmp_path, ["assembleDebug"])
+        assert len(gradle_runs) == 1
+
+    def test_a_missing_wrapper_is_reported_first(self, tmp_path, monkeypatch):
+        _use_probe(monkeypatch, FakeProbe(java_home="/jre", javac=False))
+        with pytest.raises(GradleError, match="no Gradle wrapper"):
+            run_gradle(tmp_path, ["assembleDebug"])
 
 
 class TestRunGradle:

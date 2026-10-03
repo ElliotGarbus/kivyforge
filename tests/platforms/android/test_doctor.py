@@ -397,6 +397,35 @@ class TestJdkCheck:
         )
         assert "JDK 25" in _check_jdk(probe).detail
 
+    @pytest.mark.parametrize(
+        ("probe", "tool"),
+        [
+            (FakeProbe(), "java"),
+            (FakeProbe(java_home="/jre", javac=False), "javac"),
+            (FakeProbe(java_home="/jdk"), None),
+            (FakeProbe(which={"java": "/j"}, java_banner=None), None),
+            (FakeProbe(java_home="/jdk", java_banner='openjdk version "25.0.3"'), None),
+            # Version is checked first, so a too-new JRE is a version problem.
+            (
+                FakeProbe(
+                    java_home="/jre",
+                    java_banner='openjdk version "25.0.3"',
+                    javac=False,
+                ),
+                None,
+            ),
+        ],
+        ids=["no-java", "jre", "jdk", "will-not-run", "too-new", "too-new-jre"],
+    )
+    def test_missing_jdk_tool_names_only_what_is_absent(self, probe, tool):
+        missing = doctor_mod.missing_jdk_tool(probe)
+        if tool is None:
+            assert missing is None
+        else:
+            assert missing is not None
+            assert missing[0] == tool
+            assert missing[1] == _check_jdk(probe)
+
     def test_a_jre_fails_the_whole_doctor_run(self, tmp_path):
         probe = _healthy_probe(tmp_path)
         probe._javac = False

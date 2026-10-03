@@ -80,7 +80,9 @@ BUILD_TOOL_FAILED = "KF-BUILD-TOOL-FAILED"
 #: A build tool reported success but the product is not where it should be.
 ARTIFACT_MISSING = "KF-ARTIFACT-MISSING"
 
-#: A required tool is not installed: spawning it raised ``FileNotFoundError``.
+#: A required tool is not installed: spawning it raised ``FileNotFoundError``,
+#: or a pre-flight found it absent (Android: no ``java``, or a JRE's missing
+#: ``javac``). ``context`` names the ``tool``.
 TOOLCHAIN_MISSING = "KF-TOOLCHAIN-MISSING"
 
 #: A tool is present but could not be executed (``EACCES``, ``ENOEXEC``, ...).
