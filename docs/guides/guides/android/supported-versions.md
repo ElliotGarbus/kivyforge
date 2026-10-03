@@ -79,6 +79,10 @@ releases.
 | Android Gradle Plugin | 8.10.0 |
 | Gradle | 8.11.1 (downloaded by the Gradle wrapper) |
 
+The JDK must be a full JDK, not a JRE: Gradle compiles the app's Java with `javac`,
+and a runtime-only install (such as Debian's `openjdk-21-jre-headless`) fails the
+build at that step. `kivyforge doctor -p android` checks for it.
+
 The JDK range is what the pinned Gradle can run on. Android Studio bundles its
 own JDK, which may be newer than that; if it is, install a separate JDK in the
 range and point `JAVA_HOME` at it.

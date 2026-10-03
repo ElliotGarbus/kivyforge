@@ -17,7 +17,8 @@ from Windows, macOS, or Linux. Android does not require a Mac.
 - kivyforge, installed as described in [Install kivyforge](install.md).
 - A JDK (Java Development Kit) in the range listed in
   [Supported versions](../guides/android/supported-versions.md#build-tools), in
-  `JAVA_HOME` or on your `PATH`. Android Studio's bundled JDK may be newer than
+  `JAVA_HOME` or on your `PATH`. It must be a full JDK: a JRE has no `javac`, and
+  `kivyforge doctor -p android` fails it. Android Studio's bundled JDK may be newer than
   that range; `kivyforge doctor -p android` tells you. If it is, install a
   separate one, such as [Eclipse Temurin](https://adoptium.net/).
 - The Android SDK with command-line tools, build-tools, platform-tools, and the
