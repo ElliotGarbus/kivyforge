@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### `doctor`: no more iOS failures off a Mac
+
+- **Fixed:** `kivyforge doctor` with no `-p` on a project whose only overlay is
+  `[tool.kivy.android]` (or any single non-host platform) fell back to iOS and reported
+  `missing [tool.kivy.ios] table`, `Xcode not found` and `xcode-select path not set`,
+  none of which the user can or should act on. It now uses the project's only
+  configured platform, and for a bare environment check or an ambiguous project on
+  Windows or Linux, the host's own platform. iOS remains the fallback on macOS.
+- **Migration:** none needed. Pass `-p` or set `KIVYFORGE_PLATFORM` to pick a platform
+  explicitly, as before.
+
 ### Android: SDK license guidance for command-line tools 23+
 
 - **Fixed:** the `doctor` "SDK licenses" hint, the README, and the Android quickstart
