@@ -168,6 +168,7 @@ abis = ["arm64_v8a", "x86_64"]
 | `find_links`     | list of string | no       | `[]`                       | Repo-relative directories of pre-built Android wheels consulted during `kivyforge lock` only (passed to pip as `--find-links`). Use when a dependency's Android wheels are vendored in the repo — **the canonical case is a locally cross-built `kivy` 2.3.1 wheel** (see "Local wheel directories" below). Entries must be repo-relative and must not escape the project directory. |
 | `exclude`        | list of string | no       | `[]`                       | Canonical package names to drop from the **resolved** dependency graph when writing `pylock.android.toml`. Same semantics as the iOS field — prune the transitive tail a dependency declares but your app never exercises on Android. A name that is also a direct `[project].dependencies` entry is silently ignored.   |
 | `base_theme`     | string         | no       | Material3 DayNight (NoActionBar) | Parent Android theme for the app: written as the `parent=` of the generated app `<style>` and used as the `<application>`/main-activity `android:theme` (and the splash's parent). Defaults to a `Theme.Material3.DayNight.NoActionBar`-family theme suited to a full-screen SDL surface. Set it to another Material/AppCompat base or a custom parent you supply via app resources / `include_files`. Validated as a non-empty string; a parent that doesn't resolve surfaces as a Gradle/AAPT error at build time. |
+| `fullscreen`     | bool           | no       | `false`                    | Run the app with the system bars hidden (SDL's immersive-sticky mode: status bar and navigation bar both hidden, an edge swipe reveals them briefly). The generated activity exports `P4A_IS_WINDOWED=False`, which Kivy 2.3.1 and 3.0 read on Android to create a fullscreen SDL window — Kivy ignores `graphics.fullscreen` there — and the app theme gains `android:windowFullscreen` to cover launch. The theme alone is not enough: `SDLActivity.onCreate` clears the fullscreen flag (verified on a Pixel 8a, 2026-10-03). Unlike buildozer, a missing key means `false`. |
 
 ### Auto-derived `version_code`
 
@@ -847,7 +848,7 @@ These are written automatically from the schema and cannot be set via
 | `minSdkVersion` / `targetSdkVersion` / `compileSdkVersion` | `min_sdk` / `target_sdk` / `compile_sdk` |
 | main `<activity android:name>` | the generated `org.kivy.android.PythonActivity` (bootstrap) |
 | `android:screenOrientation` (main activity) | `[tool.kivy].orientation` |
-| `android:theme` (application + main activity) + the generated splash `<style>` | `[tool.kivy.android].base_theme` (or the default) and `[tool.kivy.android.splash]` |
+| `android:theme` (application + main activity) + the generated splash `<style>` | `[tool.kivy.android].base_theme` (or the default), `[tool.kivy.android.splash]` and `[tool.kivy.android].fullscreen` |
 | `android:extractNativeLibs` / `useLegacyPackaging` | toolchain (must extract native libs so Python can `dlopen` them; see [gradle-project-generation](04-gradle-project-generation.md)) |
 | non-required `<uses-feature>` for hardware-implying permissions | `[tool.kivy.android.permissions].auto_features` (see [Implied hardware features](#implied-hardware-features-auto_features)) |
 

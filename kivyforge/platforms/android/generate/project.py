@@ -398,6 +398,10 @@ def write_resources(
 def _styles_xml(android: AndroidConfig, splash, *, v31: bool) -> str:
     """The app theme, with the splash items the given API level understands."""
     items: list[tuple[str, str]] = []
+    if android.fullscreen:
+        # Only covers launch: SDLActivity.onCreate clears it, and the activity
+        # re-hides the bars through Kivy (PythonActivity's FULLSCREEN).
+        items.append(("android:windowFullscreen", "true"))
     if splash.window_background is not None:
         items.append(("android:windowBackground", splash.window_background))
     if v31:

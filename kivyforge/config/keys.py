@@ -145,6 +145,7 @@ ANDROID: dict[str, Spec] = {
     "kivy_generation": None,
     "abis": None,
     "base_theme": None,
+    "fullscreen": None,
     "python": {"version": None},
     "permissions": {
         "uses": None,

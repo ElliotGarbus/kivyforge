@@ -221,8 +221,11 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
     def fake_stdlib_dir(prefix, stem):
         return prefix / "lib" / stem
 
-    def fake_render_bootstrap(*, sdl, python_version, entry_point="main"):
+    def fake_render_bootstrap(
+        *, sdl, python_version, entry_point="main", fullscreen=False
+    ):
         calls.setdefault("render_bootstrap", []).append(entry_point)
+        calls.setdefault("render_fullscreen", []).append(fullscreen)
         return [
             RenderedFile("java/org/kivy/android/PythonActivity.java", "// activity\n")
         ]
@@ -334,6 +337,19 @@ class TestAndroidBuildHappyPath:
         cli.android_build(project)
         assert calls["render_bootstrap"] == ["app.start"]
         assert calls["assemble_bundle"][0]["entry_point"] == "app.start"
+
+    def test_fullscreen_reaches_the_bootstrap(self, project, build_env):
+        project, calls = build_env
+        pyproject = project / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8").replace(
+                'abis = ["arm64_v8a"]', 'abis = ["arm64_v8a"]\nfullscreen = true'
+            ),
+            encoding="utf-8",
+        )
+        _write_lock(project)
+        cli.android_build(project)
+        assert calls["render_fullscreen"] == [True]
 
 
 SERVICES_TOML = """

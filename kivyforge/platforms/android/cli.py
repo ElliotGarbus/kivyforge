@@ -376,6 +376,7 @@ def android_build(
         sdl=android.kivy_generation,
         python_version=python_version,
         entry_point=config.kivy.entry_point,
+        fullscreen=android.fullscreen,
     ):
         out = app_main / rendered.relpath
         out.parent.mkdir(parents=True, exist_ok=True)

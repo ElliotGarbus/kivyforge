@@ -1,0 +1,34 @@
+[project]
+name = "android-fullscreen"
+version = "1.0.0"
+description = "An Android app with the system bars hidden (Kivy 3.0 / SDL3)"
+requires-python = ">=3.14"
+dependencies = [
+    # Kivy 3.0 is unreleased, so the specifier has to admit a .dev version —
+    # pip excludes pre-releases unless the requirement asks for one.
+    "kivy>=3.0.0.dev0,<4",
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "Fullscreen"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.fullscreen"
+min_sdk = 24
+target_sdk = 35
+kivy_generation = 3
+abis = ["arm64_v8a", "x86_64"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+# The point of this example: hide the status bar and the navigation bar.
+fullscreen = true
+
+# Kivy declares these unconditionally but nothing on Android needs them.
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"

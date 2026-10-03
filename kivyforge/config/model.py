@@ -682,6 +682,7 @@ class AndroidConfig:
     find_links: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     base_theme: str = DEFAULT_ANDROID_BASE_THEME
+    fullscreen: bool = False
     python: AndroidPythonConfig | None = None
     permissions: AndroidPermissions = field(default_factory=AndroidPermissions)
     icons: AndroidIconConfig = field(default_factory=AndroidIconConfig)
