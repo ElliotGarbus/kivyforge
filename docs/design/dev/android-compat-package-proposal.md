@@ -1,6 +1,8 @@
 # An `android` compatibility package for kivyforge: proposal
 
-**Status:** proposed 2026-10-02. Nothing here is implemented.
+**Status:** proposed 2026-10-02; revised the same day after review (E8–E10, the scope
+changes for `storage` and the splash no-ops, the delivery and conflict policy, the
+service naming gap, and stage 0). Nothing here is implemented.
 
 **Origin:** a user building Android apps with Kivy 3 on kivyforge needs the
 python-for-android (p4a) `android` package. The only prebuilt one they found is
@@ -24,6 +26,11 @@ here.
 - **It needs Java too.** The kept Python modules call methods that exist only in p4a's
   `PythonActivity`. kivyforge's `PythonActivity` and `PythonService` do not have them
   (E6), so the work has a Java half.
+- **Ship the `uiMode` manifest fix first, on its own.** Without it, a system theme
+  switch very probably quits a kivyforge app today (E10). It is needed by the dark-mode
+  part of this package but does not depend on it.
+- **Shipping `android` changes Kivy 2.3.1's behaviour.** Kivy 2.3.1 imports it at
+  startup (E8), so `kivy_generation = 2` apps take code paths they skip today.
 
 ## Evidence
 
@@ -128,7 +135,8 @@ From the archived guide
   scanner examples.
 - Says `app_storage_path()` is "not secure" and `primary_external_storage_path` does not
   work on Android 10 and later; recommends `mActivity.getApplicationContext()` with
-  pyjnius instead. That is why `storage` is dropped.
+  pyjnius instead. `storage` is still kept (decision 7) so imports keep working; the
+  docs point new code at pyjnius.
 - Says plyer's Camera, Speech to text, Audio and FileChooser do not work on newer Android.
   That lowers their priority but not the need for `config`.
 - Documents rules for `request_permissions`: call it after `on_start`, once per time
@@ -160,6 +168,18 @@ SDL already overrides some of the same Activity methods: the SDL3 `SDLActivity` 
 `onActivityResult` (line 744) and `onRequestPermissionsResult` (line 1962); the SDL2 one
 overrides `onRequestPermissionsResult` (line 1792). Neither overrides `onNewIntent`.
 
+Services differ from p4a in more than the missing statics:
+
+- **Class names.** kivyforge generates `org.kivy.android.<Name>` (for example
+  `org.kivy.android.ServiceWorker` in `docs/guides/guides/android/services.md`). p4a
+  generates `<package>.Service<Name>`, from memory; not read from its template. Ported
+  code that names the p4a class fails at `autoclass` before any `start` signature matters.
+- **Intent extra.** kivyforge reads `kivyforge_service_argument`; p4a's is
+  `pythonServiceArgument` (from memory). Both end up in `PYTHON_SERVICE_ARGUMENT`.
+- **Process.** Each service runs in its own `android:process` and loads only `libpython`
+  and `libmain`, with no SDL (`PythonService.java`). Java statics are per process, so
+  `PythonActivity.mActivity` is always `null` there, not merely stale.
+
 ### E7. What the docs say today
 
 - `docs/design/platforms/android/05-bootstrap-android.md` ("Namespace preservation") says
@@ -175,6 +195,60 @@ migration docs and `kivyforge init`'s list of dropped buildozer settings also sa
 about it. This looks like an unexamined gap, not a deliberate omission. Searched
 `docs/` and `.cursor/` only.
 
+### E8. Kivy 2.3.1 imports `android` at startup
+
+`android-loadmodel-findings.md` ("Benign Kivy warnings") records Kivy 2.3.1 on kivyforge
+logging:
+
+```
+[WARNING] [Base] Unknown <android> provider
+[WARNING] [Base] Failed to import "android" module. Could not remove android presplash.
+```
+
+So Kivy 2.3.1 tries to import `android` for the presplash and for its `android` input
+provider. Today both fail and Kivy skips them. Once the package exists, those imports
+succeed and the code behind them runs. Other Kivy 2.3.1 users of `android` are likely
+(for example, from memory, the Android clipboard provider uses `android.runnable`); not
+checked.
+
+What happens to the presplash call depends on its form, which was not read. If Kivy does
+`from android import remove_presplash`, a missing name raises `ImportError`, which the
+warning shows is caught, so the only effect is the same warning. If it does
+`import android` and then calls `android.remove_presplash()`, a missing name raises
+`AttributeError`, which would not be caught and would break startup. Providing the
+no-op (see [Scope](#scope)) is correct either way.
+
+### E9. Where the bundled package lands on `sys.path`
+
+`cpp/main.c` sets `module_search_paths` to `stdlib`, then `bootstrap`, then `app`
+(line 68), and adds `site-packages` last with `site.addsitedir` (line 112). A package
+staged under `bootstrap/` is therefore importable and comes before both the app's code
+and every locked distribution. Consequences:
+
+- A locked `android` distribution (for example kivyschool's) never wins. It is silently
+  shadowed, but still shipped: its compiled `_android` extension is flattened into
+  `jniLibs` and listed in `ext_manifest.json`, and the extension finder, which sits first
+  on `sys.meta_path`, would load that SDL2-linked library if anything imported
+  `android._android`.
+- An `android.py` or `android/` package in the app's own `app_dir` is also shadowed.
+- `bootstrap/` is byte-compiled with the rest of the bundle (`stage/bundle.py`, line 130),
+  so the package needs no special handling there.
+
+### E10. A system theme switch very probably quits the app today
+
+kivyforge declares `android:configChanges="keyboardHidden|orientation|screenSize"`
+(`generate/manifest.py:200`). Without `uiMode`, Android recreates the Activity on a
+light/dark switch. SDL3's `SDLActivity.onCreate` (lines 354–366) then calls
+`nativeAllowRecreateActivity()`, and unless the app has set SDL's allow-recreate hint,
+logs "activity finished" and calls `System.exit(0)`. kivyforge does not set the hint
+(searched `kivyforge/`). The SDL2 glue was not checked for the same logic.
+
+Separately, SDL3's own `onConfigurationChanged` (lines 663–683) already forwards dark-mode
+changes to native code with `onNativeDarkModeChanged`, but Android only calls it when
+`uiMode` is declared. So adding `uiMode` fixes a likely crash and turns on SDL3's
+theme events, independently of this package. Inferred from source; not observed on a
+device.
+
 ## What was not verified
 
 - Nothing was run on a device. The plyer failure in E4 is inferred.
@@ -183,9 +257,13 @@ about it. This looks like an unexamined gap, not a deliberate omission. Searched
   from how the modules use them and must be checked against a real p4a build.
 - p4a's `android:configChanges` value. kivyforge's (`keyboardHidden|orientation|screenSize`)
   has no `uiMode`, which dark-mode support needs.
-- Kivy 2.3.1 itself may import `android` lazily (from memory, not checked). If so, a
-  `kivy_generation = 2` app on kivyforge has the same gap for Kivy's own features. The
-  `hello-android` example builds, so those imports are at least guarded.
+- The theme-switch exit (E10) was not reproduced on a device, and the SDL2 glue was not
+  checked for the same recreate logic.
+- That Kivy 2.3.1 imports `android` is verified from logs (E8). Which of its imports
+  catch a missing *name*, and which other Kivy 2.3.1 modules use the package, were not.
+- p4a's generated service class names and intent extra (E6) are from memory.
+- Whether pyjnius gets a JNI environment in a service process, which loads no SDL. No
+  recorded run of pyjnius inside a kivyforge service was found.
 - The older Kivy 3 wheels were not inspected (E1).
 - GitHub code search is incomplete; hit counts are lower bounds.
 
@@ -206,6 +284,17 @@ about it. This looks like an unexamined gap, not a deliberate omission. Searched
    without a deprecation warning, for compatibility with existing code.
 6. **Staged path** (below): ship now, then reduce deviations through small upstream PRs.
 
+Revisions after review (2026-10-02):
+
+7. **Keep `storage`, and keep `remove_presplash` and `loadingscreen.hide_loading_screen`
+   as no-ops.** Decision 5's principle, that p4a code runs unchanged, applies: dropping a
+   module turns a common import into an `ImportError` at load time, while keeping these
+   costs about 130 lines and no Java. `remove_presplash` also matters to Kivy 2.3.1 (E8).
+8. **A conflicting `android` is an error, not a policy question** (E9): fail `lock` when
+   the lock would contain an `android` distribution, and fail `build` when `app_dir`
+   contains an `android` module or package.
+9. **The `uiMode` manifest change ships first and separately** as stage 0 (E10).
+
 ## Scope
 
 **Keep**
@@ -219,23 +308,26 @@ about it. This looks like an unexamined gap, not a deliberate omission. Searched
 - `android.broadcast`: `BroadcastReceiver`, verbatim; needs two Java types (below).
 - `android.darkmode`: `set_dark_mode_listener` and `DarkModeListener`, verbatim; needs a
   small Java hook and a manifest change (below).
+- `android.storage`: verbatim. `primary_external_storage_path` is as limited on Android 10+
+  as it is on p4a; the docs point new code at pyjnius (E5).
+- `android.loadingscreen`: `hide_loading_screen` as a no-op. kivyforge's splash is the
+  system splash, dismissed at first frame.
 - Package-level names: `mActivity`, `python_act`, `api_version`, `version_codes`,
-  `open_url`/`AndroidBrowser`, and the four jnius re-exports.
+  `open_url`/`AndroidBrowser`, `remove_presplash` (a no-op, see E8), and the four jnius
+  re-exports.
 - Services: `PythonService.mService` and the start/stop API (below).
 
-That is about 1,050 lines of vendored Python (621 + 214 + 58 + 103 + 57) plus new
-`__init__.py` and `config.py`, with no compiled code.
+That is about 1,170 lines of vendored Python (621 + 214 + 58 + 103 + 57 + 117) plus new
+`__init__.py`, `config.py` and `loadingscreen.py`, with no compiled code.
 
 **Drop**
 
 | Part | Why |
 |---|---|
-| `storage` | Insecure or non-functional on current Android (E5); pyjnius with `mActivity` replaces it |
 | `mixer`, `_android_sound` | Obsolete pygame-style audio; Kivy has audio providers |
 | `billing`, `_android_billing` | Obsolete; community uses a third-party library |
 | `touch` | Needs p4a's patched `SDLSurface`; kivyforge's glue is stock |
 | `display_cutout` | Overlaps `kivy.mobile` geometry and kivyforge's safe-area support; imports Kivy's `Window` |
-| `loadingscreen`, `remove_presplash` | The `_kivy_bootstrap` contract handles the splash; `removeLoadingScreen` is p4a-only |
 | `start_service`, `stop_service`, `AndroidService` (from `_android`) | Replaced by the declarative services and the start/stop API below; they call p4a-only Java |
 | `vibrate`, accelerometer, wifi scan, `get_dpi`, keyboard helpers, `KEYCODE_*`, `TYPE_*`, `BuildInfo` | Legacy `org.renpy.android.Hardware` paths; plyer has its own facades and `kivy.mobile` covers DPI and keyboard |
 
@@ -274,7 +366,8 @@ re-export is a breaking change, so keeping it is the safer choice.
 Guardrails:
 
 - Define `__all__` explicitly: `autoclass`, `cast`, `PythonJavaClass`, `java_method`,
-  `mActivity`, `python_act`, `api_version`, `version_codes`, `open_url`, `AndroidBrowser`.
+  `mActivity`, `python_act`, `api_version`, `version_codes`, `open_url`, `AndroidBrowser`,
+  `remove_presplash`.
   Without it, `from android import *` would also expose whatever the module happens to
   import.
 - A test pins that list so it cannot grow by accident.
@@ -286,11 +379,19 @@ Guardrails:
 
 ### `mActivity` and `python_act`
 
-p4a computes `mActivity` once at import time, so it is `None` in a service process and can
-go stale. Open question: provide it as a lazy attribute that asks
-`_kivy_bootstrap.get_activity()` (the Activity is pulled live, as Kivy does), or compute it
-at import like p4a? Lazy is safer; eager is closer to p4a. Decide when implementing and
-test the service case.
+p4a computes `mActivity` once at import time. **Proposed: a module-level `__getattr__`
+(PEP 562) that asks `_kivy_bootstrap.get_activity()` on each access.** The choice matters
+less than it first appears:
+
+- `from android import mActivity`, the common form (E5), binds the value once at import
+  whichever way it is provided. Only `android.mActivity` attribute access sees a live
+  value.
+- In a service it is always `None`, not stale: services run in their own process (E6).
+- Rotation and screen-size changes do not recreate the Activity, given the declared
+  `configChanges`; with stage 0's `uiMode` neither does a theme switch.
+
+Lazy is never worse than eager and costs nothing, so there is no reason to copy p4a's
+import-time lookup. `python_act` stays the class, which is valid in any process.
 
 ## Java contract
 
@@ -325,12 +426,10 @@ reference.
   This is what p4a's SDL3 `PythonActivity` does (read 2026-10-02; added upstream in
   kivy/python-for-android#3306).
 - **Manifest change.** Android only calls `onConfigurationChanged` for a theme switch if
-  the activity declares `uiMode` in `android:configChanges`; otherwise it recreates the
-  Activity. kivyforge currently declares `keyboardHidden|orientation|screenSize`
-  (`kivyforge/platforms/android/generate/manifest.py:200`). Adding `uiMode` makes the
-  listener fire, and stops a system theme change from restarting the app. That is a
-  behaviour change for every app, so it needs an on-device check. p4a's own
-  `configChanges` value was not checked.
+  the activity declares `uiMode` in `android:configChanges`. This change is stage 0
+  (E10): it is a fix in its own right, and the listener depends on it. The override must
+  call `super`, because SDL3's `onConfigurationChanged` forwards the same change to
+  native code.
 
 **Services**
 
@@ -342,7 +441,17 @@ reference.
   signatures were not read from its template**; confirm before implementing. Today
   kivyforge starts a service with an intent carrying `kivyforge_service_argument`, and sets
   the `PYTHON_SERVICE_ARGUMENT` environment variable (the p4a convention) inside the
-  service.
+  service. `start` hides the extra-name difference (E6). For a foreground service it
+  must use `startForegroundService`, as p4a's does; the current guide's `startService`
+  example does not.
+- **Class names (open).** `start`/`stop` only help once code finds the class, and p4a's
+  generated names differ from kivyforge's (E6). Either also generate a p4a-named class
+  (`<package>.Service<Name>`, once the convention is confirmed) that extends the
+  kivyforge one, or document the rename in the migration guide. Generating aliases keeps
+  ported code unchanged; documenting it keeps one name per service. Decide when
+  implementing.
+- **pyjnius in the service process** must be confirmed before promising `mService`: the
+  process loads no SDL (E6).
 
 A Java contract test (as already exists for the service classes) should assert these
 members, so the Python and Java halves cannot drift.
@@ -352,36 +461,57 @@ members, so the Python and Java halves cannot drift.
 - **Copy, do not rewrite.** The kept modules are taken verbatim from p4a so behaviour and
   the documented rules (E5) come with them. Provenance: the p4a commit and file list are
   recorded in a `NOTICE` next to the vendored files, with the MIT text.
-- **What is new:** `config.py`, and an `__init__.py` that replaces what the compiled
-  `_android` gave us (`mActivity`, `python_act`, `api_version`, `version_codes`, `open_url`,
-  `AndroidBrowser`, the jnius re-exports). The `.pyx` cannot be vendored as is.
+- **What is new:** `config.py`, `loadingscreen.py` (a no-op; p4a's calls p4a-only Java),
+  and an `__init__.py` that replaces what the compiled `_android` gave us (`mActivity`,
+  `python_act`, `api_version`, `version_codes`, `open_url`, `AndroidBrowser`,
+  `remove_presplash`, the jnius re-exports). The `.pyx` cannot be vendored as is.
+- **Vendored files stay byte-identical.** Every deviation lives in a new file, never as an
+  edit to a vendored one, so the register below lists files, not patch hunks.
 - **Sync check.** Add a script modelled on `scripts/check_sdl_glue_sync.py` that fetches the
-  recorded p4a commit and diffs each vendored file, allowing only the deviations in the
-  register below. Run it in CI.
+  recorded p4a commit and requires each vendored file to match it exactly. Run it in CI.
 - **Deviation register** (each entry names its stage-2 removal):
 
 | Deviation | Reason | Removable by |
 |---|---|---|
 | New `__init__.py` | `import android` must not need the compiled extension | optional `_android` import upstream |
 | Static `config.py` | p4a generates it at build time | derive from `_kivy_bootstrap` upstream |
-| Lazy or live `mActivity` | p4a's is stale in services | same upstream change |
-| Edits needed by `permissions.py` line 579 (`from android import Permission`, inside the same file that defines `Permission`) | needs a look when vendoring | confirm whether it is a real issue |
+| Lazy or live `mActivity` | p4a's is fixed at import | same upstream change |
+| No-op `loadingscreen.py` | p4a's calls `removeLoadingScreen`, which kivyforge's activity does not have | a bootstrap-neutral splash hook upstream |
+
+`permissions.py` line 579 does `from android import Permission`. That resolves against
+the package `__init__`, not `permissions.py`. If p4a's compiled module exports
+`Permission`, our `__init__` must too, which is an `__init__.py` change and not an edit to
+the vendored file. If it does not, the line is a latent p4a bug on whatever path reaches
+it, and a good first upstream PR. Check when vendoring.
 
 ## Staged path
+
+### Stage 0: the `uiMode` fix (this repo, independent)
+
+1. On a device, toggle the system theme with a current kivyforge build, for both
+   `kivy_generation` values, and record what happens (E10 predicts the app exits on
+   SDL3).
+2. Add `uiMode` to `android:configChanges` in `generate/manifest.py`, with a test.
+3. Repeat step 1: the app keeps running. Record both runs in `test-matrix.md` §7, and add
+   a `CHANGELOG.md` entry, since every app's behaviour on a theme switch changes.
 
 ### Stage 1: ship (this repo)
 
 1. Java contract in the bootstrap (activity hooks, broadcast, dark mode, service
-   `mService`/`start`/`stop`) and the `uiMode` manifest change, with a contract test.
+   `mService`/`start`/`stop`), with a contract test.
 2. The vendored, trimmed package, the `__all__` pin test, and the sync script with its CI job.
-3. Stage it into the app bundle (below).
+3. Stage it into the app bundle, and add the conflict checks (below).
 4. Docs: a section in the Android guides on the `android` package (what is and is not
    provided, plyer, services); fix the overclaims in `03` and `05`; mention it in the
-   migration guide and `kivyforge init`'s dropped-settings list.
-5. On-device gate: a small app that requests a permission, binds `on_activity_result`,
-   runs a `BroadcastReceiver`, registers a dark-mode listener and toggles the system theme
-   (the listener fires and the Activity is not recreated), starts a service via the
-   p4a-style call, and loads plyer.
+   migration guide and `kivyforge init`'s dropped-settings list; update the "Benign Kivy
+   warnings" section of `android-loadmodel-findings.md`, whose warnings stop (E8).
+5. On-device gate, as entries in `docs/design/dev/hardware-checklist.toml` so
+   `scripts/hardware_pass.py` records the results in `test-matrix.md` §7: a small app that
+   requests a permission, binds `on_activity_result`, runs a `BroadcastReceiver`,
+   registers a dark-mode listener and toggles the system theme (the listener fires and the
+   Activity is not recreated), starts a service via the p4a-style call, and loads plyer.
+6. `CHANGELOG.md` entry under `[Unreleased]`, including the migration note for apps that
+   lock their own `android` (now an error).
 
 ### Stage 2: shrink the deviations (upstream, small PRs to p4a)
 
@@ -409,13 +539,20 @@ maintainers, since kivyschool's index already serves a package of that name.
 
 ## Delivery
 
-- Stage the package into the app bundle next to `_kivy_bootstrap.py`
-  (`kivyforge/platforms/android/stage/bundle.py` writes it under `bootstrap/`). Verify that
-  directory is on `sys.path`; `_kivy_bootstrap` is imported by name, which suggests it is.
-- **Conflict policy (open).** If the app's lock already contains an `android` distribution
-  (for example kivyschool's), two copies compete for the same module name. Proposed: fail
-  the build with a message naming both, or at least warn at `lock` time. Decide before
-  implementing.
+- Stage the package into the app bundle as `bootstrap/android/`, next to
+  `_kivy_bootstrap.py` (`kivyforge/platforms/android/stage/bundle.py`). That directory is
+  on `sys.path` ahead of the app and `site-packages` (E9), and is byte-compiled with the
+  rest of the bundle.
+- **Conflicts are errors** (decision 8). Because the bundled package always wins (E9), a
+  second `android` would otherwise ship unused and unannounced.
+  - `lock`: if the resolved set contains a distribution that provides a top-level
+    `android` package (kivyschool's, for example), fail, naming the distribution and the
+    requirement that pulled it in. Check what the distribution *provides*, not only its
+    name. This is a configuration problem, so exit 1.
+  - `build`: if `app_dir` contains `android.py` or an `android/` package, fail, naming the
+    path.
+  - Each needs a new `KF-*` code in `kivyforge/report/diagnostics.py`, with tests for the
+    human and `--json` output.
 
 ## Verification plan
 
@@ -423,24 +560,29 @@ maintainers, since kivyschool's index already serves a package of that name.
   logic against a fake jnius; the sync script against a recorded fixture; Java contract
   test for the new members.
 - Behaviour tests for the documented `request_permissions` rules.
+- Hermetic tests for the conflict checks: a lock containing an `android` provider, and an
+  `app_dir` with `android.py` and with `android/`.
 - On-device gate (stage 1, step 5) on both `kivy_generation` 2 and 3, since SDL's overrides
-  differ.
+  differ. On generation 2 the gate must also cover Kivy 2.3.1's own `android` paths (E8):
+  the app starts, the presplash warning is gone, and the clipboard works.
 - plyer smoke: import `plyer.platforms.android` and one facade (for example
-  `storagepath`, which needs only `mActivity`).
+  `storagepath`, which needs only `mActivity`). Run it once *before* stage 1 too, to turn
+  E4's inference into a recorded failure.
 
 ## Risks and open questions
 
-1. `mActivity` lazy versus eager (above).
-2. Request-code collisions with SDL's own permission handling.
-3. Exact p4a service `start`/`stop` signatures (above), and plyer inside a service.
+1. Request-code collisions with SDL's own permission handling.
+2. Exact p4a service `start`/`stop` signatures, class names and intent extra (E6), and
+   plyer inside a service.
+3. pyjnius in a service process, which loads no SDL (E6).
 4. `permissions.py` line 579.
 5. Whether `_ctypes_library_finder.py` (p4a's `ctypes.util.find_library` helper) matters on
    kivyforge. Out of scope here; worth a separate check.
-6. Conflict policy for a locked `android` distribution.
-7. Kivy 2.3.1 on kivyforge may import `android` lazily (not checked).
-8. Adding `uiMode` to `android:configChanges` changes restart behaviour for every app on a
-   system theme change. It is the right behaviour for dark-mode support, but existing apps
-   that relied on the restart (unlikely for Kivy, not checked) would notice.
+6. Kivy 2.3.1 code paths that turn on once `android` exists (E8). Which ones, and whether
+   each works against this package, is only known after the generation-2 gate.
+7. The conflict check at `lock` rejects any app that currently locks kivyschool's
+   `android`. That is intended, but it is a breaking change for those apps and needs the
+   migration note.
 
 ## Related, not decided here
 
