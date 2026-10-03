@@ -1309,6 +1309,10 @@ jobs:
         xcrun simctl io booted screenshot hello-kivy-simulator.png
     - name: Upload the simulator screenshot
       if: always()
+      # Non-gating: the screenshot is for a human, and every gating step has
+      # already run. An artifact-service outage (ENOTFOUND from CreateArtifact,
+      # 2026-10-03) must not fail a job whose build, T3 and launch all passed.
+      continue-on-error: true
       uses: actions/upload-artifact@v6
       with:
         name: ios-simulator-screenshot
