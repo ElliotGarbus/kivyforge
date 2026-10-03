@@ -11,6 +11,8 @@ Substitution points today:
   generation + the ``pythonX.Y`` soname stem.
 - ``PythonActivity.java`` ``ENTRY_POINT``: ``[tool.kivy].entry_point``, which
   the activity exports as ``KF_ENTRY_POINT`` for the launcher to import.
+- ``PythonActivity.java`` ``FULLSCREEN``: ``[tool.kivy.android].fullscreen``,
+  which the activity exports as ``P4A_IS_WINDOWED`` for Kivy to read.
 - ``PythonService.java`` ``PYTHON_LIB``: the same soname stem, because a service
   process loads libpython itself.
 
@@ -51,6 +53,7 @@ _PROTO_SERVICE_PYTHON_LIB = 'private static final String PYTHON_LIB = "python3.1
 # The ENTRY_POINT constant as the template carries it; rendering the default
 # entry point back over it is a no-op (the diff-clean gate).
 _PROTO_ENTRY_POINT_LINE = '    private static final String ENTRY_POINT = "main";'
+_PROTO_FULLSCREEN_LINE = "    private static final boolean FULLSCREEN = false;"
 _DOTTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
@@ -77,7 +80,11 @@ def python_stem(python_version: str) -> str:
 
 
 def render_bootstrap(
-    *, sdl: int, python_version: str, entry_point: str = "main"
+    *,
+    sdl: int,
+    python_version: str,
+    entry_point: str = "main",
+    fullscreen: bool = False,
 ) -> list[RenderedFile]:
     """Render every bootstrap source for the generated project's app module.
 
@@ -118,6 +125,7 @@ def render_bootstrap(
         )
     activity = activity.replace(_PROTO_LIBRARIES_BLOCK, lib_lines)
     activity = _substitute_entry_point(activity, entry_point)
+    activity = _substitute_fullscreen(activity, fullscreen)
     out.append(RenderedFile("java/org/kivy/android/PythonActivity.java", activity))
 
     # 1b. The unpack + environment helper both the activity and the generated
@@ -197,6 +205,19 @@ def _substitute_entry_point(activity: str, entry_point: str) -> str:
     return activity.replace(
         _PROTO_ENTRY_POINT_LINE,
         f'    private static final String ENTRY_POINT = "{entry_point}";',
+    )
+
+
+def _substitute_fullscreen(activity: str, fullscreen: bool) -> str:
+    if _PROTO_FULLSCREEN_LINE not in activity:
+        raise RenderError(
+            "PythonActivity.java template drifted: the FULLSCREEN constant "
+            "was not found (re-extract from a proven prototype)."
+        )
+    return activity.replace(
+        _PROTO_FULLSCREEN_LINE,
+        "    private static final boolean FULLSCREEN = "
+        f"{'true' if fullscreen else 'false'};",
     )
 
 

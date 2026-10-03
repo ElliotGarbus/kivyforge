@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Android: `fullscreen` hides the system bars
+
+- **Added:** `[tool.kivy.android].fullscreen = true` runs the app with the status
+  bar and the navigation bar hidden. A swipe from the edge shows them for a moment.
+  This is the counterpart of buildozer's `fullscreen = 1`, and `kivyforge init`
+  now names it when it finds a `buildozer.spec`. Works on both Kivy 2.3.1 (SDL2)
+  and Kivy 3.0 (SDL3).
+- **Migration:** none for existing projects: the default is `false`, which is
+  today's behaviour. buildozer treats a missing `fullscreen` as `1`, so an app
+  migrated from buildozer that never set the key needs `fullscreen = true` to keep
+  hiding the bars.
+
 ### Android and iOS: a failed download is reported, not a traceback
 
 - **Fixed:** when an Android or iOS build could not download a locked artifact (for

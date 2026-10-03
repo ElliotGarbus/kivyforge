@@ -1260,6 +1260,12 @@ def _parse_android(
             key_path="tool.kivy.android.base_theme",
             line=finder.line("base_theme"),
         )
+    fullscreen = _require_bool(
+        android.get("fullscreen", False),
+        key_path="tool.kivy.android.fullscreen",
+        field="fullscreen",
+        finder=finder,
+    )
 
     python = _parse_android_python(android, finder)
     _check_requires_python_generic(
@@ -1302,6 +1308,7 @@ def _parse_android(
         find_links=tuple(find_links),
         exclude=tuple(exclude),
         base_theme=base_theme,
+        fullscreen=fullscreen,
         python=python,
         permissions=permissions,
         icons=icons,

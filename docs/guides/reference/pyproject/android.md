@@ -36,6 +36,7 @@ stale; run `kivyforge lock -p android` afterward.
 | `find_links` | list of string | `[]` | Local directories of wheels. |
 | `exclude` | list of string | `[]` | Dependency names to prune from the resolve. |
 | `base_theme` | string | `"Theme.Material3.DayNight.NoActionBar"` | Parent theme of the generated app theme. |
+| `fullscreen` | bool | `false` | Hide the status bar and the navigation bar. A swipe from the edge shows them for a moment. Replaces buildozer's `fullscreen = 1`. |
 | `gradle_properties` | table | `{}` | Extra `gradle.properties` entries. `android.useAndroidX` is reserved. |
 
 ## `[tool.kivy.android.python]`

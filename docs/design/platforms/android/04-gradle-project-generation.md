@@ -217,6 +217,7 @@ from `[tool.kivy.android].base_theme` + `[tool.kivy.android.splash]`:
 
 - The app `<style>`'s `parent=` is `base_theme` (default: a `Theme.Material3.DayNight.NoActionBar`-family theme); this theme is the `android:theme` for the `<application>` and main activity.
 - The splash is the **platform's own**, so it needs **no dependency and no code**: a `values-v31/styles.xml` override of the app `<style>` sets `windowSplashScreenBackground` (`background`), `windowSplashScreenAnimatedIcon` (`source` — a static PNG *or* an AnimatedVectorDrawable), `windowSplashScreenIconBackgroundColor` (`icon_background`), `windowSplashScreenAnimationDuration` (`animation_duration`), and `windowSplashScreenBrandingImage` (`branding`). Those attributes are API 31+, so the base theme additionally gets an `android:windowBackground` layer-list (the same color with the same icon centered) as `drawable/kf_splash.xml`: below API 31 it *is* the splash, and on every API level it covers the window between the system splash handing off and Kivy's first frame. A `values-v31` resource replaces the base one wholesale, so the override repeats the base theme's items.
+- `[tool.kivy.android].fullscreen = true` adds `android:windowFullscreen` to the app `<style>`. It only covers launch: `SDLActivity.onCreate` clears the window's fullscreen flag, and the bars are hidden for the app's lifetime by the activity exporting `P4A_IS_WINDOWED=False`, which makes Kivy create a fullscreen SDL window.
 
 ### File injection (`include_files`)
 

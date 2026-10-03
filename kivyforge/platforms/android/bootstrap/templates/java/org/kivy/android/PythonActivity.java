@@ -33,6 +33,13 @@ public class PythonActivity extends SDLActivity {
     // it from the environment, so the native sources stay project-independent.
     private static final String ENTRY_POINT = "main";
 
+    // [tool.kivy.android].fullscreen, substituted at render time. On Android
+    // Kivy ignores its own graphics.fullscreen when it creates the window and
+    // reads P4A_IS_WINDOWED instead (named for python-for-android, which set
+    // it first); a fullscreen SDL window is what hides the system bars, since
+    // SDLActivity.onCreate clears any fullscreen flag the theme set.
+    private static final boolean FULLSCREEN = false;
+
     // Kivy-compatibility: kivy.app / kivy.metrics reach the activity through
     // autoclass('org.kivy.android.PythonActivity').mActivity, and
     // org.renpy.android.Hardware.getDPI() reads it too. Preserving this static
@@ -66,6 +73,7 @@ public class PythonActivity extends SDLActivity {
             }
             File bundleDir = PythonBundle.unpack(this);
             PythonBundle.setEnvironment(this, bundleDir, ENTRY_POINT);
+            Os.setenv("P4A_IS_WINDOWED", FULLSCREEN ? "False" : "True", true);
         } catch (Exception e) {
             Log.e(TAG, "bundle unpack failed", e);
             throw new RuntimeException(e);

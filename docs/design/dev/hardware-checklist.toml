@@ -56,6 +56,31 @@ record = ["Phone model and Android version.", "Host OS (the item runs from any h
 previous = "test-matrix section 7: 2026-09-27 (Pixel 8a, macOS host), 2026-09-13 (Pixel 8a, T5)"
 
 [[item]]
+id = "android-fullscreen"
+title = "Android: `fullscreen = true` hides the system bars on a physical phone"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone with USB debugging on, authorized for this host (`adb devices` shows `device`).",
+    "The phone unlocked with the screen on.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/android-fullscreen",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device",
+    "adb shell dumpsys window windows | grep -A 6 org.kivyforge.fullscreen",
+]
+pass = [
+    "The app's label reads `P4A_IS_WINDOWED = False`.",
+    "Neither the status bar (clock, battery) nor the navigation bar or gesture pill is visible. A swipe in from the top edge shows them, and they hide again within a few seconds.",
+    "The `dumpsys` output for the app's window has `FULLSCREEN` in its `fl=` flags and not `FORCE_NOT_FULLSCREEN`.",
+]
+record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
+
+[[item]]
 id = "ios-device"
 title = "iOS: build, sign, install and launch on a physical iPhone"
 status = "runnable"

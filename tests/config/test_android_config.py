@@ -49,6 +49,7 @@ class TestDefaults:
         assert a.kivy_generation == 2
         assert a.abis == ("arm64_v8a", "x86_64")
         assert a.base_theme == "Theme.Material3.DayNight.NoActionBar"
+        assert a.fullscreen is False
         assert a.python_required.version == "3.14.6"
         assert a.permissions.auto_features is True
         assert a.signing.configured is False
@@ -56,6 +57,9 @@ class TestDefaults:
         assert a.build_settings.multidex is True
         assert a.build_settings.byte_compile == "release"
         assert a.build_settings.debug_symbols == "symbol_table"
+
+    def test_fullscreen_true(self):
+        assert load_android(with_lines("fullscreen = true")).fullscreen is True
 
     def test_absent_overlay_is_none_unless_required(self):
         text = BASE.split("[tool.kivy.android]")[0]
@@ -225,6 +229,12 @@ class TestRuleRejections:
                 "rule21-bad-theme",
                 ['base_theme = ""'],
                 "base_theme",
+            ),
+            (
+                # bool("false") is True: a string must not silently enable it.
+                "fullscreen-not-bool",
+                ['fullscreen = "false"'],
+                "fullscreen.*boolean",
             ),
             (
                 "rule21-splash-color",

@@ -724,6 +724,15 @@ class TestWriteResources:
             tmp_path / "app" / "src" / "main" / "res" / "values" / "styles.xml"
         ).read_text()
         assert android.base_theme in styles
+        assert "windowFullscreen" not in styles
+
+    def test_fullscreen_theme_item(self, tmp_path):
+        config, android = _android("fullscreen = true")
+        write_resources(tmp_path, config, android, project_root=tmp_path)
+        styles = (
+            tmp_path / "app" / "src" / "main" / "res" / "values" / "styles.xml"
+        ).read_text()
+        assert '<item name="android:windowFullscreen">true</item>' in styles
 
     def test_display_name_escaped_in_strings_xml(self, tmp_path):
         text = BASE.replace(

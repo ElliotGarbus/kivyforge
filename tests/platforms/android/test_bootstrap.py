@@ -100,6 +100,22 @@ class TestRender:
             in files["java/org/kivy/android/PythonBundle.java"]
         )
 
+    @pytest.mark.parametrize(
+        ("fullscreen", "literal"), [(True, "true"), (False, "false")]
+    )
+    def test_fullscreen_substitution(self, fullscreen, literal):
+        """Kivy (2.3.1 and 3.0) creates a fullscreen SDL window on Android only
+        when P4A_IS_WINDOWED is "False"; a theme alone is undone by
+        SDLActivity.onCreate, so this constant is what hides the system bars."""
+        activity = _by_path(
+            render_bootstrap(sdl=3, python_version="3.14.6", fullscreen=fullscreen)
+        )["java/org/kivy/android/PythonActivity.java"]
+        assert f"private static final boolean FULLSCREEN = {literal};" in activity
+        assert (
+            'Os.setenv("P4A_IS_WINDOWED", FULLSCREEN ? "False" : "True", true);'
+            in activity
+        )
+
     def test_launcher_imports_the_configured_entry_point(self):
         main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
             "cpp/main.c"

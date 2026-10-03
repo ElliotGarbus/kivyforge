@@ -96,6 +96,14 @@ required. The other keys shown have defaults, listed in the reference.
 :   Dependencies that Kivy declares but an Android app does not use. Pruning
     them keeps the lock and the app smaller.
 
+`fullscreen`
+:   Set `fullscreen = true` to hide the status bar and the navigation bar while
+    your app runs. A swipe in from the edge shows them for a few seconds. It
+    defaults to `false`. buildozer's default is the reverse, so set it
+    explicitly when you migrate an app that relied on that default.
+    Fullscreen does not remove the notch, so keep padding your layout by the
+    [safe area](../cross-platform/mobile-geometry.md).
+
 ## Add an icon and a splash screen
 
 Point `[tool.kivy.android.icons]` at a 1024x1024 PNG. kivyforge generates the

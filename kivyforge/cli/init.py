@@ -92,6 +92,11 @@ _BUILDOZER_MAP: tuple[tuple[str, tuple[str, ...], str], ...] = (
         "arm64-v8a -> arm64_v8a; the 32-bit ABIs armeabi-v7a and x86 are not supported",
     ),
     ("android.apptheme", ("tool.kivy.android.base_theme",), ""),
+    (
+        "fullscreen",
+        ("tool.kivy.android.fullscreen",),
+        "1 is true; buildozer treats a missing key as 1, kivyforge as false",
+    ),
     ("android.permissions", ("tool.kivy.android.permissions.uses",), ""),
     ("android.features", ("tool.kivy.android.permissions.features",), ""),
     (
