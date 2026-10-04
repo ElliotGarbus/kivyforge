@@ -81,6 +81,30 @@ pass = [
 record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
 
 [[item]]
+id = "android-gen2-system-bars"
+title = "Android: a Kivy 2.3.1 app keeps clear of the system bars on Android 15+"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device, Android 15 or later)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone on Android 15 or later, with USB debugging on, authorized for this host (`adb devices` shows `device`).",
+    "The phone unlocked with the screen on, using gesture or button navigation.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/hello-android",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device",
+    "adb shell dumpsys window windows | grep -A 6 org.kivyforge.helloandroid",
+]
+pass = [
+    "The status bar shows light icons on black, and the navigation bar or gesture pill sits on black. The app's content starts below the status bar and ends above the navigation bar.",
+    "The `dumpsys` output for the app's window has `EDGE_TO_EDGE_ENFORCED` in its `pfl=` flags, so the padding, not an opt-out, is what keeps the content clear.",
+]
+record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
+
+[[item]]
 id = "ios-device"
 title = "iOS: build, sign, install and launch on a physical iPhone"
 status = "runnable"

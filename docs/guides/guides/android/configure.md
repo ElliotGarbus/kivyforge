@@ -83,6 +83,15 @@ required. The other keys shown have defaults, listed in the reference.
         it. `kivyforge lock` and `kivyforge doctor` both warn when the two
         disagree.
 
+    !!! note "Generation 2 keeps clear of the system bars"
+        Android 15 and later draw an app edge to edge, under the status bar
+        and the navigation bar. Kivy 2.3.1 can't report a safe area, so with
+        `kivy_generation = 2` the app's window is kept clear of the bars and
+        the notch, with black behind the bars. This applies on API 30 and
+        higher. With `kivy_generation = 3` the app draws edge to edge and
+        pads its own layout by the
+        [safe area](../cross-platform/mobile-geometry.md).
+
 `abis`
 :   The ABIs (application binary interfaces) to build. Physical phones use
     `arm64_v8a`. Most emulators on an x86_64 computer use `x86_64`. Keep both
@@ -102,7 +111,9 @@ required. The other keys shown have defaults, listed in the reference.
     defaults to `false`. buildozer's default is the reverse, so set it
     explicitly when you migrate an app that relied on that default.
     Fullscreen does not remove the notch, so keep padding your layout by the
-    [safe area](../cross-platform/mobile-geometry.md).
+    [safe area](../cross-platform/mobile-geometry.md). With
+    `kivy_generation = 2`, kivyforge keeps the window clear of the notch for
+    you.
 
 ## Add an icon and a splash screen
 

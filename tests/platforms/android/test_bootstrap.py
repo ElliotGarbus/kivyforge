@@ -132,6 +132,16 @@ class TestRender:
         with pytest.raises(RenderError, match="orientation"):
             render_bootstrap(sdl=2, python_version="3.14.6", orientation_hint=bad)
 
+    @pytest.mark.parametrize(("sdl", "literal"), [(2, "true"), (3, "false")])
+    def test_only_generation_2_pads_for_the_system_bars(self, sdl, literal):
+        """Kivy 2.3.1 cannot report a safe area, so its content is padded clear
+        of the bars; Kivy 3 apps stay edge-to-edge and use kivy.mobile."""
+        activity = _by_path(render_bootstrap(sdl=sdl, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonActivity.java"
+        ]
+        assert f"private static final boolean PAD_SYSTEM_BARS = {literal};" in activity
+        assert "if (PAD_SYSTEM_BARS && Build.VERSION.SDK_INT >= 30)" in activity
+
     def test_launcher_imports_the_configured_entry_point(self):
         main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
             "cpp/main.c"

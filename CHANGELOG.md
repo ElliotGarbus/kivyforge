@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Android: Kivy 2.3.1 apps keep clear of the system bars
+
+- **Fixed:** on Android 15 and later, an app targeting API 35 or higher is drawn
+  edge to edge, under the status bar and the navigation bar. Kivy 2.3.1 can't
+  report a safe area, so a `kivy_generation = 2` app's content sat under the
+  bars with no way to avoid them. The generated activity now keeps the window
+  clear of the bars and the notch on API 30 and higher, with black behind the
+  bars and light bar icons. The padding follows rotation, and with
+  `fullscreen = true` only the notch is padded. Kivy 3.0 apps are unchanged:
+  they stay edge to edge and pad themselves with `kivy.mobile.get_safe_area()`
+  ([#63](https://github.com/ElliotGarbus/kivyforge/issues/63)).
+- **Migration:** a generation-2 app's window is now smaller by the bar heights
+  (for example 1080x2216 instead of 1080x2400 on a Pixel 8a). An app that
+  padded itself for the bars, for example by reading the insets with pyjnius,
+  should drop that padding.
+
 ### Android: `orientation` is honoured at runtime
 
 - **Fixed:** an Android app rotated to any orientation when the phone's

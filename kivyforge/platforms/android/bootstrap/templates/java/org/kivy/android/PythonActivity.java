@@ -1,8 +1,15 @@
 package org.kivy.android;
 
+import android.graphics.Color;
+import android.graphics.Insets;
+import android.os.Build;
 import android.os.Bundle;
 import android.system.Os;
 import android.util.Log;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 
 import org.libsdl.app.SDLActivity;
 
@@ -45,6 +52,13 @@ public class PythonActivity extends SDLActivity {
     // FULL_USER for a resizable window and the manifest's orientation is lost.
     private static final String ORIENTATION = "Portrait";
 
+    // True for kivy_generation = 2, substituted at render time. Kivy 2.3.1 has
+    // no safe-area API, so an edge-to-edge window would put its content under
+    // the system bars; generation 2 pads the content clear of them instead,
+    // with black behind the bars. Kivy 3 apps stay edge-to-edge and pad
+    // themselves with kivy.mobile.get_safe_area().
+    private static final boolean PAD_SYSTEM_BARS = true;
+
     // Kivy-compatibility: kivy.app / kivy.metrics reach the activity through
     // autoclass('org.kivy.android.PythonActivity').mActivity, and
     // org.renpy.android.Hardware.getDPI() reads it too. Preserving this static
@@ -85,5 +99,39 @@ public class PythonActivity extends SDLActivity {
             throw new RuntimeException(e);
         }
         super.onCreate(savedInstanceState);
+        if (PAD_SYSTEM_BARS && Build.VERSION.SDK_INT >= 30) {
+            padForSystemBars();
+        }
+    }
+
+    // Edge-to-edge is forced only for targetSdk 35+ on Android 15+; opting in
+    // on every API 30+ device gives one layout, whatever the device or target.
+    // The bar insets go to zero when the bars hide (fullscreen), so only the
+    // cutout stays padded. The keyboard's insets are left to Kivy.
+    @SuppressWarnings("deprecation")
+    private void padForSystemBars() {
+        View content = findViewById(android.R.id.content);
+        if (content == null) {
+            return;
+        }
+        Window window = getWindow();
+        window.setDecorFitsSystemWindows(false);
+        // Ignored from API 35, where the black content background shows through.
+        window.setStatusBarColor(Color.BLACK);
+        window.setNavigationBarColor(Color.BLACK);
+        content.setBackgroundColor(Color.BLACK);
+        content.setOnApplyWindowInsetsListener((view, insets) -> {
+            Insets bars = insets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return WindowInsets.CONSUMED;
+        });
+        WindowInsetsController controller = window.getInsetsController();
+        if (controller != null) {
+            // Light icons, readable on black.
+            controller.setSystemBarsAppearance(0,
+                    WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                    | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+        }
     }
 }
