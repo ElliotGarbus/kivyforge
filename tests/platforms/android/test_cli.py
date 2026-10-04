@@ -407,6 +407,13 @@ class TestGeneratedServices:
             "Downloader": "service_downloader"
         }
 
+    def test_the_android_package_is_bundled_for_the_generation(self, build_env):
+        project, calls = build_env
+        cli.android_build(project)
+        sources = calls["assemble_bundle"][0]["android_package_sources"]
+        assert "android/permissions.py" in sources
+        assert 'BOOTSTRAP = "sdl2"' in sources["android/config.py"]
+
     def test_service_probe_is_generated_with_the_service(self, build_env):
         project, _ = build_env
         self._with_services(project)

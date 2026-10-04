@@ -14,9 +14,8 @@ because existing code imports them from here; new code should import them from
 
 import webbrowser
 
-from jnius import PythonJavaClass, autoclass, cast, java_method
-
 from android.config import ACTIVITY_CLASS_NAME
+from jnius import PythonJavaClass, autoclass, cast, java_method
 
 __all__ = [
     "AndroidBrowser",

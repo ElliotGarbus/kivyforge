@@ -10,7 +10,7 @@ Layout under ``app/src/main/assets/_python_bundle/``:
   and ``.libs/`` were hoisted into ``jniLibs``).
 - ``app/``           — the user's ``app_dir`` payload.
 - ``bootstrap/``     — the finder module, Kivy's ``_kivy_bootstrap`` contract
-  module, and ``ext_manifest.json``.
+  module, the ``android`` package, and ``ext_manifest.json``.
 - ``VERSION``        — content stamp; a changed bundle re-extracts on-device.
 
 ``byte_compile``/``strip_source`` (android/01 §build_settings) act on the
@@ -63,6 +63,7 @@ def assemble_bundle(
     kivy_bootstrap_source: str,
     ext_manifest_json: str,
     selftest_source: str = "",
+    android_package_sources: dict[str, str] | None = None,
     entry_point: str = "main",
     service_entry_points: dict[str, str] | None = None,
     byte_compile: tuple[str, ...] | None = None,
@@ -98,6 +99,12 @@ def assemble_bundle(
             selftest_source, encoding="utf-8"
         )
     (bootstrap / "ext_manifest.json").write_text(ext_manifest_json, encoding="utf-8")
+    # The android package. bootstrap/ is ahead of the app and site-packages on
+    # sys.path, so this copy is the one every import of android gets.
+    for rel, source in sorted((android_package_sources or {}).items()):
+        path = bootstrap / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
 
     if byte_compile is not None:
         _byte_compile(bundle_dir, compiler=byte_compile, strip_source=strip_source)

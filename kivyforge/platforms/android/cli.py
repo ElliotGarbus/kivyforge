@@ -46,6 +46,7 @@ from .bootstrap.contract import (
     sdl_library_name,
 )
 from .bootstrap.render import (
+    android_package_sources,
     androidtest_files,
     finder_source,
     kivy_bootstrap_source,
@@ -363,6 +364,7 @@ def android_build(
             kivy_bootstrap_source=kivy_bootstrap_source(),
             ext_manifest_json=ext_manifest_json,
             selftest_source=selftest_source(),
+            android_package_sources=android_package_sources(android.kivy_generation),
             byte_compile=compiler,
             strip_source=strip_source,
         ),

@@ -10,7 +10,14 @@ generations. The on-device half is the self-test's ANDROID_PKG_OK marker.
 from __future__ import annotations
 
 import ast
+import copy
+import importlib
 import re
+import sys
+import types
+import webbrowser
+from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -213,3 +220,92 @@ class TestPackageSources:
             encoding="utf-8"
         )
         assert "ANDROID_PKG_OK" in java
+
+
+class _FakeJavaClass:
+    pass
+
+
+@pytest.fixture
+def device(tmp_path, monkeypatch):
+    """The rendered package importable as on a device, over a fake jnius and a
+    fake _kivy_bootstrap whose activity the test can swap."""
+    for rel, source in android_package_sources(2).items():
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    classes: dict[str, mock.MagicMock] = {}
+
+    def autoclass(name):
+        return classes.setdefault(name, mock.MagicMock(name=name))
+
+    jnius = types.ModuleType("jnius")
+    jnius.autoclass = autoclass  # type: ignore[attr-defined]
+    jnius.cast = lambda _name, obj: obj  # type: ignore[attr-defined]
+    jnius.PythonJavaClass = _FakeJavaClass  # type: ignore[attr-defined]
+    jnius.java_method = lambda *_a, **_k: lambda f: f  # type: ignore[attr-defined]
+    bootstrap = types.ModuleType("_kivy_bootstrap")
+    state = types.SimpleNamespace(activity=mock.MagicMock(name="activity-1"))
+    bootstrap.get_activity = lambda: state.activity  # type: ignore[attr-defined]
+    # The package registers a browser on import; keep it out of other tests.
+    for registry in ("_browsers", "_tryorder"):
+        value = getattr(webbrowser, registry)
+        monkeypatch.setattr(webbrowser, registry, copy.copy(value))
+    monkeypatch.setitem(sys.modules, "jnius", jnius)
+    monkeypatch.setitem(sys.modules, "_kivy_bootstrap", bootstrap)
+    for name in _android_modules():
+        monkeypatch.delitem(sys.modules, name)
+    android: Any = importlib.import_module("android")
+    yield types.SimpleNamespace(android=android, state=state, classes=classes)
+    for name in _android_modules():
+        del sys.modules[name]
+
+
+def _android_modules() -> list[str]:
+    return [m for m in sys.modules if m == "android" or m.startswith("android.")]
+
+
+class TestPackageRuntime:
+    def test_mactivity_is_read_on_each_access(self, device):
+        assert device.android.mActivity is device.state.activity
+        device.state.activity = mock.MagicMock(name="activity-2")
+        assert device.android.mActivity is device.state.activity
+
+    def test_from_import_binds_the_current_activity(self, device):
+        namespace: dict[str, object] = {}
+        exec("from android import mActivity", namespace)
+        assert namespace["mActivity"] is device.state.activity
+
+    def test_unknown_names_raise_attribute_error(self, device):
+        with pytest.raises(AttributeError, match="no attribute 'vibrate'"):
+            device.android.vibrate  # noqa: B018
+
+    def test_star_import_gives_exactly_all(self, device):
+        namespace: dict[str, object] = {}
+        exec("from android import *", namespace)
+        names = sorted(k for k in namespace if k != "__builtins__")
+        assert names == sorted(device.android.__all__)
+
+    def test_presplash_and_loading_screen_are_no_ops(self, device):
+        loadingscreen: Any = importlib.import_module("android.loadingscreen")
+        assert device.android.remove_presplash() is None
+        assert loadingscreen.hide_loading_screen() is None
+        device.state.activity.removeLoadingScreen.assert_not_called()
+
+    def test_open_url_starts_a_view_intent(self, device):
+        assert device.android.open_url("https://kivy.org") is True
+        intent = device.classes["android.content.Intent"].return_value
+        intent.setAction.assert_called_once()
+        device.state.activity.startActivity.assert_called_once_with(intent)
+
+    def test_registers_a_webbrowser(self, device):
+        assert isinstance(webbrowser.get("android"), device.android.AndroidBrowser)
+
+    def test_every_vendored_module_imports(self, device):
+        """Import-time failures (a renamed config key, a missing module) are
+        what this catches; the Java calls themselves only run on a device."""
+        for rel in android_package_sources(2):
+            module = rel.removesuffix(".py").removesuffix("/__init__")
+            importlib.import_module(module.replace("/", "."))

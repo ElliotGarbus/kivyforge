@@ -88,8 +88,6 @@ def run() -> bool:
     #    members it calls exist on the activity. A missing member only fails
     #    when the app first calls it, so it is looked up here instead.
     try:
-        from jnius import autoclass
-
         import android
         import android.activity
         import android.broadcast
@@ -98,6 +96,7 @@ def run() -> bool:
         import android.permissions
         import android.runnable
         import android.storage  # noqa: F401
+        from jnius import autoclass
 
         assert android.mActivity is not None, "android.mActivity is None"
         assert android.api_version > 0, android.api_version
