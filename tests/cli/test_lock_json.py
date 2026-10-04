@@ -15,6 +15,7 @@ on, and it must not be confused with a bad flag (``2``, click's) or a broken
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,7 @@ from kivyforge.cli import lock as lock_mod
 from kivyforge.cli.lock import _LockOps, lock
 from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics, exit_codes
+from kivyforge.report.failures import ClassifiedError
 
 LINUX_PYPROJECT = """\
 [project]
@@ -238,6 +240,29 @@ class TestWarnings:
         result = runner.invoke(lock, ["--json"])
         assert result.exit_code == exit_codes.SUCCESS
         assert envelope(result)["data"]["action"] == "wrote"
+
+
+class TestClassifiedBuildFailure:
+    def test_a_backend_code_survives_into_the_envelope(self, runner, project):
+        """A resolution failure the backend classified keeps its code and exit
+        status; it used to arrive as KF-ERROR."""
+
+        class Conflict(FakeBuildError, ClassifiedError):
+            code = diagnostics.ANDROID_DEPENDENCY_CONFLICT
+
+        def build(*_a, **_k):
+            raise Conflict(
+                "the lock would include 'android'.\n  Fix: remove it.",
+                context={"distribution": "android"},
+            )
+
+        project(dataclasses.replace(make_ops(), build=build))
+        result = runner.invoke(lock, ["--json"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        (diagnostic,) = envelope(result)["diagnostics"]
+        assert diagnostic["code"] == diagnostics.ANDROID_DEPENDENCY_CONFLICT
+        assert diagnostic["context"] == {"distribution": "android"}
+        assert diagnostic["remediation"] == "remove it."
 
 
 class TestHumanMode:

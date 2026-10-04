@@ -313,6 +313,25 @@ class TestBundle:
             ext_manifest_json="{}",
         )
 
+    def test_the_android_package_lands_in_bootstrap(self, tmp_path):
+        """bootstrap/ is ahead of the app and site-packages on sys.path, so this
+        is the android every import gets."""
+        bundle = tmp_path / "bundle"
+        assemble_bundle(
+            bundle,
+            android_package_sources={
+                "android/__init__.py": "# pkg",
+                "android/config.py": "BOOTSTRAP = 'sdl2'",
+            },
+            byte_compile=(),
+            **self._kwargs(tmp_path),
+        )
+        package = bundle / "bootstrap" / "android"
+        assert (package / "__init__.py").read_text() == "# pkg"
+        assert (package / "config.py").is_file()
+        # Compiled with the rest of bootstrap/.
+        assert list((package / "__pycache__").glob("config.*.pyc"))
+
     def test_byte_compile_keeps_source_in_the_pycache_layout(self, tmp_path):
         """With the source shipped, .pyc belongs in __pycache__ — that is where
         an import next to a .py looks for it."""

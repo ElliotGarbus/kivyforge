@@ -1,0 +1,43 @@
+[project]
+name = "android-services"
+version = "1.0.0"
+description = "Two Android services started and stopped through the android package"
+requires-python = ">=3.14"
+dependencies = [
+    "kivy==2.3.1",
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "Android Services"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.androidservices"
+min_sdk = 24
+target_sdk = 35
+kivy_generation = 2
+abis = ["arm64_v8a", "x86_64"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"
+
+[tool.kivy.android.permissions]
+uses = ["POST_NOTIFICATIONS"]
+
+[[tool.kivy.android.services]]
+name = "Worker"
+entry_point = "worker"
+
+[[tool.kivy.android.services]]
+name = "Sync"
+entry_point = "worker"
+foreground = true
+foreground_service_type = "dataSync"
+notification = { channel_id = "sync", channel_name = "Sync", title = "Syncing", text = "Configured in pyproject.toml" }

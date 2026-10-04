@@ -1,0 +1,11 @@
+This directory contains code from python-for-android
+(https://github.com/kivy/python-for-android), at the revision recorded in
+P4A_VENDOR.toml, distributed under the MIT License in LICENSE.
+
+The files here are unchanged copies. kivyforge's Android bootstrap also carries
+python-for-android members inside its own PythonActivity.java, each between
+"// BEGIN p4a <name>" and "// END p4a <name>" markers; P4A_VENDOR.toml lists
+them, and they are likewise unchanged.
+
+kivyforge's own code, including where it adapts these to its bootstrap, lives
+outside this directory and outside those markers.

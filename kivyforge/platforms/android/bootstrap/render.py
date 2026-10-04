@@ -17,6 +17,10 @@ Substitution points today:
   hint names, which the activity exports as ``KIVY_ORIENTATION``.
 - ``PythonActivity.java`` ``PAD_SYSTEM_BARS``: true for ``sdl = 2``, whose Kivy
   has no safe-area API, so the activity pads its content clear of the bars.
+- ``PythonActivity.java`` ``changeKeyboard``: the template carries
+  python-for-android's SDL2 member; ``sdl = 3`` gets its SDL3 member instead.
+- ``android/config.py``: ``BOOTSTRAP``, ``IS_SDL2`` and ``IS_SDL3`` for the
+  generation (:func:`android_package_sources`).
 - ``PythonService.java`` ``PYTHON_LIB``: the same soname stem, because a service
   process loads libpython itself.
 
@@ -60,6 +64,16 @@ _PROTO_ENTRY_POINT_LINE = '    private static final String ENTRY_POINT = "main";
 _PROTO_FULLSCREEN_LINE = "    private static final boolean FULLSCREEN = false;"
 _PROTO_ORIENTATION_LINE = '    private static final String ORIENTATION = "Portrait";'
 _PROTO_PAD_SYSTEM_BARS_LINE = "    private static final boolean PAD_SYSTEM_BARS = true;"
+# Code vendored from python-for-android (scripts/sync_p4a.py keeps it at the
+# pinned revision) and kivyforge's own part of the ``android`` package.
+P4A_DIR = TEMPLATES_DIR / "p4a"
+ANDROID_PKG_DIR = TEMPLATES_DIR / "android_pkg"
+_CHANGE_KEYBOARD_BEGIN = "    // BEGIN p4a change-keyboard\n"
+_CHANGE_KEYBOARD_END = "    // END p4a change-keyboard\n"
+_CHANGE_KEYBOARD_SDL3 = P4A_DIR / "java" / "PythonActivity.changeKeyboard.sdl3.java.in"
+# The android.config lines that depend on the generation, as the template has
+# them (generation 2).
+_PROTO_CONFIG_BOOTSTRAP = 'BOOTSTRAP = "sdl2"\nIS_SDL2 = 1\nIS_SDL3 = 0\n'
 _SDL_ORIENTATION_HINT = re.compile(r"^[A-Za-z]+( [A-Za-z]+)*$")
 _DOTTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
@@ -136,7 +150,12 @@ def render_bootstrap(
     activity = _substitute_fullscreen(activity, fullscreen)
     activity = _substitute_orientation(activity, orientation_hint)
     activity = _substitute_pad_system_bars(activity, sdl == 2)
+    activity = _substitute_change_keyboard(activity, sdl)
     out.append(RenderedFile("java/org/kivy/android/PythonActivity.java", activity))
+
+    # 1a. The Java android.broadcast drives, as python-for-android has it.
+    for java in sorted((P4A_DIR / "java/org/kivy/android").glob("*.java")):
+        out.append(RenderedFile(f"java/org/kivy/android/{java.name}", _read(java)))
 
     # 1b. The unpack + environment helper both the activity and the generated
     # services use, and the service base class they extend. The base loads
@@ -257,6 +276,46 @@ def _substitute_pad_system_bars(activity: str, pad: bool) -> str:
         "    private static final boolean PAD_SYSTEM_BARS = "
         f"{'true' if pad else 'false'};",
     )
+
+
+def _substitute_change_keyboard(activity: str, sdl: int) -> str:
+    start = activity.find(_CHANGE_KEYBOARD_BEGIN)
+    end = activity.find(_CHANGE_KEYBOARD_END)
+    if start < 0 or end < start:
+        raise RenderError(
+            "PythonActivity.java template drifted: the p4a change-keyboard "
+            "block was not found."
+        )
+    if sdl == 2:
+        return activity
+    body_start = start + len(_CHANGE_KEYBOARD_BEGIN)
+    return activity[:body_start] + _read(_CHANGE_KEYBOARD_SDL3) + activity[end:]
+
+
+def android_package_sources(sdl: int) -> dict[str, str]:
+    """The bundled ``android`` package, as ``{"android/<name>.py": source}``.
+
+    python-for-android's pure-Python modules unchanged, plus kivyforge's
+    ``__init__``, ``loadingscreen`` and ``config``, the last rendered for the
+    generation. Ships in the asset bundle's ``bootstrap/``, which is on
+    ``sys.path`` ahead of the app and its dependencies.
+    """
+    sources: dict[str, str] = {}
+    for module in sorted((P4A_DIR / "android").glob("*.py")):
+        sources[f"android/{module.name}"] = _read(module)
+    for module in sorted(ANDROID_PKG_DIR.glob("*.py")):
+        sources[f"android/{module.name}"] = _read(module)
+    config = sources["android/config.py"]
+    if _PROTO_CONFIG_BOOTSTRAP not in config:
+        raise RenderError(
+            "android_pkg/config.py template drifted: the BOOTSTRAP/IS_SDL2/"
+            "IS_SDL3 lines were not found."
+        )
+    sources["android/config.py"] = config.replace(
+        _PROTO_CONFIG_BOOTSTRAP,
+        f'BOOTSTRAP = "sdl{sdl}"\nIS_SDL2 = {int(sdl == 2)}\nIS_SDL3 = {int(sdl == 3)}\n',
+    )
+    return sources
 
 
 def finder_source() -> str:

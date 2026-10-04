@@ -91,6 +91,7 @@ nav:
           - Run on a device or emulator: guides/android/run.md
           - Add Java libraries: guides/android/java-libraries.md
           - Call Android APIs with pyjnius: guides/android/pyjnius.md
+          - Use the android package: guides/android/android-package.md
           - Add a background service: guides/android/services.md
           - Sign and publish to Google Play: guides/android/signing.md
           - Supported versions: guides/android/supported-versions.md

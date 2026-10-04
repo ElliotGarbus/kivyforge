@@ -4,9 +4,11 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.Process;
 import android.system.Os;
 import android.util.Log;
 
@@ -28,7 +30,12 @@ import java.nio.charset.StandardCharsets;
  *
  * There is no SDL here. The service's Python does background work, so only
  * libpython and libmain are loaded; nothing creates a window or a JNIEnv-owning
- * SDL thread.
+ * SDL thread. pyjnius therefore finds the VM through JNI_GetCreatedJavaVMs,
+ * which apps can reach only on API 31+.
+ *
+ * The generated subclasses carry p4a's static start/stop signatures, and
+ * mService has p4a's name, so code written against p4a's services keeps
+ * working once it names the kivyforge class.
  */
 public class PythonService extends Service implements Runnable {
     private static final String TAG = "kivyforge";
@@ -37,8 +44,58 @@ public class PythonService extends Service implements Runnable {
 
     private static final int NOTIFICATION_ID = 1;
 
+    static final String EXTRA_ARGUMENT = "kivyforge_service_argument";
+    static final String EXTRA_ICON = "kivyforge_notification_icon";
+    static final String EXTRA_TITLE = "kivyforge_notification_title";
+    static final String EXTRA_TEXT = "kivyforge_notification_text";
+
+    /** The service running in this process, set before its Python starts. */
+    public static PythonService mService = null;
+
     private boolean mStarted = false;
     private Thread mThread = null;
+    private String mIconOverride = null;
+    private String mTitleOverride = null;
+    private String mTextOverride = null;
+
+    // --- called by the generated subclasses' static start/stop ------------- #
+
+    /**
+     * Start {@code cls}. A foreground service goes through
+     * startForegroundService, which Android 8+ requires for a service that
+     * calls startForeground once started from the background. Null or empty
+     * notification values keep the ones from pyproject.toml.
+     */
+    protected static void startPythonService(
+            Context ctx,
+            Class<? extends PythonService> cls,
+            boolean foreground,
+            String smallIconName,
+            String contentTitle,
+            String contentText,
+            String pythonServiceArgument) {
+        Intent intent = new Intent(ctx, cls);
+        intent.putExtra(EXTRA_ARGUMENT, pythonServiceArgument);
+        putIfSet(intent, EXTRA_ICON, smallIconName);
+        putIfSet(intent, EXTRA_TITLE, contentTitle);
+        putIfSet(intent, EXTRA_TEXT, contentText);
+        if (foreground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ctx.startForegroundService(intent);
+        } else {
+            ctx.startService(intent);
+        }
+    }
+
+    protected static void stopPythonService(
+            Context ctx, Class<? extends PythonService> cls) {
+        ctx.stopService(new Intent(ctx, cls));
+    }
+
+    private static void putIfSet(Intent intent, String key, String value) {
+        if (value != null && !value.isEmpty()) {
+            intent.putExtra(key, value);
+        }
+    }
 
     // --- overridden by the generated subclass ------------------------------ #
 
@@ -81,6 +138,11 @@ public class PythonService extends Service implements Runnable {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null) {
+            mIconOverride = intent.getStringExtra(EXTRA_ICON);
+            mTitleOverride = intent.getStringExtra(EXTRA_TITLE);
+            mTextOverride = intent.getStringExtra(EXTRA_TEXT);
+        }
         if (isForeground()) {
             // Mandatory on Android 14+: a foreground service that does not
             // call startForeground() promptly is killed by the OS.
@@ -89,7 +151,7 @@ public class PythonService extends Service implements Runnable {
         if (!mStarted) {
             mStarted = true;
             String argument = intent == null
-                ? null : intent.getStringExtra("kivyforge_service_argument");
+                ? null : intent.getStringExtra(EXTRA_ARGUMENT);
             try {
                 prepare(argument);
             } catch (Exception e) {
@@ -108,6 +170,20 @@ public class PythonService extends Service implements Runnable {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    /**
+     * The interpreter thread cannot be interrupted, so stopping the service
+     * ends its process (each service has its own android:process). Without
+     * this, stop() would leave the Python code running.
+     */
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (mService == this) {
+            mService = null;
+        }
+        Process.killProcess(Process.myPid());
     }
 
     /** Unpack + environment, then the ready-marker path the smoke test polls. */
@@ -129,6 +205,7 @@ public class PythonService extends Service implements Runnable {
     @Override
     public void run() {
         Log.i(TAG, "service " + getServiceName() + ": starting " + getEntryPoint());
+        mService = this;
         try {
             System.loadLibrary(PYTHON_LIB);
             System.loadLibrary("main");
@@ -163,14 +240,16 @@ public class PythonService extends Service implements Runnable {
         } else {
             builder = new Notification.Builder(this);
         }
-        builder.setContentTitle(getNotificationTitle());
-        builder.setContentText(getNotificationText());
+        builder.setContentTitle(
+            mTitleOverride != null ? mTitleOverride : getNotificationTitle());
+        builder.setContentText(
+            mTextOverride != null ? mTextOverride : getNotificationText());
         builder.setSmallIcon(notificationIconResource());
         startForeground(NOTIFICATION_ID, builder.build());
     }
 
     private int notificationIconResource() {
-        String icon = getNotificationIcon();
+        String icon = mIconOverride != null ? mIconOverride : getNotificationIcon();
         if (icon != null) {
             int id = getResources().getIdentifier(icon, "drawable", getPackageName());
             if (id == 0) {

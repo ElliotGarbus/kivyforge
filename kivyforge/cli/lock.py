@@ -323,7 +323,7 @@ def _build(
             **kwargs,
         )
     except ops.build_error as exc:
-        raise ToolchainError(str(exc)) from exc
+        raise ToolchainError.wrap(exc) from exc
 
 
 def _warn(report: Report, message: str) -> None:

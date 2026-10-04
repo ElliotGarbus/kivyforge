@@ -227,18 +227,24 @@ Two consequences, both now enforced:
 
 ## Benign Kivy warnings on a kivyforge app
 
-Kivy 2.3.1 logs two warnings that are **expected** and not defects:
+Kivy 2.3.1 logs one warning that is **expected** and not a defect:
 
 ```
 [WARNING] [Base] Unknown <android> provider
-[WARNING] [Base] Failed to import "android" module. Could not remove android presplash.
 ```
 
-Both come from Kivy looking for python-for-android's `android` Python module,
-which kivyforge deliberately does not ship. Kivy degrades cleanly (the input
-provider is skipped; there is no p4a presplash View to remove — kivyforge uses
-the androidx core-splashscreen system splash, which dismisses itself). This
-coupling is exactly what the Kivy 3 bootstrap contract removes.
+Kivy's `android` input provider (`input/providers/androidjoystick.py`) imports
+the `android` package and then `pygame.joystick`. kivyforge bundles the
+`android` package, but not pygame, so the provider is still skipped. Kivy 3.0
+logs the same warning.
+
+Until 2026-10-04 Kivy 2.3.1 also logged
+`Failed to import "android" module. Could not remove android presplash.`
+kivyforge now bundles the `android` package, whose `remove_presplash` does
+nothing: there is no presplash View to remove, because kivyforge uses the
+androidx core-splashscreen system splash, which dismisses itself. The warning
+is gone (`android-package-gen2` in `test-matrix.md` §7; see
+[the proposal](android-compat-package-proposal.md)).
 
 ## Gate status
 

@@ -65,6 +65,8 @@ def _service_source(service: AndroidService, *, class_name: str) -> str:
     return (
         f"package {SERVICE_PACKAGE};\n"
         "\n"
+        "import android.content.Context;\n"
+        "\n"
         "/**\n"
         f" * Generated from [[tool.kivy.android.services]] entry {service.name!r}\n"
         " * (android/05 §services). Regenerated on every build — edit\n"
@@ -72,7 +74,32 @@ def _service_source(service: AndroidService, *, class_name: str) -> str:
         " */\n"
         f"public class {class_name} extends PythonService {{\n"
         + "\n".join(overrides)
+        + "\n"
+        + _start_stop(class_name, foreground=service.foreground)
         + "}\n"
+    )
+
+
+def _start_stop(class_name: str, *, foreground: bool) -> str:
+    """p4a's static start/stop signatures (its ``Service.tmpl.java``), so a
+    call written for p4a needs only the class name changed."""
+    return (
+        "    public static void start(Context ctx, String pythonServiceArgument) {\n"
+        "        start(ctx, null, null, null, pythonServiceArgument);\n"
+        "    }\n"
+        "\n"
+        "    public static void start(Context ctx, String smallIconName,\n"
+        "            String contentTitle, String contentText,\n"
+        "            String pythonServiceArgument) {\n"
+        f"        startPythonService(ctx, {class_name}.class,"
+        f" {'true' if foreground else 'false'},\n"
+        "            smallIconName, contentTitle, contentText,"
+        " pythonServiceArgument);\n"
+        "    }\n"
+        "\n"
+        "    public static void stop(Context ctx) {\n"
+        f"        stopPythonService(ctx, {class_name}.class);\n"
+        "    }\n"
     )
 
 
@@ -110,10 +137,11 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
-import android.content.Intent;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.io.File;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import org.junit.Test;
@@ -140,8 +168,8 @@ public class KivyforgeServiceContractTest {{
         File marker = new File(ctx.getFilesDir(), MARKER);
         marker.delete();
 
-        Intent intent = new Intent(ctx, org.kivy.android.{class_name}.class);
-        ctx.startService(intent);
+        // The static start() p4a-style code calls, not a hand-built intent.
+        org.kivy.android.{class_name}.start(ctx, "");
 
         long deadline = System.currentTimeMillis() + TIMEOUT_MS;
         String contents = "";
@@ -175,7 +203,15 @@ public class KivyforgeServiceContractTest {{
             "service native start failed: " + contents,
             contents.contains("SERVICE_START_FAILED"));
 
-        ctx.stopService(intent);
+        org.kivy.android.{class_name}.stop(ctx);
+    }}
+
+    @Test
+    public void mServiceIsAPublicStaticField() throws Exception {{
+        // pyjnius reads autoclass(SERVICE_CLASS_NAME).mService by name.
+        Field field = org.kivy.android.PythonService.class.getField("mService");
+        int mods = field.getModifiers();
+        assertTrue(Modifier.isPublic(mods) && Modifier.isStatic(mods));
     }}
 }}
 """

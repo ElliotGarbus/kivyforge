@@ -6,6 +6,7 @@ sources:
   - kivyforge/config/loader.py
   - kivyforge/platforms/android/generate/manifest.py
   - kivyforge/platforms/android/generate/services.py
+  - kivyforge/platforms/android/bootstrap/templates/java/org/kivy/android/PythonService.java
 ---
 
 # Add a background service to your Android app
@@ -62,25 +63,54 @@ service runs a Python module of your app in its own process.
     kivyforge lock -p android
     ```
 
-## Start the service from Python
+## Start and stop the service from Python
 
-Start the service with an intent from your app's code:
+Each generated service class has static `start` and `stop` methods:
 
 ```python
 from jnius import autoclass
 
-PythonActivity = autoclass("org.kivy.android.PythonActivity")
-Intent = autoclass("android.content.Intent")
-ServiceWorker = autoclass("org.kivy.android.ServiceWorker")
+import android
 
-activity = PythonActivity.mActivity
-intent = Intent(activity, ServiceWorker)
-intent.putExtra("kivyforge_service_argument", "optional text")
-activity.startService(intent)
+ServiceWorker = autoclass("org.kivy.android.ServiceWorker")
+ServiceWorker.start(android.mActivity, "optional text")
+...
+ServiceWorker.stop(android.mActivity)
 ```
 
-The service reads the optional argument from the `PYTHON_SERVICE_ARGUMENT`
-environment variable.
+- `start` takes a `Context` and an argument string. The service reads the
+  argument from the `PYTHON_SERVICE_ARGUMENT` environment variable.
+- A foreground service also has a five-argument form,
+  `start(context, small_icon_name, title, text, argument)`. A non-empty icon
+  name, title or text replaces the notification value from `pyproject.toml`
+  for that run. Pass `""` to keep the configured value.
+- `stop` ends the service's process, and with it the service's Python code.
+
+Inside the service, `PythonService.mService` is the running service, which is
+the `Context` to use for Android calls:
+
+```python
+from jnius import autoclass
+
+service = autoclass("org.kivy.android.PythonService").mService
+print(service.getPackageName())
+```
+
+A service runs in its own process, which has no activity: `android.mActivity`
+is `None` there.
+
+pyjnius finds the Java VM in a service process only on Android 12 (API 31) and
+later. On older versions the service still runs, but its `jnius` calls fail.
+
+### Coming from python-for-android
+
+`start`, `stop` and `mService` match python-for-android's. Only the class name
+changes: python-for-android names the class after your app's package, for
+example `org.example.myapp.ServiceWorker`. kivyforge's class is always
+`org.kivy.android.Service<name>`, with `name` exactly as written in
+`pyproject.toml`. Change the name in your `autoclass` call.
+
+`setAutoRestartService` is not provided.
 
 ## Verify
 
@@ -91,6 +121,9 @@ module imports without error:
 ```bash
 kivyforge run -p android --smoke
 ```
+
+For a complete app with a background and a foreground service, see
+`examples/mobile/android-services`.
 
 ## What's next
 

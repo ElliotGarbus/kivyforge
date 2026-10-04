@@ -186,6 +186,16 @@ class TestFailure:
         assert "Traceback" not in result.stderr
         assert _artifacts(env) == []
 
+    def test_android_app_module_conflict_is_an_envelope(self, android):
+        (android / "src" / "android.py").write_text("# mine\n", encoding="utf-8")
+        result, env = _run(build, ["-p", "android", "--debug"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["code"] == diagnostics.ANDROID_APP_CONFLICT
+        assert diagnostic["context"] == {"path": "src/android.py"}
+        assert diagnostic["remediation"].startswith("rename or remove it")
+        assert _artifacts(env) == []
+
     def test_android_hash_mismatch_is_an_envelope(self, android, monkeypatch):
         from kivyforge.artifacts.verify import HashMismatch
         from kivyforge.platforms.android import cli

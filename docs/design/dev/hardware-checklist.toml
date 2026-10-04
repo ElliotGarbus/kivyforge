@@ -133,6 +133,102 @@ pass = [
 record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
 
 [[item]]
+id = "android-package-gen2"
+title = "Android: the bundled android package, and Kivy 2.3.1's own uses of it (SDL2)"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device, Android 13 or later)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone on Android 13 (API 33) or later, so the notification permission is a runtime request, with USB debugging on, authorized for this host (`adb devices` shows `device`).",
+    "The phone unlocked with the screen on for the whole run.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/android-package",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device",
+    "adb logcat -d -s python.stdout python.stderr | grep -E 'android-package:|presplash|Traceback'",
+    "adb shell cmd uimode night yes, then adb shell cmd uimode night no",
+    "Tap Request permission and allow it",
+    "Tap Pick a file (activity result), then press back to cancel the picker",
+    "Tap the Numeric keyboard field, type a few digits, then dismiss the keyboard",
+    "adb shell pidof org.kivyforge.androidpackage, press back, then run the same pidof again",
+    "Reopen the app from the launcher and tap App.stop()",
+    "adb logcat -d -s python.stdout python.stderr | grep -E 'android-package:|Traceback'",
+]
+pass = [
+    "At start the log has `bootstrap sdl2`, `mActivity org.kivy.android.PythonActivity`, an `app_storage_path` under `/data/user/0/org.kivyforge.androidpackage/`, `plyer application dir /data/user/0` (plyer returns the parent of the app's directory), `broadcast battery level` with a level of 0 or more, `dark mode listener set` and `on_activity_result bound`. No `FAILED` line and no `Traceback`.",
+    "`clipboard ClipboardAndroid round trip True`, and `audio providers` starts with `SoundAndroidPlayer` (the example asks for Kivy's Android audio provider through `KIVY_AUDIO`; Kivy does not load it by default).",
+    "The two theme switches log `dark mode changed: True` then `dark mode changed: False`, and the app stays on screen.",
+    "`permission result ['android.permission.POST_NOTIFICATIONS'] [True]` after allowing, and `activity result code 0` after cancelling the picker.",
+    "The numeric field opens the number keyboard, not the full one, and the app does not exit.",
+    "Back sends the app to the background: both `pidof` calls print the same process id.",
+    "App.stop() closes the app with no `Traceback` in the log.",
+    "The log no longer has `Could not remove android presplash`.",
+]
+record = ["Phone model and Android version.", "Whether `Unknown <android> provider` still appears (expected: Kivy's joystick provider also needs pygame)."]
+
+[[item]]
+id = "android-package-sdl3"
+title = "Android: the bundled android package on Kivy 3.0 (SDL3)"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device, Android 13 or later)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone on Android 13 (API 33) or later, with USB debugging on, authorized for this host (`adb devices` shows `device`).",
+    "The phone unlocked with the screen on for the whole run.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/android-package-sdl3",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device",
+    "adb logcat -d -s python.stdout python.stderr | grep -E 'android-package:|Traceback'",
+    "adb shell cmd uimode night yes, then adb shell cmd uimode night no",
+    "Tap Request permission and allow it",
+    "Tap Pick a file (activity result), then press back to cancel the picker",
+    "Tap the Numeric keyboard field, then dismiss the keyboard",
+    "adb logcat -d -s python.stdout python.stderr | grep -E 'android-package:|Traceback'",
+]
+pass = [
+    "At start the log has `bootstrap sdl3`, `mActivity org.kivy.android.PythonActivity`, an `app_storage_path` under `/data/user/0/org.kivyforge.androidpackagesdl3/`, `plyer application dir /data/user/0`, `broadcast battery level` with a level of 0 or more, `dark mode listener set`, `on_activity_result bound`, `clipboard ClipboardAndroid round trip True` and `audio: this Kivy has no kivy.core.audio`. No `FAILED` line and no `Traceback`.",
+    "The two theme switches log `dark mode changed: True` then `dark mode changed: False`, and the app stays on screen.",
+    "`permission result ['android.permission.POST_NOTIFICATIONS'] [True]` after allowing, and `activity result code 0` after cancelling the picker: the listener is called on SDL3, whose SDLActivity overrides onActivityResult too.",
+    "The field opens the number keyboard and the app does not exit.",
+]
+record = ["Phone model and Android version."]
+
+[[item]]
+id = "android-services"
+title = "Android: services start and stop through the static start/stop, and reach mService with pyjnius"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device, Android 12 or later)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone on Android 12 (API 31) or later, with USB debugging on, authorized for this host (`adb devices` shows `device`). pyjnius cannot reach the VM in a service process below API 31.",
+    "The phone unlocked with the screen on.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/android-services",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device",
+    "Allow notifications if asked, then tap Start services",
+    "adb logcat -d -s python.stdout | grep android-services",
+    "adb shell pidof org.kivyforge.androidservices:service_worker org.kivyforge.androidservices:service_sync",
+    "Tap Stop services, wait 5 seconds, then run the same `pidof` again",
+]
+pass = [
+    "For each service, logcat shows `argument 'from the app'`, `mService org.kivy.android.ServiceWorker` or `...ServiceSync`, `mActivity None`, an `app_storage_path` under `/data/user/0/org.kivyforge.androidservices/`, then `tick` lines. No `FAILED` line.",
+    "While the services run, the notification shade shows `Syncing` / `Started from main.py`: the five-argument `start` replaced the configured text.",
+    "The first `pidof` prints two process ids; the one after Stop services prints nothing, and no further `tick` lines appear.",
+]
+record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
+
+[[item]]
 id = "ios-device"
 title = "iOS: build, sign, install and launch on a physical iPhone"
 status = "runnable"

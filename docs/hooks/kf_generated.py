@@ -132,6 +132,19 @@ _DIAGNOSTIC = {
         "This host cannot build this target at all (for example iOS from Windows).",
         "Build on a supported host; see the host matrix.",
     ),
+    "KF-ANDROID-DEPENDENCY-CONFLICT": (
+        "error",
+        "Android: a dependency provides its own `android` module. kivyforge bundles "
+        "an `android` package, which would shadow it.",
+        "Remove the dependency, or add it to `[tool.kivy.android].exclude` if "
+        "another package pulls it in; `context` names the `distribution`.",
+    ),
+    "KF-ANDROID-APP-CONFLICT": (
+        "error",
+        "Android: `app_dir` has its own `android.py` or `android/`, which the "
+        "bundled `android` package would shadow.",
+        "Rename or remove it; `context` names the `path`.",
+    ),
     "KF-ERROR": (
         "error",
         "An expected failure with no more specific code assigned yet.",

@@ -740,3 +740,34 @@ class TestMavenParser:
 
         with pytest.raises(MavenResolverError):
             parse_verification_metadata("<unclosed")
+
+
+class TestAndroidDistribution:
+    """kivyforge bundles its own `android` package, first on sys.path, so a
+    locked distribution named `android` would ship and never be imported."""
+
+    def test_a_direct_dependency_fails_the_lock(self):
+        from kivyforge.platforms.android.lock.builder import AndroidDependencyConflict
+        from kivyforge.report import diagnostics
+
+        with pytest.raises(AndroidDependencyConflict) as exc:
+            _build(packages=[_pkg(), _pkg("android", "1.0")])
+        assert exc.value.code == diagnostics.ANDROID_DEPENDENCY_CONFLICT
+        assert exc.value.context == {"distribution": "android"}
+        message = str(exc.value)
+        assert "[project].dependencies" in message
+        assert "Fix:" in message
+
+    def test_a_transitive_one_names_what_pulled_it_in(self):
+        parent = _pkg("plyer-android", "2.0")
+        parent.dependencies = ["android"]
+        with pytest.raises(BuildError, match="required by plyer-android"):
+            _build(packages=[_pkg(), parent, _pkg("android", "1.0")])
+
+    def test_an_excluded_one_is_fine(self):
+        text = PYPROJECT.replace(
+            'package = "org.example.lockapp"',
+            'package = "org.example.lockapp"\nexclude = ["android"]',
+        )
+        lock = _build(text, packages=[_pkg(), _pkg("android", "1.0")])
+        assert [p.name for p in lock.packages] == ["pyjnius"]

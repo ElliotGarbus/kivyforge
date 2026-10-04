@@ -41,6 +41,7 @@ from kivyforge.platforms.android.lock.model import (
 from kivyforge.platforms.android.stage.bundle import BundleError
 from kivyforge.platforms.android.stage.runtime import RuntimeStageError
 from kivyforge.platforms.android.stage.wheels import WheelStageError
+from kivyforge.report import diagnostics, exit_codes
 from kivyforge.status import LockState
 
 PYPROJECT = """\
@@ -407,6 +408,13 @@ class TestGeneratedServices:
             "Downloader": "service_downloader"
         }
 
+    def test_the_android_package_is_bundled_for_the_generation(self, build_env):
+        project, calls = build_env
+        cli.android_build(project)
+        sources = calls["assemble_bundle"][0]["android_package_sources"]
+        assert "android/permissions.py" in sources
+        assert 'BOOTSTRAP = "sdl2"' in sources["android/config.py"]
+
     def test_service_probe_is_generated_with_the_service(self, build_env):
         project, _ = build_env
         self._with_services(project)
@@ -423,7 +431,7 @@ class TestGeneratedServices:
             / "KivyforgeServiceContractTest.java"
         )
         assert probe.is_file()
-        assert "ServiceDownloader.class" in probe.read_text(encoding="utf-8")
+        assert "ServiceDownloader.start(" in probe.read_text(encoding="utf-8")
 
     def test_no_services_generates_no_class_or_probe(self, build_env):
         project, _ = build_env
@@ -1620,3 +1628,51 @@ class TestErrorsRenderCleanly:
             f"{name} is not decorated with @user_facing, so an "
             "AndroidBuildError from it would surface as a traceback"
         )
+
+
+class TestAndroidModuleConflicts:
+    """The bundled android package comes first on sys.path, so a second
+    `android` would ship and never be imported: the build says so instead."""
+
+    def test_an_app_android_module_fails_before_any_download(
+        self, build_env, monkeypatch
+    ):
+        project, calls = build_env
+        (project / "src" / "android.py").write_text("# mine\n", encoding="utf-8")
+        with pytest.raises(ToolchainError) as exc:
+            cli.android_build(project)
+        assert exc.value.code == diagnostics.ANDROID_APP_CONFLICT
+        assert exc.value.exit_code == exit_codes.CONFIG_ERROR
+        assert exc.value.context == {"path": "src/android.py"}
+        assert exc.value.remediation.startswith("rename or remove it")
+        assert "install_wheels" not in calls
+
+    def test_an_app_android_package_fails_too(self, build_env):
+        project, _ = build_env
+        (project / "src" / "android").mkdir()
+        with pytest.raises(ToolchainError, match="src/android would never"):
+            cli.android_build(project)
+
+    def test_a_wheel_that_installs_android_names_its_distribution(
+        self, build_env, monkeypatch
+    ):
+        project, _ = build_env
+
+        def fake_install_wheels(files, target, **kw):
+            (target / "android").mkdir(parents=True)
+            (target / "android" / "__init__.py").write_text("", encoding="utf-8")
+            info = target / "android_shim-1.0.dist-info"
+            info.mkdir()
+            (info / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: android-shim\n", encoding="utf-8"
+            )
+            (info / "RECORD").write_text(
+                "android/__init__.py,sha256=x,0\n", encoding="utf-8"
+            )
+
+        monkeypatch.setattr(cli, "install_wheels", fake_install_wheels)
+        with pytest.raises(ToolchainError) as exc:
+            cli.android_build(project)
+        assert exc.value.code == diagnostics.ANDROID_DEPENDENCY_CONFLICT
+        assert exc.value.context == {"distribution": "android-shim"}
+        assert "[tool.kivy.android].exclude" in exc.value.remediation

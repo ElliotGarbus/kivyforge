@@ -387,6 +387,9 @@ class TestNoManifest:
         assert "[tool.kivy.android].min_sdk" in out
         assert "No kivyforge counterpart" in out
         assert "p4a" in out
+        # A buildozer requirements line often lists `android`; kept, it now
+        # fails the lock.
+        assert "'android' in requirements" in out
 
     def test_buildozer_spec_echoes_the_users_own_values(self, runner, tmp_path):
         """A bare mapping table makes the reader diff it against their file; the

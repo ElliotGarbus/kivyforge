@@ -7,12 +7,13 @@ sources:
   - docs/design/platforms/ios/04-cli-ios.md
   - docs/design/platforms/ios/07-recipe-triage.md
   - kivyforge/cli/init.py
+  - docs/design/dev/android-compat-package-proposal.md
 ---
 
 # Migrate from buildozer, python-for-android, or kivy-ios
 
-kivyforge replaces buildozer, python-for-android, and kivy-ios with one tool.
-Instead of a spec file and per-app recipe builds, you describe the app in
+This page is for an app that builds with buildozer, python-for-android, or
+kivy-ios and that you want to build with kivyforge. Instead of a spec file and per-app recipe builds, you describe the app in
 `pyproject.toml` and kivyforge installs prebuilt wheels pinned in a lockfile.
 This page maps the old concepts to the new ones and walks through moving an
 Android or iOS project.
@@ -68,7 +69,12 @@ recipes, the replacement is an Apple framework that you call through
 
 2. Create a `pyproject.toml` with a `[project]` table: your app's `name`,
    `version`, `requires-python`, and `dependencies`. Move the entries of
-   `requirements` into `dependencies`.
+   `requirements` into `dependencies`, except `android`: kivyforge bundles
+   that package in every Android build, so code that imports it keeps
+   working, and `kivyforge lock` fails if a dependency is named `android`. See
+   [Use the android package](../android/android-package.md). If your app
+   starts services, change the class name each `autoclass` call uses, as
+   [Add a background service](../android/services.md) describes.
 
 3. Seed the kivyforge tables:
 

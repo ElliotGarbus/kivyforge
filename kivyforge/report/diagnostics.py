@@ -101,6 +101,16 @@ IDE_NOT_FOUND = "KF-IDE-NOT-FOUND"
 #: This host cannot build this target at all (e.g. iOS from Windows).
 HOST_INCAPABLE = "KF-HOST-INCAPABLE"
 
+#: Android: a dependency provides a top-level ``android`` module, which would
+#: be shadowed by the ``android`` package kivyforge bundles. ``lock`` catches a
+#: distribution named ``android``; ``build`` catches any wheel that installs
+#: one. ``context`` names the ``distribution``.
+ANDROID_DEPENDENCY_CONFLICT = "KF-ANDROID-DEPENDENCY-CONFLICT"
+
+#: Android: ``app_dir`` has its own ``android.py`` or ``android/``, which the
+#: bundled package would shadow. ``context`` names the ``path``.
+ANDROID_APP_CONFLICT = "KF-ANDROID-APP-CONFLICT"
+
 #: An expected failure (``ToolchainError``) with no specific code assigned yet.
 #: Branchable rather than null: it tells a consumer "this is a clean, expected
 #: failure -- read ``message`` and ``remediation``", as distinct from a crash.

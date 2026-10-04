@@ -70,6 +70,9 @@ public class KivyforgeContractTest {
             "Kivy's Android bootstrap contract failed: " + contents,
             contents.contains("KIVY_CONTRACT_OK"));
         assertTrue(
+            "the bundled android package failed: " + contents,
+            contents.contains("ANDROID_PKG_OK"));
+        assertTrue(
             "self-test reported a failure: " + contents,
             contents.contains("SELFTEST_ALL_OK"));
     }
