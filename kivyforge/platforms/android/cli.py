@@ -31,7 +31,9 @@ from kivyforge.report.failures import reclassify
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from . import (
+    AndroidAppConflict,
     AndroidBuildError,
+    AndroidDependencyConflict,
     ArtifactMissing,
     GradleFailed,
     LockDrift,
@@ -72,6 +74,7 @@ from .gradlew import GradleError, run_gradle
 from .lock import reader as lock_reader
 from .lock.model import AndroidLockfile
 from .stage.bundle import BUNDLE_DIRNAME, BundleError, assemble_bundle
+from .stage.conflicts import app_android_module, site_packages_android_provider
 from .stage.jnilibs import (
     JniLibsError,
     JniLibsStager,
@@ -222,6 +225,7 @@ def android_build(
             check_pyjnius_contract(locked_pyjnius)
         except ContractError as exc:
             raise AndroidBuildError(str(exc)) from exc
+    _reject_app_android(project_root, config.kivy.app_dir)
 
     python_version = lock.python_android[0].version
     stem = python_stem(python_version)
@@ -304,6 +308,7 @@ def android_build(
             lambda: install_wheels(files, target, python_version=python_version),
             WheelStageError,
         )
+        _reject_dependency_android(target)
         site_packages[abi_name] = target
 
     # --- Step 5: jniLibs per ABI (runtime split + wheel exts + .libs) ---
@@ -1142,6 +1147,36 @@ def _fetch(**kwargs) -> Path:
         return Path(fetch_artifact(**kwargs))
     except (DownloadError, HashMismatch) as exc:
         raise AndroidBuildError(str(exc)) from exc
+
+
+def _reject_app_android(project_root: Path, app_dir: str) -> None:
+    found = app_android_module(project_root / app_dir)
+    if found is None:
+        return
+    rel = found.relative_to(project_root).as_posix()
+    raise AndroidAppConflict(
+        f"{rel} would never be imported: kivyforge bundles an `android` package "
+        "for python-for-android compatibility, and it comes first on sys.path.\n"
+        "  Fix: rename or remove it. For what the bundled package provides, "
+        "see the Android guide.",
+        context={"path": rel},
+    )
+
+
+def _reject_dependency_android(site_packages: Path) -> None:
+    distribution = site_packages_android_provider(site_packages)
+    if distribution is None:
+        return
+    raise AndroidDependencyConflict(
+        f"the locked dependency {distribution!r} installs its own `android` "
+        "module, which would never be imported: kivyforge bundles an `android` "
+        "package for python-for-android compatibility, and it comes first on "
+        "sys.path.\n"
+        f"  Fix: remove {distribution!r} from [project].dependencies, or, if "
+        "another package pulls it in, add it to [tool.kivy.android].exclude; "
+        "then run `kivyforge lock -p android`.",
+        context={"distribution": distribution},
+    )
 
 
 def _stage(fn, error_type):

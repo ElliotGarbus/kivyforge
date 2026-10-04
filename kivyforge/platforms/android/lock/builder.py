@@ -31,6 +31,8 @@ from kivyforge.lock.model import (
     canonical_name,
 )
 from kivyforge.lock.reader import compute_pyproject_sha256
+from kivyforge.report import diagnostics
+from kivyforge.report.failures import ClassifiedError
 
 from .archives import ArchiveResolverError, resolve_android_libs
 from .generation import expected_generation, mismatch_hint
@@ -54,6 +56,39 @@ if TYPE_CHECKING:
 
 class BuildError(Exception):
     """A lock build failure surfaced with an actionable message."""
+
+
+class AndroidDependencyConflict(BuildError, ClassifiedError):
+    """The resolved set contains a distribution named ``android``."""
+
+    code = diagnostics.ANDROID_DEPENDENCY_CONFLICT
+
+
+def _reject_android_distribution(packages: list[LockedPackage]) -> None:
+    """kivyforge bundles its own ``android`` package, first on ``sys.path``, so
+    one from the lock would ship and never be imported. Only the name is known
+    here; ``build`` also checks what each installed wheel provides."""
+    conflict = next((p for p in packages if canonical_name(p.name) == "android"), None)
+    if conflict is None:
+        return
+    if conflict.direct_requirement:
+        via = "it is listed in [project].dependencies"
+    else:
+        parents = sorted(
+            p.name
+            for p in packages
+            if any(canonical_name(d.name) == "android" for d in p.dependencies)
+        )
+        via = f"it is required by {', '.join(parents) or 'another dependency'}"
+    raise AndroidDependencyConflict(
+        f"the lock would include the distribution {conflict.name!r} ({via}), "
+        "which provides an `android` module. kivyforge bundles an `android` "
+        "package for python-for-android compatibility, and it comes first on "
+        "sys.path, so this one would never be imported.\n"
+        f"  Fix: remove {conflict.name!r} from [project].dependencies, or, if "
+        "another package pulls it in, add it to [tool.kivy.android].exclude.",
+        context={"distribution": conflict.name},
+    )
 
 
 def build_lockfile(
@@ -133,6 +168,8 @@ def build_lockfile(
                 source_index=rp.source_index,
             )
         )
+
+    _reject_android_distribution(packages)
 
     if on_warning is not None:
         _warn_generation_mismatch(packages, android.kivy_generation, on_warning)

@@ -71,6 +71,18 @@ class LockDrift(AndroidBuildError):
     exit_code = exit_codes.LOCK_DRIFT
 
 
+class AndroidDependencyConflict(AndroidBuildError):
+    """A locked wheel installs its own top-level ``android``."""
+
+    code = diagnostics.ANDROID_DEPENDENCY_CONFLICT
+
+
+class AndroidAppConflict(AndroidBuildError):
+    """``app_dir`` has its own ``android.py`` or ``android/``."""
+
+    code = diagnostics.ANDROID_APP_CONFLICT
+
+
 class AndroidPlatform(Platform):
     name = "android"
     aliases = ()
