@@ -12,8 +12,8 @@ sources:
 
 # Migrate from buildozer, python-for-android, or kivy-ios
 
-kivyforge replaces buildozer, python-for-android, and kivy-ios with one tool.
-Instead of a spec file and per-app recipe builds, you describe the app in
+This page is for an app that builds with buildozer, python-for-android, or
+kivy-ios and that you want to build with kivyforge. Instead of a spec file and per-app recipe builds, you describe the app in
 `pyproject.toml` and kivyforge installs prebuilt wheels pinned in a lockfile.
 This page maps the old concepts to the new ones and walks through moving an
 Android or iOS project.

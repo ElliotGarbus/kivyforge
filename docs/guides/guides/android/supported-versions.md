@@ -54,15 +54,15 @@ target_sdk = 35
 
 | CPython | `kivy_generation` | Kivy and SDL | pyjnius | Status |
 |---|---|---|---|---|
-| 3.14 | `2` | Kivy 2.3.1 on SDL2 | 1.7.x | Tested on an emulator and a device |
-| 3.14 | `3` | Kivy 3.0 development snapshot on SDL3 | 1.7.x | Tested on an emulator and a device |
+| 3.14 | `2` | Kivy 2.3.1 on SDL2 | 1.7, 1.8 | Tested on an emulator and a device |
+| 3.14 | `3` | Kivy 3.0 development snapshot on SDL3 | 1.7, 1.8 | Tested on an emulator and a device |
 
 Kivy 3.0 is not released yet. The SDL3 row is tested against a `3.0.0.dev0`
 snapshot.
 
 The build fails, instead of producing an app that crashes at startup, when:
 
-- The locked pyjnius is outside 1.7.x.
+- The locked pyjnius is outside 1.7 and 1.8 (`>=1.7.0,<1.9`).
 - The locked Kivy wheel ships a different SDL generation than
   `kivy_generation` selects.
 

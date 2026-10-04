@@ -28,8 +28,8 @@ nothing.
     ]
     ```
 
-    kivyforge supports pyjnius 1.7.x. A locked pyjnius outside that range fails
-    the build.
+    kivyforge supports pyjnius 1.7 and 1.8 (`>=1.7.0,<1.9`). A locked pyjnius
+    outside that range fails the build.
 
 - Declare any permission the API you call requires, under
   `[tool.kivy.android.permissions]`.
