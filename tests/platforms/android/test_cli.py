@@ -431,7 +431,7 @@ class TestGeneratedServices:
             / "KivyforgeServiceContractTest.java"
         )
         assert probe.is_file()
-        assert "ServiceDownloader.class" in probe.read_text(encoding="utf-8")
+        assert "ServiceDownloader.start(" in probe.read_text(encoding="utf-8")
 
     def test_no_services_generates_no_class_or_probe(self, build_env):
         project, _ = build_env

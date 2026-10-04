@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Android: services have `start`, `stop` and `mService`
+
+- **Added:** each generated service class has static `start(context, argument)`
+  and `stop(context)` methods. A foreground service also gets the five-argument
+  `start(context, icon, title, text, argument)`, which replaces the configured
+  notification text for that run, and is started with
+  `startForegroundService`. Inside a service,
+  `autoclass("org.kivy.android.PythonService").mService` is the running
+  service. These match python-for-android's services, so ported code only
+  changes the class name to `org.kivy.android.Service<name>`. See
+  [Add a background service](docs/guides/guides/android/services.md) and the new
+  `examples/mobile/android-services`.
+- **Changed:** stopping a service now ends its process. Before, the service
+  stopped but its Python code kept running in the background.
+- **Migration:** none for the intent-based start, which still works. A service
+  that relied on running on after it was stopped has to stay started instead.
+  pyjnius can reach the VM in a service process only on Android 12 (API 31)
+  and later.
+
 ### Android: a theme switch no longer quits the app
 
 - **Fixed:** switching the phone between light and dark mode quit a kivyforge

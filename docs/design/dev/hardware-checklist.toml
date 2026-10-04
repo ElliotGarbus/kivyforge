@@ -133,6 +133,34 @@ pass = [
 record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
 
 [[item]]
+id = "android-services"
+title = "Android: services start and stop through the static start/stop, and reach mService with pyjnius"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device, Android 12 or later)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone on Android 12 (API 31) or later, with USB debugging on, authorized for this host (`adb devices` shows `device`). pyjnius cannot reach the VM in a service process below API 31.",
+    "The phone unlocked with the screen on.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/android-services",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device",
+    "Allow notifications if asked, then tap Start services",
+    "adb logcat -d -s python.stdout | grep android-services",
+    "adb shell pidof org.kivyforge.androidservices:service_worker org.kivyforge.androidservices:service_sync",
+    "Tap Stop services, wait 5 seconds, then run the same `pidof` again",
+]
+pass = [
+    "For each service, logcat shows `argument 'from the app'`, `mService org.kivy.android.ServiceWorker` or `...ServiceSync`, `mActivity None`, an `app_storage_path` under `/data/user/0/org.kivyforge.androidservices/`, then `tick` lines. No `FAILED` line.",
+    "While the services run, the notification shade shows `Syncing` / `Started from main.py`: the five-argument `start` replaced the configured text.",
+    "The first `pidof` prints two process ids; the one after Stop services prints nothing, and no further `tick` lines appear.",
+]
+record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
+
+[[item]]
 id = "ios-device"
 title = "iOS: build, sign, install and launch on a physical iPhone"
 status = "runnable"

@@ -57,6 +57,32 @@ class TestServiceBase:
         ]
         assert not [line for line in code if "SDL" in line]
 
+    def test_base_publishes_mservice_before_python_runs(self):
+        """autoclass(SERVICE_CLASS_NAME).mService is how p4a-era code (and the
+        vendored storage module) reaches the service's Context."""
+        service = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonService.java"
+        ]
+        assert "public static PythonService mService = null;" in service
+        run = service[service.index("public void run()") :]
+        assert run.index("mService = this;") < run.index("nativeStart()")
+
+    def test_base_starts_foreground_services_as_foreground(self):
+        service = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonService.java"
+        ]
+        assert "ctx.startForegroundService(intent);" in service
+        assert "intent.putExtra(EXTRA_ARGUMENT, pythonServiceArgument);" in service
+
+    def test_stopping_the_service_ends_its_process(self):
+        """The interpreter thread cannot be interrupted, so without this stop()
+        would leave the service's Python running."""
+        service = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonService.java"
+        ]
+        destroy = service[service.index("public void onDestroy()") :]
+        assert "Process.killProcess(Process.myPid());" in destroy
+
     def test_native_service_entry_is_exported(self):
         """PythonService.nativeStart() is resolved by JNI name from libmain."""
         main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
@@ -135,6 +161,36 @@ class TestGeneratedServiceClasses:
         assert 'return "He said \\"hi\\"";' in source
         assert 'return "a\\\\b";' in source
 
+    def test_class_has_p4a_start_and_stop_signatures(self):
+        """Code written for p4a calls these statics on the service class; with
+        the same signatures only the class name in autoclass changes."""
+        source = render_service_classes((_service(),))[0].content
+        assert "import android.content.Context;" in source
+        assert (
+            "public static void start(Context ctx, String pythonServiceArgument)"
+            in source
+        )
+        assert (
+            "public static void start(Context ctx, String smallIconName,\n"
+            "            String contentTitle, String contentText,\n"
+            "            String pythonServiceArgument)"
+        ) in source
+        assert "public static void stop(Context ctx)" in source
+        assert "startPythonService(ctx, ServiceDownloader.class, false," in source
+        assert "stopPythonService(ctx, ServiceDownloader.class);" in source
+
+    def test_foreground_start_says_so(self):
+        """The base uses startForegroundService only when told the service is
+        a foreground one; Android 8+ requires it for those."""
+        service = _service(
+            foreground=True,
+            notification=AndroidNotification(
+                channel_id="c", channel_name="C", title="T", text=""
+            ),
+        )
+        source = render_service_classes((service,))[0].content
+        assert "startPythonService(ctx, ServiceDownloader.class, true," in source
+
     def test_no_services_generates_nothing(self):
         assert render_service_classes(()) == []
 
@@ -158,11 +214,17 @@ class TestServiceContractTest:
             "androidTest/java/org/kivyforge/test/KivyforgeServiceContractTest.java"
         )
         source = rendered[0].content
-        assert "org.kivy.android.ServiceDownloader.class" in source
+        assert "org.kivy.android.ServiceDownloader.start(" in source
         # The marker, not a return value: a service entry point never returns.
         assert "kivyforge_service_Downloader.txt" in source
         assert "SERVICE_READY" in source
         assert "SERVICE_ENTRY_FAILED" in source
+
+    def test_probe_uses_the_static_start_and_stop(self):
+        source = render_service_contract_test((_service(),))[0].content
+        assert 'org.kivy.android.ServiceDownloader.start(ctx, "");' in source
+        assert "org.kivy.android.ServiceDownloader.stop(ctx);" in source
+        assert 'getField("mService")' in source
 
 
 class TestLauncherServiceMarker:

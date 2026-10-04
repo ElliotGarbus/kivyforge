@@ -176,12 +176,12 @@ overrides `onRequestPermissionsResult` (line 1792). Neither overrides `onNewInte
 
 Services differ from p4a in more than the missing statics:
 
-- **Class names.** kivyforge generates `org.kivy.android.<Name>` (for example
+- **Class names.** kivyforge generates `org.kivy.android.Service<Name>` (for example
   `org.kivy.android.ServiceWorker` in `docs/guides/guides/android/services.md`). p4a
-  generates `<package>.Service<Name>`, from memory; not read from its template. Ported
+  generates `<package>.Service<Name>` (read from `Service.tmpl.java` at the pin). Ported
   code that names the p4a class fails at `autoclass` before any `start` signature matters.
 - **Intent extra.** kivyforge reads `kivyforge_service_argument`; p4a's is
-  `pythonServiceArgument` (from memory). Both end up in `PYTHON_SERVICE_ARGUMENT`.
+  `pythonServiceArgument`. Both end up in `PYTHON_SERVICE_ARGUMENT`.
 - **Process.** Each service runs in its own `android:process` and loads only `libpython`
   and `libmain`, with no SDL (`PythonService.java`). Java statics are per process, so
   `PythonActivity.mActivity` is always `null` there, not merely stale.
@@ -303,8 +303,11 @@ the call is the only blocker on that path.
   `start(Context, String)`, `start(Context, String, String, String, String)` and
   `stop(Context)`, and the argument passed as the intent extra
   `pythonServiceArgument`.
-- Whether pyjnius gets a JNI environment in a service process, which loads no SDL. No
-  recorded run of pyjnius inside a kivyforge service was found.
+- pyjnius in a service process was observed on 2026-10-04 on a Pixel 8a, Android 17
+  (API 37), in `examples/mobile/android-services`. It gets its JNI environment from
+  tier 3 (`JNI_GetCreatedJavaVMs`). On API 24–30 that tier is expected to fail, as the
+  pyjnius spike findings record; this was not observed, because no device or emulator
+  image at those levels was available.
 - The older Kivy 3 wheels were not inspected (E1).
 - GitHub code search is incomplete; hit counts are lower bounds.
 
@@ -524,12 +527,23 @@ They are kivyforge-owned blocks and are listed in the deviation register.
   service; `start` hides that extra's name. For a foreground service `start` uses
   `startForegroundService`, which Android 8+ requires for a service that calls
   `startForeground`; p4a's template calls `startService`.
-- **Class names.** p4a generates `<package>.Service<Name>`, with the name passed through
-  Jinja's `capitalize` (first letter upper, the rest lower). kivyforge generates
-  `org.kivy.android.Service<Name>` with the name as written. Decided when implementing
-  (stage 1, services); see the services guide for the outcome.
-- **pyjnius in the service process** must be confirmed before promising `mService`: the
-  process loads no SDL (E6).
+- **Class names: a documented rename, no aliases.** p4a generates
+  `<package>.Service<Name>`, with the name passed through Jinja's `capitalize` (first
+  letter upper, the rest lower). kivyforge keeps `org.kivy.android.Service<Name>` with
+  the name as written. Ported code changes one string, the `autoclass` name; the calls
+  after it are unchanged. An alias would be a second generated class per service, in the
+  app's package, for a one-line saving. The services guide gives the rename.
+- **`stop` ends the service process**, as p4a's `onDestroy` does. The interpreter thread
+  cannot be interrupted, so without that `stop` would leave the service's Python
+  running. Each service has its own `android:process`, so nothing else dies with it.
+- **pyjnius in the service process** works on API 31+ (observed on API 37; see
+  [What was not verified](#what-was-not-verified)). The pyjnius wheel `dlopen`s `libSDL2.so` by name
+  while looking for SDL's getter. SDL's `JNI_OnLoad` does not run for a library
+  loaded that way, so SDL logs `Failed, there is no JavaVM`, and pyjnius falls through
+  to tier 3. The log line is benign. Loading SDL with `System.loadLibrary` in the
+  service would give API 24–30 a working tier 2; that is a possible follow-up, not part
+  of this change.
+- `setAutoRestartService` is not provided.
 
 A Java contract test (as already exists for the service classes) should assert these
 members, so the Python and Java halves cannot drift.
@@ -667,7 +681,8 @@ maintainers, since kivyschool's index already serves a package of that name.
 1. Request-code collisions with SDL's own permission handling.
 2. plyer inside a service. (p4a's service signatures, class names and intent extra were
    read on 2026-10-04; see [Java contract](#java-contract).)
-3. pyjnius in a service process, which loads no SDL (E6).
+3. pyjnius in a service process on API 24–30. It works on API 31+ (observed on API 37);
+   below that its only tier is expected to fail (see [Java contract](#java-contract)).
 4. Resolved 2026-10-04: `permissions.py` line 579 is inside a docstring.
 5. Whether `_ctypes_library_finder.py` (p4a's `ctypes.util.find_library` helper) matters on
    kivyforge. Out of scope here; worth a separate check.
