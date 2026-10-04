@@ -1,0 +1,58 @@
+# What the Android bootstrap takes from python-for-android, and from which
+# revision. Every item here is kept identical to the pinned revision; change
+# them only with `python scripts/sync_p4a.py update --rev <sha>`, and keep
+# kivyforge's own code outside them. See scripts/sync_p4a.py for the format,
+# and docs/design/dev/android-compat-package-proposal.md, "Vendoring approach".
+#
+# Paths are relative to the bootstrap's templates/ directory; `source` and
+# `sources` are paths in the python-for-android repository.
+
+[upstream]
+repo = "kivy/python-for-android"
+rev = "94ffd5f31d816414ad1fe66c0fe587c61daac757"
+
+[[file]]
+path = "p4a/LICENSE"
+source = "LICENSE"
+
+# The `android` package's pure-Python modules.
+[[file]]
+path = "p4a/android/permissions.py"
+source = "pythonforandroid/recipes/android/src/android/permissions.py"
+
+[[file]]
+path = "p4a/android/activity.py"
+source = "pythonforandroid/recipes/android/src/android/activity.py"
+
+[[file]]
+path = "p4a/android/runnable.py"
+source = "pythonforandroid/recipes/android/src/android/runnable.py"
+
+[[file]]
+path = "p4a/android/broadcast.py"
+source = "pythonforandroid/recipes/android/src/android/broadcast.py"
+
+[[file]]
+path = "p4a/android/darkmode.py"
+source = "pythonforandroid/recipes/android/src/android/darkmode.py"
+
+[[file]]
+path = "p4a/android/storage.py"
+source = "pythonforandroid/recipes/android/src/android/storage.py"
+
+# The Java that android.broadcast drives.
+[[file]]
+path = "p4a/java/org/kivy/android/GenericBroadcastReceiver.java"
+source = "pythonforandroid/bootstraps/common/build/src/main/java/org/kivy/android/GenericBroadcastReceiver.java"
+
+[[file]]
+path = "p4a/java/org/kivy/android/GenericBroadcastReceiverCallback.java"
+source = "pythonforandroid/bootstraps/common/build/src/main/java/org/kivy/android/GenericBroadcastReceiverCallback.java"
+
+# PythonActivity.changeKeyboard for kivy_generation = 3, which the render step
+# puts in place of the SDL2 member.
+[[block]]
+name = "change-keyboard"
+fragment = "p4a/java/PythonActivity.changeKeyboard.sdl3.java.in"
+source = "pythonforandroid/bootstraps/sdl3/build/src/main/java/org/kivy/android/PythonActivity.java"
+first = "public static void changeKeyboard(int inputType) {"

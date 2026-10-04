@@ -58,6 +58,22 @@ jobs:
     - name: Verify vendored SDL glue matches kivy-mobile-wheels
       run: python scripts/check_sdl_glue_sync.py
 
+  # The Android `android` package and part of PythonActivity are vendored from
+  # python-for-android at the revision in P4A_VENDOR.toml. This fails if any of
+  # that code was edited by hand instead of moved with sync_p4a.py update.
+  p4a_vendor_sync:
+    name: p4a vendor sync (python-for-android)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kivyforge
+      uses: actions/checkout@v6
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.x'
+    - name: Verify vendored p4a code matches the pin
+      run: python scripts/sync_p4a.py check
+
   package:
     name: Package (build + twine)
     runs-on: ubuntu-latest

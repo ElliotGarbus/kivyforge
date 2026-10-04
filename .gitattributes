@@ -3,5 +3,9 @@
 # the verify-*.sh helpers, and any AppRun/entrypoint scripts.
 *.sh text eol=lf
 
+# Code vendored from python-for-android stays byte-for-byte as upstream has it
+# (LF), so a Windows checkout reads what scripts/sync_p4a.py compares against.
+kivyforge/platforms/android/bootstrap/templates/p4a/** text eol=lf
+
 # PowerShell scripts are Windows-native; keep them CRLF.
 *.ps1 text eol=crlf

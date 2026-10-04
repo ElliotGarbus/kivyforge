@@ -104,6 +104,11 @@ include = ["kivyforge*"]
     "templates/**/*.py",
     "templates/**/CMakeLists.txt",
     "templates/androidtest/**/*.java",
+    # Code vendored from python-for-android, with its license and pin.
+    "templates/p4a/LICENSE",
+    "templates/p4a/NOTICE",
+    "templates/p4a/P4A_VENDOR.toml",
+    "templates/p4a/**/*.java.in",
 ]
 # Android backend: the vendored stock Gradle wrapper (Apache-2.0; see NOTICE).
 "kivyforge.platforms.android" = [
@@ -155,8 +160,13 @@ exclude_lines = [
 target-version = "py313"
 line-length = 88
 # Generated Gradle projects stage the runtime's stdlib + app bundle; never lint
-# them (they are regenerated artifacts, git-ignored).
-extend-exclude = ["*-android", "*-ios"]
+# them (they are regenerated artifacts, git-ignored). Code vendored from
+# python-for-android is kept identical to upstream, so it is not ours to restyle.
+extend-exclude = [
+    "*-android",
+    "*-ios",
+    "kivyforge/platforms/android/bootstrap/templates/p4a",
+]
 [tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
