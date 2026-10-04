@@ -22,7 +22,9 @@ for it.
 ## Before you begin
 
 - A configured [Android](../android/configure.md) or [iOS](../ios/configure.md)
-  app that depends on Kivy 3.0. `kivy.mobile` doesn't exist in Kivy 2.3.1.
+  app that depends on Kivy 3.0. `kivy.mobile` doesn't exist in Kivy 2.3.1. On
+  Android, a Kivy 2.3.1 app (`kivy_generation = 2`) needs no padding: kivyforge
+  keeps its window clear of the system bars and the notch.
 - On Android, `kivy_generation = 3` in `[tool.kivy.android]`, and `pyjnius` in
   `[project].dependencies`.
 - For safe-area insets on Android, a device or emulator running API level 30 or

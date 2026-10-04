@@ -222,10 +222,16 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
         return prefix / "lib" / stem
 
     def fake_render_bootstrap(
-        *, sdl, python_version, entry_point="main", fullscreen=False
+        *,
+        sdl,
+        python_version,
+        entry_point="main",
+        fullscreen=False,
+        orientation_hint="Portrait",
     ):
         calls.setdefault("render_bootstrap", []).append(entry_point)
         calls.setdefault("render_fullscreen", []).append(fullscreen)
+        calls.setdefault("render_orientation", []).append(orientation_hint)
         return [
             RenderedFile("java/org/kivy/android/PythonActivity.java", "// activity\n")
         ]
@@ -350,6 +356,20 @@ class TestAndroidBuildHappyPath:
         _write_lock(project)
         cli.android_build(project)
         assert calls["render_fullscreen"] == [True]
+
+    def test_orientation_reaches_the_bootstrap(self, project, build_env):
+        project, calls = build_env
+        pyproject = project / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8").replace(
+                'app_dir = "src"',
+                'app_dir = "src"\norientation = ["landscape-left", "landscape-right"]',
+            ),
+            encoding="utf-8",
+        )
+        _write_lock(project)
+        cli.android_build(project)
+        assert calls["render_orientation"] == ["LandscapeRight LandscapeLeft"]
 
 
 SERVICES_TOML = """

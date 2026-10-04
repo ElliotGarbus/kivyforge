@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Android: Kivy 2.3.1 apps keep clear of the system bars
+
+- **Fixed:** on Android 15 and later, an app targeting API 35 or higher is drawn
+  edge to edge, under the status bar and the navigation bar. Kivy 2.3.1 can't
+  report a safe area, so a `kivy_generation = 2` app's content sat under the
+  bars with no way to avoid them. The generated activity now keeps the window
+  clear of the bars and the notch on API 30 and higher, with black behind the
+  bars and light bar icons. The padding follows rotation, and with
+  `fullscreen = true` only the notch is padded. Kivy 3.0 apps are unchanged:
+  they stay edge to edge and pad themselves with `kivy.mobile.get_safe_area()`
+  ([#63](https://github.com/ElliotGarbus/kivyforge/issues/63)).
+- **Migration:** a generation-2 app's window is now smaller by the bar heights
+  (for example 1080x2216 instead of 1080x2400 on a Pixel 8a). An app that
+  padded itself for the bars, for example by reading the insets with pyjnius,
+  should drop that padding.
+
+### Android: `orientation` is honoured at runtime
+
+- **Fixed:** an Android app rotated to any orientation when the phone's
+  auto-rotate was on, whatever `[tool.kivy].orientation` said. The manifest
+  declared the right orientation, but SDL replaced it when Kivy created its window:
+  with no orientation hint and a resizable window, SDL allows every orientation.
+  The generated activity now passes `[tool.kivy].orientation` to Kivy as
+  `KIVY_ORIENTATION`, the variable python-for-android sets for buildozer apps, so
+  SDL requests what the manifest declares. Applies to Kivy 2.3.1 (SDL2) and
+  Kivy 3.0 (SDL3).
+- **Migration:** none for most apps. An app that declares `portrait` but relied on
+  rotating anyway must now list the orientations it supports.
+
 ### Android: `fullscreen` hides the system bars
 
 - **Added:** `[tool.kivy.android].fullscreen = true` runs the app with the status

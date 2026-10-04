@@ -13,6 +13,10 @@ Substitution points today:
   the activity exports as ``KF_ENTRY_POINT`` for the launcher to import.
 - ``PythonActivity.java`` ``FULLSCREEN``: ``[tool.kivy.android].fullscreen``,
   which the activity exports as ``P4A_IS_WINDOWED`` for Kivy to read.
+- ``PythonActivity.java`` ``ORIENTATION``: ``[tool.kivy].orientation`` as SDL
+  hint names, which the activity exports as ``KIVY_ORIENTATION``.
+- ``PythonActivity.java`` ``PAD_SYSTEM_BARS``: true for ``sdl = 2``, whose Kivy
+  has no safe-area API, so the activity pads its content clear of the bars.
 - ``PythonService.java`` ``PYTHON_LIB``: the same soname stem, because a service
   process loads libpython itself.
 
@@ -54,6 +58,9 @@ _PROTO_SERVICE_PYTHON_LIB = 'private static final String PYTHON_LIB = "python3.1
 # entry point back over it is a no-op (the diff-clean gate).
 _PROTO_ENTRY_POINT_LINE = '    private static final String ENTRY_POINT = "main";'
 _PROTO_FULLSCREEN_LINE = "    private static final boolean FULLSCREEN = false;"
+_PROTO_ORIENTATION_LINE = '    private static final String ORIENTATION = "Portrait";'
+_PROTO_PAD_SYSTEM_BARS_LINE = "    private static final boolean PAD_SYSTEM_BARS = true;"
+_SDL_ORIENTATION_HINT = re.compile(r"^[A-Za-z]+( [A-Za-z]+)*$")
 _DOTTED_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
@@ -85,6 +92,7 @@ def render_bootstrap(
     python_version: str,
     entry_point: str = "main",
     fullscreen: bool = False,
+    orientation_hint: str = "Portrait",
 ) -> list[RenderedFile]:
     """Render every bootstrap source for the generated project's app module.
 
@@ -126,6 +134,8 @@ def render_bootstrap(
     activity = activity.replace(_PROTO_LIBRARIES_BLOCK, lib_lines)
     activity = _substitute_entry_point(activity, entry_point)
     activity = _substitute_fullscreen(activity, fullscreen)
+    activity = _substitute_orientation(activity, orientation_hint)
+    activity = _substitute_pad_system_bars(activity, sdl == 2)
     out.append(RenderedFile("java/org/kivy/android/PythonActivity.java", activity))
 
     # 1b. The unpack + environment helper both the activity and the generated
@@ -192,7 +202,7 @@ def _substitute_entry_point(activity: str, entry_point: str) -> str:
     even though the config loader already checked it: a value carrying a quote
     or newline would otherwise be arbitrary Java in a generated source.
     """
-    if not _DOTTED_IDENTIFIER.match(entry_point):
+    if not _DOTTED_IDENTIFIER.fullmatch(entry_point):
         raise RenderError(
             f"entry_point {entry_point!r} is not a valid dotted Python "
             "identifier; cannot render the bootstrap for it."
@@ -218,6 +228,34 @@ def _substitute_fullscreen(activity: str, fullscreen: bool) -> str:
         _PROTO_FULLSCREEN_LINE,
         "    private static final boolean FULLSCREEN = "
         f"{'true' if fullscreen else 'false'};",
+    )
+
+
+def _substitute_orientation(activity: str, hint: str) -> str:
+    # Lands in a Java string literal, like ENTRY_POINT.
+    if not _SDL_ORIENTATION_HINT.fullmatch(hint):
+        raise RenderError(f"invalid SDL orientation hint {hint!r}")
+    if _PROTO_ORIENTATION_LINE not in activity:
+        raise RenderError(
+            "PythonActivity.java template drifted: the ORIENTATION constant "
+            "was not found (re-extract from a proven prototype)."
+        )
+    return activity.replace(
+        _PROTO_ORIENTATION_LINE,
+        f'    private static final String ORIENTATION = "{hint}";',
+    )
+
+
+def _substitute_pad_system_bars(activity: str, pad: bool) -> str:
+    if _PROTO_PAD_SYSTEM_BARS_LINE not in activity:
+        raise RenderError(
+            "PythonActivity.java template drifted: the PAD_SYSTEM_BARS constant "
+            "was not found (re-extract from a proven prototype)."
+        )
+    return activity.replace(
+        _PROTO_PAD_SYSTEM_BARS_LINE,
+        "    private static final boolean PAD_SYSTEM_BARS = "
+        f"{'true' if pad else 'false'};",
     )
 
 

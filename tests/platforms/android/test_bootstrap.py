@@ -116,6 +116,32 @@ class TestRender:
             in activity
         )
 
+    def test_orientation_substitution(self):
+        """Without KIVY_ORIENTATION, SDL requests FULL_USER for Kivy's resizable
+        window and the app rotates whatever the manifest declares."""
+        activity = _by_path(
+            render_bootstrap(
+                sdl=2, python_version="3.14.6", orientation_hint="LandscapeLeft"
+            )
+        )["java/org/kivy/android/PythonActivity.java"]
+        assert 'ORIENTATION = "LandscapeLeft";' in activity
+        assert 'Os.setenv("KIVY_ORIENTATION", ORIENTATION, true);' in activity
+
+    @pytest.mark.parametrize("bad", ['Portrait"; evil()', "Portrait\n", ""])
+    def test_orientation_injection_rejected(self, bad):
+        with pytest.raises(RenderError, match="orientation"):
+            render_bootstrap(sdl=2, python_version="3.14.6", orientation_hint=bad)
+
+    @pytest.mark.parametrize(("sdl", "literal"), [(2, "true"), (3, "false")])
+    def test_only_generation_2_pads_for_the_system_bars(self, sdl, literal):
+        """Kivy 2.3.1 cannot report a safe area, so its content is padded clear
+        of the bars; Kivy 3 apps stay edge-to-edge and use kivy.mobile."""
+        activity = _by_path(render_bootstrap(sdl=sdl, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonActivity.java"
+        ]
+        assert f"private static final boolean PAD_SYSTEM_BARS = {literal};" in activity
+        assert "if (PAD_SYSTEM_BARS && Build.VERSION.SDK_INT >= 30)" in activity
+
     def test_launcher_imports_the_configured_entry_point(self):
         main_c = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
             "cpp/main.c"
@@ -149,7 +175,7 @@ class TestRender:
         assert "importlib.import_module" not in main_c
 
     @pytest.mark.parametrize(
-        "bad", ['main"; evil()', "main\nimport os", "1main", "pkg..mod", ""]
+        "bad", ['main"; evil()', "main\nimport os", "main\n", "1main", "pkg..mod", ""]
     )
     def test_entry_point_injection_rejected(self, bad):
         # The value lands inside a Java string literal in a generated source.

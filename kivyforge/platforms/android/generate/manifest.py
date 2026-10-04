@@ -56,6 +56,16 @@ _ORIENTATION_MAP: dict[tuple[str, ...], str] = {
     ("landscape-right",): "landscape",
 }
 
+# [tool.kivy].orientation -> SDL's orientation hint names. SDL names landscape
+# by the Android orientation it requests (LandscapeLeft is `landscape`), so
+# these follow _ORIENTATION_MAP rather than the kivyforge spelling.
+_SDL_ORIENTATION_NAMES: dict[str, str] = {
+    "portrait": "Portrait",
+    "portrait-upside-down": "PortraitUpsideDown",
+    "landscape-left": "LandscapeRight",
+    "landscape-right": "LandscapeLeft",
+}
+
 
 class ManifestError(Exception):
     pass
@@ -99,6 +109,16 @@ def screen_orientation(orientation: tuple[str, ...]) -> str:
     if key == ("portrait", "portrait-upside-down"):
         return "sensorPortrait"
     return "fullSensor"
+
+
+def sdl_orientation_hint(orientation: tuple[str, ...]) -> str:
+    """The ``KIVY_ORIENTATION`` value that keeps SDL to the manifest's orientations.
+
+    Without it SDL ignores ``android:screenOrientation``: given no hint and a
+    resizable window it requests ``SCREEN_ORIENTATION_FULL_USER``, so the app
+    rotates whatever the manifest says.
+    """
+    return " ".join(_SDL_ORIENTATION_NAMES[o] for o in orientation)
 
 
 def service_class_name(service: AndroidService) -> str:

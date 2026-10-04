@@ -378,3 +378,19 @@ shipped inside the Kivy Android wheel. **kivyforge vendors no platform shim** â€
 `kivyforge build` writes no `platform/` directory. App code guards on
 `kivy.utils.platform == "android"` and, in Kivy 3.0, can bind `Window.safe_area`
 directly.
+
+Kivy 2.3.1 has no `kivy.mobile`, and Android 15+ enforces edge-to-edge for
+`targetSdk` 35+ (`android:windowOptOutEdgeToEdgeEnforcement` is ignored from
+target 36, and Play requires a recent target, so lowering `target_sdk` is no
+fix). So for `kivy_generation = 2` the rendered `PythonActivity` sets
+`PAD_SYSTEM_BARS`: on API 30+ it opts into edge-to-edge itself (one layout
+whatever the device or target), pads `android.R.id.content` by
+`systemBars() | displayCutout()` from an `OnApplyWindowInsetsListener`, paints
+it black and clears the light-bar appearance. The padding follows rotation, and
+under `fullscreen = true` the bar insets are zero, so only the cutout is
+padded. `ime()` is deliberately not padded; Kivy's `softinput_mode` handles the
+keyboard (`below_target` verified on a Pixel 8a, Android 17, issue #63). SDL2's
+Java has no insets handling, so nothing conflicts. Generation 3 is untouched:
+SDL3's `SDLSurface` handles insets itself and Kivy 3 apps pad via
+`get_safe_area()`. Custom bar colours are left to the `android` compat
+package's helper.
