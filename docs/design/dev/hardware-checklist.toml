@@ -205,10 +205,10 @@ id = "android-services"
 title = "Android: services start and stop through the static start/stop, and reach mService with pyjnius"
 status = "runnable"
 hosts = ["windows", "macos", "linux"]
-target = "Android `arm64_v8a` (physical device, Android 12 or later)"
+target = "Android `arm64_v8a` (physical device)"
 tier = "T5"
 needs = [
-    "An arm64 Android phone on Android 12 (API 31) or later, with USB debugging on, authorized for this host (`adb devices` shows `device`). pyjnius cannot reach the VM in a service process below API 31.",
+    "An arm64 Android phone on Android 7.0 (API 24) or later, with USB debugging on, authorized for this host (`adb devices` shows `device`).",
     "The phone unlocked with the screen on.",
     "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
 ]

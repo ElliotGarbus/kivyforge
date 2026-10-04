@@ -5,6 +5,7 @@ import android.system.Os;
 import android.util.Log;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -13,7 +14,6 @@ import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 
 /**
  * The asset-bundle unpack + environment contract, shared by every process that
@@ -48,8 +48,11 @@ public class PythonBundle {
         File stamp = new File(target, "VERSION");
         String wanted = readAsset(ctx, "_python_bundle/VERSION");
         if (stamp.exists()) {
-            String have = new String(
-                Files.readAllBytes(stamp.toPath()), StandardCharsets.UTF_8);
+            // Not Files.readAllBytes: java.nio.file is API 26, min_sdk is 24.
+            String have;
+            try (InputStream in = new FileInputStream(stamp)) {
+                have = new String(readAll(in), StandardCharsets.UTF_8);
+            }
             if (have.equals(wanted)) {
                 Log.i(TAG, "bundle up to date (VERSION " + have + "), skipping unpack");
                 Os.setenv("KF_UNPACK_SKIPPED", "1", true);

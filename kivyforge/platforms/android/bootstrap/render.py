@@ -23,6 +23,8 @@ Substitution points today:
   generation (:func:`android_package_sources`).
 - ``PythonService.java`` ``PYTHON_LIB``: the same soname stem, because a service
   process loads libpython itself.
+- ``PythonService.java`` ``SDL_LIB``: the generation's SDL library, which a
+  service loads so pyjnius can reach the JavaVM through SDL on API 24-30.
 
 The per-service subclasses named by the manifest are generated from config, not
 from a template; see ``generate/services.py``.
@@ -57,6 +59,7 @@ _PROTO_PYTHON_STEM = "python3.14"
 # PythonService loads libpython itself (no SDLActivity in a service process), so
 # the stem is substituted there too.
 _PROTO_SERVICE_PYTHON_LIB = 'private static final String PYTHON_LIB = "python3.14";'
+_PROTO_SERVICE_SDL_LIB = 'private static final String SDL_LIB = "SDL2";'
 
 # The ENTRY_POINT constant as the template carries it; rendering the default
 # entry point back over it is a no-op (the diff-clean gate).
@@ -170,8 +173,10 @@ def render_bootstrap(
     out.append(
         RenderedFile(
             "java/org/kivy/android/PythonService.java",
-            _substitute_service_python_lib(
-                _read(TEMPLATES_DIR / "java/org/kivy/android/PythonService.java"), stem
+            _substitute_service_libs(
+                _read(TEMPLATES_DIR / "java/org/kivy/android/PythonService.java"),
+                stem,
+                libraries[0],
             ),
         )
     )
@@ -202,15 +207,23 @@ def render_bootstrap(
     return out
 
 
-def _substitute_service_python_lib(service: str, stem: str) -> str:
-    if _PROTO_SERVICE_PYTHON_LIB not in service:
-        raise RenderError(
-            "PythonService.java template drifted: the PYTHON_LIB constant was "
-            "not found (re-extract from a proven prototype)."
-        )
-    return service.replace(
+def _substitute_service_libs(service: str, stem: str, sdl_lib: str) -> str:
+    for proto, name in (
+        (_PROTO_SERVICE_PYTHON_LIB, "PYTHON_LIB"),
+        (_PROTO_SERVICE_SDL_LIB, "SDL_LIB"),
+    ):
+        if proto not in service:
+            raise RenderError(
+                f"PythonService.java template drifted: the {name} constant was "
+                "not found (re-extract from a proven prototype)."
+            )
+    service = service.replace(
         _PROTO_SERVICE_PYTHON_LIB,
         f'private static final String PYTHON_LIB = "{stem}";',
+    )
+    return service.replace(
+        _PROTO_SERVICE_SDL_LIB,
+        f'private static final String SDL_LIB = "{sdl_lib}";',
     )
 
 

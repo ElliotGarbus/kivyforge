@@ -44,18 +44,22 @@ class TestServiceBase:
         assert "python3.14" not in service
         assert 'System.loadLibrary("main")' in service
 
-    def test_base_does_not_touch_sdl(self):
-        """Services do background work; loading SDL there would create a second
-        window-owning thread in a process with no Activity."""
-        service = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
+    @pytest.mark.parametrize("sdl", [2, 3])
+    def test_base_loads_sdl_before_python(self, sdl):
+        """SDL's JNI_OnLoad records the JavaVM, and SDL's JNIEnv getter is the
+        only way pyjnius reaches it in a service on API 24-30, where apps cannot
+        call JNI_GetCreatedJavaVMs. Loading the library creates no window: that
+        comes from SDLActivity, which a service never starts."""
+        service = _by_path(render_bootstrap(sdl=sdl, python_version="3.14.6"))[
             "java/org/kivy/android/PythonService.java"
         ]
-        code = [
-            line
-            for line in service.splitlines()
-            if not line.lstrip().startswith(("*", "/*", "//"))
-        ]
-        assert not [line for line in code if "SDL" in line]
+        assert f'SDL_LIB = "SDL{sdl}";' in service
+        assert f'"SDL{5 - sdl}"' not in service
+        run = service[service.index("public void run()") :]
+        assert run.index("System.loadLibrary(SDL_LIB);") < run.index(
+            "System.loadLibrary(PYTHON_LIB);"
+        )
+        assert "SDLActivity" not in service
 
     def test_base_publishes_mservice_before_python_runs(self):
         """autoclass(SERVICE_CLASS_NAME).mService is how p4a-era code (and the
@@ -243,4 +247,11 @@ class TestTemplateDrift:
 
         monkeypatch.setattr(render_mod, "_PROTO_SERVICE_PYTHON_LIB", "not-in-template")
         with pytest.raises(RenderError, match="PythonService.java template drifted"):
+            render_bootstrap(sdl=2, python_version="3.14.6")
+
+    def test_missing_sdl_lib_constant_is_caught(self, monkeypatch):
+        from kivyforge.platforms.android.bootstrap import render as render_mod
+
+        monkeypatch.setattr(render_mod, "_PROTO_SERVICE_SDL_LIB", "not-in-template")
+        with pytest.raises(RenderError, match="the SDL_LIB constant"):
             render_bootstrap(sdl=2, python_version="3.14.6")

@@ -7,9 +7,11 @@ import android.content.Context;
 import android.content.Intent;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -47,8 +49,7 @@ public class KivyforgeContractTest {
         String contents = "";
         while (System.currentTimeMillis() < deadline) {
             if (result.exists()) {
-                contents = new String(
-                    Files.readAllBytes(result.toPath()), StandardCharsets.UTF_8);
+                contents = readText(result);
                 if (contents.contains("SELFTEST_DONE")) {
                     break;
                 }
@@ -75,5 +76,16 @@ public class KivyforgeContractTest {
         assertTrue(
             "self-test reported a failure: " + contents,
             contents.contains("SELFTEST_ALL_OK"));
+    }
+
+    // Not Files.readAllBytes: java.nio.file is API 26, min_sdk is 24.
+    private static String readText(File file) throws Exception {
+        try (InputStream in = new FileInputStream(file)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }
     }
 }

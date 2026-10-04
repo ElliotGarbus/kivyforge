@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -213,7 +214,7 @@ class TestAdbFunction:
         self._stub_tool(monkeypatch)
         captured = {}
 
-        def fake_run(cmd, capture_output, text, stdin=None):
+        def fake_run(cmd, **kwargs):
             captured["cmd"] = cmd
             return subprocess.CompletedProcess(cmd, 0, stdout="ok\n", stderr="")
 
@@ -225,7 +226,7 @@ class TestAdbFunction:
         self._stub_tool(monkeypatch)
         captured = {}
 
-        def fake_run(cmd, capture_output, text, stdin=None):
+        def fake_run(cmd, **kwargs):
             captured["cmd"] = cmd
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
@@ -236,7 +237,7 @@ class TestAdbFunction:
     def test_nonzero_exit_raises_when_checked(self, monkeypatch):
         self._stub_tool(monkeypatch)
 
-        def fake_run(cmd, capture_output, text, stdin=None):
+        def fake_run(cmd, **kwargs):
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no device")
 
         monkeypatch.setattr(adb_mod.subprocess, "run", fake_run)
@@ -246,11 +247,18 @@ class TestAdbFunction:
     def test_nonzero_exit_ignored_when_unchecked(self, monkeypatch):
         self._stub_tool(monkeypatch)
 
-        def fake_run(cmd, capture_output, text, stdin=None):
+        def fake_run(cmd, **kwargs):
             return subprocess.CompletedProcess(cmd, 1, stdout="partial", stderr="")
 
         monkeypatch.setattr(adb_mod.subprocess, "run", fake_run)
         assert adb_mod.adb("shell", "true", check=False) == "partial"
+
+    def test_device_output_is_decoded_as_utf8(self, monkeypatch):
+        """logcat relays whatever apps logged. Decoded with the Windows locale
+        codec, an arrow made subprocess return stdout=None and crashed `run`."""
+        monkeypatch.setattr(adb_mod, "sdk_tool", lambda *a, **k: sys.executable)
+        code = r"import sys; sys.stdout.buffer.write(b'\xe2\x86\x92 \x81')"
+        assert adb_mod.adb("-c", code) == "\u2192 \ufffd"
 
 
 class TestAvailableAvds:

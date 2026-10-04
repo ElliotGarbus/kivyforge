@@ -69,7 +69,16 @@ def adb(*args: str, serial: str | None = None, check: bool = True) -> str:
     if serial:
         cmd += ["-s", serial]
     cmd += list(args)
-    proc = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    # adb relays device output as UTF-8 (logcat carries whatever apps logged).
+    # Decoding with the Windows locale codec fails inside subprocess's reader
+    # thread, which leaves stdout as None instead of raising.
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        stdin=subprocess.DEVNULL,
+    )
     if check and proc.returncode != 0:
         raise AdbError(f"adb {' '.join(args)} failed:\n{proc.stderr or proc.stdout}")
     return proc.stdout

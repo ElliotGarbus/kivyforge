@@ -281,6 +281,31 @@ class TestRender:
         assert "kivyforge_selftest" in content
         assert "EXT_OK" in content and "PROXY_OK" in content
 
+    @pytest.mark.parametrize("sdl", [2, 3])
+    def test_no_generated_java_needs_api_26(self, sdl):
+        """java.nio.file arrived in API 26 and min_sdk is 24. Lint's NewApi is
+        not in the release gate, so on Android 7 a call to it surfaced only as
+        a NoSuchMethodError: every relaunch of every app crashed."""
+        from kivyforge.config.model import AndroidService
+        from kivyforge.platforms.android.generate.services import (
+            render_service_contract_test,
+        )
+
+        service = AndroidService(name="Worker", entry_point="worker")
+        files = [
+            *render_bootstrap(sdl=sdl, python_version="3.14.6"),
+            *androidtest_files(),
+            *render_service_contract_test((service,)),
+        ]
+        java = [f for f in files if f.relpath.endswith(".java")]
+        assert java
+        offenders = [
+            f.relpath
+            for f in java
+            if "import java.nio.file" in f.content or ".toPath()" in f.content
+        ]
+        assert offenders == []
+
     def test_sdl_license_travels_with_the_glue(self):
         assert (TEMPLATES_DIR / "sdl2" / "LICENSE-SDL.txt").is_file()
         revision = (TEMPLATES_DIR / "sdl2" / "SDL_REVISION.txt").read_text()

@@ -99,8 +99,9 @@ print(service.getPackageName())
 A service runs in its own process, which has no activity: `android.mActivity`
 is `None` there.
 
-pyjnius finds the Java VM in a service process only on Android 12 (API 31) and
-later. On older versions the service still runs, but its `jnius` calls fail.
+pyjnius works in a service on every Android version kivyforge supports. The
+service loads the app's SDL library before Python starts, because that is how
+pyjnius finds the Java VM. The service creates no window.
 
 ### Coming from python-for-android
 

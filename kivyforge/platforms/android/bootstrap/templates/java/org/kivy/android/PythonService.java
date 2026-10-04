@@ -28,10 +28,10 @@ import java.nio.charset.StandardCharsets;
  * not return until the entry point does and blocking a service's main thread is
  * an ANR.
  *
- * There is no SDL here. The service's Python does background work, so only
- * libpython and libmain are loaded; nothing creates a window or a JNIEnv-owning
- * SDL thread. pyjnius therefore finds the VM through JNI_GetCreatedJavaVMs,
- * which apps can reach only on API 31+.
+ * The service creates no window, but it still loads the generation's SDL
+ * library first: SDL's JNI_OnLoad records the JavaVM, and SDL's JNIEnv getter
+ * is how pyjnius reaches it. Its other route, JNI_GetCreatedJavaVMs, is open to
+ * apps only on API 31+, so without SDL a service's jnius fails on API 24-30.
  *
  * The generated subclasses carry p4a's static start/stop signatures, and
  * mService has p4a's name, so code written against p4a's services keeps
@@ -41,6 +41,8 @@ public class PythonService extends Service implements Runnable {
     private static final String TAG = "kivyforge";
     // The libpython soname stem, substituted at render time.
     private static final String PYTHON_LIB = "python3.14";
+    // The SDL library for the Kivy generation, substituted at render time.
+    private static final String SDL_LIB = "SDL2";
 
     private static final int NOTIFICATION_ID = 1;
 
@@ -207,6 +209,7 @@ public class PythonService extends Service implements Runnable {
         Log.i(TAG, "service " + getServiceName() + ": starting " + getEntryPoint());
         mService = this;
         try {
+            System.loadLibrary(SDL_LIB);
             System.loadLibrary(PYTHON_LIB);
             System.loadLibrary("main");
             int rc = nativeStart();

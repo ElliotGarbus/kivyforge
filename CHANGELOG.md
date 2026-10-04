@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Android: apps relaunch on Android 7, and services can use pyjnius below Android 12
+
+- **Fixed:** on Android 7.0 and 7.1 (API 24 and 25), every app crashed on its
+  second launch, and every service crashed on start, with
+  `NoSuchMethodError: ... toPath()`. The check for an already-unpacked bundle
+  used `java.nio.file`, which Android added in 8.0. Only the first launch after
+  an install got through.
+- **Fixed:** in a service on Android 7 to 11 (API 24 to 30), `import jnius`
+  raised `RuntimeError: pyjnius (Android) could not obtain a JNIEnv`. A service
+  now loads the app's SDL library before Python starts, which is how pyjnius
+  finds the Java VM. It creates no window.
+- **Fixed:** on Windows, `kivyforge run -p android` could crash with
+  `AttributeError: 'NoneType' object has no attribute 'splitlines'` after
+  launching the app. adb output is now read as UTF-8.
+
 ### Android: the `android` package is bundled
 
 - **Added:** every Android build includes python-for-android's `android`
