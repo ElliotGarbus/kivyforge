@@ -49,10 +49,59 @@ source = "pythonforandroid/bootstraps/common/build/src/main/java/org/kivy/androi
 path = "p4a/java/org/kivy/android/GenericBroadcastReceiverCallback.java"
 source = "pythonforandroid/bootstraps/common/build/src/main/java/org/kivy/android/GenericBroadcastReceiverCallback.java"
 
-# PythonActivity.changeKeyboard for kivy_generation = 3, which the render step
-# puts in place of the SDL2 member.
+# PythonActivity members the android package calls. p4a's SDL2 and SDL3
+# activities carry them identically, so each block is checked against both.
+[[block]]
+name = "new-intent-listener"
+target = "java/org/kivy/android/PythonActivity.java"
+sources = [
+    "pythonforandroid/bootstraps/sdl2/build/src/main/java/org/kivy/android/PythonActivity.java",
+    "pythonforandroid/bootstraps/sdl3/build/src/main/java/org/kivy/android/PythonActivity.java",
+]
+first = "public interface NewIntentListener {"
+last = "public void unregisterNewIntentListener(NewIntentListener listener) {"
+
+[[block]]
+name = "activity-result-listener"
+target = "java/org/kivy/android/PythonActivity.java"
+sources = [
+    "pythonforandroid/bootstraps/sdl2/build/src/main/java/org/kivy/android/PythonActivity.java",
+    "pythonforandroid/bootstraps/sdl3/build/src/main/java/org/kivy/android/PythonActivity.java",
+]
+first = "public interface ActivityResultListener {"
+last = "public void unregisterActivityResultListener(ActivityResultListener listener) {"
+
+[[block]]
+name = "permissions"
+target = "java/org/kivy/android/PythonActivity.java"
+sources = [
+    "pythonforandroid/bootstraps/sdl2/build/src/main/java/org/kivy/android/PythonActivity.java",
+    "pythonforandroid/bootstraps/sdl3/build/src/main/java/org/kivy/android/PythonActivity.java",
+]
+first = "public interface PermissionsCallback {"
+last = "public void requestPermissions(String[] permissions) {"
+
+[[block]]
+name = "dark-mode"
+target = "java/org/kivy/android/PythonActivity.java"
+sources = [
+    "pythonforandroid/bootstraps/sdl2/build/src/main/java/org/kivy/android/PythonActivity.java",
+    "pythonforandroid/bootstraps/sdl3/build/src/main/java/org/kivy/android/PythonActivity.java",
+]
+first = "public interface DarkModeListener {"
+last = "public void onConfigurationChanged(Configuration newConfig) {"
+
+# changeKeyboard differs by generation: the template carries the SDL2 member,
+# and the render step puts the SDL3 fragment in its place for
+# kivy_generation = 3.
 [[block]]
 name = "change-keyboard"
+target = "java/org/kivy/android/PythonActivity.java"
+source = "pythonforandroid/bootstraps/sdl2/build/src/main/java/org/kivy/android/PythonActivity.java"
+first = "public static void changeKeyboard(int inputType) {"
+
+[[block]]
+name = "change-keyboard-sdl3"
 fragment = "p4a/java/PythonActivity.changeKeyboard.sdl3.java.in"
 source = "pythonforandroid/bootstraps/sdl3/build/src/main/java/org/kivy/android/PythonActivity.java"
 first = "public static void changeKeyboard(int inputType) {"

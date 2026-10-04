@@ -84,6 +84,46 @@ def run() -> bool:
         lines.append("KIVY_CONTRACT_FAIL")
         lines.append(traceback.format_exc())
 
+    # 4. The bundled android package: every module imports, and the Java
+    #    members it calls exist on the activity. A missing member only fails
+    #    when the app first calls it, so it is looked up here instead.
+    try:
+        from jnius import autoclass
+
+        import android
+        import android.activity
+        import android.broadcast
+        import android.darkmode
+        import android.loadingscreen
+        import android.permissions
+        import android.runnable
+        import android.storage  # noqa: F401
+
+        assert android.mActivity is not None, "android.mActivity is None"
+        assert android.api_version > 0, android.api_version
+        granted = android.mActivity.checkCurrentPermission(
+            "android.permission.INTERNET"
+        )
+        assert granted in (True, False), granted
+        cls = autoclass("java.lang.Class").forName(android.config.ACTIVITY_CLASS_NAME)
+        declared = {m.getName() for m in cls.getDeclaredMethods()}
+        missing = {
+            "addPermissionsCallback",
+            "changeKeyboard",
+            "registerActivityResultListener",
+            "registerNewIntentListener",
+            "requestPermissionsWithRequestCode",
+            "setDarkModeListener",
+            "unregisterActivityResultListener",
+            "unregisterNewIntentListener",
+        } - declared
+        assert not missing, f"PythonActivity lacks {sorted(missing)}"
+        lines.append("ANDROID_PKG_OK")
+    except Exception:
+        ok = False
+        lines.append("ANDROID_PKG_FAIL")
+        lines.append(traceback.format_exc())
+
     if ok:
         lines.append("SELFTEST_ALL_OK")
     lines.append("SELFTEST_DONE")
