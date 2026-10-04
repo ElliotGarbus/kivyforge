@@ -825,7 +825,11 @@ def _manifest_main_activity_problems(
 
     expected: dict[str, str] = {
         "android:exported": "true",
-        "android:configChanges": "keyboardHidden|orientation|screenSize",
+        "android:configChanges": (
+            "mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation"
+            "|orientation|screenLayout|fontScale|uiMode|screenSize"
+            "|smallestScreenSize|layoutDirection|density"
+        ),
         "android:screenOrientation": screen_orientation(orientation),
         "android:theme": GENERATED_THEME,
     }

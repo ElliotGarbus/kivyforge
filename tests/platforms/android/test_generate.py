@@ -203,6 +203,19 @@ class TestManifest:
         # The serialized form is escaped once, which is what makes it parse.
         assert 'android:description="Rock &amp; Roll"' in text
 
+    @pytest.mark.parametrize(
+        "change", ["uiMode", "locale", "fontScale", "density", "screenLayout"]
+    )
+    def test_activity_handles_config_changes_sdl_cannot_survive(self, change):
+        """An undeclared change recreates the activity, and SDL ends its main
+        thread when that happens: a light/dark switch quit the app on a Pixel 8a
+        (Android 17) on both SDL2 and SDL3 before uiMode was declared."""
+        _, android = _android("")
+        _, tree = _manifest_tree(android)
+        activity = tree.find("application/activity")
+        assert activity is not None
+        assert change in activity.get(f"{NS}configChanges", "").split("|")
+
     def test_orientation_mapping(self):
         assert screen_orientation(("portrait",)) == "portrait"
         assert (

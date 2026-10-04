@@ -18,6 +18,16 @@ ANDROID_NS = "http://schemas.android.com/apk/res/android"
 MAIN_ACTIVITY = "org.kivy.android.PythonActivity"
 GENERATED_THEME = "@style/Theme.Kivyforge"
 
+# Every configuration change the activity handles itself. One it does not
+# declare makes Android recreate the activity, and SDL cannot survive that: its
+# main thread ends and the app quits (a theme switch did, before uiMode was
+# added). The list is python-for-android's, so apps behave as they did there.
+ACTIVITY_CONFIG_CHANGES = (
+    "mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation"
+    "|screenLayout|fontScale|uiMode|screenSize|smallestScreenSize"
+    "|layoutDirection|density"
+)
+
 # Google's permission -> implied-hardware-feature table (android/01
 # §implied features), including the two documented deliberate extras
 # (USE_BIOMETRIC mirroring USE_FINGERPRINT; the API-31 Bluetooth pair).
@@ -217,7 +227,7 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
     activity_attrs: dict[str, str] = {
         "android:name": MAIN_ACTIVITY,
         "android:exported": "true",
-        "android:configChanges": "keyboardHidden|orientation|screenSize",
+        "android:configChanges": ACTIVITY_CONFIG_CHANGES,
         "android:screenOrientation": screen_orientation(orientation),
         "android:theme": GENERATED_THEME,
     }

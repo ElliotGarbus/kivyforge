@@ -81,6 +81,34 @@ pass = [
 record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
 
 [[item]]
+id = "android-theme-switch"
+title = "Android: a light/dark theme switch does not quit the app (both SDL generations)"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone with USB debugging on, authorized for this host (`adb devices` shows `device`).",
+    "The phone unlocked with the screen on for the whole run: Android defers a configuration change for an activity that is not visible.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/hello-android",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device",
+    "adb shell pidof org.kivyforge.helloandroid",
+    "adb shell cmd uimode night yes",
+    "adb shell cmd uimode night no",
+    "adb shell pidof org.kivyforge.helloandroid",
+    "cd ../hello-sdl3, then repeat the same steps with org.kivyforge.hellosdl3",
+]
+pass = [
+    "For each app, both `pidof` calls print the same process id, and the app is still on screen after both switches.",
+    "`adb logcat -b events` shows no `wm_relaunch_resume_activity` for the app during the switches.",
+]
+record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
+
+[[item]]
 id = "android-gen2-system-bars"
 title = "Android: a Kivy 2.3.1 app keeps clear of the system bars on Android 15+"
 status = "runnable"
