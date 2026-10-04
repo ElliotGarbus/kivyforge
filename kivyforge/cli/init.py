@@ -166,6 +166,12 @@ _BUILDOZER_DROPPED: tuple[tuple[str, str], ...] = (
         "wheel (see docs/design/platforms/android/03).",
     ),
     (
+        "'android' in requirements",
+        "every kivyforge Android build bundles python-for-android's `android` "
+        "package, so leave it out: `kivyforge lock` rejects a dependency named "
+        "android.",
+    ),
+    (
         "android.ndk, android.sdk, android.ndk_api, android.gradle_version",
         "kivyforge pins the toolchain itself; `kivyforge doctor -p android` "
         "checks the host against those pins.",

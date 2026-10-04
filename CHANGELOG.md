@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Android: the `android` package is bundled
+
+- **Added:** every Android build includes python-for-android's `android`
+  package, so code that imports it runs unchanged: `android.permissions`,
+  `android.activity`, `android.runnable`, `android.broadcast`,
+  `android.darkmode`, `android.storage`, `android.config`, and the package's
+  own `mActivity`, `api_version`, `open_url` and the rest. The modules are
+  taken unchanged from python-for-android at a pinned revision. plyer's
+  Android facades, which import it, can now load. Nothing to add to your
+  dependencies, but the package needs `pyjnius`. See
+  [Use the android package](docs/guides/guides/android/android-package.md).
+- **Fixed:** on Kivy 2.3.1, tapping a `TextInput` quit the app, and so did the
+  back key, `App.stop()` and `App.pause()`: Kivy calls the activity through
+  this package. Kivy's Android clipboard provider now loads, and so does its
+  Android audio provider when an app selects it with `KIVY_AUDIO`. A
+  `TextInput` with `input_type = "number"` (or `"mail"`, `"tel"`, ...) gets
+  the matching keyboard.
+- **Changed:** `kivyforge lock` fails with `KF-ANDROID-DEPENDENCY-CONFLICT`
+  when a dependency is named `android`, and `kivyforge build` fails with
+  `KF-ANDROID-APP-CONFLICT` when `app_dir` has an `android.py` or an `android/`
+  package (or with `KF-ANDROID-DEPENDENCY-CONFLICT` when an installed wheel
+  provides one). Both exit 1. The bundled package always comes first, so a
+  second one would ship and never be imported.
+- **Migration:** remove `android` from your dependencies, for example a
+  package index's `android` wheel or an `android` carried over from a
+  buildozer `requirements` line. Rename an `android.py` or `android/` of your
+  own.
+
 ### Android: services have `start`, `stop` and `mService`
 
 - **Added:** each generated service class has static `start(context, argument)`

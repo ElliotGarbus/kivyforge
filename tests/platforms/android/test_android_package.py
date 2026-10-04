@@ -16,11 +16,13 @@ import re
 import sys
 import types
 import webbrowser
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
 import pytest
 
+from kivyforge.config.loader import load_config
 from kivyforge.platforms.android.bootstrap.render import (
     P4A_DIR,
     TEMPLATES_DIR,
@@ -309,3 +311,29 @@ class TestPackageRuntime:
         for rel in android_package_sources(2):
             module = rel.removesuffix(".py").removesuffix("/__init__")
             importlib.import_module(module.replace("/", "."))
+
+
+_EXAMPLES = Path(__file__).resolve().parents[3] / "examples" / "mobile"
+
+
+class TestGateExamples:
+    """android-package and android-package-sdl3 are one app built on each Kivy
+    generation; a fix made to one copy only would leave a gate that no longer
+    checks the same thing on both."""
+
+    def test_both_generations_run_the_same_app(self):
+        gen2 = (_EXAMPLES / "android-package" / "src" / "main.py").read_bytes()
+        gen3 = (_EXAMPLES / "android-package-sdl3" / "src" / "main.py").read_bytes()
+        assert gen2 == gen3
+
+    @pytest.mark.parametrize(
+        ("example", "generation"),
+        [("android-package", 2), ("android-package-sdl3", 3)],
+    )
+    def test_each_example_targets_its_generation(self, example, generation):
+        config = load_config(
+            _EXAMPLES / example / "pyproject.toml",
+            require_ios=False,
+            require_android=True,
+        )
+        assert config.android_required.kivy_generation == generation

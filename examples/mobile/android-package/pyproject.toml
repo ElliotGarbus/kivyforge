@@ -1,0 +1,33 @@
+[project]
+name = "android-package"
+version = "1.0.0"
+description = "The bundled android package, checked on a device (Kivy 2.3.1, SDL2)"
+requires-python = ">=3.14"
+dependencies = [
+    "kivy==2.3.1",
+    "pyjnius",
+    "plyer",
+]
+
+[tool.kivy]
+display_name = "Android Package"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.androidpackage"
+min_sdk = 24
+target_sdk = 35
+kivy_generation = 2
+abis = ["arm64_v8a", "x86_64"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"
+
+[tool.kivy.android.permissions]
+uses = ["POST_NOTIFICATIONS"]

@@ -69,9 +69,10 @@ loose in `app_dir`. `kivyforge doctor` flags a non-Android `.so` under `app_dir`
 
 The common case — *using* `pyjnius`/`plyer` to reach Java/Android APIs — needs no
 author-side compilation: the author writes pure Python, and pyjnius arrives as a
-prebuilt Android wheel. (plyer's Android facades also import the python-for-android
-`android` package, which kivyforge does not provide yet; see
-[the proposal](../../dev/android-compat-package-proposal.md).)
+prebuilt Android wheel. plyer's Android facades also import python-for-android's
+`android` package, which kivyforge bundles as pure Python in every Android build (see
+[the proposal](../../dev/android-compat-package-proposal.md)), so it needs no wheel
+either.
 
 ## Distribution channel 1: Android wheels
 

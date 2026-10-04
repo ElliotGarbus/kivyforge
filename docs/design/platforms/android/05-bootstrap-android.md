@@ -48,7 +48,12 @@ names (`org.kivy.android.PythonActivity`, `org.kivy.android.PythonService`, …)
 This is not cosmetic: Kivy, Plyer, and app code reach Android APIs via
 `autoclass('org.kivy.android.PythonActivity')` and friends. Preserving the
 namespace means that existing Kivy-Android Python code that calls `autoclass` on
-these classes works unmodified. Likewise the SDL Java glue keeps `org.libsdl.app.*`,
+these classes works unmodified. Code that imports python-for-android's `android`
+package (`from android.permissions import ...`) works because the bootstrap bundles
+that package too, together with the `PythonActivity` and `PythonService` members it
+calls ([proposal](../../dev/android-compat-package-proposal.md)). Generated service
+classes are `org.kivy.android.Service<Name>`, where python-for-android uses the app's
+package, so that one name changes. Likewise the SDL Java glue keeps `org.libsdl.app.*`,
 and the pyjnius glue keeps `org.jnius.NativeInvocationHandler` (the class name
 pyjnius resolves at proxy-creation time).
 

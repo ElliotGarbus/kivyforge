@@ -290,8 +290,12 @@ the call is the only blocker on that path.
 
 ## What was not verified
 
-- Only the `TextInput` crash (E11) and the theme-switch exit (E10) were run on a device.
-  The plyer failure in E4 is inferred.
+- Before the package, only the `TextInput` crash (E11) and the theme-switch exit (E10)
+  were run on a device; the plyer failure in E4 is inferred. With the package, every
+  E11 path that it fixes was run on 2026-10-04 (`android-package-gen2` and
+  `android-package-sdl3` in `test-matrix.md` §7). Kivy 2.3.1 loads `audio_android` only
+  when `KIVY_AUDIO` names it, so "skipped" in E11 is Kivy's default, not an import
+  failure.
 - Kivyschool's `android` wheel was not downloaded; "depends on SDL2" is the user's report.
 - p4a's generated `android/config.py` was not built, but the recipe that writes it
   (`recipes/android/__init__.py`, `prebuild_arch`) was read on 2026-10-04; [Config](#config)
