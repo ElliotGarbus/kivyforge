@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Android: a theme switch no longer quits the app
+
+- **Fixed:** switching the phone between light and dark mode quit a kivyforge
+  Android app, on Kivy 2.3.1 (SDL2) and Kivy 3.0 (SDL3). Android recreates an
+  activity for any configuration change the manifest does not declare, and SDL
+  ends the app when its activity is recreated. The generated manifest now
+  declares the same `android:configChanges` list as python-for-android,
+  including `uiMode`, so a theme switch, a language or font-size change, a
+  density change or a split-screen resize reaches the running app instead.
+- **Migration:** none. An app that set its own `android:configChanges` through
+  `[tool.kivy.android.manifest].activity` keeps its value.
+
 ### Android: Kivy 2.3.1 apps keep clear of the system bars
 
 - **Fixed:** on Android 15 and later, an app targeting API 35 or higher is drawn
