@@ -57,6 +57,13 @@ service runs a Python module of your app in its own process.
     your app needs it. For the list of valid types, see the
     [Android overlay reference](../../reference/pyproject/android.md).
 
+    The notification uses the app's launcher icon unless you add
+    `icon = "<name>"` to the `notification` table. Android expects a
+    monochrome silhouette there; ship it as a drawable, for example
+    `drawable/ic_notification.xml`, as described in
+    [Add Android resources](configure.md#add-android-resources), and set
+    `icon = "ic_notification"`.
+
 4. Re-lock, because `pyproject.toml` changed:
 
     ```bash
