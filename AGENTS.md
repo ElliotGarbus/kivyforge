@@ -122,6 +122,9 @@ result into `test-matrix.md` §7. Commit that row with the pass.
   archs and package formats, **which hosts can build which targets**, every
   verb and whether it takes `--json`, and the exit-code and `KF-*` vocabularies.
   It needs no project, lock or network.
+- **`run -p android` follows the app's log until the app exits.** Pass
+  `--no-follow` to get one snapshot and a return instead of a command that
+  never ends on its own.
 - **Every verb but `run` takes `--json`.** stdout is one envelope:
   `{"schema", "kivyforge", "command", "platform", "ok", "data", "diagnostics"}`.
   Progress stays on stderr, so a build log and a parseable document coexist.

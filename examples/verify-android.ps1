@@ -44,7 +44,8 @@ foreach ($ex in $examples) {
         if ($LASTEXITCODE -ne 0) { throw "build failed" }
 
         if ($Run) {
-            & $kivyforge run -p android --emulator --avd $Avd --abi x86_64
+            # --no-follow: return after one snapshot instead of streaming the log.
+            & $kivyforge run -p android --emulator --avd $Avd --abi x86_64 --no-follow
             if ($LASTEXITCODE -ne 0) { throw "run failed" }
             & $kivyforge run -p android --smoke --avd $Avd --abi x86_64
             if ($LASTEXITCODE -ne 0) { throw "smoke failed" }

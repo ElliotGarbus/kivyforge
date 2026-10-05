@@ -7,7 +7,11 @@ job (Phase 6).
 
 from __future__ import annotations
 
+import queue
 import shutil
+import subprocess
+import threading
+import time
 from pathlib import Path
 
 import click
@@ -730,9 +734,16 @@ def android_run(
     avd: str | None = None,
     prefer_emulator: bool = False,
     require_physical: bool = False,
+    follow: bool = True,
     wait_sec: int = 25,
 ) -> str:
     """Build (unless ``--no-build``), install, launch, echo + return app logcat.
+
+    The log is the app's process only (``logcat --pid``), so other apps stay
+    out and the app's own crash report stays in. ``follow`` streams it until
+    the app exits or the user presses Ctrl-C, the way pidcat or Briefcase does;
+    without it, ``run`` takes one snapshot ``wait_sec`` after launch and
+    returns, for scripts.
 
     ``release`` builds and installs the release variant instead of debug —
     the only way to exercise `byte_compile`/`strip_source` (release-only
@@ -804,19 +815,114 @@ def android_run(
         adb_mod.install_apk(device, apk)
         adb_mod.logcat_clear(device)
         adb_mod.launch(device, android.package, "org.kivy.android.PythonActivity")
-        click.echo(f"[run] launched {android.package}; capturing logcat...", err=True)
-        import time as _time
-
-        _time.sleep(wait_sec)
-        log = adb_mod.logcat_dump(device)
+        pid = _wait_for_pid(adb_mod, device, android.package)
+        if pid is None:
+            # Never seen running: it died at once or never started. Its own
+            # report is in the unfiltered log, which was cleared at launch.
+            click.echo(adb_mod.logcat_dump(device), err=True, nl=False)
+            raise AndroidBuildError(
+                f"{android.package} did not start: no process within "
+                f"{_PID_WAIT_SEC:g} s of launch. The device log since launch "
+                "is above."
+            )
+        if follow:
+            click.echo(
+                f"[run] launched {android.package} (pid {pid}); following its "
+                "log, Ctrl-C to stop...",
+                err=True,
+            )
+            return _follow_app_log(adb_mod, device, android.package, pid)
+        click.echo(
+            f"[run] launched {android.package} (pid {pid}); capturing {wait_sec} s "
+            "of its log...",
+            err=True,
+        )
+        time.sleep(wait_sec)
+        log = adb_mod.logcat_dump(device, pid=pid)
         # The app's own output is `run`'s product, so it alone goes to stdout;
-        # every [run] line above is progress (AGENTS.md).
-        for line in log.splitlines():
-            if any(tag in line for tag in ("kivyforge", "python.std", "SDL")):
-                click.echo(line)
+        # every [run] line is progress (AGENTS.md).
+        click.echo(log, nl=False)
         return log
     except adb_mod.AdbError as exc:
         raise AndroidBuildError(str(exc)) from exc
+
+
+# How long a launched app has to show up as a process. It is the process that
+# unpacks the bundle, so it exists well before Python starts.
+_PID_WAIT_SEC = 10.0
+# How often a followed app is checked for having exited.
+_PID_POLL_SEC = 1.0
+
+
+def _wait_for_pid(adb_mod, device: str, package: str) -> str | None:
+    deadline = time.monotonic() + _PID_WAIT_SEC
+    while True:
+        pid = adb_mod.pidof(device, package)
+        if pid is not None or time.monotonic() >= deadline:
+            return pid
+        time.sleep(0.2)
+
+
+def _follow_app_log(adb_mod, device: str, package: str, pid: str) -> str:
+    """Echo the app's log live until it exits or the user presses Ctrl-C.
+
+    logcat itself never ends while the device is attached, so exit is detected
+    by asking for the pid again; a different pid is a restarted app, which this
+    run did not launch.
+    """
+    proc = adb_mod.logcat_follow(device, pid)
+    lines: queue.Queue[str | None] = queue.Queue()
+
+    def pump() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=pump, daemon=True).start()
+    captured: list[str] = []
+
+    def echo(line: str) -> None:
+        captured.append(line)
+        click.echo(line, nl=False)
+
+    ending = "logcat ended (was the device disconnected?)"
+    try:
+        next_check = time.monotonic() + _PID_POLL_SEC
+        while True:
+            try:
+                line = lines.get(timeout=_PID_POLL_SEC)
+            except queue.Empty:
+                line = ""
+            if line is None:
+                break
+            if line:
+                echo(line)
+            if time.monotonic() >= next_check:
+                if adb_mod.pidof(device, package) != pid:
+                    # Gone: let logcat deliver the last lines (a crash report
+                    # is written as the process dies), then stop.
+                    while True:
+                        try:
+                            line = lines.get(timeout=0.5)
+                        except queue.Empty:
+                            break
+                        if line is None:
+                            break
+                        echo(line)
+                    ending = f"{package} exited"
+                    break
+                next_check = time.monotonic() + _PID_POLL_SEC
+    except KeyboardInterrupt:
+        ending = f"stopped following the log; {package} is still running"
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    click.echo(f"[run] {ending}.", err=True)
+    return "".join(captured)
 
 
 def _abi_for_device(device: str, android: AndroidConfig) -> str:

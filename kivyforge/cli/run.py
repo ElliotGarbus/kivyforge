@@ -75,6 +75,14 @@ from ._platform import platform_option, reject_android_only, resolve_target
     default=None,
     help="Android: restrict the implicit build to one ABI.",
 )
+@click.option(
+    "--no-follow",
+    is_flag=True,
+    help=(
+        "Android: print the app's log once, 25 s after launch, and return "
+        "instead of following it until the app exits or Ctrl-C (for scripts)."
+    ),
+)
 def run(
     cli_platform: str | None,
     target: str,
@@ -88,6 +96,7 @@ def run(
     smoke: bool,
     release: bool,
     abi: str | None,
+    no_follow: bool,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
     backend, project_root = resolve_target(cli_platform, verb="run")
@@ -100,6 +109,7 @@ def run(
             "--serial": serial,
             "--smoke": smoke,
             "--abi": abi,
+            "--no-follow": no_follow,
         },
     )
     abi = abi or arch
@@ -126,6 +136,11 @@ def run(
             )
         require_physical = explicit == "device"
 
+        if smoke and no_follow:
+            raise ToolchainError(
+                "--no-follow applies to the app's log, which --smoke does not "
+                "show; pass one."
+            )
         if list_devices:
             from ..platforms.android import adb as adb_mod
 
@@ -152,6 +167,7 @@ def run(
                 avd=avd,
                 prefer_emulator=emulator or avd is not None,
                 require_physical=require_physical,
+                follow=not no_follow,
             )
         return
 

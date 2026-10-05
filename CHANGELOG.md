@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Android: `run` follows the app's log
+
+- **Changed:** `kivyforge run -p android` now shows the app's log live, the way
+  pidcat or Briefcase does, until the app exits or you press Ctrl+C (which stops
+  the log and leaves the app running). It used to print one snapshot 25 seconds
+  after launch and return, so anything the app logged later, such as a
+  traceback from a button press, never appeared, and a slow first start could
+  show no Kivy output at all.
+  ([#73](https://github.com/ElliotGarbus/kivyforge/issues/73))
+- **Fixed:** the log is now the app's own process (`adb logcat --pid`). The old
+  filter matched text in each line, so it let other apps' lines through (any
+  line mentioning `SDL` or `kivyforge`) and dropped the app's own Android crash
+  report.
+- **Added:** if the app never starts, `run` prints the device log since launch
+  and fails, instead of showing an empty capture.
+- **Migration:** a script that runs `kivyforge run -p android` and expects it
+  to return must add `--no-follow`, which keeps the one-snapshot behaviour
+  (now filtered to the app's process). `run --smoke` is unchanged.
+
 ### Android: switching `kivy_generation` no longer needs `kivyforge clean`
 
 - **Fixed:** rebuilding after changing `[tool.kivy.android].kivy_generation`
