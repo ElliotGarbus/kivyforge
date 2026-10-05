@@ -243,8 +243,42 @@ def force_stop(serial: str, package: str) -> None:
     adb("shell", "am", "force-stop", package, serial=serial, check=False)
 
 
-def logcat_dump(serial: str) -> str:
-    return adb("logcat", "-d", serial=serial)
+def pidof(serial: str, package: str) -> str | None:
+    """The app's process id, or ``None`` while it is not running."""
+    pid = adb("shell", "pidof", "-s", package, serial=serial, check=False).strip()
+    return pid if pid.isdigit() else None
+
+
+def logcat_dump(serial: str, pid: str | None = None) -> str:
+    """The device log so far; with ``pid``, only that process's lines."""
+    args = ["logcat", "-d"] + (["--pid", pid] if pid else [])
+    return adb(*args, serial=serial)
+
+
+def logcat_follow(serial: str, pid: str) -> subprocess.Popen[str]:
+    """Stream one process's log as it is written, until the caller stops it.
+
+    ``--pid`` (API 24, kivyforge's floor) is what keeps other apps out. Without
+    ``-b``, logcat reads the main, system and crash buffers, so the app's own
+    ``AndroidRuntime`` crash report is included.
+    """
+    return subprocess.Popen(
+        [
+            sdk_tool("adb", subdir="platform-tools"),
+            "-s",
+            serial,
+            "logcat",
+            "--pid",
+            pid,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        # UTF-8 for the same reason as adb() above.
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
 
 
 def logcat_clear(serial: str) -> None:

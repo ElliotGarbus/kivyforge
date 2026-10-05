@@ -46,7 +46,7 @@ commands = [
     "cd examples/mobile/hello-android",
     "kivyforge doctor -p android",
     "kivyforge run -p android --device --smoke --release",
-    "kivyforge run -p android --device",
+    "kivyforge run -p android --device --no-follow",
 ]
 pass = [
     "`run --device --smoke --release` prints exactly `Contract smoke test PASSED.` on stdout and exits 0.",
@@ -70,7 +70,7 @@ needs = [
 commands = [
     "cd examples/mobile/android-fullscreen",
     "kivyforge lock -p android",
-    "kivyforge run -p android --device",
+    "kivyforge run -p android --device --no-follow",
     "adb shell dumpsys window windows | grep -A 6 org.kivyforge.fullscreen",
 ]
 pass = [
@@ -95,7 +95,7 @@ needs = [
 commands = [
     "cd examples/mobile/hello-android",
     "kivyforge lock -p android",
-    "kivyforge run -p android --device",
+    "kivyforge run -p android --device --no-follow",
     "adb shell pidof org.kivyforge.helloandroid",
     "adb shell cmd uimode night yes",
     "adb shell cmd uimode night no",
@@ -123,7 +123,7 @@ needs = [
 commands = [
     "cd examples/mobile/hello-android",
     "kivyforge lock -p android",
-    "kivyforge run -p android --device",
+    "kivyforge run -p android --device --no-follow",
     "adb shell dumpsys window windows | grep -A 6 org.kivyforge.helloandroid",
 ]
 pass = [
@@ -147,7 +147,7 @@ needs = [
 commands = [
     "cd examples/mobile/android-package",
     "kivyforge lock -p android",
-    "kivyforge run -p android --device",
+    "kivyforge run -p android --device --no-follow",
     "adb logcat -d -s python.stdout python.stderr | grep -E 'android-package:|presplash|Traceback'",
     "adb shell cmd uimode night yes, then adb shell cmd uimode night no",
     "Tap Request permission and allow it",
@@ -184,7 +184,7 @@ needs = [
 commands = [
     "cd examples/mobile/android-package-sdl3",
     "kivyforge lock -p android",
-    "kivyforge run -p android --device",
+    "kivyforge run -p android --device --no-follow",
     "adb logcat -d -s python.stdout python.stderr | grep -E 'android-package:|Traceback'",
     "adb shell cmd uimode night yes, then adb shell cmd uimode night no",
     "Tap Request permission and allow it",
@@ -215,7 +215,7 @@ needs = [
 commands = [
     "cd examples/mobile/android-services",
     "kivyforge lock -p android",
-    "kivyforge run -p android --device",
+    "kivyforge run -p android --device --no-follow",
     "Allow notifications if asked, then tap Start services",
     "adb logcat -d -s python.stdout | grep android-services",
     "adb shell pidof org.kivyforge.androidservices:service_worker org.kivyforge.androidservices:service_sync",

@@ -12,6 +12,7 @@ for real.
 from __future__ import annotations
 
 import shutil
+import threading
 from pathlib import Path
 
 import pytest
@@ -1174,7 +1175,56 @@ def _fake_device(
 
     monkeypatch.setattr(adb_mod, "resolve_device", resolve)
     monkeypatch.setattr(adb_mod, "device_abi", lambda dev: abi)
+    _fake_app(monkeypatch)
     return seen
+
+
+class _FakeLogcat:
+    """`adb logcat --pid` as `run` follows it: lines, then (unless the device
+    goes away) no end of its own."""
+
+    def __init__(self, lines, *, ends=False):
+        self._lines = list(lines)
+        self._ends = ends
+        self._stopped = threading.Event()
+        self.terminated = False
+        self.stdout = self._read()
+
+    def _read(self):
+        yield from self._lines
+        if not self._ends:
+            self._stopped.wait()
+
+    def terminate(self):
+        self.terminated = True
+        self._stopped.set()
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        self._stopped.set()
+
+
+def _fake_app(monkeypatch, *, log=(), pids=("4242", None), ends=False):
+    """The launched app: `pids` is what successive `pidof` calls see (the last
+    repeats; None is not running), `log` is what following it streams."""
+    seen = list(pids)
+    state: dict = {"follow": []}
+
+    def pidof(dev, package):
+        return seen.pop(0) if len(seen) > 1 else seen[0]
+
+    def follow(dev, pid):
+        proc = _FakeLogcat(log, ends=ends)
+        state["follow"].append((dev, pid, proc))
+        return proc
+
+    monkeypatch.setattr(adb_mod, "pidof", pidof)
+    monkeypatch.setattr(adb_mod, "logcat_follow", follow)
+    monkeypatch.setattr(cli, "_PID_WAIT_SEC", 0.05)
+    monkeypatch.setattr(cli, "_PID_POLL_SEC", 0.01)
+    return state
 
 
 class TestAndroidRun:
@@ -1199,12 +1249,11 @@ class TestAndroidRun:
             "launch",
             lambda dev, pkg, act: events.append(("launch", dev, pkg, act)),
         )
-        monkeypatch.setattr(
-            adb_mod, "logcat_dump", lambda dev: "I/kivyforge: booted\nI/other: noise\n"
-        )
-        log = cli.android_run(project, wait_sec=0)
+        app = _fake_app(monkeypatch, log=["I python.stderr: booted\n"])
+        log = cli.android_run(project)
         assert calls["run_gradle"] == [("assembleDebug",)]
         assert ("install", "emulator-5554") in events
+        assert app["follow"][0][:2] == ("emulator-5554", "4242")
         assert "booted" in log
 
     @pytest.mark.parametrize("release", [False, True])
@@ -1219,17 +1268,15 @@ class TestAndroidRun:
         monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
         for name in ("install_apk", "launch", "logcat_clear"):
             monkeypatch.setattr(adb_mod, name, lambda *a: None)
-        monkeypatch.setattr(
-            adb_mod, "logcat_dump", lambda dev: "I/kivyforge: booted\nI/other: noise\n"
-        )
+        _fake_app(monkeypatch, log=["I python.stderr: booted\n"])
         if release:
             # --release runs assembleRelease itself; give it an APK to find.
             apk = cli._release_output(project / "demoapp-android", "apk")
             apk.parent.mkdir(parents=True, exist_ok=True)
             apk.write_bytes(b"PK")
-        cli.android_run(project, wait_sec=0, release=release)
+        cli.android_run(project, release=release)
         captured = capsys.readouterr()
-        assert captured.out == "I/kivyforge: booted\n"
+        assert captured.out == "I python.stderr: booted\n"
         assert "[run] device" in captured.err
         assert "[run] building for" in captured.err
         assert "Generated demoapp-android" in captured.err
@@ -1427,6 +1474,97 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
         cli.android_run(project, require_physical=True, wait_sec=0)
         assert seen["require_physical"] is True
+
+
+class TestAndroidRunLog:
+    """`run` shows the app's own process log, live by default (issue #73)."""
+
+    @pytest.fixture
+    def launched(self, build_env, monkeypatch):
+        project, _ = build_env
+        _fake_device(monkeypatch)
+        for name in ("install_apk", "launch", "logcat_clear"):
+            monkeypatch.setattr(adb_mod, name, lambda *a: None)
+        return project
+
+    def test_follows_until_the_app_exits(self, launched, monkeypatch, capsys):
+        app = _fake_app(
+            monkeypatch,
+            log=["I python.stderr: [INFO] up\n", "I python.stderr: tapped\n"],
+            pids=("4242", "4242", None),
+        )
+        log = cli.android_run(launched)
+        captured = capsys.readouterr()
+        # Lines after startup are the point: a fixed snapshot missed them.
+        assert captured.out.endswith("I python.stderr: tapped\n")
+        assert log == captured.out
+        assert "following its log, Ctrl-C to stop" in captured.err
+        assert "[run] org.example.demoapp exited." in captured.err
+        assert app["follow"][0][2].terminated
+
+    def test_a_restarted_app_is_not_followed(self, launched, monkeypatch, capsys):
+        """A new pid is a process this run did not launch."""
+        _fake_app(monkeypatch, pids=("4242", "5151"))
+        cli.android_run(launched)
+        assert "org.example.demoapp exited." in capsys.readouterr().err
+
+    def test_ctrl_c_stops_following_and_leaves_the_app(
+        self, launched, monkeypatch, capsys
+    ):
+        app = _fake_app(monkeypatch, log=["I python.stderr: up\n"])
+        calls = []
+
+        def pidof(dev, package):
+            calls.append(package)
+            if len(calls) > 1:
+                raise KeyboardInterrupt
+            return "4242"
+
+        monkeypatch.setattr(adb_mod, "pidof", pidof)
+        cli.android_run(launched)
+        captured = capsys.readouterr()
+        assert captured.out == "I python.stderr: up\n"
+        assert "demoapp is still running" in captured.err
+        assert app["follow"][0][2].terminated
+
+    def test_logcat_ending_on_its_own_is_reported(self, launched, monkeypatch, capsys):
+        _fake_app(monkeypatch, pids=("4242",), ends=True)
+        cli.android_run(launched)
+        assert "logcat ended" in capsys.readouterr().err
+
+    def test_an_app_that_never_starts_shows_the_device_log(
+        self, launched, monkeypatch, capsys
+    ):
+        """Briefcase does the same: no process, so no pid to filter by, and the
+        reason is somewhere in the unfiltered log."""
+        _fake_app(monkeypatch, pids=(None,))
+        dumped = []
+        monkeypatch.setattr(
+            adb_mod,
+            "logcat_dump",
+            lambda dev, pid=None: dumped.append(pid) or "E AndroidRuntime: boom\n",
+        )
+        with pytest.raises(ToolchainError, match="did not start"):
+            cli.android_run(launched)
+        assert dumped == [None]
+        captured = capsys.readouterr()
+        assert "E AndroidRuntime: boom" in captured.err
+        assert captured.out == ""
+
+    def test_no_follow_prints_one_snapshot_of_the_app_only(
+        self, launched, monkeypatch, capsys
+    ):
+        app = _fake_app(monkeypatch, pids=("4242",))
+        dumped = []
+        monkeypatch.setattr(
+            adb_mod,
+            "logcat_dump",
+            lambda dev, pid=None: dumped.append(pid) or "I python.stderr: up\n",
+        )
+        log = cli.android_run(launched, follow=False, wait_sec=0)
+        assert dumped == ["4242"]
+        assert app["follow"] == []
+        assert log == capsys.readouterr().out == "I python.stderr: up\n"
 
 
 class TestAndroidSmoke:

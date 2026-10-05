@@ -95,10 +95,19 @@ own CI runs `run --smoke --release` on an x86_64 emulator.
 
 ## Verify
 
-`run` prints the device it chose, launches the app, and then prints the app's
-log lines tagged `kivyforge`, `python.std`, or `SDL` for about 25 seconds.
-Python output and tracebacks appear there. A passing smoke test ends with
-`Contract smoke test PASSED.`
+`run` prints the device it chose, launches the app, and then follows the app's
+log as it runs: everything the app's own process writes, including Python
+output, tracebacks and Android crash reports, and nothing from other apps. It
+keeps following until the app exits or you press Ctrl+C. Ctrl+C stops the log,
+not the app.
+
+If the app never starts, `run` prints the whole device log since launch, where
+the reason is, and fails.
+
+For a script, add `--no-follow`: `run` then prints the app's log once, about 25
+seconds after launch, and returns.
+
+A passing smoke test ends with `Contract smoke test PASSED.`
 
 ## What's next
 

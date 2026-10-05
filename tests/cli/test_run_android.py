@@ -219,6 +219,33 @@ class TestAndroidRun:
         assert result.exit_code == 0, result.output
         assert captured["serial"] == "ABC123"
 
+    @pytest.mark.parametrize("argv, follow", [([], True), (["--no-follow"], False)])
+    def test_the_log_is_followed_unless_no_follow(
+        self, runner, fake_project_root, monkeypatch, argv, follow
+    ):
+        backend = _FakeBackend("android")
+        _patch_resolve_target(monkeypatch, backend, fake_project_root)
+        captured = {}
+        monkeypatch.setattr(
+            android_cli_mod,
+            "android_run",
+            lambda project_root, **kw: captured.update(kw),
+        )
+        result = runner.invoke(run_cmd, argv)
+        assert result.exit_code == 0, result.output
+        assert captured["follow"] is follow
+
+    def test_no_follow_with_smoke_is_rejected(
+        self, runner, fake_project_root, monkeypatch
+    ):
+        """--smoke shows a verdict, not the app's log, so the flag would be
+        silently ignored."""
+        backend = _FakeBackend("android")
+        _patch_resolve_target(monkeypatch, backend, fake_project_root)
+        result = runner.invoke(run_cmd, ["--smoke", "--no-follow"])
+        assert result.exit_code != 0
+        assert "--no-follow" in result.output
+
 
 class TestAndroidDeviceSelector:
     """`--device` is documented as Android's `--emulator` counterpart, so it has

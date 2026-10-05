@@ -364,6 +364,42 @@ class TestDeviceCommands:
         monkeypatch.setattr(adb_mod, "adb", lambda *a, **k: "log output")
         assert adb_mod.logcat_dump("ABC123") == "log output"
 
+    def test_logcat_dump_for_one_process(self, monkeypatch):
+        captured = {}
+        monkeypatch.setattr(adb_mod, "adb", lambda *a, **k: captured.update(args=a))
+        adb_mod.logcat_dump("ABC123", pid="4242")
+        assert captured["args"] == ("logcat", "-d", "--pid", "4242")
+
+    @pytest.mark.parametrize(
+        "out, pid", [("4242\n", "4242"), ("", None), ("pidof: not found\n", None)]
+    )
+    def test_pidof(self, monkeypatch, out, pid):
+        captured = {}
+
+        def fake(*a, **k):
+            captured.update(args=a, kw=k)
+            return out
+
+        monkeypatch.setattr(adb_mod, "adb", fake)
+        assert adb_mod.pidof("ABC123", "org.example.app") == pid
+        assert captured["args"] == ("shell", "pidof", "-s", "org.example.app")
+        # Not running is an answer, not a failure.
+        assert captured["kw"] == {"serial": "ABC123", "check": False}
+
+    def test_logcat_follow_streams_one_process(self, monkeypatch):
+        captured = {}
+        monkeypatch.setattr(adb_mod, "sdk_tool", lambda name, subdir: "adb")
+        monkeypatch.setattr(
+            adb_mod.subprocess,
+            "Popen",
+            lambda cmd, **kw: captured.update(cmd=cmd, kw=kw) or "proc",
+        )
+        assert adb_mod.logcat_follow("ABC123", "4242") == "proc"
+        assert captured["cmd"] == ["adb", "-s", "ABC123", "logcat", "--pid", "4242"]
+        # Never interactive, and decoded the way adb relays app output.
+        assert captured["kw"]["stdin"] is adb_mod.subprocess.DEVNULL
+        assert captured["kw"]["encoding"] == "utf-8"
+
     def test_logcat_clear(self, monkeypatch):
         captured = {}
         monkeypatch.setattr(
