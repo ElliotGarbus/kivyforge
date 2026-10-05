@@ -29,6 +29,10 @@
 - **Fixed:** on Windows, `kivyforge run -p android` could crash with
   `AttributeError: 'NoneType' object has no attribute 'splitlines'` after
   launching the app. adb output is now read as UTF-8.
+- **Added:** `kivyforge run --smoke` also checks a relaunch: it unpacks the
+  bundle a second time and expects the already-unpacked bundle to be used. A
+  fresh install never takes that path, which is how the Android 7 crash above
+  went unnoticed.
 
 ### Android: the `android` package is bundled
 
