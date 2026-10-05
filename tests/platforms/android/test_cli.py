@@ -894,7 +894,10 @@ class TestIncludeFilesIntoRes:
             ),
         )
         cli.android_build(project, events=events)
-        return project / "demoapp-android", progress, notes
+        # Other notes depend on the host (no CPython 3.14 means a byte-compile
+        # note), so only the ones under test are returned.
+        overrides = [n for n in notes if n[0] == diagnostics.ANDROID_INCLUDE_OVERRIDE]
+        return project / "demoapp-android", progress, overrides
 
     def test_subfolders_and_qualifiers_are_kept(self, project, monkeypatch, tmp_path):
         dest, _, notes = self._build(
