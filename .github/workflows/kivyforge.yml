@@ -757,6 +757,18 @@ jobs:
         apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
         pytest tests/platforms/android/test_apk_signature.py -q --no-cov \
           --android-apk "$apk" --android-project "$APP_DIR"
+    - name: Lint kivyforge's Java for calls above min_sdk (NewApi)
+      # A check on kivyforge's own templates, not the user's release gate:
+      # lintRelease runs a curated policy subset, and NewApi is not in it.
+      # A java.nio.file call in PythonBundle crashed every relaunch on
+      # Android 7 and only showed up on a device; this catches that class of
+      # bug at build time, androidTest sources included. SDL's vendored glue
+      # is ignored (its *_API26 classes are guarded by the caller). Last on
+      # purpose: the script rewrites the generated build.gradle, and every
+      # step above should run against the real one. Java is identical across
+      # ABIs, so one leg is enough.
+      if: matrix.abi == 'x86_64'
+      run: python scripts/lint_newapi.py "$APP_DIR/hello-android-android"
     - name: Upload the generated project on failure (for triage)
       if: failure()
       uses: actions/upload-artifact@v6
@@ -1091,15 +1103,32 @@ jobs:
   # the load model but not the stripping, which is the part with the history.
   # android/06 calls exactly this the "required release gate".
   #
-  # Cost: ~10 min, the slowest job here. If that becomes a problem the natural
-  # move is a `schedule:` trigger rather than dropping the tier.
+  # Two devices, at opposite ends of what an app built with the defaults can
+  # run on. hello-android on API 35 is the current-Android baseline.
+  # android-services on API 24 is min_sdk: java.nio.file, the pyjnius VM
+  # lookup and other API-gated paths differ below API 26/31, and a relaunch
+  # crash on Android 7 shipped once because only fresh installs had been
+  # run there. The contract test now unpacks twice to take the relaunch path,
+  # and the services example adds a service process to the same app.
+  #
+  # Cost: ~10 min each, in parallel; the slowest jobs here. If that becomes a
+  # problem the natural move is a `schedule:` trigger rather than dropping
+  # the tier.
   android_emulator:
-    name: Android smoke test (emulator, T4)
+    name: Android smoke test (emulator API ${{ matrix.api }}, ${{ matrix.app }}, T4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: hello-android
+            api: '35'
+          - app: android-services
+            api: '24'
     env:
-      APP_DIR: examples/mobile/hello-android
+      APP_DIR: examples/mobile/${{ matrix.app }}
       ABI: x86_64
-      API_LEVEL: '35'
+      API_LEVEL: ${{ matrix.api }}
     steps:
     - name: Checkout kivyforge
       uses: actions/checkout@v6
@@ -1173,10 +1202,10 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v6
       with:
-        name: android-smoke-report
+        name: android-smoke-report-${{ matrix.app }}-api${{ matrix.api }}
         path: |
-          ${{ env.APP_DIR }}/hello-android-android/app/build/reports/androidTests/
-          ${{ env.APP_DIR }}/hello-android-android/app/build/outputs/androidTest-results/
+          ${{ env.APP_DIR }}/${{ matrix.app }}-android/app/build/reports/androidTests/
+          ${{ env.APP_DIR }}/${{ matrix.app }}-android/app/build/outputs/androidTest-results/
 
   # macOS integration: the full suite runs here too (pbxproj generation and
   # xcodebuild/simctl command construction get real-macOS coverage). The live

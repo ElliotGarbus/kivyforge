@@ -1,6 +1,7 @@
-# Generated lock: regenerate with `kivyforge lock -p android` (see README).
-# Gitignored per the example-repo lock policy in
-# docs/design/common/03-lockfile-concept.md — only the on-device gate examples
-# (hello-android, hello-sdl3, hello-kivy) keep a committed lock, as validation
-# evidence.
-pylock.*.toml
+# pylock.android.toml is intentionally TRACKED here — this is an on-device
+# gate example: CI's android_emulator job runs its contract smoke test on an
+# API 24 emulator (min_sdk), and its lock records the exact wheel hashes that
+# passed there and on the Pixel 8a. Regenerating it would detach that result
+# from the binaries it was obtained from, and would make
+# `kivyforge lock -p android --check` unable to fail. See "Example-repo lock
+# policy" in docs/design/common/03-lockfile-concept.md.

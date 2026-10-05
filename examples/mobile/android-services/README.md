@@ -37,9 +37,11 @@ Each service logs its argument, its own class through `mService`, `None` for
 `android.mActivity` (a service process has no activity) and its storage path.
 **Stop services** ends both service processes.
 
-pyjnius finds the Java VM in a service process only on Android 12 (API 31) and
-later, so on older versions the service runs but its `jnius` calls fail.
+This works on every Android version the app supports (`min_sdk = 24`,
+Android 7.0).
 
-The lock is gitignored, per the [example-repo lock
-policy](../../../docs/design/common/03-lockfile-concept.md) — only the
-on-device gate examples keep a committed lock as validation evidence.
+This is also the **min_sdk on-device gate**: CI runs its contract smoke test
+(`kivyforge run --smoke --release`) on an API 24 emulator, so
+`pylock.android.toml` is committed rather than ignored — the lock is the
+evidence. See the [example-repo lock
+policy](../../../docs/design/common/03-lockfile-concept.md).
