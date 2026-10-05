@@ -1936,6 +1936,16 @@ what it actually inherits from before committing to this item** — if it is not
 already a `ComponentActivity` that is a bootstrap change, and bootstrap changes
 are the riskiest edits in the Android backend.
 
+*Checked 2026-10-05:* it is not. `PythonActivity` extends SDL's stock
+`SDLActivity`, which extends `android.app.Activity`, although `ComponentActivity`
+is already on the classpath through Material. A spike made it a
+`ComponentActivity` with a one-line change per SDL generation: both generations
+built, passed the smoke test and delivered activity results through the AndroidX
+registry, and Back was unchanged. Permission results do not reach the registry,
+because SDL's `onRequestPermissionsResult` does not call `super`, so that needs
+a second change. See
+[`android-componentactivity-spike-findings.md`](android-componentactivity-spike-findings.md).
+
 **The one cheap early move, and why it is worth doing out of order.** The spec
 names kivyforge as its intended first consumer and says the contract stays
 unfrozen until a real consumer builds to a device — and no consumer exists, so
@@ -1951,7 +1961,9 @@ generate half early.
 
 - Spike the read half; feed findings back into the spec before freeze.
 - Design the `[tool.kivy.native.<distribution>]` answer surface.
-- Verify the `ComponentActivity` obligation against the current bootstrap.
+- ~~Verify the `ComponentActivity` obligation against the current bootstrap.~~
+  Done 2026-10-05 (spike findings above); the change itself, with the
+  permission-result fix, is still to do.
 - Generate half, Android first (kivyforge's Gradle generation is the more
   mature of the two), then iOS.
 - Persist `native-integration.record` and implement the acceptance gate,
