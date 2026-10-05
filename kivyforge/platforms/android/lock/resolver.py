@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import re
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -43,6 +44,7 @@ from kivyforge.lock.resolver import (
     version_str,
 )
 
+from ..streaming import elapsed, run_streaming
 from .markers import android_marker_environment
 
 # Run by path, not ``-m``: the shim imports nothing from kivyforge, so it also
@@ -106,8 +108,16 @@ class PipResolver:
     filename across ABIs).
     """
 
-    def __init__(self, python_executable: str | None = None) -> None:
+    def __init__(
+        self,
+        python_executable: str | None = None,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+        on_transfer: Callable[[str, int, int, str], None] | None = None,
+    ) -> None:
         self._python = python_executable or sys.executable
+        self._on_progress = on_progress
+        self._on_transfer = on_transfer
 
     def resolve(
         self,
@@ -133,8 +143,11 @@ class PipResolver:
             environment = android_marker_environment(
                 python_version=python_version, abi=abi
             )
+            if self._on_progress is not None:
+                self._on_progress(f"[lock] {abi}: resolving wheels")
             report = self._run_report(
                 requirements,
+                label=abi,
                 python_version=python_version,
                 platform_tag=abi_platform_tag(min_sdk, abi),
                 abis=cp_abis,
@@ -209,6 +222,7 @@ class PipResolver:
         self,
         requirements: list[str],
         *,
+        label: str = "",
         python_version: str,
         platform_tag: str,
         abis: tuple[str, ...],
@@ -239,6 +253,10 @@ class PipResolver:
                 str(Path(tmp) / "target"),
                 "--report",
                 str(report_path),
+                # Machine-readable byte counts even when not on a terminal,
+                # which is the only way to show download progress (#84).
+                "--progress-bar",
+                "raw",
             ]
             for abi in abis:
                 cmd += ["--abi", abi]
@@ -252,11 +270,17 @@ class PipResolver:
 
             env = dict(os.environ)
             env[MARKER_ENV_VAR] = json.dumps(marker_environment)
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
+            progress = _PipProgress(
+                label or platform_tag, self._on_progress, self._on_transfer
             )
-            if proc.returncode != 0:
-                output = proc.stderr or proc.stdout
+            returncode, transcript = run_streaming(
+                cmd,
+                env=env,
+                on_segment=progress,
+                on_quiet=progress.quiet if self._on_progress else None,
+            )
+            if returncode != 0:
+                output = _without_progress(transcript)
                 culprit = unresolved_requirement(output)
                 what = (
                     f"no {platform_tag} wheel for {culprit!r}"
@@ -287,6 +311,63 @@ class PipResolver:
                 return json.loads(report_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise ResolverError(f"could not read pip report: {exc}") from exc
+
+
+_DOWNLOADING = re.compile(r"^\s*Downloading (\S+)(?: \(([^)]+)\))?")
+_PROGRESS = re.compile(r"^Progress (\d+) of (\d+)$")
+
+
+class _PipProgress:
+    """Turn ``pip --progress-bar raw`` output into transfer events."""
+
+    def __init__(
+        self,
+        label: str,
+        on_progress: Callable[[str], None] | None,
+        on_transfer: Callable[[str, int, int, str], None] | None,
+    ) -> None:
+        self._label = label
+        self._on_progress = on_progress
+        self._on_transfer = on_transfer
+        self._current = ""
+
+    def __call__(self, segment: str) -> bool:
+        line = segment.strip()
+        downloading = _DOWNLOADING.match(line)
+        if downloading:
+            self._current = f"[lock] {self._label}: {_short_name(downloading.group(1))}"
+            return False
+        progress = _PROGRESS.match(line)
+        if progress and self._current and self._on_transfer is not None:
+            done, total = int(progress.group(1)), int(progress.group(2))
+            self._on_transfer(self._current, done, total, "bytes")
+            return True
+        return False
+
+    def quiet(self, seconds: float) -> None:
+        if self._on_progress is not None:
+            self._on_progress(
+                f"[lock] {self._label}: still resolving ({elapsed(seconds)})"
+            )
+
+
+def _short_name(url: str) -> str:
+    """``.../Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl`` -> ``Kivy-2.3.1``.
+
+    The ABI is already in the label, and the full filename does not fit beside
+    a bar in a narrow terminal.
+    """
+    filename = url.rsplit("/", 1)[-1]
+    if filename.endswith(".whl"):
+        return "-".join(filename.split("-")[:2])
+    return filename
+
+
+def _without_progress(transcript: str) -> str:
+    """pip's output for an error message, minus the raw byte-count lines."""
+    return "\n".join(
+        line for line in transcript.splitlines() if not _PROGRESS.match(line.strip())
+    )
 
 
 def get_resolver(backend: str = "pip", **kwargs) -> Resolver:

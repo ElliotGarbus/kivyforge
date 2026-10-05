@@ -49,6 +49,7 @@ from rich.console import Console
 
 from .diagnostics import Diagnostic
 from .envelope import Envelope
+from .transfers import TransferRenderer
 
 #: Status styles. ASCII-safe by construction -- these are colour names, and the
 #: glyphs stay in the message text where the cp1252 guard can see them.
@@ -121,6 +122,7 @@ class Report:
         err = sys.stderr if stderr is None else stderr
         self._out = _console(out, no_color=no_color, env=env)
         self._err = _console(err, no_color=no_color, env=env)
+        self._transfers = TransferRenderer(self._err, self.progress)
 
     # --- human output ------------------------------------------------------
 
@@ -136,7 +138,21 @@ class Report:
 
     def progress(self, text: str) -> None:
         """Incidental progress: stderr, and shown even under ``--json``."""
-        self._err.print(text)
+        if self._transfers.active:
+            self._transfers.print(text)  # above a live bar, not through it
+        else:
+            self._err.print(text)
+
+    def transfer(self, label: str, done: int, total: int, unit: str = "bytes") -> None:
+        """A download or install moving: a bar on a terminal, lines otherwise.
+
+        Progress like any other, so stderr and shown under ``--json`` too.
+        """
+        self._transfers(label, done, total, unit)
+
+    def close_transfers(self) -> None:
+        """Stop a live bar, e.g. when the verb fails partway through one."""
+        self._transfers.close()
 
     # --- diagnostics -------------------------------------------------------
 

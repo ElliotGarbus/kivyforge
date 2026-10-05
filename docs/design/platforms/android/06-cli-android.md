@@ -75,6 +75,18 @@ audit record; it is not re-verified at build time — see
 Writes `pylock.android.toml`. Exits non-zero
 with a clear error if no pyproject is present or it lacks `[tool.kivy.android]`.
 
+**Progress.** Resolution downloads wheels (pip reads a wheel's dependencies from
+the wheel itself when an index publishes no PEP 658 metadata, so a Kivy wheel is
+fetched in full, once per ABI) and, with Maven dependencies, runs Gradle. All of
+it is shown on stderr, including under `--json`: a `[lock] <abi>: resolving
+wheels` line per ABI, each download as a progress bar on a terminal (or a few
+`45% of 8.9 MB` lines in a log, from `pip --progress-bar raw`), a line before the
+Gradle step, and a `still resolving (1m 30s)` line after 30 s with nothing else to
+show. Until #84 the whole step was silent, which on a slow connection was
+indistinguishable from a hang. pip's own socket timeout (15 s, 5 retries) and
+Gradle's still end a stalled download; this changes what is visible, not when it
+gives up.
+
 > **`lock` may require a JDK + network for the Gradle channel.** Generating the
 > Gradle dependency lock needs a reachable JDK/Gradle and Maven repositories. When
 > `[tool.kivy.android].gradle.dependencies` is empty (the common Kivy case), this
@@ -286,14 +298,27 @@ Runs in **environment mode** (no pyproject) or **project mode** (pyproject
 present), like iOS. Each check reports PASS / WARN / FAIL with a remediation hint;
 exit code is non-zero only on FAIL.
 
-> **kivyforge never installs the host toolchain.** The JDK and the Android
-> SDK/NDK/build-tools are **user-installed prerequisites** (via Android Studio's
-> SDK Manager or the official `sdkmanager`), exactly as Xcode is on iOS. `doctor`
-> only *detects* them and prints an actionable hint — it does **not** download,
-> install, or auto-`--fix` them, and kivyforge ships **no** bundled downloader.
-> This is deliberate: hardcoding installer URLs, package coordinates, or pinned
-> component versions would be a standing maintenance/drift liability when those get
-> moved or renamed. Accordingly, `doctor` checks for *adequacy* (a resolvable SDK,
+> **kivyforge never installs the JDK or the Android SDK.** They and the SDK's
+> build-tools and platforms are **user-installed prerequisites** (via Android
+> Studio's SDK Manager or the official `sdkmanager`), exactly as Xcode is on iOS.
+> `doctor` only *detects* them and prints an actionable hint — it does **not**
+> download, install, or auto-`--fix` them, and kivyforge ships **no** bundled
+> downloader. This is deliberate: hardcoding installer URLs, package coordinates,
+> or pinned component versions would be a standing maintenance/drift liability
+> when those get moved or renamed.
+>
+> **The one exception is the NDK and CMake the generated build pins** (changed
+> 2026-10-05, #74). `app/build.gradle` pins `ndkVersion` and the CMake version
+> from `toolchain.py`, and when either is missing AGP downloads it itself, in the
+> middle of the build, with no progress shown — the NDK is several hundred MB, and
+> on a slow connection that looked like a hang. So before any Gradle run,
+> `build` installs a missing one with the SDK's own `sdkmanager` and shows the
+> progress. This adds no maintained version or URL: the package ids come from the
+> same `toolchain.py` pins the generated build already uses, and nothing is
+> installed that AGP would not have installed anyway. It is a convenience, never a
+> gate: without `sdkmanager`, or with its license not accepted (it then prints the
+> license and exits 0 without installing), `build` says so and AGP installs it as
+> before. Accordingly, `doctor` checks for *adequacy* (a resolvable SDK,
 > a build-tools version compatible with `compile_sdk`, accepted licenses, the NDK
 > — now required for every build, since it compiles the native launcher) and
 > derives any suggested `sdkmanager`
@@ -360,7 +385,8 @@ kivyforge and re-running `build` is the normal way to move them.
 
 The **JDK**, **Android SDK / build-tools**, and the **NDK** binaries are
 prerequisites you install (Android Studio SDK Manager / `sdkmanager`), exactly as
-Xcode is on iOS. kivyforge **cannot upgrade these** — `doctor` only checks
+Xcode is on iOS, except that a *missing* NDK or CMake at the pinned version is
+installed before Gradle runs (see the `doctor` note above). kivyforge **cannot upgrade these** — `doctor` only checks
 *adequacy* against your project config and prints an `sdkmanager` hint derived
 from your own settings. There is **no** kivyforge-driven SDK/NDK upgrade and **no**
 maintained version manifest (that would be a standing drift liability).

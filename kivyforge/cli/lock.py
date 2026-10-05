@@ -51,6 +51,8 @@ class _LockOps:
     # Wheel+runtime backends (macOS/Linux) surface non-fatal lock warnings
     # (e.g. accepting a vendored plain linux_* wheel) via an on_warning callback.
     emits_warnings: bool = False
+    #: The backend accepts ``on_progress``/``on_transfer`` and reports with them.
+    emits_progress: bool = False
     # Most backends resolve with pip alone, so `lock` runs anywhere and the
     # result is committed. iOS is the exception: resolving declared Swift
     # packages shells out to `swift package resolve`, which needs the Xcode
@@ -133,6 +135,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=False,
             require_android=True,
             emits_warnings=True,
+            emits_progress=True,
         )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."
@@ -314,6 +317,11 @@ def _build(
         # consumer could not see that (say) a vendored plain linux_* wheel had
         # been accepted -- a decision worth knowing about from a machine.
         kwargs["on_warning"] = lambda msg: _warn(report, msg)
+    if ops.emits_progress:
+        # Locking downloads wheels (and, with Maven dependencies, Gradle's
+        # graph). Silent, that looked like a hang on a slow connection (#84).
+        kwargs["on_progress"] = report.progress
+        kwargs["on_transfer"] = report.transfer
     try:
         return ops.build(
             config,

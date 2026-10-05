@@ -6,7 +6,8 @@ import os
 import subprocess
 from pathlib import Path
 
-from kivyforge.cli._common import ToolchainError
+from kivyforge.build_outcome import BuildEvents
+from kivyforge.cli._common import PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.report import diagnostics, exit_codes
 from kivyforge.report.failures import spawn_failure
 from kivyforge.report.streams import stderr_for_child
@@ -20,11 +21,24 @@ class GradleError(Exception):
         self.returncode = returncode
 
 
+def _install_missing_sdk_packages(events: BuildEvents) -> None:
+    """Install a missing pinned NDK/CMake visibly, before AGP does it silently."""
+    from .doctor import RealAndroidProbe
+    from .sdk_packages import ensure_sdk_packages
+
+    ensure_sdk_packages(
+        RealAndroidProbe().sdk_root(),
+        on_progress=events.on_progress,
+        on_transfer=events.on_transfer,
+    )
+
+
 def run_gradle(
     project_dir: Path,
     tasks: list[str],
     *,
     env_overrides: dict[str, str] | None = None,
+    events: BuildEvents | None = None,
 ) -> None:
     script = project_dir / ("gradlew.bat" if os.name == "nt" else "gradlew")
     if not script.is_file():
@@ -33,6 +47,7 @@ def run_gradle(
             "(re)generate the project."
         )
     _require_jdk()
+    _install_missing_sdk_packages(events or PROGRESS_ONLY_EVENTS)
     env = dict(os.environ)
     if env_overrides:
         env.update(env_overrides)

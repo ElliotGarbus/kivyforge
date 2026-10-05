@@ -18,14 +18,15 @@ actually declared (android/06 §lock).
 from __future__ import annotations
 
 import shutil
-import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
 from kivyforge.config.model import AndroidGradleConfig
 
+from ..streaming import elapsed, run_streaming
 from .model import GradleArtifact, GradlePins, GradleResolvedModule
 
 _VERIFICATION_NS = "{https://schema.gradle.org/dependency-verification}"
@@ -46,6 +47,7 @@ def resolve_gradle_pins(
     *,
     resolver: GradleMavenResolver | None = None,
     offline: bool = False,
+    on_progress: Callable[[str], None] | None = None,
 ) -> GradlePins:
     """Resolve the declared coordinates into hash-pinned modules.
 
@@ -54,7 +56,12 @@ def resolve_gradle_pins(
     """
     if not gradle.dependencies:
         return GradlePins()
-    backend = resolver or ScratchProjectResolver()
+    if on_progress is not None:
+        on_progress(
+            f"[lock] resolving {len(gradle.dependencies)} Maven dependencies with "
+            "Gradle (a first run also downloads Gradle itself)"
+        )
+    backend = resolver or ScratchProjectResolver(on_progress=on_progress)
     resolved = backend.resolve(gradle, offline=offline)
     return GradlePins(
         dependencies=tuple(gradle.dependencies),
@@ -159,8 +166,26 @@ class ScratchProjectResolver:
 
     _WRAPPER_DIR = Path(__file__).parent.parent / "gradle_wrapper"
 
-    def __init__(self, gradle_executable: str | None = None) -> None:
+    def __init__(
+        self,
+        gradle_executable: str | None = None,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+    ) -> None:
         self._gradle = gradle_executable
+        self._on_progress = on_progress
+
+    def _announce_wrapper_download(self, segment: str) -> bool:
+        # The wrapper's first-run fetch of the Gradle distribution itself.
+        if self._on_progress is not None and segment.startswith("Downloading http"):
+            # "Downloading <url>", without the dots the wrapper appends.
+            self._on_progress(f"[lock] Gradle: {' '.join(segment.split()[:2])}")
+            return True
+        return False
+
+    def _still_resolving(self, seconds: float) -> None:
+        if self._on_progress is not None:
+            self._on_progress(f"[lock] Gradle: still resolving ({elapsed(seconds)})")
 
     def resolve(
         self, gradle: AndroidGradleConfig, *, offline: bool = False
@@ -200,13 +225,18 @@ class ScratchProjectResolver:
             ]
             if offline:
                 cmd.append("--offline")
-            proc = subprocess.run(
-                cmd, cwd=root, capture_output=True, text=True, stdin=subprocess.DEVNULL
+            returncode, transcript = run_streaming(
+                cmd,
+                cwd=root,
+                # Gradle's plain console names no downloads, so the useful
+                # signal is the wrapper's own fetch, then that it is alive.
+                on_segment=self._announce_wrapper_download,
+                on_quiet=self._still_resolving if self._on_progress else None,
             )
-            if proc.returncode != 0:
+            if returncode != 0:
                 raise MavenResolverError(
                     "Gradle could not resolve the declared Maven coordinates.\n"
-                    f"  Gradle said:\n{_indent(proc.stderr or proc.stdout)}"
+                    f"  Gradle said:\n{_indent(transcript)}"
                 )
             metadata = root / "gradle" / "verification-metadata.xml"
             if not metadata.is_file():

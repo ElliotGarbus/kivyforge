@@ -70,6 +70,9 @@ class BuildEvents:
     on_progress: Callable[[str], None]
     on_artifact: Callable[[Artifact], None]
     on_note: Callable[[str, str, Mapping[str, str] | None], None]
+    #: ``(label, done, total, unit)`` for a download or install in flight. The
+    #: renderer draws it; ``None`` reports nothing.
+    on_transfer: Callable[[str, int, int, str], None] | None = None
 
     def without_artifacts(self) -> BuildEvents:
         """Same output, nothing recorded: for a build nested inside ``package``."""

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Android: `lock` and `build` show their downloads
+
+- **Fixed:** `kivyforge lock -p android` printed nothing until it finished, so a
+  slow connection looked exactly like a hang
+  ([#84](https://github.com/ElliotGarbus/kivyforge/issues/84)). It now reports
+  each step, shows each wheel download as a progress bar (or as a few percentage
+  lines when the output is a log rather than a terminal), and says it is still
+  working after 30 s with nothing else to show. The Gradle step for Maven
+  dependencies is announced too.
+- **Added:** before Gradle runs, a missing NDK or CMake at the versions the
+  generated build pins is installed with the SDK's `sdkmanager`, with progress
+  ([#74](https://github.com/ElliotGarbus/kivyforge/issues/74)). Gradle used to
+  download the NDK itself in the middle of the build, a download of several
+  hundred MB with no progress shown. Without `sdkmanager`, or with its license
+  not accepted, `build` says so and Gradle installs it as before.
+- **Changed:** download progress is drawn by the console layer with Rich, so it
+  is a live bar on a terminal and plain lines in CI logs, redirected output and
+  under `--no-color`. Progress stays on stderr, so `--json` output is unaffected.
+
 ### Android: adding your own resources with `include_files`
 
 - **Added:** a guide section,

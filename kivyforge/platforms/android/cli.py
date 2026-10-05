@@ -562,7 +562,7 @@ def android_build(
         task = "assembleDebug" if fmt == "apk" else "bundleDebug"
         events.on_progress(f"[gradle] {task}")
         try:
-            run_gradle(dest, [task])
+            run_gradle(dest, [task], events=events)
         except GradleError as exc:
             raise _gradle_failure(exc, task) from exc
         out = _require_artifact(_debug_output(dest, fmt), task)
@@ -668,7 +668,7 @@ def android_package(
     task = "assembleRelease" if fmt == "apk" else "bundleRelease"
     events.on_progress(f"[gradle] {task}")
     try:
-        run_gradle(dest, [task])
+        run_gradle(dest, [task], events=events)
     except GradleError as exc:
         raise _gradle_failure(exc, task) from exc
     out = _require_artifact(_release_output(dest, fmt), task)
@@ -687,7 +687,7 @@ def _enforce_merged_manifest(
 
     events.on_progress(f"[gradle] lintRelease ({len(LINT_CHECKS)} curated checks)")
     try:
-        run_gradle(dest, ["lintRelease", MERGED_MANIFEST_TASK])
+        run_gradle(dest, ["lintRelease", MERGED_MANIFEST_TASK], events=events)
     except GradleError as exc:
         raise _gradle_failure(
             exc,
