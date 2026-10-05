@@ -46,6 +46,7 @@ from .bootstrap.contract import (
     check_sdl_generation,
     check_sdl_glue_contract,
     sdl_library_name,
+    sdl_version_from_glue,
 )
 from .bootstrap.render import (
     android_package_sources,
@@ -70,7 +71,7 @@ from .generate.project import (
     write_settings_gradle,
 )
 from .generate.services import render_service_classes, render_service_contract_test
-from .gradlew import GradleError, run_gradle
+from .gradlew import GradleError, run_gradle, stop_gradle_daemon
 from .lock import reader as lock_reader
 from .lock.model import AndroidLockfile
 from .stage.bundle import BUNDLE_DIRNAME, BundleError, assemble_bundle
@@ -129,6 +130,57 @@ def _prune_stale(directory: Path, pattern: str, *, keep: set[str]) -> None:
     for path in directory.glob(pattern):
         if path.name not in keep:
             path.unlink()
+
+
+def _generated_sdl_generation(app_main: Path) -> int | None:
+    """The SDL generation the existing project's glue was rendered for.
+
+    The glue records it as ``SDL_MAJOR_VERSION``, so no separate marker is
+    needed and a project generated before this check existed is still read.
+    ``None`` for a fresh project or glue that cannot be read.
+    """
+    glue = app_main / "java" / "org" / "libsdl" / "app" / "SDLActivity.java"
+    try:
+        return int(
+            sdl_version_from_glue(glue.read_text(encoding="utf-8")).split(".")[0]
+        )
+    except (OSError, ContractError, ValueError):
+        return None
+
+
+def _reset_java_build_on_generation_change(
+    dest: Path, app_main: Path, generation: int, events: BuildEvents
+) -> None:
+    """Drop ``app/build`` when the SDL generation differs from the last build's.
+
+    SDL2 keeps ``SDLInputConnection`` inside ``SDLActivity.java``; SDL3 moves it
+    to its own file. Gradle's incremental javac does not follow a class that
+    moves between source files: it deletes the class with its old source and
+    leaves the new file out of the recompile, so the build fails with "cannot
+    find symbol". Only a full compile recovers, so pay for one on the (rare)
+    switch rather than on every build. ``app/.cxx`` stays: the native launcher
+    does not link SDL.
+    """
+    previous = _generated_sdl_generation(app_main)
+    build_dir = dest / "app" / "build"
+    if previous is None or previous == generation or not build_dir.is_dir():
+        return
+    events.on_progress(
+        f"[generate] SDL generation changed ({previous} -> {generation}); "
+        "discarding app/build for a full recompile"
+    )
+    # A live daemon holds handles under app/build, which makes the removal fail
+    # outright on Windows (the same reason `clean` stops it first).
+    stop_gradle_daemon(dest)
+    try:
+        shutil.rmtree(build_dir)
+    except OSError as exc:
+        raise AndroidBuildError(
+            f"the SDL generation changed, so {build_dir} must be removed for a "
+            f"full recompile, but it could not be: {exc}\n"
+            "  Fix: close anything using the project (Android Studio, a running "
+            "Gradle), then rebuild or run `kivyforge clean`."
+        ) from exc
 
 
 def _setting_applies(value: bool | str, *, release: bool) -> bool:
@@ -378,19 +430,35 @@ def android_build(
     events.on_progress(f"[stage] asset bundle assembled (stamp {stamp})")
 
     # --- Step 7: (re)generate the Gradle project ---
+    # Before the glue is rewritten: the old glue is what records the generation.
+    _reset_java_build_on_generation_change(
+        dest, app_main, android.kivy_generation, events
+    )
     sdl_activity_java = ""
-    for rendered in render_bootstrap(
+    bootstrap = render_bootstrap(
         sdl=android.kivy_generation,
         python_version=python_version,
         entry_point=config.kivy.entry_point,
         fullscreen=android.fullscreen,
         orientation_hint=sdl_orientation_hint(config.kivy.orientation),
-    ):
+    )
+    for rendered in bootstrap:
         out = app_main / rendered.relpath
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(rendered.content, encoding="utf-8", newline="\n")
         if rendered.relpath.endswith("org/libsdl/app/SDLActivity.java"):
             sdl_activity_java = rendered.content
+    # The two generations' glue differ in file set (SDL3 splits classes SDL2
+    # nests in SDLActivity.java), so files left from the other generation would
+    # redefine those classes: "duplicate class".
+    sdl_glue = "java/org/libsdl/app/"
+    _prune_stale(
+        app_main / sdl_glue,
+        "*.java",
+        keep={
+            Path(r.relpath).name for r in bootstrap if r.relpath.startswith(sdl_glue)
+        },
+    )
 
     # 7b. The classes the manifest's <service> entries name. Written after the
     # bootstrap so they land next to the PythonService base they extend, and
