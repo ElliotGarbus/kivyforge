@@ -377,6 +377,7 @@ known-unverified list.
 | ~~9~~ | ~~Byte-compile the embedded stdlib at build time (desktop)~~ | S | **done 2026-09-17**; measured on Windows, Linux, and macOS |
 | 10 | Dynamic `[project].version` (setuptools-scm and friends) | S–M | none |
 | 11 | CPython 3.15 on every platform | S–M | CPython 3.15.0 final released |
+| 12 | Enforce Maven artifact hashes at build time (Android) | M | none |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -2113,3 +2114,55 @@ Once 3.15 is final, every platform can use it.
 
 **Done when** a freshly initialised project on each platform locks and builds
 on 3.15, and `init` writes no pre-release version.
+
+---
+
+### 12. Enforce Maven artifact hashes at build time (Android)
+
+**New 2026-10-04**, from an audit of where the Android specs were narrowed to
+match the code. The Android plan's deferred list was the only place this was
+tracked, and the plan stopped being updated at v1.
+
+Every artifact kivyforge downloads itself (wheels, the python.org runtime,
+`.aar`/`.jar` URLs) and every staged `include_files` file is hash-verified
+before a build uses it. Maven coordinates (`[tool.kivy.android.gradle]`) are
+the exception: `kivyforge lock` records the resolved graph with a SHA-256 per
+artifact in `[[tool.kivyforge.gradle.resolved]]`, but `kivyforge build` only
+mirrors that record into `app/gradle.lockfile` as comments. Gradle downloads
+the artifacts and nothing compares them with the lock. Versions are pinned, so
+an artifact republished at the same version with different bytes builds
+without complaint. It is detectable only by re-locking and diffing.
+
+The spec originally promised enforcement through a `verification-metadata.xml`
+written by `build`. Commit `832eabc0` (2026-07-28) changed the spec to say
+"audit record" because Gradle's dependency verification covers the whole build
+classpath (AGP, aapt, androidx and every plugin's dependencies), not just the
+app's coordinates. A file listing only the app's artifacts makes Gradle reject
+everything else, so no build runs. See
+[02 §Gradle/Maven pins](../platforms/android/02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins).
+
+**Options**
+
+- **A scoped check of kivyforge's own.** Generate a Gradle task that runs
+  before compilation, resolves the release and debug runtime classpaths, hashes
+  each resolved artifact file, and fails on any whose SHA-256 differs from the
+  lock (or that the lock does not list). Gradle's whole-classpath verification
+  stays off. This covers exactly the artifacts the lock records. Probably the
+  smaller change.
+- **Full-classpath verification.** Have `lock` resolve the build classpath too
+  (AGP and its plugins) and write a complete `verification-metadata.xml` for
+  `build` to install. This is Gradle's own mechanism, but the lock grows by the
+  whole toolchain, and every AGP bump changes it.
+
+**Work**
+
+- [ ] Choose an option and record why in 02 §Gradle/Maven pins.
+- [ ] Implement it, with the failure naming the coordinate, the file and both
+      hashes, and pointing at `kivyforge lock`, as `include_files` drift does.
+- [ ] Correct the module docstring of `kivyforge/platforms/android/lock/maven.py`,
+      which still says `build` writes `gradle/verification-metadata.xml`.
+- [ ] Update 02, 03 and 04, which describe the channel as recorded-not-enforced.
+
+**Done when** a build of `examples/mobile/qr-maven` fails, naming the artifact,
+after one byte of a resolved ZXing artifact is changed in the Gradle cache, and
+passes again after re-locking.

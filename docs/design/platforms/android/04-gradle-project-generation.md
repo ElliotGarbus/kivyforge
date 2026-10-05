@@ -55,7 +55,7 @@ Building an Android app with kivyforge is a four-phase pipeline across two tools
 ### Why these folders, not others
 
 - **`app/src/main/jniLibs/<abi>/`** is the only place Android will extract and let a process `dlopen` a native library at runtime. Every `.so` — `libpython3.x.so`, the SDL family, wheel extension modules, and wheel-embedded `.libs/` payloads — must land here (see "Native libraries and the `.so` load model").
-- **`app/src/main/assets/_python_bundle/`** holds the pure-Python payload (stdlib, `pip-deps` site-packages, and the app's own code). Assets are packaged **uncompressed** — the toolchain adds the bundle to AGP's `androidResources.noCompress` list (not the default), so first-launch extraction is a straight copy rather than an inflate — and unpacked to app-private storage on first launch by the bootstrap: Python source cannot be imported directly from inside an APK/asset stream, so it is materialized to a real filesystem path.
+- **`app/src/main/assets/_python_bundle/`** holds the pure-Python payload (stdlib, `pip-deps` site-packages, and the app's own code). Assets keep AGP's default **compression** — measured, not assumed (see below) — and are unpacked to app-private storage on first launch by the bootstrap: Python source cannot be imported directly from inside an APK/asset stream, so it is materialized to a real filesystem path.
 - **`java/org/kivy/android/` + `java/org/libsdl/app/`** hold the generated bootstrap. The `org.kivy.android.*` namespace is **preserved deliberately** so that `autoclass('org.kivy.android.PythonActivity')` and Plyer-style access keep working unmodified (see [bootstrap-android](05-bootstrap-android.md)).
 - **`app/src/main/cpp/`** holds kivyforge's native-launcher source (`main.c` + `CMakeLists.txt`). AGP's `externalNativeBuild` compiles it to `libmain.so` per ABI with the NDK (see "The native launcher (`libmain.so`)"); it is a build output, not a staged/downloaded library.
 - **The app's own code** is copied straight from `app_dir` into the bundle's `app/` subtree by the Stage step — there is no separate staging link. The bundle is rebuilt from scratch on every `build`, so there is nothing to keep in sync, and a link would only have added a Windows privilege/cross-volume failure mode for no gain. `app_dir` must be a subdirectory (the project root `"."` is rejected), so the copy never sweeps `pyproject.toml`/`.git`/build output into the app.
@@ -121,7 +121,7 @@ Every native library kivyforge packages must be 16 KB-aligned:
 
 - **Wheels**: built with NDK r28+ / `-Wl,-z,max-page-size=16384` — both first-party wheels (Kivy and pyjnius) are, and it is a requirement for any other Android wheel, see [artifact-distribution-android §"Wheel content rules"](03-artifact-distribution-android.md#wheel-content-rules).
 - **The python.org runtime**: its `.so`s land in `jniLibs/` like any other, so the check below covers them.
-- **The APK**: zip-aligned with 16 KB alignment for uncompressed `.so`s. AGP's packaging handles this; the toolchain sets the packaging options accordingly.
+- **The APK**: needs no zip-alignment work. `useLegacyPackaging = true` stores every `.so` compressed and the installer extracts it to `nativeLibraryDir`, so the 16 KB requirement is on the extracted file's LOAD segments (above), not on its offset inside the APK. Zip alignment for `.so`s matters only for libraries stored uncompressed and loaded in place, which kivyforge does not do.
 
 `kivyforge doctor` includes a **16 KB alignment check** that reads the LOAD-segment
 alignment (`p_align`) of every `.so` staged under `app/src/main/jniLibs/` and FAILs
@@ -137,6 +137,25 @@ The pure-Python payload is assembled into `app/src/main/assets/_python_bundle/`:
 - The stdlib pure-Python tree (from the runtime), the `pip-deps` site-packages (pure-Python content of installed wheels), the app's own code (copied from `app_dir`), and the generated extension-module manifest (`dotted-module → jniLibs filename`) the bootstrap finder consumes.
 - **ABI-independent by construction, and verified so.** Every ABI-specific `.so` is pulled into `jniLibs/<abi>/` (above), leaving only ABI-neutral content in the bundle. Since each ABI's wheels are installed into a *separate* per-ABI staging tree, `kivyforge build` assembles the single bundle from one **canonical ABI** (the first entry in `abis`) and then asserts the non-`.so` payload of every other ABI slice is **byte-for-byte identical** to it (per-file SHA-256). A divergence — an ABI slice shipping different Python source or data at the same version — fails the build naming the path and the two hashes, rather than silently shipping one ABI's Python to both. (Version skew across ABIs is already rejected at lock time; this catches content skew.)
 - On first launch the bootstrap unpacks it to app-private storage (`getFilesDir()`), version-stamped so an app update re-extracts. `PYTHONHOME`/`PYTHONPATH` point at the extracted location; `pip-deps` is registered via `site.addsitedir()` (not bare `PYTHONPATH`) so `.pth` files work — the same rule as the iOS bootstrap.
+
+### Compression: kept, because storing it uncompressed costs more than it saves
+
+This spec used to say the bundle was stored uncompressed (`androidResources.noCompress`)
+so the first-launch unpack would be a straight copy. kivyforge never generated that
+setting, and the load-model findings had already noted it was an optimization to
+"keep or drop deliberately". Measured on 2026-10-04 with `hello-android` (Kivy 2.3.1
+plus the standard library, 1,292 files, 20.5 MB raw) on a Pixel 8a, first launch after
+`pm clear`, five runs each:
+
+| Bundle in the APK | APK size | Unpack time (median) |
+|---|---|---|
+| Compressed (AGP default, 8.0 MB) | 25.5 MB | ~261 ms |
+| Stored (`noCompress += ['']`) | 62.3 MB | ~214 ms |
+
+Storing saves about 50 ms, once per install or update. The cost is the bundle's 12.5 MB
+of compression at the least, and 37 MB with the catch-all pattern, which also stores the
+native libraries uncompressed. A quarter-second unpack is not what makes a first start
+slow, so the bundle stays compressed. See `test-matrix.md` §7 for the run.
 
 ### Byte-compilation and size (`build_settings`)
 
@@ -157,7 +176,7 @@ Stdlib module *pruning* is intentionally not a build knob here — it is unsafe 
 - **Signing configs**: a `debug` config (Android debug keystore) and, when `[tool.kivy.android.signing]` is present, a `release` config reading the keystore + alias and the passwords from the configured env vars. The v1–v4 toggles apply to `.apk` outputs (`apksigner`); an `.aab` is JAR-signed with the same key (the schemes then apply to the APKs Play/`bundletool` derive from it).
 - **Dependencies**: `files(...)` entries for staged `libs/*.aar|*.jar` (channel 3), one `implementation platform('...')` per `[tool.kivy.android.gradle].platforms` BOM, and `implementation` lines for `[tool.kivy.android.gradle].dependencies` (channel 4) — fully versioned, or versionless when a BOM supplies the version. `kivyforge build` mirrors the resolved graph embedded in `pylock.android.toml` (`[[tool.kivyforge.gradle.resolved]]`) into `app/gradle.lockfile` as comments — an **audit record, not an enforced gate**: neither Gradle dependency locking nor Gradle artifact verification is enabled in the generated project, because Gradle's verification is whole-classpath and the lock resolves only the app's own coordinates (rationale and what would lift this: [pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins)). The reproducibility data is committed in the lock, never inside the disposable project; a stale strict `gradle/verification-metadata.xml` written by an older kivyforge is deleted on regeneration.
 - **Native launcher build**: `externalNativeBuild { cmake { path "src/main/cpp/CMakeLists.txt" } }` plus a pinned `ndkVersion`, so the NDK compiles the emitted launcher C into `libmain.so` per ABI (see "The native launcher (`libmain.so`)").
-- **Packaging options**: `jniLibs { useLegacyPackaging = true }` and the 16 KB packaging alignment; `jniLibs.keepDebugSymbols` is set from `[tool.kivy.android.build_settings].strip_native_libs` (kept for debug / when stripping is off, dropped for a stripped release).
+- **Packaging options**: `jniLibs { useLegacyPackaging = true }`; `jniLibs.keepDebugSymbols` is set from `[tool.kivy.android.build_settings].strip_native_libs` (kept for debug / when stripping is off, dropped for a stripped release).
 - **Native debug symbols**: for a stripped release, `buildTypes.release.ndk.debugSymbolLevel` is emitted from `[tool.kivy.android.build_settings].debug_symbols` (`SYMBOL_TABLE` / `FULL`), so AGP exports a `native-debug-symbols.zip` for crash symbolication (see below).
 - **R8/minify** posture from `[tool.kivy.android.build_settings]` (off by default), wiring `proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'`. See ["R8 / `proguard-rules.pro`"](#r8--proguard-rulespro) for how that file is composed.
 - Kotlin plugin applied only when `[tool.kivy.android.src].kotlin` is non-empty.
