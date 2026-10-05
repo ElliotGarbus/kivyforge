@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Android: switching `kivy_generation` no longer needs `kivyforge clean`
+
+- **Fixed:** rebuilding after changing `[tool.kivy.android].kivy_generation`
+  failed to compile until `kivyforge clean` was run. Going from 3 to 2 failed
+  with `duplicate class: org.libsdl.app.SDLInputConnection`, because the SDL3
+  Java files were left in the generated project. Going from 2 to 3 failed with
+  `cannot find symbol: SDLInputConnection`, because Gradle's incremental
+  compiler loses a class that SDL3 moved into its own file. The build now
+  removes the other generation's SDL files, and on a generation change it
+  discards `app/build` (stopping the project's Gradle daemon first), so that
+  one build compiles from scratch. Builds that keep the same generation are
+  unaffected. ([#66](https://github.com/ElliotGarbus/kivyforge/issues/66))
+
 ### Android: apps relaunch on Android 7, and services can use pyjnius below Android 12
 
 - **Fixed:** on Android 7.0 and 7.1 (API 24 and 25), every app crashed on its

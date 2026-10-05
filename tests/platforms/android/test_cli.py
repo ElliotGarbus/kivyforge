@@ -25,7 +25,10 @@ from kivyforge.platforms.android import adb as adb_mod
 from kivyforge.platforms.android import policy as policy_mod
 from kivyforge.platforms.android import signing as signing_mod
 from kivyforge.platforms.android import smoke as smoke_mod
-from kivyforge.platforms.android.bootstrap.render import RenderedFile
+from kivyforge.platforms.android.bootstrap.render import (
+    RenderedFile,
+    render_bootstrap,
+)
 from kivyforge.platforms.android.doctor import RealAndroidProbe
 from kivyforge.platforms.android.generate.project import (
     MERGED_MANIFEST_RELPATH,
@@ -106,6 +109,7 @@ def _write_lock(
     in_sync: bool = True,
     pyjnius_version="1.7.0",
     include_files=(),
+    kivy_generation=2,
 ):
     text = (project_root / "pyproject.toml").read_text(encoding="utf-8")
     packages = (
@@ -140,7 +144,7 @@ def _write_lock(
         generated_at="2026-01-01T00:00:00Z",
         pyproject_sha256=(compute_pyproject_sha256(text) if in_sync else "0" * 64),
         tool_kivy_android_schema_version=1,
-        kivy_generation=2,
+        kivy_generation=kivy_generation,
         include_files=tuple(include_files),
     )
     (project_root / "pylock.android.toml").write_text(
@@ -480,6 +484,106 @@ class TestGeneratedServices:
         cli.android_build(project)
         assert not stale.exists()
         assert not probe.exists()
+
+
+class TestGenerationSwitch:
+    """Switching kivy_generation must not need `kivyforge clean` (issue #66).
+
+    SDL2 nests SDLInputConnection in SDLActivity.java; SDL3 gives it its own
+    file. Left over, the other generation's files redefine the class ("duplicate
+    class"), and Gradle's incremental javac loses a class that moved between
+    files ("cannot find symbol") until app/build is gone.
+    """
+
+    @pytest.fixture
+    def env(self, build_env, monkeypatch):
+        project, calls = build_env
+        # The real glue: the file sets differing by generation is the point.
+        monkeypatch.setattr(cli, "render_bootstrap", render_bootstrap)
+        monkeypatch.setattr(
+            cli, "stop_gradle_daemon", lambda dest: calls.setdefault("stop", [])
+        )
+        return project, calls
+
+    def _set_generation(self, project, generation):
+        (project / "pyproject.toml").write_text(
+            PYPROJECT.replace(
+                'abis = ["arm64_v8a"]',
+                f'abis = ["arm64_v8a"]\nkivy_generation = {generation}',
+            ),
+            encoding="utf-8",
+        )
+        _write_lock(project, kivy_generation=generation)
+
+    def _build(self, project, generation):
+        self._set_generation(project, generation)
+        (dest,) = _built_paths(cli.android_build(project), project)
+        glue = dest / "app" / "src" / "main" / "java" / "org" / "libsdl" / "app"
+        return dest, glue
+
+    def _compiled(self, dest):
+        # Stand in for a previous Gradle run's incremental state.
+        marker = dest / "app" / "build" / "intermediates" / "javac" / "state.bin"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_bytes(b"")
+        return dest / "app" / "build"
+
+    def test_two_to_three_recompiles_from_scratch(self, env):
+        project, calls = env
+        dest, _ = self._build(project, 2)
+        build_dir = self._compiled(dest)
+        _, glue = self._build(project, 3)
+        assert not build_dir.exists()
+        assert "stop" in calls  # the daemon is stopped before the removal
+        assert (glue / "SDLInputConnection.java").is_file()
+
+    def test_three_to_two_drops_the_sdl3_only_glue(self, env):
+        project, _ = env
+        dest, glue = self._build(project, 3)
+        sdl3_only = {"SDLDummyEdit.java", "SDLInputConnection.java"}
+        assert sdl3_only <= {p.name for p in glue.glob("*.java")}
+        build_dir = self._compiled(dest)
+        _, glue = self._build(project, 2)
+        assert not build_dir.exists()
+        names = {p.name for p in glue.glob("*.java")}
+        assert not sdl3_only & names
+        assert "SDLSensorManager.java" not in names
+        assert "SDLActivity.java" in names
+
+    def test_same_generation_keeps_the_incremental_build(self, env):
+        project, calls = env
+        dest, _ = self._build(project, 2)
+        build_dir = self._compiled(dest)
+        self._build(project, 2)
+        assert build_dir.is_dir()
+        assert "stop" not in calls
+
+    def test_glue_records_the_generation(self, env):
+        project, _ = env
+        dest, _ = self._build(project, 3)
+        assert cli._generated_sdl_generation(dest / "app" / "src" / "main") == 3
+
+    def test_unreadable_glue_is_not_a_switch(self, tmp_path):
+        glue = tmp_path / "java" / "org" / "libsdl" / "app" / "SDLActivity.java"
+        glue.parent.mkdir(parents=True)
+        glue.write_text("class SDLActivity {}\n", encoding="utf-8")
+        assert cli._generated_sdl_generation(tmp_path) is None
+        assert cli._generated_sdl_generation(tmp_path / "missing") is None
+
+    def test_a_locked_build_dir_is_an_actionable_failure(self, env, monkeypatch):
+        project, _ = env
+        dest, _ = self._build(project, 2)
+        build_dir = self._compiled(dest)
+        rmtree = shutil.rmtree
+
+        def locked(path):
+            if Path(path) == build_dir:
+                raise PermissionError("in use")
+            rmtree(path)
+
+        monkeypatch.setattr(cli.shutil, "rmtree", locked)
+        with pytest.raises(ToolchainError, match="kivyforge clean"):
+            self._build(project, 3)
 
 
 class TestByteCompileResolution:
