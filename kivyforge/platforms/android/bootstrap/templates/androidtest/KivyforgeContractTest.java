@@ -1,10 +1,12 @@
 package org.kivyforge.test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.content.Context;
 import android.content.Intent;
+import android.system.Os;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.io.ByteArrayOutputStream;
@@ -13,6 +15,7 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import org.junit.Test;
+import org.kivy.android.PythonBundle;
 import org.junit.runner.RunWith;
 
 /**
@@ -76,6 +79,20 @@ public class KivyforgeContractTest {
         assertTrue(
             "self-test reported a failure: " + contents,
             contents.contains("SELFTEST_ALL_OK"));
+    }
+
+    /**
+     * Every launch after the first reads the unpacked bundle's stamp instead of
+     * unpacking. A fresh install never takes that path, so the launch above does
+     * not cover it; the second call here does. Reading the stamp through
+     * java.nio.file crashed every relaunch on Android 7 (API 24/25).
+     */
+    @Test
+    public void relaunchReadsTheUnpackedBundle() throws Exception {
+        Context ctx = ApplicationProvider.getApplicationContext();
+        PythonBundle.unpack(ctx);
+        PythonBundle.unpack(ctx);
+        assertEquals("1", Os.getenv("KF_UNPACK_SKIPPED"));
     }
 
     // Not Files.readAllBytes: java.nio.file is API 26, min_sdk is 24.

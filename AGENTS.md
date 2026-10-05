@@ -107,7 +107,8 @@ result into `test-matrix.md` §7. Commit that row with the pass.
 - Work on the current feature branch; **ask before pushing**.
 - Never commit a generated example lock, build output, or an edit made to an
   example just to reproduce something. Most examples gitignore `pylock.*.toml`;
-  three on-device gate examples (`hello-android`, `hello-sdl3`, `hello-kivy`)
+  four on-device gate examples (`hello-android`, `hello-sdl3`, `hello-kivy`,
+  `android-services`)
   track theirs on purpose and say so in their own `.gitignore`. If re-locking
   one of those would change it, diff and report rather than committing —
   `docs/design/common/03-lockfile-concept.md` §"Example-repo lock policy".

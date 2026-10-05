@@ -1,5 +1,6 @@
 package org.kivy.android;
 
+import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
@@ -120,6 +121,7 @@ public class PythonActivity extends SDLActivity {
     // The bar insets go to zero when the bars hide (fullscreen), so only the
     // cutout stays padded. The keyboard's insets are left to Kivy.
     @SuppressWarnings("deprecation")
+    @TargetApi(30)
     private void padForSystemBars() {
         View content = findViewById(android.R.id.content);
         if (content == null) {
