@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Android: `pyjnius` is included automatically
+
+- **Fixed:** an Android app whose dependencies didn't list `pyjnius` built
+  without complaint and then crashed at launch with `No module named 'jnius'`
+  ([#65](https://github.com/ElliotGarbus/kivyforge/issues/65)). Kivy imports
+  pyjnius on Android (to read the screen density, for example) but doesn't
+  declare it, because python-for-android always supplied it. Now
+  `kivyforge lock -p android` adds it, in the range kivyforge supports
+  (`>=1.7.0,<1.9`), when your project doesn't declare it. It is added to the
+  Android lock only, so desktop installs are unaffected and you don't need a
+  `; sys_platform == 'android'` marker. Declaring it yourself still works and
+  chooses the version.
+- **Migration:** a lock made before this change, without pyjnius, now stops the
+  build with `KF-LOCK-INCOMPLETE` (exit 4) instead of producing an app that
+  crashes. Run `kivyforge lock -p android --update`. Projects that already
+  declare pyjnius need no change.
+
 ### Android: `lock` and `build` show their downloads
 
 - **Fixed:** `kivyforge lock -p android` printed nothing until it finished, so a

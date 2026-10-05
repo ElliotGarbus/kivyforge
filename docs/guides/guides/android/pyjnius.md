@@ -18,18 +18,25 @@ nothing.
 
 - [Configure your Android app](configure.md), including the mobile wheel index
   in `extra_index_urls`.
-- Add `pyjnius` to your dependencies:
+- You don't need to add `pyjnius` to your dependencies. Kivy itself uses it on
+  Android, so `kivyforge lock -p android` adds it to every Android lock, in the
+  range kivyforge supports (`>=1.7.0,<1.9`). Your desktop dependencies stay
+  unchanged.
+
+    To choose the version yourself, declare it. kivyforge then uses your
+    requirement instead, and a locked pyjnius outside the supported range fails
+    the build:
 
     ```toml
     [project]
     dependencies = [
         "kivy==2.3.1",
-        "pyjnius",
+        "pyjnius==1.8.0; sys_platform == 'android'",
     ]
     ```
 
-    kivyforge supports pyjnius 1.7 and 1.8 (`>=1.7.0,<1.9`). A locked pyjnius
-    outside that range fails the build.
+    The marker keeps it out of desktop installs, where pyjnius would need a
+    Java runtime.
 
 - Declare any permission the API you call requires, under
   `[tool.kivy.android.permissions]`.

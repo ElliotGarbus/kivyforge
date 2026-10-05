@@ -46,6 +46,12 @@ LOCK_MISSING = "KF-LOCK-MISSING"
 #: treating as stale -- it usually means a bad merge or a truncated write.
 LOCK_UNREADABLE = "KF-LOCK-UNREADABLE"
 
+#: A lock that matches ``pyproject.toml`` but lacks something the build needs,
+#: because it predates kivyforge supplying it (for example the ``pyjnius`` an
+#: Android lock now always carries). Not drift -- ``pyproject.toml`` did not
+#: move -- but the same remedy: re-lock.
+LOCK_INCOMPLETE = "KF-LOCK-INCOMPLETE"
+
 #: Resolution succeeded but made a judgement call worth surfacing (e.g. the
 #: macOS/Linux backends accepting a vendored plain ``linux_*`` wheel). Always
 #: WARNING: the lock written is usable, and the run is ``ok``.

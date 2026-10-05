@@ -34,6 +34,7 @@ from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
 
+from ..bootstrap.contract import COMPATIBLE_PYJNIUS
 from .archives import ArchiveResolverError, resolve_android_libs
 from .generation import expected_generation, mismatch_hint
 from .maven import GradleMavenResolver, MavenResolverError, resolve_gradle_pins
@@ -62,6 +63,10 @@ class AndroidDependencyConflict(BuildError, ClassifiedError):
     """The resolved set contains a distribution named ``android``."""
 
     code = diagnostics.ANDROID_DEPENDENCY_CONFLICT
+
+
+#: Supplied by kivyforge on Android when the project does not declare it.
+PYJNIUS = "pyjnius"
 
 
 def _reject_android_distribution(packages: list[LockedPackage]) -> None:
@@ -137,9 +142,26 @@ def build_lockfile(
     # You can't exclude what you explicitly depend on (android/01 §exclude).
     excluded -= direct
 
+    requirements = list(config.project.dependencies)
+    if PYJNIUS not in direct:
+        # Kivy imports jnius on Android (kivy/metrics.py, for the screen
+        # density), and so do the bundled android package and _kivy_bootstrap,
+        # but Kivy's metadata does not declare it: on Android, python-for-android
+        # always supplied it. So kivyforge does too, in the range the bootstrap's
+        # invoke0 glue is built for. Android-only, so the project's desktop
+        # dependencies never need a `; sys_platform == "android"` marker (#65).
+        requirements.append(f"{PYJNIUS}{COMPATIBLE_PYJNIUS}")
+        if on_progress is not None:
+            on_progress(
+                f"[lock] adding {PYJNIUS}{COMPATIBLE_PYJNIUS} (Kivy needs it on "
+                "Android; declare it to choose the version)"
+            )
+    # Never excludable: an app without it crashes at launch.
+    excluded.discard(PYJNIUS)
+
     try:
         resolved = resolver.resolve(
-            list(config.project.dependencies),
+            requirements,
             python_version=python_version,
             min_sdk=android.min_sdk,
             abis=tuple(android.abis),

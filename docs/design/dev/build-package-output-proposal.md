@@ -753,6 +753,7 @@ raised. These two verbs are its entire reason for existing.
 | Lock drift blocks the build | `KF-LOCK-DRIFT` (exists) | `4` |
 | No lockfile for this platform | `KF-LOCK-MISSING` (exists) | `4` |
 | Lockfile present but unparseable | `KF-LOCK-UNREADABLE` (exists) | `4` |
+| Lockfile matches `pyproject.toml` but predates something kivyforge now adds (Android: `pyjnius`, #65) | `KF-LOCK-INCOMPLETE` (added 2026-10-05) | `4` |
 | Bad config or flag combination | untriaged raises keep `KF-ERROR` | `1` |
 | Tool said success but produced no artifact (`_require_artifact`) | `KF-ARTIFACT-MISSING` | `5` |
 | `byte_compile = true` and no compatible interpreter | `KF-BYTECOMPILE-NO-INTERP` (exists), ERROR | `1` |

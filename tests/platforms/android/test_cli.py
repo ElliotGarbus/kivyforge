@@ -109,26 +109,31 @@ def _write_lock(
     project_root: Path,
     *,
     in_sync: bool = True,
-    pyjnius_version="1.7.0",
+    pyjnius_version: str | None = "1.7.0",
     include_files=(),
     kivy_generation=2,
 ):
     text = (project_root / "pyproject.toml").read_text(encoding="utf-8")
+    # None: a lock from before kivyforge added pyjnius itself.
     packages = (
-        LockedPackage(
-            name="pyjnius",
-            version=pyjnius_version,
-            wheels=(
-                LockedWheel(
-                    name=(
-                        f"pyjnius-{pyjnius_version}-cp314-cp314-"
-                        "android_24_arm64_v8a.whl"
+        ()
+        if pyjnius_version is None
+        else (
+            LockedPackage(
+                name="pyjnius",
+                version=pyjnius_version,
+                wheels=(
+                    LockedWheel(
+                        name=(
+                            f"pyjnius-{pyjnius_version}-cp314-cp314-"
+                            "android_24_arm64_v8a.whl"
+                        ),
+                        url="https://files.example/pyjnius.whl",
+                        sha256="a" * 64,
                     ),
-                    url="https://files.example/pyjnius.whl",
-                    sha256="a" * 64,
                 ),
             ),
-        ),
+        )
     )
     lock = AndroidLockfile(
         requires_python=">=3.14",
@@ -688,6 +693,21 @@ class TestAndroidBuildGates:
         with pytest.raises(ToolchainError, match="invoke0"):
             cli.android_build(project)
         assert not calls["fetch"]  # never got to step 2
+
+    def test_a_lock_without_pyjnius_asks_for_a_relock(
+        self, project, monkeypatch, tmp_path
+    ):
+        """Kivy imports jnius on Android: building would succeed and the app
+        would die at launch (#65), so stop before any work, with the fix."""
+        _write_lock(project, pyjnius_version=None)
+        monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
+        calls: dict = {}
+        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
+        with pytest.raises(ToolchainError, match="lock -p android --update") as exc:
+            cli.android_build(project)
+        assert exc.value.code == diagnostics.LOCK_INCOMPLETE
+        assert exc.value.exit_code == exit_codes.LOCK_DRIFT
+        assert not calls["fetch"]
 
     def test_sdl_glue_mismatch_blocks_build(self, project, monkeypatch, tmp_path):
         _write_lock(project)
