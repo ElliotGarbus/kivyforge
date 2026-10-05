@@ -139,11 +139,13 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -175,8 +177,7 @@ public class KivyforgeServiceContractTest {{
         String contents = "";
         while (System.currentTimeMillis() < deadline) {{
             if (marker.exists()) {{
-                contents = new String(
-                    Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8);
+                contents = readText(marker);
                 if (contents.contains("SERVICE_READY")) {{
                     break;
                 }}
@@ -192,8 +193,7 @@ public class KivyforgeServiceContractTest {{
         // moment and confirm it did not blow up.
         Thread.sleep(2000);
         if (marker.exists()) {{
-            contents = new String(
-                Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8);
+            contents = readText(marker);
         }}
         assertFalse(
             "service entry point {service.entry_point} raised on import: "
@@ -212,6 +212,17 @@ public class KivyforgeServiceContractTest {{
         Field field = org.kivy.android.PythonService.class.getField("mService");
         int mods = field.getModifiers();
         assertTrue(Modifier.isPublic(mods) && Modifier.isStatic(mods));
+    }}
+
+    // Not Files.readAllBytes: java.nio.file is API 26, min_sdk is 24.
+    private static String readText(File file) throws Exception {{
+        try (InputStream in = new FileInputStream(file)) {{
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        }}
     }}
 }}
 """

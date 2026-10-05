@@ -308,10 +308,11 @@ the call is the only blocker on that path.
   `stop(Context)`, and the argument passed as the intent extra
   `pythonServiceArgument`.
 - pyjnius in a service process was observed on 2026-10-04 on a Pixel 8a, Android 17
-  (API 37), in `examples/mobile/android-services`. It gets its JNI environment from
-  tier 3 (`JNI_GetCreatedJavaVMs`). On API 24–30 that tier is expected to fail, as the
-  pyjnius spike findings record; this was not observed, because no device or emulator
-  image at those levels was available.
+  (API 37), in `examples/mobile/android-services`, getting its JNI environment from
+  tier 3 (`JNI_GetCreatedJavaVMs`). The same day, on API 30 and API 24 emulators, the
+  expected failure was observed: no tier was reachable and `import jnius` raised. The
+  service now loads SDL first (see [Java contract](#java-contract)), which fixed it on
+  both emulators and on both Kivy generations at API 30 (`test-matrix.md` §7).
 - The older Kivy 3 wheels were not inspected (E1).
 - GitHub code search is incomplete; hit counts are lower bounds.
 
@@ -540,13 +541,14 @@ They are kivyforge-owned blocks and are listed in the deviation register.
 - **`stop` ends the service process**, as p4a's `onDestroy` does. The interpreter thread
   cannot be interrupted, so without that `stop` would leave the service's Python
   running. Each service has its own `android:process`, so nothing else dies with it.
-- **pyjnius in the service process** works on API 31+ (observed on API 37; see
-  [What was not verified](#what-was-not-verified)). The pyjnius wheel `dlopen`s `libSDL2.so` by name
-  while looking for SDL's getter. SDL's `JNI_OnLoad` does not run for a library
-  loaded that way, so SDL logs `Failed, there is no JavaVM`, and pyjnius falls through
-  to tier 3. The log line is benign. Loading SDL with `System.loadLibrary` in the
-  service would give API 24–30 a working tier 2; that is a possible follow-up, not part
-  of this change.
+- **pyjnius in the service process** needs the service to load SDL. The pyjnius wheel
+  `dlopen`s the SDL library by name while looking for SDL's JNIEnv getter, but SDL's
+  `JNI_OnLoad` does not run for a library loaded that way, so SDL has no VM and logs
+  `Failed, there is no JavaVM`. pyjnius then falls through to tier 3, which apps can
+  reach only on API 31+. `PythonService` therefore loads the generation's SDL library
+  with `System.loadLibrary` before libpython: `JNI_OnLoad` records the VM and the SDL
+  getter works on every API level. Loading the library creates no window or SDL
+  thread; those come from `SDLActivity`, which a service never starts.
 - `setAutoRestartService` is not provided.
 
 A Java contract test (as already exists for the service classes) should assert these
@@ -685,8 +687,9 @@ maintainers, since kivyschool's index already serves a package of that name.
 1. Request-code collisions with SDL's own permission handling.
 2. plyer inside a service. (p4a's service signatures, class names and intent extra were
    read on 2026-10-04; see [Java contract](#java-contract).)
-3. pyjnius in a service process on API 24–30. It works on API 31+ (observed on API 37);
-   below that its only tier is expected to fail (see [Java contract](#java-contract)).
+3. Resolved 2026-10-04: pyjnius in a service process on API 24–30. The failure was
+   observed on API 30 and API 24 emulators and fixed by loading SDL in the service (see
+   [Java contract](#java-contract)).
 4. Resolved 2026-10-04: `permissions.py` line 579 is inside a docstring.
 5. Whether `_ctypes_library_finder.py` (p4a's `ctypes.util.find_library` helper) matters on
    kivyforge. Out of scope here; worth a separate check.
