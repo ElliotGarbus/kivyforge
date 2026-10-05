@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Android: adding your own resources with `include_files`
+
+- **Added:** a guide section,
+  [Add Android resources](docs/guides/guides/android/configure.md#add-android-resources):
+  stage a folder laid out like an Android `res` folder with
+  `dest = "app/src/main/res"`, keeping subfolders and qualifiers.
+  ([#71](https://github.com/ElliotGarbus/kivyforge/issues/71))
+- **Added:** a file that replaces one kivyforge generates, such as
+  `res/values/styles.xml` or the launcher icon, is now reported
+  (`[include] ... replaces the file kivyforge generated`, and
+  `KF-ANDROID-INCLUDE-OVERRIDE` under `--json`). It used to be silent.
+- **Added:** the build stops, saying what to fix, when an included
+  `strings.xml` or `styles.xml` leaves `res/values/` without `app_name` or
+  `Theme.Kivyforge`, which the generated manifest uses. That used to fail
+  later in Gradle with an AAPT error that did not mention `include_files`.
+- **Fixed:** a file removed from `include_files`, or from a directory it
+  names, is now removed from the generated project on the next build. It used
+  to stay, and ship, until `kivyforge clean`.
+
 ### Android: `run` follows the app's log
 
 - **Changed:** `kivyforge run -p android` now shows the app's log live, the way

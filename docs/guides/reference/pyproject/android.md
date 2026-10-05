@@ -107,12 +107,17 @@ LocalWidget = { version = "0.2.0", source = "libs/LocalWidget-0.2.0.aar" }
 ## `[[tool.kivy.android.include_files]]`
 
 An array of tables. Each entry copies project files into the generated Android
-project.
+project. See [Add Android resources](../../guides/android/configure.md#add-android-resources).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `dest` | string | required | Destination directory, relative to the generated `<app>-android/` project. |
-| `sources` | list of string | required | Project-relative files or directories to copy. Each must exist. |
+| `sources` | list of string | required | Project-relative files or directories to copy. Each must exist. A file lands in `dest` under its own name; a directory's contents land in `dest` with their subfolders. |
+
+A file that would replace the generated manifest or a Gradle file is rejected.
+A file that replaces a generated resource is copied and reported with
+`KF-ANDROID-INCLUDE-OVERRIDE`. A file removed from `sources` is removed from the
+generated project on the next build.
 
 ## `[[tool.kivy.android.services]]`
 

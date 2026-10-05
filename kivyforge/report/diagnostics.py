@@ -111,6 +111,12 @@ ANDROID_DEPENDENCY_CONFLICT = "KF-ANDROID-DEPENDENCY-CONFLICT"
 #: bundled package would shadow. ``context`` names the ``path``.
 ANDROID_APP_CONFLICT = "KF-ANDROID-APP-CONFLICT"
 
+#: Android: an ``include_files`` file replaced one kivyforge generates (a
+#: resource such as ``res/values/styles.xml`` or the launcher icon). INFO: the
+#: override is usually deliberate, and the build goes on. ``context`` names
+#: the ``path`` in the generated project.
+ANDROID_INCLUDE_OVERRIDE = "KF-ANDROID-INCLUDE-OVERRIDE"
+
 #: An expected failure (``ToolchainError``) with no specific code assigned yet.
 #: Branchable rather than null: it tells a consumer "this is a clean, expected
 #: failure -- read ``message`` and ``remediation``", as distinct from a crash.

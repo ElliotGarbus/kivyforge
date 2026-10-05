@@ -145,6 +145,12 @@ _DIAGNOSTIC = {
         "bundled `android` package would shadow.",
         "Rename or remove it; `context` names the `path`.",
     ),
+    "KF-ANDROID-INCLUDE-OVERRIDE": (
+        "info",
+        "Android: an `include_files` file replaced one kivyforge generates, such "
+        "as `res/values/styles.xml` or the launcher icon. The build goes on.",
+        "None if the override is deliberate; `context` names the `path`.",
+    ),
     "KF-ERROR": (
         "error",
         "An expected failure with no more specific code assigned yet.",

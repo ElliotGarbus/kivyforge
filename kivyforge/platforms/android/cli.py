@@ -282,6 +282,7 @@ def android_build(
         except ContractError as exc:
             raise AndroidBuildError(str(exc)) from exc
     _reject_app_android(project_root, config.kivy.app_dir)
+    _remove_previous_includes(dest)
 
     python_version = lock.python_android[0].version
     stem = python_stem(python_version)
@@ -546,7 +547,9 @@ def android_build(
     _stage(_generate_project_files, ProjectGenError)
     write_gradle_pins(dest, lock)
     _write_local_properties(dest)
-    _copy_include_files(project_root, dest, android, lock, verify=not no_verify_lock)
+    _copy_include_files(
+        project_root, dest, android, lock, events, verify=not no_verify_lock
+    )
     events.on_progress(f"[generate] {dest.name}/ regenerated")
     # The [generate] line is progress; without this product line a plain
     # `build` would print nothing on stdout while claiming a project artifact.
@@ -1049,11 +1052,47 @@ def _release_dev_signing(
     return "", "debug"
 
 
+#: What the last build's ``include_files`` copied, one project-relative path a
+#: line, so the next build can take it out again.
+_INCLUDE_RECORD = ".kivyforge-include-files"
+
+_VALUES_DIR = "app/src/main/res/values/"
+
+#: Resources the generated manifest names (``android:label`` and
+#: ``android:theme`` are reserved), with the generated file that defines each.
+_REQUIRED_VALUES = (
+    ("string", "app_name", "strings.xml"),
+    ("style", "Theme.Kivyforge", "styles.xml"),
+)
+
+
+def _remove_previous_includes(dest: Path) -> None:
+    """Delete the files the last build's ``include_files`` copied.
+
+    The project dir is incremental, so a file taken out of ``include_files``
+    (or out of a directory source) would otherwise keep shipping. This runs
+    before generation, so a generated file that an include had replaced is
+    written fresh by this build.
+    """
+    record = dest / _INCLUDE_RECORD
+    try:
+        lines = record.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return
+    for line in lines:
+        rel = Path(line)
+        if not line or rel.is_absolute() or ".." in rel.parts:
+            continue
+        (dest / rel).unlink(missing_ok=True)
+    record.unlink()
+
+
 def _copy_include_files(
     project_root: Path,
     dest: Path,
     android: AndroidConfig,
     lock: AndroidLockfile,
+    events: BuildEvents,
     *,
     verify: bool = True,
 ) -> None:
@@ -1065,6 +1104,10 @@ def _copy_include_files(
     shipped silently, with a lock that claimed otherwise. Verification is
     checked-in drift detection, not supply-chain integrity — these are the
     user's own repo files — so the fix is always "re-run lock".
+
+    Replacing a generated resource is allowed and reported. The previous
+    build's includes are gone by now (:func:`_remove_previous_includes`), so a
+    file already at the destination is one this build generated.
     """
     generated = {
         "app/src/main/AndroidManifest.xml",
@@ -1075,36 +1118,55 @@ def _copy_include_files(
     }
     pins = {(p.dest, p.source): p.sha256 for p in lock.include_files}
     staged: set[tuple[str, str]] = set()
-    for entry in android.include_files:
-        target_dir = dest / entry.dest
-        for source in entry.sources:
-            src = project_root / source
-            targets = (
-                [
-                    (
-                        child,
-                        target_dir / child.relative_to(src),
-                        (Path(source) / child.relative_to(src)).as_posix(),
-                    )
-                    for child in sorted(src.rglob("*"))
-                    if child.is_file()
-                ]
-                if src.is_dir()
-                else [(src, target_dir / src.name, source)]
+    copied: list[str] = []
+    try:
+        for entry in android.include_files:
+            target_dir = dest / entry.dest
+            for source in entry.sources:
+                src = project_root / source
+                targets = (
+                    [
+                        (
+                            child,
+                            target_dir / child.relative_to(src),
+                            (Path(source) / child.relative_to(src)).as_posix(),
+                        )
+                        for child in sorted(src.rglob("*"))
+                        if child.is_file()
+                    ]
+                    if src.is_dir()
+                    else [(src, target_dir / src.name, source)]
+                )
+                for file_src, file_dest, rel_source in targets:
+                    rel = file_dest.relative_to(dest).as_posix()
+                    if rel in generated:
+                        raise AndroidBuildError(
+                            f"include_files entry would overwrite the generated "
+                            f"{rel}; use the manifest/gradle passthroughs instead "
+                            f"(android/01 §include_files)."
+                        )
+                    if verify:
+                        _verify_include_file(file_src, rel_source, entry.dest, pins)
+                        staged.add((entry.dest, rel_source))
+                    if file_dest.is_file() and rel not in copied:
+                        events.on_progress(
+                            f"[include] {rel} replaces the file kivyforge generated"
+                        )
+                        events.note(
+                            diagnostics.ANDROID_INCLUDE_OVERRIDE,
+                            f"include_files replaced the generated {rel}.",
+                            {"path": rel},
+                        )
+                    file_dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(file_src, file_dest)
+                    copied.append(rel)
+    finally:
+        if copied:
+            (dest / _INCLUDE_RECORD).write_text(
+                "".join(f"{rel}\n" for rel in dict.fromkeys(copied)),
+                encoding="utf-8",
+                newline="\n",
             )
-            for file_src, file_dest, rel_source in targets:
-                rel = file_dest.relative_to(dest).as_posix()
-                if rel in generated:
-                    raise AndroidBuildError(
-                        f"include_files entry would overwrite the generated "
-                        f"{rel}; use the manifest/gradle passthroughs instead "
-                        f"(android/01 §include_files)."
-                    )
-                if verify:
-                    _verify_include_file(file_src, rel_source, entry.dest, pins)
-                    staged.add((entry.dest, rel_source))
-                file_dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(file_src, file_dest)
     if verify:
         # A pin with nothing behind it: a file the lock recorded has since been
         # deleted from a directory source, which the per-file loop cannot see.
@@ -1116,6 +1178,46 @@ def _copy_include_files(
                 "exists.\n"
                 "  Re-run `kivyforge lock -p android` to re-record what the "
                 "project actually ships."
+            )
+    _check_required_values(dest, copied)
+
+
+def _check_required_values(dest: Path, copied: list[str]) -> None:
+    """Refuse an include that left ``res/values`` without a name the manifest uses.
+
+    Replacing the generated ``strings.xml`` or ``styles.xml`` is allowed, but
+    without ``app_name`` or ``Theme.Kivyforge`` the build fails inside AAPT,
+    with an error that says nothing about ``include_files``.
+    """
+    import xml.etree.ElementTree as ET
+
+    into_values = sorted(r for r in copied if r.startswith(_VALUES_DIR))
+    if not into_values:
+        return
+    defined: set[tuple[str, str]] = set()
+    for path in sorted((dest / _VALUES_DIR).glob("*.xml")):
+        try:
+            root = ET.parse(path).getroot()
+        except (ET.ParseError, OSError):
+            continue  # AAPT reports a malformed file better than we would
+        for element in root:
+            name = element.get("name")
+            if name:
+                kind = (
+                    element.get("type", element.tag)
+                    if element.tag == "item"
+                    else element.tag
+                )
+                defined.add((kind, name))
+    for kind, name, generated_file in _REQUIRED_VALUES:
+        if (kind, name) not in defined:
+            raise AndroidBuildError(
+                f"include_files left res/values without the {kind} {name!r}, "
+                "which the generated manifest uses (staged there: "
+                f"{', '.join(into_values)}).\n"
+                f'  Fix: define <{kind} name="{name}"> in your file, or give '
+                "your file another name so kivyforge's own "
+                f"{generated_file} stays."
             )
 
 

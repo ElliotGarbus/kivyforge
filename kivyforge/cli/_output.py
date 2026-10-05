@@ -67,7 +67,10 @@ def reporting(
 
 #: Severity of each success-path note a build or package can attach. A note is
 #: never an error -- anything fatal raises instead -- so unknown codes are warnings.
-_NOTE_SEVERITY = {diagnostics.MANIFEST_POLICY: diagnostics.INFO}
+_NOTE_SEVERITY = {
+    diagnostics.MANIFEST_POLICY: diagnostics.INFO,
+    diagnostics.ANDROID_INCLUDE_OVERRIDE: diagnostics.INFO,
+}
 
 
 def report_events(report: Report) -> BuildEvents:

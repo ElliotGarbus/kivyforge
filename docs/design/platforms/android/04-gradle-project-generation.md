@@ -244,8 +244,13 @@ After the manifest and Gradle files are generated, `kivyforge build` copies each
 `[[tool.kivy.android.include_files]]` entry — `sources` (repo-relative files or
 directories) into `dest` (relative to `<app>-android/`) — so config files like
 `app/google-services.json` or `app/src/main/res/xml/network_security_config.xml`
-are present before Gradle runs. A copy that would clobber a kivyforge-generated
-file is rejected; sources are SHA-256-pinned in the lock for drift detection.
+are present before Gradle runs. A copy that would clobber the generated manifest
+or a Gradle file is rejected; one that replaces a generated resource is allowed
+and reported (`KF-ANDROID-INCLUDE-OVERRIDE`), provided `res/values/` still
+defines `app_name` and `Theme.Kivyforge`. What the previous build copied is
+deleted first, so a removed file does not linger. Sources are SHA-256-pinned in
+the lock for drift detection. See
+[pyproject-android §`include_files`](01-pyproject-android.md#toolkivyandroidinclude_files--copy-arbitrary-files-into-the-project).
 
 ## Developer iteration workflow
 

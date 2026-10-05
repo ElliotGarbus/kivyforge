@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from kivyforge.build_outcome import ArtifactKind
+from kivyforge.build_outcome import ArtifactKind, BuildEvents
 from kivyforge.cli._common import ToolchainError
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.lock.reader import compute_pyproject_sha256
@@ -31,6 +31,7 @@ from kivyforge.platforms.android.bootstrap.render import (
     render_bootstrap,
 )
 from kivyforge.platforms.android.doctor import RealAndroidProbe
+from kivyforge.platforms.android.generate import project as project_mod
 from kivyforge.platforms.android.generate.project import (
     MERGED_MANIFEST_RELPATH,
     MERGED_MANIFEST_TASK,
@@ -851,6 +852,142 @@ class TestAndroidBuildIncludeFiles:
 
         with pytest.raises(ToolchainError, match="include_files"):
             cli.android_build(project)
+
+
+RES = "app/src/main/res"
+_STYLE_OK = (
+    '<resources><style name="Theme.Kivyforge" parent="Theme.Material3.Light" />'
+    "</resources>\n"
+)
+
+
+class TestIncludeFilesIntoRes:
+    """A folder of Android resources, staged with ``dest = app/src/main/res``.
+
+    ``write_resources`` runs for real here: what is under test is how the
+    includes meet the resources kivyforge generates.
+    """
+
+    def _build(self, project, monkeypatch, tmp_path, files: dict[str, str]):
+        res = project / "android_res"
+        shutil.rmtree(res, ignore_errors=True)
+        for rel, text in files.items():
+            (res / rel).parent.mkdir(parents=True, exist_ok=True)
+            (res / rel).write_text(text, encoding="utf-8")
+        text = PYPROJECT + (
+            f'\n[[tool.kivy.android.include_files]]\ndest = "{RES}"\n'
+            'sources = ["android_res"]\n'
+        )
+        (project / "pyproject.toml").write_text(text, encoding="utf-8")
+        _write_lock(project, include_files=_include_pins(project, RES, "android_res"))
+        monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
+        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls={})
+        monkeypatch.setattr(cli, "write_resources", project_mod.write_resources)
+        progress: list[str] = []
+        notes: list[tuple] = []
+        events = BuildEvents(
+            on_line=lambda _s: None,
+            on_progress=progress.append,
+            on_artifact=lambda _a: None,
+            on_note=lambda code, message, context=None: notes.append(
+                (code, message, context)
+            ),
+        )
+        cli.android_build(project, events=events)
+        # Other notes depend on the host (no CPython 3.14 means a byte-compile
+        # note), so only the ones under test are returned.
+        overrides = [n for n in notes if n[0] == diagnostics.ANDROID_INCLUDE_OVERRIDE]
+        return project / "demoapp-android", progress, overrides
+
+    def test_subfolders_and_qualifiers_are_kept(self, project, monkeypatch, tmp_path):
+        dest, _, notes = self._build(
+            project,
+            monkeypatch,
+            tmp_path,
+            {
+                "drawable/ic_notification.xml": "<vector />",
+                "drawable-night-xxhdpi/logo.png": "png",
+                "values/colors.xml": "<resources />",
+            },
+        )
+        assert (dest / RES / "drawable" / "ic_notification.xml").is_file()
+        assert (dest / RES / "drawable-night-xxhdpi" / "logo.png").is_file()
+        assert (dest / RES / "values" / "colors.xml").is_file()
+        assert (dest / RES / "values" / "strings.xml").is_file()  # generated, kept
+        assert notes == []
+
+    def test_replacing_a_generated_file_is_reported(
+        self, project, monkeypatch, tmp_path
+    ):
+        """Allowed, because it is how a user overrides a default, but said out
+        loud: the generated styles.xml also carries fullscreen and splash items."""
+        dest, progress, notes = self._build(
+            project, monkeypatch, tmp_path, {"values/styles.xml": _STYLE_OK}
+        )
+        rel = f"{RES}/values/styles.xml"
+        assert (dest / rel).read_text(encoding="utf-8") == _STYLE_OK
+        assert notes == [
+            (
+                diagnostics.ANDROID_INCLUDE_OVERRIDE,
+                f"include_files replaced the generated {rel}.",
+                {"path": rel},
+            )
+        ]
+        assert f"[include] {rel} replaces the file kivyforge generated" in progress
+
+    @pytest.mark.parametrize(
+        ("files", "missing"),
+        [
+            ({"values/styles.xml": "<resources />"}, "Theme.Kivyforge"),
+            ({"values/strings.xml": "<resources />"}, "app_name"),
+        ],
+    )
+    def test_a_replacement_without_a_required_name_is_refused(
+        self, project, monkeypatch, tmp_path, files, missing
+    ):
+        """Without it AAPT fails with an error that never mentions include_files."""
+        with pytest.raises(ToolchainError, match=missing) as exc:
+            self._build(project, monkeypatch, tmp_path, files)
+        assert "include_files" in str(exc.value)
+
+    def test_the_name_may_live_in_another_file(self, project, monkeypatch, tmp_path):
+        """Resources merge by name across a values folder, not by file."""
+        self._build(
+            project,
+            monkeypatch,
+            tmp_path,
+            {
+                "values/styles.xml": "<resources />",
+                "values/themes.xml": _STYLE_OK,
+            },
+        )
+
+    def test_a_removed_file_does_not_linger(self, project, monkeypatch, tmp_path):
+        """The project dir is incremental, so without the record a file taken
+        out of the folder would keep shipping."""
+        dest, _, _ = self._build(
+            project,
+            monkeypatch,
+            tmp_path,
+            {"drawable/old.xml": "<vector />", "drawable/kept.xml": "<vector />"},
+        )
+        assert (dest / RES / "drawable" / "old.xml").is_file()
+        self._build(project, monkeypatch, tmp_path, {"drawable/kept.xml": "<vector />"})
+        assert not (dest / RES / "drawable" / "old.xml").exists()
+        assert (dest / RES / "drawable" / "kept.xml").is_file()
+
+    def test_dropping_an_override_restores_the_generated_file(
+        self, project, monkeypatch, tmp_path
+    ):
+        dest, _, _ = self._build(
+            project, monkeypatch, tmp_path, {"values/styles.xml": _STYLE_OK}
+        )
+        _, _, notes = self._build(
+            project, monkeypatch, tmp_path, {"values/colors.xml": "<resources />"}
+        )
+        styles = (dest / RES / "values" / "styles.xml").read_text(encoding="utf-8")
+        assert styles != _STYLE_OK and "Theme.Kivyforge" in styles
+        assert notes == []
 
 
 class TestLoadHelpers:

@@ -89,6 +89,11 @@ recipes, the replacement is an Apple framework that you call through
    [Configure your Android app](../android/configure.md) and the
    [Android overlay reference](../../reference/pyproject/android.md).
 
+    Resources added with `android.add_resources` (python-for-android's
+    `--add-resource`) go in a folder laid out like an Android `res` folder,
+    staged with `include_files`. See
+    [Add Android resources](../android/configure.md#add-android-resources).
+
 5. Set `kivy_generation` to match your Kivy version: `2` for Kivy 2.3.1 on SDL2,
    or `3` for Kivy 3.0 on SDL3.
 
