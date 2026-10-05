@@ -132,6 +132,69 @@ background = "#1e1e2e"
 Without an icon source, kivyforge generates a plain default icon. Without a
 splash source, it generates no splash screen.
 
+## Add Android resources
+
+To ship your own Android resources, such as vector drawables, a notification
+icon, density-specific images, `values/` files or `xml/` configuration, keep
+them in a folder laid out like an Android `res` folder and stage it with
+`include_files`:
+
+```text
+android_res/
+├── drawable/
+│   └── ic_notification.xml
+├── drawable-night/
+│   └── banner.xml
+├── drawable-xxhdpi/
+│   └── banner.png
+├── values/
+│   └── colors.xml
+└── xml/
+    └── network_security_config.xml
+```
+
+```toml
+[[tool.kivy.android.include_files]]
+dest = "app/src/main/res"
+sources = ["android_res"]
+```
+
+A directory source copies its *contents*, subfolders included, so
+`android_res/drawable-night/banner.xml` ends up at `res/drawable-night/banner.xml`.
+Qualifiers such as `-night`, `-v26`, `-xxhdpi` or `-land` are ordinary Android
+folder names; kivyforge copies them as they are and AAPT, Android's resource
+compiler, interprets them. Combined qualifiers must follow
+[Android's order](https://developer.android.com/guide/topics/resources/providing-resources#AlternativeResources),
+for example `drawable-night-xxhdpi`.
+
+`kivyforge lock` records a hash for every file, so after adding, editing or
+removing one, run `kivyforge lock -p android` again. A file you remove from the
+folder is also removed from the generated project on the next build.
+
+A service's notification icon is a resource name, looked up as a drawable and
+then as a mipmap, so `drawable/ic_notification.xml` above is
+`icon = "ic_notification"` in the service's
+[`notification` table](../../reference/pyproject/android.md#toolkivyandroidservices).
+
+### Replacing a file kivyforge generates
+
+kivyforge writes some resources itself: `values/strings.xml` (the app name),
+`values/styles.xml` (the app theme), the launcher icon under `mipmap-*`, and the
+splash screen when one is configured. A file of yours at the same path replaces
+kivyforge's, and the build says so with `KF-ANDROID-INCLUDE-OVERRIDE`.
+
+The generated manifest uses the string `app_name` and the style
+`Theme.Kivyforge`, so a replacement `strings.xml` or `styles.xml` must still
+define them, or the build stops and says which one is missing. Replacing
+`styles.xml` also drops what kivyforge put in that theme for `fullscreen` and
+the splash screen. To add values without replacing anything, use files with
+other names, such as `colors.xml` or `themes.xml`. To change only the theme's
+parent, set `[tool.kivy.android].base_theme`.
+
+!!! note "SVG files"
+    Android does not accept SVG files in `res/`. Convert them to vector
+    drawable XML first, for example with Android Studio's Vector Asset tool.
+
 ## Declare permissions
 
 List the permissions your app needs. For permissions that imply hardware, such
