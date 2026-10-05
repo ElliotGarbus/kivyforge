@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from kivyforge.platforms.android.lock import resolver as resolver_mod
 from kivyforge.platforms.android.lock.markers import android_marker_environment
 from kivyforge.platforms.android.lock.resolver import (
     MIN_ANDROID_PIP_VERSION,
@@ -40,6 +41,19 @@ def _modern_host_pip(monkeypatch):
 # ---------------------------------------------------------------------------
 # abi_platform_tag
 # ---------------------------------------------------------------------------
+
+
+def _streaming(fake_run):
+    """Adapt a ``subprocess.run``-shaped fake to the resolver's streaming seam."""
+
+    def run_streaming(cmd, *, on_segment, env=None, cwd=None, on_quiet=None, **_kw):
+        result = fake_run(
+            cmd, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
+        parts = (getattr(result, "stdout", None), getattr(result, "stderr", None))
+        return result.returncode, "\n".join(p for p in parts if isinstance(p, str))
+
+    return run_streaming
 
 
 class TestAbiPlatformTag:
@@ -310,7 +324,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         pr = PipResolver()
         result = pr._run_report(
             ["kivy"],
@@ -332,7 +346,7 @@ class TestPipResolverRunReport:
             result.stdout = ""
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         pr = PipResolver()
         with pytest.raises(ResolverError, match="pip could not resolve"):
             pr._run_report(
@@ -364,7 +378,7 @@ class TestPipResolverRunReport:
             result.stdout = ""
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         with pytest.raises(ResolverError) as excinfo:
             PipResolver()._run_report(
                 ["numpy"],
@@ -389,7 +403,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         pr = PipResolver()
         with pytest.raises(ResolverError, match="could not read pip report"):
             pr._run_report(
@@ -414,7 +428,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -439,7 +453,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -466,7 +480,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -491,7 +505,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -612,3 +626,71 @@ class TestPipResolverResolve:
                 abis=("arm64_v8a", "x86_64"),
                 extra_index_urls=[],
             )
+
+
+class TestDownloadProgress:
+    """pip's raw progress becomes transfer events (#84)."""
+
+    URL = "https://github.com/x/releases/download/k/Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl"
+
+    def test_progress_after_a_download_line_becomes_transfers(self):
+        transfers = []
+        parse = resolver_mod._PipProgress(
+            "arm64_v8a", None, lambda *a: transfers.append(a)
+        )
+        assert parse("Progress 5 of 10") is False  # nothing is downloading yet
+        assert parse(f"  Downloading {self.URL} (8.9 MB)") is False
+        assert parse("Progress 4000000 of 8889878") is True
+        assert transfers == [
+            (
+                "[lock] arm64_v8a: Kivy-2.3.1",
+                4000000,
+                8889878,
+                "bytes",
+            )
+        ]
+
+    def test_labels_name_the_package_not_the_whole_filename(self):
+        """The full wheel filename does not fit beside a bar in a narrow terminal."""
+        assert resolver_mod._short_name(self.URL) == "Kivy-2.3.1"
+        assert resolver_mod._short_name("https://x/archive.tar.gz") == "archive.tar.gz"
+
+    def test_other_pip_lines_are_not_shown(self):
+        parse = resolver_mod._PipProgress("x86_64", None, lambda *a: None)
+        assert parse("Collecting kivy==2.3.1") is False
+
+    def test_quiet_names_the_abi_and_time(self):
+        lines = []
+        resolver_mod._PipProgress("x86_64", lines.append, None).quiet(65)
+        assert lines == ["[lock] x86_64: still resolving (1m 05s)"]
+
+    def test_error_text_drops_the_byte_counts(self):
+        text = "Collecting kivy\nProgress 1 of 9\nERROR: No matching distribution"
+        assert resolver_mod._without_progress(text) == (
+            "Collecting kivy\nERROR: No matching distribution"
+        )
+
+    def test_pip_is_asked_for_raw_progress_and_each_abi_is_announced(self, monkeypatch):
+        captured, lines = [], []
+
+        def fake_run(cmd, *, env, **kw):
+            captured.append(cmd)
+            report_path = Path(next(a for a in cmd if a.endswith("report.json")))
+            report_path.write_text(json.dumps({"install": []}))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        PipResolver(on_progress=lines.append).resolve(
+            ["kivy"],
+            python_version="3.14.0",
+            min_sdk=24,
+            abis=("arm64_v8a", "x86_64"),
+            extra_index_urls=[],
+        )
+        assert all(cmd[cmd.index("--progress-bar") + 1] == "raw" for cmd in captured)
+        assert lines == [
+            "[lock] arm64_v8a: resolving wheels",
+            "[lock] x86_64: resolving wheels",
+        ]

@@ -60,9 +60,13 @@ def reporting(
     try:
         yield report
     except ToolchainError as exc:
+        report.close_transfers()
         report.diagnose(exc.as_diagnostic())
         report.emit(ok=False)
         raise
+    finally:
+        # A live bar left running would swallow the error text that follows.
+        report.close_transfers()
 
 
 #: Severity of each success-path note a build or package can attach. A note is
@@ -101,6 +105,7 @@ def report_events(report: Report) -> BuildEvents:
         on_progress=report.progress,
         on_artifact=on_artifact,
         on_note=on_note,
+        on_transfer=report.transfer,
     )
 
 

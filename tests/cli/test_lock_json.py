@@ -242,6 +242,49 @@ class TestWarnings:
         assert envelope(result)["data"]["action"] == "wrote"
 
 
+class TestProgress:
+    """Locking downloads wheels; silent, a slow connection looked hung (#84)."""
+
+    def _ops(self):
+        def build(_config, _text, *, project_root=None, offline=False, **kwargs):
+            kwargs["on_progress"]("[lock] arm64_v8a: resolving wheels")
+            for done in (0, 4_000_000, 8_889_878):
+                kwargs["on_transfer"](
+                    "[lock] arm64_v8a: Kivy.whl", done, 8_889_878, "bytes"
+                )
+            return FakeLock()
+
+        return dataclasses.replace(make_ops(), build=build, emits_progress=True)
+
+    def test_steps_and_downloads_are_shown_on_stderr(self, runner, project):
+        project(self._ops())
+        result = runner.invoke(lock, ["--no-color"])
+        assert result.exit_code == exit_codes.SUCCESS
+        assert "[lock] arm64_v8a: resolving wheels" in result.stderr
+        assert "[lock] arm64_v8a: Kivy.whl  100% of 8.9 MB" in result.stderr
+        assert "[lock]" not in result.stdout
+
+    def test_json_stays_parseable_while_progress_shows(self, runner, project):
+        project(self._ops())
+        result = runner.invoke(lock, ["--json"])
+        assert envelope(result)["ok"] is True
+        assert "Kivy.whl" in result.stderr
+
+    def test_a_backend_without_progress_is_not_given_the_callbacks(
+        self, runner, project
+    ):
+        """Only Android's builder takes them; the others' signatures stay put."""
+        seen = {}
+
+        def build(_config, _text, *, project_root=None, offline=False, **kwargs):
+            seen.update(kwargs)
+            return FakeLock()
+
+        project(dataclasses.replace(make_ops(), build=build))
+        runner.invoke(lock, [])
+        assert "on_progress" not in seen and "on_transfer" not in seen
+
+
 class TestClassifiedBuildFailure:
     def test_a_backend_code_survives_into_the_envelope(self, runner, project):
         """A resolution failure the backend classified keeps its code and exit

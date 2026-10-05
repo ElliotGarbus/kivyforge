@@ -103,13 +103,19 @@ def build_lockfile(
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    on_transfer: Callable[[str, int, int, str], None] | None = None,
 ) -> AndroidLockfile:
     if config.android is None:
         raise BuildError(
             "pyproject.toml has no [tool.kivy.android] table; nothing to lock."
         )
     android = config.android
-    resolver = resolver or get_resolver("pip")
+    # Progress is wired into the real resolvers only; an injected one (tests,
+    # other backends) keeps its own signature.
+    resolver = resolver or get_resolver(
+        "pip", on_progress=on_progress, on_transfer=on_transfer
+    )
     python_provider = python_provider or PythonOrgAndroidProvider()
     root = (project_root or Path.cwd()).resolve()
 
@@ -186,7 +192,10 @@ def build_lockfile(
 
     try:
         gradle_pins = resolve_gradle_pins(
-            android.gradle, resolver=maven_resolver, offline=offline
+            android.gradle,
+            resolver=maven_resolver,
+            offline=offline,
+            on_progress=on_progress,
         )
     except MavenResolverError as exc:
         raise BuildError(str(exc)) from exc

@@ -14,6 +14,7 @@ import click
 from ..build_outcome import BuildEvents, discard_artifact, discard_note
 from ..report import diagnostics, exit_codes
 from ..report.failures import ClassifiedError
+from ..report.transfers import TransferLines
 
 PYPROJECT_NAME = "pyproject.toml"
 # iOS lockfile name, kept for the iOS verbs' backward-compatible call sites.
@@ -95,6 +96,7 @@ ECHO_EVENTS = BuildEvents(
     on_progress=_echo_progress,
     on_artifact=discard_artifact,
     on_note=discard_note,
+    on_transfer=TransferLines(_echo_progress),
 )
 
 
@@ -112,6 +114,7 @@ PROGRESS_ONLY_EVENTS = BuildEvents(
     on_progress=_echo_err,
     on_artifact=discard_artifact,
     on_note=discard_note,
+    on_transfer=TransferLines(_echo_err),
 )
 
 

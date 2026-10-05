@@ -24,6 +24,20 @@ from kivyforge.platforms.android.lock.model import (
 )
 
 
+def _streaming(fake_run):
+    """Adapt a ``subprocess.run``-shaped fake to the Gradle step's streaming seam."""
+
+    def run_streaming(cmd, *, on_segment, cwd=None, on_quiet=None, **_kw):
+        result = fake_run(
+            cmd, cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+        )
+        return result.returncode, "\n".join(
+            p for p in (result.stdout, result.stderr) if isinstance(p, str)
+        )
+
+    return run_streaming
+
+
 class FakeGradle:
     def __init__(self, modules):
         self.modules = modules
@@ -179,7 +193,7 @@ class TestScratchProjectResolverResolve:
             )
             return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
 
-        monkeypatch.setattr(maven_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(maven_mod, "run_streaming", _streaming(fake_run))
         resolver = ScratchProjectResolver(gradle_executable="fake-gradle")
         modules = resolver.resolve(self._config())
 
@@ -201,7 +215,7 @@ class TestScratchProjectResolverResolve:
             )
             return subprocess.CompletedProcess(cmd, 0)
 
-        monkeypatch.setattr(maven_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(maven_mod, "run_streaming", _streaming(fake_run))
         config = AndroidGradleConfig(
             dependencies=("com.google.firebase:firebase-analytics",),
             platforms=("com.google.firebase:firebase-bom:34.0.0",),
@@ -228,7 +242,7 @@ class TestScratchProjectResolverResolve:
             seen_cmds.append(cmd)
             return fake_run(cmd, cwd, capture_output, text)
 
-        monkeypatch.setattr(maven_mod.subprocess, "run", recording_run)
+        monkeypatch.setattr(maven_mod, "run_streaming", _streaming(recording_run))
         resolver = ScratchProjectResolver(gradle_executable="fake-gradle")
         resolver.resolve(self._config(), offline=True)
         assert "--offline" in seen_cmds[0]
@@ -239,7 +253,7 @@ class TestScratchProjectResolverResolve:
                 cmd, 1, stdout="", stderr="could not resolve dependency"
             )
 
-        monkeypatch.setattr(maven_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(maven_mod, "run_streaming", _streaming(fake_run))
         resolver = ScratchProjectResolver(gradle_executable="fake-gradle")
         with pytest.raises(MavenResolverError, match="could not resolve dependency"):
             resolver.resolve(self._config())
@@ -248,7 +262,37 @@ class TestScratchProjectResolverResolve:
         def fake_run(cmd, cwd, capture_output, text, stdin=None):
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-        monkeypatch.setattr(maven_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(maven_mod, "run_streaming", _streaming(fake_run))
         resolver = ScratchProjectResolver(gradle_executable="fake-gradle")
         with pytest.raises(MavenResolverError, match="wrote no verification"):
             resolver.resolve(self._config())
+
+
+class TestProgress:
+    """The Gradle step is quiet by nature; say what it is doing (#84)."""
+
+    def test_the_step_is_announced(self):
+        lines = []
+        gradle = AndroidGradleConfig(dependencies=("com.google.zxing:core:3.5.3",))
+        resolve_gradle_pins(gradle, resolver=FakeGradle(()), on_progress=lines.append)
+        assert lines and "1 Maven dependencies with Gradle" in lines[0]
+
+    def test_nothing_to_announce_without_dependencies(self):
+        lines = []
+        resolve_gradle_pins(AndroidGradleConfig(), on_progress=lines.append)
+        assert lines == []
+
+    def test_wrapper_download_and_silence_are_reported(self):
+        lines = []
+        resolver = ScratchProjectResolver(on_progress=lines.append)
+        shown = resolver._announce_wrapper_download(
+            "Downloading https://services.gradle.org/distributions/gradle-8.11.1-bin.zip"
+        )
+        assert shown is True
+        assert resolver._announce_wrapper_download("> Task :x") is False
+        resolver._still_resolving(30)
+        assert lines == [
+            "[lock] Gradle: Downloading "
+            "https://services.gradle.org/distributions/gradle-8.11.1-bin.zip",
+            "[lock] Gradle: still resolving (30s)",
+        ]
