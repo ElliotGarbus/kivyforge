@@ -82,7 +82,7 @@ it is shown on stderr, including under `--json`: a `[lock] <abi>: resolving
 wheels` line per ABI, each download as a progress bar on a terminal (or a few
 `45% of 8.9 MB` lines in a log, from `pip --progress-bar raw`), a line before the
 Gradle step, and a `still resolving (1m 30s)` line after 30 s with nothing else to
-show. Until #84 the whole step was silent, which on a slow connection was
+show; [`download-progress-output.md`](../../dev/download-progress-output.md) shows the output. Until #84 the whole step was silent, which on a slow connection was
 indistinguishable from a hang. pip's own socket timeout (15 s, 5 retries) and
 Gradle's still end a stalled download; this changes what is visible, not when it
 gives up.
