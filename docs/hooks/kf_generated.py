@@ -63,6 +63,12 @@ _DIAGNOSTIC = {
         "A lock exists but could not be parsed (a bad merge or a truncated write).",
         "Re-create it with `kivyforge lock -p <platform>`.",
     ),
+    "KF-LOCK-INCOMPLETE": (
+        "error",
+        "The lock matches `pyproject.toml` but predates something kivyforge now "
+        "adds to it (Android: `pyjnius`, which Kivy needs at launch).",
+        "Re-lock with `kivyforge lock -p <platform> --update`.",
+    ),
     "KF-LOCK-WARNING": (
         "warning",
         "Resolution made a judgement call worth surfacing. The lock is usable and the run is `ok`.",
