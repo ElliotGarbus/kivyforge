@@ -36,7 +36,9 @@ nothing.
     ```
 
     The marker keeps it out of desktop installs, where pyjnius would need a
-    Java runtime.
+    Java runtime. If a marker leaves Android out (for example
+    `sys_platform == 'win32'`), kivyforge adds its own requirement as well,
+    so an Android lock always has pyjnius.
 
 - Declare any permission the API you call requires, under
   `[tool.kivy.android.permissions]`.

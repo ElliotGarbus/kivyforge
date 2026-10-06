@@ -828,3 +828,43 @@ class TestImplicitPyjnius:
         )
         assert [p.name for p in lock.packages] == ["pyjnius"]
         assert lock.packages[0].direct_requirement is False
+
+
+class TestDeclaredMeansDeclaredForAndroid:
+    """A pyjnius requirement counts only where pip will act on it."""
+
+    def _requirements(self, dependency):
+        text = PYPROJECT.replace('["pyjnius"]', f'["kivy", {dependency}]')
+        resolver, lines = FakeResolver([_pkg()]), []
+        build_lockfile(
+            _config(text),
+            text,
+            project_root=Path.cwd(),
+            resolver=resolver,
+            python_provider=FakeProvider(),
+            on_progress=lines.append,
+        )
+        return resolver.calls[0][0], lines
+
+    def test_a_marker_that_excludes_android_still_gets_the_implicit_one(self):
+        """Otherwise the lock has no pyjnius and build blames an old lock."""
+        from kivyforge.platforms.android.bootstrap.contract import COMPATIBLE_PYJNIUS
+
+        reqs, lines = self._requirements("\"pyjnius; sys_platform == 'win32'\"")
+        assert reqs[-1] == f"pyjnius{COMPATIBLE_PYJNIUS}"
+        assert "marker leaves it out on Android" in lines[0]
+
+    def test_a_marker_true_on_only_one_abi_gets_it_too(self):
+        reqs, _ = self._requirements(
+            "\"pyjnius==1.8.0; platform_machine == 'aarch64'\""
+        )
+        # Both reach pip: theirs still applies on arm64, the range covers x86_64.
+        assert reqs[1] == "pyjnius==1.8.0; platform_machine == 'aarch64'"
+        assert reqs[2].startswith("pyjnius")
+
+    def test_an_android_marker_counts_as_declared(self):
+        reqs, lines = self._requirements(
+            "\"pyjnius==1.8.0; sys_platform == 'android'\""
+        )
+        assert len(reqs) == 2
+        assert lines == []

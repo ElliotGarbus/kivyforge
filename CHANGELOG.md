@@ -14,6 +14,12 @@
   Android lock only, so desktop installs are unaffected and you don't need a
   `; sys_platform == 'android'` marker. Declaring it yourself still works and
   chooses the version.
+- **Fixed:** a `pyjnius` requirement whose marker leaves Android out (for
+  example `pyjnius; sys_platform == 'win32'`) counted as declared, so nothing
+  was added, pip skipped it for Android, and `build` stopped with
+  `KF-LOCK-INCOMPLETE`, which re-locking did not cure. A declaration now counts
+  only if its marker holds on every ABI being locked; otherwise kivyforge adds
+  its own requirement as well.
 - **Migration:** a lock made before this change, without pyjnius, now stops the
   build with `KF-LOCK-INCOMPLETE` (exit 4) instead of producing an app that
   crashes. Run `kivyforge lock -p android --update`. Projects that already
