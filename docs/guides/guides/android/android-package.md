@@ -22,8 +22,8 @@ every build.
 ## Before you begin
 
 - [Configure your Android app](configure.md).
-- Add `pyjnius` to your dependencies. The package calls Android through
-  pyjnius, so `import android` fails without it. See
+- Nothing to add. The package calls Android through pyjnius, which
+  `kivyforge lock -p android` includes in every Android lock. See
   [Call Android APIs with pyjnius](pyjnius.md).
 
 ## What is included

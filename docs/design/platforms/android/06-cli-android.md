@@ -64,7 +64,9 @@ Version pinning of `[project].dependencies` is `kivyforge lock`'s job, not init'
 Flags: `--update`, `--offline`, `--check` (same semantics as iOS).
 
 Resolves per-ABI wheels (with the missing-ABI / inconsistent-version fail-fast
-checks), the per-ABI python.org runtime, `.aar`/`.jar` SHA-256s, and — when
+checks; `pyjnius` is added in the bootstrap's supported range when
+`[project].dependencies` doesn't name it, because Kivy imports it on Android without
+declaring it, #65), the per-ABI python.org runtime, `.aar`/`.jar` SHA-256s, and — when
 `[tool.kivy.android.gradle].dependencies` is non-empty — runs Gradle dependency
 locking + hash verification against a scratch project (with any declared BOMs
 imported as `platform(...)`) and embeds the resolved

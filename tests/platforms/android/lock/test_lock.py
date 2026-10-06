@@ -771,3 +771,60 @@ class TestAndroidDistribution:
         )
         lock = _build(text, packages=[_pkg(), _pkg("android", "1.0")])
         assert [p.name for p in lock.packages] == ["pyjnius"]
+
+
+class TestImplicitPyjnius:
+    """Kivy imports jnius on Android but does not declare it; kivyforge
+    supplies it, as python-for-android always did (#65)."""
+
+    KIVY_ONLY = PYPROJECT.replace(
+        'dependencies = ["pyjnius"]', 'dependencies = ["kivy"]'
+    )
+
+    def _requirements(self, text, **kwargs):
+        resolver = FakeResolver([_pkg()])
+        build_lockfile(
+            _config(text),
+            text,
+            project_root=Path.cwd(),
+            resolver=resolver,
+            python_provider=FakeProvider(),
+            **kwargs,
+        )
+        return resolver.calls[0][0]
+
+    def test_added_in_the_supported_range_when_not_declared(self):
+        from kivyforge.platforms.android.bootstrap.contract import COMPATIBLE_PYJNIUS
+
+        reqs = self._requirements(self.KIVY_ONLY)
+        assert reqs == ("kivy", f"pyjnius{COMPATIBLE_PYJNIUS}")
+
+    @pytest.mark.parametrize(
+        "declared",
+        ['"pyjnius==1.7.0"', "\"pyjnius; sys_platform == 'android'\"", '"PyJnius"'],
+    )
+    def test_a_declared_pyjnius_is_left_alone(self, declared):
+        text = PYPROJECT.replace('["pyjnius"]', f"[{declared}]")
+        reqs = self._requirements(text)
+        assert len(reqs) == 1  # theirs, not a second one
+
+    def test_the_addition_is_announced(self):
+        lines = []
+        self._requirements(self.KIVY_ONLY, on_progress=lines.append)
+        assert lines and lines[0].startswith("[lock] adding pyjnius")
+
+    def test_exclude_cannot_remove_it(self):
+        """An app without it crashes at launch, so exclude does not apply."""
+        text = self.KIVY_ONLY.replace(
+            'package = "org.example.lockapp"',
+            'package = "org.example.lockapp"\nexclude = ["pyjnius"]',
+        )
+        lock = build_lockfile(
+            _config(text),
+            text,
+            project_root=Path.cwd(),
+            resolver=FakeResolver([_pkg()]),
+            python_provider=FakeProvider(),
+        )
+        assert [p.name for p in lock.packages] == ["pyjnius"]
+        assert lock.packages[0].direct_requirement is False

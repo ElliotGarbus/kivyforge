@@ -64,6 +64,13 @@ class LockUnreadable(AndroidBuildError):
     exit_code = exit_codes.LOCK_DRIFT
 
 
+class LockIncomplete(AndroidBuildError):
+    """The lock matches ``pyproject.toml`` but predates something kivyforge adds."""
+
+    code = diagnostics.LOCK_INCOMPLETE
+    exit_code = exit_codes.LOCK_DRIFT
+
+
 class LockDrift(AndroidBuildError):
     """``pyproject.toml`` or a pinned ``include_files`` entry moved since locking."""
 

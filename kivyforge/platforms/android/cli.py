@@ -41,6 +41,7 @@ from . import (
     ArtifactMissing,
     GradleFailed,
     LockDrift,
+    LockIncomplete,
     LockMissing,
     LockUnreadable,
 )
@@ -276,11 +277,20 @@ def android_build(
     # Step 7 pre-check (hard gate BEFORE any generation): the pyjnius/bootstrap
     # invoke0 matched pair (android/05).
     locked_pyjnius = _locked_version(lock, "pyjnius")
-    if locked_pyjnius is not None:
-        try:
-            check_pyjnius_contract(locked_pyjnius)
-        except ContractError as exc:
-            raise AndroidBuildError(str(exc)) from exc
+    if locked_pyjnius is None:
+        # Kivy imports jnius on Android, so without it the app builds and then
+        # dies at launch with "No module named 'jnius'" (#65). `lock` now adds
+        # it; a lock from before that is what lands here.
+        raise LockIncomplete(
+            "pylock.android.toml has no pyjnius, which Kivy needs on Android "
+            "(without it the app crashes at launch: No module named 'jnius').\n"
+            "  The lock predates kivyforge adding pyjnius automatically.\n"
+            "  Fix: kivyforge lock -p android --update"
+        )
+    try:
+        check_pyjnius_contract(locked_pyjnius)
+    except ContractError as exc:
+        raise AndroidBuildError(str(exc)) from exc
     _reject_app_android(project_root, config.kivy.app_dir)
     _remove_previous_includes(dest)
 
