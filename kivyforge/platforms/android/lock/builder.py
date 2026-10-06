@@ -9,7 +9,7 @@ pins (skipped without declared coordinates), ``include_files`` hashes.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -37,6 +37,7 @@ from kivyforge.report.failures import ClassifiedError
 from ..bootstrap.contract import COMPATIBLE_PYJNIUS
 from .archives import ArchiveResolverError, resolve_android_libs
 from .generation import expected_generation, mismatch_hint
+from .markers import android_marker_environment
 from .maven import GradleMavenResolver, MavenResolverError, resolve_gradle_pins
 from .model import (
     DEFAULT_REQUIRES_PYTHON,
@@ -143,19 +144,30 @@ def build_lockfile(
     excluded -= direct
 
     requirements = list(config.project.dependencies)
-    if PYJNIUS not in direct:
+    declared = _declared_for_android(
+        config.project.dependencies, python_version, tuple(android.abis)
+    )
+    if not declared:
         # Kivy imports jnius on Android (kivy/metrics.py, for the screen
         # density), and so do the bundled android package and _kivy_bootstrap,
         # but Kivy's metadata does not declare it: on Android, python-for-android
         # always supplied it. So kivyforge does too, in the range the bootstrap's
         # invoke0 glue is built for. Android-only, so the project's desktop
         # dependencies never need a `; sys_platform == "android"` marker (#65).
+        #
+        # "Declared" means for every ABI being locked, not merely named: a
+        # requirement whose marker is false on Android (or on one ABI) is
+        # skipped by pip there, which would leave the lock without pyjnius.
+        # Where the user's marker does apply, pip combines the two requirements,
+        # so their version still wins on those ABIs.
         requirements.append(f"{PYJNIUS}{COMPATIBLE_PYJNIUS}")
         if on_progress is not None:
-            on_progress(
-                f"[lock] adding {PYJNIUS}{COMPATIBLE_PYJNIUS} (Kivy needs it on "
-                "Android; declare it to choose the version)"
+            why = (
+                "your pyjnius requirement's marker leaves it out on Android"
+                if PYJNIUS in direct
+                else "Kivy needs it on Android; declare it to choose the version"
             )
+            on_progress(f"[lock] adding {PYJNIUS}{COMPATIBLE_PYJNIUS} ({why})")
     # Never excludable: an app without it crashes at launch.
     excluded.discard(PYJNIUS)
 
@@ -472,6 +484,36 @@ def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
     if old_rt != new_rt:
         out.append(f"  ~ python.org Android runtime: {old_rt} -> {new_rt}")
     return out
+
+
+def _declared_for_android(
+    dependencies: Sequence[str], python_version: str, abis: tuple[str, ...]
+) -> bool:
+    """Whether a pyjnius requirement applies on every ABI being locked.
+
+    Evaluated with the same Android marker environment the resolver uses, so a
+    declaration counts exactly when pip will act on it.
+    """
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    environments = [
+        {
+            **android_marker_environment(python_version=python_version, abi=abi),
+            "extra": "",
+        }
+        for abi in abis
+    ]
+    for dependency in dependencies:
+        try:
+            requirement = Requirement(dependency)
+        except InvalidRequirement:
+            continue
+        if canonical_name(requirement.name) != PYJNIUS:
+            continue
+        marker = requirement.marker
+        if marker is None or all(marker.evaluate(env) for env in environments):
+            return True
+    return False
 
 
 def _req_name(requirement: str) -> str:
