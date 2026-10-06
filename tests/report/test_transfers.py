@@ -53,6 +53,18 @@ class TestTransferLines:
         assert lines[0] == f"{LABEL}  0% of 8.9 MB"
         assert lines[-1] == f"{LABEL}  100% of 8.9 MB"
 
+    def test_a_small_file_gets_one_line_at_the_end(self):
+        lines: list[str] = []
+        render = TransferLines(lines.append)
+        for done in (0, 20_000, 37_210):
+            render("[download] filetype-1.2.0 (any)", done, 37_210, "bytes")
+        assert lines == ["[download] filetype-1.2.0 (any)  100% of 37 kB"]
+
+    def test_sizes_are_readable(self):
+        assert megabytes(8_889_878) == "8.9 MB"
+        assert megabytes(37_210) == "37 kB"
+        assert megabytes(1) == "1 kB"
+
     def test_percent_lines_have_no_size(self):
         lines: list[str] = []
         TransferLines(lines.append)("[sdk] NDK", 40, 100, "percent")
@@ -75,8 +87,8 @@ class TestTransferRenderer:
     def test_not_a_terminal_means_lines(self):
         lines: list[str] = []
         console = Console(file=io.StringIO(), force_terminal=False)
-        TransferRenderer(console, lines.append)(LABEL, 1, 2, "bytes")
-        assert lines == [f"{LABEL}  50% of 0.0 MB"]
+        TransferRenderer(console, lines.append)(LABEL, 1_000_000, 2_000_000, "bytes")
+        assert lines == [f"{LABEL}  50% of 2.0 MB"]
 
     def test_a_terminal_draws_a_bar_and_keeps_the_label(self):
         """markup off: Rich would otherwise eat "[lock]" as a style tag."""

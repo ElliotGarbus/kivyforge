@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from ..lock.find_links import FindLinksError, wheel_path_from_project_root
+from ..report.transfers import report_transfer
 from .cache import ArtifactCache
 from .verify import HashMismatch, sha256_file, verify_file
 
@@ -29,12 +30,35 @@ class Downloader(Protocol):
 
 class UrllibDownloader:
     def fetch_to(self, url: str, dest: Path) -> None:
+        label = f"[download] {download_label(dest.name)}"
         try:
             with urllib.request.urlopen(url) as resp, open(dest, "wb") as out:  # noqa: S310
-                for chunk in iter(lambda: resp.read(1 << 20), b""):
+                # Content-Length is the total a bar needs; without it (a chunked
+                # response) the download still happens, just without progress.
+                total = int(resp.headers.get("Content-Length") or 0)
+                done = 0
+                report_transfer(label, done, total)
+                # 64 KiB, not 1 MiB: on a slow line a 1 MiB read is many
+                # seconds of a bar that does not move (#84).
+                for chunk in iter(lambda: resp.read(1 << 16), b""):
                     out.write(chunk)
+                    done += len(chunk)
+                    report_transfer(label, done, total)
         except (OSError, ValueError) as exc:
             raise DownloadError(f"failed to download {url}: {exc}") from exc
+
+
+def download_label(filename: str) -> str:
+    """``Kivy-2.3.1-cp314-cp314-android_24_x86_64.whl`` -> ``Kivy-2.3.1 (android_24_x86_64)``.
+
+    Short enough to sit beside a bar in a narrow terminal, and still telling the
+    per-ABI copies of one wheel apart. Other files keep their name.
+    """
+    if filename.endswith(".whl"):
+        parts = filename[: -len(".whl")].split("-")
+        if len(parts) >= 5:
+            return f"{parts[0]}-{parts[1]} ({parts[-1]})"
+    return filename
 
 
 def fetch_artifact(

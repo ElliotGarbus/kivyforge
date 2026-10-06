@@ -53,6 +53,37 @@ quietly), a line says the step is still alive:
 [lock] Gradle: still resolving (2m 00s)
 ```
 
+### `build` and `run`, when the artifact cache is cold
+
+On any platform, `build` downloads the Python runtime and every wheel through
+kivyforge's own downloader the first time, after `clean --cache`, or with
+`--no-cache`. Each download gets a bar (or lines in a log), labelled with the
+wheel's name, version and platform, so the per-ABI copies of one wheel are told
+apart:
+
+```
+[collect] python.org runtime 3.14.6 (x86_64)
+[download] python-3.14.6-x86_64-linux-android.tar.gz ━━━━━━━━━━━━━━ 100% 22.7 MB / 22.7 MB 0:00:00
+[download] Kivy-2.3.1 (android_24_x86_64) ━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 9.3 MB / 9.3 MB 0:00:00
+```
+
+In a log, a large download gets the usual lines every 10%, and a file under
+1 MB gets a single line when it finishes, sized in kB:
+
+```
+[download] Kivy-2.3.1 (android_24_x86_64)  90% of 9.3 MB
+[download] Kivy-2.3.1 (android_24_x86_64)  100% of 9.3 MB
+[download] pyjnius-1.8.0 (android_24_x86_64)  100% of 234 kB
+```
+
+A server that sends no `Content-Length` gets no bar; the download still runs.
+A cache hit downloads nothing, so it shows nothing.
+
+**`clean --cache` does not empty pip's cache.** `lock` resolves through pip,
+which keeps its own cache, so after `clean --cache` a `lock` is usually still
+fast and shows no downloads. `pip cache purge` clears pip's, or
+`PIP_NO_CACHE_DIR=1` skips it for one run.
+
 ### `build`, the first time the NDK or CMake is needed
 
 Before any Gradle run, a missing NDK or CMake at the pinned version is installed
@@ -114,6 +145,12 @@ do not print (AGENTS.md):
   bar is live go through the bar's console, so Rich puts them above the bar.
 - The `reporting()` context stops a live bar when a verb ends, including on
   failure, so an error message is never drawn into a bar.
+- The shared artifact downloader (`artifacts/download.py`) has about fifteen
+  callers across the platforms, so instead of a callback through each, it
+  reports to a context-scoped sink (`transfers_to` / `report_transfer` in
+  `report/transfers.py`). `reporting()` sets the sink to the verb's report;
+  `run`, which has no `reporting()` context, sets one of its own. With no sink set
+  (a library caller, a test) the downloader reports nothing.
 - Long-running tools run through `platforms/android/streaming.py`
   (`run_streaming`). It reads their output live, splits it on `\r` as well as `\n`
   (`sdkmanager` redraws with `\r`), and hands each piece to a small parser:

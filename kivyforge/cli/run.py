@@ -5,7 +5,10 @@ from __future__ import annotations
 import click
 from click.core import ParameterSource
 
+from .. import __version__
 from ..platforms.ios.cli import ios_list_devices
+from ..report import Report
+from ..report.transfers import transfers_to
 from ._common import ToolchainError
 from ._platform import platform_option, reject_android_only, resolve_target
 
@@ -99,6 +102,47 @@ def run(
     no_follow: bool,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
+    # run takes no --json, so no reporting() context gives it a report; its
+    # implicit build still downloads, so downloads draw through one of their
+    # own (stderr only, like all progress).
+    report = Report(command="run", kivyforge_version=__version__)
+    try:
+        with transfers_to(report.transfer):
+            _run(
+                cli_platform=cli_platform,
+                target=target,
+                arch=arch,
+                destination=destination,
+                list_devices=list_devices,
+                no_build=no_build,
+                emulator=emulator,
+                avd=avd,
+                serial=serial,
+                smoke=smoke,
+                release=release,
+                abi=abi,
+                no_follow=no_follow,
+            )
+    finally:
+        report.close_transfers()
+
+
+def _run(
+    *,
+    cli_platform: str | None,
+    target: str,
+    arch: str | None,
+    destination: str | None,
+    list_devices: bool,
+    no_build: bool,
+    emulator: bool,
+    avd: str | None,
+    serial: str | None,
+    smoke: bool,
+    release: bool,
+    abi: str | None,
+    no_follow: bool,
+) -> None:
     backend, project_root = resolve_target(cli_platform, verb="run")
 
     reject_android_only(

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### `build` shows its downloads
+
+- **Added:** on every platform, `build` (and `run`'s implicit build) now shows a
+  progress bar for each Python runtime and wheel it downloads, or a few
+  percentage lines when the output is a log. These downloads happen on a first
+  build, after `clean --cache`, or with `--no-cache`, and used to be silent.
+- **Changed:** `clean --cache`'s help and the guides now say that pip's own cache,
+  which `lock` resolves through, is left alone (`pip cache purge` clears it).
+  After `clean --cache`, `lock` usually stays fast and shows no downloads.
+
 ### Android: `pyjnius` is included automatically
 
 - **Fixed:** an Android app whose dependencies didn't list `pyjnius` built
