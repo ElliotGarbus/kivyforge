@@ -16,6 +16,7 @@ import click
 from .. import __version__
 from ..build_outcome import Artifact, BuildEvents
 from ..report import Diagnostic, Report, diagnostics
+from ..report.transfers import transfers_to
 from ._common import ToolchainError
 
 
@@ -58,7 +59,10 @@ def reporting(
         no_color=no_color,
     )
     try:
-        yield report
+        # Downloads anywhere below (the shared artifact downloader) draw
+        # through this report, without each call site carrying a callback.
+        with transfers_to(report.transfer):
+            yield report
     except ToolchainError as exc:
         report.close_transfers()
         report.diagnose(exc.as_diagnostic())

@@ -98,6 +98,9 @@ To remove the generated project files and also clear the download cache, run:
 kivyforge clean --cache
 ```
 
+This clears kivyforge's cache of runtimes and wheels. pip's own cache, which
+`lock` uses while resolving, is separate; clear it with `pip cache purge`.
+
 ## Verify
 
 Check that the lock matches `pyproject.toml`:

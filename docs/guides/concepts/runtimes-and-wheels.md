@@ -74,7 +74,9 @@ extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 
 Every artifact is pinned by SHA-256 in the lockfile and verified on download. A
 mismatch fails the build. Downloads are cached in a per-user cache shared by all
-your projects. To empty it, run `kivyforge clean --cache`.
+your projects. To empty it, run `kivyforge clean --cache`. pip keeps a separate
+cache for what `lock` resolves, which that leaves alone; `pip cache purge`
+clears it.
 
 ## What's next
 

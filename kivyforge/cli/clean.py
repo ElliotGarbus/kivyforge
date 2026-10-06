@@ -26,7 +26,8 @@ from ._output import output_options, reporting
     "flush_cache",
     is_flag=True,
     help="Also flush the artifact download cache and the generated Android "
-    "project's own Gradle cache.",
+    "project's own Gradle cache. pip keeps its own cache, which this leaves "
+    "alone (`pip cache purge` clears it).",
 )
 @click.option(
     "--cache-all",

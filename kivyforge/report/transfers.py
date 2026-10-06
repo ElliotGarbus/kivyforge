@@ -13,7 +13,9 @@ much -- through ``on_transfer``; they never format a bar. That keeps the
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from rich.console import Console
 from rich.progress import (
@@ -31,8 +33,41 @@ from rich.table import Column
 TransferCallback = Callable[[str, int, int, str], None]
 
 
+#: Where a transfer deep inside a backend reports, without every call site
+#: threading a callback through: the verb layer sets it for the verb's lifetime
+#: (``reporting()``, and ``run``), and the shared downloader reads it.
+_CURRENT: ContextVar[TransferCallback | None] = ContextVar(
+    "kivyforge_transfer", default=None
+)
+
+
+@contextmanager
+def transfers_to(callback: TransferCallback | None) -> Iterator[None]:
+    """Send transfers reported in this context to ``callback``."""
+    token = _CURRENT.set(callback)
+    try:
+        yield
+    finally:
+        _CURRENT.reset(token)
+
+
+def report_transfer(label: str, done: int, total: int, unit: str = "bytes") -> None:
+    """Report to the current sink, if a verb has set one; otherwise nothing."""
+    callback = _CURRENT.get()
+    if callback is not None:
+        callback(label, done, total, unit)
+
+
 def megabytes(n: int) -> str:
+    """A size for people: ``8889878`` -> ``8.9 MB``, ``37210`` -> ``37 kB``."""
+    if n < 1_000_000:
+        return f"{max(1, round(n / 1000))} kB"
     return f"{n / 1_000_000:.1f} MB"
+
+
+#: Below this, a log gets one line per transfer, at the end: a 30 kB wheel's
+#: 0% / 47% / 100% lines are noise, and it is over before anyone reads them.
+SMALL_TRANSFER = 1_000_000
 
 
 class PercentThrottle:
@@ -76,8 +111,9 @@ class TransferLines:
             return
         done = max(0, min(done, total))
         pct = done * 100 // total
+        small = unit == "bytes" and total < SMALL_TRANSFER
         throttle = self._throttles.setdefault(label, PercentThrottle())
-        if throttle.due(pct):
+        if (not small or done >= total) and throttle.due(pct):
             size = f" of {megabytes(total)}" if unit == "bytes" else ""
             self._emit(f"{label}  {pct}%{size}")
         if done >= total:
