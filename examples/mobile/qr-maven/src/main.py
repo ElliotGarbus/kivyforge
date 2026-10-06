@@ -74,7 +74,7 @@ BoxLayout:
         on_release: app.render(entry.text)
     Image:
         id: qr
-        allow_stretch: True
+        fit_mode: "contain"
     Label:
         id: status
         text: app.status_text
