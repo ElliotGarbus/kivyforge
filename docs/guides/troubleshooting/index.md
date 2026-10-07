@@ -89,6 +89,7 @@ If you redirect only stdout, the file doesn't contain the build log.
 
 The [FAQ](../faq.md) covers common platform problems, including:
 
+- Android: the harmless "SDK XML versions up to 3" warning.
 - iOS: the simulator SDK can't be located, a `Python.xcframework` download
   returns HTTP 404, and an invalid character in the bundle identifier.
 - macOS: Developer ID signing fails with `errSecInternalComponent`.
