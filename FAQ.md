@@ -83,6 +83,30 @@ ideal as a smoke test of the toolchain or for validating pure-Python code
 on-device. To ship an actual app you still need a UI layer: Kivy (via SDL), or a
 native bridge such as `rubicon-objc`/`pyobjus` that your Python code drives.
 
+### Android builds warn "This version only understands SDK XML versions up to 3"
+
+Android builds can print this before Gradle starts:
+
+```
+Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
+```
+
+The warning is harmless: the build reads the SDK correctly and succeeds. You
+don't need to change anything.
+
+Every package in the Android SDK has a `package.xml` written by the tool that
+installed it. Recent versions of Android Studio's SDK Manager and the Android
+SDK command-line tools write format version 4. The Android Gradle plugin that
+kivyforge pins (`AGP_VERSION` in `kivyforge/platforms/android/toolchain.py`)
+reads it but expects version 3, so it prints the warning. kivyforge also
+installs the pinned NDK and CMake with the SDK's own `sdkmanager`, so even an
+SDK that started without version-4 files can have them after a build.
+
+Only Android Gradle plugin 9.2 or later reads version 4 without the warning.
+Moving to it is a larger change for kivyforge projects, so kivyforge stays on
+its current pin for now. See
+[issue #91](https://github.com/ElliotGarbus/kivyforge/issues/91).
+
 ### macOS Developer ID signing fails with `errSecInternalComponent`
 
 If `kivyforge package -p macos` (with `[tool.kivy.macos.signing]` configured)
