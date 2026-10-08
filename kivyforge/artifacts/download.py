@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 from ..lock.find_links import FindLinksError, wheel_path_from_project_root
+from ..net import request
 from ..report.transfers import report_transfer
 from .cache import ArtifactCache
 from .verify import HashMismatch, sha256_file, verify_file
@@ -32,7 +33,7 @@ class UrllibDownloader:
     def fetch_to(self, url: str, dest: Path) -> None:
         label = f"[download] {download_label(dest.name)}"
         try:
-            with urllib.request.urlopen(url) as resp, open(dest, "wb") as out:  # noqa: S310
+            with urllib.request.urlopen(request(url)) as resp, open(dest, "wb") as out:  # noqa: S310
                 # Content-Length is the total a bar needs; without it (a chunked
                 # response) the download still happens, just without progress.
                 total = int(resp.headers.get("Content-Length") or 0)

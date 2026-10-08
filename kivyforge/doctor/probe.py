@@ -138,8 +138,10 @@ class RealProbe:
             import json
             import urllib.request
 
+            from ..net import request
+
             url = "https://pypi.org/pypi/kivyforge/json"
-            with urllib.request.urlopen(url, timeout=3) as resp:  # noqa: S310
+            with urllib.request.urlopen(request(url), timeout=3) as resp:  # noqa: S310
                 data = json.load(resp)
             return data.get("info", {}).get("version")
         except Exception:

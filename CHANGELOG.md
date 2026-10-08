@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Wheels from more package indexes
+
+- **Fixed:** wheels hosted on Cloudflare R2, such as the Android Pillow wheels
+  on the Kivy School index, locked fine and then failed to download at build
+  time with HTTP 403 ([#97](https://github.com/ElliotGarbus/kivyforge/issues/97)).
+  The host refuses Python's default `Python-urllib` User-Agent. Every request
+  kivyforge makes now identifies itself as `kivyforge/<version>`.
+- **Changed:** when an index publishes no SHA-256 for a wheel, `lock` now says
+  so and gives the two fixes: use an index that publishes hashes, or put the
+  wheels in a `find_links` directory, where kivyforge hashes them itself. It
+  used to suggest re-running with network access, which never helps. The
+  requirement itself is unchanged: kivyforge still pins every wheel by
+  SHA-256. This only happens with indexes that serve wheel metadata (PEP 658)
+  but no hashes, because pip then resolves without downloading the wheel.
+
 ### `build` shows its downloads
 
 - **Added:** on every platform, `build` (and `run`'s implicit build) now shows a

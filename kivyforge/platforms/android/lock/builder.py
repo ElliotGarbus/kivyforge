@@ -20,6 +20,7 @@ from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.find_links import (
     FindLinksError,
     find_links_resolution_hint,
+    missing_wheel_hash_message,
     resolve_find_links,
     validate_find_links,
     wheel_path_from_project_root,
@@ -346,8 +347,7 @@ def _locked_wheel_from_resolved(w, *, project_root: Path) -> LockedWheel:
         sha256 = sha256_file((project_root / path).resolve())
     if not sha256:
         raise BuildError(
-            f"could not determine SHA-256 for wheel {w.filename!r}; "
-            f"re-run lock with network access or check the vendored file."
+            missing_wheel_hash_message(w.filename, url, platform="android")
         )
     return LockedWheel(
         name=w.filename,

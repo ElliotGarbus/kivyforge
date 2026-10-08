@@ -111,6 +111,26 @@ def find_links_resolution_hint(
     )
 
 
+def missing_wheel_hash_message(filename: str, url: str | None, *, platform: str) -> str:
+    """Why a resolved remote wheel has no SHA-256, and the two ways out.
+
+    pip reports a hash only when the index publishes one (a ``#sha256=``
+    fragment) or pip downloaded the wheel. An index that serves PEP 658
+    metadata but no hashes lets pip resolve without downloading, so the hash is
+    empty. kivyforge does not fetch and hash remote wheels on the index's behalf.
+    """
+    source = f" from {url}" if url else ""
+    return (
+        f"could not determine SHA-256 for wheel {filename!r}{source}.\n"
+        "  kivyforge pins every wheel by SHA-256, and this index publishes no "
+        "hash for it: pip resolved the wheel from the index's metadata without "
+        "downloading it.\n"
+        "  Use an index that publishes SHA-256 hashes (a #sha256= fragment on "
+        "each wheel link), or download the wheels into a directory listed in "
+        f"[tool.kivy.{platform}].find_links, where kivyforge hashes them itself."
+    )
+
+
 def find_links_doctor_detail(
     project_root: Path, entry: str, path: Path, *, platform: str = "ios"
 ) -> tuple[str, str | None]:
