@@ -12,6 +12,8 @@ import zipfile
 import pytest
 
 from kivyforge.platforms.android.elf import (
+    EM_AARCH64,
+    EM_X86_64,
     ElfError,
     parse_elf,
     read_elf,
@@ -35,6 +37,7 @@ def _make_elf(
     include_dynamic: bool = True,
     include_strtab: bool = True,
     strtab_vaddr_override: int | None = None,
+    machine: int = EM_AARCH64,
 ) -> bytes:
     """Hand-assemble a minimal ELF: one PT_LOAD (whole file, identity
     vaddr==offset) plus, optionally, a PT_DYNAMIC segment with DT_NEEDED/
@@ -54,7 +57,7 @@ def _make_elf(
         header = (
             e_ident
             + struct.pack(end + "H", 3)  # e_type: ET_DYN
-            + struct.pack(end + "H", 0xB7)  # e_machine: AArch64
+            + struct.pack(end + "H", machine)
             + struct.pack(end + "I", 1)  # e_version
             + struct.pack(end + "Q", 0)  # e_entry
             + struct.pack(end + "Q", phoff)  # e_phoff
@@ -168,6 +171,11 @@ def _make_elf(
     body += dyn_bytes
     assert len(body) == total_size
     return body
+
+
+#: A minimal library for each ABI the runtime ships.
+ARM64_LIB = _make_elf()
+X86_64_LIB = _make_elf(machine=EM_X86_64)
 
 
 class TestReadElfHeaderParsing:

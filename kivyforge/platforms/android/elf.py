@@ -47,6 +47,8 @@ _MACHINE_NAMES = {
     0x28: "armv7 (32-bit)",
     0x03: "i386 (32-bit)",
 }
+#: The machine each configured ABI's libraries must be built for.
+ABI_MACHINES = {"arm64_v8a": EM_AARCH64, "x86_64": EM_X86_64}
 
 
 def machine_name(e_machine: int) -> str:

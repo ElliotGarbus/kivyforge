@@ -28,6 +28,15 @@
   `lib*.so` (for example `libgfortran-040039e1.so.5`) now fails the build with a
   message naming the file. Android only packages `lib*.so` files, so before this
   change the library was missing from the app.
+- **Changed:** wheels from Flet's index (and others using Chaquopy's separate
+  library wheels, such as `flet-libjpeg`) now fail the build with
+  `KF-ANDROID-WHEEL-LAYOUT`, naming the wheels. Their libraries live under
+  `opt/lib`, which kivyforge cannot load from. Before, the build failed with
+  a misleading "ABI content skew" on their `.a` files, or, without those,
+  built an app that could not find the libraries.
+- **Added:** a native library built for another architecture than its
+  wheel's tag (an x86_64 binary in an `arm64_v8a` wheel) now fails the build
+  with `KF-ANDROID-WHEEL-ARCH`, instead of failing to load on the device.
 - **Fixed:** `run -p android --release` without a configured release signing
   identity failed with "Gradle reported success for assembleRelease but no
   artifact is at ...". It said it was signing with the debug keystore, but left

@@ -1156,6 +1156,91 @@ class TestPackagedNativeLibraries:
         assert "1 native libraries keep their symbols" in captured.out + captured.err
 
 
+class TestWheelChecks:
+    """Wheels kivyforge cannot ship fail at build time, naming the wheel."""
+
+    def test_flets_library_wheels_fail_before_the_bundle(self, build_env, monkeypatch):
+        project, calls = build_env
+
+        def fake_install_wheels(files, target, **kw):
+            for dist, lib in (("flet-libjpeg", "libjpeg"), ("flet-libwebp", "libwebp")):
+                rel = f"opt/lib/{lib}.so"
+                (target / "opt" / "lib").mkdir(parents=True, exist_ok=True)
+                (target / rel).write_bytes(b"x")
+                info = target / f"{dist.replace('-', '_')}-1.0.dist-info"
+                info.mkdir()
+                (info / "METADATA").write_text(
+                    f"Metadata-Version: 2.1\nName: {dist}\n", encoding="utf-8"
+                )
+                (info / "RECORD").write_text(f"{rel},sha256=x,1\n", encoding="utf-8")
+
+        monkeypatch.setattr(cli, "install_wheels", fake_install_wheels)
+        with pytest.raises(ToolchainError, match="Chaquopy's layout") as exc:
+            cli.android_build(project)
+        assert exc.value.code == diagnostics.ANDROID_WHEEL_LAYOUT
+        assert exc.value.exit_code == exit_codes.CONFIG_ERROR
+        assert exc.value.context == {
+            "distributions": "flet-libjpeg, flet-libwebp",
+            "layout": "opt/lib",
+        }
+        assert "assemble_bundle" not in calls
+
+    def test_a_library_for_another_architecture_names_its_wheel(
+        self, build_env, monkeypatch
+    ):
+        from kivyforge.platforms.android.stage import jnilibs
+        from tests.platforms.android.test_elf import X86_64_LIB
+
+        project, _ = build_env
+        rel = "mypkg/_ext.cpython-314-aarch64-linux-android.so"
+
+        def fake_install_wheels(files, target, **kw):
+            (target / "mypkg").mkdir(parents=True)
+            (target / rel).write_bytes(X86_64_LIB)
+            info = target / "mypkg-1.0.dist-info"
+            info.mkdir()
+            (info / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: mypkg\n", encoding="utf-8"
+            )
+            (info / "RECORD").write_text(f"{rel},sha256=x,1\n", encoding="utf-8")
+
+        monkeypatch.setattr(cli, "install_wheels", fake_install_wheels)
+        monkeypatch.setattr(
+            cli,
+            "stage_site_packages_extensions",
+            jnilibs.stage_site_packages_extensions,
+        )
+        with pytest.raises(ToolchainError, match="built for x86_64") as exc:
+            cli.android_build(project)
+        assert exc.value.code == diagnostics.ANDROID_WHEEL_ARCH
+        assert exc.value.context == {
+            "library": rel,
+            "distribution": "mypkg",
+            "abi": "arm64_v8a",
+        }
+        assert "whoever published mypkg" in exc.value.remediation
+
+    def test_a_runtime_library_for_another_architecture_names_the_runtime(
+        self, build_env, monkeypatch, tmp_path
+    ):
+        from tests.platforms.android.test_elf import X86_64_LIB
+
+        project, _ = build_env
+        libpython = tmp_path / "libpython3.14.so"
+        libpython.write_bytes(X86_64_LIB)
+
+        def fake_stage_runtime_libs(stager, prefix_lib, *, python_stem):
+            stager.add_shared_library(libpython, provider="runtime")
+            return (1, 0)
+
+        monkeypatch.setattr(cli, "stage_runtime_libs", fake_stage_runtime_libs)
+        with pytest.raises(ToolchainError) as exc:
+            cli.android_build(project)
+        assert exc.value.code == diagnostics.ANDROID_WHEEL_ARCH
+        assert exc.value.context["distribution"] == "the python.org runtime"
+        assert exc.value.context["library"] == "libpython3.14.so"
+
+
 class TestDebugReleaseOutputPaths:
     def test_debug_apk_and_aab(self, tmp_path):
         assert cli._debug_output(tmp_path, "apk").name == "app-debug.apk"

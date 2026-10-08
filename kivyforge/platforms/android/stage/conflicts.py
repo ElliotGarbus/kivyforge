@@ -38,14 +38,26 @@ def site_packages_android_provider(site_packages: Path) -> str | None:
     found = _top_level_android(site_packages)
     if found is None:
         return None
-    prefix = found.name
+    return installed_by(site_packages, found.name) or found.name
+
+
+def installed_by(site_packages: Path, prefix: str) -> str | None:
+    """The first distribution whose RECORD lists *prefix* or a file below it."""
+    owners = installers(site_packages, prefix)
+    return owners[0] if owners else None
+
+
+def installers(site_packages: Path, prefix: str) -> list[str]:
+    """Every distribution whose RECORD lists *prefix* or a file below it."""
+    owners: list[str] = []
     for record in sorted(site_packages.glob("*.dist-info/RECORD")):
         for line in record.read_text(encoding="utf-8", errors="replace").splitlines():
             path = line.split(",", 1)[0]
             if path == prefix or path.startswith(f"{prefix}/"):
                 metadata = record.parent / "METADATA"
-                return _dist_name(metadata) or record.parent.name.split("-")[0]
-    return found.name
+                owners.append(_dist_name(metadata) or record.parent.name.split("-")[0])
+                break
+    return owners
 
 
 def _dist_name(metadata: Path) -> str | None:

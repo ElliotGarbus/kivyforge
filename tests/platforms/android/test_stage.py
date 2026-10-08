@@ -10,17 +10,20 @@ from typing import TypedDict
 import pytest
 
 from kivyforge.lock.model import LockedPackage, LockedWheel
+from kivyforge.platforms.android.elf import EM_AARCH64
 from kivyforge.platforms.android.stage import wheels as wheels_mod
 from kivyforge.platforms.android.stage.bundle import BundleError, assemble_bundle
 from kivyforge.platforms.android.stage.jnilibs import (
     JniLibsError,
     JniLibsStager,
+    NativeLibWrongArch,
     dotted_module_name,
     stage_runtime_libs,
     stage_site_packages_extensions,
     stage_wheel_libs_dir,
     stage_wheel_libs_dirs,
 )
+from kivyforge.platforms.android.stage.layouts import separate_library_wheels
 from kivyforge.platforms.android.stage.wheels import (
     WheelStageError,
     install_wheels,
@@ -169,6 +172,34 @@ class TestJniLibs:
         stager = JniLibsStager(dest=tmp_path / "jni")
         assert stage_wheel_libs_dirs(stager, sp) == 0
         assert not (tmp_path / "jni" / "libavcodec.so").exists()
+
+    @pytest.mark.parametrize("where", ["extension", "libs"])
+    def test_a_library_for_another_architecture_fails_the_build(self, tmp_path, where):
+        """A wheel tagged arm64 that ships x86_64 code would fail to load."""
+        from tests.platforms.android.test_elf import X86_64_LIB
+
+        sp = tmp_path / "sp"
+        if where == "extension":
+            rel = "mypkg/_ext.cpython-314-aarch64-linux-android.so"
+        else:
+            rel = "mypkg.libs/libfoo.so"
+        bad = _write(sp / rel, X86_64_LIB)
+        stager = JniLibsStager(dest=tmp_path / "arm64-v8a", machine=EM_AARCH64)
+        with pytest.raises(NativeLibWrongArch, match="built for x86_64") as exc:
+            stage_wheel_libs_dirs(stager, sp)
+            stage_site_packages_extensions(stager, sp, wheel_name="site-packages")
+        assert "staged for arm64-v8a, which needs aarch64" in str(exc.value)
+        assert exc.value.source == bad
+        assert not (tmp_path / "arm64-v8a").exists()
+
+    def test_a_library_for_its_own_architecture_stages(self, tmp_path):
+        from tests.platforms.android.test_elf import ARM64_LIB
+
+        sp = tmp_path / "sp"
+        _write(sp / "mypkg.libs" / "libfoo.so", ARM64_LIB)
+        _write(sp / ".libs" / "libSDL3.so", b"not an elf")
+        stager = JniLibsStager(dest=tmp_path / "jni", machine=EM_AARCH64)
+        assert stage_wheel_libs_dirs(stager, sp) == 2
 
     def test_identical_duplicate_dedupes_silently(self, tmp_path):
         a = _write(tmp_path / "a" / "libSDL2.so", b"same")
@@ -636,3 +667,59 @@ class TestBundle:
                 kivy_bootstrap_source="# kivy contract",
                 ext_manifest_json="{}",
             )
+
+
+def _library_wheel(sp: Path, dist: str, files: list[str]) -> None:
+    """Install a Chaquopy-style library wheel the way pip lays it out."""
+    for rel in files:
+        _write(sp / rel)
+    info = sp / f"{dist.replace('-', '_')}-1.0.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text(
+        f"Metadata-Version: 2.1\nName: {dist}\n", encoding="utf-8"
+    )
+    (info / "RECORD").write_text(
+        "".join(f"{rel},sha256=x,1\n" for rel in files), encoding="utf-8"
+    )
+
+
+class TestSeparateLibraryWheels:
+    """Flet's index: each native library is its own wheel under opt/lib."""
+
+    def test_flets_library_wheels_are_named(self, tmp_path):
+        sp = tmp_path / "sp"
+        _library_wheel(
+            sp,
+            "flet-libjpeg",
+            ["opt/lib/libjpeg.so", "opt/lib/libjpeg.a", "opt/include/jpeglib.h"],
+        )
+        _library_wheel(sp, "flet-libwebp", ["opt/lib/libwebp.so"])
+        _library_wheel(sp, "pillow", ["PIL/__init__.py"])
+        assert separate_library_wheels(sp) == ["flet-libjpeg", "flet-libwebp"]
+
+    @pytest.mark.parametrize("files", [["opt/lib/libfoo.so.1"], ["opt/include/foo.h"]])
+    def test_libraries_or_headers_alone_are_enough(self, tmp_path, files):
+        sp = tmp_path / "sp"
+        _library_wheel(sp, "flet-libfoo", files)
+        assert separate_library_wheels(sp) == ["flet-libfoo"]
+
+    def test_a_layout_no_record_claims_is_still_reported(self, tmp_path):
+        sp = tmp_path / "sp"
+        _write(sp / "opt" / "lib" / "libfoo.so")
+        assert separate_library_wheels(sp) == ["opt"]
+
+    @pytest.mark.parametrize(
+        "files",
+        [
+            ["opt/__init__.py", "opt/lib/libfoo.so"],
+            ["opt/lib/README.txt"],
+            ["opt/data/table.bin"],
+        ],
+    )
+    def test_anything_else_called_opt_is_left_alone(self, tmp_path, files):
+        sp = tmp_path / "sp"
+        _library_wheel(sp, "opt", files)
+        assert separate_library_wheels(sp) is None
+
+    def test_no_opt_at_all(self, tmp_path):
+        assert separate_library_wheels(tmp_path) is None

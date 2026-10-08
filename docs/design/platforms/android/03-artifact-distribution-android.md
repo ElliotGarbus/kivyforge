@@ -175,6 +175,28 @@ kivyforge exempts those libraries from stripping; see
 > runtime, which means building them against a single, unrenamed
 > `libc++_shared.so`.
 
+### Wheel layouts
+
+Chaquopy ships each native library as its own wheel, a convention BeeWare's
+mobile-forge and Flet's index (`pypi.flet.dev`) carry on. A library wheel such as
+`flet-libjpeg` installs a top-level `opt/` with `lib/*.so`, `include/` and often
+static `*.a` archives, and the wrapper (Pillow) pins it through `Requires-Dist`.
+Those runtimes know to load from `opt/lib`; kivyforge's does not, and supporting the
+layout is out of scope, since the ecosystem's standard tooling grafts libraries into
+`<dist>.libs/` instead. Staged as is, each library would become an extension module
+under a name the linker never asks for.
+
+So `build` stops after installing the wheels with `KF-ANDROID-WHEEL-LAYOUT`, naming
+every distribution whose RECORD lists a file under `opt/`. Only the exact signature
+matches: a top-level `opt` that is not a Python package (no `__init__.py`) and holds
+a shared object in `lib/` or an `include/` directory.
+
+Every library staged into `jniLibs/<abi>/`, the runtime's included, must also be an
+ELF built for that ABI's machine (AArch64 for `arm64_v8a`, x86-64 for `x86_64`).
+The wheel's tag is what routed it there, so a mismatch means the wheel is mislabelled,
+and `build` fails with `KF-ANDROID-WHEEL-ARCH` instead of shipping a library that
+fails to load. A `.so` that is not an ELF file is not judged.
+
 ### Wheel content rules
 
 Android wheels in the Kivy ecosystem must:

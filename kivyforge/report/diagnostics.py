@@ -129,6 +129,17 @@ ANDROID_INCLUDE_OVERRIDE = "KF-ANDROID-INCLUDE-OVERRIDE"
 #: edited. ``context`` names the first ``library`` (its path in the archive).
 ANDROID_NATIVE_LIB_MISALIGNED = "KF-ANDROID-NATIVE-LIB-MISALIGNED"
 
+#: Android: a locked wheel ships its native libraries in a layout kivyforge
+#: does not stage -- Chaquopy's separate library wheels (``opt/lib``), as
+#: Flet's index serves them. ``context`` names the ``distributions``
+#: (comma-separated) and the ``layout``.
+ANDROID_WHEEL_LAYOUT = "KF-ANDROID-WHEEL-LAYOUT"
+
+#: Android: a native library in a locked wheel (or the runtime) is built for
+#: another architecture than the ABI the wheel's tag routed it to. ``context``
+#: names the ``library``, its ``distribution`` and the ``abi``.
+ANDROID_WHEEL_ARCH = "KF-ANDROID-WHEEL-ARCH"
+
 #: An expected failure (``ToolchainError``) with no specific code assigned yet.
 #: Branchable rather than null: it tells a consumer "this is a clean, expected
 #: failure -- read ``message`` and ``remediation``", as distinct from a crash.
