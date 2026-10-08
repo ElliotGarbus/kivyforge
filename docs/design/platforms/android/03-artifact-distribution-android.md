@@ -145,6 +145,36 @@ its own Kivy wheel rather than trusting a community one.
 > kivyforge bootstrap template, and SDL's Java glue is part of the bootstrap. See
 > [bootstrap-android](05-bootstrap-android.md).
 
+### Third-party wheels: auditwheel's `<dist>.libs/`
+
+cibuildwheel's default Android repair runs auditwheel, which grafts each external
+library into a top-level `<dist>.libs/` under a hashed name
+(`numpy.libs/libc++_shared-d523468d.so`), rewrites the extensions' `DT_NEEDED` to
+that name, and sets RUNPATH to `$ORIGIN/../../numpy.libs`. kivyforge stages these
+directories exactly like the Kivy wheel's `.libs/`: flat only, names unchanged, into
+`jniLibs/<abi>/`. RUNPATH plays no part, because the flattened extensions load from
+`nativeLibraryDir`, where the linker's default search path finds the grafted names.
+Android packages only `lib*.so` files as native libraries, so another name
+(`libgfortran-040039e1.so.5`) fails the build: it cannot be renamed without
+breaking the libraries that link to it by that name.
+
+patchelf, which does the rewriting, leaves a layout that AGP's strip corrupts.
+kivyforge exempts those libraries from stripping; see
+[gradle-project-generation §"Stripping"](04-gradle-project-generation.md#stripping).
+
+> **Risk: two copies of the C++ runtime.** Grafting renames each wheel's copy of
+> `libc++_shared.so`, so the dynamic linker treats the copies as different
+> libraries and loads all of them. A Kivy-plus-numpy app loads Kivy's
+> `.libs/libc++_shared.so` (needed by `kivy.core.image._img_sdl3`) and numpy's
+> `libc++_shared-d523468d.so`. That works while C++ objects, exceptions and
+> `std::type_info` stay inside the library that created them. It fails, typically
+> as an uncaught exception, a failed `dynamic_cast`, or a crash in `free`, if two
+> extensions from different wheels pass C++ objects to each other directly. This is
+> the same trade auditwheel makes on Linux, and kivyforge neither detects nor
+> prevents it. Wheels that pass C++ objects between each other need to share one
+> runtime, which means building them against a single, unrenamed
+> `libc++_shared.so`.
+
 ### Wheel content rules
 
 Android wheels in the Kivy ecosystem must:

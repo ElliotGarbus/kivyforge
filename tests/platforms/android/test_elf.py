@@ -7,10 +7,17 @@ needed) to exercise ``read_elf``'s header/program-header/.dynamic parsing.
 from __future__ import annotations
 
 import struct
+import zipfile
 
 import pytest
 
-from kivyforge.platforms.android.elf import ElfError, read_elf, scan_alignment
+from kivyforge.platforms.android.elf import (
+    ElfError,
+    parse_elf,
+    read_elf,
+    scan_alignment,
+    scan_packaged_libs,
+)
 
 _DT_NEEDED = 1
 _DT_STRTAB = 5
@@ -247,6 +254,129 @@ class TestDtNeeded:
         )
         info = read_elf(path)
         assert info.needed == ()
+
+
+_SHF_ALLOC = 0x2
+
+
+def make_sectioned_elf(
+    *,
+    loads: list[tuple[int, int, int, int]],
+    sections: list[tuple[int, int, int, int]],
+    phoff: int = 64,
+) -> bytes:
+    """ELF64 LE with the given program and section headers, no real content.
+
+    ``loads`` are ``(offset, vaddr, filesz, align)``; ``sections`` are
+    ``(type, flags, offset, size)``. Only headers are parsed, so the bytes they
+    describe are zeros.
+    """
+    shoff = max(
+        [phoff + 0x38 * len(loads)]
+        + [off + size for off, _, size, _ in loads]
+        + [off + size for _, _, off, size in sections]
+    )
+    shoff = (shoff + 7) & ~7
+    shnum = len(sections) + 1
+    header = (
+        bytes([0x7F, 0x45, 0x4C, 0x46, 2, 1, 1, 0])
+        + b"\x00" * 8
+        + struct.pack(
+            "<HHIQQQIHHHHHH",
+            3, 0xB7, 1, 0, phoff, shoff, 0, 64, 0x38, len(loads), 0x40, shnum, 0,
+        )
+    )  # fmt: skip
+    phdrs = b"".join(
+        struct.pack("<IIQQQQQQ", _PT_LOAD, 4, off, va, va, size, size, align)
+        for off, va, size, align in loads
+    )
+    shdrs = b"\x00" * 0x40 + b"".join(
+        struct.pack("<IIQQQQIIQQ", 0, typ, flags, 0, off, size, 0, 0, 1, 0)
+        for typ, flags, off, size in sections
+    )
+    body = bytearray(shoff + len(shdrs))
+    body[:64] = header
+    body[phoff : phoff + len(phdrs)] = phdrs
+    body[shoff:] = shdrs
+    return bytes(body)
+
+
+# A linker's layout: loadable sections first, then .comment/.symtab/.strtab.
+LINKED = make_sectioned_elf(
+    loads=[(0, 0, 0x1000, 0x4000), (0x1000, 0x5000, 0x800, 0x4000)],
+    sections=[(1, _SHF_ALLOC, 0x200, 0xE00), (1, _SHF_ALLOC, 0x1000, 0x800),
+              (1, 0, 0x1800, 0x100), (2, 0, 0x1900, 0x300)],
+)  # fmt: skip
+# patchelf's: a new loadable segment appended after the symbol table.
+PATCHED = make_sectioned_elf(
+    loads=[(0, 0, 0x1000, 0x4000), (0x10000, 0x10000, 0x400, 0x10000)],
+    sections=[(1, _SHF_ALLOC, 0x200, 0xE00), (2, 0, 0x1000, 0x300),
+              (11, _SHF_ALLOC, 0x10000, 0x400)],
+)  # fmt: skip
+# What NDK r27's llvm-strip makes of PATCHED: the segment moved, its address not.
+STRIPPED = make_sectioned_elf(
+    loads=[(0, 0, 0x1000, 0x4000), (0x1078, 0x10000, 0x400, 0x10000)],
+    sections=[(1, _SHF_ALLOC, 0x200, 0xE00), (11, _SHF_ALLOC, 0x1078, 0x400)],
+)  # fmt: skip
+
+
+class TestStripSafety:
+    def test_a_linkers_layout_is_safe_to_strip(self):
+        assert parse_elf(LINKED, name="lib.so").strip_unsafe is False
+
+    def test_a_segment_after_the_symbol_table_is_not(self):
+        assert parse_elf(PATCHED, name="lib.so").strip_unsafe is True
+
+    def test_no_section_headers_is_safe(self, tmp_path):
+        path = tmp_path / "lib.so"
+        path.write_bytes(_make_elf())
+        assert read_elf(path).strip_unsafe is False
+
+    def test_a_truncated_file_is_an_elf_error(self):
+        with pytest.raises(ElfError, match="truncated"):
+            parse_elf(PATCHED[:200], name="lib.so")
+
+    def test_congruent_segments_are_not_misaligned(self):
+        assert parse_elf(PATCHED, name="lib.so").misaligned_loads == ()
+
+    def test_a_moved_segment_is_misaligned(self):
+        (seg,) = parse_elf(STRIPPED, name="lib.so").misaligned_loads
+        assert (seg.offset, seg.vaddr, seg.align) == (0x1078, 0x10000, 0x10000)
+
+
+class TestScanPackagedLibs:
+    def _archive(self, tmp_path, members: dict[str, bytes]):
+        path = tmp_path / "app.apk"
+        with zipfile.ZipFile(path, "w") as zf:
+            for name, data in members.items():
+                zf.writestr(name, data)
+        return path
+
+    def test_reports_misaligned_libraries_only(self, tmp_path):
+        apk = self._archive(
+            tmp_path,
+            {
+                "lib/arm64-v8a/libgood.so": PATCHED,
+                "lib/arm64-v8a/libbad.so": STRIPPED,
+                "lib/arm64-v8a/libjunk.so": b"not an elf",
+                "assets/_python_bundle/stray.so": STRIPPED,
+            },
+        )
+        bad = scan_packaged_libs(apk)
+        assert [member for member, _ in bad] == ["lib/arm64-v8a/libbad.so"]
+
+    def test_reads_an_aab_module(self, tmp_path):
+        aab = self._archive(tmp_path, {"base/lib/x86_64/libbad.so": STRIPPED})
+        assert [m for m, _ in scan_packaged_libs(aab)] == ["base/lib/x86_64/libbad.so"]
+
+    def test_program_headers_past_the_first_page_are_read(self, tmp_path):
+        far = make_sectioned_elf(
+            loads=[(0, 0, 0x100, 0x4000), (0x3078, 0x10000, 0x10, 0x10000)],
+            sections=[],
+            phoff=0x2000,
+        )
+        apk = self._archive(tmp_path, {"lib/arm64-v8a/libfar.so": far})
+        assert [m for m, _ in scan_packaged_libs(apk)] == ["lib/arm64-v8a/libfar.so"]
 
 
 class TestScanAlignment:

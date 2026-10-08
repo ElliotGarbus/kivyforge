@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import shutil
 import threading
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -160,6 +161,14 @@ def _write_lock(
     return lock
 
 
+def _write_fake_archive(path: Path, members: dict[str, bytes] | None = None) -> None:
+    """An APK/AAB stand-in: a zip, since the build checks its native libraries."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in (members or {}).items():
+            zf.writestr(name, data)
+
+
 def _gradle_output_for(dest: Path, tasks: list[str]) -> None:
     outputs = dest / "app" / "build" / "outputs"
     mapping = {
@@ -171,8 +180,7 @@ def _gradle_output_for(dest: Path, tasks: list[str]) -> None:
     for task in tasks:
         path = mapping.get(task)
         if path is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(b"fake")
+            _write_fake_archive(path)
         if task == MERGED_MANIFEST_TASK:
             # Stand in for AGP's manifest merge: with no library manifests to
             # merge, the merged manifest is the generated one.
@@ -219,7 +227,7 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
     def fake_stage_runtime_libs(stager, prefix_lib, *, python_stem):
         return (0, 0)
 
-    def fake_stage_wheel_libs_dir(stager, libs_dir, *, wheel_name):
+    def fake_stage_wheel_libs_dirs(stager, site_packages):
         return 0
 
     def fake_stage_site_packages_extensions(stager, site_packages, *, wheel_name):
@@ -263,7 +271,7 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
         "extract_runtime": fake_extract_runtime,
         "install_wheels": fake_install_wheels,
         "stage_runtime_libs": fake_stage_runtime_libs,
-        "stage_wheel_libs_dir": fake_stage_wheel_libs_dir,
+        "stage_wheel_libs_dirs": fake_stage_wheel_libs_dirs,
         "stage_site_packages_extensions": fake_stage_site_packages_extensions,
         "assemble_bundle": fake_assemble_bundle,
         "stdlib_dir": fake_stdlib_dir,
@@ -728,14 +736,14 @@ class TestAndroidBuildGates:
             ],
         )
 
-        def fake_stage_wheel_libs_dir(stager, libs_dir, *, wheel_name):
+        def fake_stage_wheel_libs_dirs(stager, site_packages):
             stager.dest.mkdir(parents=True, exist_ok=True)
             (stager.dest / "libSDL2.so").write_bytes(
                 b"junk release-2.30.0-0-gdeadbee junk"
             )
             return 1
 
-        monkeypatch.setattr(cli, "stage_wheel_libs_dir", fake_stage_wheel_libs_dir)
+        monkeypatch.setattr(cli, "stage_wheel_libs_dirs", fake_stage_wheel_libs_dirs)
 
         def fake_install_wheels(files, target, **kw):
             (target / ".libs").mkdir(parents=True, exist_ok=True)
@@ -1086,8 +1094,66 @@ class TestArtifactExistenceGate:
     def test_present_artifact_is_returned(self, tmp_path):
         apk = tmp_path / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
         apk.parent.mkdir(parents=True)
-        apk.write_bytes(b"fake")
+        _write_fake_archive(apk)
         assert cli._require_artifact(apk, "assembleDebug") == apk
+
+
+class TestPackagedNativeLibraries:
+    """AGP's strip corrupted patchelf-edited libraries (numpy's on-device import)."""
+
+    def _gradle_writes(self, monkeypatch, members: dict[str, bytes]):
+        def fake_run_gradle(dest, tasks, **kw):
+            for task in tasks:
+                if task == "assembleDebug":
+                    _write_fake_archive(cli._debug_output(dest, "apk"), members)
+
+        monkeypatch.setattr(cli, "run_gradle", fake_run_gradle)
+
+    def test_a_library_the_device_cannot_load_fails_the_build(
+        self, build_env, monkeypatch
+    ):
+        from tests.platforms.android.test_elf import PATCHED, STRIPPED
+
+        project, _ = build_env
+        self._gradle_writes(
+            monkeypatch,
+            {
+                "lib/arm64-v8a/libpy.numpy.fft._pocketfft_umath.so": STRIPPED,
+                "lib/arm64-v8a/libc++_shared-d523468d.so": PATCHED,
+            },
+        )
+        with pytest.raises(ToolchainError, match="Android cannot load") as exc:
+            cli.android_build(project, debug=True)
+        assert exc.value.code == diagnostics.ANDROID_NATIVE_LIB_MISALIGNED
+        assert "_pocketfft_umath" in str(exc.value)
+        assert "libc++_shared" not in str(exc.value)
+
+    def test_an_archive_that_is_not_a_zip_is_reported(self, tmp_path):
+        apk = tmp_path / "app.apk"
+        apk.write_bytes(b"not a zip")
+        with pytest.raises(AndroidBuildError, match="could not check"):
+            cli._check_packaged_libs(apk)
+
+    def test_strip_unsafe_libraries_reach_the_gradle_file(
+        self, build_env, monkeypatch, tmp_path, capsys
+    ):
+        from tests.platforms.android.test_elf import PATCHED
+
+        project, calls = build_env
+        grafted = tmp_path / "libc++_shared-d523468d.so"
+        grafted.write_bytes(PATCHED)
+
+        def fake_stage_wheel_libs_dirs(stager, site_packages):
+            stager.add_shared_library(grafted, provider="wheel numpy")
+            return 1
+
+        monkeypatch.setattr(cli, "stage_wheel_libs_dirs", fake_stage_wheel_libs_dirs)
+        cli.android_build(project)
+        assert calls["write_app_build_gradle"][-1]["strip_unsafe_libs"] == [
+            "libc++_shared-d523468d.so"
+        ]
+        captured = capsys.readouterr()
+        assert "1 native libraries keep their symbols" in captured.out + captured.err
 
 
 class TestDebugReleaseOutputPaths:
@@ -1430,7 +1496,7 @@ class TestAndroidRun:
             # --release runs assembleRelease itself; give it an APK to find.
             apk = cli._release_output(project / "demoapp-android", "apk")
             apk.parent.mkdir(parents=True, exist_ok=True)
-            apk.write_bytes(b"PK")
+            _write_fake_archive(apk)
         cli.android_run(project, release=release)
         captured = capsys.readouterr()
         assert captured.out == "I python.stderr: booted\n"
@@ -1452,7 +1518,7 @@ class TestAndroidRun:
             / "app-debug.apk"
         )
         apk.parent.mkdir(parents=True)
-        apk.write_bytes(b"fake")
+        _write_fake_archive(apk)
         _fake_device(monkeypatch)
         monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
@@ -1557,7 +1623,7 @@ class TestAndroidRun:
             / "app-release.apk"
         )
         apk.parent.mkdir(parents=True)
-        apk.write_bytes(b"fake")
+        _write_fake_archive(apk)
         _fake_device(monkeypatch)
         monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
@@ -1579,7 +1645,11 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
         cli.android_run(project, release=True, wait_sec=0)
-        assert calls["write_app_build_gradle"][-1]["signing_config_block"] == ""
+        generated = calls["write_app_build_gradle"][-1]
+        assert generated["signing_config_block"] == ""
+        # Without it AGP leaves the release APK unsigned and named
+        # app-release-unsigned.apk, which nothing can install.
+        assert generated["release_signing_config"] == "debug"
         assert (
             "signing the release app with the debug keystore" in capsys.readouterr().err
         )
@@ -1607,7 +1677,9 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
         cli.android_run(project, release=True, wait_sec=0)
-        assert "upload" in calls["write_app_build_gradle"][-1]["signing_config_block"]
+        generated = calls["write_app_build_gradle"][-1]
+        assert "upload" in generated["signing_config_block"]
+        assert generated["release_signing_config"] == "release"
 
     def test_debug_run_is_unaffected_by_release_signing_wiring(
         self, build_env, monkeypatch

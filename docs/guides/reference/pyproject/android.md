@@ -186,7 +186,7 @@ in `pyproject.toml`.
 |---|---|---|---|
 | `byte_compile` | bool or `"release"` | `"release"` | Compile the Python payload to `.pyc`. `"release"` applies to release builds only. |
 | `strip_source` | bool or `"release"` | `"release"` | Drop `.py` files after compiling. Ignored when `byte_compile` is off. |
-| `strip_native_libs` | bool or `"release"` | `"release"` | Strip debug symbols from the shipped `.so` files. |
+| `strip_native_libs` | bool or `"release"` | `"release"` | Strip debug symbols from the shipped `.so` files. Libraries that stripping would corrupt (ones auditwheel's repair edited with patchelf) always keep their symbols, and the build says how many. |
 | `debug_symbols` | string | `"symbol_table"` | Native debug symbols to export: `symbol_table`, `full`, or `none`. |
 | `minify` | bool | `false` | Enable R8 for release builds. |
 | `shrink_resources` | bool | `false` | Remove unused resources. Requires `minify = true`. |

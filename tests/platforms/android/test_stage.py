@@ -19,6 +19,7 @@ from kivyforge.platforms.android.stage.jnilibs import (
     stage_runtime_libs,
     stage_site_packages_extensions,
     stage_wheel_libs_dir,
+    stage_wheel_libs_dirs,
 )
 from kivyforge.platforms.android.stage.wheels import (
     WheelStageError,
@@ -76,6 +77,87 @@ class TestJniLibs:
         stager = JniLibsStager(dest=tmp_path / "jni")
         with pytest.raises(JniLibsError, match="flat"):
             stage_wheel_libs_dir(stager, libs, wheel_name="kivy")
+
+    def test_a_dist_libs_dir_is_staged_under_its_own_names(self, tmp_path):
+        """auditwheel's <dist>.libs/ (cibuildwheel's default Android repair).
+
+        The extension's DT_NEEDED names the hashed file, so renaming it the way
+        an extension module is renamed made numpy fail to import on-device.
+        """
+        sp = tmp_path / "sp"
+        _write(sp / "numpy" / "_core" / "_umath.cpython-314-aarch64-linux-android.so")
+        _write(sp / "numpy.libs" / "libc++_shared-d523468d.so")
+        _write(sp / ".libs" / "libSDL3.so")
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        assert stage_wheel_libs_dirs(stager, sp) == 2
+        stage_site_packages_extensions(stager, sp, wheel_name="site-packages")
+        staged = {p.name for p in (tmp_path / "jni").iterdir()}
+        assert staged == {
+            "libc++_shared-d523468d.so",
+            "libSDL3.so",
+            "libpy.numpy._core._umath.so",
+        }
+        assert list(stager.manifest()) == ["numpy._core._umath"]
+
+    def test_libraries_patchelf_edited_are_reported_strip_unsafe(self, tmp_path):
+        """AGP's strip corrupts them: numpy's import failed on-device."""
+        from tests.platforms.android.test_elf import LINKED, PATCHED
+
+        sp = tmp_path / "sp"
+        _write(
+            sp / "numpy" / "_core" / "_umath.cpython-314-aarch64-linux-android.so",
+            PATCHED,
+        )
+        _write(sp / "numpy" / "_linalg.cpython-314-aarch64-linux-android.so", LINKED)
+        _write(sp / "numpy.libs" / "libc++_shared-d523468d.so", PATCHED)
+        _write(sp / ".libs" / "libSDL3.so", b"not an elf")
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        stage_wheel_libs_dirs(stager, sp)
+        stage_site_packages_extensions(stager, sp, wheel_name="site-packages")
+        assert stager.strip_unsafe() == [
+            "libc++_shared-d523468d.so",
+            "libpy.numpy._core._umath.so",
+        ]
+
+    def test_the_same_grafted_library_from_two_wheels_is_staged_once(self, tmp_path):
+        sp = tmp_path / "sp"
+        _write(sp / "numpy.libs" / "libc++_shared-d523468d.so", b"same")
+        _write(sp / "pandas.libs" / "libc++_shared-d523468d.so", b"same")
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        stage_wheel_libs_dirs(stager, sp)
+        assert [p.name for p in (tmp_path / "jni").iterdir()] == [
+            "libc++_shared-d523468d.so"
+        ]
+
+    def test_conflicting_grafted_libraries_name_both_wheels(self, tmp_path):
+        sp = tmp_path / "sp"
+        _write(sp / "numpy.libs" / "libfoo.so", b"one")
+        _write(sp / "pandas.libs" / "libfoo.so", b"two")
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        with pytest.raises(JniLibsError, match="wheel numpy and wheel pandas"):
+            stage_wheel_libs_dirs(stager, sp)
+
+    def test_a_nested_dist_libs_dir_is_a_malformed_wheel(self, tmp_path):
+        sp = tmp_path / "sp"
+        _write(sp / "numpy.libs" / "sub" / "libfoo.so")
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        with pytest.raises(JniLibsError, match="nested numpy.libs/"):
+            stage_wheel_libs_dirs(stager, sp)
+
+    @pytest.mark.parametrize("name", ["libgfortran-040039e1.so.5", "_raw_aes.so"])
+    def test_a_library_android_cannot_package_fails_the_build(self, tmp_path, name):
+        sp = tmp_path / "sp"
+        _write(sp / "numpy.libs" / name)
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        with pytest.raises(JniLibsError, match=r"must be named\s+lib\*\.so"):
+            stage_wheel_libs_dirs(stager, sp)
+
+    def test_a_libs_dir_inside_a_package_is_left_as_before(self, tmp_path):
+        sp = tmp_path / "sp"
+        _write(sp / "ffmpeg" / ".libs" / "libavcodec.so")
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        assert stage_wheel_libs_dirs(stager, sp) == 0
+        assert not (tmp_path / "jni" / "libavcodec.so").exists()
 
     def test_identical_duplicate_dedupes_silently(self, tmp_path):
         a = _write(tmp_path / "a" / "libSDL2.so", b"same")
@@ -265,6 +347,7 @@ class TestBundle:
             _write(root / "jnius" / "__init__.py", b"# jnius")
             _write(root / "jnius" / f"jnius.{abi}.so")  # excluded per-ABI
             _write(root / ".libs" / "libSDL2.so")  # excluded (hoisted)
+            _write(root / "numpy.libs" / "libc++_shared-d523468d.so")  # hoisted
             if skew and abi == "x86_64":
                 _write(root / "jnius" / "__init__.py", b"# DIFFERENT")
             sp[abi] = root
@@ -291,6 +374,7 @@ class TestBundle:
         assert (bundle / "site-packages" / "jnius" / "__init__.py").is_file()
         assert not list((bundle / "site-packages").rglob("*.so"))
         assert not (bundle / "site-packages" / ".libs").exists()
+        assert not (bundle / "site-packages" / "numpy.libs").exists()
         assert (bundle / "app" / "main.py").is_file()
         assert (bundle / "bootstrap" / "ext_manifest.json").is_file()
         assert (bundle / "bootstrap" / "_kivyforge_bootstrap.py").is_file()

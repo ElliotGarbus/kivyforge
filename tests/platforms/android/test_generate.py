@@ -653,10 +653,8 @@ class TestWriteAppBuildGradleVariants:
         text = (tmp_path / "app" / "build.gradle").read_text()
         assert "keepDebugSymbols += ['**/*.so']" in text
 
-    def test_strip_native_libs_default_release_only_omits_keep_symbols(self, tmp_path):
-        # Default build_settings.strip_native_libs is the "release" tri-state,
-        # which _release_flag treats as stripped (matches ANDROID_RELEASE_ONLY).
-        config, android = _android()
+    def _gradle(self, tmp_path, extra="", **kwargs) -> str:
+        config, android = _android(extra)
         write_app_build_gradle(
             tmp_path,
             config,
@@ -664,9 +662,57 @@ class TestWriteAppBuildGradleVariants:
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
+            **kwargs,
         )
-        text = (tmp_path / "app" / "build.gradle").read_text()
+        return (tmp_path / "app" / "build.gradle").read_text()
+
+    _DEBUG_KEEPS = "variant.packaging.jniLibs.keepDebugSymbols.add('**/*.so')"
+
+    def test_strip_native_libs_default_strips_release_only(self, tmp_path):
+        text = self._gradle(tmp_path)
+        assert "keepDebugSymbols +=" not in text
+        debug = text.index("selector().withBuildType('debug')")
+        assert text.index(self._DEBUG_KEEPS) > debug
+
+    def test_strip_native_libs_true_strips_debug_too(self, tmp_path):
+        text = self._gradle(
+            tmp_path, "[tool.kivy.android.build_settings]\nstrip_native_libs = true\n"
+        )
         assert "keepDebugSymbols" not in text
+
+    def test_strip_native_libs_false_has_no_debug_variant_override(self, tmp_path):
+        text = self._gradle(
+            tmp_path, "[tool.kivy.android.build_settings]\nstrip_native_libs = false\n"
+        )
+        assert self._DEBUG_KEEPS not in text
+
+    @pytest.mark.parametrize("setting", ["", "strip_native_libs = true\n"])
+    def test_strip_unsafe_libraries_are_never_stripped(self, tmp_path, setting):
+        text = self._gradle(
+            tmp_path,
+            "[tool.kivy.android.build_settings]\n" + setting,
+            strip_unsafe_libs=[
+                "libpy.numpy.fft._pocketfft_umath.so",
+                "libc++_shared-d5.so",
+            ],
+        )
+        assert (
+            "keepDebugSymbols += ['**/libc++_shared-d5.so', "
+            "'**/libpy.numpy.fft._pocketfft_umath.so']" in text
+        )
+
+    def test_strip_unsafe_list_is_subsumed_when_nothing_is_stripped(self, tmp_path):
+        text = self._gradle(
+            tmp_path,
+            "[tool.kivy.android.build_settings]\nstrip_native_libs = false\n",
+            strip_unsafe_libs=["libfoo.so"],
+        )
+        assert "keepDebugSymbols += ['**/*.so']" in text
+        assert "libfoo" not in text
+
+    def test_glob_characters_in_a_name_match_literally_enough(self, tmp_path):
+        text = self._gradle(tmp_path, strip_unsafe_libs=["libfoo[1]{x}*.so"])
+        assert "keepDebugSymbols += ['**/libfoo?1??x??.so']" in text
 
     def test_minify_and_shrink_resources_enabled(self, tmp_path):
         config, android = _android(

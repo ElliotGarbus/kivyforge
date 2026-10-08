@@ -54,6 +54,13 @@ class ArtifactMissing(AndroidBuildError):
     exit_code = exit_codes.BUILD_FAILURE
 
 
+class NativeLibMisaligned(AndroidBuildError):
+    """Gradle packaged a native library whose segments the device cannot map."""
+
+    code = diagnostics.ANDROID_NATIVE_LIB_MISALIGNED
+    exit_code = exit_codes.BUILD_FAILURE
+
+
 class LockMissing(AndroidBuildError):
     code = diagnostics.LOCK_MISSING
     exit_code = exit_codes.LOCK_DRIFT

@@ -3,15 +3,21 @@
 Two kinds of ``.so``, found two different ways at runtime:
 
 - **Shared libraries** resolved by soname (``System.loadLibrary`` /
-  ``DT_NEEDED``): ``libpython3.X.so``, the runtime's ``lib*_python.so``, the
-  SDL family from a wheel's ``.libs/``. Copied verbatim, names unchanged.
+  ``DT_NEEDED``): ``libpython3.X.so``, the runtime's ``lib*_python.so``, and
+  everything in a wheel's libraries directory -- kivy-mobile-wheels' shared
+  ``.libs/`` (the SDL family) or auditwheel's ``<dist>.libs/`` (what
+  cibuildwheel's default Android repair grafts, e.g.
+  ``numpy.libs/libc++_shared-d523468d.so``). Copied verbatim, names
+  unchanged: the extensions' ``DT_NEEDED`` already names them that way.
 - **Extension modules** imported by dotted name: flattened to
   ``libpy.<dotted>.so`` (the platform's native-lib extraction requires the
   ``lib*.so`` shape — proven on-device, loadmodel findings §confirmed #1) and
   recorded in the ``ext_manifest.json`` the bootstrap finder consumes.
 
-Wheel ``.libs/`` is **flat-only**: a nested subdirectory is a malformed wheel
-and fails the build (android/03/04 — the wheel tag is the sole ABI truth).
+A libraries directory is **flat-only**: a nested subdirectory is a malformed
+wheel and fails the build (android/03/04 — the wheel tag is the sole ABI
+truth). A ``.libs/`` inside a package (``pkg/.libs/``) is not one; how such
+libraries are loaded is still unexplored, so they stage as before.
 The duplicate policy is the iOS rule adapted: identical content dedupes
 silently; same basename with different bytes aborts naming both providers.
 """
@@ -25,11 +31,24 @@ from pathlib import Path
 
 from kivyforge.artifacts.verify import sha256_file
 
+from ..elf import ElfError, read_elf
+
 EXT_MANIFEST_NAME = "ext_manifest.json"
 
 # Suffix pattern of CPython extension modules: everything from the first "."
 # after the module path is the ABI suffix (".cpython-314-....so" or just ".so").
 _SO_SUFFIX = ".so"
+
+_LIBS_SUFFIX = ".libs"
+
+
+def is_wheel_libs_dir(name: str) -> bool:
+    """Whether a top-level site-packages entry is a libraries directory.
+
+    ``.libs`` and ``<dist>.libs``. A name ending in ``.libs`` is never an
+    importable package, so the suffix cannot capture one.
+    """
+    return name.endswith(_LIBS_SUFFIX)
 
 
 class JniLibsError(Exception):
@@ -49,6 +68,7 @@ class JniLibsStager:
     _seen: dict[str, tuple[str, str]] = field(default_factory=dict)
     # dotted module -> flattened filename
     _manifest: dict[str, str] = field(default_factory=dict)
+    _strip_unsafe: set[str] = field(default_factory=set)
 
     def add_shared_library(self, source: Path, *, provider: str) -> None:
         """Copy a soname-resolved library verbatim (name unchanged)."""
@@ -68,6 +88,10 @@ class JniLibsStager:
 
     def manifest(self) -> dict[str, str]:
         return dict(sorted(self._manifest.items()))
+
+    def strip_unsafe(self) -> list[str]:
+        """Staged names AGP's strip would corrupt (android/04 §Stripping)."""
+        return sorted(self._strip_unsafe)
 
     def write_manifest(self, bootstrap_dir: Path) -> Path:
         bootstrap_dir.mkdir(parents=True, exist_ok=True)
@@ -96,6 +120,15 @@ class JniLibsStager:
         self.dest.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, self.dest / basename)
         self._seen[basename] = (digest, provider)
+        if _is_strip_unsafe(source):
+            self._strip_unsafe.add(basename)
+
+
+def _is_strip_unsafe(path: Path) -> bool:
+    try:
+        return read_elf(path).strip_unsafe
+    except (ElfError, OSError):
+        return False
 
 
 def dotted_module_name(so_path: Path, site_packages_root: Path) -> str:
@@ -109,24 +142,46 @@ def dotted_module_name(so_path: Path, site_packages_root: Path) -> str:
 def stage_wheel_libs_dir(
     stager: JniLibsStager, libs_dir: Path, *, wheel_name: str
 ) -> int:
-    """Ingest one wheel's flat ``.libs/`` (SDL family etc.). Returns the count.
+    """Ingest one flat libraries directory (``.libs/`` or ``<dist>.libs/``).
 
-    Flat-only: any subdirectory is a malformed wheel (android/03). The ABI is
-    the wheel tag's business — the caller already routed this stager to the
-    right ABI.
+    Returns the count. Flat-only: any subdirectory is a malformed wheel
+    (android/03). The ABI is the wheel tag's business — the caller already
+    routed this stager to the right ABI.
+
+    Android packages only ``lib*.so`` files as native libraries, and these
+    cannot be renamed: other libraries link against them by file name.
     """
     count = 0
     for entry in sorted(libs_dir.iterdir()):
         if entry.is_dir():
             raise JniLibsError(
-                f"wheel {wheel_name!r} has a nested .libs/ subdirectory "
-                f"({entry.name!r}); .libs/ must be flat — the wheel platform "
-                f"tag is the sole source of truth for the ABI (android/03 "
-                f"§flat only)."
+                f"wheel {wheel_name!r} has a nested {libs_dir.name}/ "
+                f"subdirectory ({entry.name!r}); {libs_dir.name}/ must be "
+                f"flat — the wheel platform tag is the sole source of truth "
+                f"for the ABI (android/03 §flat only)."
             )
-        if entry.suffix == _SO_SUFFIX:
+        name = entry.name
+        if name.startswith("lib") and name.endswith(_SO_SUFFIX):
             stager.add_shared_library(entry, provider=f"wheel {wheel_name}")
             count += 1
+        elif _SO_SUFFIX in name:
+            raise JniLibsError(
+                f"wheel {wheel_name!r} ships {libs_dir.name}/{name}, which "
+                f"Android cannot package: native libraries must be named "
+                f"lib*.so, and kivyforge cannot rename this one because "
+                f"other libraries link against it by that name."
+            )
+    return count
+
+
+def stage_wheel_libs_dirs(stager: JniLibsStager, site_packages: Path) -> int:
+    """Ingest every top-level libraries directory. Returns the count."""
+    count = 0
+    for entry in sorted(site_packages.iterdir()):
+        if entry.is_dir() and is_wheel_libs_dir(entry.name):
+            # pip merges every wheel's .libs/ into one, so it has no single owner.
+            owner = entry.name.removesuffix(_LIBS_SUFFIX) or "site-packages"
+            count += stage_wheel_libs_dir(stager, entry, wheel_name=owner)
     return count
 
 
@@ -136,8 +191,8 @@ def stage_site_packages_extensions(
     """Flatten every extension ``.so`` under an installed wheel's tree."""
     count = 0
     for so in sorted(site_packages.rglob(f"*{_SO_SUFFIX}")):
-        if ".libs" in so.relative_to(site_packages).parts[:1]:
-            continue  # the flat .libs/ dir is handled by stage_wheel_libs_dir
+        if is_wheel_libs_dir(so.relative_to(site_packages).parts[0]):
+            continue  # handled by stage_wheel_libs_dirs
         stager.add_extension_module(
             so,
             dotted=dotted_module_name(so, site_packages),
