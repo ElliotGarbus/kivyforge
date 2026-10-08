@@ -25,6 +25,7 @@ silently; same basename with different bytes aborts naming both providers.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +41,9 @@ EXT_MANIFEST_NAME = "ext_manifest.json"
 _SO_SUFFIX = ".so"
 
 _LIBS_SUFFIX = ".libs"
+
+# A shared object by name: ".so", or versioned (".so.5", ".so.1.2").
+_SHARED_OBJECT = re.compile(r"\.so(\.\d+)*$")
 
 
 def is_wheel_libs_dir(name: str) -> bool:
@@ -164,7 +168,7 @@ def stage_wheel_libs_dir(
         if name.startswith("lib") and name.endswith(_SO_SUFFIX):
             stager.add_shared_library(entry, provider=f"wheel {wheel_name}")
             count += 1
-        elif _SO_SUFFIX in name:
+        elif _SHARED_OBJECT.search(name):
             raise JniLibsError(
                 f"wheel {wheel_name!r} ships {libs_dir.name}/{name}, which "
                 f"Android cannot package: native libraries must be named "

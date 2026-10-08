@@ -144,13 +144,24 @@ class TestJniLibs:
         with pytest.raises(JniLibsError, match="nested numpy.libs/"):
             stage_wheel_libs_dirs(stager, sp)
 
-    @pytest.mark.parametrize("name", ["libgfortran-040039e1.so.5", "_raw_aes.so"])
+    @pytest.mark.parametrize(
+        "name", ["libgfortran-040039e1.so.5", "libgfortran.so.3.0.0", "_raw_aes.so"]
+    )
     def test_a_library_android_cannot_package_fails_the_build(self, tmp_path, name):
         sp = tmp_path / "sp"
         _write(sp / "numpy.libs" / name)
         stager = JniLibsStager(dest=tmp_path / "jni")
         with pytest.raises(JniLibsError, match=r"must be named\s+lib\*\.so"):
             stage_wheel_libs_dirs(stager, sp)
+
+    @pytest.mark.parametrize("name", ["README.sources.txt", "libfoo.sorted"])
+    def test_a_file_that_is_not_a_library_is_left_out(self, tmp_path, name):
+        sp = tmp_path / "sp"
+        _write(sp / "numpy.libs" / name)
+        _write(sp / "numpy.libs" / "libfoo.so")
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        assert stage_wheel_libs_dirs(stager, sp) == 1
+        assert {p.name for p in (tmp_path / "jni").iterdir()} == {"libfoo.so"}
 
     def test_a_libs_dir_inside_a_package_is_left_as_before(self, tmp_path):
         sp = tmp_path / "sp"
