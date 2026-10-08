@@ -157,6 +157,14 @@ _DIAGNOSTIC = {
         "as `res/values/styles.xml` or the launcher icon. The build goes on.",
         "None if the override is deliberate; `context` names the `path`.",
     ),
+    "KF-ANDROID-NATIVE-LIB-MISALIGNED": (
+        "error",
+        "Android: the built APK or AAB holds a native library the device cannot "
+        "load, because a segment's file offset and address disagree. Usually "
+        "the strip during packaging damaged a library patchelf had edited.",
+        "Set `strip_native_libs = false` and report the wheel; `context` names "
+        "the `library`.",
+    ),
     "KF-ERROR": (
         "error",
         "An expected failure with no more specific code assigned yet.",

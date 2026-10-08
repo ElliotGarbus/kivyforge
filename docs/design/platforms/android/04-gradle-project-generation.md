@@ -67,7 +67,7 @@ Three sources feed `jniLibs/<abi>/` at build time:
 
 1. **The python.org runtime** — `libpython3.x.so` and the stdlib C extensions (`lib-dynload`) from the extracted per-ABI embeddable package.
 2. **Wheel extension modules** — every `.so` inside each installed Android wheel for that ABI.
-3. **Wheel-embedded native libraries** — each `.so` under a wheel's flat top-level `.libs/` directory (the Kivy wheel's SDL family and Kivy's own compiled libs), placed into the ABI folder named by the **wheel's platform tag**. This is the Android analog of the iOS wheel-embedded-`.frameworks/` scan, and mirrors the `auditwheel`/`delvewheel` `<pkg>.libs/` convention. `.libs/` must be **flat**; any subdirectory (e.g. a nested `.libs/<abi>/`) is a malformed wheel and fails the build, since the wheel tag is the sole source of truth for the ABI (see [artifact-distribution-android](03-artifact-distribution-android.md#the-kivy-wheel-carries-its-native-so-payload-libs)).
+3. **Wheel-embedded native libraries** — each `.so` under a wheel's flat top-level `.libs/` directory (the Kivy wheel's SDL family and Kivy's own compiled libs), placed into the ABI folder named by the **wheel's platform tag**. This is the Android analog of the iOS wheel-embedded-`.frameworks/` scan, and mirrors the `auditwheel`/`delvewheel` `<pkg>.libs/` convention. `.libs/` must be **flat**; any subdirectory (e.g. a nested `.libs/<abi>/`) is a malformed wheel and fails the build, since the wheel tag is the sole source of truth for the ABI (see [artifact-distribution-android](03-artifact-distribution-android.md#the-kivy-wheel-carries-its-native-so-payload-libs)). auditwheel's `<dist>.libs/` (what cibuildwheel's default Android repair writes, e.g. `numpy.libs/libc++_shared-d523468d.so`) is staged the same way: names unchanged, because the extensions' `DT_NEEDED` entries name the hashed files. Android packages only `lib*.so` files as native libraries, and these cannot be renamed, so any other `.so` name in a libraries directory (`libgfortran-040039e1.so.5`) fails the build. A `.libs/` *inside* a package (`ffmpeg/.libs/`) is not a libraries directory; how such libraries are loaded is still unexplored, and they stage as extension modules, as before.
 
 All three flow into the same `jniLibs/<abi>/` folder and are packaged by AGP.
 
@@ -163,7 +163,49 @@ Per [`[tool.kivy.android.build_settings]`](01-pyproject-android.md#toolkivyandro
 
 - **`byte_compile`** (default: release-only) — compiles the entire Python payload to `.pyc`. A `.pyc` is keyed to one exact CPython magic number, frozen at each `3.x.0`, so the compiler must be a **CPython of the target's minor version**: kivyforge is installed under whatever Python the host has, so it *discovers* a matching interpreter (`py -3.14` on Windows, `python3.14` elsewhere) rather than requiring itself to run under one. With the default `"release"`, no match degrades to shipping source with a warning; `byte_compile = true` reads as "I insist" and errors instead. Debug builds keep `.py` for readable tracebacks and fast `kivyforge run` iteration.
 - **`strip_source`** (default: release-only) — when byte-compiling, drops the paired `.py`, roughly halving the payload. Tracebacks still show file/line via the `.pyc` line table; only source text is unavailable.
-- **`strip_native_libs`** (default: release-only) — strips debug symbols from the shipped `.so`s (runtime + wheel extensions + wheel `.libs/`). This is done by **AGP** during packaging (via `packagingOptions.jniLibs.keepDebugSymbols`), not a bespoke kivyforge strip pass, so it tracks the toolchain and preserves 16 KB alignment. Debug keeps symbols in place. See **Native debug symbols** below for retaining the stripped symbols.
+- **`strip_native_libs`** (default: release-only) — strips debug symbols from the shipped `.so`s (runtime + wheel extensions + wheel `.libs/`). This is done by **AGP** during packaging (via `packagingOptions.jniLibs.keepDebugSymbols`), not a bespoke kivyforge strip pass, so it tracks the toolchain and preserves 16 KB alignment. Debug keeps symbols in place. Libraries that stripping would corrupt are never stripped; see ["Stripping"](#stripping) below. See **Native debug symbols** below for retaining the stripped symbols.
+
+### Stripping
+
+AGP strips `jniLibs` with the NDK's `llvm-strip` unless `keepDebugSymbols` matches
+the file. kivyforge generates the patterns from `strip_native_libs`:
+
+| `strip_native_libs` | Debug variant | Release variant |
+|---|---|---|
+| `"release"` (default) | nothing stripped | stripped, except strip-unsafe libraries |
+| `true` | stripped, except strip-unsafe libraries | same |
+| `false` | nothing stripped | nothing stripped |
+
+`packagingOptions` applies to every variant, so the default's debug half is set
+through the variant API (`onVariants(selector().withBuildType('debug'))` adding
+`'**/*.so'` to `variant.packaging.jniLibs.keepDebugSymbols`). Before 2026-10-08 the
+generated project stripped debug builds too, contrary to this spec.
+
+**Strip-unsafe libraries.** patchelf, which auditwheel's repair runs to rewrite
+`DT_NEEDED` and RUNPATH, appends a new loadable segment *after* the non-loaded
+sections (`.comment`, `.symtab`, `.strtab`). NDK r27's `llvm-strip`
+(`--strip-unneeded` and `--strip-debug` alike) removes those sections and moves the
+segment's bytes down without keeping its file offset congruent to its address
+modulo the page size. Bionic maps whole pages, so it then reads the segment
+shifted: numpy failed with `dlopen failed: cannot find "operty_get" from
+verneed[0]`, a string read 0x78 bytes off. Chaquopy hit the same interaction and
+strips *before* patchelf when it builds its own wheels.
+
+At staging, kivyforge reads each library's section and program headers, and lists
+any library with a loadable segment after a non-allocated section as an exact
+`keepDebugSymbols` pattern (`'**/<name>'`). Linkers never produce that layout. On
+2026-10-08 the rule flagged exactly the libraries `llvm-strip` broke: 25 of 195 in
+the arm64 wheels from the Kivy School index (numpy, pandas, matplotlib,
+opencv-python, contourpy, kiwisolver, greenlet, materialyoucolor) and 3 of the 139
+in a Kivy-plus-numpy app, with no false positives. Such a library ships with its
+symbols, which costs size, not correctness. The build says how many it kept.
+
+**The packaged check.** After every Gradle task that produces an APK or AAB
+(`build --debug`, `package`, `run --release`), kivyforge reads the program headers
+of each `lib/<abi>/*.so` in the archive and fails with
+`KF-ANDROID-NATIVE-LIB-MISALIGNED` if any loadable segment's offset and address
+disagree modulo its alignment. That covers a library the staging rule does not
+recognise and damage from any other cause.
 
 Stdlib module *pruning* is intentionally not a build knob here — it is unsafe under pyjnius/`importlib` dynamic imports. Prune deliberately through the resolution-graph `exclude` field and test the app.
 
@@ -176,7 +218,7 @@ Stdlib module *pruning* is intentionally not a build knob here — it is unsafe 
 - **Signing configs**: a `debug` config (Android debug keystore) and, when `[tool.kivy.android.signing]` is present, a `release` config reading the keystore + alias and the passwords from the configured env vars. The v1–v4 toggles apply to `.apk` outputs (`apksigner`); an `.aab` is JAR-signed with the same key (the schemes then apply to the APKs Play/`bundletool` derive from it).
 - **Dependencies**: `files(...)` entries for staged `libs/*.aar|*.jar` (channel 3), one `implementation platform('...')` per `[tool.kivy.android.gradle].platforms` BOM, and `implementation` lines for `[tool.kivy.android.gradle].dependencies` (channel 4) — fully versioned, or versionless when a BOM supplies the version. `kivyforge build` mirrors the resolved graph embedded in `pylock.android.toml` (`[[tool.kivyforge.gradle.resolved]]`) into `app/gradle.lockfile` as comments — an **audit record, not an enforced gate**: neither Gradle dependency locking nor Gradle artifact verification is enabled in the generated project, because Gradle's verification is whole-classpath and the lock resolves only the app's own coordinates (rationale and what would lift this: [pylock-android-spec §"Gradle/Maven pins"](02-pylock-android-spec.md#toolkivyforgegradle--mavengradle-pins)). The reproducibility data is committed in the lock, never inside the disposable project; a stale strict `gradle/verification-metadata.xml` written by an older kivyforge is deleted on regeneration.
 - **Native launcher build**: `externalNativeBuild { cmake { path "src/main/cpp/CMakeLists.txt" } }` plus a pinned `ndkVersion`, so the NDK compiles the emitted launcher C into `libmain.so` per ABI (see "The native launcher (`libmain.so`)").
-- **Packaging options**: `jniLibs { useLegacyPackaging = true }`; `jniLibs.keepDebugSymbols` is set from `[tool.kivy.android.build_settings].strip_native_libs` (kept for debug / when stripping is off, dropped for a stripped release).
+- **Packaging options**: `jniLibs { useLegacyPackaging = true }`; `jniLibs.keepDebugSymbols` is set from `[tool.kivy.android.build_settings].strip_native_libs` and the strip-unsafe libraries staging found (see ["Stripping"](#stripping)).
 - **Native debug symbols**: for a stripped release, `buildTypes.release.ndk.debugSymbolLevel` is emitted from `[tool.kivy.android.build_settings].debug_symbols` (`SYMBOL_TABLE` / `FULL`), so AGP exports a `native-debug-symbols.zip` for crash symbolication (see below).
 - **R8/minify** posture from `[tool.kivy.android.build_settings]` (off by default), wiring `proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'`. See ["R8 / `proguard-rules.pro`"](#r8--proguard-rulespro) for how that file is composed.
 - Kotlin plugin applied only when `[tool.kivy.android.src].kotlin` is non-empty.

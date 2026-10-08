@@ -154,6 +154,7 @@ def write_app_build_gradle(
     python_version: str,
     runtime_root: Path,
     staged_libs: list[str],
+    strip_unsafe_libs: list[str] | tuple[str, ...] = (),
     abis: tuple[str, ...] | None = None,
     signing_config_block: str = "",
     release_signing_config: str | None = None,
@@ -171,6 +172,9 @@ def write_app_build_gradle(
     instrumented tests run against — AGP only generates
     ``connected<Variant>AndroidTest`` for that one variant, so the release smoke
     test needs it set to ``release``.
+
+    ``strip_unsafe_libs`` names the staged ``jniLibs`` files AGP must not
+    strip (``JniLibsStager.strip_unsafe``).
 
     ``runtime_root`` is the staging directory holding one extracted runtime
     per target triplet (``<runtime_root>/<triplet>/prefix``). AGP invokes
@@ -215,9 +219,31 @@ def write_app_build_gradle(
     strip = _release_flag(bs.strip_native_libs)
     minify = "true" if bs.minify else "false"
     shrink = "true" if (bs.shrink_resources and bs.minify) else "false"
-    # Keep .so debug symbols unless a stripped release is configured (AGP does
-    # the strip, tracking the toolchain + preserving 16 KB alignment).
-    keep_symbols_line = "" if strip else "            keepDebugSymbols += ['**/*.so']\n"
+    # AGP does the strip, tracking the toolchain + preserving 16 KB alignment.
+    # A strip-unsafe library is kept whole in every variant: stripping it
+    # yields a .so the device cannot load (android/04 §Stripping).
+    keep_patterns = (
+        ["**/*.so"]
+        if not strip
+        else [f"**/{_glob_literal(name)}" for name in sorted(strip_unsafe_libs)]
+    )
+    keep_symbols_line = (
+        "            keepDebugSymbols += ["
+        + ", ".join(_groovy_str(p) for p in keep_patterns)
+        + "]\n"
+        if keep_patterns
+        else ""
+    )
+    # The packaging block above applies to every variant; release-only
+    # stripping leaves the debug variant's symbols in place through the
+    # variant API instead.
+    debug_keep_symbols = (
+        "    onVariants(selector().withBuildType('debug')) { variant ->\n"
+        "        variant.packaging.jniLibs.keepDebugSymbols.add('**/*.so')\n"
+        "    }\n"
+        if strip and bs.strip_native_libs is not True
+        else ""
+    )
     debug_symbol_level = {
         "symbol_table": "SYMBOL_TABLE",
         "full": "FULL",
@@ -330,7 +356,7 @@ android {{
 // kivyforge's own half of the policy lints the *merged* release manifest, so
 // export it to a stable path (AGP's intermediates layout is not a contract).
 androidComponents {{
-    onVariants(selector().withName('release')) {{ variant ->
+{debug_keep_symbols}    onVariants(selector().withName('release')) {{ variant ->
         tasks.register('{MERGED_MANIFEST_TASK}', Copy) {{
             from(variant.artifacts.get(SingleArtifact.MERGED_MANIFEST.INSTANCE))
             into(layout.buildDirectory.dir('kivyforge'))
@@ -352,6 +378,16 @@ dependencies {{
         "-keep class org.renpy.android.** { *; }\n"
         "-keep class org.libsdl.app.** { *; }\n",
     )
+
+
+def _glob_literal(name: str) -> str:
+    """*name* as an AGP packaging pattern that matches it.
+
+    Glob metacharacters become ``?`` rather than being escaped: escaping is
+    host-dependent in Java's glob, and a pattern that also matches a sibling
+    differing in that one character only keeps that sibling's symbols too.
+    """
+    return "".join("?" if ch in "*?[]{}\\" else ch for ch in name)
 
 
 def _release_flag(value: bool | str) -> bool:

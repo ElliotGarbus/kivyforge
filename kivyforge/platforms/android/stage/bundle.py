@@ -7,7 +7,8 @@ Layout under ``app/src/main/assets/_python_bundle/``:
   loadmodel findings §corrections #5; ``test``/``idlelib``/``turtledemo``
   excluded for size, matching the proven prototype).
 - ``site-packages/`` — pure-Python content of the installed wheels (``.so``s
-  and ``.libs/`` were hoisted into ``jniLibs``).
+  and the ``.libs/``/``<dist>.libs/`` directories were hoisted into
+  ``jniLibs``).
 - ``app/``           — the user's ``app_dir`` payload.
 - ``bootstrap/``     — the finder module, Kivy's ``_kivy_bootstrap`` contract
   module, the ``android`` package, and ``ext_manifest.json``.
@@ -35,6 +36,8 @@ from kivyforge.artifacts.verify import sha256_file
 # Imported as a module, not by name: ``assemble_bundle`` takes a *parameter*
 # called ``byte_compile`` (the compiler argv), so a bare import would shadow.
 from kivyforge.bundle import pycompile
+
+from .jnilibs import is_wheel_libs_dir
 
 BUNDLE_DIRNAME = "_python_bundle"
 
@@ -182,8 +185,8 @@ def _copy_pure(src: Path, dest: Path) -> None:
         if Path(directory).name.endswith(".dist-info"):
             out += [n for n in names if n == "direct_url.json"]
         if Path(directory).resolve() == src.resolve():
-            # top-level flat .libs/ was hoisted into jniLibs
-            out += [n for n in names if n == ".libs"]
+            # top-level .libs/ and <dist>.libs/ were hoisted into jniLibs
+            out += [n for n in names if is_wheel_libs_dir(n)]
             # host-generated console scripts; see the docstring
             out += [n for n in names if n == "bin"]
         return out
@@ -272,7 +275,7 @@ def _pure_hashes(root: Path) -> dict[str, str]:
         parts = rel.parts
         # Mirrors _copy_pure's exclusions: anything not shipped must not be
         # compared either, or the assertion fails on files the bundle drops.
-        if "__pycache__" in parts or parts[0] in (".libs", "bin"):
+        if "__pycache__" in parts or parts[0] == "bin" or is_wheel_libs_dir(parts[0]):
             continue
         if path.suffix == ".so":
             continue

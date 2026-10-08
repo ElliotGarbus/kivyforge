@@ -123,6 +123,12 @@ ANDROID_APP_CONFLICT = "KF-ANDROID-APP-CONFLICT"
 #: the ``path`` in the generated project.
 ANDROID_INCLUDE_OVERRIDE = "KF-ANDROID-INCLUDE-OVERRIDE"
 
+#: Android: the APK or AAB Gradle built holds a native library with a loadable
+#: segment whose file offset and address disagree modulo its alignment, so the
+#: device cannot load it. Seen when AGP's strip damages a library patchelf
+#: edited. ``context`` names the first ``library`` (its path in the archive).
+ANDROID_NATIVE_LIB_MISALIGNED = "KF-ANDROID-NATIVE-LIB-MISALIGNED"
+
 #: An expected failure (``ToolchainError``) with no specific code assigned yet.
 #: Branchable rather than null: it tells a consumer "this is a clean, expected
 #: failure -- read ``message`` and ``remediation``", as distinct from a crash.

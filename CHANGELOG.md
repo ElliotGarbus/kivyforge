@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Android: wheels built by cibuildwheel
+
+- **Fixed:** numpy, pandas, matplotlib, opencv-python and other wheels that
+  cibuildwheel's default repair (auditwheel) produces failed to import on the
+  device with `dlopen failed: library "libc++_shared-d523468d.so" not found`.
+  These wheels carry their shared libraries in a top-level `<dist>.libs/`
+  directory (`numpy.libs/`), which kivyforge staged as Python extension modules
+  under new names. They are now staged under their own names, like the Kivy
+  wheel's `.libs/`.
+- **Fixed:** once staged, the same libraries were corrupted by the strip during
+  packaging, and numpy then failed with errors like `cannot find "operty_get"
+  from verneed[0]`. patchelf, which auditwheel uses, lays these libraries out in
+  a way the NDK's `llvm-strip` mishandles. kivyforge now recognises them and
+  keeps their symbols, and the build says how many it kept.
+- **Added:** after Gradle builds an APK or AAB, kivyforge checks every native
+  library in it and fails with `KF-ANDROID-NATIVE-LIB-MISALIGNED` if one could
+  not be loaded on a device, instead of shipping an app that crashes at import.
+- **Changed:** debug builds no longer strip native libraries. The default
+  `strip_native_libs = "release"` was meant to keep symbols in debug builds, as
+  documented, but the generated project stripped both. Debug APKs grow by the
+  size of the symbols; set `strip_native_libs = true` to strip debug builds as
+  before.
+- **Changed:** a wheel whose libraries directory holds a `.so` not named
+  `lib*.so` (for example `libgfortran-040039e1.so.5`) now fails the build with a
+  message naming the file. Android only packages `lib*.so` files, so before this
+  change the library was missing from the app.
+- **Fixed:** `run -p android --release` without a configured release signing
+  identity failed with "Gradle reported success for assembleRelease but no
+  artifact is at ...". It said it was signing with the debug keystore, but left
+  the APK unsigned; now it signs with the debug keystore.
+
+Two things are not handled yet. Libraries in a `.libs/` directory *inside* a
+package (`ffmpeg/.libs/`) still stage as before, and how they are meant to load
+is unexplored. Each auditwheel-repaired wheel also carries its own renamed copy
+of the C++ runtime, so an app can load several. That is safe unless C++ objects
+pass between libraries from different wheels; see
+`docs/design/platforms/android/03-artifact-distribution-android.md`.
+
 ### Wheels from more package indexes
 
 - **Fixed:** wheels hosted on Cloudflare R2, such as the Android Pillow wheels

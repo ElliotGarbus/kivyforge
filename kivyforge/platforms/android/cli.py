@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import threading
 import time
+import zipfile
 from pathlib import Path
 
 import click
@@ -44,6 +45,7 @@ from . import (
     LockIncomplete,
     LockMissing,
     LockUnreadable,
+    NativeLibMisaligned,
 )
 from .bootstrap.contract import (
     ContractError,
@@ -62,6 +64,7 @@ from .bootstrap.render import (
     render_bootstrap,
     selftest_source,
 )
+from .elf import ElfError, scan_packaged_libs
 from .generate.manifest import generate_manifest, sdl_orientation_hint
 from .generate.project import (
     ABI_TO_TRIPLET,
@@ -86,7 +89,7 @@ from .stage.jnilibs import (
     JniLibsStager,
     stage_runtime_libs,
     stage_site_packages_extensions,
-    stage_wheel_libs_dir,
+    stage_wheel_libs_dirs,
 )
 from .stage.runtime import RuntimeStageError, extract_runtime, stdlib_dir
 from .stage.wheels import WheelStageError, install_wheels, select_wheel
@@ -380,6 +383,7 @@ def android_build(
 
     # --- Step 5: jniLibs per ABI (runtime split + wheel exts + .libs) ---
     ext_manifest_json = ""
+    strip_unsafe: set[str] = set()
     for abi_name in abis:
         jni = app_main / "jniLibs" / android_abi(abi_name)
         if jni.exists():
@@ -390,15 +394,11 @@ def android_build(
             prefix = prefixes[abi_name]
             stage_runtime_libs(stager, prefix / "lib", python_stem=stem)
             sp = site_packages[abi_name]
-            for package in lock.packages:
-                wheel_name = package.name
-                libs = sp / ".libs"
-                if libs.is_dir():
-                    stage_wheel_libs_dir(stager, libs, wheel_name=wheel_name)
-                    break  # one flat .libs per staging tree
+            stage_wheel_libs_dirs(stager, sp)
             stage_site_packages_extensions(stager, sp, wheel_name="site-packages")
 
         _stage(_stage_all, JniLibsError)
+        strip_unsafe.update(stager.strip_unsafe())
         manifest = stager.manifest()
         import json as _json
 
@@ -406,6 +406,14 @@ def android_build(
         events.on_progress(
             f"[stage] jniLibs/{android_abi(abi_name)}: "
             f"{len(manifest)} extensions flattened"
+        )
+    if strip_unsafe and _setting_applies(
+        android.build_settings.strip_native_libs, release=not debug
+    ):
+        events.on_progress(
+            f"[stage] {len(strip_unsafe)} native libraries keep their symbols: "
+            "patchelf edited them (auditwheel's repair does), and stripping "
+            "them would leave libraries Android cannot load"
         )
 
     # --- Step 6: the ABI-independent asset bundle ---
@@ -547,6 +555,7 @@ def android_build(
             python_version=python_version,
             runtime_root=runtime_root,
             staged_libs=staged_libs,
+            strip_unsafe_libs=sorted(strip_unsafe),
             abis=abis,
             signing_config_block=signing_config_block,
             release_signing_config=release_signing_config,
@@ -576,6 +585,7 @@ def android_build(
         except GradleError as exc:
             raise _gradle_failure(exc, task) from exc
         out = _require_artifact(_debug_output(dest, fmt), task)
+        _check_packaged_libs(out)
         rel = out.relative_to(project_root)
         events.on_line(f"Built {rel}")
         outcome.add(rel, ArtifactKind.APK if fmt == "apk" else ArtifactKind.AAB)
@@ -601,6 +611,41 @@ def _require_artifact(path: Path, task: str) -> Path:
             "version; check app/build/outputs/ and file a kivyforge issue."
         )
     return path
+
+
+def _check_packaged_libs(archive: Path) -> None:
+    """Refuse an APK/AAB holding a native library the device cannot load.
+
+    The staging check keeps every library kivyforge knows stripping corrupts;
+    this catches the ones it does not know, whatever damaged them.
+    """
+    try:
+        bad = scan_packaged_libs(archive)
+    except (ElfError, OSError, zipfile.BadZipFile) as exc:
+        raise AndroidBuildError(
+            f"could not check the native libraries in {archive.name}: {exc}"
+        ) from exc
+    if not bad:
+        return
+    members = sorted({member for member, _ in bad})
+    detail = "\n".join(
+        f"    {member}: segment at file offset 0x{seg.offset:x} maps to "
+        f"address 0x{seg.vaddr:x} (alignment 0x{seg.align:x})"
+        for member, seg in bad
+    )
+    raise NativeLibMisaligned(
+        f"{archive.name} contains {len(members)} native "
+        f"{'library' if len(members) == 1 else 'libraries'} Android cannot "
+        "load: a loadable segment's file offset and address disagree, so the "
+        "device would read it from the wrong place.\n"
+        f"{detail}\n"
+        "  This usually means the strip during packaging damaged a library "
+        "kivyforge did not recognise as unsafe to strip.\n"
+        "  Fix: set strip_native_libs = false in "
+        "[tool.kivy.android.build_settings], and file a kivyforge issue "
+        "naming the wheel that ships the library.",
+        context={"library": members[0]},
+    )
 
 
 @user_facing
@@ -682,6 +727,7 @@ def android_package(
     except GradleError as exc:
         raise _gradle_failure(exc, task) from exc
     out = _require_artifact(_release_output(dest, fmt), task)
+    _check_packaged_libs(out)
     rel = out.relative_to(project_root)
     events.on_line(f"Packaged {rel}")
     outcome.add(rel, ArtifactKind.APK if fmt == "apk" else ArtifactKind.AAB)
@@ -810,6 +856,9 @@ def android_run(
                 run_gradle(dest, ["assembleRelease"])
             except GradleError as exc:
                 raise _gradle_failure(exc, "assembleRelease") from exc
+            _check_packaged_libs(
+                _require_artifact(_release_output(dest, "apk"), "assembleRelease")
+            )
         else:
             android_build(
                 project_root,
