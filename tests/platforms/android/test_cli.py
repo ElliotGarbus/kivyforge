@@ -1579,7 +1579,11 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
         cli.android_run(project, release=True, wait_sec=0)
-        assert calls["write_app_build_gradle"][-1]["signing_config_block"] == ""
+        generated = calls["write_app_build_gradle"][-1]
+        assert generated["signing_config_block"] == ""
+        # Without it AGP leaves the release APK unsigned and named
+        # app-release-unsigned.apk, which nothing can install.
+        assert generated["release_signing_config"] == "debug"
         assert (
             "signing the release app with the debug keystore" in capsys.readouterr().err
         )
@@ -1607,7 +1611,9 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
         cli.android_run(project, release=True, wait_sec=0)
-        assert "upload" in calls["write_app_build_gradle"][-1]["signing_config_block"]
+        generated = calls["write_app_build_gradle"][-1]
+        assert "upload" in generated["signing_config_block"]
+        assert generated["release_signing_config"] == "release"
 
     def test_debug_run_is_unaffected_by_release_signing_wiring(
         self, build_env, monkeypatch

@@ -793,7 +793,7 @@ def android_run(
             # (android_package's own explicit assembleRelease is why), so this
             # does what android_package does for a signed distributable, minus
             # the manifest-policy/lint gates that verb owns.
-            signing_block, _ = _release_dev_signing(
+            signing_block, signing_name = _release_dev_signing(
                 android, project_root, tag="[run]", label="app"
             )
             android_build(
@@ -802,6 +802,7 @@ def android_run(
                 fmt="apk",
                 abi=target_abi,
                 signing_config_block=signing_block,
+                release_signing_config=signing_name,
                 events=PROGRESS_ONLY_EVENTS,
             )
             click.echo("[run] assembleRelease", err=True)
