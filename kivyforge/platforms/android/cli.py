@@ -46,6 +46,8 @@ from . import (
     LockMissing,
     LockUnreadable,
     NativeLibMisaligned,
+    WheelLayoutUnsupported,
+    WheelWrongArch,
 )
 from .bootstrap.contract import (
     ContractError,
@@ -64,7 +66,7 @@ from .bootstrap.render import (
     render_bootstrap,
     selftest_source,
 )
-from .elf import ElfError, scan_packaged_libs
+from .elf import ABI_MACHINES, ElfError, scan_packaged_libs
 from .generate.manifest import generate_manifest, sdl_orientation_hint
 from .generate.project import (
     ABI_TO_TRIPLET,
@@ -83,14 +85,20 @@ from .gradlew import GradleError, run_gradle, stop_gradle_daemon
 from .lock import reader as lock_reader
 from .lock.model import AndroidLockfile
 from .stage.bundle import BUNDLE_DIRNAME, BundleError, assemble_bundle
-from .stage.conflicts import app_android_module, site_packages_android_provider
+from .stage.conflicts import (
+    app_android_module,
+    installed_by,
+    site_packages_android_provider,
+)
 from .stage.jnilibs import (
     JniLibsError,
     JniLibsStager,
+    NativeLibWrongArch,
     stage_runtime_libs,
     stage_site_packages_extensions,
     stage_wheel_libs_dirs,
 )
+from .stage.layouts import separate_library_wheels
 from .stage.runtime import RuntimeStageError, extract_runtime, stdlib_dir
 from .stage.wheels import WheelStageError, install_wheels, select_wheel
 
@@ -379,6 +387,7 @@ def android_build(
             WheelStageError,
         )
         _reject_dependency_android(target)
+        _reject_separate_library_wheels(target)
         site_packages[abi_name] = target
 
     # --- Step 5: jniLibs per ABI (runtime split + wheel exts + .libs) ---
@@ -388,16 +397,21 @@ def android_build(
         jni = app_main / "jniLibs" / android_abi(abi_name)
         if jni.exists():
             shutil.rmtree(jni)
-        stager = JniLibsStager(dest=jni)
+        stager = JniLibsStager(dest=jni, machine=ABI_MACHINES[abi_name])
+        sp = site_packages[abi_name]
 
         def _stage_all() -> None:
             prefix = prefixes[abi_name]
             stage_runtime_libs(stager, prefix / "lib", python_stem=stem)
-            sp = site_packages[abi_name]
             stage_wheel_libs_dirs(stager, sp)
             stage_site_packages_extensions(stager, sp, wheel_name="site-packages")
 
-        _stage(_stage_all, JniLibsError)
+        try:
+            _stage_all()
+        except NativeLibWrongArch as exc:
+            raise _wrong_arch(exc, sp, abi_name) from exc
+        except JniLibsError as exc:
+            raise AndroidBuildError(str(exc)) from exc
         strip_unsafe.update(stager.strip_unsafe())
         manifest = stager.manifest()
         import json as _json
@@ -1512,6 +1526,44 @@ def _reject_dependency_android(site_packages: Path) -> None:
         "another package pulls it in, add it to [tool.kivy.android].exclude; "
         "then run `kivyforge lock -p android`.",
         context={"distribution": distribution},
+    )
+
+
+def _reject_separate_library_wheels(site_packages: Path) -> None:
+    distributions = separate_library_wheels(site_packages)
+    if distributions is None:
+        return
+    names = ", ".join(distributions)
+    raise WheelLayoutUnsupported(
+        f"the locked wheels {names} ship native libraries under opt/lib, "
+        "Chaquopy's layout for separate library wheels (Flet's index serves "
+        "it). kivyforge cannot load libraries from there: it loads a wheel's "
+        "native libraries from the wheel's own <dist>.libs/ or .libs/ "
+        "directory, where auditwheel and cibuildwheel put them.\n"
+        "  Fix: lock the package that requires them from an index whose "
+        "wheels carry their own libraries, then run `kivyforge lock -p "
+        "android`.",
+        context={"distributions": names, "layout": "opt/lib"},
+    )
+
+
+def _wrong_arch(
+    exc: NativeLibWrongArch, site_packages: Path, abi: str
+) -> WheelWrongArch:
+    try:
+        rel = exc.source.relative_to(site_packages).as_posix()
+    except ValueError:
+        rel, distribution = exc.source.name, "the python.org runtime"
+    else:
+        distribution = installed_by(site_packages, rel) or rel.split("/", 1)[0]
+    return WheelWrongArch(
+        f"{exc}\n  Fix: report it to whoever published {distribution}, and "
+        "lock a correctly built wheel.",
+        context={
+            "library": rel,
+            "distribution": distribution,
+            "abi": abi,
+        },
     )
 
 

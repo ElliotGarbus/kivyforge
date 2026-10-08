@@ -32,7 +32,7 @@ from pathlib import Path
 
 from kivyforge.artifacts.verify import sha256_file
 
-from ..elf import ElfError, read_elf
+from ..elf import ElfError, machine_name, read_elf
 
 EXT_MANIFEST_NAME = "ext_manifest.json"
 
@@ -59,15 +59,28 @@ class JniLibsError(Exception):
     pass
 
 
+class NativeLibWrongArch(JniLibsError):
+    """A library built for another architecture than the ABI it is staged for."""
+
+    def __init__(self, message: str, *, source: Path) -> None:
+        super().__init__(message)
+        self.source = source
+
+
 @dataclass
 class JniLibsStager:
     """Accumulates ``.so`` files for one ABI, enforcing the duplicate policy.
 
     ``provider`` strings name where a file came from (e.g. ``"runtime"``,
     ``"wheel kivy"``) so a conflict diagnostic can name both sides.
+
+    ``machine`` is the ELF ``e_machine`` this ABI needs. An ELF built for any
+    other fails the build here, not at load time on the device: the wheel's
+    tag is what routed it to this ABI, and its contents disagree.
     """
 
     dest: Path
+    machine: int | None = None
     # basename -> (sha256, provider)
     _seen: dict[str, tuple[str, str]] = field(default_factory=dict)
     # dotted module -> flattened filename
@@ -121,18 +134,26 @@ class JniLibsStager:
                 f"can link and then crash at runtime (android/04 §duplicate "
                 f".so policy)."
             )
+        try:
+            info = read_elf(source)
+        except (ElfError, OSError):
+            info = None
+        if info is not None and self.machine is not None:
+            if info.machine != self.machine:
+                raise NativeLibWrongArch(
+                    f"{provider} supplies {source.name}, which is built for "
+                    f"{machine_name(info.machine)}, but it is being staged for "
+                    f"{self.dest.name}, which needs "
+                    f"{machine_name(self.machine)}. The wheel's platform tag "
+                    f"and its contents disagree, so the library would fail to "
+                    f"load on the device.",
+                    source=source,
+                )
         self.dest.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, self.dest / basename)
         self._seen[basename] = (digest, provider)
-        if _is_strip_unsafe(source):
+        if info is not None and info.strip_unsafe:
             self._strip_unsafe.add(basename)
-
-
-def _is_strip_unsafe(path: Path) -> bool:
-    try:
-        return read_elf(path).strip_unsafe
-    except (ElfError, OSError):
-        return False
 
 
 def dotted_module_name(so_path: Path, site_packages_root: Path) -> str:

@@ -61,6 +61,18 @@ class NativeLibMisaligned(AndroidBuildError):
     exit_code = exit_codes.BUILD_FAILURE
 
 
+class WheelLayoutUnsupported(AndroidBuildError):
+    """A locked wheel ships native libraries where kivyforge cannot load them."""
+
+    code = diagnostics.ANDROID_WHEEL_LAYOUT
+
+
+class WheelWrongArch(AndroidBuildError):
+    """A native library is built for another architecture than its ABI."""
+
+    code = diagnostics.ANDROID_WHEEL_ARCH
+
+
 class LockMissing(AndroidBuildError):
     code = diagnostics.LOCK_MISSING
     exit_code = exit_codes.LOCK_DRIFT

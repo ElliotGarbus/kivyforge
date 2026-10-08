@@ -165,6 +165,21 @@ _DIAGNOSTIC = {
         "Set `strip_native_libs = false` and report the wheel; `context` names "
         "the `library`.",
     ),
+    "KF-ANDROID-WHEEL-LAYOUT": (
+        "error",
+        "Android: locked wheels ship their native libraries under `opt/lib`, "
+        "Chaquopy's layout for separate library wheels, which Flet's index "
+        "serves. kivyforge cannot load libraries from there.",
+        "Lock the package that requires them from an index whose wheels carry "
+        "their own libraries; `context` names the `distributions`.",
+    ),
+    "KF-ANDROID-WHEEL-ARCH": (
+        "error",
+        "Android: a native library is built for another architecture than the "
+        "ABI its wheel is tagged for, so it would fail to load on the device.",
+        "Report it to the wheel's publisher and lock a correct wheel; `context` "
+        "names the `library`, its `distribution` and the `abi`.",
+    ),
     "KF-ERROR": (
         "error",
         "An expected failure with no more specific code assigned yet.",
