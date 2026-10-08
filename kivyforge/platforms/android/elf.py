@@ -80,7 +80,9 @@ class ElfInfo:
     #: A loadable segment lies after a section stripping removes. NDK r27's
     #: llvm-strip then moves the segment's bytes without keeping its offset
     #: congruent to its address. patchelf, which auditwheel's repair runs,
-    #: writes this layout; linkers never do.
+    #: writes this layout; linkers never do. The layout test is independent of
+    #: the NDK: under one whose strip handles it, keeping such a library whole
+    #: only costs its symbols' size.
     strip_unsafe: bool = False
 
     @property
