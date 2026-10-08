@@ -22,6 +22,7 @@ from typing import Protocol
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.verify import sha256_file
+from kivyforge.net import request
 
 # python.org publishes the official iOS xcframework from 3.15.0b1 onward.
 PYTHON_ORG_URL = "https://www.python.org/ftp/python/{version}/python-{version}-iOS-XCframework.tar.gz"
@@ -160,7 +161,7 @@ class PythonOrgProvider:
             try:
                 digest = hashlib.sha256()
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
-                    with urllib.request.urlopen(url) as resp:  # noqa: S310
+                    with urllib.request.urlopen(request(url)) as resp:  # noqa: S310
                         for chunk in iter(lambda: resp.read(1 << 20), b""):
                             digest.update(chunk)
                             tmp.write(chunk)

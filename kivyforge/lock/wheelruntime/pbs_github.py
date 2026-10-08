@@ -19,6 +19,7 @@ import os
 import re
 import urllib.request
 
+from ...net import USER_AGENT
 from .runtime import ReleaseAsset, RuntimeProviderError
 
 _API = "https://api.github.com/repos/astral-sh/python-build-standalone"
@@ -68,7 +69,7 @@ def _github_token() -> str:
 
 
 def _request_headers() -> dict[str, str]:
-    headers = {"Accept": "application/vnd.github+json"}
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT}
     token = _github_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"

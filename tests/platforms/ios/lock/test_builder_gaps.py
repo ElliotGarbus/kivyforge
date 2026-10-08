@@ -221,7 +221,7 @@ class TestWheelSourceNormalization:
             "bundle_id='o.x.a'\n[tool.kivy.ios.python]\nversion='3.15.0'"
         )
         cfg = load_config_from_text(toml)
-        with pytest.raises(BuildError, match="could not determine SHA-256"):
+        with pytest.raises(BuildError, match="could not determine SHA-256") as excinfo:
             build_lockfile(
                 cfg,
                 toml,
@@ -229,6 +229,7 @@ class TestWheelSourceNormalization:
                 python_provider=fake_python_provider,
                 project_root=tmp_path,
             )
+        assert "[tool.kivy.ios].find_links" in str(excinfo.value)
 
     def test_wheel_outside_project_scope_rejected(self, fake_python_provider, tmp_path):
         project_root = tmp_path / "proj"

@@ -424,7 +424,7 @@ class TestWheelSourceNormalization:
                 )
             ],
         )
-        with pytest.raises(BuildError, match="could not determine SHA-256"):
+        with pytest.raises(BuildError, match="could not determine SHA-256") as excinfo:
             build_lockfile(
                 _config(text),
                 text,
@@ -432,6 +432,10 @@ class TestWheelSourceNormalization:
                 resolver=FakeResolver([pkg]),
                 python_provider=FakeProvider(),
             )
+        message = str(excinfo.value)
+        assert "https://files.example/pyjnius.whl" in message
+        assert "publishes SHA-256 hashes" in message
+        assert "[tool.kivy.android].find_links" in message
 
     def test_wheel_outside_find_links_scope_rejected(self, tmp_path):
         outside = Path(tempfile.mkdtemp())

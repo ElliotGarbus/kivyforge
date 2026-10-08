@@ -18,6 +18,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from kivyforge.net import request
+
 HERE = Path(__file__).resolve().parent
 RCEDIT_NAME = "rcedit-x64.exe"
 RCEDIT_PATH = HERE / RCEDIT_NAME
@@ -66,7 +68,7 @@ def verify_only() -> int:
 
 def fetch() -> int:
     expected = pinned_sha256()
-    with urllib.request.urlopen(RCEDIT_URL, timeout=60) as resp:  # noqa: S310
+    with urllib.request.urlopen(request(RCEDIT_URL), timeout=60) as resp:  # noqa: S310
         data = resp.read()
     actual = _sha256(data)
     if actual != expected:

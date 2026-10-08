@@ -16,7 +16,7 @@ hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1
 
 [[packages]]
 name = "Kivy"
-version = "3.0.0.dev202607301604"
+version = "3.0.0.dev202610051055"
 requires-python = ">=3.11"
 dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }]
 
@@ -24,14 +24,14 @@ dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygme
 direct_requirement = true
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202607301604/kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-hashes = { sha256 = "85f6d59d5649cdefb5729d1b09a7031657810e0a072d952e2391470acfae6941" }
+name = "kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202610051055/kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+hashes = { sha256 = "2ab99cb2650b08272b014970754f55b0f62e20d3b1a406da1a06b5f2f14f8883" }
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202607301604/kivy-3.0.0.dev202607301604-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-hashes = { sha256 = "2a4dd30d04fb21a63bd4fbeee07ef4e7aef5f0c31c542dc4af6f051faf9955c0" }
+name = "kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202610051055/kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+hashes = { sha256 = "3bdeab7a91f6f0e0b480f57c9f9d9cefc3ca2808d2a4543d94a291d9379cd5a0" }
 
 [[packages]]
 name = "more-itertools"
@@ -49,7 +49,7 @@ hashes = { sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd54212
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev0"
-generated_at = "2026-09-15T00:37:21Z"
+generated_at = "2026-10-08T12:20:37Z"
 pyproject_sha256 = "fc8dbced07c9fe739de7149481eff073d50466d51f91c2a50c57b42a040def88"
 tool_kivyforge_schema_version = 1
 

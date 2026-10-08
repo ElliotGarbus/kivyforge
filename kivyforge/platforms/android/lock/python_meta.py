@@ -31,6 +31,7 @@ from typing import Protocol
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.verify import sha256_file
+from kivyforge.net import request
 
 RELEASE_LISTING_URL = "https://www.python.org/ftp/python/{version}/"
 
@@ -158,7 +159,7 @@ class PythonOrgAndroidProvider:
     def _fetch_listing(self, version: str) -> dict[str, str]:
         url = RELEASE_LISTING_URL.format(version=version)
         try:
-            with urllib.request.urlopen(url) as resp:  # noqa: S310
+            with urllib.request.urlopen(request(url)) as resp:  # noqa: S310
                 html = resp.read().decode("utf-8", "replace")
         except OSError:
             # The artifact fetch itself will surface a clear error if the
@@ -175,7 +176,7 @@ class PythonOrgAndroidProvider:
             try:
                 digest = hashlib.sha256()
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
-                    with urllib.request.urlopen(url) as resp:  # noqa: S310
+                    with urllib.request.urlopen(request(url)) as resp:  # noqa: S310
                         for chunk in iter(lambda: resp.read(1 << 20), b""):
                             digest.update(chunk)
                             tmp.write(chunk)
