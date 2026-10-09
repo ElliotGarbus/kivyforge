@@ -73,6 +73,12 @@ class WheelWrongArch(AndroidBuildError):
     code = diagnostics.ANDROID_WHEEL_ARCH
 
 
+class WheelWrongSuffix(AndroidBuildError):
+    """An extension module is named so that CPython on Android would not import it."""
+
+    code = diagnostics.ANDROID_WHEEL_SUFFIX
+
+
 class LockMissing(AndroidBuildError):
     code = diagnostics.LOCK_MISSING
     exit_code = exit_codes.LOCK_DRIFT

@@ -1220,6 +1220,46 @@ class TestWheelChecks:
         }
         assert "whoever published mypkg" in exc.value.remediation
 
+    def test_a_host_suffixed_extension_names_its_wheel(self, build_env, monkeypatch):
+        """p4a-wheels' Pillow: AArch64 code under the Linux build host's suffix."""
+        from kivyforge.platforms.android.stage import jnilibs
+
+        project, _ = build_env
+        rel = "PIL/_imaging.cpython-314-x86_64-linux-gnu.so"
+
+        def fake_install_wheels(files, target, **kw):
+            (target / "PIL").mkdir(parents=True)
+            (target / rel).write_bytes(b"x")
+            info = target / "pillow-11.3.0.dist-info"
+            info.mkdir()
+            (info / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: pillow\n", encoding="utf-8"
+            )
+            (info / "RECORD").write_text(f"{rel},sha256=x,1\n", encoding="utf-8")
+
+        monkeypatch.setattr(cli, "install_wheels", fake_install_wheels)
+        monkeypatch.setattr(
+            cli,
+            "stage_site_packages_extensions",
+            jnilibs.stage_site_packages_extensions,
+        )
+        with pytest.raises(ToolchainError, match="would not import") as exc:
+            cli.android_build(project)
+        assert exc.value.code == diagnostics.ANDROID_WHEEL_SUFFIX
+        assert exc.value.exit_code == exit_codes.CONFIG_ERROR
+        assert exc.value.context == {
+            "library": rel,
+            "distribution": "pillow",
+            "abi": "arm64_v8a",
+        }
+
+    def test_the_suffixes_follow_the_locked_python_and_the_abi(self):
+        assert cli._extension_suffixes("3.14.6", "x86_64") == (
+            ".cpython-314-x86_64-linux-android.so",
+            ".abi3.so",
+            ".so",
+        )
+
     def test_a_runtime_library_for_another_architecture_names_the_runtime(
         self, build_env, monkeypatch, tmp_path
     ):
