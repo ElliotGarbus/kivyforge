@@ -140,6 +140,11 @@ ANDROID_WHEEL_LAYOUT = "KF-ANDROID-WHEEL-LAYOUT"
 #: names the ``library``, its ``distribution`` and the ``abi``.
 ANDROID_WHEEL_ARCH = "KF-ANDROID-WHEEL-ARCH"
 
+#: Android: an extension module in a locked wheel is named with a suffix CPython
+#: on Android does not import (a build host's, or another Python version's).
+#: ``context`` names the ``library``, its ``distribution`` and the ``abi``.
+ANDROID_WHEEL_SUFFIX = "KF-ANDROID-WHEEL-SUFFIX"
+
 #: An expected failure (``ToolchainError``) with no specific code assigned yet.
 #: Branchable rather than null: it tells a consumer "this is a clean, expected
 #: failure -- read ``message`` and ``remediation``", as distinct from a crash.
