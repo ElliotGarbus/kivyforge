@@ -152,20 +152,20 @@ the pyjnius wheel's `invoke0` implementation are a **matched pair that must move
 together**. Because the wheel ships no Java, nothing links them at compile time,
 so kivyforge enforces the pairing explicitly:
 
-- **Hard build gate (not a warning).** The bootstrap template and the pinned pyjnius wheel both carry a compatibility marker. `kivyforge build` **fails** — and `kivyforge doctor` reports **FAIL** — when the locked `pyjnius` version falls outside the template's declared compatible range. The `invoke0` native-method signature is an ABI contract; a mismatch is a guaranteed runtime crash, never something to ship. The fix is to re-lock to a compatible `pyjnius` or update kivyforge for a newer template.
+- **Hard build gate (not a warning).** `kivyforge build` **fails** when the installed pyjnius wheel's extension does not contain the JNI signature the template's `invoke0` declares, and fails — as does `kivyforge doctor` (**FAIL**) — when the locked `pyjnius` is older than the contract's floor. The `invoke0` native-method signature is an ABI contract; a mismatch is a guaranteed runtime crash, never something to ship. The fix is to pin a `pyjnius` that keeps the contract or update kivyforge for a newer template.
 - Even so, pyjnius resolves `autoclass('org.jnius.NativeInvocationHandler')` at proxy-creation, so any residual mismatch that slipped through still surfaces as a clear `ClassNotFound`/`NoSuchMethodError` at first use — not silent corruption.
 
-> **Where the marker lives.** Only the *bootstrap* half is machine-readable: the
-> template declares the range it is written against (`COMPATIBLE_PYJNIUS` in
-> `bootstrap/contract.py`), and `build`/`doctor` compare the **locked pyjnius
-> version** against it. The wheel itself carries no marker — the spike wheel had
+> **How the pair is checked.** The wheel carries no marker — the spike wheel had
 > only a version comment, and the findings noted "nothing enforces it once
 > packaging is out of the loop"
 > ([findings, "Java-glue delivery"](../../dev/pyjnius-android-wheel-spike-findings.md)).
-> Version-range checking is therefore what enforces the pairing in v1; a
-> machine-readable marker in the wheel would let the check assert the `invoke0`
-> signature itself instead of trusting the version, and remains a wheel-build work
-> item.
+> But pyjnius registers `invoke0` with a JNI signature string that sits verbatim
+> in the compiled extension, so `build` asserts the **signature itself**
+> (`INVOKE0_JNI_SIGNATURE`, `check_invoke0_signature` in `bootstrap/contract.py`)
+> rather than trusting the version. The version is only a floor
+> (`COMPATIBLE_PYJNIUS`). An earlier revision capped it at `<1.9`; pyjnius 1.9.0
+> kept the contract byte-for-byte and the cap turned a routine upstream release
+> into a build failure for every user (#113).
 
 The supported `invoke0` ranges per bootstrap-template version, alongside the
 CPython/Kivy/SDL/ABI/minSdk combinations they pair with, are tabulated in the

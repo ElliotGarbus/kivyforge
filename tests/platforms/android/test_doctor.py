@@ -862,12 +862,13 @@ class TestPyjniusContractDirect:
     def test_skip_when_absent(self):
         assert _check_pyjnius_contract(_doctor_lock()).status is Status.SKIP
 
-    def test_pass_when_in_range(self):
-        lock = _doctor_lock(packages=[_wheel_pkg("pyjnius", "1.7.0")])
+    @pytest.mark.parametrize("version", ["1.7.0", "1.9.0", "2.0.0"])
+    def test_pass_when_in_range(self, version):
+        lock = _doctor_lock(packages=[_wheel_pkg("pyjnius", version)])
         assert _check_pyjnius_contract(lock).status is Status.PASS
 
-    def test_fail_when_out_of_range(self):
-        lock = _doctor_lock(packages=[_wheel_pkg("pyjnius", "2.0.0")])
+    def test_fail_when_below_floor(self):
+        lock = _doctor_lock(packages=[_wheel_pkg("pyjnius", "1.6.1")])
         result = _check_pyjnius_contract(lock)
         assert result.status is Status.FAIL
         assert "invoke0" in result.detail

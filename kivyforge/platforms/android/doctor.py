@@ -543,16 +543,16 @@ def _check_pyjnius_contract(lock) -> CheckResult:
         return CheckResult(
             "pyjnius / bootstrap match",
             Status.FAIL,
-            f"locked pyjnius {pyjnius.version} is outside the bootstrap template's "
-            f"invoke0 range ({COMPATIBLE_PYJNIUS})",
+            f"locked pyjnius {pyjnius.version} predates the bootstrap template's "
+            f"invoke0 contract ({COMPATIBLE_PYJNIUS})",
             hint=f'require "pyjnius{COMPATIBLE_PYJNIUS}" in [project].dependencies '
-            "and re-lock (a bare `pyjnius` floats to the newest release), "
-            "or upgrade kivyforge.",
+            "and re-lock.",
         )
     return CheckResult(
         "pyjnius / bootstrap match",
         Status.PASS,
-        f"pyjnius {pyjnius.version} in range",
+        f"pyjnius {pyjnius.version} meets {COMPATIBLE_PYJNIUS} "
+        "(the wheel's invoke0 signature is verified at build)",
     )
 
 

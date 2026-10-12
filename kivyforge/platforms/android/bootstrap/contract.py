@@ -9,15 +9,14 @@ than discovering them on-device.
 pyjnius wheel's implementation are an ABI contract that must move together.
 The wheel ships no Java and nothing links them at compile time, so kivyforge
 enforces the pairing explicitly: the bootstrap template carries a contract
-version and the pyjnius version range it is compatible with, and
-``kivyforge build`` **fails** (doctor: **FAIL**) when the locked pyjnius falls
-outside it. A mismatch is a guaranteed runtime crash — never something to ship.
+version, and ``kivyforge build`` **fails** when the installed pyjnius wheel does
+not bind the ``invoke0`` signature the template declares (doctor: **FAIL** when
+the locked version predates the contract). A mismatch is a guaranteed runtime
+crash — never something to ship.
 
-Wheel-side status: the spike wheel carries no machine-readable marker yet
-(see android/05 §"Implementation status"), so this range list IS the
-enforcement until upstream pyjnius grows one. Widening the range is a
-bootstrap-template change that must re-run the contract smoke test
-(android/08 §revalidation).
+The check is on the wheel's binary, not a version ceiling, so a new pyjnius
+release that keeps the contract works without a kivyforge release. The version
+is only a floor (``COMPATIBLE_PYJNIUS``).
 """
 
 from __future__ import annotations
@@ -34,19 +33,36 @@ from packaging.version import InvalidVersion, Version
 # and the Phase-0 prototype).
 INVOKE0_CONTRACT_VERSION = 1
 
-# pyjnius releases whose invoke0 implementation matches contract v1. 1.7.x is
+# The oldest pyjnius whose invoke0 implementation matches contract v1. 1.7.x is
 # the spike-validated series; 1.8.x is the first release to ship Android wheels
-# on PyPI (same invoke0 contract). Anything newer must be revalidated (and this
-# range widened) before it is accepted.
-COMPATIBLE_PYJNIUS = SpecifierSet(">=1.7.0,<1.9")
+# on PyPI. This is a *floor only*: pyjnius releases often and the contract has
+# not moved since 1.7 (1.9.0 was verified byte-for-byte), so a version ceiling
+# only turned every upstream release into a kivyforge outage (#113). What would
+# actually break is the signature changing, and that is checked directly against
+# the wheel's binary by ``check_invoke0_signature`` rather than guessed from the
+# version number.
+COMPATIBLE_PYJNIUS = SpecifierSet(">=1.7.0")
+
+# The JNI signature pyjnius passes to RegisterNatives for ``invoke0``
+# (jnius/jnius_proxy.pxi). It sits verbatim in the wheel's compiled extension, so
+# its presence there proves the wheel binds the method NativeInvocationHandler
+# declares: ``native Object invoke0(Object, Method, Object[])``.
+INVOKE0_JNI_SIGNATURE = (
+    b"(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)"
+    b"Ljava/lang/Object;"
+)
 
 
 class ContractError(Exception):
-    """The locked pyjnius is outside the bootstrap template's invoke0 range."""
+    """The locked pyjnius does not satisfy the bootstrap template's invoke0 contract."""
 
 
 def check_pyjnius_contract(locked_version: str) -> None:
-    """Hard build gate (android/05): raise unless the pyjnius version is in range."""
+    """Early build gate (android/05): raise if pyjnius predates contract v1.
+
+    Only a floor — see ``COMPATIBLE_PYJNIUS``. The authoritative check for newer
+    releases is ``check_invoke0_signature`` on the installed wheel.
+    """
     try:
         version = Version(locked_version)
     except InvalidVersion as exc:
@@ -56,19 +72,48 @@ def check_pyjnius_contract(locked_version: str) -> None:
         ) from exc
     if version not in COMPATIBLE_PYJNIUS:
         raise ContractError(
-            f"locked pyjnius {locked_version} is outside the bootstrap "
-            f"template's compatible range ({COMPATIBLE_PYJNIUS}) for invoke0 "
+            f"locked pyjnius {locked_version} is older than the bootstrap "
+            f"template supports ({COMPATIBLE_PYJNIUS}) for invoke0 "
             f"contract v{INVOKE0_CONTRACT_VERSION}.\n"
             "  The invoke0 native-method signature is an ABI contract between "
             "the pyjnius wheel and the generated "
             "org.jnius.NativeInvocationHandler; a mismatch crashes at first "
             "proxy use.\n"
-            "  Fix: constrain pyjnius in [project].dependencies "
-            f'(e.g. "pyjnius{COMPATIBLE_PYJNIUS}") and re-lock; a bare '
-            "`pyjnius` floats to the newest release, so re-locking alone "
-            "picks the same version again. Or upgrade kivyforge for a newer "
-            "bootstrap template (android/05 §matched pair)."
+            "  Fix: require a newer pyjnius in [project].dependencies "
+            f'(e.g. "pyjnius{COMPATIBLE_PYJNIUS}") and re-lock '
+            "(android/05 §matched pair)."
         )
+
+
+def pyjnius_extensions(site_packages: Path) -> list[Path]:
+    """The compiled ``jnius`` extension module(s) in an installed site-packages."""
+    package = site_packages / "jnius"
+    return sorted(package.glob("*.so")) if package.is_dir() else []
+
+
+def check_invoke0_signature(so_path: Path) -> None:
+    """Hard build gate: the wheel must bind the ``invoke0`` the template declares.
+
+    Checks the shipped binary, so it holds for any pyjnius version — including
+    one released after this kivyforge. An unreadable file is not a failure (the
+    version floor still applies); a readable one without the signature is.
+    """
+    try:
+        blob = so_path.read_bytes()
+    except OSError:
+        return
+    if INVOKE0_JNI_SIGNATURE in blob:
+        return
+    raise ContractError(
+        f"{so_path.name} does not bind the invoke0 signature the bootstrap "
+        f"template declares (contract v{INVOKE0_CONTRACT_VERSION}: "
+        "native Object invoke0(Object, Method, Object[])).\n"
+        "  The wheel's pyjnius changed the NativeInvocationHandler ABI, so "
+        "the first Python object a Java callback touches would crash the app.\n"
+        "  Fix: pin pyjnius in [project].dependencies to the last release "
+        "that kept the contract and re-lock, or upgrade kivyforge for a "
+        "newer bootstrap template (android/05 §matched pair)."
+    )
 
 
 # --- SDL glue <-> libSDL<N>.so ----------------------------------------------
