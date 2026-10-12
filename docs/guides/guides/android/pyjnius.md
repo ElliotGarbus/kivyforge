@@ -20,12 +20,13 @@ nothing.
   in `extra_index_urls`.
 - You don't need to add `pyjnius` to your dependencies. Kivy itself uses it on
   Android, so `kivyforge lock -p android` adds it to every Android lock, in the
-  range kivyforge supports (`>=1.7.0,<1.9`). Your desktop dependencies stay
-  unchanged.
+  range kivyforge supports (`>=1.7.0`, so new pyjnius releases work as they
+  come out). Your desktop dependencies stay unchanged.
 
     To choose the version yourself, declare it. kivyforge then uses your
-    requirement instead, and a locked pyjnius outside the supported range fails
-    the build:
+    requirement instead. The build fails if the locked pyjnius is older than
+    1.7, or if its Android wheel does not match the Java glue kivyforge
+    generates:
 
     ```toml
     [project]

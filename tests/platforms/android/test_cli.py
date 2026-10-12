@@ -694,13 +694,44 @@ class TestAndroidBuildGates:
     def test_pyjnius_contract_gate_blocks_before_generation(
         self, project, monkeypatch, tmp_path
     ):
-        _write_lock(project, pyjnius_version="2.0.0")  # outside the compatible range
+        _write_lock(project, pyjnius_version="1.6.1")  # below the contract floor
         monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
         calls: dict = {}
         _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
         with pytest.raises(ToolchainError, match="invoke0"):
             cli.android_build(project)
         assert not calls["fetch"]  # never got to step 2
+
+    def test_a_newer_pyjnius_is_not_rejected_by_version(
+        self, project, monkeypatch, tmp_path
+    ):
+        """#113: pyjnius 1.9.0 shipped and the old ceiling (<1.9) failed every
+        build, though the contract had not changed."""
+        _write_lock(project, pyjnius_version="1.9.0")
+        monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
+        calls: dict = {}
+        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
+        cli.android_build(project)
+        assert calls["fetch"]
+
+    def test_a_wheel_that_broke_the_invoke0_signature_blocks_the_build(
+        self, project, monkeypatch, tmp_path
+    ):
+        """Whatever the version, the installed binary is what is verified."""
+        _write_lock(project, pyjnius_version="3.0.0")
+        monkeypatch.setenv("ANDROID_HOME", str(tmp_path / "sdk"))
+        calls: dict = {}
+        _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
+
+        def install_with_changed_abi(files, target, **kw):
+            (target / "jnius").mkdir(parents=True)
+            (
+                target / "jnius" / "jnius.cpython-314-aarch64-linux-android.so"
+            ).write_bytes(b"\x7fELF\x00invoke0\x00(Ljava/lang/Object;)V\x00")
+
+        monkeypatch.setattr(cli, "install_wheels", install_with_changed_abi)
+        with pytest.raises(ToolchainError, match="does not bind the invoke0"):
+            cli.android_build(project)
 
     def test_a_lock_without_pyjnius_asks_for_a_relock(
         self, project, monkeypatch, tmp_path

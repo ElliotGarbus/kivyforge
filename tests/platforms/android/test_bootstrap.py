@@ -9,10 +9,13 @@ import pytest
 from kivyforge.platforms.android.bootstrap.contract import (
     COMPATIBLE_PYJNIUS,
     INVOKE0_CONTRACT_VERSION,
+    INVOKE0_JNI_SIGNATURE,
     ContractError,
+    check_invoke0_signature,
     check_pyjnius_contract,
     check_sdl_generation,
     check_sdl_glue_contract,
+    pyjnius_extensions,
     sdl_library_name,
     sdl_version_from_glue,
     sdl_version_from_library,
@@ -317,18 +320,57 @@ class TestContract:
         assert INVOKE0_CONTRACT_VERSION == 1
         assert "1.7" in str(COMPATIBLE_PYJNIUS)
 
-    @pytest.mark.parametrize("version", ["1.7.0", "1.7.1", "1.7.99", "1.8.0", "1.8.99"])
+    @pytest.mark.parametrize(
+        "version", ["1.7.0", "1.7.1", "1.8.0", "1.9.0", "1.10.0", "2.0.0"]
+    )
     def test_in_range(self, version):
+        # No ceiling (#113): a new release must not need a kivyforge release.
         check_pyjnius_contract(version)  # must not raise
 
-    @pytest.mark.parametrize("version", ["1.6.1", "1.9.0", "2.0.0"])
-    def test_out_of_range(self, version):
+    @pytest.mark.parametrize("version", ["1.6.1", "1.5.0"])
+    def test_below_floor(self, version):
         with pytest.raises(ContractError, match="invoke0"):
             check_pyjnius_contract(version)
 
     def test_garbage_version(self):
         with pytest.raises(ContractError, match="not a valid version"):
             check_pyjnius_contract("not-a-version")
+
+
+class TestInvoke0Signature:
+    """The version is only a floor; the wheel's binary is what is verified."""
+
+    def test_signature_matches_the_template(self):
+        java = TEMPLATES_DIR / "java" / "org" / "jnius" / "NativeInvocationHandler.java"
+        assert "native Object invoke0(Object proxy, Method method, Object[] args);" in (
+            java.read_text()
+        )
+        assert INVOKE0_JNI_SIGNATURE == (
+            b"(Ljava/lang/Object;Ljava/lang/reflect/Method;[Ljava/lang/Object;)"
+            b"Ljava/lang/Object;"
+        )
+
+    def test_binary_with_signature_passes(self, tmp_path):
+        so = tmp_path / "jnius.cpython-313-aarch64-linux-android.so"
+        so.write_bytes(b"\x7fELF\x00invoke0\x00" + INVOKE0_JNI_SIGNATURE + b"\x00")
+        check_invoke0_signature(so)  # must not raise
+
+    def test_binary_without_signature_fails(self, tmp_path):
+        so = tmp_path / "jnius.so"
+        so.write_bytes(b"\x7fELF\x00invoke0\x00(Ljava/lang/Object;)V\x00")
+        with pytest.raises(ContractError, match="invoke0"):
+            check_invoke0_signature(so)
+
+    def test_unreadable_binary_is_not_a_failure(self, tmp_path):
+        check_invoke0_signature(tmp_path / "missing.so")  # must not raise
+
+    def test_finds_extension_in_site_packages(self, tmp_path):
+        assert pyjnius_extensions(tmp_path) == []
+        (tmp_path / "jnius").mkdir()
+        (tmp_path / "jnius" / "__init__.py").write_text("")
+        so = tmp_path / "jnius" / "jnius.cpython-313-aarch64-linux-android.so"
+        so.write_bytes(b"x")
+        assert pyjnius_extensions(tmp_path) == [so]
 
 
 class TestSdlGlueContract:

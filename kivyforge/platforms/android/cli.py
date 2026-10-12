@@ -51,9 +51,11 @@ from . import (
 )
 from .bootstrap.contract import (
     ContractError,
+    check_invoke0_signature,
     check_pyjnius_contract,
     check_sdl_generation,
     check_sdl_glue_contract,
+    pyjnius_extensions,
     sdl_library_name,
     sdl_version_from_glue,
 )
@@ -388,6 +390,13 @@ def android_build(
         )
         _reject_dependency_android(target)
         _reject_separate_library_wheels(target)
+        # The authoritative half of the invoke0 matched pair: the version
+        # check above is only a floor, so verify the installed binary itself.
+        for ext in pyjnius_extensions(target):
+            try:
+                check_invoke0_signature(ext)
+            except ContractError as exc:
+                raise AndroidBuildError(str(exc)) from exc
         site_packages[abi_name] = target
 
     # --- Step 5: jniLibs per ABI (runtime split + wheel exts + .libs) ---

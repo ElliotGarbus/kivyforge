@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Android: pyjnius versions
+
+- **Fixed:** pyjnius 1.9.0 failed every Android build with "locked pyjnius 1.9.0
+  is outside the bootstrap template's compatible range"
+  ([#113](https://github.com/ElliotGarbus/kivyforge/issues/113)), though its
+  `invoke0` method is unchanged. kivyforge no longer caps the pyjnius version.
+  Instead of guessing from the version number, `build` now checks the installed
+  pyjnius wheel for the `invoke0` signature kivyforge's Java glue declares, and
+  fails with a message naming the wheel if it differs. New pyjnius releases that
+  keep the signature work without a kivyforge update.
+- **Changed:** `kivyforge lock -p android` adds `pyjnius>=1.7.0` instead of
+  `pyjnius>=1.7.0,<1.9` when your project doesn't declare it, so a re-lock picks
+  the newest release. Existing locks need no change: a lock that already holds
+  pyjnius 1.9.0 now builds. Older than 1.7 still fails, and `doctor` only
+  checks that floor, since the wheel check needs the installed wheel.
+
 ### Android: wheels built by cibuildwheel
 
 - **Fixed:** numpy, pandas, matplotlib, opencv-python and other wheels that

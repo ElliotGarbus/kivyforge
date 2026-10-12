@@ -69,11 +69,15 @@ separately at the end.
 
 Notes:
 
-- **pyjnius `invoke0` contract v1** is the version range carried by the current
-  bootstrap template's compatibility marker (`>=1.7.0,<1.9`: the spike-validated
-  1.7.x series plus 1.8.x, the first release with Android wheels on PyPI). kivyforge **fails the build** (and
-  `doctor` FAILs) for a locked pyjnius outside it; widening the range is a
-  bootstrap-template change that adds a new contract version here.
+- **pyjnius `invoke0` contract v1** is `native Object invoke0(Object, Method,
+  Object[])`. The version is only a floor (`>=1.7.0`: the spike-validated 1.7.x
+  series; 1.8.x was the first release with Android wheels on PyPI). There is no
+  ceiling: `build` greps the installed wheel's `jnius` extension for the JNI
+  signature it registers and **fails** if it is absent, so a release that keeps
+  the contract (1.9.0 does) needs no kivyforge change, and one that breaks it is
+  caught by what it ships rather than by a guessed version number. `doctor`
+  FAILs only below the floor (it sees the lock, not the wheel). A contract
+  change is a new contract version here.
 - **The local Kivy 2.3.1 wheel** is kivyforge-built (no dependency on third-party
   channels), per [artifact-distribution-android](03-artifact-distribution-android.md).
 - **Kivy 3.0 / SDL3** is first-class in the schema (`kivy_generation = 3`) and now exercised
