@@ -42,9 +42,17 @@
   artifact is at ...". It said it was signing with the debug keystore, but left
   the APK unsigned; now it signs with the debug keystore.
 
-Two things are not handled yet. Libraries in a `.libs/` directory *inside* a
-package (`ffmpeg/.libs/`) still stage as before, and how they are meant to load
-is unexplored. Each auditwheel-repaired wheel also carries its own renamed copy
+- **Fixed:** libraries a package carries inside its own directory, such as
+  `ffmpeg/.libs/libavcodec.so` or `blosc2/lib/libtcc.so`, were staged as
+  Python extension modules under new names, so nothing could find them. They
+  are now staged under their own names, like a top-level `.libs/`.
+- **Changed:** an extension module named with a suffix CPython on Android does
+  not import (a build host's `.cpython-314-x86_64-linux-gnu.so`, or another
+  Python version's) now fails the build with `KF-ANDROID-WHEEL-SUFFIX`.
+  kivyforge's loader ignored the suffix, so such a wheel used to load under
+  kivyforge while being unusable anywhere else.
+
+Each auditwheel-repaired wheel carries its own renamed copy
 of the C++ runtime, so an app can load several. That is safe unless C++ objects
 pass between libraries from different wheels; see
 `docs/design/platforms/android/03-artifact-distribution-android.md`.

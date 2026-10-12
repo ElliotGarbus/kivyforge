@@ -797,10 +797,12 @@ def _check_find_links(config: Config, project_root: Path) -> CheckResult:
 def _check_app_native_binaries(config: Config, project_root: Path) -> CheckResult:
     """Native code in ``app_dir`` cannot work on Android, whatever its ABI.
 
-    ``app_dir`` is staged into the Python *asset* bundle and unpacked to
-    app-private storage at first launch, and Android refuses to ``dlopen`` a
-    library from there (W^X). Only ``jniLibs/`` — which kivyforge fills from
-    wheels — is a loadable location, so a ``.so`` here is dead weight at best.
+    ``app_dir`` is staged into the Python *asset* bundle, which every ABI
+    shares, so a library there is built for one ABI at most. kivyforge stages
+    native code into ``jniLibs/<abi>/`` only from wheels, whose tag names the
+    ABI. Android would load a library from the unpacked bundle (measured on
+    API 35, targetSdk 35), but SELinux audits each such load, and nothing
+    kivyforge generates relies on it.
     """
     from .elf import ElfError, machine_name, read_elf
 
@@ -826,9 +828,10 @@ def _check_app_native_binaries(config: Config, project_root: Path) -> CheckResul
             "App-local native binaries",
             Status.FAIL,
             "; ".join(found),
-            hint="native code belongs in an Android wheel (jniLibs), not "
-            "app_dir: the asset bundle is unpacked to app-private storage, "
-            "which Android will not dlopen (android/03 §wheel content rules).",
+            hint="native code belongs in an Android wheel, which kivyforge "
+            "stages per ABI into jniLibs: app_dir goes into the asset bundle "
+            "every ABI shares, so a library there fits one ABI at most "
+            "(android/03 §app-specific native extensions).",
         )
     return CheckResult(
         "App-local native binaries", Status.PASS, "no native binaries in app_dir"

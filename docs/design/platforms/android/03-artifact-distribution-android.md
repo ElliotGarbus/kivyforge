@@ -64,8 +64,20 @@ into an Android wheel out-of-band and then consumed like any other dependency**
 3. Consumes the wheel either **hosted** (publish to PyPI / a supplemental index, reference by name) or **vendored** (commit the built wheel, pin it by `path` — see [pylock-android-spec §"Locally built wheels"](02-pylock-android-spec.md#locally-built-wheels-path)).
 
 **Corollary — `app_dir` is pure-Python only.** A `.so` compiled for the host will
-not load on an Android device; native code belongs in an Android wheel, never
-loose in `app_dir`. `kivyforge doctor` flags a non-Android `.so` under `app_dir`.
+not load on an Android device, and even an Android one fits one ABI at most:
+`app_dir` goes into the asset bundle every ABI shares, and kivyforge stages
+native code into `jniLibs/<abi>/` only from wheels, whose tag names the ABI.
+`kivyforge doctor` fails on any native binary under `app_dir`.
+
+It is not that Android refuses to load a library from app-private storage, as an
+earlier version of this page said. Measured on an API 35 emulator with
+`targetSdk` 35 (test-matrix §7, 2026-10-09), a library unpacked with the bundle,
+a writable copy and a read-only copy all load, through both `ctypes` and
+`System.load`. SELinux logs each load as an audited grant (`avc: granted
+{ execute }`), which is why kivyforge keeps every library it stages in `jniLibs`
+rather than relying on it. Running a *program* from app data is a different
+matter: Android 10's behaviour changes document that `execve` there fails for apps
+targeting API 29 and later (not measured here).
 
 The common case — *using* `pyjnius`/`plyer` to reach Java/Android APIs — needs no
 author-side compilation: the author writes pure Python, and pyjnius arrives as a
@@ -195,7 +207,10 @@ Every library staged into `jniLibs/<abi>/`, the runtime's included, must also be
 ELF built for that ABI's machine (AArch64 for `arm64_v8a`, x86-64 for `x86_64`).
 The wheel's tag is what routed it there, so a mismatch means the wheel is mislabelled,
 and `build` fails with `KF-ANDROID-WHEEL-ARCH` instead of shipping a library that
-fails to load. A `.so` that is not an ELF file is not judged.
+fails to load. A `.so` that is not an ELF file is not judged. An extension module's
+suffix must be one CPython on Android imports, or `build` fails with
+`KF-ANDROID-WHEEL-SUFFIX`; see
+[gradle-project-generation §"Populating `jniLibs/<abi>/`"](04-gradle-project-generation.md#populating-jnilibsabi).
 
 ### Wheel content rules
 

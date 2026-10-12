@@ -14,10 +14,12 @@ from kivyforge.platforms.android.elf import EM_AARCH64
 from kivyforge.platforms.android.stage import wheels as wheels_mod
 from kivyforge.platforms.android.stage.bundle import BundleError, assemble_bundle
 from kivyforge.platforms.android.stage.jnilibs import (
+    ExtensionWrongSuffix,
     JniLibsError,
     JniLibsStager,
     NativeLibWrongArch,
     dotted_module_name,
+    stage_package_libraries,
     stage_runtime_libs,
     stage_site_packages_extensions,
     stage_wheel_libs_dir,
@@ -41,6 +43,9 @@ class _BundleKwargs(TypedDict):
     finder_source: str
     kivy_bootstrap_source: str
     ext_manifest_json: str
+
+
+_ARM64 = (".cpython-314-aarch64-linux-android.so", ".abi3.so", ".so")
 
 
 def _write(path: Path, content: bytes = b"x") -> Path:
@@ -166,12 +171,68 @@ class TestJniLibs:
         assert stage_wheel_libs_dirs(stager, sp) == 1
         assert {p.name for p in (tmp_path / "jni").iterdir()} == {"libfoo.so"}
 
-    def test_a_libs_dir_inside_a_package_is_left_as_before(self, tmp_path):
+    def test_a_packages_own_libraries_are_staged_under_their_own_names(self, tmp_path):
+        """ffmpeg/.libs/ is linked by name; blosc2 opens lib/libtcc.so by path."""
         sp = tmp_path / "sp"
+        _write(sp / "ffmpeg" / "__init__.py", b"")
         _write(sp / "ffmpeg" / ".libs" / "libavcodec.so")
+        _write(sp / "blosc2" / "__init__.py", b"")
+        _write(sp / "blosc2" / "lib" / "libtcc.so")
+        _write(sp / "blosc2" / "blosc2_ext.so")
         stager = JniLibsStager(dest=tmp_path / "jni")
         assert stage_wheel_libs_dirs(stager, sp) == 0
-        assert not (tmp_path / "jni" / "libavcodec.so").exists()
+        assert stage_package_libraries(stager, sp) == 2
+        assert stage_site_packages_extensions(stager, sp, wheel_name="w") == 1
+        staged = {p.name for p in (tmp_path / "jni").iterdir()}
+        assert staged == {"libavcodec.so", "libtcc.so", "libpy.blosc2.blosc2_ext.so"}
+        assert list(stager.manifest()) == ["blosc2.blosc2_ext"]
+
+    @pytest.mark.parametrize(
+        "rel",
+        [
+            "libfoo.so",  # a top-level module named libfoo
+            "pkg/libfoo.so",  # inside a regular package: importable
+            "pkg/lib/libfoo.cpython-314-aarch64-linux-android.so",
+            "pkg/lib/libfoo.abi3.so",
+            "pkg/lib/_foo.so",
+        ],
+    )
+    def test_anything_importable_stays_an_extension_module(self, tmp_path, rel):
+        sp = tmp_path / "sp"
+        _write(sp / "pkg" / "__init__.py", b"")
+        _write(sp / rel)
+        stager = JniLibsStager(dest=tmp_path / "jni")
+        assert stage_package_libraries(stager, sp) == 0
+        assert stage_site_packages_extensions(stager, sp, wheel_name="w") == 1
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "_ext.cpython-314-x86_64-linux-gnu.so",
+            "_ext.cpython-313-aarch64-linux-android.so",
+            "_ext.cpython-314-x86_64-linux-android.so",
+            "_ext.cpython-314-darwin.so",
+        ],
+    )
+    def test_an_extension_suffix_cpython_would_not_import_fails(self, tmp_path, name):
+        """The finder ignores the suffix, so kivyforge alone would load these."""
+        sp = tmp_path / "sp"
+        bad = _write(sp / "PIL" / name)
+        stager = JniLibsStager(dest=tmp_path / "arm64-v8a", extension_suffixes=_ARM64)
+        with pytest.raises(ExtensionWrongSuffix, match="would not import") as exc:
+            stage_site_packages_extensions(stager, sp, wheel_name="w")
+        assert exc.value.source == bad
+        assert ".cpython-314-aarch64-linux-android.so, .abi3.so, .so" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "name",
+        ["_ext.cpython-314-aarch64-linux-android.so", "_ext.abi3.so", "_ext.so"],
+    )
+    def test_the_suffixes_cpython_imports_pass(self, tmp_path, name):
+        sp = tmp_path / "sp"
+        _write(sp / "pkg" / name)
+        stager = JniLibsStager(dest=tmp_path / "jni", extension_suffixes=_ARM64)
+        assert stage_site_packages_extensions(stager, sp, wheel_name="w") == 1
 
     @pytest.mark.parametrize("where", ["extension", "libs"])
     def test_a_library_for_another_architecture_fails_the_build(self, tmp_path, where):

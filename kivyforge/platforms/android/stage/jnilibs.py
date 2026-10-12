@@ -3,8 +3,9 @@
 Two kinds of ``.so``, found two different ways at runtime:
 
 - **Shared libraries** resolved by soname (``System.loadLibrary`` /
-  ``DT_NEEDED``): ``libpython3.X.so``, the runtime's ``lib*_python.so``, and
-  everything in a wheel's libraries directory -- kivy-mobile-wheels' shared
+  ``DT_NEEDED``): ``libpython3.X.so``, the runtime's ``lib*_python.so``, a
+  package's own ``lib*.so``, and everything in a wheel's libraries directory --
+  kivy-mobile-wheels' shared
   ``.libs/`` (the SDL family) or auditwheel's ``<dist>.libs/`` (what
   cibuildwheel's default Android repair grafts, e.g.
   ``numpy.libs/libc++_shared-d523468d.so``). Copied verbatim, names
@@ -16,8 +17,8 @@ Two kinds of ``.so``, found two different ways at runtime:
 
 A libraries directory is **flat-only**: a nested subdirectory is a malformed
 wheel and fails the build (android/03/04 — the wheel tag is the sole ABI
-truth). A ``.libs/`` inside a package (``pkg/.libs/``) is not one; how such
-libraries are loaded is still unexplored, so they stage as before.
+truth). A package can also carry its own libraries (``ffmpeg/.libs/``,
+``blosc2/lib/``); those are copied verbatim too, see ``is_package_library``.
 The duplicate policy is the iOS rule adapted: identical content dedupes
 silently; same basename with different bytes aborts naming both providers.
 """
@@ -45,6 +46,9 @@ _LIBS_SUFFIX = ".libs"
 # A shared object by name: ".so", or versioned (".so.5", ".so.1.2").
 _SHARED_OBJECT = re.compile(r"\.so(\.\d+)*$")
 
+# The suffixes that mark a .so as an extension module (a bare ".so" may be one too).
+_EXTENSION_SUFFIX = re.compile(r"\.(cpython-\d+-[^.]+|abi3)\.so$")
+
 
 def is_wheel_libs_dir(name: str) -> bool:
     """Whether a top-level site-packages entry is a libraries directory.
@@ -59,12 +63,20 @@ class JniLibsError(Exception):
     pass
 
 
-class NativeLibWrongArch(JniLibsError):
-    """A library built for another architecture than the ABI it is staged for."""
+class UnloadableLibrary(JniLibsError):
+    """A wheel's ``.so`` the device would not load; ``source`` is the file."""
 
     def __init__(self, message: str, *, source: Path) -> None:
         super().__init__(message)
         self.source = source
+
+
+class NativeLibWrongArch(UnloadableLibrary):
+    """A library built for another architecture than the ABI it is staged for."""
+
+
+class ExtensionWrongSuffix(UnloadableLibrary):
+    """An extension module named so that CPython on Android would not import it."""
 
 
 @dataclass
@@ -77,10 +89,17 @@ class JniLibsStager:
     ``machine`` is the ELF ``e_machine`` this ABI needs. An ELF built for any
     other fails the build here, not at load time on the device: the wheel's
     tag is what routed it to this ABI, and its contents disagree.
+
+    ``extension_suffixes`` are the suffixes CPython on Android imports an
+    extension module under. The bootstrap finder imports by dotted name and
+    never looks at the suffix, so without this check a module standard CPython
+    would not find (a build host's ``.cpython-314-x86_64-linux-gnu.so``, or
+    another Python's ``.cpython-313-...``) would load anyway.
     """
 
     dest: Path
     machine: int | None = None
+    extension_suffixes: tuple[str, ...] = ()
     # basename -> (sha256, provider)
     _seen: dict[str, tuple[str, str]] = field(default_factory=dict)
     # dotted module -> flattened filename
@@ -93,6 +112,17 @@ class JniLibsStager:
 
     def add_extension_module(self, source: Path, *, dotted: str, provider: str) -> None:
         """Flatten one extension module and record it in the finder manifest."""
+        suffix = source.name[len(source.name.split(".", 1)[0]) :]
+        if self.extension_suffixes and suffix not in self.extension_suffixes:
+            raise ExtensionWrongSuffix(
+                f"{provider} supplies the extension module {source.name}, "
+                f"which CPython on Android would not import: for "
+                f"{self.dest.name} it imports only "
+                f"{', '.join(self.extension_suffixes)}. A wheel built with "
+                f"another platform's or another Python's suffix is broken, "
+                f"even though kivyforge's loader would load it.",
+                source=source,
+            )
         flattened = f"libpy.{dotted}.so"
         existing = self._manifest.get(dotted)
         if existing is not None and existing != flattened:
@@ -210,6 +240,40 @@ def stage_wheel_libs_dirs(stager: JniLibsStager, site_packages: Path) -> int:
     return count
 
 
+def is_package_library(so: Path, site_packages: Path) -> bool:
+    """Whether a ``.so`` inside a package is a shared library, not an extension.
+
+    ``ffmpeg/.libs/libavcodec.so``, ``blosc2/lib/libtcc.so``: named ``lib*.so``
+    with no extension-module suffix, in a directory that is not a regular
+    package. Such a file is linked by name or opened by path, never imported.
+    """
+    rel = so.relative_to(site_packages)
+    return (
+        len(rel.parts) >= 2
+        and so.name.startswith("lib")
+        and so.name.endswith(_SO_SUFFIX)
+        and not _EXTENSION_SUFFIX.search(so.name)
+        and not (so.parent / "__init__.py").exists()
+    )
+
+
+def stage_package_libraries(stager: JniLibsStager, site_packages: Path) -> int:
+    """Copy each package's own shared libraries verbatim. Returns the count.
+
+    They go into ``jniLibs`` under their own names, like a top-level ``.libs/``:
+    that is where the linker resolves ``DT_NEEDED`` and where the package finds
+    them when it searches the directory of its extension modules.
+    """
+    count = 0
+    for so in sorted(site_packages.rglob(f"*{_SO_SUFFIX}")):
+        top = so.relative_to(site_packages).parts[0]
+        if is_wheel_libs_dir(top) or not is_package_library(so, site_packages):
+            continue
+        stager.add_shared_library(so, provider=f"package {top}")
+        count += 1
+    return count
+
+
 def stage_site_packages_extensions(
     stager: JniLibsStager, site_packages: Path, *, wheel_name: str
 ) -> int:
@@ -218,6 +282,8 @@ def stage_site_packages_extensions(
     for so in sorted(site_packages.rglob(f"*{_SO_SUFFIX}")):
         if is_wheel_libs_dir(so.relative_to(site_packages).parts[0]):
             continue  # handled by stage_wheel_libs_dirs
+        if is_package_library(so, site_packages):
+            continue  # handled by stage_package_libraries
         stager.add_extension_module(
             so,
             dotted=dotted_module_name(so, site_packages),

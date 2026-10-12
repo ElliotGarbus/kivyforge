@@ -48,6 +48,7 @@ from . import (
     NativeLibMisaligned,
     WheelLayoutUnsupported,
     WheelWrongArch,
+    WheelWrongSuffix,
 )
 from .bootstrap.contract import (
     ContractError,
@@ -91,9 +92,11 @@ from .stage.conflicts import (
     site_packages_android_provider,
 )
 from .stage.jnilibs import (
+    ExtensionWrongSuffix,
     JniLibsError,
     JniLibsStager,
-    NativeLibWrongArch,
+    UnloadableLibrary,
+    stage_package_libraries,
     stage_runtime_libs,
     stage_site_packages_extensions,
     stage_wheel_libs_dirs,
@@ -397,19 +400,24 @@ def android_build(
         jni = app_main / "jniLibs" / android_abi(abi_name)
         if jni.exists():
             shutil.rmtree(jni)
-        stager = JniLibsStager(dest=jni, machine=ABI_MACHINES[abi_name])
+        stager = JniLibsStager(
+            dest=jni,
+            machine=ABI_MACHINES[abi_name],
+            extension_suffixes=_extension_suffixes(python_version, abi_name),
+        )
         sp = site_packages[abi_name]
 
         def _stage_all() -> None:
             prefix = prefixes[abi_name]
             stage_runtime_libs(stager, prefix / "lib", python_stem=stem)
             stage_wheel_libs_dirs(stager, sp)
+            stage_package_libraries(stager, sp)
             stage_site_packages_extensions(stager, sp, wheel_name="site-packages")
 
         try:
             _stage_all()
-        except NativeLibWrongArch as exc:
-            raise _wrong_arch(exc, sp, abi_name) from exc
+        except UnloadableLibrary as exc:
+            raise _unloadable(exc, sp, abi_name) from exc
         except JniLibsError as exc:
             raise AndroidBuildError(str(exc)) from exc
         strip_unsafe.update(stager.strip_unsafe())
@@ -1547,16 +1555,25 @@ def _reject_separate_library_wheels(site_packages: Path) -> None:
     )
 
 
-def _wrong_arch(
-    exc: NativeLibWrongArch, site_packages: Path, abi: str
-) -> WheelWrongArch:
+def _extension_suffixes(python_version: str, abi: str) -> tuple[str, ...]:
+    """What CPython on Android imports an extension module under, most specific first."""
+    major, minor = python_version.split(".")[:2]
+    return (f".cpython-{major}{minor}-{ABI_TO_TRIPLET[abi]}.so", ".abi3.so", ".so")
+
+
+def _unloadable(
+    exc: UnloadableLibrary, site_packages: Path, abi: str
+) -> AndroidBuildError:
     try:
         rel = exc.source.relative_to(site_packages).as_posix()
     except ValueError:
         rel, distribution = exc.source.name, "the python.org runtime"
     else:
         distribution = installed_by(site_packages, rel) or rel.split("/", 1)[0]
-    return WheelWrongArch(
+    family = (
+        WheelWrongSuffix if isinstance(exc, ExtensionWrongSuffix) else WheelWrongArch
+    )
+    return family(
         f"{exc}\n  Fix: report it to whoever published {distribution}, and "
         "lock a correctly built wheel.",
         context={

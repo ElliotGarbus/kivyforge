@@ -180,6 +180,13 @@ _DIAGNOSTIC = {
         "Report it to the wheel's publisher and lock a correct wheel; `context` "
         "names the `library`, its `distribution` and the `abi`.",
     ),
+    "KF-ANDROID-WHEEL-SUFFIX": (
+        "error",
+        "Android: an extension module is named with a suffix CPython on Android "
+        "does not import, such as a build host's or another Python version's.",
+        "Report it to the wheel's publisher and lock a correct wheel; `context` "
+        "names the `library`, its `distribution` and the `abi`.",
+    ),
     "KF-ERROR": (
         "error",
         "An expected failure with no more specific code assigned yet.",
