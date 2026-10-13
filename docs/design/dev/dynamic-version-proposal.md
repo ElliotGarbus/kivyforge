@@ -198,7 +198,7 @@ the lock or are not worth a backend run.
 
 | # | When | Version |
 |---|---|---|
-| 1 | `--app-version X` on `build`, `package` or `run`; else `KIVYFORGE_APP_VERSION=X`. **The flag wins** when both are set | `X`; nothing else is read |
+| 1 | `--app-version X` on `build`, `package` or `run`; else `KIVYFORGE_APP_VERSION=X`. **The flag wins** when both are set | `X`; the backend is not run |
 | 2 | `StaticVersion` | Its value (today's behaviour) |
 | 3 | `DynamicVersion` | The backend computes it, run by pip (section 3.3) |
 
@@ -208,7 +208,15 @@ plugin offers the same escape hatch for the same reason
 (`SETUPTOOLS_SCM_PRETEND_VERSION` and friends), and those keep working under
 row 3 because the backend reads them itself. Row 1 is the kivyforge spelling
 that works the same way for every backend. The override must be valid PEP 440,
-or it is a config error; this catches `v1.2.3` pasted from a tag name.
+or it is a config error. A tag name pasted as is, `v1.2.3`, is valid and
+normalizes to `1.2.3` (section 3.1).
+
+**The override replaces the value, not the declaration.** The config is parsed
+and validated first, for every verb (section 3.1), so `--app-version` cannot
+rescue a project whose `version` is missing from both `version` and `dynamic`,
+both static and dynamic, or not PEP 440. Those stay config errors. What row 1
+skips is resolution: the backend is never run, and with a `StaticVersion` the
+override is used instead of it (`source: "override"`).
 
 **Decided 2026-10-12: the flag is `--app-version`.** It must not be
 `--version`, which by click convention prints kivyforge's own version. It is
@@ -283,6 +291,19 @@ against 1.2 s, section 8) and needs no network. The docs carry the `0.0.0`
 hazard above. kivyforge does not try to detect it: `0.0.0` is also a legitimate
 version.
 
+**When pip will not run, `--no-build-isolation` does nothing.** Two cases,
+treated differently on purpose:
+
+- **The command line makes it a no-op:** together with `--app-version`, or with
+  `run --no-build` or `run --list-devices`. That is a usage error, for the same
+  reason as `--app-version` with those `run` modes (section 3.2): the user
+  expected it to do something, and the conflict is visible in the command
+  alone.
+- **The project makes it a no-op:** a `StaticVersion`. Accepted, with an INFO
+  diagnostic saying the flag had no effect. Rejecting it would make one CI
+  command line valid for some projects and invalid for others, depending on
+  the contents of `pyproject.toml`.
+
 **No `[build-system]` table:** pip applies PEP 517's default
 (`setuptools.build_meta:__legacy__`) itself, so kivyforge does not special-case
 it.
@@ -319,7 +340,7 @@ flow becomes two-phase, with the version as a value that crosses the interface:
    ```python
    @dataclass(frozen=True)
    class ResolvedVersion:
-       value: str                 # full PEP 440 string
+       value: str                 # normalized PEP 440, e.g. "1.2" for "v1.2"
        source: Literal["override", "static", "backend"]
        apple_short: str           # section 3.6
        windows_file_version: str  # pep440_to_file_version(value)
@@ -330,11 +351,24 @@ flow becomes two-phase, with the version as a value that crosses the interface:
 
    An `"auto"` version code that cannot be derived (a dev version, say) fails
    here, in the verb, before any backend work starts, with today's message.
-4. **Pass it in.** `Platform.build`, `package` and `run` gain a keyword-only
+4. **Record it.** `report.record(version=...)` immediately, before any
+   backend is dispatched. `record` exists for exactly this
+   (`report/console.py:168`): fields recorded early survive into the envelope
+   that `reporting()` emits when the verb raises, so a build that fails in
+   Gradle still reports which version it was building.
+5. **Pass it in.** `Platform.build`, `package` and `run` gain a keyword-only
    `version: ResolvedVersion`. For `run` it is `ResolvedVersion | None`, `None`
    exactly when nothing is built (`--no-build`, `--list-devices`). The backend
    threads it to the version consumers of section 2, which take it as a
    parameter instead of reading `config.project.version`.
+
+   **Android `run` does not go through `Platform.run`.** `cli/run.py` calls
+   `android_run` and `android_smoke` directly (`cli/run.py:162-215`), and both
+   generate the Android project, so both need the version. Each gains the same
+   `version` parameter, and the verb resolves before that branch, after its
+   `--list-devices` early return. A test asserts every path that can reach the
+   Android project generator receives a `ResolvedVersion`, so a later direct
+   call cannot bypass it.
 
 This keeps the backends' own `load_config` calls; replacing those with a config
 passed down from the verb is a worthwhile refactor, but it is not needed for
@@ -350,7 +384,10 @@ The verb reports what it used, because the user never typed this version:
 - **Human:** one stderr line before the build starts:
   `Version 1.2.4.dev3+g1a2b3c (from setuptools.build_meta, via pip)`.
 - **`--json`:** `data.version = {"value": "...", "source": "override" |
-  "static" | "backend"}`. This is additive to the envelope, so no schema bump.
+  "static" | "backend"}`, recorded before backend dispatch (section 3.4, step
+  4), so it is present on failed runs too. A run that fails *during*
+  resolution has no version to record and omits the key. This is additive to
+  the envelope, so no schema bump.
 
 The echo is also the only defence against the most common scm surprise: a
 shallow CI checkout (`actions/checkout` defaults to `fetch-depth: 1`) has no
@@ -360,7 +397,7 @@ visible, and the docs say to use `fetch-depth: 0` or row 1.
 
 ### 3.6 Store-facing fields
 
-The full PEP 440 string stays the *display* version: Android `versionName`, the
+The full normalized PEP 440 string stays the *display* version: Android `versionName`, the
 Windows string `ProductVersion`, and the artifact filename. Each store field
 with its own grammar gets a derived value:
 
@@ -457,17 +494,29 @@ so a later refactor keeps it.
 **A stale `version_file` is documented, and warned about for setuptools-scm
 only.** With row 1 or row 2 the backend never runs, so a `version_file` keeps
 what the last backend run wrote, and the app can report a different version
-than its plist. The documentation is the commitment: with `--app-version`, also
-set the plugin's own override (`SETUPTOOLS_SCM_PRETEND_VERSION`) if the app
-reads a version file, or read the version some other way.
+than its plist. The documentation is the commitment, and it gives the one
+approach that keeps the two in step:
+
+- **If the app reads a version file, pin the version through the plugin, not
+  through `--app-version`.** Set `SETUPTOOLS_SCM_PRETEND_VERSION=1.2.3` (which
+  hatch-vcs also honours, since it runs setuptools-scm) and leave
+  `--app-version` unset. kivyforge then resolves through the backend (row 3),
+  the backend writes the file with the pinned version, and kivyforge reads the
+  same version back, so the file and the plist agree.
+- Setting that variable *alongside* `--app-version` does nothing for the file:
+  row 1 never runs the backend, so nothing reads the variable. An earlier
+  revision of this note gave that advice; it was wrong.
+- Otherwise, avoid the file: have the app get its version some other way, or
+  accept that it can be stale under `--app-version`.
 
 A backend-neutral check is not implementable: neither the declaration of such a
 file nor its format is standardized (`[tool.setuptools_scm].version_file`,
 `[tool.hatch.build.hooks.vcs].version-file`, versioningit's own table, each
 with its own template). For the common case, kivyforge emits
 `KF-VERSION-FILE-NOT-REFRESHED` when `[tool.setuptools_scm].version_file` is
-set and the version did not come from the backend. It does not read or compare
-the file, whose contents a template decides. It is described as covering
+set and the version did not come from the backend. Its remediation is the
+first bullet above. It does not read or compare the file, whose contents a
+template decides. It is described as covering
 setuptools-scm only; hatch-vcs and versioningit users get the documentation.
 
 Running pip under the override just to refresh that file was rejected: it
@@ -501,7 +550,13 @@ launch that builds; section 3.2), and the `egg-info` cause is known (section
   `version_code` line number in the error; `doctor` and `status` load a dynamic
   project with `version_code = "auto"` and never start pip; the flag beats
   `KIVYFORGE_APP_VERSION` when both are set; `lock --app-version` is a usage
-  error (no such option); `dynamic` that is not a list of strings is rejected;
+  error (no such option); `--app-version` does not rescue a missing, doubly
+  declared or non-PEP 440 `version`; `--no-build-isolation` is a usage error
+  with `--app-version`, `run --no-build` and `run --list-devices`, and an INFO
+  no-op with a static version; `android_run` and `android_smoke` receive the
+  `ResolvedVersion`, and no path reaches the Android project generator without
+  one; a `--json` build that fails after resolution still carries
+  `data.version`, and one that fails during resolution omits it; `dynamic` that is not a list of strings is rejected;
   a static version, override or environment value that is not PEP 440
   (`1.0.0-SNAPSHOT`, `latest`) is a config error with the file line, and
   normalizable ones (`v1.2`, `1.0-beta`) are accepted and written normalized
@@ -574,6 +629,20 @@ components, `description` and `authors`). It added:
 | Say plainly that a build can leave a clean checkout dirty | Section 3.9 |
 | Tests: `--ignore-installed`, a non-setuptools backend, `doctor`/`status` never start pip, flag vs environment, malformed `dynamic` | Section 6; the first two are in the live test and measured (section 8) |
 
+A third pass approved the direction and asked for six clarifications:
+
+| Finding | Change |
+|---|---|
+| "Nothing else is read" suggests `--app-version` can rescue an invalid declaration | Section 3.2: the override replaces the value, not the declaration; validation always runs |
+| Android `run` bypasses `Platform.run` | Section 3.4: `android_run` and `android_smoke` take the version too, with a test that no path skips it |
+| Setting `SETUPTOOLS_SCM_PRETEND_VERSION` alongside `--app-version` cannot refresh `version_file` | Correct: row 1 never runs the backend. Section 3.9 now says to pin through the variable *instead of* `--app-version`; measured (section 8) |
+| `--no-build-isolation` when pip will not run | Section 3.3: usage error where the command line makes it a no-op; INFO where the project does |
+| PEP 440 wording contradicted itself | Already settled by the spec decision below; the remaining "full PEP 440 string" now says normalized, and `v1.2.3` is no longer called invalid |
+| Record `data.version` before dispatch | Section 3.4 step 4 and section 3.5 |
+
+The exit-1 classification of ambiguous pip failures (section 3.8) stands as a
+stated compromise.
+
 One suggestion was not taken: a non-isolated fast path with an isolated retry
 on failure. The `0.0.0` case in section 8 does not fail, so a retry never
 fires there. Isolation stays the default, as that review also allowed.
@@ -633,6 +702,11 @@ already uses): `v1.2` gives `1.2`, `V2.0` gives `2.0`, `1.0-beta` gives
 `1.0`, and `1.2.3.4.5` and `1!2.0` are valid as written. Invalid: `1.0-`,
 `2024.10-final`, `1.0.0-beta.2.x`, `1.0.0-SNAPSHOT`, `latest`, `2024-10-12`,
 `release-1.0`.
+
+**Pinning through the plugin.** With `SETUPTOOLS_SCM_PRETEND_VERSION=9.9.9`,
+the isolated run reports `9.9.9` for both the setuptools-scm project (with
+`version_file` set, whose `_version.py` then holds
+`__version__ = version = '9.9.9'`) and the hatch-vcs project.
 
 **pip on an invalid static version.** A setuptools project with
 `version = "1.0.0-SNAPSHOT"`: pip fails with
