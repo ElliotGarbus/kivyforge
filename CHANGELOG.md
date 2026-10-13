@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v3.0.0.dev1](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0.dev1) - 2026-10-13
+
 ### All platforms: dynamic versions
 
 - **Added:** `dynamic = ["version"]` in `[project]` is supported
