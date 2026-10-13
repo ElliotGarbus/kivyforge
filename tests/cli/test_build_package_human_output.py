@@ -260,10 +260,17 @@ _ANDROID_OUTPUTS = Path("demoapp-android", "app", "build", "outputs")
 class TestAndroid:
     def test_build(self, android):
         result = _invoke(build, ["-p", "android"])
+        # Deliberate (#106): a bare build says Gradle did not run and how to
+        # get an APK, instead of ending on `Generated ...` with exit 0.
+        ready = (
+            "Project ready; Gradle did not run. Build a debug APK with "
+            "`kivyforge build -p android --debug`, or a release with "
+            "`kivyforge package -p android`.\n"
+        )
         _assert_streams(
             result,
-            merged=_android_generate(byte_compile_note=True),
-            stdout=_ANDROID_GENERATED,
+            merged=_android_generate(byte_compile_note=True) + ready,
+            stdout=_ANDROID_GENERATED + ready,
         )
 
     def test_build_debug(self, android):

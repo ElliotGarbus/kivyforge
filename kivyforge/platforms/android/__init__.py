@@ -158,7 +158,7 @@ class AndroidPlatform(Platform):
         self.reject_ios_only_target(target)
         from .cli import android_build
 
-        return android_build(
+        outcome = android_build(
             project_root,
             version=version,
             events=events,
@@ -168,6 +168,16 @@ class AndroidPlatform(Platform):
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
         )
+        if not debug:
+            # Without this, `Generated ...` and exit 0 read as a finished build
+            # with the APK missing (#106). Said here, not in android_build,
+            # because package and run --release also generate without --debug.
+            events.on_line(
+                "Project ready; Gradle did not run. Build a debug APK with "
+                "`kivyforge build -p android --debug`, or a release with "
+                "`kivyforge package -p android`."
+            )
+        return outcome
 
     def run(
         self,
