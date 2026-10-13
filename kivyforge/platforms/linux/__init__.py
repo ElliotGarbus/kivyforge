@@ -19,6 +19,7 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.build_outcome import BuildEvents, BuildOutcome
+    from kivyforge.config.model import ResolvedVersion
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -54,6 +55,7 @@ class LinuxPlatform(Platform):
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -70,6 +72,7 @@ class LinuxPlatform(Platform):
 
         return linux_build(
             project_root,
+            version=version,
             events=events,
             arch=arch,
             no_verify_lock=no_verify_lock,
@@ -80,6 +83,7 @@ class LinuxPlatform(Platform):
         self,
         project_root: Path,
         *,
+        version: ResolvedVersion | None,
         target: str,
         arch: str | None,
         destination: str | None,
@@ -88,13 +92,16 @@ class LinuxPlatform(Platform):
     ) -> None:
         from .cli import linux_run
 
-        linux_run(project_root, arch=arch, no_build=no_build, release=release)
+        linux_run(
+            project_root, version=version, arch=arch, no_build=no_build, release=release
+        )
 
     def package(
         self,
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         fmt: str,
         arch: str | None,
         team_id: str | None,
@@ -112,6 +119,7 @@ class LinuxPlatform(Platform):
 
         return linux_package(
             project_root,
+            version=version,
             events=events,
             fmt=fmt,
             arch=arch,

@@ -29,7 +29,8 @@ from kivyforge.build_outcome import (
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
-from kivyforge.config.model import AndroidConfig, Config
+from kivyforge.config.model import AndroidConfig, Config, ResolvedVersion
+from kivyforge.config.version import android_version_code, with_version
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import reclassify
@@ -262,6 +263,7 @@ def _resolve_byte_compile(
 def android_build(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     debug: bool = False,
     assemble: bool = True,
     fmt: str = "apk",
@@ -283,7 +285,7 @@ def android_build(
     payload without step 8, for a caller whose own Gradle task builds the APK.
     """
     outcome = OutcomeBuilder(events.on_artifact)
-    config, lock = _load(project_root, no_verify_lock=no_verify_lock)
+    config, lock = _load(project_root, version, no_verify_lock=no_verify_lock)
     android = config.android_required
     abis = _select_abis(android, abi)
 
@@ -683,6 +685,7 @@ def _check_packaged_libs(archive: Path) -> None:
 def android_package(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     fmt: str = "apk",
     abi: str | None = None,
     keystore: str | None = None,
@@ -700,7 +703,7 @@ def android_package(
     from .signing import SigningError, resolve_signing, signing_config_gradle
 
     outcome = OutcomeBuilder(events.on_artifact)
-    config, _lock = _load(project_root, no_verify_lock=no_verify_lock)
+    config, _lock = _load(project_root, version, no_verify_lock=no_verify_lock)
     android = config.android_required
 
     # Signing pre-flight (fail fast, BEFORE staging/generation).
@@ -718,6 +721,7 @@ def android_package(
     signing_block = signing_config_gradle(signing)
     android_build(
         project_root,
+        version=version,
         debug=False,
         abi=abi,
         no_verify_lock=no_verify_lock,
@@ -817,6 +821,7 @@ def _release_output(dest: Path, fmt: str) -> Path:
 def android_run(
     project_root: Path,
     *,
+    version: ResolvedVersion | None,
     no_build: bool = False,
     release: bool = False,
     abi: str | None = None,
@@ -846,7 +851,7 @@ def android_run(
     """
     from . import adb as adb_mod
 
-    config, _lock = _load(project_root, no_verify_lock=False)
+    config, _lock = _load(project_root, version, no_verify_lock=False)
     android = config.android_required
 
     # The target comes first, even though the build is the long step: it decides
@@ -875,6 +880,7 @@ def android_run(
             )
             android_build(
                 project_root,
+                version=version,
                 debug=False,
                 fmt="apk",
                 abi=target_abi,
@@ -893,6 +899,7 @@ def android_run(
         else:
             android_build(
                 project_root,
+                version=version,
                 debug=True,
                 fmt="apk",
                 abi=target_abi,
@@ -1054,6 +1061,7 @@ def _abi_for_device(device: str, android: AndroidConfig) -> str:
 def android_smoke(
     project_root: Path,
     *,
+    version: ResolvedVersion | None,
     release: bool = False,
     abi: str | None = None,
     serial: str | None = None,
@@ -1065,7 +1073,7 @@ def android_smoke(
     from . import adb as adb_mod
     from .smoke import SmokeError, run_smoke
 
-    config, _lock = _load(project_root, no_verify_lock=False)
+    config, _lock = _load(project_root, version, no_verify_lock=False)
     # As in `android_run`: resolve the target first so the probe builds for the
     # ABI it will actually be installed on.
     try:
@@ -1093,6 +1101,7 @@ def android_smoke(
     # builds the APK, but the Python is staged here, at generate time.
     android_build(
         project_root,
+        version=version,
         debug=not release,
         assemble=False,
         abi=abi,
@@ -1484,10 +1493,15 @@ def _locked_version(lock: AndroidLockfile, name: str) -> str | None:
     return None
 
 
-def _load(project_root: Path, *, no_verify_lock: bool):
+def _load(project_root: Path, version: ResolvedVersion | None, *, no_verify_lock: bool):
     pyproject = project_root / "pyproject.toml"
     try:
         config = load_config(pyproject, require_ios=False, require_android=True)
+        config = with_version(config, version)
+        if version is not None:
+            # Before any staging or Gradle work: "auto" with a dev version (a
+            # dynamic one between tags, or an override) has no versionCode.
+            android_version_code(config)
     except ConfigError as exc:
         raise AndroidBuildError(exc.format()) from exc
     lock_path = project_root / "pylock.android.toml"

@@ -20,6 +20,7 @@ import pytest
 
 from kivyforge.build_outcome import ArtifactKind, BuildEvents
 from kivyforge.cli._common import ToolchainError
+from kivyforge.config.model import ResolvedVersion
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.platforms.android import AndroidBuildError, cli
@@ -67,6 +68,9 @@ abis = ["arm64_v8a"]
 [tool.kivy.android.python]
 version = "3.14.6"
 """
+
+#: A version no fixture declares, so finding it proves it was forwarded.
+_OVERRIDE = ResolvedVersion("9.8.7", source="override")
 
 
 def _built_paths(outcome, project_root: Path) -> list[Path]:
@@ -287,7 +291,7 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
         "stage_gradle_wrapper": lambda dest: None,
         "write_app_build_gradle": lambda dest, config, android, **kw: calls[
             "write_app_build_gradle"
-        ].append(kw),
+        ].append({**kw, "_version": config.version_required}),
         "write_resources": lambda dest, config, android, **kw: None,
         "write_gradle_pins": lambda dest, lock: calls["write_gradle_pins"].append(lock),
         "run_gradle": fake_run_gradle,
@@ -1052,21 +1056,21 @@ class TestIncludeFilesIntoRes:
 class TestLoadHelpers:
     def test_missing_lock_is_actionable(self, project):
         with pytest.raises(AndroidBuildError, match="pylock.android.toml not found"):
-            cli._load(project, no_verify_lock=False)
+            cli._load(project, None, no_verify_lock=False)
 
     def test_unreadable_lock_is_wrapped(self, project):
         (project / "pylock.android.toml").write_text("{{ not toml", encoding="utf-8")
         with pytest.raises(AndroidBuildError):
-            cli._load(project, no_verify_lock=False)
+            cli._load(project, None, no_verify_lock=False)
 
     def test_stale_lock_blocks_by_default(self, project):
         _write_lock(project, in_sync=False)
         with pytest.raises(AndroidBuildError, match="has changed since"):
-            cli._load(project, no_verify_lock=False)
+            cli._load(project, None, no_verify_lock=False)
 
     def test_no_verify_lock_allows_stale(self, project):
         _write_lock(project, in_sync=False)
-        config, lock = cli._load(project, no_verify_lock=True)
+        config, lock = cli._load(project, None, no_verify_lock=True)
         assert lock.packages[0].name == "pyjnius"
 
     def test_bad_config_is_wrapped(self, project):
@@ -1074,7 +1078,7 @@ class TestLoadHelpers:
             "[project]\nname='x'\nversion='1'\n", encoding="utf-8"
         )
         with pytest.raises(AndroidBuildError):
-            cli._load(project, no_verify_lock=True)
+            cli._load(project, None, no_verify_lock=True)
 
 
 class TestSelectAbis:
@@ -1362,6 +1366,15 @@ class TestAndroidPackage:
             ("assembleRelease",),
         ]
 
+    def test_the_version_reaches_the_inner_build(self, build_env, monkeypatch):
+        # package builds through android_build, which loads config again; the
+        # verb's version must survive that second load.
+        project, calls = build_env
+        self._fake_signing(monkeypatch)
+        self._fake_manifest_ok(monkeypatch)
+        cli.android_package(project, version=_OVERRIDE, fmt="apk")
+        assert calls["write_app_build_gradle"][-1]["_version"] == _OVERRIDE
+
     def test_success_bundles_release_aab(self, build_env, monkeypatch):
         project, calls = build_env
         self._fake_signing(monkeypatch)
@@ -1611,7 +1624,17 @@ class TestAndroidRun:
         project, _ = build_env
         _fake_device(monkeypatch)
         with pytest.raises(ToolchainError, match="no debug APK"):
-            cli.android_run(project, no_build=True)
+            cli.android_run(project, version=None, no_build=True)
+
+    def test_the_version_reaches_the_build(self, build_env, monkeypatch):
+        project, calls = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
+        _fake_app(monkeypatch, log=[])
+        cli.android_run(project, version=_OVERRIDE)
+        assert calls["write_app_build_gradle"][-1]["_version"] == _OVERRIDE
 
     def test_builds_then_installs_and_launches(self, build_env, monkeypatch):
         project, calls = build_env
@@ -1629,7 +1652,7 @@ class TestAndroidRun:
             lambda dev, pkg, act: events.append(("launch", dev, pkg, act)),
         )
         app = _fake_app(monkeypatch, log=["I python.stderr: booted\n"])
-        log = cli.android_run(project)
+        log = cli.android_run(project, version=None)
         assert calls["run_gradle"] == [("assembleDebug",)]
         assert ("install", "emulator-5554") in events
         assert app["follow"][0][:2] == ("emulator-5554", "4242")
@@ -1653,7 +1676,7 @@ class TestAndroidRun:
             apk = cli._release_output(project / "demoapp-android", "apk")
             apk.parent.mkdir(parents=True, exist_ok=True)
             _write_fake_archive(apk)
-        cli.android_run(project, release=release)
+        cli.android_run(project, version=None, release=release)
         captured = capsys.readouterr()
         assert captured.out == "I python.stderr: booted\n"
         assert "[run] device" in captured.err
@@ -1680,7 +1703,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, no_build=True, wait_sec=0)
+        cli.android_run(project, version=None, no_build=True, wait_sec=0)
         assert not calls["run_gradle"]
 
     def test_adb_error_is_wrapped(self, build_env, monkeypatch):
@@ -1691,7 +1714,7 @@ class TestAndroidRun:
 
         monkeypatch.setattr(adb_mod, "resolve_device", boom)
         with pytest.raises(ToolchainError, match="no device attached"):
-            cli.android_run(project, wait_sec=0)
+            cli.android_run(project, version=None, wait_sec=0)
 
     def test_abi_defaults_to_the_targets_own(self, build_env, monkeypatch):
         """android/06 §run: `--abi`'s default is the target's architecture, and
@@ -1702,7 +1725,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, wait_sec=0)
+        cli.android_run(project, version=None, wait_sec=0)
         # The build's effective ABI set reaches Gradle's abiFilters, so that is
         # where the restriction is observable.
         assert calls["write_app_build_gradle"][-1]["abis"] == ("arm64_v8a",)
@@ -1714,7 +1737,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, abi="arm64_v8a", wait_sec=0)
+        cli.android_run(project, version=None, abi="arm64_v8a", wait_sec=0)
         assert calls["write_app_build_gradle"][-1]["abis"] == ("arm64_v8a",)
 
     def test_device_needing_an_unlocked_abi_fails_before_gradle(
@@ -1725,7 +1748,7 @@ class TestAndroidRun:
         project, calls = build_env
         _fake_device(monkeypatch, abi="x86_64")  # project locks arm64_v8a only
         with pytest.raises(ToolchainError, match="needs the x86_64 ABI"):
-            cli.android_run(project, wait_sec=0)
+            cli.android_run(project, version=None, wait_sec=0)
         assert not calls["run_gradle"]
 
     def test_unknown_device_abi_falls_back_to_the_host(self, build_env, monkeypatch):
@@ -1736,7 +1759,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, wait_sec=0)
+        cli.android_run(project, version=None, wait_sec=0)
         assert calls["write_app_build_gradle"][-1]["abis"] == ("arm64_v8a",)
 
     def test_release_invokes_assemblerelease_and_installs_the_release_apk(
@@ -1753,7 +1776,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, release=True, wait_sec=0)
+        cli.android_run(project, version=None, release=True, wait_sec=0)
         assert calls["run_gradle"] == [("assembleRelease",)]
         (apk,) = installed
         assert apk.name == "app-release.apk"
@@ -1764,7 +1787,7 @@ class TestAndroidRun:
         project, _ = build_env
         _fake_device(monkeypatch)
         with pytest.raises(ToolchainError, match="no release APK"):
-            cli.android_run(project, no_build=True, release=True)
+            cli.android_run(project, version=None, no_build=True, release=True)
 
     def test_release_no_build_uses_existing_release_apk(self, build_env, monkeypatch):
         project, calls = build_env
@@ -1785,7 +1808,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, no_build=True, release=True, wait_sec=0)
+        cli.android_run(project, version=None, no_build=True, release=True, wait_sec=0)
         assert not calls["run_gradle"]
 
     def test_release_falls_back_to_the_debug_keystore_when_unconfigured(
@@ -1800,7 +1823,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, release=True, wait_sec=0)
+        cli.android_run(project, version=None, release=True, wait_sec=0)
         generated = calls["write_app_build_gradle"][-1]
         assert generated["signing_config_block"] == ""
         # Without it AGP leaves the release APK unsigned and named
@@ -1832,7 +1855,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, release=True, wait_sec=0)
+        cli.android_run(project, version=None, release=True, wait_sec=0)
         generated = calls["write_app_build_gradle"][-1]
         assert "upload" in generated["signing_config_block"]
         assert generated["release_signing_config"] == "release"
@@ -1847,7 +1870,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, wait_sec=0)
+        cli.android_run(project, version=None, wait_sec=0)
         assert calls["run_gradle"] == [("assembleDebug",)]
 
     def test_require_physical_reaches_adb(self, build_env, monkeypatch):
@@ -1857,7 +1880,7 @@ class TestAndroidRun:
         monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
         monkeypatch.setattr(adb_mod, "launch", lambda dev, pkg, act: None)
         monkeypatch.setattr(adb_mod, "logcat_dump", lambda dev: "")
-        cli.android_run(project, require_physical=True, wait_sec=0)
+        cli.android_run(project, version=None, require_physical=True, wait_sec=0)
         assert seen["require_physical"] is True
 
 
@@ -1878,7 +1901,7 @@ class TestAndroidRunLog:
             log=["I python.stderr: [INFO] up\n", "I python.stderr: tapped\n"],
             pids=("4242", "4242", None),
         )
-        log = cli.android_run(launched)
+        log = cli.android_run(launched, version=None)
         captured = capsys.readouterr()
         # Lines after startup are the point: a fixed snapshot missed them.
         assert captured.out.endswith("I python.stderr: tapped\n")
@@ -1890,7 +1913,7 @@ class TestAndroidRunLog:
     def test_a_restarted_app_is_not_followed(self, launched, monkeypatch, capsys):
         """A new pid is a process this run did not launch."""
         _fake_app(monkeypatch, pids=("4242", "5151"))
-        cli.android_run(launched)
+        cli.android_run(launched, version=None)
         assert "org.example.demoapp exited." in capsys.readouterr().err
 
     def test_ctrl_c_stops_following_and_leaves_the_app(
@@ -1906,7 +1929,7 @@ class TestAndroidRunLog:
             return "4242"
 
         monkeypatch.setattr(adb_mod, "pidof", pidof)
-        cli.android_run(launched)
+        cli.android_run(launched, version=None)
         captured = capsys.readouterr()
         assert captured.out == "I python.stderr: up\n"
         assert "demoapp is still running" in captured.err
@@ -1914,7 +1937,7 @@ class TestAndroidRunLog:
 
     def test_logcat_ending_on_its_own_is_reported(self, launched, monkeypatch, capsys):
         _fake_app(monkeypatch, pids=("4242",), ends=True)
-        cli.android_run(launched)
+        cli.android_run(launched, version=None)
         assert "logcat ended" in capsys.readouterr().err
 
     def test_an_app_that_never_starts_shows_the_device_log(
@@ -1930,7 +1953,7 @@ class TestAndroidRunLog:
             lambda dev, pid=None: dumped.append(pid) or "E AndroidRuntime: boom\n",
         )
         with pytest.raises(ToolchainError, match="did not start"):
-            cli.android_run(launched)
+            cli.android_run(launched, version=None)
         assert dumped == [None]
         captured = capsys.readouterr()
         assert "E AndroidRuntime: boom" in captured.err
@@ -1946,18 +1969,25 @@ class TestAndroidRunLog:
             "logcat_dump",
             lambda dev, pid=None: dumped.append(pid) or "I python.stderr: up\n",
         )
-        log = cli.android_run(launched, follow=False, wait_sec=0)
+        log = cli.android_run(launched, version=None, follow=False, wait_sec=0)
         assert dumped == ["4242"]
         assert app["follow"] == []
         assert log == capsys.readouterr().out == "I python.stderr: up\n"
 
 
 class TestAndroidSmoke:
+    def test_the_version_reaches_the_build(self, build_env, monkeypatch):
+        project, calls = build_env
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        cli.android_smoke(project, version=_OVERRIDE)
+        assert calls["write_app_build_gradle"][-1]["_version"] == _OVERRIDE
+
     def test_success(self, build_env, monkeypatch, capsys):
         project, calls = build_env
         _fake_device(monkeypatch)
         monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
-        cli.android_smoke(project)
+        cli.android_smoke(project, version=None)
         assert "PASSED" in capsys.readouterr().out
 
     @pytest.mark.parametrize("release", [False, True])
@@ -1974,7 +2004,7 @@ class TestAndroidSmoke:
         _fake_device(monkeypatch)
         monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
         monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
-        cli.android_smoke(project, release=release)
+        cli.android_smoke(project, version=None, release=release)
         captured = capsys.readouterr()
         assert captured.out == "Contract smoke test PASSED.\n"
         assert "[smoke] device" in captured.err
@@ -1992,7 +2022,7 @@ class TestAndroidSmoke:
 
         monkeypatch.setattr(smoke_mod, "run_smoke", boom)
         with pytest.raises(ToolchainError, match="contract test failed"):
-            cli.android_smoke(project)
+            cli.android_smoke(project, version=None)
 
     def test_adb_error_is_wrapped(self, build_env, monkeypatch):
         project, _ = build_env
@@ -2002,13 +2032,13 @@ class TestAndroidSmoke:
 
         monkeypatch.setattr(adb_mod, "resolve_device", boom)
         with pytest.raises(ToolchainError, match="no AVD exists"):
-            cli.android_smoke(project)
+            cli.android_smoke(project, version=None)
 
     def test_debug_smoke_leaves_the_test_variant_alone(self, build_env, monkeypatch):
         project, calls = build_env
         _fake_device(monkeypatch)
         monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
-        cli.android_smoke(project)
+        cli.android_smoke(project, version=None)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
         assert gradle_kwargs["test_build_type"] is None
         assert gradle_kwargs["release_signing_config"] is None
@@ -2028,7 +2058,7 @@ class TestAndroidSmoke:
         _fake_device(monkeypatch)
         monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
         monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
-        cli.android_smoke(project, release=release)
+        cli.android_smoke(project, version=None, release=release)
         (bundle,) = calls["assemble_bundle"]
         assert bundle["byte_compile"] == compiled
         assert bundle["strip_source"] is release
@@ -2048,7 +2078,7 @@ class TestAndroidSmoke:
             "run_smoke",
             lambda dest, *, release: seen.update(release=release),
         )
-        cli.android_smoke(project, release=True)
+        cli.android_smoke(project, version=None, release=True)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
         assert gradle_kwargs["test_build_type"] == "release"
         assert gradle_kwargs["release_signing_config"] == "debug"
@@ -2074,7 +2104,7 @@ class TestAndroidSmoke:
         monkeypatch.setattr(signing_mod, "_verify_alias", lambda *a, **kw: None)
         _fake_device(monkeypatch)
         monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
-        cli.android_smoke(project, release=True)
+        cli.android_smoke(project, version=None, release=True)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
         assert gradle_kwargs["release_signing_config"] == "release"
         assert "upload" in gradle_kwargs["signing_config_block"]

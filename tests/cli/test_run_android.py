@@ -29,6 +29,10 @@ def runner():
 
 @pytest.fixture
 def fake_project_root(tmp_path):
+    # The verb reads the version declaration before dispatching.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0.0"\n', encoding="utf-8"
+    )
     return tmp_path
 
 
@@ -74,6 +78,7 @@ class TestAndroidOnlyFlagsGuard:
         with pytest.raises(ToolchainError, match="not valid for `run -p ios`"):
             IosPlatform().run(
                 fake_project_root,
+                version=None,
                 target="simulator",
                 arch=None,
                 destination=None,

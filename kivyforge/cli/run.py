@@ -11,6 +11,7 @@ from ..report import Report
 from ..report.transfers import transfers_to
 from ._common import ToolchainError
 from ._platform import platform_option, reject_android_only, resolve_target
+from ._version import reject_unused, resolve_for_verb, version_options
 
 
 @click.command()
@@ -86,6 +87,7 @@ from ._platform import platform_option, reject_android_only, resolve_target
         "instead of following it until the app exits or Ctrl-C (for scripts)."
     ),
 )
+@version_options
 def run(
     cli_platform: str | None,
     target: str,
@@ -100,6 +102,8 @@ def run(
     release: bool,
     abi: str | None,
     no_follow: bool,
+    app_version: str | None,
+    no_build_isolation: bool,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
     # run takes no --json, so no reporting() context gives it a report; its
@@ -122,6 +126,9 @@ def run(
                 release=release,
                 abi=abi,
                 no_follow=no_follow,
+                app_version=app_version,
+                no_build_isolation=no_build_isolation,
+                report=report,
             )
     finally:
         report.close_transfers()
@@ -142,8 +149,32 @@ def _run(
     release: bool,
     abi: str | None,
     no_follow: bool,
+    app_version: str | None,
+    no_build_isolation: bool,
+    report: Report,
 ) -> None:
     backend, project_root = resolve_target(cli_platform, verb="run")
+    # --smoke always builds (it has no --no-build path); --list-devices and
+    # --no-build build nothing, so they carry no version and refuse the flags.
+    builds = not list_devices and (smoke or not no_build)
+    if not builds:
+        reject_unused(
+            app_version=app_version,
+            no_build_isolation=no_build_isolation,
+            why="--list-devices" if list_devices else "--no-build",
+        )
+
+    def resolve():
+        if not builds:
+            return None
+        return resolve_for_verb(
+            report,
+            project_root,
+            platform=backend.name,
+            app_version=app_version,
+            no_build_isolation=no_build_isolation,
+            exports=False,
+        )
 
     reject_android_only(
         backend,
@@ -191,9 +222,12 @@ def _run(
             click.echo("Devices: " + (", ".join(adb_mod.connected_devices()) or "none"))
             click.echo("AVDs: " + (", ".join(adb_mod.available_avds()) or "none"))
             return
+        version = resolve()
         if smoke:
+            assert version is not None  # smoke always builds
             android_smoke(
                 project_root,
+                version=version,
                 release=release,
                 abi=abi,
                 serial=serial,
@@ -204,6 +238,7 @@ def _run(
         else:
             android_run(
                 project_root,
+                version=version,
                 no_build=no_build,
                 release=release,
                 abi=abi,
@@ -221,6 +256,7 @@ def _run(
 
     backend.run(
         project_root,
+        version=resolve(),
         target=target,
         arch=arch,
         destination=destination,

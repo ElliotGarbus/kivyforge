@@ -33,7 +33,8 @@ from kivyforge.cli._common import (
 )
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.config.icons import IconSourceError
-from kivyforge.config.model import VALID_SIMULATOR_ARCHS
+from kivyforge.config.model import VALID_SIMULATOR_ARCHS, ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.lock import LockError, is_in_sync
 from kivyforge.platforms.base import HostCapabilityError
 from kivyforge.report import failures
@@ -75,6 +76,7 @@ from .xcode.commands import SIGNING_IDENTITY_ENV, resolve_signing_identity
 def ios_build(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     target: str | None,
     arch: str | None,
     no_verify_lock: bool,
@@ -89,7 +91,7 @@ def ios_build(
     _require_macos_host()
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
-    config = _load_config(project_root / "pyproject.toml")
+    config = with_version(_load_config(project_root / "pyproject.toml"), version)
     resolved_team_id: str | None = None
     if target is not None:
         try:
@@ -465,6 +467,7 @@ def _load_lock(project_root: Path):
 def ios_run(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     target: str,
     destination: str | None,
     no_build: bool,
@@ -475,6 +478,7 @@ def ios_run(
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:
         raise ToolchainError(exc.format()) from exc
+    config = with_version(config, version)
 
     xb = XcodeBuild.from_config(config, project_root)
     derived_data = xb.build_dir / "DerivedData"
@@ -571,6 +575,7 @@ def _run_device(device: Device, app: Path, bundle_id: str) -> None:
 def ios_package(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     team_id: str | None,
     signing_identity: str | None,
     export_method: str,
@@ -585,7 +590,7 @@ def ios_package(
     """
     outcome = OutcomeBuilder(events.on_artifact)
     _require_macos_host()
-    config = _load_config(project_root / "pyproject.toml")
+    config = with_version(_load_config(project_root / "pyproject.toml"), version)
     try:
         # Resolve before prepare_build so the generated .xcodeproj carries the
         # right DEVELOPMENT_TEAM the first time — _xcodebuild_step7 resolves

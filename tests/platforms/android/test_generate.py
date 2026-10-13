@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
+from kivyforge.config.model import ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.platforms.android.generate import project as project_mod
 from kivyforge.platforms.android.generate.manifest import (
     ManifestError,
@@ -279,6 +281,21 @@ class TestProjectFiles:
             kivy_generation=2,
             gradle=gradle,
         )
+
+    def test_app_build_gradle_versions_come_from_the_resolved_version(self, tmp_path):
+        config, android = _android('version_code = "auto"\nbuild = 3')
+        built = with_version(config, ResolvedVersion("4.5.6", "override"))
+        write_app_build_gradle(
+            tmp_path,
+            built,
+            android,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "python-runtime",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "versionName '4.5.6'" in text
+        assert "versionCode 4050603" in text
 
     def test_app_build_gradle_content(self, tmp_path):
         config, android = _android(

@@ -12,6 +12,7 @@ import stat
 from pathlib import Path
 
 from kivyforge.config.model import AndroidConfig, Config
+from kivyforge.config.version import android_version_code
 
 from .. import policy, toolchain
 from ..lock.model import AndroidLockfile
@@ -184,6 +185,8 @@ def write_app_build_gradle(
     libpython — a Gradle-side lookup cannot do this for plain ``gradlew``
     builds (``android.injected.build.abi`` is Studio-only).
     """
+    version = config.version_required
+    version_code = android_version_code(config)
     effective = abis if abis is not None else tuple(android.abis)
     abis_filter = ", ".join(f"'{android_abi(a)}'" for a in effective)
     stem = "python" + ".".join(python_version.split(".")[:2])
@@ -283,8 +286,8 @@ android {{
         applicationId '{android.package}'
         minSdk {android.min_sdk}
         targetSdk {android.target_sdk}
-        versionCode {android.version_code}
-        versionName '{config.project.version}'
+        versionCode {version_code}
+        versionName '{version.value}'
         multiDexEnabled {multidex}
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk {{ abiFilters {abis_filter} }}

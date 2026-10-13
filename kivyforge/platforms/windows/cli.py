@@ -28,7 +28,8 @@ from kivyforge.cli._common import (
     lockfile_path_for,
 )
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
-from kivyforge.config.model import Config
+from kivyforge.config.model import Config, ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -76,6 +77,7 @@ _PACKAGE_IGNORE = shutil.ignore_patterns(
 def windows_build(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
@@ -85,7 +87,7 @@ def windows_build(
     """Assemble the Windows onedir bundle."""
     outcome = OutcomeBuilder(events.on_artifact)
     _require_windows_host()
-    config, lock = _load_and_verify(project_root, no_verify_lock)
+    config, lock = _load_and_verify(project_root, no_verify_lock, version)
     bundle = _assemble(
         config,
         lock,
@@ -104,6 +106,7 @@ def windows_build(
 def windows_package(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     fmt: str,
     arch: str | None,
     no_verify_lock: bool,
@@ -117,7 +120,7 @@ def windows_package(
     """
     outcome = OutcomeBuilder(events.on_artifact)
     _require_windows_host()
-    config, lock = _load_and_verify(project_root, no_verify_lock)
+    config, lock = _load_and_verify(project_root, no_verify_lock, version)
     target_arch = _resolve_arch(lock, arch)
     bundle = _assemble(
         config,
@@ -135,7 +138,7 @@ def windows_package(
         project_root
         / "dist"
         / "windows"
-        / f"{bundle_dir_name(config)}-{config.project.version}-{target_arch}"
+        / f"{bundle_dir_name(config)}-{config.version_required.filename_part}-{target_arch}"
     )
     # Reserve any prior package and keep it until *signing* also succeeds, so a
     # signer failure (missing cert, timestamp outage) rolls back to the previous
@@ -206,6 +209,7 @@ def _note_path_depth(bundle: Path, events: BuildEvents) -> None:
 def windows_run(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     arch: str | None,
     no_build: bool,
     release: bool = False,
@@ -233,6 +237,7 @@ def windows_run(
         config = _load_config(project_root)
         built = windows_build(
             project_root,
+            version=version,
             arch=arch,
             no_verify_lock=False,
             no_cache=False,
@@ -338,9 +343,9 @@ def _stage_dist_copy(bundle: Path, dest: Path) -> Path | None:
 
 
 def _load_and_verify(
-    project_root: Path, no_verify_lock: bool
+    project_root: Path, no_verify_lock: bool, version: ResolvedVersion | None
 ) -> tuple[Config, WindowsLockfile]:
-    config = _load_config(project_root)
+    config = with_version(_load_config(project_root), version)
     lock = _load_lock(project_root)
     pyproject = project_root / "pyproject.toml"
     if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):

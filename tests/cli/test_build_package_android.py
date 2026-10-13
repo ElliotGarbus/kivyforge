@@ -41,6 +41,10 @@ def runner():
 
 
 def _patch(monkeypatch, module, backend, project_root):
+    # The verb reads the version declaration before dispatching.
+    (project_root / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0.0"\n', encoding="utf-8"
+    )
     monkeypatch.setattr(
         module, "resolve_target", lambda cli_platform, verb: (backend, project_root)
     )

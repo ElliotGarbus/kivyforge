@@ -26,7 +26,8 @@ from kivyforge.cli._common import (
     lockfile_path_for,
 )
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
-from kivyforge.config.model import Config
+from kivyforge.config.model import Config, ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -42,6 +43,7 @@ from .lock import load as load_linux_lock
 def linux_build(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
@@ -51,7 +53,7 @@ def linux_build(
     """Assemble the Linux AppDir."""
     outcome = OutcomeBuilder(events.on_artifact)
     _require_linux_host()
-    config, lock = _load_and_verify(project_root, no_verify_lock)
+    config, lock = _load_and_verify(project_root, no_verify_lock, version)
     appdir = _assemble(
         config,
         lock,
@@ -70,6 +72,7 @@ def linux_build(
 def linux_package(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     fmt: str,
     arch: str | None,
     no_verify_lock: bool,
@@ -79,7 +82,7 @@ def linux_package(
     """Produce the distributable artifact: an ``.AppImage`` (default) or the AppDir."""
     outcome = OutcomeBuilder(events.on_artifact)
     _require_linux_host()
-    config, lock = _load_and_verify(project_root, no_verify_lock)
+    config, lock = _load_and_verify(project_root, no_verify_lock, version)
     target_arch = _resolve_arch(lock, arch)
     appdir = _assemble(
         config,
@@ -106,7 +109,7 @@ def linux_package(
         project_root
         / "dist"
         / "linux"
-        / f"{config.app_slug}-{config.project.version}-{target_arch}.AppImage"
+        / f"{config.app_slug}-{config.version_required.filename_part}-{target_arch}.AppImage"
     )
     try:
         result = build_appimage(
@@ -161,9 +164,9 @@ def _resolve_arch(lock: LinuxLockfile, arch: str | None) -> str:
 
 
 def _load_and_verify(
-    project_root: Path, no_verify_lock: bool
+    project_root: Path, no_verify_lock: bool, version: ResolvedVersion | None
 ) -> tuple[Config, LinuxLockfile]:
-    config = _load_config(project_root)
+    config = with_version(_load_config(project_root), version)
     lock = _load_lock(project_root)
     pyproject = project_root / "pyproject.toml"
     if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
@@ -180,6 +183,7 @@ def _load_and_verify(
 def linux_run(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     arch: str | None,
     no_build: bool,
     release: bool = False,
@@ -206,6 +210,7 @@ def linux_run(
     else:
         built = linux_build(
             project_root,
+            version=version,
             arch=arch,
             no_verify_lock=False,
             no_cache=False,

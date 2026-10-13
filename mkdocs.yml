@@ -120,6 +120,7 @@ nav:
           - Handle mobile screen geometry: guides/cross-platform/mobile-geometry.md
           - Ship native binaries: guides/cross-platform/native-binaries.md
           - Manage dependencies and re-lock: guides/cross-platform/dependencies.md
+          - Set the app version: guides/cross-platform/versioning.md
           - Drive kivyforge from CI or an agent: guides/cross-platform/ci-and-agents.md
           - Migrate from buildozer, p4a, or kivy-ios: guides/cross-platform/migrate.md
   - Reference:

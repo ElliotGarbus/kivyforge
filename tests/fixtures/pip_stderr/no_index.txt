@@ -1,0 +1,17 @@
+  error: subprocess-exited-with-error
+  
+  × installing build dependencies did not run successfully.
+  │ exit code: 1
+  ╰─> [8 lines of output]
+      Looking in indexes: http://127.0.0.1:9/simple
+      WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused")': /simple/setuptools/
+      WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused")': /simple/setuptools/
+      ERROR: Could not find a version that satisfies the requirement setuptools>=64 (from versions: none)
+      ERROR: No matching distribution found for setuptools>=64
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///project' when installing build dependencies

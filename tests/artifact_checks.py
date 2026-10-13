@@ -622,8 +622,13 @@ def android_manifest_problems(
     android: AndroidConfig,
     orientation: tuple[str, ...],
     version_name: str,
+    version_code: int,
 ) -> list[str]:
     """Every way AGP's *merged* manifest fails to carry what config declared.
+
+    ``version_name`` and ``version_code`` are the values the build used, not
+    the declaration: a dynamic or ``"auto"`` version has no value in
+    ``pyproject.toml`` (``config.version.android_version_code``).
 
     ``manifest_xml`` is the text of the merged manifest — the artifact the
     generated ``exportKivyforgeReleaseManifest`` task copies to
@@ -643,7 +648,7 @@ def android_manifest_problems(
         return [f"the merged manifest's root element is <{root.tag}>, not <manifest>"]
 
     problems = _manifest_identity_problems(
-        root, android=android, version_name=version_name
+        root, android=android, version_name=version_name, version_code=version_code
     )
     problems += _manifest_permission_problems(root, android=android)
     problems += _manifest_feature_problems(root, android=android)
@@ -694,7 +699,7 @@ def _expected_attr_value(value: object) -> str:
 
 
 def _manifest_identity_problems(
-    root: ET.Element, *, android: AndroidConfig, version_name: str
+    root: ET.Element, *, android: AndroidConfig, version_name: str, version_code: int
 ) -> list[str]:
     """applicationId, version, and the SDK floor/target.
 
@@ -711,7 +716,7 @@ def _manifest_identity_problems(
             f"declares {android.package!r}"
         )
 
-    expected_code = str(android.version_code)
+    expected_code = str(version_code)
     if _android_attr(root, "versionCode") != expected_code:
         problems.append(
             f"merged manifest android:versionCode is "

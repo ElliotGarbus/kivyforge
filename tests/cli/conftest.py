@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from kivyforge.config.model import ResolvedVersion
 from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
 
 _PYPROJECT = """\
@@ -45,7 +46,7 @@ def windows(desktop_project, monkeypatch):
 
     config = SimpleNamespace(
         display_name="My App",
-        project=SimpleNamespace(version="1.2.3"),
+        version_required=ResolvedVersion("1.2.3", source="static"),
         windows_required=SimpleNamespace(signing=None),
     )
     lock = SimpleNamespace(archs=("amd64",))
@@ -57,7 +58,9 @@ def windows(desktop_project, monkeypatch):
         return bundle
 
     monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
-    monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: (config, lock))
+    monkeypatch.setattr(
+        cli, "_load_and_verify", lambda root, nv, version=None: (config, lock)
+    )
     monkeypatch.setattr(cli, "build_onedir", fake_build_onedir)
     return cli
 
@@ -67,7 +70,8 @@ def linux(desktop_project, monkeypatch):
     from kivyforge.platforms.linux import cli
 
     config = SimpleNamespace(
-        app_slug="demo-app", project=SimpleNamespace(version="1.2.3")
+        app_slug="demo-app",
+        version_required=ResolvedVersion("1.2.3", source="static"),
     )
     lock = SimpleNamespace(archs=("x86_64",))
 
@@ -83,7 +87,9 @@ def linux(desktop_project, monkeypatch):
         return output
 
     monkeypatch.setattr(cli, "_require_linux_host", lambda: None)
-    monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: (config, lock))
+    monkeypatch.setattr(
+        cli, "_load_and_verify", lambda root, nv, version=None: (config, lock)
+    )
     monkeypatch.setattr(cli, "build_appdir", fake_build_appdir)
     monkeypatch.setattr(cli, "build_appimage", fake_build_appimage)
     return cli
@@ -106,7 +112,7 @@ def macos(desktop_project, monkeypatch):
         return app
 
     monkeypatch.setattr(cli, "_require_macos_host", lambda: None)
-    monkeypatch.setattr(cli, "_load_config", lambda root: config)
+    monkeypatch.setattr(cli, "_load_config", lambda root, version=None: config)
     monkeypatch.setattr(cli, "_load_lock", lambda root: object())
     monkeypatch.setattr(cli, "is_in_sync", lambda lock, text: True)
     monkeypatch.setattr(cli, "build_app_bundle", fake_build_app_bundle)
@@ -141,6 +147,7 @@ def ios(desktop_project, monkeypatch):
 
     monkeypatch.setattr(cli, "_require_macos_host", lambda: None)
     monkeypatch.setattr(cli, "_load_config", lambda pyproject: config)
+    monkeypatch.setattr(cli, "with_version", lambda config, version: config)
     monkeypatch.setattr(cli, "_load_lock", lambda root: lock)
     monkeypatch.setattr(cli, "is_in_sync", lambda lock, text: True)
     monkeypatch.setattr(cli, "preflight_signing", lambda *a, **k: "TEAM123456")

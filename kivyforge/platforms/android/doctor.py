@@ -1025,6 +1025,7 @@ def android_doctor(
         )
     )
     results.append(_check_app_native_binaries(config, cwd))
+    results.append(C.check_version(config))
     results.append(_check_icon(config, cwd))
     results.append(_check_splash(config, cwd))
     results.append(_check_find_links(config, cwd))

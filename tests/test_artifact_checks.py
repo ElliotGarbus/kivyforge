@@ -554,11 +554,13 @@ def _mcheck(
     orientation: tuple[str, ...] = ("portrait",),
     version_name: str = "1.0.0",
 ) -> list[str]:
+    assert isinstance(android.version_code, int)  # these configs never use "auto"
     return android_manifest_problems(
         manifest_xml,
         android=android,
         orientation=orientation,
         version_name=version_name,
+        version_code=android.version_code,
     )
 
 

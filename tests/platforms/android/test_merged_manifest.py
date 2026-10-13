@@ -26,6 +26,7 @@ import pytest
 
 from kivyforge.config.loader import load_config
 from kivyforge.config.model import Config
+from kivyforge.config.version import android_version_code
 from kivyforge.platforms.android.generate.project import MERGED_MANIFEST_RELPATH
 from tests.artifact_checks import android_manifest_problems
 
@@ -73,7 +74,8 @@ def test_the_merged_manifest_declares_what_config_asked_for(
         merged_manifest.read_text(encoding="utf-8"),
         android=android,
         orientation=project_config.kivy.orientation,
-        version_name=project_config.project.version,
+        version_name=project_config.version_required.value,
+        version_code=android_version_code(project_config),
     )
     assert not problems, (
         f"{merged_manifest.name} does not carry what pyproject.toml declared:\n  "

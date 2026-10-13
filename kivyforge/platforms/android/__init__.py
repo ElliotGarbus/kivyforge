@@ -26,6 +26,7 @@ from ..base import Platform
 
 if TYPE_CHECKING:
     from kivyforge.build_outcome import BuildEvents, BuildOutcome
+    from kivyforge.config.model import ResolvedVersion
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -138,6 +139,7 @@ class AndroidPlatform(Platform):
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -158,6 +160,7 @@ class AndroidPlatform(Platform):
 
         return android_build(
             project_root,
+            version=version,
             events=events,
             debug=debug,
             fmt=fmt or "apk",
@@ -170,6 +173,7 @@ class AndroidPlatform(Platform):
         self,
         project_root: Path,
         *,
+        version: ResolvedVersion | None,
         target: str,
         arch: str | None,
         destination: str | None,
@@ -180,6 +184,7 @@ class AndroidPlatform(Platform):
 
         android_run(
             project_root,
+            version=version,
             no_build=no_build,
             release=release,
             abi=arch,
@@ -191,6 +196,7 @@ class AndroidPlatform(Platform):
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         fmt: str,
         arch: str | None,
         team_id: str | None,
@@ -208,6 +214,7 @@ class AndroidPlatform(Platform):
 
         return android_package(
             project_root,
+            version=version,
             events=events,
             fmt=fmt,
             abi=abi or arch,

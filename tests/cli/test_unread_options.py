@@ -33,6 +33,10 @@ class _FakeBackend:
 
 def _invoke(monkeypatch, tmp_path, module, platform: str, args: list[str]):
     backend = _FakeBackend(platform)
+    # The verb reads the version declaration before dispatching.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0.0"\n', encoding="utf-8"
+    )
     monkeypatch.setattr(
         module, "resolve_target", lambda cli_platform, verb: (backend, tmp_path)
     )

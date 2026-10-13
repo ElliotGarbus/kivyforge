@@ -15,7 +15,9 @@ does not configure a target. For how the tables fit together, see
 [Project configuration](../../concepts/configuration.md).
 
 kivyforge reads the app's name and version from `[project]`, and its
-dependencies from `[project].dependencies`.
+dependencies from `[project].dependencies`. The version can be dynamic, taken
+from git by your build backend; see
+[Set the app version](../../guides/cross-platform/versioning.md).
 
 ## Keys
 

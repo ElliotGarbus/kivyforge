@@ -62,7 +62,9 @@ class TestBuild:
             return project_root / "build" / "windows" / "My App"
 
         monkeypatch.setattr(cli, "build_onedir", _fake_build)
-        monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: ("cfg", "lock"))
+        monkeypatch.setattr(
+            cli, "_load_and_verify", lambda root, nv, version=None: ("cfg", "lock")
+        )
         monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         outcome = cli.windows_build(
             project, arch=None, no_verify_lock=True, no_cache=False
@@ -154,11 +156,14 @@ class TestRun:
             returncode = 0
 
         monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
-        monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: ("cfg", "lock"))
+        monkeypatch.setattr(
+            cli, "_load_and_verify", lambda root, nv, version=None: ("cfg", "lock")
+        )
         monkeypatch.setattr(cli, "build_onedir", _fake_build)
         monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: _Proc())
         WindowsPlatform().run(
             project,
+            version=None,
             target="simulator",
             arch=None,
             destination=None,
@@ -179,7 +184,9 @@ class TestRun:
             returncode = 0
 
         monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
-        monkeypatch.setattr(cli, "_load_and_verify", lambda root, nv: ("cfg", "lock"))
+        monkeypatch.setattr(
+            cli, "_load_and_verify", lambda root, nv, version=None: ("cfg", "lock")
+        )
         monkeypatch.setattr(cli, "build_onedir", _fake_build)
         monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: _Proc())
         cli.windows_run(project, arch=None, no_build=False)
@@ -201,7 +208,9 @@ class TestPackage:
     def _package(self, project, built, monkeypatch):
         monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         monkeypatch.setattr(
-            cli, "_load_and_verify", lambda root, nv: (_config(project), self._Lock())
+            cli,
+            "_load_and_verify",
+            lambda root, nv, version=None: (_config(project), self._Lock()),
         )
         monkeypatch.setattr(cli, "build_onedir", lambda *a, **k: built)
         outcome = cli.windows_package(
@@ -436,17 +445,17 @@ class TestHostAndLoaderErrors:
 class TestLoadAndVerify:
     def test_in_sync_returns_config_and_lock(self, project):
         _write_windows_lock(project, in_sync=True)
-        config, lock = cli._load_and_verify(project, False)
+        config, lock = cli._load_and_verify(project, False, None)
         assert lock.archs == ("amd64",)
 
     def test_stale_lock_raises(self, project):
         _write_windows_lock(project, in_sync=False)
         with pytest.raises(ToolchainError, match="out of date"):
-            cli._load_and_verify(project, False)
+            cli._load_and_verify(project, False, None)
 
     def test_no_verify_lock_allows_stale(self, project):
         _write_windows_lock(project, in_sync=False)
-        _config_obj, lock = cli._load_and_verify(project, True)
+        _config_obj, lock = cli._load_and_verify(project, True, None)
         assert lock.archs == ("amd64",)
 
 

@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
+from kivyforge.config.model import ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.platforms.macos import AppBundleError
 from kivyforge.platforms.macos import launcher as launcher_mod
 from kivyforge.platforms.macos.launcher import build_launcher, render_launcher_source
@@ -49,6 +51,13 @@ class TestInfoPlist:
         assert plist["CFBundleVersion"] == "7"
         assert plist["CFBundlePackageType"] == "APPL"
         assert "CFBundleIconFile" not in plist
+
+    def test_short_version_is_the_resolved_one_as_given(self):
+        # Never rewritten: an App Store export is checked in the verb instead.
+        config = with_version(_config(), ResolvedVersion("2.6.0.dev3+gabc", "backend"))
+        plist = build_info_plist(config, executable="x", icon_file=None)
+        assert plist["CFBundleShortVersionString"] == "2.6.0.dev3+gabc"
+        assert plist["CFBundleVersion"] == "7"
 
     def test_default_minimum_system_version(self):
         plist = build_info_plist(_config(), executable="x", icon_file=None)

@@ -22,6 +22,7 @@ from ._platform import (
     reject_unread,
     resolve_target,
 )
+from ._version import resolve_for_verb, version_options
 
 
 @click.command()
@@ -87,6 +88,7 @@ from ._platform import (
     default=None,
     help="Android: restrict this build to one ABI.",
 )
+@version_options
 @output_options
 def build(
     cli_platform: str | None,
@@ -100,6 +102,8 @@ def build(
     debug: bool,
     fmt: str | None,
     abi: str | None,
+    app_version: str | None,
+    no_build_isolation: bool,
     json_out: bool,
     no_color: bool,
 ) -> None:
@@ -122,10 +126,22 @@ def build(
                 "--export-method": (passed("export_method"), ("ios",)),
             },
         )
+        version = resolve_for_verb(
+            report,
+            project_root,
+            platform=backend.name,
+            app_version=app_version,
+            no_build_isolation=no_build_isolation,
+            # An iOS --release archives and exports; every other build is a
+            # development build nothing uploads.
+            exports=target == "release",
+            export_method=export_method,
+        )
 
         outcome = backend.build(
             project_root,
             events=report_events(report),
+            version=version,
             target=target,
             arch=arch,
             no_verify_lock=no_verify_lock,

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from kivyforge.build_outcome import BuildEvents, BuildOutcome
+    from kivyforge.config.model import ResolvedVersion
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -87,12 +88,17 @@ class Platform(ABC):
     #
     # ``build``/``package`` report through ``events`` as they run and return what
     # this invocation finalised; the verb renders both (build_outcome.py).
+    #
+    # ``version`` is the one the verb resolved before dispatch (versioning.py);
+    # a backend loads config with it, so every artifact carries that version.
+    # ``run`` gets ``None`` exactly when it builds nothing (``--no-build``).
 
     def build(
         self,
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -110,6 +116,7 @@ class Platform(ABC):
         self,
         project_root: Path,
         *,
+        version: ResolvedVersion | None,
         target: str,
         arch: str | None,
         destination: str | None,
@@ -123,6 +130,7 @@ class Platform(ABC):
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         fmt: str,
         arch: str | None,
         team_id: str | None,

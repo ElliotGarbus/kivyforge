@@ -207,6 +207,14 @@ def pytest_addoption(parser):
         "meaningful on a Windows host where LongPathsEnabled has been set to 0; "
         "the test fails if it has not.",
     )
+    # Not an artifact either: pip and setuptools fetched from the index, to pin
+    # the behaviour docs/design/dev/dynamic-version-proposal.md builds on.
+    pip_metadata = parser.getgroup("kivyforge pip metadata (live)")
+    pip_metadata.addoption(
+        "--pip-metadata-live",
+        action="store_true",
+        help="Run the pip metadata-preparation tests: needs git and network.",
+    )
     resolver.addoption(
         "--resolver-prerelease-minor",
         default=None,
