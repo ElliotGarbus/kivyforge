@@ -12,7 +12,11 @@ projects in temporary git repositories:
 * a project that gets setuptools-scm through ``setup_requires`` reports
   ``0.0.0``, with pip exiting 0, when run non-isolated in an environment that
   satisfies ``[build-system].requires``. This is why isolation is the default
-  and not chosen automatically.
+  and not chosen automatically;
+* with an older copy of the project installed where pip runs (the usual state
+  under ``uv run``), the report still gives the tree's version;
+* a non-setuptools backend (hatchling with hatch-vcs) resolves the same way and
+  leaves the tree untouched.
 
 The design documents the egg-info as a side effect rather than undoing it, and
 its cause is pinned too. With isolation, pip calls the backend's ``get_requires_for_build_wheel`` hook to
@@ -258,3 +262,58 @@ def test_non_isolated_misses_setup_requires_silently(tmp_path, setuptools_only_p
     python = setuptools_only_python
     assert _pip_metadata_version(python, project, isolated=False) == "0.0.0"
     assert _pip_metadata_version(python, project, isolated=True) == "1.2.3"
+
+
+def test_ignore_installed_reports_the_tree_not_the_installed_copy(
+    tmp_path, backend_python
+):
+    """Under `uv run kf` the project is usually installed where pip runs."""
+    project = _make_project(tmp_path / "proj", src_layout=False)
+    _git(project, "checkout", "-q", "v1.2.3")
+    pip = [str(backend_python), "-m", "pip"]
+    install = [*pip, "install", "-q", "--no-build-isolation", str(project)]
+    subprocess.run(install, stdin=subprocess.DEVNULL, capture_output=True, check=True)
+    _git(project, "checkout", "-q", "-")
+    try:
+        version = _pip_metadata_version(backend_python, project, isolated=False)
+        _assert_dev_version(version, project)
+    finally:
+        subprocess.run(
+            [*pip, "uninstall", "-qy", "myapp"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=True,
+        )
+
+
+HATCH_PYPROJECT = """\
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "myapp"
+dynamic = ["version"]
+
+[tool.hatch.version]
+source = "vcs"
+"""
+
+
+def test_hatch_vcs_resolves_and_leaves_the_tree_untouched(tmp_path):
+    project = tmp_path / "hatch"
+    (project / "src" / "myapp").mkdir(parents=True)
+    (project / "src" / "myapp" / "__init__.py").write_text("", encoding="utf-8")
+    (project / "pyproject.toml").write_text(HATCH_PYPROJECT, encoding="utf-8")
+    _git(project, "init", "-q")
+    _git(project, "add", ".")
+    _git(project, "commit", "-q", "-m", "init")
+    _git(project, "tag", "v1.2.3")
+    (project / "CHANGES").write_text("one more\n", encoding="utf-8")
+    _git(project, "add", ".")
+    _git(project, "commit", "-q", "-m", "after the tag")
+
+    version = _pip_metadata_version(Path(sys.executable), project, isolated=True)
+
+    _assert_dev_version(version, project)
+    assert _git(project, "status", "--porcelain", "--ignored") == ""
