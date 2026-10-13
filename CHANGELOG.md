@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### All platforms: install metadata left out of the app
+
+- **Fixed:** a `*.egg-info` folder inside `app_dir` was copied into the app.
+  `pip install .` and `pip install -e .` create one next to your package in a
+  src layout (`src/myapp.egg-info`), so a project with `app_dir = "src"` shipped
+  setuptools' record of the developer's checkout: the version installed last,
+  and a file list with host paths. Every platform's app copy now leaves it out.
+  iOS debug builds are the exception, because they link to `app_dir` instead of
+  copying it, and Xcode copies the folder as it is.
+- **Migration:** if your app called `importlib.metadata.version("myapp")` and
+  got an answer, that answer came from the shipped `egg-info` and was whatever
+  version was installed last on the build machine, not necessarily the one you
+  built. It now raises `PackageNotFoundError`, because the app is not installed
+  as a package. Write the version into a module instead, for example with
+  setuptools-scm's `version_file` setting.
+
 ### Android: pyjnius versions
 
 - **Fixed:** pyjnius 1.9.0 failed every Android build with "locked pyjnius 1.9.0

@@ -9,12 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kivyforge.build_outcome import discard_note
+from kivyforge.bundle.appcopy import APP_COPY_EXCLUDES
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError, reclassify
 
-_APP_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
+_APP_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", *APP_COPY_EXCLUDES)
 
 
 class StagingError(ClassifiedError):

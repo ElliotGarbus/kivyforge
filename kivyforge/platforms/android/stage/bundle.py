@@ -36,6 +36,7 @@ from kivyforge.artifacts.verify import sha256_file
 # Imported as a module, not by name: ``assemble_bundle`` takes a *parameter*
 # called ``byte_compile`` (the compiler argv), so a bare import would shadow.
 from kivyforge.bundle import pycompile
+from kivyforge.bundle.appcopy import APP_COPY_EXCLUDES
 
 from .jnilibs import is_wheel_libs_dir
 
@@ -230,10 +231,8 @@ def _copy_app(
             f"set entry_point for [[tool.kivy.android.services]] {name!r}",
         )
 
-    def ignore(directory: str, names: list[str]) -> list[str]:
-        return [n for n in names if n == "__pycache__"]
-
-    shutil.copytree(src, dest, ignore=ignore)
+    excluded = shutil.ignore_patterns("__pycache__", *APP_COPY_EXCLUDES)
+    shutil.copytree(src, dest, ignore=excluded)
 
 
 def _assert_abi_identity(
