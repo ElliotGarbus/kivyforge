@@ -214,12 +214,16 @@ def check_version(config: Config) -> CheckResult:
         f"dynamic via {declared.backend} (resolved at build time; the first "
         "build needs network)"
     )
-    hint = ""
     android = config.android
     if android is not None and isinstance(android.version_code, AutoVersionCode):
-        hint = (
-            'version_code = "auto" is derived at build time too; a pre-release, '
-            "dev or local version fails then. Build from a release tag, or set "
-            "an explicit integer version_code."
+        # A WARN, not a PASS with a note: doctor prints hints only for WARN and
+        # FAIL, and this combination fails every build between tags.
+        return CheckResult(
+            "Version",
+            Status.WARN,
+            detail,
+            hint='version_code = "auto" is derived from it at build time, and a '
+            "build between tags (a dev version) fails then. Build from a release "
+            "tag, or set an explicit integer version_code.",
         )
-    return CheckResult("Version", Status.PASS, detail, hint=hint)
+    return CheckResult("Version", Status.PASS, detail)

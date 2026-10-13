@@ -832,6 +832,7 @@ the code met the text; none changes a behaviour the reviews asked for.
 | `ResolvedVersion` carries every derived value (3.4 step 3) | It carries `value`, `source` and `filename_part`. The Android code is `config.version.android_version_code(config)`; the Windows numeric version stays `pep440_to_file_version(value)` in the Windows backend; the Apple check runs in the verb. | Each derived value lives with the one consumer that needs it. The Android backend calls `android_version_code` as soon as it loads config with a version, so a dev version with `"auto"` still fails before any staging or Gradle work, with the file's line number. |
 | An INFO diagnostic for `--no-build-isolation` with a static version (3.3) | Code `KF-VERSION-ISOLATION-UNUSED`. | The design named the diagnostic but not its code. |
 | "Usage error" for flags that cannot apply (3.2, 3.3) | `ToolchainError`, exit 1. | Exit 2 belongs to click's parser; kivyforge never raises it (`report/exit_codes.py`). |
+| `doctor`: a dynamic version with `"auto"` is a PASS with a note (3.7) | A WARN with that hint. | doctor prints hints only for WARN and FAIL (`CheckResult.render`), so a PASS's note was invisible; and the combination fails every build between tags, which is what doctor is for. Found in the uv test. |
 | One stderr line naming the version (3.5) | Printed for `override` and `backend` sources only. | A static version is in `pyproject.toml` already; printing it would change every existing project's output. |
 
 The user-facing page is `docs/guides/guides/cross-platform/versioning.md`.

@@ -1,0 +1,76 @@
+  error: subprocess-exited-with-error
+  
+  × Getting requirements to build wheel did not run successfully.
+  │ exit code: 1
+  ╰─> [67 lines of output]
+      Traceback (most recent call last):
+        File "/tool-env/lib/python3.14/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 389, in <module>
+          main()
+          ~~~~^^
+        File "/tool-env/lib/python3.14/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 373, in main
+          json_out["return_val"] = hook(**hook_input["kwargs"])
+                                   ~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/tool-env/lib/python3.14/site-packages/pip/_vendor/pyproject_hooks/_in_process/_in_process.py", line 143, in get_requires_for_build_wheel
+          return hook(config_settings)
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/build_meta.py", line 333, in get_requires_for_build_wheel
+          return self._get_build_requires(config_settings, requirements=[])
+                 ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/build_meta.py", line 301, in _get_build_requires
+          self.run_setup()
+          ~~~~~~~~~~~~~~^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/build_meta.py", line 317, in run_setup
+          exec(code, locals())  # noqa: S102 # exec is intentional here
+          ~~~~^^^^^^^^^^^^^^^^
+        File "<string>", line 1, in <module>
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/__init__.py", line 117, in setup
+          return distutils.core.setup(**attrs)  # type: ignore[return-value]
+                 ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/_distutils/core.py", line 130, in setup
+          _setup_distribution = dist = klass(attrs)
+                                       ~~~~~^^^^^^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/dist.py", line 321, in __init__
+          _Distribution.__init__(self, dist_attrs)
+          ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/_distutils/dist.py", line 338, in __init__
+          self.finalize_options()
+          ~~~~~~~~~~~~~~~~~~~~~^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools/dist.py", line 790, in finalize_options
+          ep(self)
+          ~~^^^^^^
+        File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/contextlib.py", line 85, in inner
+          return func(*args, **kwds)
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools_scm/_integration/setuptools.py", line 267, in infer_version
+          _infer_version_impl(
+          ~~~~~~~~~~~~~~~~~~~^
+              dist,
+              ^^^^^
+          ...<3 lines>...
+              _get_version_inference_config=_get_version_inference_config,
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          )
+          ^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools_scm/_integration/setuptools.py", line 300, in _infer_version_impl
+          result.apply(dist)
+          ~~~~~~~~~~~~^^^^^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools_scm/_integration/version_inference.py", line 199, in apply
+          data = infer_version_with_config(
+              self.dist_name,
+          ...<2 lines>...
+              env=self.env,
+          )
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/setuptools_scm/_integration/version_inference.py", line 139, in infer_version_with_config
+          _version_missing(config)
+          ~~~~~~~~~~~~~~~~^^^^^^^^
+        File "/private/var/folders/vn/6m2fpc2s2bbdyxl635r97d5m0000gn/T/pip-build-env-d9rsdk5d/overlay/lib/python3.14/site-packages/vcs_versioning/_get_version_impl.py", line 306, in _version_missing
+          raise LookupError(error_msg)
+      LookupError: setuptools-scm was unable to detect version for /project.
+      
+      Make sure you're either building from a fully intact git repository or PyPI tarballs. Most other sources (such as GitHub's tarballs, a git checkout without the .git folder) don't contain the necessary metadata and will not work.
+      
+      For example, if you're using pip, instead of https://github.com/user/proj/archive/master.zip use git+https://github.com/user/proj.git#egg=proj
+      
+      Alternatively, set the version in the environment with SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DICE_ROLLER or VCS_VERSIONING_PRETEND_VERSION_FOR_DICE_ROLLER, as described in https://setuptools-scm.readthedocs.io/en/latest/config/
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+ERROR: Failed to build 'file:///project' when getting requirements to build wheel

@@ -36,8 +36,16 @@ from .report.failures import ClassifiedError, spawn_failure
 ENV_OVERRIDE = "KIVYFORGE_APP_VERSION"
 FLAG_OVERRIDE = "--app-version"
 
-#: How many lines of pip's stderr a failure quotes.
+#: How many lines of pip's stderr a failure quotes, at most.
 _STDERR_TAIL = 15
+
+#: The lines of pip's stderr that say what went wrong: pip's own ``ERROR:``
+#: lines and the exception a backend raised (``LookupError: setuptools-scm was
+#: unable to detect version ...``, ``BackendUnavailable: Cannot import ...``).
+#: The traceback around them is noise to anyone reading the failure.
+_PIP_SIGNAL = re.compile(
+    r"^(ERROR: (?!Exception:$)|[\w.]*(Error|Exception|Unavailable): )"
+)
 
 #: What App Store Connect accepts at upload (ITMS-90060): one to three
 #: dot-separated integers. Apple's documentation says "three", but enforcing
@@ -126,12 +134,20 @@ def _from_backend(
     project_root: Path, declared: DynamicVersion, *, isolated: bool, runner: Runner
 ) -> str:
     context = {"backend": declared.backend, "isolated": "true" if isolated else "false"}
-    fix = (
-        "  Fix: check the project builds (`pip wheel --no-deps .`): a "
-        "setuptools-scm project needs a git checkout with tags (in CI, "
-        "fetch-depth: 0), and pip needs to reach the package index to fetch "
-        f"the build backend. Or pass {FLAG_OVERRIDE} to skip the backend."
-    )
+    if isolated:
+        fix = (
+            "  Fix: check the project builds (`pip wheel --no-deps .`): a "
+            "setuptools-scm project needs a git checkout with tags (in CI, "
+            "fetch-depth: 0), and pip needs to reach the package index to fetch "
+            f"the build backend. Or pass {FLAG_OVERRIDE} to skip the backend."
+        )
+    else:
+        fix = (
+            "  Fix: with --no-build-isolation the build backend must be installed "
+            "alongside kivyforge (for example `uv tool install kivyforge --with "
+            "setuptools-scm`); or drop --no-build-isolation, or pass "
+            f"{FLAG_OVERRIDE}."
+        )
     try:
         # The child inherits this environment on purpose: PIP_INDEX_URL and
         # SETUPTOOLS_SCM_PRETEND_VERSION only work because it does.
@@ -147,10 +163,7 @@ def _from_backend(
             **spawn_failure("pip", exc),
         ) from exc
     if proc.returncode != 0:
-        tail = "\n".join(
-            "    " + line
-            for line in (proc.stderr or "").strip().splitlines()[-_STDERR_TAIL:]
-        )
+        tail = "\n".join("    " + line for line in pip_failure_summary(proc.stderr))
         raise VersionUnresolved(
             f"could not resolve the dynamic [project].version: pip exited with "
             f"status {proc.returncode} preparing the metadata "
@@ -173,6 +186,13 @@ def _from_backend(
             context=context,
         )
     return normalized(version, what=f"the version {declared.backend} reported")
+
+
+def pip_failure_summary(stderr: str | None) -> list[str]:
+    """The lines of a failed pip run worth showing; its tail if none stand out."""
+    lines = [line.strip() for line in (stderr or "").splitlines() if line.strip()]
+    signal = [line for line in lines if _PIP_SIGNAL.match(line)]
+    return (signal or lines)[-_STDERR_TAIL:]
 
 
 def announcement(

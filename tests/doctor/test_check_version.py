@@ -41,7 +41,9 @@ def test_dynamic_names_the_backend_and_never_runs_pip(monkeypatch):
     assert result.hint == ""
 
 
-def test_dynamic_with_android_auto_says_the_code_waits_too():
+def test_dynamic_with_android_auto_warns_where_the_hint_is_shown():
+    # doctor prints hints only for WARN and FAIL; this fails builds between tags.
     result = check_version(config('dynamic = ["version"]', AUTO))
-    assert result.status is Status.PASS
+    assert result.status is Status.WARN
     assert 'version_code = "auto"' in result.hint
+    assert "hint:" in result.render()

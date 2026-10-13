@@ -272,3 +272,59 @@ class TestVersionFile:
         assert (
             check_version_file(ResolvedVersion("1.0", source="override"), None) is None
         )
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "pip_stderr"
+
+
+class TestFailureSummary:
+    """Real pip 26.2.1 stderr (tests/fixtures/pip_stderr), paths replaced."""
+
+    @pytest.mark.parametrize(
+        ("sample", "expected"),
+        [
+            (
+                "no_backend",  # --no-build-isolation, backend not installed
+                [
+                    "pip._vendor.pyproject_hooks._impl.BackendUnavailable: "
+                    "Cannot import 'setuptools.build_meta'"
+                ],
+            ),
+            (
+                "no_git",  # setuptools-scm outside a git checkout
+                [
+                    "LookupError: setuptools-scm was unable to detect version for /project.",
+                    "ERROR: Failed to build 'file:///project' when getting requirements "
+                    "to build wheel",
+                ],
+            ),
+            (
+                "no_index",  # isolated, package index unreachable
+                [
+                    "ERROR: Could not find a version that satisfies the requirement "
+                    "setuptools>=64 (from versions: none)",
+                    "ERROR: No matching distribution found for setuptools>=64",
+                    "ERROR: Failed to build 'file:///project' when installing build "
+                    "dependencies",
+                ],
+            ),
+        ],
+    )
+    def test_keeps_what_went_wrong_and_drops_the_traceback(self, sample, expected):
+        stderr = (FIXTURES / f"{sample}.txt").read_text(encoding="utf-8")
+        assert len(stderr.splitlines()) > len(expected)
+        from kivyforge.versioning import pip_failure_summary
+
+        assert pip_failure_summary(stderr) == expected
+
+    def test_falls_back_to_the_tail(self):
+        from kivyforge.versioning import pip_failure_summary
+
+        stderr = "\n".join(f"plain {i}" for i in range(30))
+        assert pip_failure_summary(stderr) == [f"plain {i}" for i in range(15, 30)]
+
+    def test_non_isolated_failure_says_to_install_the_backend(self):
+        with pytest.raises(VersionUnresolved) as exc:
+            resolve(isolated=False, runner=FakePip(returncode=2, stderr="x"))
+        assert "uv tool install kivyforge --with setuptools-scm" in str(exc.value)
+        assert exc.value.context["isolated"] == "false"
