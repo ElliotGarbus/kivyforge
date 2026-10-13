@@ -4,7 +4,10 @@
 > Written for [issue #111](https://github.com/ElliotGarbus/kivyforge/issues/111).
 > Code claims were read from the source at `70573b79` (`main`); line numbers are
 > as of that commit. The pip behaviour was measured on macOS on the same date;
-> section 8 has the runs. Section 7 records what the review changed and why.
+> section 8 has the runs. Section 7 records what the reviews changed and why.
+> **Prerequisite:** [#115](https://github.com/ElliotGarbus/kivyforge/pull/115)
+> (exclude `*.egg-info` from app copies) must merge first; section 3.9 relies
+> on it.
 
 A project that gets its version from git through setuptools-scm (or hatch-vcs,
 versioningit, ...) declares no version string at all:
@@ -116,11 +119,12 @@ write `None` into a plist. No generator reads `ProjectMeta.version` any more;
 they read the resolved value of section 3.4, so the type system enforces that a
 version was resolved before anything is built.
 
-**Android's `version_code` stays unresolved through config load too.** Today
-`AndroidConfig.version_code` is an `int` computed inside the loader (fact 2),
-and `doctor`, `status`, `clean` and `lock` all load that config. With a dynamic
-version there is nothing to compute it from at load time, and those verbs must
-keep working. So the field becomes a declaration as well:
+**Android's `version_code` stays unresolved through config load, for a
+dynamic version only.** Today `AndroidConfig.version_code` is an `int` computed
+inside the loader (fact 2), and `doctor`, `status`, `clean` and `lock` all load
+that config. With a dynamic version there is nothing to compute it from at
+load time, and those verbs must keep working. So the field becomes a
+declaration as well:
 
 ```python
 @dataclass(frozen=True)
@@ -131,11 +135,21 @@ class AutoVersionCode:
 AndroidConfig.version_code: int | AutoVersionCode
 ```
 
-An explicit integer is still validated at load time, as today. `"auto"` is
-computed during resolution (section 3.4) by the existing
-`_parse_android_version_code` rules, and its errors keep today's messages
-**and the `version_code` line number** from the file, which is why the
-declaration carries `line`. The only reader of the computed value is the
+An explicit integer is still validated at load time, as today. For
+`"auto"`, it depends on the declared version:
+
+- **`StaticVersion`: computed and checked at load, as today.** So
+  `version = "1.0rc1"` with `version_code = "auto"` still fails in
+  `load_config`, and `doctor` and `lock` keep reporting it. That is the case
+  they can actually see; deferring it would hide an error they report today.
+  If `--app-version` then replaces the value, the code is computed again from
+  the override at resolution. The load-time check still applies to the
+  declaration, consistent with the override not rescuing it (section 3.2).
+- **`DynamicVersion`: `AutoVersionCode`, computed at resolution** (section
+  3.4) by the same `_parse_android_version_code` rules. Its errors keep
+  today's messages **and the `version_code` line number** from the file, which
+  is why the declaration carries `line`. `doctor`'s Version check says the
+  code cannot be checked until build (section 3.7). The only reader of the computed value is the
 Android project generator (`platforms/android/generate/project.py:286`), which
 takes it from `ResolvedVersion`. `version_code_auto` disappears: the type says
 it.
@@ -198,8 +212,8 @@ the lock or are not worth a backend run.
 
 | # | When | Version |
 |---|---|---|
-| 1 | `--app-version X` on `build`, `package` or `run`; else `KIVYFORGE_APP_VERSION=X`. **The flag wins** when both are set | `X`; the backend is not run |
-| 2 | `StaticVersion` | Its value (today's behaviour) |
+| 1 | `--app-version X` on `build`, `package` or `run`; else `KIVYFORGE_APP_VERSION=X`. **The flag wins** when both are set | `X`, normalized (`v1.2.3` gives `1.2.3`); the backend is not run |
+| 2 | `StaticVersion` | Its value, normalized (section 3.1) |
 | 3 | `DynamicVersion` | The backend computes it, run by pip (section 3.3) |
 
 Row 1 is the release-pipeline path and the offline path. A CI job that already
@@ -315,6 +329,12 @@ it.
   kivyforge's stdout must be exactly one envelope. Its stderr is captured too.
   On failure, the tail goes into the error message. On success it is dropped,
   and shown on stderr under `--verbose`.
+- **The pip child inherits kivyforge's environment, deliberately.**
+  `SETUPTOOLS_SCM_PRETEND_VERSION` (section 3.9), `PIP_INDEX_URL` and pip's
+  other settings work only because it does. Nothing is stripped or added.
+- **A failed run can write too.** pip failing after the backend started can
+  leave the same `egg-info` and `version_file` writes as a successful run
+  (section 3.9).
 
 **Index configuration.** pip honours `pip.conf` and `PIP_INDEX_URL`, which is
 what `lock` relies on today. uv's `[tool.uv.index]` is not read. A project that
@@ -383,7 +403,14 @@ The verb reports what it used, because the user never typed this version:
 
 - **Human:** one stderr line before the build starts:
   `Version 1.2.4.dev3+g1a2b3c (from setuptools.build_meta, via pip)`.
-- **`--json`:** `data.version = {"value": "...", "source": "override" |
+- **The warnings in `ResolvedVersion.warnings` are emitted by the verb.** The
+  field does not reach any report by itself. `build` and `package` add them to
+  the report's diagnostics, so they render on stderr and appear in the `--json`
+  envelope.
+- **`run` has no `--json` envelope** (`cli/run.py:105`), so the stderr line
+  and the warnings, `KF-VERSION-REDUCED` included, are its only report. They
+  stay on stderr: `run`'s product is the app's log.
+- **`--json`** (`build` and `package`): `data.version = {"value": "...", "source": "override" |
   "static" | "backend"}`, recorded before backend dispatch (section 3.4, step
   4), so it is present on failed runs too. A run that fails *during*
   resolution has no version to record and omits the key. This is additive to
@@ -420,7 +447,9 @@ A new common check, **Version**, that never runs pip:
 
 - Static: PASS, with the value.
 - Dynamic: PASS, `dynamic via setuptools.build_meta (resolved at build time;
-  the first build needs network)`.
+  the first build needs network)`. With Android `version_code = "auto"` it
+  adds that the code is also derived at build time, and that a pre-release,
+  dev or local version will fail then (section 3.1).
 
 The Windows resource check (`doctor.py:326`) shows `dynamic` instead of a value.
 An earlier draft also checked whether the backend was installed locally; with
@@ -443,8 +472,10 @@ new `data` key is additive.
 
 pip not being able to start at all is already covered: `spawn_failure("pip",
 exc)` gives `KF-TOOLCHAIN-MISSING` / exit 3, as for `lock`. An invalid
-override is an ordinary config error (exit 1); an invalid static version is a
-warning (section 3.1).
+override, environment value or static version is an ordinary config error
+(exit 1, section 3.1). A static version's error names its line in
+`pyproject.toml`; the override's and the environment value's have no line, so
+they name `--app-version` or `KIVYFORGE_APP_VERSION` instead.
 
 **One code, exit 1, on purpose.** An isolated run that fails because the index
 is unreachable is a machine problem (exit 3), and one that fails because the
@@ -476,7 +507,7 @@ So there is no cleanup. Known writes, for the docs:
 
 | Written | When | Effect |
 |---|---|---|
-| `<name>.egg-info/` in the package root (project root, or `src/` in a src layout) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. Cannot reach an artifact: every app copy excludes `*.egg-info` ([#115](https://github.com/ElliotGarbus/kivyforge/pull/115)). |
+| `<name>.egg-info/` in the package root (project root, or `src/` in a src layout) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. Kept out of every artifact by [#115](https://github.com/ElliotGarbus/kivyforge/pull/115), which makes every app copy exclude `*.egg-info`. **#115 is a prerequisite:** until it merges, nothing excludes it, and with `app_dir = "src"` this folder sits inside the copied tree. |
 | setuptools-scm `version_file` (e.g. `src/myapp/_version.py`) | Both modes | Wanted: it usually sits in `app_dir`, ships, and carries the resolved version. Inside a bundle it is how the app can know its version, because `importlib.metadata` cannot work there. |
 | Nothing | hatchling with hatch-vcs, no `version-file` configured (section 8) | Tree untouched. |
 
@@ -555,7 +586,13 @@ launch that builds; section 3.2), and the `egg-info` cause is known (section
   with `--app-version`, `run --no-build` and `run --list-devices`, and an INFO
   no-op with a static version; `android_run` and `android_smoke` receive the
   `ResolvedVersion`, and no path reaches the Android project generator without
-  one; a `--json` build that fails after resolution still carries
+  one; a static pre-release with `version_code = "auto"` still fails in
+  `load_config` (so `doctor` and `lock` report it), while a dynamic one loads
+  and fails at resolution with the file line; an invalid override names
+  `--app-version` or `KIVYFORGE_APP_VERSION`, not a file line; `run` prints the
+  version line and `KF-VERSION-REDUCED` on stderr, with stdout untouched;
+  `build` and `package` carry `ResolvedVersion.warnings` into the envelope's
+  diagnostics; a `--json` build that fails after resolution still carries
   `data.version`, and one that fails during resolution omits it; `dynamic` that is not a list of strings is rejected;
   a static version, override or environment value that is not PEP 440
   (`1.0.0-SNAPSHOT`, `latest`) is a config error with the file line, and
@@ -594,7 +631,10 @@ launch that builds; section 3.2), and the `egg-info` cause is known (section
   versions are reduced to `MAJOR.MINOR.PATCH`; a `+` in a version becomes `_`
   in artifact filenames, which renames the artifact for a static local version
   such as `1.0+local`; a version that is not PEP 440 is now an error, and versions are written in
-  normalized form (`v1.2` becomes `1.2` in `versionName` and filenames); dynamic
+  normalized form, which users will see in `versionName` and filenames:
+  `v1.2` becomes `1.2`, `1.0-beta` becomes `1.0b0`, and a local segment is
+  lowercased with `-` turned into `.` (`1.0+Build-5` becomes `1.0+build.5`)
+  before `+` becomes `_` in a filename (`1.0_build.5`); dynamic
   `dependencies`, `name`, `description`, `authors` or `requires-python` are
   now errors (each behaviour change with a migration note).
 
@@ -642,6 +682,20 @@ A third pass approved the direction and asked for six clarifications:
 
 The exit-1 classification of ambiguous pip failures (section 3.8) stands as a
 stated compromise.
+
+A fourth pass found later decisions not carried through, and two code facts
+assumed ahead of time:
+
+| Finding | Change |
+|---|---|
+| Precedence table and section 3.8 still described the pre-spec PEP 440 rule | Both rows say normalized; section 3.8 says config error, naming the flag or variable when there is no file line. (The `v1.2.3` sentence was already fixed in the third pass.) |
+| CHANGELOG should name the normalizations users will see | Section 6: `1.0-beta` to `1.0b0`, local segment lowercased and `-` to `.`, then `+` to `_` (measured: `1.0+Build-5` gives `1.0+build.5`) |
+| Deferring every `"auto"` hides today's load-time error for a static pre-release from `doctor` and `lock` | Section 3.1: compute at load for `StaticVersion`; defer only for `DynamicVersion`; `doctor` says so |
+| `run` has no `--json` | Section 3.5: `data.version` is for `build`/`package`; `run` reports on stderr; the verb emits `ResolvedVersion.warnings` |
+| The egg-info exclusion is not on `main` yet | #115 is now a stated prerequisite (header and section 3.9) |
+| The pip child's environment; failed runs can write too | Section 3.3 |
+
+(The Android `run` threading was already in the third pass.)
 
 One suggestion was not taken: a non-isolated fast path with an isolated retry
 on failure. The `0.0.0` case in section 8 does not fail, so a retry never
