@@ -72,7 +72,8 @@ from ._version import resolve_for_verb, version_options
 @click.option(
     "--debug",
     is_flag=True,
-    help="Android: assemble the debug-signed artifact after generating.",
+    help="Android: run Gradle to assemble the debug-signed artifact. Without "
+    "it, build only generates the Android project.",
 )
 @click.option(
     "-f",
@@ -107,7 +108,11 @@ def build(
     json_out: bool,
     no_color: bool,
 ) -> None:
-    """Download artifacts, generate the platform project, and optionally build it."""
+    """Download artifacts, generate the platform project, and optionally build it.
+
+    A bare build only generates the project on iOS and Android: add --simulator,
+    --device or --release (iOS) or --debug (Android) to build it as well.
+    """
     with reporting("build", json_out=json_out, no_color=no_color) as report:
         # Before anything can fail, so every envelope carries the key.
         report.record(artifacts=[])

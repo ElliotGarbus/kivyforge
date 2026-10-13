@@ -55,7 +55,7 @@ with an error that names the line, the flag, or the variable.
 2. Build as usual:
 
     ```bash
-    kivyforge build -p android
+    kivyforge build -p android --debug
     ```
 
     kivyforge asks pip to prepare your project's metadata, and prints the
@@ -84,7 +84,7 @@ To build offline, either:
 
     ```bash
     uv tool install kivyforge --with setuptools-scm
-    kivyforge build -p android --no-build-isolation
+    kivyforge build -p android --debug --no-build-isolation
     ```
 
 !!! warning

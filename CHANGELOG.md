@@ -4,6 +4,18 @@
 
 ## [v3.0.0.dev1](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0.dev1) - 2026-10-13
 
+### Android
+
+- **Changed:** `kivyforge build -p android` without `--debug` now ends with a
+  line saying Gradle did not run and naming the commands that produce an APK
+  ([#106](https://github.com/ElliotGarbus/kivyforge/issues/106)). Before, it
+  ended on `Generated <app>-android` with exit 0 and no APK, which read like a
+  successful build. What a bare build does is unchanged: it generates the
+  project and stages the release payload for `package`. If you run
+  `./gradlew assembleDebug` yourself on that project, the debug APK you get
+  contains the release payload. Use `build --debug` instead. `--json` output
+  is unchanged.
+
 ### All platforms: dynamic versions
 
 - **Added:** `dynamic = ["version"]` in `[project]` is supported
