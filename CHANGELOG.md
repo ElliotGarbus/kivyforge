@@ -4,6 +4,11 @@
 
 ### Android
 
+- **Added:** `kivyforge lock -p android` shows a progress bar while it
+  downloads the python.org CPython runtime, one per ABI, the first time that
+  tarball is not already cached ([#84](https://github.com/ElliotGarbus/kivyforge/issues/84)).
+  Before, that download printed nothing, so a first lock looked stuck until
+  `[lock] <abi>: resolving wheels`.
 - **Changed:** `kivyforge build -p android` without `--debug` now ends with a
   line saying Gradle did not run and naming the commands that produce an APK
   ([#106](https://github.com/ElliotGarbus/kivyforge/issues/106)). Before, it

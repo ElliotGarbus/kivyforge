@@ -14,12 +14,20 @@ document describes what is shown now and the rules behind it.
 One line per step, and a live bar for each download that redraws in place:
 
 ```
+[lock] arm64_v8a: CPython 3.14.6 ━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 22.7 MB / 22.7 MB 0:00:00
 [lock] arm64_v8a: resolving wheels
 [lock] arm64_v8a: Kivy-2.3.1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 8.9 MB / 8.9 MB 0:00:00
+[lock] x86_64: CPython 3.14.6 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 22.7 MB / 22.7 MB 0:00:00
 [lock] x86_64: resolving wheels
 [lock] x86_64: Kivy-2.3.1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 9.3 MB / 9.3 MB 0:00:00
 Wrote pylock.android.toml (8 packages pinned).
 ```
+
+The CPython lines are the python.org runtime tarball, one per ABI, the first time
+it is not already in the artifact cache. `lock` downloads it to hash it and read
+its minimum API, before pip starts. A cache hit downloads nothing, so those lines
+are absent. A server that sends no `Content-Length` gets no bar; the download
+still runs.
 
 While a download is running, the bar shows the percentage, the bytes so far and
 the time remaining. A finished bar stays on screen as a record.
@@ -37,6 +45,8 @@ No bar, since a bar in a log is a wall of redraws. Instead, a few lines per
 download:
 
 ```
+[lock] arm64_v8a: CPython 3.14.6  0% of 22.7 MB
+[lock] arm64_v8a: CPython 3.14.6  100% of 22.7 MB
 [lock] arm64_v8a: resolving wheels
 [lock] arm64_v8a: Kivy-2.3.1  0% of 8.9 MB
 [lock] arm64_v8a: Kivy-2.3.1  64% of 8.9 MB

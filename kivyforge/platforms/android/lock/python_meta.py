@@ -32,6 +32,7 @@ from typing import Protocol
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.net import request
+from kivyforge.report.transfers import report_transfer
 
 RELEASE_LISTING_URL = "https://www.python.org/ftp/python/{version}/"
 
@@ -47,6 +48,9 @@ _API_LEVEL_RE = re.compile(r"ANDROID_API_LEVEL:?=\s*(\d+)")
 
 _DOWNLOAD_ATTEMPTS = 4
 _RETRY_BACKOFF_SEC = (1.0, 2.0, 4.0)
+# 64 KiB, not 1 MiB: on a slow line a 1 MiB read is many seconds of a bar
+# that does not move (#84). Same size as the shared artifact downloader.
+_CHUNK = 1 << 16
 # Returned when android-env.sh is absent or unparseable; matches the runtime's
 # documented floor (android/01 min_sdk).
 _MIN_API_FALLBACK = 24
@@ -71,6 +75,22 @@ class PythonAndroidProvider(Protocol):
     def get(
         self, version: str, abi: str, *, offline: bool = False
     ) -> PythonAndroidInfo: ...
+
+
+def _content_length(resp: object) -> int:
+    """``Content-Length`` from a response, or 0 when the server sends none.
+
+    0 means "no bar": the renderer skips a transfer whose total is unknown,
+    and the download still runs.
+    """
+    headers = getattr(resp, "headers", None)
+    if headers is None:
+        return 0
+    raw = headers.get("Content-Length")
+    try:
+        return int(raw) if raw else 0
+    except (TypeError, ValueError):
+        return 0
 
 
 def read_min_api(archive_path: str | Path) -> int:
@@ -175,11 +195,17 @@ class PythonOrgAndroidProvider:
         for attempt in range(_DOWNLOAD_ATTEMPTS):
             try:
                 digest = hashlib.sha256()
+                label = f"[lock] {abi}: CPython {version}"
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
                     with urllib.request.urlopen(request(url)) as resp:  # noqa: S310
-                        for chunk in iter(lambda: resp.read(1 << 20), b""):
+                        total = _content_length(resp)
+                        done = 0
+                        report_transfer(label, done, total)
+                        for chunk in iter(lambda: resp.read(_CHUNK), b""):
                             digest.update(chunk)
                             tmp.write(chunk)
+                            done += len(chunk)
+                            report_transfer(label, done, total)
                     tmp.flush()
                     tmp.seek(0)
                     min_api = _read_min_api_from_fileobj(tmp)
