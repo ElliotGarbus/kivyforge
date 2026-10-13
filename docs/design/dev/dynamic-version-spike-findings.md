@@ -62,9 +62,12 @@ iOS simulator `Info.plist` after `kivyforge build -p ios --simulator`:
 and ran (finding 7). So the proposal's fact 3 is real and **silent until upload**:
 the only thing that would reject this string is App Store Connect, which this
 host cannot test (it needs a signing account; `hardware-checklist.toml`). This
-is the strongest argument for the proposal's Apple reduction rule
-(`release[:3]` plus `KF-VERSION-REDUCED`): without it, a dynamic-version
-project produces an `.app` that works locally and is refused at submission.
+is why the proposal checks the version before an App Store export
+(`KF-VERSION-APPLE-FORMAT`, an error for an iOS `app-store` export): without a
+check, a dynamic-version project produces an `.app` that works locally and is
+refused at submission. (The spike was first read as an argument for rewriting
+the value to `MAJOR.MINOR.PATCH`; that was dropped as overreach, see the
+proposal's section 3.6.)
 
 ### 2. The egg-info lands in `app_dir` by default; #115 is what keeps it out
 
@@ -209,7 +212,8 @@ dynamic-version project can leave a clean checkout dirty.
 
 ## Consequences for the proposal
 
-- Finding 1 confirms the Apple reduction rule is needed, not just tidy.
+- Finding 1 confirms an Apple version check is needed, and that only an
+  early failure for App Store exports catches it before upload.
 - Findings 2 and 3 refine section 3.9's side-effects table: the egg-info goes
   where setuptools' discovery puts it, which for a converted app with no
   setuptools table is `app_dir`; #115 covers every copy except iOS debug.

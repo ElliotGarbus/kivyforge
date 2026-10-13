@@ -86,10 +86,12 @@ Four facts follow from this table and the code around it:
    depends on the version and has to move with it.
 3. **The Apple plists pass the raw string through today.** A static
    `version = "1.0rc1"` already produces a `CFBundleShortVersionString` that
-   App Store Connect rejects. Nobody has hit this because hand-written versions
-   are usually final. Between tags, setuptools-scm versions are *never* final,
-   so dynamic versions turn this latent bug into the common case. Section 3.6
-   covers it.
+   App Store Connect rejects at upload (ITMS-90060). Nobody has hit this
+   because hand-written versions are usually final. Between tags,
+   setuptools-scm versions are *never* final, so dynamic versions turn this
+   latent problem into the common case. The spike confirmed nothing local
+   objects: `plutil`, `xcodebuild` and a launch all accept it (spike finding 1).
+   Section 3.6 covers it.
 4. **Backends load their own configuration.** `Platform.build`, `package` and
    `run` (`platforms/base.py:91-121`) take `project_root`, and each backend's
    `cli.py` calls `load_config` itself (e.g. `platforms/windows/cli.py:378`).
@@ -364,15 +366,16 @@ flow becomes two-phase, with the version as a value that crosses the interface:
    class ResolvedVersion:
        value: str                 # normalized PEP 440, e.g. "1.2" for "v1.2"
        source: Literal["override", "static", "backend"]
-       apple_short: str           # section 3.6
        windows_file_version: str  # pep440_to_file_version(value)
        filename_part: str         # value with "+" -> "_"
        android_version_code: int | None  # "auto" or explicit; None off Android
-       warnings: tuple[Diagnostic, ...]  # KF-VERSION-REDUCED, if any
+       apple_conforms: bool       # 1-3 dot-separated integers (section 3.6)
+       warnings: tuple[Diagnostic, ...]  # KF-VERSION-APPLE-FORMAT, if any
    ```
 
    An `"auto"` version code that cannot be derived (a dev version, say) fails
-   here, in the verb, before any backend work starts, with today's message.
+   here, in the verb, before any backend work starts, with today's message. So
+   does a version an App Store export cannot carry (section 3.6).
 4. **Record it.** `report.record(version=...)` immediately, before any
    backend is dispatched. `record` exists for exactly this
    (`report/console.py:168`): fields recorded early survive into the envelope
@@ -410,7 +413,7 @@ The verb reports what it used, because the user never typed this version:
   the report's diagnostics, so they render on stderr and appear in the `--json`
   envelope.
 - **`run` has no `--json` envelope** (`cli/run.py:105`), so the stderr line
-  and the warnings, `KF-VERSION-REDUCED` included, are its only report. They
+  and any warnings are its only report. They
   stay on stderr: `run`'s product is the app's log.
 - **`--json`** (`build` and `package`): `data.version = {"value": "...", "source": "override" |
   "static" | "backend"}`, recorded before backend dispatch (section 3.4, step
@@ -426,22 +429,45 @@ visible, and the docs say to use `fetch-depth: 0` or row 1.
 
 ### 3.6 Store-facing fields
 
-The full normalized PEP 440 string stays the *display* version: Android `versionName`, the
-Windows string `ProductVersion`, and the artifact filename. Each store field
-with its own grammar gets a derived value:
+The full normalized PEP 440 string is the *display* version: Android
+`versionName`, the Windows string `ProductVersion`, Apple's
+`CFBundleShortVersionString`, and the artifact filename. Fields that have no
+other source get a derived value, as today (Android `versionCode`, Windows
+`FILEVERSION`). The Apple short version is not one of those: it is the
+user-visible version, so kivyforge writes it as given and only checks it.
 
 | Field | Rule |
 |---|---|
 | Android `versionCode` (`"auto"`) | Unchanged rules. Already refuses non-final versions with a hint to set an integer, so a dev version with `auto` fails, which is correct: Play rejects a non-monotonic code. |
-| Apple `CFBundleShortVersionString` | `release[:3]` joined with dots (`1.2.4`). One rule for the warning: emit **`KF-VERSION-REDUCED`** (WARNING) naming both strings **whenever the string written differs from the version**. That covers every loss without listing them: `1.0rc1`, `1.2.4.dev3+gabc`, `1.2.3.4` (fourth component), `1!2.0.0` (epoch). Applies to static versions too, which fixes fact 3. The comparison is against the normalized version, so `v1.2.3` (normalized `1.2.3`) does not warn. |
+| Apple `CFBundleShortVersionString` | **Written as given, never rewritten.** Checked against the rule App Store Connect enforces (below); what happens on a mismatch depends on where the build goes. |
 | Windows `FILEVERSION` | Unchanged; `pep440_to_file_version` already handles every segment. Its `0.0.0.0` fallback for an unparseable version becomes unreachable, because section 3.1 rejects those. |
 | Filenames | Replace `+` with `_`. `+` is legal on every filesystem but becomes a space in a URL query string and trips naive upload scripts. This renames the artifact for a **static** local version too (`1.0+local`), so it gets a CHANGELOG entry. |
 
-The Apple warning says the version was reduced, not that the build is wrong. A
-dev build for the simulator is a normal thing to make, so `ok` stays `true`.
-App Store Connect distinguishes uploads by `CFBundleVersion` (the `build`
-counter), not by the short version, so two dev builds reducing to the same
-`1.2.4` do not collide.
+**Apple's rule.** Apple's documentation says the "required format is three
+period-separated integers, such as 10.14.1. The string can only contain
+numeric characters (0-9) and periods." What App Store Connect has enforced at
+upload since late 2015 is looser: **one to three dot-separated non-negative
+integers**, failing anything else with ITMS-90060 (reported by Nutrient for
+`ios-5.0.0`, MongoDB for `1.13.1-dev`, and on Apple's forums for four-part
+versions). kivyforge checks the enforced rule, `^[0-9]+(\.[0-9]+){0,2}$`. The
+documented one would reject every app versioned `1.0`, which is very common, so
+enforcing it would be the same overreach as rewriting. `CFBundleVersion` (one
+to three integers) already conforms: kivyforge writes the integer `build`
+counter there.
+
+**What a non-conforming version does, by destination** (examples:
+`1.2.4.dev3+gabc`, `1.0rc1`, `1.2.3.4`, `1!2.0`):
+
+| Destination | Result |
+|---|---|
+| Simulator, device and other debug builds | Written as given, **no diagnostic**. Seeing the exact dev version in a test build is useful, and nothing local rejects it (spike finding 1). |
+| iOS export with `--export-method development` or `ad-hoc`; macOS `package` | Written as given, **`KF-VERSION-APPLE-FORMAT` (WARNING)**: App Store Connect will refuse it. macOS signs with Developer ID and notarizes, with no Mac App Store path; whether notarization checks this field is not verified, so it warns rather than fails. |
+| iOS export with `--export-method app-store` (`build -p ios --release` or `package -p ios`; `app-store` is the default) | **Config error, exit 1, before any build tool runs**, naming ITMS-90060 and the fixes: tag a release, pass `--app-version 1.2.4`, or export with `ad-hoc`/`development`. The upload is certain to fail, and finding out after an archive and an upload is the worst place to learn it. |
+
+This is the same shape as `version_code = "auto"`: kivyforge does not invent a
+number for a dev version; it says what the store will do and lets the user
+choose. It applies to static versions too, so a static `1.0rc1` exported for
+the App Store now fails early instead of at upload (CHANGELOG).
 
 ### 3.7 `doctor`
 
@@ -464,7 +490,7 @@ New codes in `report/diagnostics.py`:
 | Code | Exit | When |
 |---|---|---|
 | `KF-VERSION-UNRESOLVED` | 1 (config) | pip exited non-zero, or its report has no version. The message carries pip's captured stderr tail; `context` names the `backend` and whether the run was `isolated`. Remediation: fix the project's scm setup (not a git checkout, no tags, shallow clone), check network access to the package index, or pass `--app-version`. |
-| `KF-VERSION-REDUCED` | — (WARNING) | The Apple short version differs from the version (section 3.6). `context`: `version`, `reduced`. |
+| `KF-VERSION-APPLE-FORMAT` | 1 (config) or — (WARNING) | The version is not 1–3 dot-separated integers, so App Store Connect will refuse it (ITMS-90060). An error for an iOS `app-store` export, a warning for other iOS exports and macOS `package` (section 3.6). `context`: `version`, `export_method`. |
 | `KF-VERSION-FILE-NOT-REFRESHED` | — (WARNING) | `[tool.setuptools_scm].version_file` is configured, but the version came from row 1 or 2, so the backend did not rewrite it (section 3.9). `context`: `path`. |
 
 The new codes need no wiring into `capabilities`: it publishes every
@@ -592,16 +618,19 @@ launch that builds; section 3.2), and the `egg-info` cause is known (section
   `load_config` (so `doctor` and `lock` report it), while a dynamic one loads
   and fails at resolution with the file line; an invalid override names
   `--app-version` or `KIVYFORGE_APP_VERSION`, not a file line; `run` prints the
-  version line and `KF-VERSION-REDUCED` on stderr, with stdout untouched;
+  version line and any warnings on stderr, with stdout untouched;
   `build` and `package` carry `ResolvedVersion.warnings` into the envelope's
   diagnostics; a `--json` build that fails after resolution still carries
   `data.version`, and one that fails during resolution omits it; `dynamic` that is not a list of strings is rejected;
   a static version, override or environment value that is not PEP 440
   (`1.0.0-SNAPSHOT`, `latest`) is a config error with the file line, and
   normalizable ones (`v1.2`, `1.0-beta`) are accepted and written normalized
-  (`1.2`, `1.0b0`); `KF-VERSION-REDUCED` fires exactly when the Apple
-  string differs (`1.0rc1`, `1.2.4.dev3+gabc`, `1.2.3.4`, `1!2.0.0` warn;
-  `1.2.3` does not); `KF-VERSION-FILE-NOT-REFRESHED` fires for a configured
+  (`1.2`, `1.0b0`); the plist always carries the version as given;
+  `1.0rc1`, `1.2.4.dev3+gabc`, `1.2.3.4` and `1!2.0` are silent for debug
+  builds, warn `KF-VERSION-APPLE-FORMAT` for `ad-hoc`/`development` exports
+  and macOS `package`, and fail with exit 1 before xcodebuild for an
+  `app-store` export from both `build --release` and `package`, while `1`,
+  `1.0` and `1.2.3` pass everywhere; `KF-VERSION-FILE-NOT-REFRESHED` fires for a configured
   setuptools-scm `version_file` under rows 1 and 2 and not under row 3; `+` in
   filenames; every section 2 consumer reads `ResolvedVersion`, not
   `config.project.version`.
@@ -627,10 +656,12 @@ launch that builds; section 3.2), and the `egg-info` cause is known (section
   from a dynamic-version example.
 - **Docs and CHANGELOG:** the precedence table; the network note for the first
   build; `--no-build-isolation` with its `0.0.0` hazard; the pip-index note;
-  `fetch-depth: 0` for CI; the Apple reduction rule; the side-effects table and
+  `fetch-depth: 0` for CI; the Apple version rule and its three outcomes; the side-effects table and
   the `version_file` advice. CHANGELOG under `[Unreleased]`: dynamic versions
-  are accepted; `--app-version` and `--no-build-isolation` are new; Apple short
-  versions are reduced to `MAJOR.MINOR.PATCH`; a `+` in a version becomes `_`
+  are accepted; `--app-version` and `--no-build-isolation` are new; an iOS
+  `app-store` export of a version App Store Connect would refuse (a dev or
+  pre-release version, four components, an epoch) now fails before building
+  instead of at upload, and other Apple builds warn; a `+` in a version becomes `_`
   in artifact filenames, which renames the artifact for a static local version
   such as `1.0+local`; a version that is not PEP 440 is now an error, and versions are written in
   normalized form, which users will see in `versionName` and filenames:
@@ -651,7 +682,7 @@ checked against the code; all held. What changed:
 | Automatic `--no-build-isolation` is unsound, because `get_requires_for_build_wheel` can add requirements | Isolation is always the default; non-isolated is an explicit flag. Measured the silent `0.0.0` that justifies it (section 8) |
 | The "tree left as found" claim is false | Cleanup dropped; side effects accepted and documented (section 3.9) |
 | Dynamic `description` and `authors` are consumed too | Section 3.1 rejects every dynamic field the loader reads except `version` |
-| Apple reduction ignored epochs and extra release components; invalid static versions unspecified | Section 3.6 warns on both; section 3.1 rejects non-PEP 440 versions (briefly reversed after the second review, then settled from the specs, below) |
+| Apple reduction ignored epochs and extra release components; invalid static versions unspecified | Section 3.6 warned on both (the reduction was later dropped, below); section 3.1 rejects non-PEP 440 versions (briefly reversed after the second review, then settled from the specs, below) |
 | `--app-version` silently ignored by `run --no-build` / `--list-devices` | Section 3.2: usage error |
 | A backend-neutral stale-`version_file` warning is not implementable | Dropped; documented instead (section 3.9) |
 | `ProjectMeta.version: str \| None` weakens types | `DeclaredVersion` in config, `ResolvedVersion` for consumers (sections 3.1, 3.4) |
@@ -698,6 +729,19 @@ assumed ahead of time:
 | The pip child's environment; failed runs can write too | Section 3.3 |
 
 (The Android `run` threading was already in the third pass.)
+
+**The Apple short version is checked, not rewritten** (decided 2026-10-12).
+Every review had accepted reducing `CFBundleShortVersionString` to
+`MAJOR.MINOR.PATCH`. On reflection that is overreach: unlike Android's
+`versionCode` or Windows' `FILEVERSION`, this field is the user-visible
+version, so rewriting it changes the user's data and makes two dev builds
+claim the same version. Apple's documentation ("three period-separated
+integers") and the rule App Store Connect enforces at upload (1–3 integers,
+ITMS-90060) were checked. The result is section 3.6: write the version as
+given; say nothing for debug builds; warn for other exports; fail early only
+for an iOS `app-store` export, where rejection is certain. `KF-VERSION-REDUCED`
+and `ResolvedVersion.apple_short` are gone; `KF-VERSION-APPLE-FORMAT` replaces
+them.
 
 One suggestion was not taken: a non-isolated fast path with an isolated retry
 on failure. The `0.0.0` case in section 8 does not fail, so a retry never
