@@ -108,7 +108,7 @@ hashes = { sha256 = "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75
 
 [tool.kivyforge]
 schema_version = 1
-kivyforge_version = "3.0.0.dev0"
+kivyforge_version = "3.0.0.dev1"
 generated_at = "2026-10-04T21:20:33Z"
 pyproject_sha256 = "2b1e18fbd5eea763b518dda00786fd6f4931d318b3fa9863e069fc649ce9190d"
 tool_kivy_android_schema_version = 1

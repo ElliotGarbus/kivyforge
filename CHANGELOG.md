@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v3.0.0.dev1](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0.dev1) - 2026-10-13
+
 ### Android
 
 - **Added:** `kivyforge lock -p android` shows a progress bar while it

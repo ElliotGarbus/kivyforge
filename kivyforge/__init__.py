@@ -8,4 +8,4 @@ it into that platform's project or bundle. See ``docs/design`` for the full
 specification.
 """
 
-__version__ = "3.0.0.dev0"
+__version__ = "3.0.0.dev1"
