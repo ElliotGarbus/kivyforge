@@ -109,7 +109,7 @@ enabled) before `kivyforge run`.
 ## Installation
 
 kivyforge is a command-line tool and needs Python 3.13 or newer. It is on PyPI,
-but every release so far is a **pre-release** (currently `3.0.0.dev0`), and
+but every release so far is a **pre-release** (currently `3.0.0.dev1`), and
 installers skip pre-releases unless you opt in — so each command below carries a
 pre-release flag. The recommended installer is [uv](https://docs.astral.sh/uv/),
 which installs it into its own isolated environment and puts `kivyforge` on your
