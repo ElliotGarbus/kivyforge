@@ -202,12 +202,91 @@ costs nothing extra, and the proposal's "resolve in the verb, pass
 `src/_version.py` and lock. As the proposal's section 3.9 says, a build of a
 dynamic-version project can leave a clean checkout dirty.
 
+## Real uv install modes (second run, same day)
+
+The spike commit restored into a worktree, uv 0.13.0 installed, and the macOS
+copy of `dice-roller` built two more ways. Both pass.
+
+### 12. `uv tool install` works
+
+```
+$ uv tool install --editable <spike worktree>
+Installed 2 executables: kf, kivyforge
+```
+
+The tool environment (`~/.local/share/uv/tools/kivyforge`) has pip 26.2.1,
+pulled in by kivyforge's own `pip>=25.1` dependency, and neither setuptools nor
+setuptools-scm. From a clean clone of the converted project:
+
+```
+$ kivyforge lock -p macos
+SPIKE: config load #1: resolved 1.2.4.dev1+g629b36fab via pip in 3.07s
+$ kivyforge build -p macos
+SPIKE: config load #1: resolved 1.2.4.dev1+g629b36fab via pip in 1.47s
+Built build/macos/Dice Roller.app
+```
+
+The plist and the app's own interpreter both give `1.2.4.dev1+g629b36fab`; no
+`.egg-info` in the bundle. This is the install mode that broke the first
+design, now exercised for real rather than through a stand-in venv.
+
+### 13. `uv run kf` resolves the tree, not uv's stale install
+
+A clone made into a uv project with `uv add --dev --editable <spike
+worktree>`, then committed (tree at `v1.2.3-2-g0274a04`). uv had installed the
+app itself, editable, into `.venv` **before** that commit, as
+`1.2.4.dev1+g629b36fab.d20261013`, and did not reinstall it afterwards:
+
+```
+$ uv run -v python -c pass
+DEBUG Requirement already installed: dice-roller==1.2.4.dev1+g629b36fab.d20261013
+```
+
+kivyforge, running inside that environment, still resolved the tree:
+
+```
+$ uv run kf build -p macos
+SPIKE: config load #1: resolved 1.2.4.dev2+g0274a042e via pip in 1.43s
+Built build/macos/Dice Roller.app
+```
+
+Plist and `_version.py` in the bundle: `1.2.4.dev2+g0274a042e`; no
+`.egg-info` in the bundle. This is the proposal's `--ignore-installed` case
+under the reporter's real setup, with a genuinely stale installed copy.
+
+### 14. The build's egg-info shadows the dev environment's metadata
+
+After the build, `importlib.metadata` in the project's own `.venv`, run from
+the project root, reports the **build's** version, not the installed one:
+
+| Version | Found at |
+|---|---|
+| `1.2.4.dev2+g0274a042e` | `dice_roller.egg-info` (project root, written by kivyforge's pip run) |
+| `1.2.4.dev1+g629b36fab.d20261013` | `.venv/.../dice_roller-1.2.4.dev1+g629b36fab.d20261013.dist-info` (uv's install) |
+
+The project root is on `sys.path` (as the current directory) whenever Python
+runs from it, which covers `uv run python`, `uv run pytest` and most dev
+commands, and the egg-info comes first. So after a kivyforge build,
+`importlib.metadata.version("dice-roller")` in the developer's environment
+returns whatever the last build resolved. In this run that was the *more*
+accurate value, but it no longer comes from the install. It is the same thing
+any `pip install .` or `python -m build` of a setuptools project does, which is
+why many projects already gitignore `*.egg-info`; it is new only in that
+kivyforge now triggers it. A side effect to document, not a defect in the
+design.
+
+### 15. Timing under uv
+
+Resolution took 1.43–1.50 s inside uv-managed environments (3.07 s on the very
+first `lock` from the new tool environment), against 1.08–1.18 s from the plain
+venv. A full warm `build -p macos` took 3.7–3.8 s either way.
+
 ## Not covered
 
 - App Store Connect accepting or refusing the plist value (finding 1): needs a
   signing account.
 - Launching through LaunchServices (`open`), a device, or an emulator.
-- Real `uv tool install` and pipx (stood in for by a kivyforge-only venv).
+- pipx (uv tool install and `uv run` are covered by findings 12-13).
 - Windows and Linux hosts; a cold pip cache; a project with no git history.
 
 ## Consequences for the proposal
@@ -219,4 +298,6 @@ dynamic-version project can leave a clean checkout dirty.
   setuptools table is `app_dir`; #115 covers every copy except iOS debug.
 - Finding 4 is the concrete case for deferring `"auto"` on dynamic versions.
 - Finding 5 gives section 3.3 real numbers to cite.
+- Findings 12-13 confirm the design in the two install modes the issue is
+  about; finding 14 adds a side effect to section 3.9's table.
 - Nothing found argues against the design.
