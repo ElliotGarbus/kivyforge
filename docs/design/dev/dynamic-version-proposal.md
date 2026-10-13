@@ -5,6 +5,8 @@
 > Code claims were read from the source at `70573b79` (`main`); line numbers are
 > as of that commit. The pip behaviour was measured on macOS on the same date;
 > section 8 has the runs. Section 7 records what the reviews changed and why.
+> App-level spike: [`dynamic-version-spike-findings.md`](dynamic-version-spike-findings.md)
+> (macOS, Android, iOS simulator); nothing found argues against the design.
 > **Prerequisite:** [#115](https://github.com/ElliotGarbus/kivyforge/pull/115)
 > (exclude `*.egg-info` from app copies) must merge first; section 3.9 relies
 > on it.
@@ -507,7 +509,7 @@ So there is no cleanup. Known writes, for the docs:
 
 | Written | When | Effect |
 |---|---|---|
-| `<name>.egg-info/` in the package root (project root, or `src/` in a src layout) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. Kept out of every artifact by [#115](https://github.com/ElliotGarbus/kivyforge/pull/115), which makes every app copy exclude `*.egg-info`. **#115 is a prerequisite:** until it merges, nothing excludes it, and with `app_dir = "src"` this folder sits inside the copied tree. |
+| `<name>.egg-info/` where setuptools' discovery puts it: `src/` (that is, `app_dir`) for a converted app with no `[tool.setuptools]` table, the project root with `packages = []` (spike findings 2, 6) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. Kept out of every artifact by [#115](https://github.com/ElliotGarbus/kivyforge/pull/115), which makes every app copy exclude `*.egg-info`. **#115 is a prerequisite:** until it merges, nothing excludes it, and with `app_dir = "src"` this folder sits inside the copied tree. iOS debug builds stay exposed even after it: they link `app_dir` rather than copy it (spike finding 3). |
 | setuptools-scm `version_file` (e.g. `src/myapp/_version.py`) | Both modes | Wanted: it usually sits in `app_dir`, ships, and carries the resolved version. Inside a bundle it is how the app can know its version, because `importlib.metadata` cannot work there. |
 | Nothing | hatchling with hatch-vcs, no `version-file` configured (section 8) | Tree untouched. |
 
