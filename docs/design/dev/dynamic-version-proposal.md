@@ -151,15 +151,35 @@ These are config errors (exit 1):
   silently picking one would hide the mistake.
 - `dynamic` present but not a list of strings.
 
-**A static `version` that is not valid PEP 440 keeps working.** Today any
-non-empty string is accepted (`loader.py:330`), and that stays: it is written
-through unchanged everywhere it is written today, Windows' numeric resource
-still degrades to `0.0.0.0`, and `version_code = "auto"` still refuses it.
-Rejecting it would be standards-aligned (PEP 621 requires PEP 440, and pip
-refuses such a project), but it would break existing projects for no gain to
-the dynamic case. Instead the build emits `KF-VERSION-NOT-PEP440` (WARNING),
-because the stores may reject what is written. Only `--app-version` and
-`KIVYFORGE_APP_VERSION` are validated as PEP 440, since they are new.
+**Every version is parsed per the version specifier spec (PEP 440), and the
+normalized form is what kivyforge writes.** Decided 2026-10-12 from the specs,
+after the two reviews disagreed:
+
+- The pyproject spec defines `version` as "the version of the project, as
+  defined in the Version specifier specification". A string outside that
+  grammar is not a valid `[project].version`. Today kivyforge accepts any
+  non-empty string (`loader.py:330`); it becomes a config error (exit 1),
+  naming the string and the file line. This applies to a static `version`,
+  `--app-version` and `KIVYFORGE_APP_VERSION` alike.
+- That rejects less than it sounds. The version spec requires tools to accept
+  its normalizations ("MUST also include the normalizations"), so `v1.2`,
+  `V2.0`, `1.0-beta`, `1.0.0-rc.1` and ` 1.0 ` are all valid
+  (`packaging.version.Version` gives `1.2`, `2.0`, `1.0b0`, `1.0.0rc1`,
+  `1.0`). What is rejected is the likes of `1.0.0-SNAPSHOT`, `2024-10-12`,
+  `latest` and `release-1.0` (section 8).
+- Those projects cannot be built as Python packages by any standard tool
+  anyway: pip with setuptools refuses them with
+  "`project.version` must be pep440" (section 8). Accepting them made
+  kivyforge laxer than the rest of the ecosystem, and pushed the failure to
+  App Store Connect, or to a silent `0.0.0.0` in the Windows resources.
+- **The normalized form is written everywhere**: `versionName`, the Windows
+  `ProductVersion` string, filenames, and the source of every derived field.
+  The spec says a leading `v` "MUST be ignored for all purposes and should be
+  omitted from all normalized forms". It also makes static and dynamic
+  versions behave the same, because a dynamic version arrives normalized from
+  the backend's METADATA. A project with `version = "v1.2"` therefore gets
+  `versionName '1.2'` and `...-1.2-...` filenames instead of `v1.2`. CHANGELOG
+  migration note.
 
 **Other dynamic fields kivyforge reads are errors.** The loader reads six
 `[project]` fields: `name`, `version`, `dependencies`, `authors`,
@@ -347,8 +367,8 @@ with its own grammar gets a derived value:
 | Field | Rule |
 |---|---|
 | Android `versionCode` (`"auto"`) | Unchanged rules. Already refuses non-final versions with a hint to set an integer, so a dev version with `auto` fails, which is correct: Play rejects a non-monotonic code. |
-| Apple `CFBundleShortVersionString` | `release[:3]` joined with dots (`1.2.4`). One rule for the warning: emit **`KF-VERSION-REDUCED`** (WARNING) naming both strings **whenever the string written differs from the version**. That covers every loss without listing them: `1.0rc1`, `1.2.4.dev3+gabc`, `1.2.3.4` (fourth component), `1!2.0.0` (epoch). Applies to static versions too, which fixes fact 3. A version that is not PEP 440 (section 3.1) is written through unchanged, as today, and gets `KF-VERSION-NOT-PEP440` instead. |
-| Windows `FILEVERSION` | Unchanged; `pep440_to_file_version` already handles every segment, and still degrades a non-PEP 440 version to `0.0.0.0`. |
+| Apple `CFBundleShortVersionString` | `release[:3]` joined with dots (`1.2.4`). One rule for the warning: emit **`KF-VERSION-REDUCED`** (WARNING) naming both strings **whenever the string written differs from the version**. That covers every loss without listing them: `1.0rc1`, `1.2.4.dev3+gabc`, `1.2.3.4` (fourth component), `1!2.0.0` (epoch). Applies to static versions too, which fixes fact 3. The comparison is against the normalized version, so `v1.2.3` (normalized `1.2.3`) does not warn. |
+| Windows `FILEVERSION` | Unchanged; `pep440_to_file_version` already handles every segment. Its `0.0.0.0` fallback for an unparseable version becomes unreachable, because section 3.1 rejects those. |
 | Filenames | Replace `+` with `_`. `+` is legal on every filesystem but becomes a space in a URL query string and trips naive upload scripts. This renames the artifact for a **static** local version too (`1.0+local`), so it gets a CHANGELOG entry. |
 
 The Apple warning says the version was reduced, not that the build is wrong. A
@@ -377,7 +397,6 @@ New codes in `report/diagnostics.py`:
 |---|---|---|
 | `KF-VERSION-UNRESOLVED` | 1 (config) | pip exited non-zero, or its report has no version. The message carries pip's captured stderr tail; `context` names the `backend` and whether the run was `isolated`. Remediation: fix the project's scm setup (not a git checkout, no tags, shallow clone), check network access to the package index, or pass `--app-version`. |
 | `KF-VERSION-REDUCED` | — (WARNING) | The Apple short version differs from the version (section 3.6). `context`: `version`, `reduced`. |
-| `KF-VERSION-NOT-PEP440` | — (WARNING) | A static version is not PEP 440; written through unchanged (section 3.1). `context`: `version`. |
 | `KF-VERSION-FILE-NOT-REFRESHED` | — (WARNING) | `[tool.setuptools_scm].version_file` is configured, but the version came from row 1 or 2, so the backend did not rewrite it (section 3.9). `context`: `path`. |
 
 The new codes need no wiring into `capabilities`: it publishes every
@@ -483,8 +502,10 @@ launch that builds; section 3.2), and the `egg-info` cause is known (section
   project with `version_code = "auto"` and never start pip; the flag beats
   `KIVYFORGE_APP_VERSION` when both are set; `lock --app-version` is a usage
   error (no such option); `dynamic` that is not a list of strings is rejected;
-  a non-PEP 440 static version is written through and warns
-  `KF-VERSION-NOT-PEP440`; `KF-VERSION-REDUCED` fires exactly when the Apple
+  a static version, override or environment value that is not PEP 440
+  (`1.0.0-SNAPSHOT`, `latest`) is a config error with the file line, and
+  normalizable ones (`v1.2`, `1.0-beta`) are accepted and written normalized
+  (`1.2`, `1.0b0`); `KF-VERSION-REDUCED` fires exactly when the Apple
   string differs (`1.0rc1`, `1.2.4.dev3+gabc`, `1.2.3.4`, `1!2.0.0` warn;
   `1.2.3` does not); `KF-VERSION-FILE-NOT-REFRESHED` fires for a configured
   setuptools-scm `version_file` under rows 1 and 2 and not under row 3; `+` in
@@ -517,7 +538,8 @@ launch that builds; section 3.2), and the `egg-info` cause is known (section
   are accepted; `--app-version` and `--no-build-isolation` are new; Apple short
   versions are reduced to `MAJOR.MINOR.PATCH`; a `+` in a version becomes `_`
   in artifact filenames, which renames the artifact for a static local version
-  such as `1.0+local`; a static version that is not PEP 440 now warns; dynamic
+  such as `1.0+local`; a version that is not PEP 440 is now an error, and versions are written in
+  normalized form (`v1.2` becomes `1.2` in `versionName` and filenames); dynamic
   `dependencies`, `name`, `description`, `authors` or `requires-python` are
   now errors (each behaviour change with a migration note).
 
@@ -532,7 +554,7 @@ checked against the code; all held. What changed:
 | Automatic `--no-build-isolation` is unsound, because `get_requires_for_build_wheel` can add requirements | Isolation is always the default; non-isolated is an explicit flag. Measured the silent `0.0.0` that justifies it (section 8) |
 | The "tree left as found" claim is false | Cleanup dropped; side effects accepted and documented (section 3.9) |
 | Dynamic `description` and `authors` are consumed too | Section 3.1 rejects every dynamic field the loader reads except `version` |
-| Apple reduction ignored epochs and extra release components; invalid static versions unspecified | Section 3.6 warns on both; section 3.1 rejected non-PEP 440 static versions (reversed after the second review, below: they now warn) |
+| Apple reduction ignored epochs and extra release components; invalid static versions unspecified | Section 3.6 warns on both; section 3.1 rejects non-PEP 440 versions (briefly reversed after the second review, then settled from the specs, below) |
 | `--app-version` silently ignored by `run --no-build` / `--list-devices` | Section 3.2: usage error |
 | A backend-neutral stale-`version_file` warning is not implementable | Dropped; documented instead (section 3.9) |
 | `ProjectMeta.version: str \| None` weakens types | `DeclaredVersion` in config, `ResolvedVersion` for consumers (sections 3.1, 3.4) |
@@ -545,7 +567,7 @@ components, `description` and `authors`). It added:
 |---|---|
 | `version_code = "auto"` is an `int` computed at load, and `doctor`/`status`/`clean`/`lock` load that config | Section 3.1: `int \| AutoVersionCode`, computed at resolution, errors keep the file's line number |
 | Warn whenever the Apple string differs from the version, rather than listing cases | Section 3.6 adopts that rule |
-| Write a non-PEP 440 static version through unchanged | Adopted, reversing the first revision's rejection: section 3.1, plus a `KF-VERSION-NOT-PEP440` warning |
+| Write a non-PEP 440 static version through unchanged | Adopted briefly, then reversed: the specs decide it (below) |
 | `--app-version` only on `build`/`package`/`run`; flag beats environment variable | Section 3.2 |
 | The `+` filename rule renames static local versions | CHANGELOG bullet (sections 3.6, 6) |
 | Commit to documenting the stale `version_file`; a setuptools-scm-only warning is possible | Section 3.9: both, the warning described as setuptools-scm only |
@@ -555,6 +577,15 @@ components, `description` and `authors`). It added:
 One suggestion was not taken: a non-isolated fast path with an isolated retry
 on failure. The `0.0.0` case in section 8 does not fail, so a retry never
 fires there. Isolation stays the default, as that review also allowed.
+
+**Non-PEP 440 versions, settled from the specs.** The two reviews disagreed:
+specify a validation failure, or write the string through. The pyproject spec
+decides it. It defines `version` "as defined in the Version specifier
+specification", so a non-conforming string is not a valid version, and pip
+with setuptools already refuses such a project. The version spec's required
+normalizations mean the rejected set is small (section 8), and its rule that a
+leading `v` is omitted from normalized forms decides what is written. Section
+3.1 has the result: reject what does not parse, write the normalized form.
 
 ## 8. Measurements (2026-10-12, macOS, pip 26.2.1, setuptools 84.0.0, setuptools-scm 10.3.4, Python 3.14.7)
 
@@ -595,6 +626,17 @@ the tree and at an older one: pip reported the tree's version with and without
 `[tool.hatch.version] source = "vcs"`, src layout, one commit past `v1.2.3`,
 isolated: `1.2.4.dev1+g0812e43b5` in 1.67 s, and `git status --ignored` empty
 afterwards.
+
+**Which strings are valid.** `packaging.version.Version` (the parser kivyforge
+already uses): `v1.2` gives `1.2`, `V2.0` gives `2.0`, `1.0-beta` gives
+`1.0b0`, `1.0.0-rc.1` gives `1.0.0rc1`, `1.0a` gives `1.0a0`, `" 1.0 "` gives
+`1.0`, and `1.2.3.4.5` and `1!2.0` are valid as written. Invalid: `1.0-`,
+`2024.10-final`, `1.0.0-beta.2.x`, `1.0.0-SNAPSHOT`, `latest`, `2024-10-12`,
+`release-1.0`.
+
+**pip on an invalid static version.** A setuptools project with
+`version = "1.0.0-SNAPSHOT"`: pip fails with
+``configuration error: `project.version` must be pep440``.
 
 Not yet measured: a cold pip cache, Windows, Linux, and a project with no git
 history.
