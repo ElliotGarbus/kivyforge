@@ -20,6 +20,7 @@ from kivyforge.platforms.android.lock.python_meta import (
     PythonOrgAndroidProvider,
     read_min_api,
 )
+from kivyforge.report.transfers import transfers_to
 
 
 def _make_runtime_archive(tmp_path, *, min_api: int | None, name="rt.tar.gz"):
@@ -50,8 +51,11 @@ def _archive_bytes(*, min_api: int) -> bytes:
 
 
 class _FakeResponse:
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes, *, content_length: int | None = None):
         self._buf = data
+        self.headers = (
+            {} if content_length is None else {"Content-Length": str(content_length)}
+        )
 
     def read(self, n=None):
         if n is None or n < 0:
@@ -185,6 +189,21 @@ class TestDownloadRetry:
         assert min_api == 27
         assert calls["n"] == 3
         assert sha == hashlib.sha256(archive_bytes).hexdigest()
+
+    def test_reports_bytes_against_content_length(self, tmp_path, monkeypatch):
+        archive_bytes = _archive_bytes(min_api=24)
+        monkeypatch.setattr(
+            pm.urllib.request,
+            "urlopen",
+            lambda url: _FakeResponse(archive_bytes, content_length=len(archive_bytes)),
+        )
+        seen: list[tuple] = []
+        provider = PythonOrgAndroidProvider(cache=ArtifactCache(root=tmp_path))
+        with transfers_to(lambda *args: seen.append(args)):
+            provider._download("https://example/x.tar.gz", "3.14.6", "arm64_v8a")
+        label = "[lock] arm64_v8a: CPython 3.14.6"
+        assert seen[0] == (label, 0, len(archive_bytes), "bytes")
+        assert seen[-1] == (label, len(archive_bytes), len(archive_bytes), "bytes")
 
     def test_gives_up_after_all_attempts(self, tmp_path, monkeypatch):
         monkeypatch.setattr(pm.time, "sleep", lambda s: None)

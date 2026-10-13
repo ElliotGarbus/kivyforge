@@ -77,14 +77,17 @@ audit record; it is not re-verified at build time — see
 Writes `pylock.android.toml`. Exits non-zero
 with a clear error if no pyproject is present or it lacks `[tool.kivy.android]`.
 
-**Progress.** Resolution downloads wheels (pip reads a wheel's dependencies from
-the wheel itself when an index publishes no PEP 658 metadata, so a Kivy wheel is
-fetched in full, once per ABI) and, with Maven dependencies, runs Gradle. All of
-it is shown on stderr, including under `--json`: a `[lock] <abi>: resolving
-wheels` line per ABI, each download as a progress bar on a terminal (or a few
-`45% of 8.9 MB` lines in a log, from `pip --progress-bar raw`), a line before the
-Gradle step, and a `still resolving (1m 30s)` line after 30 s with nothing else to
-show; [`download-progress-output.md`](../../dev/download-progress-output.md) shows the output. Until #84 the whole step was silent, which on a slow connection was
+**Progress.** Before pip, a runtime that is not already cached is downloaded from
+python.org (one tarball per ABI, to hash it and read its minimum API) and shown
+as a `[lock] <abi>: CPython <version>` bar. Resolution then downloads wheels
+(pip reads a wheel's dependencies from the wheel itself when an index publishes
+no PEP 658 metadata, so a Kivy wheel is fetched in full, once per ABI) and, with
+Maven dependencies, runs Gradle. All of it is shown on stderr, including under
+`--json`: a `[lock] <abi>: resolving wheels` line per ABI, each download as a
+progress bar on a terminal (or a few `45% of 8.9 MB` lines in a log, from
+`pip --progress-bar raw`), a line before the Gradle step, and a
+`still resolving (1m 30s)` line after 30 s with nothing else to show;
+[`download-progress-output.md`](../../dev/download-progress-output.md) shows the output. Until #84 the whole step was silent, which on a slow connection was
 indistinguishable from a hang. pip's own socket timeout (15 s, 5 retries) and
 Gradle's still end a stalled download; this changes what is visible, not when it
 gives up.
