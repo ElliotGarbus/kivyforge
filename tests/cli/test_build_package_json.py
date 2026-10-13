@@ -78,6 +78,14 @@ class TestSuccess:
         ]
         assert "[gradle] assembleDebug" in result.stderr
 
+    def test_android_bare_build_reports_only_the_project(self, android):
+        result, env = _run(build, ["-p", "android"])
+        assert result.exit_code == 0
+        assert _artifacts(env) == [("demoapp-android", "project")]
+        # The "Gradle did not run" hint (#106) is human output: an agent reads
+        # the missing apk from `artifacts`, not from prose on stdout.
+        assert "Gradle did not run" not in result.stdout
+
 
 class TestSuccessWithNotes:
     """ok with diagnostics and exit 0: a warning is not a failure."""
