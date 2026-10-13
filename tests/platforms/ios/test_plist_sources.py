@@ -7,6 +7,8 @@ import plistlib
 import pytest
 
 from kivyforge.config import load_config_from_text
+from kivyforge.config.model import ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.platforms.ios.entitlements import write_entitlements
 from kivyforge.platforms.ios.plist import build_info_plist, write_info_plist
 from kivyforge.platforms.ios.privacy import STUB_MANIFEST, write_privacy_manifest
@@ -29,6 +31,12 @@ class TestInfoPlist:
         assert plist["CFBundleShortVersionString"] == "1.2.3"
         assert plist["CFBundleVersion"] == "7"
         assert plist["MinimumOSVersion"] == "13.0"
+
+    def test_short_version_is_the_resolved_one_as_given(self, config):
+        built = with_version(config, ResolvedVersion("1.2.4.dev1+gabc", "backend"))
+        assert (
+            build_info_plist(built)["CFBundleShortVersionString"] == "1.2.4.dev1+gabc"
+        )
 
     def test_sdl3_scene_manifest_always_present(self, config):
         plist = build_info_plist(config)

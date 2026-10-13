@@ -1,6 +1,7 @@
 # Proposal — dynamic `[project].version`
 
-> Status: **proposal, revised 2026-10-12 after review. Not implemented.**
+> Status: **implemented 2026-10-12** (branch `dynamic-version-impl`). Where the
+> code differs from the text below, section 9 says so, and section 9 wins.
 > Written for [issue #111](https://github.com/ElliotGarbus/kivyforge/issues/111).
 > Code claims were read from the source at `70573b79` (`main`); line numbers are
 > as of that commit. The pip behaviour was measured on macOS on the same date;
@@ -817,3 +818,20 @@ the isolated run reports `9.9.9` for both the setuptools-scm project (with
 
 Not yet measured: a cold pip cache, Windows, Linux, and a project with no git
 history.
+
+## 9. Implementation (2026-10-12)
+
+Implemented as designed, with these differences. Each was a choice made when
+the code met the text; none changes a behaviour the reviews asked for.
+
+| Design text | Implementation | Why |
+|---|---|---|
+| `ResolvedVersion` is a parameter threaded through every consumer (3.4) | `Config.resolved_version`, set by each backend when it loads config (`config.version.with_version`), read through `Config.version_required`. That accessor returns the resolved version; for a config loaded without one, it builds one from a *static* declaration, and it raises for a dynamic one. | The consumers sit 3-5 calls below each backend's entry point, and ~190 test call sites reach them. The accessor follows the codebase's `ios_required` idiom. What the design wanted is kept: a dynamic version cannot be read unresolved (it raises), and no consumer can read the declaration as a string, because it is no longer one. |
+| Pyright guarantees no path loses the version (3.4) | Pyright guarantees it at the boundary: `Platform.build`/`package` take a required `version`, `run` and `android_run`/`android_smoke` a required `version: ResolvedVersion \| None`. Below that, each backend's `run` and `package` forward it to their own `build`, which loads config again; `tests/cli/test_version_forwarding.py` and three Android tests pin every such hop. | The static fallback above means a forgotten forward would silently build the declared version instead of an override. Tests catch that where types cannot. |
+| The verb loads the config (3.4 step 1) | The verb reads only the declaration (`config.loader.load_declared_version`: `[project]`, `[build-system]`, `[tool.setuptools_scm]`). | The backend validates the whole file anyway; doing it twice would duplicate errors and couple the verb to every overlay. |
+| `ResolvedVersion` carries every derived value (3.4 step 3) | It carries `value`, `source` and `filename_part`. The Android code is `config.version.android_version_code(config)`; the Windows numeric version stays `pep440_to_file_version(value)` in the Windows backend; the Apple check runs in the verb. | Each derived value lives with the one consumer that needs it. The Android backend calls `android_version_code` as soon as it loads config with a version, so a dev version with `"auto"` still fails before any staging or Gradle work, with the file's line number. |
+| An INFO diagnostic for `--no-build-isolation` with a static version (3.3) | Code `KF-VERSION-ISOLATION-UNUSED`. | The design named the diagnostic but not its code. |
+| "Usage error" for flags that cannot apply (3.2, 3.3) | `ToolchainError`, exit 1. | Exit 2 belongs to click's parser; kivyforge never raises it (`report/exit_codes.py`). |
+| One stderr line naming the version (3.5) | Printed for `override` and `backend` sources only. | A static version is in `pyproject.toml` already; printing it would change every existing project's output. |
+
+The user-facing page is `docs/guides/guides/cross-platform/versioning.md`.

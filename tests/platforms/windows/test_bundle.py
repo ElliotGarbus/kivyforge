@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from kivyforge.config import load_config
+from kivyforge.config.model import ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
@@ -118,6 +120,14 @@ class TestBuildOnedir:
         # LegalCopyright + CompanyName derive from the first [project].authors name.
         assert patch.legal_copyright == "Acme Corp"
         assert patch.company_name == "Acme Corp"
+
+    def test_resource_patch_uses_the_resolved_version(self, project, fake_stages):
+        root, config = project
+        built = with_version(config, ResolvedVersion("2.0.0rc1+local", "override"))
+        bundle.build_onedir(built, _lock(), root, echo=lambda *a, **k: None)
+        _exe, patch = fake_stages[0]
+        assert patch.product_version_string == "2.0.0rc1+local"
+        assert patch.file_version == patch.product_version == "2.0.0.30001"
 
     def test_resource_patch_without_authors(self, tmp_path, fake_stages):
         pyproject = _PYPROJECT.replace('authors = [{ name = "Acme Corp" }]\n', "")

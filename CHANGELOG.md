@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### All platforms: dynamic versions
+
+- **Added:** `dynamic = ["version"]` in `[project]` is supported
+  ([#111](https://github.com/ElliotGarbus/kivyforge/issues/111)). A project
+  that takes its version from git through setuptools-scm, hatch-vcs or another
+  build backend plugin no longer fails with "missing or empty
+  [project].version". `build`, `package` and `run` ask pip to prepare the
+  project's metadata, in an isolated environment, and print the version they
+  got. This works whether kivyforge was installed with `uv tool`, pipx or as a
+  project dependency. `lock`, `doctor`, `status` and `clean` never run pip, and
+  a new commit doesn't make the lock out of date. The first build needs the
+  network to fetch the backend. See
+  [Set the app version](docs/guides/guides/cross-platform/versioning.md).
+- **Added:** `--app-version VERSION` on `build`, `package` and `run`, and the
+  `KIVYFORGE_APP_VERSION` environment variable (the flag wins), to set the
+  version without running the build backend. `--no-build-isolation` resolves a
+  dynamic version with a backend installed alongside kivyforge, offline.
+- **Added:** `--json` envelopes from `build` and `package` carry
+  `data.version`: `{"value", "source"}`, where `source` is `override`, `static`
+  or `backend`. It is recorded before the build starts, so failed builds keep
+  it.
+- **Added:** `doctor` reports a Version check. New codes:
+  `KF-VERSION-UNRESOLVED` (exit 1), `KF-VERSION-APPLE-FORMAT`,
+  `KF-VERSION-FILE-NOT-REFRESHED`, `KF-VERSION-ISOLATION-UNUSED`.
+- **Changed:** an iOS export for the App Store (`package -p ios`, or
+  `build -p ios --release`, both with the default `--export-method app-store`)
+  fails before Xcode runs when the version isn't one to three dot-separated
+  numbers, such as `1.0rc1` or `1.2.3.4`. App Store Connect refuses such a
+  version at upload (ITMS-90060). Other iOS exports and macOS `package` warn
+  instead, and debug builds are unaffected. **Migration:** a static
+  pre-release version used to fail at upload; it now fails at `package`. Build
+  from a release version, pass `--app-version`, or export with
+  `--export-method ad-hoc` or `development`.
+- **Changed:** `[project].version` must follow PEP 440, and kivyforge writes
+  its normalized form. **Migration:** `v1.2` becomes `1.2` in `versionName`,
+  the plists and file names; `1.0-beta` becomes `1.0b0`; a local segment is
+  lowercased with `-` turned into `.` (`1.0+Build-5` becomes `1.0+build.5`). A
+  version PEP 440 can't parse, such as `1.0.0-SNAPSHOT`, now fails to load;
+  pip already refused to build such a project.
+- **Changed:** a `+` in the version becomes `_` in Linux `.AppImage` and
+  Windows `dist` folder names, since `+` turns into a space in URL query
+  strings. **Migration:** `1.0+local` now packages as `...-1.0_local-...`.
+- **Changed:** listing `name`, `dependencies`, `authors`, `description` or
+  `requires-python` in `[project].dynamic` is now an error. kivyforge reads
+  those fields itself, and a dynamic one used to load as absent: a
+  `dynamic = ["dependencies"]` project locked no dependencies at all.
+  **Migration:** set the field statically.
+
 ### All platforms: install metadata left out of the app
 
 - **Fixed:** a `*.egg-info` folder inside `app_dir` was copied into the app.

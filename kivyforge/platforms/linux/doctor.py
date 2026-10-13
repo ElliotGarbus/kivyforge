@@ -427,6 +427,7 @@ def run_linux_checks(
     linux = config.linux_required
     results += [
         C.check_app_dir(config, project_root),
+        C.check_version(config),
         C.check_byte_compile(
             probe,
             byte_compile=linux.build_settings.byte_compile,

@@ -15,7 +15,12 @@ from kivyforge.config import (
     load_config_from_text,
     read_pyproject_text,
 )
-from kivyforge.config.model import NativeBinaryDep, SwiftPackageDep, XcframeworkDep
+from kivyforge.config.model import (
+    NativeBinaryDep,
+    StaticVersion,
+    SwiftPackageDep,
+    XcframeworkDep,
+)
 from kivyforge.lock import compute_pyproject_sha256
 
 
@@ -27,7 +32,7 @@ class TestHappyPath:
     def test_parses_valid(self, valid_toml):
         cfg = load_config_from_text(valid_toml)
         assert cfg.project.name == "touchtracer"
-        assert cfg.project.version == "1.0.0"
+        assert cfg.project.version == StaticVersion("1.0.0")
         assert cfg.project.dependencies == ("kivy>=3.0,<4",)
         assert cfg.kivy.app_dir == "src"
         assert cfg.kivy.entry_point == "main"

@@ -505,6 +505,7 @@ def run_ios_checks(
     ios = config.ios_required
     results += [
         C.check_app_dir(config, project_root),
+        C.check_version(config),
         # iOS never has a runnable staged interpreter: Python.xcframework is a
         # linkable library, not an executable, so native= is always False here.
         C.check_byte_compile(

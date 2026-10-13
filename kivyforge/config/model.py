@@ -241,11 +241,58 @@ class Author:
 
 
 @dataclass(frozen=True)
+class StaticVersion:
+    """``[project].version`` as written: parsed per PEP 440, held normalized."""
+
+    value: str
+
+
+@dataclass(frozen=True)
+class DynamicVersion:
+    """``"version"`` in ``[project].dynamic``: the build backend supplies it.
+
+    Resolved only by the verbs that build an artifact
+    (docs/design/dev/dynamic-version-proposal.md).
+    """
+
+    #: ``[build-system].build-backend``, or PEP 517's default; for messages.
+    backend: str
+
+
+DeclaredVersion = StaticVersion | DynamicVersion
+
+
+@dataclass(frozen=True)
+class ResolvedVersion:
+    """The version one invocation builds with.
+
+    Resolved once, by the verb (``kivyforge.versioning``), and carried into the
+    backend on its config (``Config.resolved_version``), so every artifact reads
+    the same normalized value.
+    """
+
+    #: Normalized PEP 440 (``"1.2"`` for ``"v1.2"``).
+    value: str
+    #: ``"override"`` (``--app-version`` or ``KIVYFORGE_APP_VERSION``),
+    #: ``"static"`` or ``"backend"``.
+    source: str
+
+    @property
+    def filename_part(self) -> str:
+        """The version as it appears in artifact filenames.
+
+        ``+`` is legal on every filesystem but becomes a space in a URL query
+        string, so a local segment is joined with ``_`` instead.
+        """
+        return self.value.replace("+", "_")
+
+
+@dataclass(frozen=True)
 class ProjectMeta:
     """PEP 621 ``[project]`` subset consumed by kivyforge."""
 
     name: str
-    version: str
+    version: DeclaredVersion
     description: str | None = None
     requires_python: str | None = None
     dependencies: tuple[str, ...] = ()
@@ -659,19 +706,29 @@ class AndroidBuildSettings:
 
 
 @dataclass(frozen=True)
+class AutoVersionCode:
+    """``version_code = "auto"``: derived from the version and ``build``."""
+
+    build: int
+    #: Where ``version_code`` sits in ``pyproject.toml``, so an error raised at
+    #: resolution still points at the file.
+    line: int | None = None
+
+
+@dataclass(frozen=True)
 class AndroidConfig:
     """``[tool.kivy.android]`` overlay (android/01).
 
-    ``version_code`` is the **resolved** integer: an explicit value verbatim, or
-    the auto-derived code (``MAJOR*1_000_000 + MINOR*10_000 + PATCH*100 +
-    build``) when the overlay says ``"auto"`` (``version_code_auto`` records
-    which). ``compile_sdk`` defaults to ``target_sdk`` at parse time.
+    ``version_code`` is an explicit integer verbatim, or :class:`AutoVersionCode`
+    when the overlay says ``"auto"``. The auto code depends on the version, so
+    it is computed with it (``ResolvedVersion.android_version_code``), and a
+    static version is also checked against it at load time.
+    ``compile_sdk`` defaults to ``target_sdk`` at parse time.
     """
 
     schema_version: int
     package: str
-    version_code: int = 1
-    version_code_auto: bool = False
+    version_code: int | AutoVersionCode = 1
     build: int = 0
     min_sdk: int = DEFAULT_ANDROID_MIN_SDK
     target_sdk: int = DEFAULT_ANDROID_TARGET_SDK
@@ -759,6 +816,26 @@ class Config:
     linux: LinuxConfig | None = None
     windows: WindowsConfig | None = None
     android: AndroidConfig | None = None
+    #: Set by a backend that builds, from the version its verb resolved.
+    resolved_version: ResolvedVersion | None = None
+
+    @property
+    def version_required(self) -> ResolvedVersion:
+        """The version an artifact carries.
+
+        The resolved version when the verb supplied one. Without one, a static
+        declaration stands for itself (callers that load config directly, such
+        as tests); a dynamic one has no value until resolved, so asking for it
+        is a bug and raises.
+        """
+        if self.resolved_version is not None:
+            return self.resolved_version
+        if isinstance(self.project.version, DynamicVersion):
+            raise RuntimeError(
+                "Config.resolved_version is None for a dynamic [project].version; "
+                "resolve it in the verb and load config with it before building."
+            )
+        return ResolvedVersion(value=self.project.version.value, source="static")
 
     @property
     def display_name(self) -> str:

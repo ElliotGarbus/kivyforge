@@ -43,7 +43,7 @@ def build_info_plist(config: Config) -> dict:
         "CFBundleDisplayName": config.display_name,
         "CFBundleIdentifier": ios.bundle_id,
         "CFBundleExecutable": "$(EXECUTABLE_NAME)",
-        "CFBundleShortVersionString": config.project.version,
+        "CFBundleShortVersionString": config.version_required.value,
         "CFBundleVersion": str(ios.build),
         "CFBundlePackageType": "APPL",
         "CFBundleInfoDictionaryVersion": "6.0",

@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from ..config.model import Config
+from ..config.model import AutoVersionCode, Config, StaticVersion
 from ..host import host_runs_natively
 from ..lock.resolver import MIN_PIP_VERSION, version_str
 from .probe import Probe
@@ -198,3 +198,28 @@ def check_app_dir(config: Config, project_root: Path) -> CheckResult:
             "point at your app's Python source.",
         )
     return CheckResult("App source directory", Status.PASS, app_dir)
+
+
+def check_version(config: Config) -> CheckResult:
+    """The version a build will carry, without running the build backend.
+
+    A dynamic version is resolved by pip at build time
+    (docs/design/dev/dynamic-version-proposal.md); doctor never runs it, because
+    an isolated resolution needs network and says nothing about this machine.
+    """
+    declared = config.project.version
+    if isinstance(declared, StaticVersion):
+        return CheckResult("Version", Status.PASS, declared.value)
+    detail = (
+        f"dynamic via {declared.backend} (resolved at build time; the first "
+        "build needs network)"
+    )
+    hint = ""
+    android = config.android
+    if android is not None and isinstance(android.version_code, AutoVersionCode):
+        hint = (
+            'version_code = "auto" is derived at build time too; a pre-release, '
+            "dev or local version fails then. Build from a release tag, or set "
+            "an explicit integer version_code."
+        )
+    return CheckResult("Version", Status.PASS, detail, hint=hint)

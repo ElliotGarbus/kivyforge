@@ -285,7 +285,7 @@ def _resource_patch(config: Config, icon: Path | None) -> ResourcePatch:
     FILEVERSION/PRODUCTVERSION use the deterministic four-part mapping (signing).
     LegalCopyright/CompanyName come from the first ``[project].authors`` entry.
     """
-    version = config.project.version
+    version = config.version_required.value
     numeric = pep440_to_file_version(version)
     author = _first_author(config)
     return ResourcePatch(

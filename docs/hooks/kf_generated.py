@@ -187,6 +187,34 @@ _DIAGNOSTIC = {
         "Report it to the wheel's publisher and lock a correct wheel; `context` "
         "names the `library`, its `distribution` and the `abi`.",
     ),
+    "KF-VERSION-UNRESOLVED": (
+        "error",
+        "pip could not produce the dynamic `[project].version`: the build "
+        "backend failed (not a git checkout, no tags) or the package index was "
+        "unreachable.",
+        "Check `pip wheel --no-deps .` works; in CI fetch tags "
+        "(`fetch-depth: 0`); or pass `--app-version`.",
+    ),
+    "KF-VERSION-APPLE-FORMAT": (
+        "error or warning",
+        "The version is not one to three dot-separated numbers, which App Store "
+        "Connect refuses (ITMS-90060). An error for an iOS `app-store` export, a "
+        "warning for other iOS exports and macOS `package`.",
+        "Build from a release tag, pass `--app-version 1.2.3`, or export with "
+        "`--export-method ad-hoc` or `development`.",
+    ),
+    "KF-VERSION-FILE-NOT-REFRESHED": (
+        "warning",
+        "setuptools-scm's `version_file` was not rewritten, because the version "
+        "came from `--app-version` or `pyproject.toml`.",
+        "Pin with `SETUPTOOLS_SCM_PRETEND_VERSION` instead of `--app-version`.",
+    ),
+    "KF-VERSION-ISOLATION-UNUSED": (
+        "info",
+        "`--no-build-isolation` had no effect: the version is static, so the "
+        "build backend did not run.",
+        "Nothing to do; drop the flag for this project.",
+    ),
     "KF-ERROR": (
         "error",
         "An expected failure with no more specific code assigned yet.",

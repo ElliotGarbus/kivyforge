@@ -22,7 +22,7 @@ def build_info_plist(config: Config, *, executable: str, icon_file: str | None) 
         "CFBundleExecutable": executable,
         "CFBundlePackageType": "APPL",
         "CFBundleInfoDictionaryVersion": "6.0",
-        "CFBundleShortVersionString": config.project.version,
+        "CFBundleShortVersionString": config.version_required.value,
         "CFBundleVersion": str(macos.build),
         "LSMinimumSystemVersion": (
             macos.minimum_system_version or DEFAULT_MINIMUM_SYSTEM_VERSION

@@ -23,6 +23,12 @@ kivyforge at tools installed in non-default locations.
 |---|---|
 | `KIVYFORGE_PLATFORM` | Default target when you don't pass `-p`, for example `android` or its alias `win` for `windows`. `-p` overrides it. See [Choose a target platform](../concepts/choose-platform.md). |
 
+## Version
+
+| Variable | Effect |
+|---|---|
+| `KIVYFORGE_APP_VERSION` | The version `build`, `package` and `run` write into the app, instead of `[project].version` or the build backend's. `--app-version` overrides it. Ignored by `run --no-build` and `run --list-devices`, which build nothing. See [Set the app version](../guides/cross-platform/versioning.md). |
+
 ## Output
 
 | Variable | Effect |

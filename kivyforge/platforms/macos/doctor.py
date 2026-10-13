@@ -438,6 +438,7 @@ def run_macos_checks(
     macos = config.macos_required
     results += [
         C.check_app_dir(config, project_root),
+        C.check_version(config),
         C.check_byte_compile(
             probe,
             byte_compile=macos.build_settings.byte_compile,

@@ -26,6 +26,8 @@ from kivyforge.cli._common import (
     lockfile_path_for,
 )
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
+from kivyforge.config.model import ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -42,6 +44,7 @@ from .signing import sign_bundle_developer_id
 def macos_build(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
@@ -52,7 +55,7 @@ def macos_build(
     """Assemble (and ad-hoc sign) the macOS ``.app``."""
     outcome = OutcomeBuilder(events.on_artifact)
     _require_macos_host()
-    config = _load_config(project_root)
+    config = _load_config(project_root, version)
     lock = _load_lock(project_root)
 
     pyproject = project_root / "pyproject.toml"
@@ -89,6 +92,7 @@ def macos_build(
 def macos_run(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     arch: str | None,
     no_build: bool,
     release: bool = False,
@@ -115,6 +119,7 @@ def macos_run(
     else:
         built = macos_build(
             project_root,
+            version=version,
             arch=arch,
             no_verify_lock=False,
             no_cache=False,
@@ -137,6 +142,7 @@ def macos_run(
 def macos_package(
     project_root: Path,
     *,
+    version: ResolvedVersion | None = None,
     arch: str | None,
     no_verify_lock: bool,
     no_cache: bool,
@@ -158,7 +164,7 @@ def macos_package(
     """
     outcome = OutcomeBuilder(events.on_artifact)
     _require_macos_host()
-    config = _load_config(project_root)
+    config = _load_config(project_root, version)
     signing = config.macos_required.signing
     identity = signing_identity or signing.identity
     profile = notary_profile or signing.notary_profile
@@ -175,6 +181,7 @@ def macos_package(
             )
         built = macos_build(
             project_root,
+            version=version,
             arch=arch,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
@@ -210,6 +217,7 @@ def macos_package(
     # Assemble unsigned; the Developer ID deep-sign below seals every Mach-O.
     built = macos_build(
         project_root,
+        version=version,
         arch=arch,
         no_verify_lock=no_verify_lock,
         no_cache=no_cache,
@@ -289,13 +297,14 @@ def _require_macos_host() -> None:
         raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
-def _load_config(project_root: Path):
+def _load_config(project_root: Path, version: ResolvedVersion | None = None):
     try:
-        return load_config(
+        config = load_config(
             project_root / "pyproject.toml", require_ios=False, require_macos=True
         )
     except ConfigError as exc:
         raise ToolchainError(exc.format()) from exc
+    return with_version(config, version)
 
 
 def _load_lock(project_root: Path) -> MacosLockfile:

@@ -79,9 +79,12 @@ from .model import (
     AndroidSplashConfig,
     AndroidSrcConfig,
     Author,
+    AutoVersionCode,
     Config,
+    DeclaredVersion,
     DesktopBuildSettings,
     DesktopConfig,
+    DynamicVersion,
     IconConfig,
     IosConfig,
     KivyMeta,
@@ -92,11 +95,13 @@ from .model import (
     ProjectMeta,
     SigningConfig,
     SplashConfig,
+    StaticVersion,
     SwiftPackageDep,
     WindowsConfig,
     WindowsSigningConfig,
     XcframeworkDep,
 )
+from .version import android_auto_version_code, normalized
 
 
 def _is_absolute_source(value: str) -> bool:
@@ -160,6 +165,23 @@ def load_config(
         require_android=require_android,
         project_root=path.parent,
     )
+
+
+def load_declared_version(path: str | Path) -> tuple[DeclaredVersion, str | None]:
+    """Only what resolving the version needs: its declaration and the
+    setuptools-scm ``version_file``.
+
+    The verbs that build resolve before dispatching to a backend, which loads
+    and validates the whole file itself; reading just ``[project]`` here keeps
+    that validation in one place.
+    """
+    text = read_pyproject_text(Path(path))
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"invalid TOML: {exc}") from exc
+    project = _parse_project(raw, _LineFinder(text))
+    return project.version, _scm_version_file(raw)
 
 
 def load_config_from_text(
@@ -255,6 +277,25 @@ def load_config_from_text(
     )
 
 
+def _scm_version_file(raw: dict) -> str | None:
+    """setuptools-scm's ``version_file`` (or its deprecated ``write_to``).
+
+    Read only to warn when a build's version did not come from the backend, so
+    the file was not rewritten (``KF-VERSION-FILE-NOT-REFRESHED``). Other
+    plugins declare such files in their own tables and formats; they are not
+    read (docs/design/dev/dynamic-version-proposal.md section 3.9).
+    """
+    tool = raw.get("tool")
+    scm = tool.get("setuptools_scm") if isinstance(tool, dict) else None
+    if not isinstance(scm, dict):
+        return None
+    for key in ("version_file", "write_to"):
+        value = scm.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Unknown keys under [tool.kivy]
 # --------------------------------------------------------------------------- #
@@ -327,13 +368,7 @@ def _parse_project(raw: dict, finder: _LineFinder) -> ProjectMeta:
             key_path="project.name",
             line=finder.line("project"),
         )
-    version = project.get("version")
-    if not version or not isinstance(version, str):
-        raise ConfigError(
-            "missing or empty [project].version",
-            key_path="project.version",
-            line=finder.line("project"),
-        )
+    version = _parse_project_version(raw, project, finder)
 
     deps = project.get("dependencies", [])
     if not isinstance(deps, list) or not all(isinstance(d, str) for d in deps):
@@ -354,6 +389,80 @@ def _parse_project(raw: dict, finder: _LineFinder) -> ProjectMeta:
         requires_python=project.get("requires-python"),
         dependencies=tuple(deps),
         authors=tuple(authors),
+    )
+
+
+#: ``[project]`` keys kivyforge reads besides ``version``. Listed in ``dynamic``,
+#: each would parse as absent -- no dependencies, no description -- so a lock or
+#: an artifact would be silently wrong instead of the project failing to load.
+_UNRESOLVABLE_DYNAMIC = (
+    "name",
+    "dependencies",
+    "authors",
+    "description",
+    "requires-python",
+)
+
+#: PEP 517's backend when ``[build-system]`` names none.
+_DEFAULT_BUILD_BACKEND = "setuptools.build_meta:__legacy__"
+
+
+def _parse_project_version(
+    raw: dict, project: dict, finder: _LineFinder
+) -> StaticVersion | DynamicVersion:
+    dynamic = project.get("dynamic", [])
+    if not isinstance(dynamic, list) or not all(isinstance(d, str) for d in dynamic):
+        raise ConfigError(
+            "[project].dynamic must be a list of field names",
+            key_path="project.dynamic",
+            line=finder.line("dynamic"),
+        )
+    for key in _UNRESOLVABLE_DYNAMIC:
+        if key in dynamic:
+            raise ConfigError(
+                f"[project].{key} is listed in dynamic, which kivyforge does "
+                "not support",
+                key_path="project.dynamic",
+                line=finder.line("dynamic"),
+                hint=f"kivyforge reads [project].{key} itself; set it "
+                'statically. Only "version" may be dynamic.',
+            )
+
+    version = project.get("version")
+    if "version" in dynamic:
+        if version is not None:
+            raise ConfigError(
+                "[project].version is set and also listed in dynamic",
+                key_path="project.version",
+                line=finder.line("version"),
+                hint="PEP 621 allows one or the other: remove the version, or "
+                'remove "version" from dynamic.',
+            )
+        build_system = raw.get("build-system")
+        backend = (
+            build_system.get("build-backend")
+            if isinstance(build_system, dict)
+            else None
+        )
+        if not isinstance(backend, str) or not backend:
+            backend = _DEFAULT_BUILD_BACKEND
+        return DynamicVersion(backend=backend)
+
+    if not version or not isinstance(version, str):
+        raise ConfigError(
+            "missing or empty [project].version",
+            key_path="project.version",
+            line=finder.line("project"),
+            hint='set version = "1.0.0", or list "version" in [project].dynamic '
+            "to take it from the build backend (setuptools-scm, hatch-vcs, ...).",
+        )
+    return StaticVersion(
+        normalized(
+            version,
+            what="[project].version",
+            key_path="project.version",
+            line=finder.line("version"),
+        )
     )
 
 
@@ -1226,9 +1335,7 @@ def _parse_android(
     )
     package = _validate_android_package(android.get("package"), finder)
     build = _parse_android_build_counter(android, finder)
-    version_code, version_code_auto = _parse_android_version_code(
-        android, finder, project, build=build
-    )
+    version_code = _parse_android_version_code(android, finder, project, build=build)
     min_sdk, target_sdk, compile_sdk = _parse_android_sdk_levels(android, finder)
     kivy_generation = _parse_android_kivy_generation(android, finder)
     abis = _parse_android_abis(android, finder)
@@ -1297,7 +1404,6 @@ def _parse_android(
         schema_version=schema_version,
         package=package,
         version_code=version_code,
-        version_code_auto=version_code_auto,
         build=build,
         min_sdk=min_sdk,
         target_sdk=target_sdk,
@@ -1363,7 +1469,7 @@ def _parse_android_build_counter(android: dict, finder: _LineFinder) -> int:
 
 def _parse_android_version_code(
     android: dict, finder: _LineFinder, project: ProjectMeta, *, build: int
-) -> tuple[int, bool]:
+) -> int | AutoVersionCode:
     # Rule 20: a positive integer used verbatim, or "auto" derived from
     # [project].version as MAJOR*1_000_000 + MINOR*10_000 + PATCH*100 + build.
     raw = android.get("version_code", 1)
@@ -1384,59 +1490,16 @@ def _parse_android_version_code(
                 key_path="tool.kivy.android.version_code",
                 line=line,
             )
-        return raw, False
+        return raw
     if raw == "auto":
-        try:
-            version = Version(project.version)
-        except InvalidVersion as exc:
-            raise ConfigError(
-                f"[project].version {project.version!r} is not a valid version; "
-                'version_code = "auto" cannot derive from it',
-                key_path="tool.kivy.android.version_code",
-                line=line,
-            ) from exc
-        if (
-            version.is_prerelease
-            or version.is_devrelease
-            or version.is_postrelease
-            or version.epoch != 0
-            or version.local is not None
-        ):
-            raise ConfigError(
-                f'version_code = "auto" requires a final MAJOR.MINOR.PATCH '
-                f"[project].version; {project.version!r} is not one",
-                key_path="tool.kivy.android.version_code",
-                line=line,
-                hint="pre-release/dev/post/local/epoch versions have no "
-                "monotonic integer mapping; set an explicit integer "
-                "version_code for those.",
-            )
-        release = version.release
-        if len(release) > 3:
-            raise ConfigError(
-                f"[project].version {project.version!r} has a 4th numeric "
-                'segment; version_code = "auto" supports MAJOR.MINOR.PATCH only',
-                key_path="tool.kivy.android.version_code",
-                line=line,
-                hint="express the extra increment via the `build` counter.",
-            )
-        major, minor, patch = (*release, 0, 0)[:3]
-        if minor > 99 or patch > 99:
-            raise ConfigError(
-                f"MINOR and PATCH must each be <= 99 for "
-                f'version_code = "auto"; got {project.version!r}',
-                key_path="tool.kivy.android.version_code",
-                line=line,
-            )
-        code = major * 1_000_000 + minor * 10_000 + patch * 100 + build
-        if code > ANDROID_VERSION_CODE_CEILING:
-            raise ConfigError(
-                f"auto-derived version_code {code:,} exceeds Google Play's "
-                f"ceiling of {ANDROID_VERSION_CODE_CEILING:,}",
-                key_path="tool.kivy.android.version_code",
-                line=line,
-            )
-        return code, True
+        auto = AutoVersionCode(build=build, line=line)
+        # A static version can be checked now, so doctor and lock keep reporting
+        # a pre-release one as they always have. A dynamic version has no value
+        # until a build resolves it; the code is computed then, from whatever
+        # version that build uses (an override included).
+        if isinstance(project.version, StaticVersion):
+            android_auto_version_code(project.version.value, auto)
+        return auto
     raise ConfigError(
         "[tool.kivy.android].version_code must be a positive integer or the "
         'string "auto"',

@@ -23,6 +23,7 @@ from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.config.model import (
     WINDOWS_APP_ID_MAX_LENGTH,
     Config,
+    StaticVersion,
 )
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.probe import Probe, RealProbe
@@ -323,7 +324,8 @@ def check_windows_resource_assets(config: Config, project_root: Path) -> CheckRe
     The patch always writes ProductName / ProductVersion (from project metadata,
     always present) and, when configured, an icon (validated by the icon check).
     """
-    version = config.project.version
+    declared = config.project.version
+    version = declared.value if isinstance(declared, StaticVersion) else "dynamic"
     source = config.windows_required.icons.source
     if source and icon_source_problem((project_root / source).resolve()):
         return CheckResult(
@@ -517,6 +519,7 @@ def run_windows_checks(
     windows = config.windows_required
     results += [
         C.check_app_dir(config, project_root),
+        C.check_version(config),
         C.check_byte_compile(
             probe,
             byte_compile=windows.build_settings.byte_compile,

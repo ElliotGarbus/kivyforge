@@ -71,6 +71,20 @@ A failed run lists only what it produced before it failed. For example, a
 failed iOS `build` still lists the generated Xcode project. It never lists output
 left on disk by an earlier run, so `[]` means this run produced nothing.
 
+## `data.version`
+
+For `build` and `package`, `data.version` is the version this run wrote into its
+artifacts:
+
+| Key | Description |
+|---|---|
+| `value` | The normalized PEP 440 version. |
+| `source` | `override` (`--app-version` or `KIVYFORGE_APP_VERSION`), `static` (`[project].version`), or `backend` (a dynamic version from the build backend). |
+
+kivyforge records it before the build starts, so a failed build still reports
+it. A run that fails while looking up the version has no `data.version`. See
+[Set the app version](../guides/cross-platform/versioning.md).
+
 ## Diagnostics
 
 Each entry in `diagnostics` has these keys:

@@ -6,6 +6,8 @@ import pytest
 
 from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config_from_text
+from kivyforge.config.model import AutoVersionCode
+from kivyforge.config.version import android_version_code
 
 BASE = """
 [project]
@@ -44,7 +46,7 @@ class TestDefaults:
         a = load_android(BASE)
         assert a.schema_version == 1
         assert a.package == "org.kivy.touchtracer"
-        assert a.version_code == 1 and a.version_code_auto is False
+        assert a.version_code == 1
         assert (a.min_sdk, a.target_sdk, a.compile_sdk) == (24, 35, 35)
         assert a.kivy_generation == 2
         assert a.abis == ("arm64_v8a", "x86_64")
@@ -310,14 +312,14 @@ class TestVersionCode:
     )
     def test_auto_table(self, version, build, expected):
         text = BASE.replace('version = "1.2.3"', f'version = "{version}"', 1)
-        a = load_android(
+        config = load(
             text.replace(
                 "[tool.kivy.android.python]",
                 f'version_code = "auto"\nbuild = {build}\n\n[tool.kivy.android.python]',
             )
         )
-        assert a.version_code == expected
-        assert a.version_code_auto is True
+        assert isinstance(config.android_required.version_code, AutoVersionCode)
+        assert android_version_code(config) == expected
 
     @pytest.mark.parametrize(
         ("version", "match"),
@@ -355,7 +357,7 @@ class TestVersionCode:
 
     def test_explicit_integer_ignores_build(self):
         a = load_android(with_lines("version_code = 7", "build = 55"))
-        assert a.version_code == 7 and a.version_code_auto is False
+        assert a.version_code == 7
 
     def test_bad_types_rejected(self):
         for value in ('"latest"', "0", "-3", "true"):

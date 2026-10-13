@@ -145,6 +145,30 @@ ANDROID_WHEEL_ARCH = "KF-ANDROID-WHEEL-ARCH"
 #: ``context`` names the ``library``, its ``distribution`` and the ``abi``.
 ANDROID_WHEEL_SUFFIX = "KF-ANDROID-WHEEL-SUFFIX"
 
+#: A dynamic ``[project].version`` could not be resolved: pip exited non-zero
+#: preparing the project's metadata, or reported no version. One code for
+#: "unreachable index" and "not a git checkout" alike, because only pip's
+#: wording tells them apart and that is not a contract; the remediation names
+#: both. Exit 1. ``context`` names the ``backend`` and whether the run was
+#: ``isolated``.
+VERSION_UNRESOLVED = "KF-VERSION-UNRESOLVED"
+
+#: The version is not one to three dot-separated integers, which App Store
+#: Connect refuses at upload (ITMS-90060). An error, before any build tool
+#: runs, for an iOS ``app-store`` export; a warning for other iOS exports and
+#: macOS ``package``. ``context`` names the ``version`` and ``export_method``.
+VERSION_APPLE_FORMAT = "KF-VERSION-APPLE-FORMAT"
+
+#: ``[tool.setuptools_scm].version_file`` is configured but the version came
+#: from ``--app-version`` or a static declaration, so the build backend did not
+#: rewrite the file and an app reading it may report another version. WARNING.
+#: ``context`` names the ``path``.
+VERSION_FILE_NOT_REFRESHED = "KF-VERSION-FILE-NOT-REFRESHED"
+
+#: ``--no-build-isolation`` had no effect: the version is static, so pip was
+#: not run. INFO.
+VERSION_ISOLATION_UNUSED = "KF-VERSION-ISOLATION-UNUSED"
+
 #: An expected failure (``ToolchainError``) with no specific code assigned yet.
 #: Branchable rather than null: it tells a consumer "this is a clean, expected
 #: failure -- read ``message`` and ``remediation``", as distinct from a crash.

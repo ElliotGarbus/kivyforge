@@ -17,6 +17,7 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.build_outcome import BuildEvents, BuildOutcome
+    from kivyforge.config.model import ResolvedVersion
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
 
@@ -49,6 +50,7 @@ class IosPlatform(Platform):
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         target: str | None,
         arch: str | None,
         no_verify_lock: bool,
@@ -64,6 +66,7 @@ class IosPlatform(Platform):
 
         return ios_build(
             project_root,
+            version=version,
             events=events,
             target=target,
             arch=arch,
@@ -78,6 +81,7 @@ class IosPlatform(Platform):
         self,
         project_root: Path,
         *,
+        version: ResolvedVersion | None,
         target: str,
         arch: str | None,
         destination: str | None,
@@ -100,6 +104,7 @@ class IosPlatform(Platform):
 
         ios_run(
             project_root,
+            version=version,
             target=target,
             destination=destination,
             no_build=no_build,
@@ -110,6 +115,7 @@ class IosPlatform(Platform):
         project_root: Path,
         *,
         events: BuildEvents,
+        version: ResolvedVersion,
         fmt: str,
         arch: str | None,
         team_id: str | None,
@@ -127,6 +133,7 @@ class IosPlatform(Platform):
 
         return ios_package(
             project_root,
+            version=version,
             events=events,
             team_id=team_id,
             signing_identity=signing_identity,
