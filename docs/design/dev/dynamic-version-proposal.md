@@ -7,9 +7,9 @@
 > section 8 has the runs. Section 7 records what the reviews changed and why.
 > App-level spike: [`dynamic-version-spike-findings.md`](dynamic-version-spike-findings.md)
 > (macOS, Android, iOS simulator); nothing found argues against the design.
-> **Prerequisite:** [#115](https://github.com/ElliotGarbus/kivyforge/pull/115)
-> (exclude `*.egg-info` from app copies) must merge first; section 3.9 relies
-> on it.
+> **Prerequisite, met:** [#115](https://github.com/ElliotGarbus/kivyforge/pull/115)
+> (exclude `*.egg-info` from app copies), which section 3.9 relies on, merged
+> on 2026-10-13 as `c3a0210b`.
 
 A project that gets its version from git through setuptools-scm (or hatch-vcs,
 versioningit, ...) declares no version string at all:
@@ -537,7 +537,7 @@ So there is no cleanup. Known writes, for the docs:
 
 | Written | When | Effect |
 |---|---|---|
-| `<name>.egg-info/` where setuptools' discovery puts it: `src/` (that is, `app_dir`) for a converted app with no `[tool.setuptools]` table, the project root with `packages = []` (spike findings 2, 6) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. Kept out of every artifact by [#115](https://github.com/ElliotGarbus/kivyforge/pull/115), which makes every app copy exclude `*.egg-info`. **#115 is a prerequisite:** until it merges, nothing excludes it, and with `app_dir = "src"` this folder sits inside the copied tree. iOS debug builds stay exposed even after it: they link `app_dir` rather than copy it (spike finding 3). |
+| `<name>.egg-info/` where setuptools' discovery puts it: `src/` (that is, `app_dir`) for a converted app with no `[tool.setuptools]` table, the project root with `packages = []` (spike findings 2, 6) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. Kept out of every artifact by [#115](https://github.com/ElliotGarbus/kivyforge/pull/115), which makes every app copy exclude `*.egg-info`. #115 was a prerequisite for that reason (without it, with `app_dir = "src"`, this folder sat inside the copied tree) and merged on 2026-10-13. iOS debug builds stay exposed even after it: they link `app_dir` rather than copy it (spike finding 3). |
 | setuptools-scm `version_file` (e.g. `src/myapp/_version.py`) | Both modes | Wanted: it usually sits in `app_dir`, ships, and carries the resolved version. Inside a bundle it is how the app can know its version, because `importlib.metadata` cannot work there. |
 | Nothing | hatchling with hatch-vcs, no `version-file` configured (section 8) | Tree untouched. |
 | (consequence of the egg-info row) | Any later Python run from the project root | `importlib.metadata` in the developer's own environment now finds the egg-info before the installed `.dist-info`, so it reports the last build's version (spike finding 14). Standard setuptools behaviour, but now triggered by a kivyforge build. |
@@ -728,7 +728,7 @@ assumed ahead of time:
 | CHANGELOG should name the normalizations users will see | Section 6: `1.0-beta` to `1.0b0`, local segment lowercased and `-` to `.`, then `+` to `_` (measured: `1.0+Build-5` gives `1.0+build.5`) |
 | Deferring every `"auto"` hides today's load-time error for a static pre-release from `doctor` and `lock` | Section 3.1: compute at load for `StaticVersion`; defer only for `DynamicVersion`; `doctor` says so |
 | `run` has no `--json` | Section 3.5: `data.version` is for `build`/`package`; `run` reports on stderr; the verb emits `ResolvedVersion.warnings` |
-| The egg-info exclusion is not on `main` yet | #115 is now a stated prerequisite (header and section 3.9) |
+| The egg-info exclusion is not on `main` yet | #115 became a stated prerequisite (header and section 3.9); it has since merged (2026-10-13, `c3a0210b`) |
 | The pip child's environment; failed runs can write too | Section 3.3 |
 
 (The Android `run` threading was already in the third pass.)

@@ -82,7 +82,7 @@ depends on the project's setuptools configuration:
 A converted app with no setuptools table, the likely default, therefore gets
 the folder inside the tree every backend copies. With #115 merged into the
 spike, no `.egg-info` appeared in the macOS `.app` or the Android APK. This
-makes #115 a hard prerequisite, as the proposal now says, and refines its
+made #115 a hard prerequisite (it merged on 2026-10-13 as `c3a0210b`), and refines the proposal's
 side-effects table ("package root") to "where setuptools' discovery puts
 it, usually `src/` for an app".
 
