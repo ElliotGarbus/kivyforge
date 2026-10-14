@@ -178,7 +178,13 @@ VALID_ORIENTATIONS = frozenset(
     {"portrait", "portrait-upside-down", "landscape-left", "landscape-right"}
 )
 
-DEFAULT_DEPLOYMENT_TARGET = "13.0"
+# The app's minimum iOS, written to IPHONEOS_DEPLOYMENT_TARGET and
+# MinimumOSVersion. It is not the floor python.org's Python.xcframework tags its
+# wheels with (ios_13_0_*); that is checked separately at lock time. 16.0 because
+# Kivy's own iOS extension modules are linked with minos 16.0, so a lower target
+# installs on devices that cannot load them, and Xcode 27 refuses anything below
+# 15.0 outright (13.0 was the default until it did).
+DEFAULT_DEPLOYMENT_TARGET = "16.0"
 DEFAULT_ENTRY_POINT = "main"
 DEFAULT_ORIENTATION = ("portrait",)
 

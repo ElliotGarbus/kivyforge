@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 from pbxproj import XcodeProject
 
@@ -186,7 +188,7 @@ class TestPbxprojGeneration:
         assert debug["DEBUG_INFORMATION_FORMAT"] == "dwarf"
         assert release["DEBUG_INFORMATION_FORMAT"] == "dwarf-with-dsym"
         assert debug["ENABLE_USER_SCRIPT_SANDBOXING"] == "NO"
-        assert debug["IPHONEOS_DEPLOYMENT_TARGET"] == "13.0"
+        assert debug["IPHONEOS_DEPLOYMENT_TARGET"] == "16.0"
         assert debug["TARGETED_DEVICE_FAMILY"] == "1,2"
         # Pre-signed embedded frameworks must not be stripped on copy.
         assert debug["COPY_PHASE_STRIP"] == "NO"
@@ -325,6 +327,37 @@ class TestPbxprojGeneration:
         assert set(signing_settings(every, project_root=project_root)) == (
             SIGNING_SETTING_KEYS
         )
+
+    def test_deployment_target_also_reaches_the_project_level(
+        self, config, project_root
+    ):
+        """The skeleton seeded the project level with a literal 13.0 that no
+        later run touched, below Xcode 27's 15.0 floor (found 2026-10-14)."""
+        assert config.ios is not None
+        raised = dataclasses.replace(
+            config, ios=dataclasses.replace(config.ios, deployment_target="17.0")
+        )
+        layout = materialize_project(raised, project_root)
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        for configuration in ("Debug", "Release"):
+            proj = _project_settings_for(project, configuration)
+            assert proj["IPHONEOS_DEPLOYMENT_TARGET"] == "17.0"
+
+    def test_regeneration_heals_a_stale_project_level_target(
+        self, config, project_root
+    ):
+        layout = materialize_project(config, project_root)
+        pbxproj = str(layout.xcodeproj / "project.pbxproj")
+        project = XcodeProject.load(pbxproj)
+        for cfg in _objects(project).get_project_configurations():
+            cfg.set_flags("IPHONEOS_DEPLOYMENT_TARGET", "13.0")
+        project.save()
+
+        materialize_project(config, project_root)
+        project = XcodeProject.load(pbxproj)
+        for configuration in ("Debug", "Release"):
+            proj = _project_settings_for(project, configuration)
+            assert proj["IPHONEOS_DEPLOYMENT_TARGET"] == "16.0"
 
     def test_last_upgrade_check_current(self, config, project_root):
         # Xcode prompts "Update to recommended settings" when LastUpgradeCheck

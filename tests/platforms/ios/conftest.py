@@ -27,7 +27,7 @@ def _cfg(extra: str = "") -> str:
         schema_version = 1
         bundle_id = "org.kivy.touchtracer"
         build = 7
-        deployment_target = "13.0"
+        deployment_target = "16.0"
 
         [tool.kivy.ios.python]
         version = "3.15.0"

@@ -115,6 +115,9 @@ class TestWriterUnits:
         # commented entries leave defaults in place
         assert ios.simulator_archs == ("arm64",)
         assert ios.icons.source is None
+        # Seeded explicitly, so the project does not depend on kivyforge's
+        # default; 13.0 was below Xcode 27's floor.
+        assert ios.deployment_target == "16.0"
         assert ios.splash.source is None
 
     def test_render_kivy_tables_with_kivy_exclude(self):

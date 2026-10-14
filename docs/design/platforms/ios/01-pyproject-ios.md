@@ -61,7 +61,7 @@ iOS-specific overlay. Every field below applies to iOS only.
 schema_version = 1
 bundle_id = "org.example.myapp"
 build = 1
-deployment_target = "13.0"
+deployment_target = "16.0"
 ```
 
 | Field               | Type    | Required | Default  | Description                                                                                                                                                                                                                                          |
@@ -69,7 +69,7 @@ deployment_target = "13.0"
 | `schema_version`    | integer | yes      | —        | Declares the major version of the iOS schema this `[tool.kivy.ios]` table targets. `toolchain` refuses to operate on a value higher than it understands, with a clear "upgrade kivyforge" error. Independent of other platforms' overlay schema versions. |
 | `bundle_id`         | string  | yes      | —        | iOS bundle identifier. Init suggests `org.example.<slug>` with a comment to change it.                                                                                                                                                               |
 | `build`             | integer | no       | `1`      | Build number (`CFBundleVersion`). Increment per submission.                                                                                                                                 |
-| `deployment_target` | string  | no       | `"13.0"` | Minimum iOS version. Must be >= the floor of the selected `Python.xcframework`.                                                                                                                                                                      |
+| `deployment_target` | string  | no       | `"16.0"` | Minimum iOS version (`IPHONEOS_DEPLOYMENT_TARGET`, `MinimumOSVersion`). Must be >= the floor of the selected `Python.xcframework`, and inside the range the installed Xcode accepts (Xcode 27: 15.0 to 27.0.x; `doctor -p ios` reads it from the SDK). The default is Kivy's own iOS minimum: its extension modules are linked with `minos` 16.0. It was `"13.0"` until Xcode 27 refused it. |
 | `simulator_archs`   | list of string | no | `["arm64"]` | Which **simulator** CPU architectures `kivyforge lock` pins. The device slice is always `arm64` and is not configurable. **`"arm64"` is the only allowed value**; `"x86_64"` is rejected with a migration message. Must be non-empty. See "Simulator architectures (`simulator_archs`)" below and [pylock spec §"Resolution semantics"](02-pylock-ios-spec.md#resolution-semantics). |
 | `extra_index_urls`  | list of string | no | `[]`     | Supplemental pip index URLs consulted *in addition to* PyPI when resolving iOS wheels. `kivyforge lock` passes each as `--extra-index-url` to pip. Plural-by-design, channel-agnostic, and **empty by default**; PyPI is always the primary source. Each resolved wheel's source URL is pinned in `pylock.ios.toml`'s `[[packages.wheels]]` (and its index recorded under `[packages.tool.kivyforge].source_index`) regardless of which index supplied it, keeping builds reproducible. As packages publish iOS wheels to PyPI proper, configured entries go quiet on their own. See [iOS artifact distribution §"Source registry: PyPI direct"](03-artifact-distribution-ios.md#source-registry-pypi-direct-plus-configurable-supplemental-indexes) and the [common overview](../../common/00-overview.md). |
 | `find_links`        | list of string | no | `[]`     | Repo-relative directories of pre-built wheels consulted during `kivyforge lock` only. Each entry is passed to pip as `--find-links` (pip's name for flat wheel directories or direct wheel URLs). Use when a dependency's iOS wheels are vendored in the repo but not published to PyPI or a supplemental index yet — e.g. locally cross-built `kivy` cp315 wheels under `wheels/`. Entries must be repo-relative (not absolute, must not escape the project directory). **Not** used at `kivyforge build` time; the lockfile's per-wheel `path` or `url` pins are authoritative after lock. See "Local wheel directories (`find_links`)" below and [pylock spec §"Locally built wheels"](02-pylock-ios-spec.md#locally-built-wheels-path). |
@@ -436,7 +436,7 @@ orientation = ["portrait", "portrait-upside-down", "landscape-left", "landscape-
 schema_version = 1
 bundle_id = "org.kivy.touchtracer"
 build = 1
-deployment_target = "13.0"
+deployment_target = "16.0"
 
 [tool.kivy.ios.python]
 version = "3.15.0"

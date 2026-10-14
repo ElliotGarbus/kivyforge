@@ -441,7 +441,7 @@ orientation = ["portrait"]
 [tool.kivy.ios]
 bundle_id = "org.example.hello-world"   # reverse-DNS; UTI characters only (no underscores)
 build = 1
-deployment_target = "13.0"
+deployment_target = "16.0"
 # find_links = ["../../wheels/ios"]     # repo-relative wheel directory for lock
 # exclude = ["docutils", "pygments"]    # drop transitive deps you don't use at runtime
 

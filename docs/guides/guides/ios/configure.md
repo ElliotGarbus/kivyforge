@@ -66,7 +66,10 @@ full key list, see the [iOS overlay reference](../../reference/pyproject/ios.md)
     underscore is rejected.
 
 `deployment_target`
-:   The minimum iOS version, for example `"16.0"`. Defaults to `"13.0"`.
+:   The minimum iOS version, for example `"16.0"`. Defaults to `"16.0"`, the
+    oldest iOS that Kivy's own iOS wheels run on. Xcode also limits it: Xcode 27
+    accepts 15.0 and later, and `kivyforge doctor -p ios` reports the range your
+    Xcode accepts.
 
 `build`
 :   The build number, an integer you increment for each submission. Defaults to

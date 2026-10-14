@@ -29,6 +29,7 @@ from .model import (
     DEFAULT_ANDROID_MIN_SDK,
     DEFAULT_ANDROID_STORE_PASSWORD_ENV,
     DEFAULT_ANDROID_TARGET_SDK,
+    DEFAULT_DEPLOYMENT_TARGET,
     DEFAULT_DESKTOP_CATEGORIES,
     DEFAULT_LINUX_ARCHS,
     DEFAULT_MACOS_ARCHS,
@@ -646,7 +647,7 @@ def _parse_ios(
             line=finder.line("build"),
         )
 
-    deployment_target = ios.get("deployment_target", "13.0")
+    deployment_target = ios.get("deployment_target", DEFAULT_DEPLOYMENT_TARGET)
     if not isinstance(deployment_target, str):
         raise ConfigError(
             "[tool.kivy.ios].deployment_target must be a string",

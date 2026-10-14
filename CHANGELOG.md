@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### iOS: the default deployment target is 16.0
+
+- **Fixed:** with Xcode 27, `kivyforge build -p ios` failed for any project
+  that did not set `[tool.kivy.ios].deployment_target`. The default was 13.0,
+  and Xcode 27 accepts only 15.0 to 27.0.x, so xcodebuild stopped at the end
+  of the build ("The iOS deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set
+  to 13.0, but the range of supported deployment target versions is 15.0 to
+  27.0.x"; `KF-BUILD-TOOL-FAILED`, exit 5). The default is now 16.0, not
+  Xcode's 15.0, because that is the oldest iOS Kivy's own iOS wheels run on:
+  their extension modules are built for iOS 16.0, so a lower target lets older
+  devices install an app that cannot load Kivy. `kivyforge init` writes 16.0,
+  and the `hello-world` example, the one example still at 13.0, now uses 16.0.
+- **Fixed:** the generated Xcode project always had 13.0 as its project-level
+  `IPHONEOS_DEPLOYMENT_TARGET`, whatever `deployment_target` said. Only the app
+  target had the configured value. Both levels now use it, and the next build
+  of an existing `<app>-ios/` project corrects the old value.
+- **Added:** `kivyforge doctor -p ios` has a "Deployment target" check. It reads
+  the range the selected Xcode accepts from the iOS SDK and fails when
+  `deployment_target` is outside it, before a build gets that far. Without a
+  project, it reports the range.
+- **Migration:** what to do depends on how your project sets the key.
+  - **Set below 15.0:** Xcode 27 refuses the value whatever kivyforge's
+    default, so raise it (to `"16.0"` for a Kivy app). Any edit to
+    `pyproject.toml` makes `build` stop with `KF-LOCK-DRIFT` (exit 4), so run
+    `kivyforge lock -p ios` after the edit.
+  - **Not set:** you need no edit, but your app's minimum iOS rises from 13.0
+    to 16.0 (`MinimumOSVersion` and `IPHONEOS_DEPLOYMENT_TARGET`), so devices
+    below iOS 16 cannot install new builds. If your dependencies run on iOS 15
+    (Kivy's do not), set `deployment_target = "15.0"`, the lowest value
+    Xcode 27 accepts.
+  - **Existing locks stay valid.** The lock checks a hash of the text of
+    `pyproject.toml`, and a default is not in that text, so `build`,
+    `package` and `lock --check` accept a lock made before this change. A
+    re-lock does ask pip for `ios_16_0_*` tags instead of `ios_13_0_*`. Wheels
+    built for an older iOS still match, so the kivy and pyobjus wheels (tagged
+    `ios_13_0`) resolve to the same files. A package that publishes wheels for
+    several minimum iOS versions may resolve to a different file, which makes
+    `lock --check` report the lock as stale; run
+    `kivyforge lock -p ios --update`.
+
 ### Guides
 
 - **Added:** [Manage dependencies and re-lock](docs/guides/guides/cross-platform/dependencies.md)
