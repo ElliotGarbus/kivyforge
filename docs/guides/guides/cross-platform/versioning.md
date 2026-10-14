@@ -2,6 +2,8 @@
 title: Set the app version
 sources:
   - docs/design/dev/dynamic-version-proposal.md
+  - docs/design/dev/package-metadata-proposal.md
+  - kivyforge/bundle/app_metadata.py
   - kivyforge/versioning.py
   - kivyforge/config/loader.py
   - kivyforge/config/version.py
@@ -120,7 +122,7 @@ writes:
 
 | File | When | What to do |
 |---|---|---|
-| `<name>.egg-info/`, in `src/` or the project root | setuptools, when pip installs the backend | Add `*.egg-info/` to `.gitignore`. When it sits inside `app_dir` (a src layout with `app_dir = "src"`), it is copied into the app, which is what lets your app read its own entry points (below). |
+| `<name>.egg-info/`, in `src/` or the project root | setuptools, when pip installs the backend | Add `*.egg-info/` to `.gitignore`. It stays out of the app: kivyforge writes the app's own metadata instead (below). |
 | setuptools-scm's `version_file`, such as `src/myapp/_version.py` | Every build that looks up the version | Don't commit it; setuptools-scm's header for the file says the same. |
 
 While an `egg-info` folder sits in your project root, Python started from that
@@ -130,25 +132,77 @@ last kivyforge build.
 
 ## Read your package metadata inside the app
 
-A packaged app isn't installed as a Python distribution. `importlib.metadata`
-finds one only when a `<name>.egg-info` folder sits inside `app_dir`, which a
-src layout with setuptools gets from `pip install -e .`, `uv sync`, or
-kivyforge's own lookup of a dynamic version. kivyforge copies that folder into
-the app, so `importlib.metadata.entry_points()` and `version()` work there, for
-example for an app that discovers its plugins through
-`[project.entry-points]`.
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier, the
+    app's only metadata is a development `<name>.egg-info` that happens to sit
+    in `app_dir`.
 
-That folder records whatever last wrote it, not necessarily the build you are
-making: after changing your entry points, re-run `uv sync` (or
-`pip install -e .`) before building. A project without such a folder (hatch, a
-flat layout, a fresh CI checkout without an install) has no metadata in the
-app. kivyforge generating this metadata itself is tracked in
-[#122](https://github.com/ElliotGarbus/kivyforge/issues/122).
+A packaged app isn't an installed Python distribution, so kivyforge writes its
+metadata into the app itself, on every platform: a `<name>-<version>.dist-info`
+folder beside your code, made from `[project]`. Inside the app,
+`importlib.metadata` then finds:
+
+| Call | Returns |
+|---|---|
+| `version("myapp")` | The version of this build, the same value as `versionName` or `CFBundleShortVersionString`. |
+| `metadata("myapp")["Name"]` | `[project].name` as you wrote it. |
+| `entry_points(group="myapp.plugins")` | The groups in `[project.entry-points]`. `[project.scripts]` and `[project.gui-scripts]` are the `console_scripts` and `gui_scripts` groups. |
+| `packages_distributions()` | Your app's top-level modules and packages in `app_dir`, mapped to your app. Folders without an `__init__.py`, such as asset folders, aren't listed. |
+| `files()`, `requires()` | `None`. kivyforge records neither the app's files nor its dependencies. |
+
+The name is matched as Python normalizes it: for a project named `my-app`,
+`version("my_app")` and `version("My.App")` find it too.
+
+A development `egg-info` folder in `app_dir`, from `pip install -e .`,
+`uv sync` or kivyforge's own lookup of a dynamic version, stays in your source
+tree but not in the app. So does every other `*.egg-info` folder at the top of
+`app_dir`, such as one left by a project you renamed: `entry_points()` would
+still collect its entry points. The app always sees the metadata of the build
+you made.
+
+### Declare entry points in `[project]`
+
+kivyforge reads entry points from `[project]` only:
+
+```toml
+[project.entry-points."myapp.plugins"]
+checked = "myapp.boards:Checked"
+```
+
+Quote a group name that contains a dot. Without the quotes, TOML reads
+`[project.entry-points.myapp.plugins]` as a group `myapp` holding a nested
+table, which kivyforge rejects.
+
+A setuptools project that declares entry points only in `setup.cfg`
+(`[options.entry_points]`) or `setup.py` (`entry_points=`) fails to build with
+`KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT`. Move them into
+`[project.entry-points]`, console scripts into `[project.scripts]` and GUI
+scripts into `[project.gui-scripts]`. setuptools still reads them from those
+files, but has deprecated doing so for a project with a `[project]` table. An
+empty `[project.entry-points]` table doesn't count as declaring them.
+
+### Let your build backend compute entry points
+
+When `[project].dynamic` lists `entry-points`, `scripts` or `gui-scripts`, only
+your build backend knows the full set. kivyforge then writes no metadata,
+leaves `app_dir` as it is, and warns with `KF-METADATA-NOT-GENERATED`. A
+development `egg-info` in `app_dir` is then the app's only metadata, so run
+`pip install -e .` (or `uv sync`) before each build to keep it current.
+
+### Rebuild in Xcode
+
+On iOS, a build you start in Xcode, such as Run (Cmd-R), uses the metadata the
+last `kivyforge build -p ios` or `kivyforge run -p ios` wrote. The
+`Info.plist` version comes from the same command, so the two always agree.
+After a commit changes a dynamic version, run `kivyforge build -p ios` before
+building in Xcode.
 
 ### Read the version
 
-The most reliable source is a module in `app_dir`. Have setuptools-scm write
-the version into one:
+`importlib.metadata.version("myapp")` gives the version inside the app. A
+module in `app_dir` also gives it when you run your code from source without
+installing it. Have setuptools-scm write the version into one:
 
 ```toml
 [tool.setuptools_scm]
