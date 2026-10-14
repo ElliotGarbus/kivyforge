@@ -215,6 +215,17 @@ def pytest_addoption(parser):
         action="store_true",
         help="Run the pip metadata-preparation tests: needs git and network.",
     )
+    # Not an artifact: an app built, launched and asked what importlib.metadata
+    # sees inside it (docs/design/dev/package-metadata-proposal.md, layer 3).
+    metaprobe = parser.getgroup("kivyforge app metadata on devices (live)")
+    metaprobe.addoption(
+        "--metaprobe",
+        default=None,
+        metavar="PLATFORMS",
+        help="Build and launch the metaprobe fixture app on these platforms "
+        "(comma-separated: macos, ios-sim, android-emu). Needs their "
+        "toolchains and the network, and takes minutes per platform.",
+    )
     resolver.addoption(
         "--resolver-prerelease-minor",
         default=None,

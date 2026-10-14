@@ -1,0 +1,15 @@
+# A second dependency of the probe app, built into wheels/ by the driver:
+# entry_points() must collect from every distribution, not only the first.
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metaprobe-extra"
+version = "2.0"
+
+[project.entry-points."metaprobe.plugins"]
+extra-plugin = "metaprobe_extra:Extra"
+
+[tool.setuptools]
+py-modules = ["metaprobe_extra"]
