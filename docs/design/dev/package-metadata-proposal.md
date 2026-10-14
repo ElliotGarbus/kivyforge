@@ -1,6 +1,7 @@
 # Proposal — the app's own package metadata
 
-> Status: **plan, revised 2026-10-14. Not implemented; waiting for approval.**
+> Status: **plan, revised 2026-10-14. Not implemented; waiting for approval**
+> (decisions in section 3, open questions in section 10).
 > Follows [#122](https://github.com/ElliotGarbus/kivyforge/issues/122): #115
 > excluded the `*.egg-info` that a src-layout app's `importlib.metadata` reads,
 > and an app that finds its plugins through entry points stopped starting; #123
@@ -275,3 +276,36 @@ into the user's source tree; kivyforge's design writes nothing there.
   `main` today for any project without a dev install, passes.
 - The #122 reporter confirms their APK.
 - Linux and Windows have a dated row in `test-matrix.md` §7.
+
+## 9. Out of scope
+
+- **Where finished artifacts land and what they are called**
+  ([#112](https://github.com/ElliotGarbus/kivyforge/issues/112): Android, macOS
+  and iOS outputs into `dist/` with versioned names, as Linux and Windows
+  already do). Independent of this proposal: it changes the output step of
+  `build`/`package`, not what is inside the app. Its one dependency,
+  `ResolvedVersion.filename_part`, is already on `main`.
+- **Metadata produced by the build backend** (D1 option (c)): the long-term
+  route for `setup.py`/`setup.cfg` and dynamic entry points; not this change.
+- **Extra `METADATA` fields** in Briefcase's style (D7).
+- **Script wrappers** for `console_scripts`/`gui_scripts` (C5).
+
+## 10. Open questions
+
+Beyond the decisions in section 3, which need an answer before implementation:
+
+| # | Question | Current thinking |
+|---|---|---|
+| Q1 | What exactly goes in `top_level.txt`? `app_dir` holds the entry module (often `main.py`), packages, plain data directories and assets. | Every top-level `*.py` module and every directory with an `__init__.py`, excluding `__pycache__` and metadata directories. Listing `main` maps a generic module name to the app in `packages_distributions()`; harmless, but worth a decision. |
+| Q2 | How far does the exclusion reach? | Top level of the app copy only, where setuptools writes: `*.egg-info`, and any `.dist-info` of the app's own normalized name. A vendored package's own metadata deeper in `app_dir` is left alone. |
+| Q3 | How reliable is D1's detection? `setup.cfg` can be parsed; `setup.py` is code. | Parse `setup.cfg`'s `[options.entry_points]`; for `setup.py`, a textual match on `entry_points`. A false positive only means "warn and generate nothing", which is today's behaviour, never a regression. |
+| Q4 | Name of the new warning code for D1/D2. | e.g. `KF-APP-METADATA-INCOMPLETE`. |
+| Q5 | iOS Xcode-only rebuilds keep the metadata from the last `kivyforge build`. With a dynamic version, a new commit followed only by Cmd-R leaves the version stale. | Accept and document: the plist's version is stale in exactly the same way today, and spec 06 already says `pyproject.toml` changes need `kivyforge build`. |
+| Q6 | The #123 regression test (`tests/bundle/test_app_metadata.py`) asserts the `egg-info` ships. | Rewrite it around behaviour: metadata reachable in every copy; the generated one when kivyforge generates, the dev one in the D1/D2 cases. |
+| Q7 | Untested here: an iOS release archive, any physical device, any Linux or Windows build. | Layer 5: signing-capable runs and #118-style prompts for the other hosts before the release that ships this. |
+| Q8 | Acceptance by the #122 reporter. | Their project declares entry points only in `[project]` and uses a static version, so it takes the generated path; ask them to confirm their APK on the branch before release. |
+
+Settled while writing: Android copies the app payload once, after the per-ABI
+identity check of the dependencies (`assemble_bundle` calls `_copy_app` once),
+so the generated folder needs no per-ABI handling.
+
