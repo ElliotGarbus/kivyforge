@@ -1256,10 +1256,10 @@ jobs:
       # development egg-info, release and dynamic variants included.
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
-        # Each case runs `lock -p macos`, whose PBS runtime lookup queries
-        # GitHub's API: 60 requests/hour per IP unauthenticated, which the
-        # shared runner IPs exhaust (all six cases failed with HTTP 403 on
-        # 6f4f7c98). The token Actions already provides raises it to 5000.
+        # Each variant runs `kivyforge lock -p macos`, whose PBS runtime
+        # lookup queries GitHub's API: 60 requests/hour per IP
+        # unauthenticated, which a shared runner exhausts (HTTP 403, every
+        # variant erroring at lock). The token Actions provides raises it.
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: pytest tests/integration/test_app_metadata_devices.py -v --no-cov --metaprobe macos
 

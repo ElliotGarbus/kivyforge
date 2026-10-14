@@ -18,6 +18,7 @@ from pbxproj.pbxextensions.ProjectFiles import FileOptions, ProjectFiles, TreeTy
 from kivyforge.config.model import RESERVED_BUILD_SETTINGS, Config
 
 from .buildsettings import (
+    BUILD_PYTHON_OUTPUTS,
     BUILD_PYTHON_SCRIPT,
     PREVIOUS_BUILD_PYTHON_SCRIPTS,
     SIGNING_SETTING_KEYS,
@@ -245,7 +246,9 @@ class XcodeProjectGenerator:
         self._order_run_script(project)
 
     def _configure_run_script(self, project: XcodeProject) -> None:
-        # Spec 06: run every build (install_python walks app/ + pip-deps/).
+        # Spec 06: run every build (install_python walks app/ + pip-deps/), and
+        # declare what it writes into the bundle so Xcode re-signs the app
+        # after it (BUILD_PYTHON_OUTPUTS says why).
         target = project.get_target_by_name(self.app_name)
         if target is None:
             raise RuntimeError(f"target {self.app_name!r} not found in Xcode project")
@@ -256,6 +259,7 @@ class XcodeProjectGenerator:
                 and getattr(phase, "shellScript", None) == BUILD_PYTHON_SCRIPT
             ):
                 phase["alwaysOutOfDate"] = 1
+                phase["outputPaths"] = list(BUILD_PYTHON_OUTPUTS)
                 break
 
     def _order_run_script(self, project: XcodeProject) -> None:
