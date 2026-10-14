@@ -1,7 +1,9 @@
 # Proposal — the app's own package metadata
 
-> Status: **plan with decisions recorded, 2026-10-14. Not implemented; waiting
-> for the go-ahead.** Follows
+> Status: **implemented 2026-10-14** on branch `app-metadata-design`, not yet
+> released; layers 1-3 pass on this Mac, layer 4 is wired into CI, layer 5 is
+> open (section 5). What the implementation decided beyond this plan is in
+> section 11. Follows
 > [#122](https://github.com/ElliotGarbus/kivyforge/issues/122): #115 excluded
 > the `*.egg-info` that a src-layout app's `importlib.metadata` reads, and an
 > app that finds its plugins through entry points stopped starting; #123
@@ -373,3 +375,18 @@ into the user's source tree; this design writes nothing there.
 | Q6 | The #123 regression test asserts the `egg-info` ships. | Replaced by the removal test of layer 1. |
 | Q7 | Untested here: iOS release archives, physical devices, Linux, Windows. | Layer 5, before the release that ships this. |
 | Q8 | Acceptance by the #122 reporter. | Their project declares entry points only in `[project]` with a static version, so it takes the generated path; ask them to confirm their APK on the branch before release. |
+
+## 11. Implementation notes, 2026-10-14
+
+What the implementation settled that the plan above left open, and one fact
+it found. None of it changes a decision in section 3.
+
+| # | Note |
+|---|---|
+| I1 | The 2.1 checks live in the config loader (`_parse_entry_points`), not in `bundle/app_metadata.py`: the loader owns `[project]` and the line finder, so each rule is a config error at its line, in every verb that loads the config (`lock` and `doctor` too), not only in builds. |
+| I2 | An entry point name or value containing a line break is also rejected: the spec allows it in a name, but `entry_points.txt` cannot hold it, so no backend could write it either. |
+| I3 | `top_level.txt` lists only names that are Python identifiers (`not-a-module.py` is not importable), plus the top-level module of `[tool.kivy].entry_point`. |
+| I4 | 2.3 and 2.4 are checked by `build`, `package` and `run` (`cli/_version.py` `check_app_metadata`) right after the version is resolved and before any backend runs. After, not before, because resolving a dynamic version runs the backend, which can write the development `egg-info` the 2.4 warning names. |
+| I5 | The iOS script removes a stale `.dist-info` of the app's name by normalizing each folder's name as Python does, so `MyApp-0.9.dist-info` goes too. `_BUILD_PYTHON_SCRIPT_V1`, the script before this change, is kept as `PREVIOUS_BUILD_PYTHON_SCRIPTS`, so regenerating an existing project replaces its phase instead of adding a second (tested). |
+| I6 | **Found by the metaprobe:** with `scripts` declared in `[project]` and only `entry-points` in `dynamic`, setuptools 84.0.0 builds without `setup.cfg`'s `[options.entry_points]` groups, and says nothing. kivyforge warns (2.4) and generates nothing, so the app gets exactly what setuptools wrote; `tests/bundle/test_app_metadata_live.py` pins it, and the layer 3 variant lists all three keys in `dynamic`. |
+| I7 | The layer 3 driver shares this Mac's devices with other work: it prefers an already booted simulator, shuts down only what it booted, and uninstalls its probe app at the end. `METAPROBE_SIMULATOR` and `METAPROBE_AVD` choose the devices. |
