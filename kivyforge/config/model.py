@@ -293,6 +293,24 @@ class ResolvedVersion:
         return self.value.replace("+", "_")
 
 
+#: PEP 517's backend when ``[build-system]`` names none.
+DEFAULT_BUILD_BACKEND = "setuptools.build_meta:__legacy__"
+
+
+@dataclass(frozen=True)
+class EntryPoint:
+    """One entry point ``[project]`` declares, under the group it installs in.
+
+    ``[project.scripts]`` and ``[project.gui-scripts]`` are the
+    ``console_scripts`` and ``gui_scripts`` groups (the entry-points spec).
+    """
+
+    group: str
+    name: str
+    #: As written: ``module:object``, a bare module, or either with extras.
+    value: str
+
+
 @dataclass(frozen=True)
 class ProjectMeta:
     """PEP 621 ``[project]`` subset consumed by kivyforge."""
@@ -303,6 +321,14 @@ class ProjectMeta:
     requires_python: str | None = None
     dependencies: tuple[str, ...] = ()
     authors: tuple[Author, ...] = ()
+    #: ``scripts``, ``gui-scripts`` and ``entry-points``, in declared order:
+    #: what the app's generated ``entry_points.txt`` holds
+    #: (docs/design/dev/package-metadata-proposal.md).
+    entry_points: tuple[EntryPoint, ...] = ()
+    #: ``[project].dynamic`` as written.
+    dynamic: tuple[str, ...] = ()
+    #: ``[build-system].build-backend``, or PEP 517's default without one.
+    build_backend: str = DEFAULT_BUILD_BACKEND
 
 
 @dataclass(frozen=True)

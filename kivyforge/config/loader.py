@@ -29,6 +29,7 @@ from .model import (
     DEFAULT_ANDROID_MIN_SDK,
     DEFAULT_ANDROID_STORE_PASSWORD_ENV,
     DEFAULT_ANDROID_TARGET_SDK,
+    DEFAULT_BUILD_BACKEND,
     DEFAULT_DEPLOYMENT_TARGET,
     DEFAULT_DESKTOP_CATEGORIES,
     DEFAULT_LINUX_ARCHS,
@@ -86,6 +87,7 @@ from .model import (
     DesktopBuildSettings,
     DesktopConfig,
     DynamicVersion,
+    EntryPoint,
     IconConfig,
     IosConfig,
     KivyMeta,
@@ -183,6 +185,26 @@ def load_declared_version(path: str | Path) -> tuple[DeclaredVersion, str | None
         raise ConfigError(f"invalid TOML: {exc}") from exc
     project = _parse_project(raw, _LineFinder(text))
     return project.version, _scm_version_file(raw)
+
+
+def load_declared_project(path: str | Path) -> tuple[ProjectMeta, str | None]:
+    """``[project]`` and ``[tool.kivy].app_dir``, for what a verb checks first.
+
+    ``build``, ``package`` and ``run`` check the app's metadata declaration
+    before any backend runs (docs/design/dev/package-metadata-proposal.md 2.3,
+    2.4); like :func:`load_declared_version`, this leaves validating the rest
+    to the backend. ``app_dir`` is ``None`` when it is not a string.
+    """
+    text = read_pyproject_text(Path(path))
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"invalid TOML: {exc}") from exc
+    project = _parse_project(raw, _LineFinder(text))
+    tool = raw.get("tool")
+    kivy = tool.get("kivy") if isinstance(tool, dict) else None
+    app_dir = kivy.get("app_dir") if isinstance(kivy, dict) else None
+    return project, app_dir if isinstance(app_dir, str) and app_dir else None
 
 
 def load_config_from_text(
@@ -369,6 +391,15 @@ def _parse_project(raw: dict, finder: _LineFinder) -> ProjectMeta:
             key_path="project.name",
             line=finder.line("project"),
         )
+    if not _PROJECT_NAME.fullmatch(name):
+        raise ConfigError(
+            f"[project].name {name!r} is not a valid project name",
+            key_path="project.name",
+            line=finder.line("name"),
+            hint="use ASCII letters and digits, with '.', '_' or '-' only between "
+            "them, as the packaging spec requires and every build backend "
+            "enforces; kivyforge writes the name into the app's metadata.",
+        )
     version = _parse_project_version(raw, project, finder)
 
     deps = project.get("dependencies", [])
@@ -390,7 +421,142 @@ def _parse_project(raw: dict, finder: _LineFinder) -> ProjectMeta:
         requires_python=project.get("requires-python"),
         dependencies=tuple(deps),
         authors=tuple(authors),
+        entry_points=_parse_entry_points(project, finder),
+        # Checked to be a list of strings by _parse_project_version.
+        dynamic=tuple(project.get("dynamic", [])),
+        build_backend=_build_backend(raw),
     )
+
+
+#: A valid project name (the name-normalization spec), matched case-blind.
+_PROJECT_NAME = re.compile(
+    r"[A-Z0-9]|[A-Z0-9][A-Z0-9._-]*[A-Z0-9]", re.IGNORECASE | re.ASCII
+)
+
+#: A valid entry point group: dot-separated words (the entry-points spec).
+_ENTRY_POINT_GROUP = re.compile(r"\w+(\.\w+)*")
+
+#: ``[project]`` tables that are entry point groups, and those groups' names.
+_SCRIPT_TABLES = (("scripts", "console_scripts"), ("gui-scripts", "gui_scripts"))
+
+
+def _build_backend(raw: dict) -> str:
+    build_system = raw.get("build-system")
+    backend = (
+        build_system.get("build-backend") if isinstance(build_system, dict) else None
+    )
+    if not isinstance(backend, str) or not backend:
+        return DEFAULT_BUILD_BACKEND
+    return backend
+
+
+def _parse_entry_points(project: dict, finder: _LineFinder) -> tuple[EntryPoint, ...]:
+    """``scripts``, ``gui-scripts`` and ``entry-points``, checked as backends do.
+
+    kivyforge writes these into the app's ``entry_points.txt``
+    (docs/design/dev/package-metadata-proposal.md 2.1), so the rules the
+    pyproject and entry-points specs give, and every backend enforces, are
+    config errors here too.
+    """
+    found: list[EntryPoint] = []
+    for key, group in _SCRIPT_TABLES:
+        if key in project:
+            line = finder.table_line("project", key) or finder.line(key)
+            found += _entry_point_table(project[key], group, key, line, finder)
+    groups = project.get("entry-points")
+    if groups is None:
+        return tuple(found)
+    line = finder.line("entry-points") or finder.table_line(
+        "project", "entry-points", prefix=True
+    )
+    if not isinstance(groups, dict):
+        raise ConfigError(
+            "[project.entry-points] must be a table of entry point groups",
+            key_path="project.entry-points",
+            line=line,
+        )
+    for group, entries in groups.items():
+        where = f"entry-points.{group}"
+        group_line = finder.table_line("project", "entry-points", group) or line
+        for key, name in _SCRIPT_TABLES:
+            if group == name:
+                raise ConfigError(
+                    f"[project.entry-points.{group}] is not allowed",
+                    key_path=f"project.{where}",
+                    line=group_line,
+                    hint=f"declare these in [project.{key}]: the pyproject spec "
+                    f"reserves the {group} group for it.",
+                )
+        if not _ENTRY_POINT_GROUP.fullmatch(group):
+            raise ConfigError(
+                f"entry point group {group!r} is not a valid group name",
+                key_path=f"project.{where}",
+                line=group_line,
+                hint="a group is words of letters, digits and underscores joined "
+                'by dots, such as "myapp.plugins".',
+            )
+        found += _entry_point_table(entries, group, where, group_line, finder)
+    return tuple(found)
+
+
+def _entry_point_table(
+    entries: object, group: str, where: str, line: int | None, finder: _LineFinder
+) -> list[EntryPoint]:
+    key_path = f"project.{where}"
+    if not isinstance(entries, dict):
+        raise ConfigError(
+            f'[project.{where}] must be a table of name = "module:object" strings',
+            key_path=key_path,
+            line=line,
+        )
+    out: list[EntryPoint] = []
+    for name, value in entries.items():
+        name_line = finder.key_line(name, after=line) or line
+        if isinstance(value, dict):
+            raise ConfigError(
+                f"[project.{where}.{name}] is a sub-table, and entry point groups "
+                "do not nest",
+                key_path=key_path,
+                line=finder.table_line(
+                    "project", "entry-points", group, name, prefix=True
+                )
+                or name_line,
+                hint="quote a dotted group name, so it is one group: "
+                f'[project.entry-points."{group}.{name}"].',
+            )
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(
+                f"entry point {name!r} in [project.{where}] must be a non-empty "
+                'string such as "module:object"',
+                key_path=key_path,
+                line=name_line,
+            )
+        problem = _entry_point_name_problem(name)
+        if problem is None and ("\n" in value or "\r" in value):
+            problem = "has a line break in its value"
+        if problem is not None:
+            raise ConfigError(
+                f"entry point name {name!r} in [project.{where}] {problem}",
+                key_path=key_path,
+                line=name_line,
+                hint="a name may hold any character but '=', may not start "
+                "with '[' or start or end with whitespace (the entry-points "
+                "spec), and entry_points.txt cannot hold a line break.",
+            )
+        out.append(EntryPoint(group=group, name=name, value=value))
+    return out
+
+
+def _entry_point_name_problem(name: str) -> str | None:
+    if "=" in name:
+        return "contains '='"
+    if name.startswith("["):
+        return "starts with '['"
+    if name != name.strip():
+        return "starts or ends with whitespace"
+    if "\n" in name or "\r" in name:
+        return "contains a line break"
+    return None
 
 
 #: ``[project]`` keys kivyforge reads besides ``version``. Listed in ``dynamic``,
@@ -403,9 +569,6 @@ _UNRESOLVABLE_DYNAMIC = (
     "description",
     "requires-python",
 )
-
-#: PEP 517's backend when ``[build-system]`` names none.
-_DEFAULT_BUILD_BACKEND = "setuptools.build_meta:__legacy__"
 
 
 def _parse_project_version(
@@ -439,15 +602,7 @@ def _parse_project_version(
                 hint="PEP 621 allows one or the other: remove the version, or "
                 'remove "version" from dynamic.',
             )
-        build_system = raw.get("build-system")
-        backend = (
-            build_system.get("build-backend")
-            if isinstance(build_system, dict)
-            else None
-        )
-        if not isinstance(backend, str) or not backend:
-            backend = _DEFAULT_BUILD_BACKEND
-        return DynamicVersion(backend=backend)
+        return DynamicVersion(backend=_build_backend(raw))
 
     if not version or not isinstance(version, str):
         raise ConfigError(
@@ -3333,6 +3488,32 @@ class _LineFinder:
         key_re = re.compile(rf"^\s*(\[*\s*){re.escape(key)}\b")
         for i, line in enumerate(self._lines, start=1):
             if key_re.search(line):
+                return i
+        return None
+
+    def table_line(self, *parts: str, prefix: bool = False) -> int | None:
+        """The line of a ``[a.b."c"]`` header, each part bare or quoted.
+
+        With *prefix*, also a header of a table below it (``[a.b.c.d]``).
+        """
+        quoted = [
+            rf"""(?:{re.escape(p)}|"{re.escape(p)}"|'{re.escape(p)}')""" for p in parts
+        ]
+        end = r"\s*[.\]]" if prefix else r"\s*\]"
+        header = re.compile(r"^\s*\[\s*" + r"\s*\.\s*".join(quoted) + end)
+        for i, line in enumerate(self._lines, start=1):
+            if header.search(line):
+                return i
+        return None
+
+    def key_line(self, key: str, *, after: int | None = None) -> int | None:
+        """The first ``key =``, bare or quoted, on or after line *after*."""
+        pattern = re.compile(
+            rf"""^\s*(?:{re.escape(key)}|"{re.escape(key)}"|'{re.escape(key)}')\s*="""
+        )
+        start = after or 1
+        for i, line in enumerate(self._lines[start - 1 :], start=start):
+            if pattern.search(line):
                 return i
         return None
 

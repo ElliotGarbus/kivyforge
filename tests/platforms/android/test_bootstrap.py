@@ -275,6 +275,42 @@ class TestRender:
         # Compiles cleanly (no syntax errors in the shipped module).
         compile(source, "_kivyforge_selftest.py", "exec")
 
+    def test_selftest_expects_the_generated_app_metadata(self):
+        """Layer 4 of docs/design/dev/package-metadata-proposal.md: every
+        emulator job's contract test checks the app finds what kivyforge
+        wrote, so the expected values are rendered in."""
+        from kivyforge.bundle.app_metadata import AppMetadata
+        from kivyforge.config.model import EntryPoint
+
+        metadata = AppMetadata(
+            name="Hello-App",
+            version="1.0rc1",
+            entry_points=(
+                EntryPoint("myapp.plugins", "Zed", "myapp:Zed"),
+                EntryPoint("console_scripts", "hello", "myapp:main"),
+            ),
+            main_module="main",
+        )
+        source = selftest_source(metadata)
+        namespace: dict = {}
+        exec(compile(source, "_kivyforge_selftest.py", "exec"), namespace)
+        assert namespace["EXPECTED_APP_METADATA"] == {
+            "name": "Hello-App",
+            "version": "1.0rc1",
+            "entry_points": [
+                ["console_scripts", "hello", "myapp:main"],
+                ["myapp.plugins", "Zed", "myapp:Zed"],
+            ],
+        }
+        assert "APP_METADATA_OK" in source
+        java = "\n".join(f.content for f in androidtest_files())
+        assert "APP_METADATA_OK" in java, "the marker must be asserted on-device"
+
+    def test_selftest_without_generated_metadata_expects_none(self):
+        namespace: dict = {}
+        exec(compile(selftest_source(None), "selftest", "exec"), namespace)
+        assert namespace["EXPECTED_APP_METADATA"] is None
+
     def test_androidtest_generated(self):
         files = {f.relpath: f.content for f in androidtest_files()}
         ((path, content),) = files.items()

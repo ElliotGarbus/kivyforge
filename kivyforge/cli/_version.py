@@ -2,7 +2,8 @@
 
 Shared by ``build``, ``package`` and ``run``, the verbs that write a version
 into an artifact. The verb resolves once, records the result and hands it to
-the backend (docs/design/dev/dynamic-version-proposal.md section 3.4).
+the backend (docs/design/dev/dynamic-version-proposal.md section 3.4), then
+checks what the app's package metadata will be (``check_app_metadata``).
 """
 
 from __future__ import annotations
@@ -13,8 +14,9 @@ from pathlib import Path
 
 import click
 
+from ..bundle import app_metadata
 from ..config import ConfigError
-from ..config.loader import load_declared_version
+from ..config.loader import load_declared_project, load_declared_version
 from ..config.model import DynamicVersion, ResolvedVersion
 from ..report import Report, diagnostics
 from ..report.diagnostics import Diagnostic
@@ -137,6 +139,28 @@ def resolve_for_verb(
         if found is not None:
             _report(report, found)
     return version
+
+
+def check_app_metadata(report: Report, project_root: Path) -> None:
+    """Entry points kivyforge cannot write, before any backend runs.
+
+    docs/design/dev/package-metadata-proposal.md: entry points declared only in
+    ``setup.cfg``/``setup.py`` fail the build (2.3); entry points in
+    ``[project].dynamic`` warn that the app gets no generated metadata (2.4).
+    After the version on purpose: resolving a dynamic one can write the
+    development egg-info the warning names.
+    """
+    try:
+        project, app_dir = load_declared_project(project_root / "pyproject.toml")
+    except ConfigError as exc:
+        raise ToolchainError(exc.format()) from exc
+    try:
+        app_metadata.check_declaration(project, project_root)
+    except ClassifiedError as exc:
+        raise ToolchainError.wrap(exc) from exc
+    found = app_metadata.not_generated(project, project_root, app_dir)
+    if found is not None:
+        _report(report, found)
 
 
 def _report(report: Report, diagnostic: Diagnostic) -> None:

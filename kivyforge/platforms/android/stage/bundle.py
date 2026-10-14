@@ -9,7 +9,9 @@ Layout under ``app/src/main/assets/_python_bundle/``:
 - ``site-packages/`` — pure-Python content of the installed wheels (``.so``s
   and the ``.libs/``/``<dist>.libs/`` directories were hoisted into
   ``jniLibs``).
-- ``app/``           — the user's ``app_dir`` payload.
+- ``app/``           — the user's ``app_dir`` payload, with the app's own
+  ``<name>-<version>.dist-info`` in place of any development ``egg-info``
+  (docs/design/dev/package-metadata-proposal.md).
 - ``bootstrap/``     — the finder module, Kivy's ``_kivy_bootstrap`` contract
   module, the ``android`` package, and ``ext_manifest.json``.
 - ``VERSION``        — content stamp; a changed bundle re-extracts on-device.
@@ -35,7 +37,9 @@ from kivyforge.artifacts.verify import sha256_file
 
 # Imported as a module, not by name: ``assemble_bundle`` takes a *parameter*
 # called ``byte_compile`` (the compiler argv), so a bare import would shadow.
+from kivyforge.bundle import app_metadata as app_metadata_mod
 from kivyforge.bundle import pycompile
+from kivyforge.bundle.app_metadata import AppMetadata
 
 from .jnilibs import is_wheel_libs_dir
 
@@ -69,10 +73,15 @@ def assemble_bundle(
     android_package_sources: dict[str, str] | None = None,
     entry_point: str = "main",
     service_entry_points: dict[str, str] | None = None,
+    app_metadata: AppMetadata | None = None,
     byte_compile: tuple[str, ...] | None = None,
     strip_source: bool = False,
 ) -> str:
-    """Assemble the bundle; returns the content stamp written to ``VERSION``."""
+    """Assemble the bundle; returns the content stamp written to ``VERSION``.
+
+    The app payload is copied once, after the per-ABI identity check, so it
+    and *app_metadata* are shared by every ABI.
+    """
     if bundle_dir.exists():
         shutil.rmtree(bundle_dir)
     bundle_dir.mkdir(parents=True)
@@ -86,6 +95,7 @@ def assemble_bundle(
         bundle_dir / "app",
         entry_point=entry_point,
         service_entry_points=service_entry_points or {},
+        app_metadata=app_metadata,
     )
 
     bootstrap = bundle_dir / "bootstrap"
@@ -215,6 +225,7 @@ def _copy_app(
     *,
     entry_point: str = "main",
     service_entry_points: dict[str, str],
+    app_metadata: AppMetadata | None = None,
 ) -> None:
     if not src.is_dir():
         raise BundleError(
@@ -234,6 +245,8 @@ def _copy_app(
         return [n for n in names if n == "__pycache__"]
 
     shutil.copytree(src, dest, ignore=ignore)
+    # The app's own package metadata, in place of any development egg-info.
+    app_metadata_mod.install(dest, app_metadata)
 
 
 def _assert_abi_identity(

@@ -169,6 +169,20 @@ VERSION_FILE_NOT_REFRESHED = "KF-VERSION-FILE-NOT-REFRESHED"
 #: not run. INFO.
 VERSION_ISOLATION_UNUSED = "KF-VERSION-ISOLATION-UNUSED"
 
+#: A setuptools project declares entry points in ``setup.cfg`` or ``setup.py``
+#: and none in ``[project]``. kivyforge writes the app's package metadata from
+#: ``[project]``, so the app would start without them; the spec lets no backend
+#: add them either, and setuptools has deprecated doing so. Exit 1. ``context``
+#: names the ``path`` (``setup.cfg`` or ``setup.py``).
+METADATA_ENTRY_POINTS_OUTSIDE_PROJECT = "KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT"
+
+#: ``[project].dynamic`` lists ``entry-points``, ``scripts`` or
+#: ``gui-scripts``, so only the build backend knows the app's entry points and
+#: kivyforge generates no package metadata for it. WARNING. ``context``:
+#: ``reason`` is ``dynamic`` or ``static-and-dynamic``; ``fallback`` is the
+#: development egg-info that ships instead, or ``none``.
+METADATA_NOT_GENERATED = "KF-METADATA-NOT-GENERATED"
+
 #: An expected failure (``ToolchainError``) with no specific code assigned yet.
 #: Branchable rather than null: it tells a consumer "this is a clean, expected
 #: failure -- read ``message`` and ``remediation``", as distinct from a crash.

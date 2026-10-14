@@ -77,6 +77,10 @@ public class KivyforgeContractTest {
             "the bundled android package failed: " + contents,
             contents.contains("ANDROID_PKG_OK"));
         assertTrue(
+            "the app's own package metadata is not what kivyforge wrote: "
+                + contents,
+            contents.contains("APP_METADATA_OK"));
+        assertTrue(
             "self-test reported a failure: " + contents,
             contents.contains("SELFTEST_ALL_OK"));
     }

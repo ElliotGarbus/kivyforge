@@ -9,12 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kivyforge.build_outcome import discard_note
+from kivyforge.bundle import app_metadata
 from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError, reclassify
 
 _APP_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
+
+#: Where ``kivyforge build`` stages the app's package metadata for the Build
+#: Python script to copy into the bundle. Never on the app's import path (D4).
+APP_METADATA_DIR = "_kivyforge_meta"
 
 
 class StagingError(ClassifiedError):
@@ -58,6 +63,10 @@ class StagingLayout:
     @property
     def resources(self) -> Path:
         return self.root / "Resources"
+
+    @property
+    def app_metadata(self) -> Path:
+        return self.root / APP_METADATA_DIR
 
 
 def staging_dir_name(config: Config) -> str:
@@ -107,7 +116,33 @@ def create_staging(
         )
     else:
         _refresh_app_symlink(layout, project_root, config.kivy.app_dir)
+    _stage_app_metadata(layout, project_root, config)
     return layout
+
+
+def _stage_app_metadata(
+    layout: StagingLayout, project_root: Path, config: Config
+) -> None:
+    """Stage the app's package metadata for the Build Python script.
+
+    docs/design/dev/package-metadata-proposal.md 2.2: the bundle's ``app/`` is
+    Xcode's copy, made at Xcode build time -- a debug build's ``app/`` links to
+    ``app_dir``, so nothing can be written there -- and the script swaps the
+    staged folder in for the copy's development egg-info. Rewritten on every
+    build, and removed when kivyforge generates nothing (entry points in
+    ``dynamic``), so the script then leaves the copy alone. Only *reads*
+    ``app_dir``, for ``top_level.txt``.
+    """
+    staged = layout.app_metadata
+    if staged.exists():
+        shutil.rmtree(staged)
+    metadata = app_metadata.for_build(config)
+    if metadata is None:
+        return
+    staged.mkdir()
+    source = project_root / config.kivy.app_dir
+    top_level = app_metadata.top_level_names(source, metadata.main_module)
+    app_metadata.write_dist_info(metadata, staged, top_level)
 
 
 def _refresh_app_symlink(
