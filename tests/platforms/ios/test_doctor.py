@@ -25,7 +25,7 @@ app_dir = "src"
 [tool.kivy.ios]
 schema_version = 1
 bundle_id = "org.example.myapp"
-deployment_target = "13.0"
+deployment_target = "16.0"
 
 [tool.kivy.ios.python]
 version = "3.15.0"
@@ -98,6 +98,47 @@ class TestEnvironmentChecks:
     def test_runtime_meets_floor(self, config):
         r = C.check_simulator_runtimes(FakeProbe(runtimes=["13.0", "18.0"]), config)
         assert r.status is Status.PASS
+
+    def test_deployment_target_inside_the_sdk_range(self, config):
+        r = C.check_deployment_target(FakeProbe(sdk_range=("15.0", "27.0.99")), config)
+        assert r.status is Status.PASS
+        assert r.detail == "16.0 (Xcode supports 15.0 to 27.0.x)"
+
+    def test_deployment_target_below_the_sdk_floor_fails(self):
+        """Xcode 27 refuses 13.0, the old default (found 2026-10-14)."""
+        cfg = load_config_from_text(_DOCTOR_CONFIG.replace('"16.0"', '"13.0"'))
+        r = C.check_deployment_target(FakeProbe(sdk_range=("15.0", "27.0.99")), cfg)
+        assert r.status is Status.FAIL
+        assert "13.0 is below the 15.0 to 27.0.x" in r.detail
+        # Xcode's floor is 15.0, but Kivy's wheels need 16.0: suggest that.
+        assert r.hint is not None and '"16.0"' in r.hint
+
+    def test_deployment_target_hint_follows_a_floor_above_the_default(self):
+        cfg = load_config_from_text(_DOCTOR_CONFIG.replace('"16.0"', '"13.0"'))
+        r = C.check_deployment_target(FakeProbe(sdk_range=("17.0", "28.0.99")), cfg)
+        assert r.status is Status.FAIL
+        assert r.hint is not None and '"17.0"' in r.hint
+
+    def test_deployment_target_above_the_sdk_maximum_fails(self):
+        cfg = load_config_from_text(_DOCTOR_CONFIG.replace('"16.0"', '"28.0"'))
+        r = C.check_deployment_target(FakeProbe(sdk_range=("15.0", "27.0.99")), cfg)
+        assert r.status is Status.FAIL
+        assert "above" in r.detail
+
+    @pytest.mark.parametrize("target", ["15", "15.0", "27.0", "27.0.1"])
+    def test_deployment_target_bounds_are_inclusive(self, target):
+        cfg = load_config_from_text(_DOCTOR_CONFIG.replace('"16.0"', f'"{target}"'))
+        r = C.check_deployment_target(FakeProbe(sdk_range=("15.0", "27.0.99")), cfg)
+        assert r.status is Status.PASS
+
+    def test_deployment_target_environment_mode_reports_the_range(self):
+        r = C.check_deployment_target(FakeProbe(sdk_range=("15.0", "27.0.99")), None)
+        assert r.status is Status.PASS
+        assert r.detail == "Xcode supports iOS 15.0 to 27.0.x"
+
+    def test_deployment_target_unreadable_sdk_skips(self, config):
+        r = C.check_deployment_target(FakeProbe(sdk_range=None), config)
+        assert r.status is Status.SKIP
 
     def test_kivyforge_version_offline_pass(self):
         r = CC.check_kivyforge_version(FakeProbe(), "3.0.0", offline=True)
@@ -272,6 +313,7 @@ class TestRunModes:
             project_root=tmp_path,
         )
         names = {r.name for r in results}
+        assert "Deployment target" in names
         assert "App source directory" in names
         assert "Signing identity" in names
         assert "find_links directories" in names

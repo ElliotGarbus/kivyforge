@@ -13,6 +13,7 @@ class FakeProbe:
         self._clang = overrides.get("clang", True)
         self._swift = overrides.get("swift", True)
         self._runtimes = overrides.get("runtimes", ["18.0"])
+        self._sdk_range = overrides.get("sdk_range", ("15.0", "27.0.99"))
         self._latest = overrides.get("latest", None)
         self._identities = overrides.get("identities", [])
         self._login_identities = overrides.get("login_identities", [])
@@ -66,6 +67,9 @@ class FakeProbe:
 
     def simulator_runtimes(self):
         return list(self._runtimes)
+
+    def ios_deployment_target_range(self):
+        return self._sdk_range
 
     def latest_kivyforge_version(self):
         return self._latest

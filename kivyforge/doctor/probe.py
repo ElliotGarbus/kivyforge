@@ -45,6 +45,7 @@ class Probe(Protocol):
     def has_xcrun_clang(self) -> bool: ...
     def has_swift_toolchain(self) -> bool: ...
     def simulator_runtimes(self) -> list[str]: ...
+    def ios_deployment_target_range(self) -> tuple[str, str] | None: ...
     def latest_kivyforge_version(self) -> str | None: ...
     def keychain_identities(self) -> list[str]: ...
     def login_keychain_identities(self) -> list[str]: ...
@@ -131,6 +132,33 @@ class RealProbe:
                 if len(parts) >= 2:
                     versions.append(parts[1])
         return versions
+
+    def ios_deployment_target_range(self) -> tuple[str, str] | None:
+        """The ``(minimum, maximum)`` deployment target the selected Xcode accepts.
+
+        Read from the iOS SDK's own ``SDKSettings.json``, which is where Xcode
+        gets the range it quotes when it refuses one ("the range of supported
+        deployment target versions is 15.0 to 27.0.x"), so no table of Xcode
+        versions has to be kept current here. ``None`` when there is no SDK or
+        the file does not have the expected shape.
+        """
+        sdk = _capture(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"]).strip()
+        if not sdk:
+            return None
+        try:
+            import json
+
+            settings = json.loads(
+                (Path(sdk) / "SDKSettings.json").read_text(encoding="utf-8")
+            )
+            target = settings["SupportedTargets"]["iphoneos"]
+            low = target["MinimumDeploymentTarget"]
+            high = target["MaximumDeploymentTarget"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        if not isinstance(low, str) or not isinstance(high, str):
+            return None
+        return low, high
 
     def latest_kivyforge_version(self) -> str | None:
         # Best-effort PyPI lookup; failures are non-fatal.

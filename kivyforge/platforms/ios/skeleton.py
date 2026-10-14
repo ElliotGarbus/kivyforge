@@ -133,7 +133,6 @@ _SKELETON = """// !$*UTF8*$!
 \t\t\tbuildSettings = {
 \t\t\t\tALWAYS_SEARCH_USER_PATHS = NO;
 \t\t\t\tSDKROOT = iphoneos;
-\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 13.0;
 \t\t\t};
 \t\t\tname = Debug;
 \t\t};
@@ -142,7 +141,6 @@ _SKELETON = """// !$*UTF8*$!
 \t\t\tbuildSettings = {
 \t\t\t\tALWAYS_SEARCH_USER_PATHS = NO;
 \t\t\t\tSDKROOT = iphoneos;
-\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 13.0;
 \t\t\t};
 \t\t\tname = Release;
 \t\t};

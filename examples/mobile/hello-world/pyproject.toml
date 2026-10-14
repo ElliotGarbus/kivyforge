@@ -18,7 +18,7 @@ orientation = ["portrait"]
 schema_version = 1
 bundle_id = "org.example.hello-world"  # TODO: change to your reverse-DNS bundle identifier
 build = 1
-deployment_target = "13.0"
+deployment_target = "16.0"
 
 [tool.kivy.ios.icons]
 # iOS: 1024x1024 *opaque*, full-bleed PNG (transparency not allowed).

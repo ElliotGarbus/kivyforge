@@ -18,6 +18,7 @@ from pbxproj.pbxextensions.ProjectFiles import FileOptions, ProjectFiles, TreeTy
 from kivyforge.config.model import RESERVED_BUILD_SETTINGS, Config
 
 from .buildsettings import (
+    BUILD_PYTHON_OUTPUTS,
     BUILD_PYTHON_SCRIPT,
     PREVIOUS_BUILD_PYTHON_SCRIPTS,
     SIGNING_SETTING_KEYS,
@@ -159,6 +160,27 @@ class XcodeProjectGenerator:
                 keep=merged,
             )
             self._apply_project_level_signing(project, signing, configuration)
+            self._sync_project_deployment_target(project, configuration)
+
+    def _sync_project_deployment_target(
+        self, project: XcodeProject, configuration: str
+    ) -> None:
+        """Mirror ``deployment_target`` onto the *project's* build configuration.
+
+        The app target sets its own, but the project level is what Xcode shows
+        in the project editor and what any target without an override inherits.
+        The skeleton used to seed it with a literal 13.0 that nothing updated,
+        so every project carried a value below Xcode 27's 15.0 floor under the
+        correct target-level one. Synced on every run, which also heals
+        projects bootstrapped by those older runs.
+        """
+        assert self.config.ios is not None
+        for config_obj in cast(Any, project).objects.get_project_configurations(
+            configuration_name=configuration
+        ):
+            config_obj.set_flags(
+                "IPHONEOS_DEPLOYMENT_TARGET", self.config.ios.deployment_target
+            )
 
     @staticmethod
     def _drop_stale(
@@ -224,7 +246,9 @@ class XcodeProjectGenerator:
         self._order_run_script(project)
 
     def _configure_run_script(self, project: XcodeProject) -> None:
-        # Spec 06: run every build (install_python walks app/ + pip-deps/).
+        # Spec 06: run every build (install_python walks app/ + pip-deps/), and
+        # declare what it writes into the bundle so Xcode re-signs the app
+        # after it (BUILD_PYTHON_OUTPUTS says why).
         target = project.get_target_by_name(self.app_name)
         if target is None:
             raise RuntimeError(f"target {self.app_name!r} not found in Xcode project")
@@ -235,6 +259,7 @@ class XcodeProjectGenerator:
                 and getattr(phase, "shellScript", None) == BUILD_PYTHON_SCRIPT
             ):
                 phase["alwaysOutOfDate"] = 1
+                phase["outputPaths"] = list(BUILD_PYTHON_OUTPUTS)
                 break
 
     def _order_run_script(self, project: XcodeProject) -> None:

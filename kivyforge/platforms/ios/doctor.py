@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
-from kivyforge.config.model import Config
+from kivyforge.config.model import DEFAULT_DEPLOYMENT_TARGET, Config
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
 from kivyforge.doctor.probe import Probe, RealProbe
@@ -98,6 +98,55 @@ def check_simulator_runtimes(probe: Probe, config: Config | None) -> CheckResult
                 hint=f"install an iOS {floor}+ simulator runtime.",
             )
     return CheckResult("Simulator runtimes", Status.PASS, ", ".join(runtimes))
+
+
+def check_deployment_target(probe: Probe, config: Config | None) -> CheckResult:
+    """``deployment_target`` must be inside the range the installed Xcode accepts.
+
+    Outside it, xcodebuild refuses the target and every build fails at the
+    very end (exit 65). Xcode 27 raised its floor to 15.0, which is how the
+    old 13.0 default was found. The range comes from the SDK, so this tracks
+    whichever Xcode ``xcode-select`` points at.
+    """
+    name = "Deployment target"
+    supported = probe.ios_deployment_target_range()
+    if supported is None:
+        return CheckResult(
+            name, Status.SKIP, "could not read the iOS SDK's supported range"
+        )
+    low, high = supported
+    # Xcode quotes a maximum of "27.0.99" as "27.0.x"; match its wording.
+    shown = f"{low} to {high[:-3] + '.x' if high.endswith('.99') else high}"
+    if config is None:
+        return CheckResult(name, Status.PASS, f"Xcode supports iOS {shown}")
+    target = config.ios_required.deployment_target
+    if _os_version(target) < _os_version(low):
+        # Xcode's floor can be below what Kivy's wheels run on (15.0 vs 16.0
+        # with Xcode 27); suggest the default unless Xcode needs more.
+        suggested = max(low, DEFAULT_DEPLOYMENT_TARGET, key=_os_version)
+        return CheckResult(
+            name,
+            Status.FAIL,
+            f"{target} is below the {shown} this Xcode supports",
+            hint=f'raise [tool.kivy.ios].deployment_target to "{suggested}", '
+            "then run `kivyforge lock -p ios`.",
+        )
+    if _os_version(target) > _os_version(high):
+        return CheckResult(
+            name,
+            Status.FAIL,
+            f"{target} is above the {shown} this Xcode supports",
+            hint="lower [tool.kivy.ios].deployment_target, or install a newer Xcode.",
+        )
+    return CheckResult(name, Status.PASS, f"{target} (Xcode supports {shown})")
+
+
+def _os_version(value: str) -> tuple[int, ...]:
+    """A comparable OS version: "15" and "15.0" are the same version."""
+    parts = list(_ver_tuple(value))
+    while parts and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
 
 
 # ---- project checks -----------------------------------------------------
@@ -481,6 +530,7 @@ def run_ios_checks(
         check_command_line_tools(probe),
         C.check_pip_version(probe),
         check_simulator_runtimes(probe, config),
+        check_deployment_target(probe, config),
         C.check_kivyforge_version(probe, kivyforge_version, offline=offline),
     ]
 
