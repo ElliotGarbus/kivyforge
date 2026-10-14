@@ -204,6 +204,23 @@ class TestSetuptoolsOutsideProject:
         assert not _IGNORED.search(output)
         assert self._check(project)  # 2.4: a warning instead
 
+    def test_static_scripts_drop_dynamic_setup_cfg_groups(self, tmp_path):
+        """Found by the metaprobe (2026-10-14): ``scripts`` static, only
+        ``entry-points`` dynamic, and setuptools 84 builds without
+        ``setup.cfg``'s groups and without a warning. kivyforge warns (2.4)
+        and generates nothing, so the app gets exactly what setuptools wrote;
+        this pins what that is."""
+        extra = (
+            'dynamic = ["entry-points"]\n'
+            '[project.scripts]\nprobe-cli = "metaprobe_live:main"\n'
+        )
+        project = _project(tmp_path / "p", "setuptools", extra, setup_cfg=SETUP_CFG)
+        wheel, output = _wheel(project, tmp_path / "out")
+        groups = {e[0] for e in _wheel_entry_points(wheel, tmp_path)}
+        assert groups == {"console_scripts"}
+        assert not _IGNORED.search(output)
+        assert self._check(project)
+
     def test_project_entry_points_win(self, tmp_path):
         extra = '\n[project.entry-points."metaprobe.plugins"]\nours = "metaprobe_live:Ours"\n'
         project = _project(

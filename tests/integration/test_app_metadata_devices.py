@@ -12,7 +12,8 @@ subset). Once opted in, a missing tool **fails**: the option is a promise that
 the platform is there. Needs the network (wheels, locks, the setuptools a dev
 install fetches) and takes minutes per platform; the Android emulator and the
 iOS simulator are booted if needed, and shut down at the end only if this run
-booted them.
+booted them; an already booted simulator is preferred, and the probe app is
+uninstalled from both at the end.
 
 A report is accepted only from a build that succeeded, and only if it carries
 the ``BUILD_MARK`` this run wrote into ``main.py``. The spike this replaces
@@ -414,6 +415,8 @@ def simulator(selected) -> Iterator[str]:
     _run(["xcrun", "simctl", "boot", udid], check=False)
     _run(["xcrun", "simctl", "bootstatus", udid, "-b"], timeout=300)
     yield udid
+    # Leave the device as found: it may be someone else's.
+    _run(["xcrun", "simctl", "uninstall", udid, APP_ID], check=False)
     if not booted:  # booted here, so shut down here; someone else's stays up
         _run(["xcrun", "simctl", "shutdown", udid], check=False)
 
@@ -480,6 +483,8 @@ def emulator(selected) -> Iterator[str]:
     running = set(adb_mod.connected_devices())
     serial = adb_mod.resolve_device(prefer_emulator=True, avd=AVD)
     yield serial
+    # Leave the device as found: it may be someone else's.
+    _run([adb, "-s", serial, "uninstall", APP_ID], check=False)
     if serial not in running:  # booted here, so shut down here
         _run([adb, "-s", serial, "emu", "kill"], check=False)
 
@@ -766,16 +771,26 @@ def test_dynamic_version(platform_project, request):
 
 @pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
 def test_dynamic_entry_points(platform_project, request):
-    """D2: entry points from ``setup.cfg``, ``entry-points`` in ``dynamic``.
+    """D2: every entry point from ``setup.cfg``, all three keys in ``dynamic``.
 
     kivyforge cannot know them, so it warns, generates nothing and removes
-    nothing; the dev install's egg-info carries them into the app.
+    nothing; the dev install's egg-info carries them into the app. All three
+    keys, because with ``scripts`` static and only ``entry-points`` dynamic
+    setuptools 84 drops ``setup.cfg``'s groups without a word
+    (``tests/bundle/test_app_metadata_live.py`` pins it).
     """
     platform, project = platform_project
     _edit_pyproject(
         project,
-        ('version = "1.2.3"', 'version = "1.2.3"\ndynamic = ["entry-points"]'),
         (
+            'version = "1.2.3"',
+            'version = "1.2.3"\ndynamic = ["scripts", "gui-scripts", "entry-points"]',
+        ),
+        (
+            "[project.scripts]\n"
+            'metaprobe-cli = "metaprobe_app.cli:main"\n\n'
+            "[project.gui-scripts]\n"
+            'metaprobe-gui = "metaprobe_app.cli:gui"\n\n'
             '[project.entry-points."metaprobe.plugins"]\n'
             'app-plugin = "metaprobe_app.plugins:AppPlugin"\n'
             'CasePlugin = "metaprobe_app.plugins:CasePlugin"\n',
@@ -784,6 +799,10 @@ def test_dynamic_entry_points(platform_project, request):
     )
     (project / "setup.cfg").write_text(
         "[options.entry_points]\n"
+        "console_scripts =\n"
+        "    metaprobe-cli = metaprobe_app.cli:main\n"
+        "gui_scripts =\n"
+        "    metaprobe-gui = metaprobe_app.cli:gui\n"
         "metaprobe.plugins =\n"
         "    app-plugin = metaprobe_app.plugins:AppPlugin\n"
         "    CasePlugin = metaprobe_app.plugins:CasePlugin\n",
@@ -798,7 +817,7 @@ def test_dynamic_entry_points(platform_project, request):
         d for d in envelope["diagnostics"] if d["code"] == "KF-METADATA-NOT-GENERATED"
     ]
     assert warning["context"] == {
-        "reason": "static-and-dynamic",
+        "reason": "dynamic",
         "fallback": egg_info.relative_to(project).as_posix(),
     }
     _assert_finds_its_metadata(report)
