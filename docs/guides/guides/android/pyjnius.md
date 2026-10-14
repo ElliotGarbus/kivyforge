@@ -41,6 +41,9 @@ nothing.
     `sys_platform == 'win32'`), kivyforge adds its own requirement as well,
     so an Android lock always has pyjnius.
 
+    Pin any other dependency, including Kivy, the same way. See
+    [Pin a package version](../cross-platform/dependencies.md#pin-a-package-version).
+
 - Declare any permission the API you call requires, under
   `[tool.kivy.android.permissions]`.
 

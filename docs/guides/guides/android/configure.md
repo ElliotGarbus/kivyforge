@@ -80,7 +80,10 @@ required. The other keys shown have defaults, listed in the reference.
         `kivy_generation = 3` and a plain `kivy` requirement, `kivyforge lock`
         still pins 2.3.1, because pip skips pre-releases. Require Kivy 3.0
         yourself, for example `"kivy>=3.0.0.dev0,<4"`, with an index that hosts
-        it. `kivyforge lock` and `kivyforge doctor` both warn when the two
+        it. That range moves to the newest snapshot on every re-lock. To stay
+        on one snapshot,
+        [pin it exactly](../cross-platform/dependencies.md#pin-a-package-version).
+        `kivyforge lock` and `kivyforge doctor` both warn when the two
         disagree.
 
     !!! note "Generation 2 keeps clear of the system bars"
