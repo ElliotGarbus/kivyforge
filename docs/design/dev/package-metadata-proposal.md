@@ -1,17 +1,15 @@
 # Proposal — the app's own package metadata
 
-> Status: **plan, revised 2026-10-14. Not implemented; waiting for approval**
-> (decisions in section 3, open questions in section 10).
-> Follows [#122](https://github.com/ElliotGarbus/kivyforge/issues/122): #115
-> excluded the `*.egg-info` that a src-layout app's `importlib.metadata` reads,
-> and an app that finds its plugins through entry points stopped starting; #123
+> Status: **plan with decisions recorded, 2026-10-14. Not implemented; waiting
+> for the go-ahead.** Follows
+> [#122](https://github.com/ElliotGarbus/kivyforge/issues/122): #115 excluded
+> the `*.egg-info` that a src-layout app's `importlib.metadata` reads, and an
+> app that finds its plugins through entry points stopped starting; #123
 > reverted it. Every assumption here was tested before it was written down
 > ([`package-metadata-spike-findings.md`](package-metadata-spike-findings.md),
-> F1-F6), the design was checked against the PyPA specifications (section 6),
-> and compared with how Briefcase solves the same problem (section 7). The
-> first draft placed the metadata in a separate directory first on the import
-> path (option B); the spec review, Briefcase and the iOS spike (F6) moved the
-> recommendation to option A.
+> F1-F7), the design was checked against the PyPA specifications (section 6) and
+> compared with Briefcase (section 7). Decisions are in section 3, answered
+> questions in section 10.
 
 ## 1. Problem
 
@@ -30,18 +28,18 @@ Apps do read this metadata: `version()`, `distribution()` and `entry_points()`
 (S7), plugin-based apps cannot start without it (#122), and Toga builds
 `toga.App` on `importlib.metadata.metadata(app_name)` (section 7).
 
-## 2. Design (option A)
+## 2. Design
 
-**kivyforge writes the app's metadata itself, into the app's own code
-directory in the bundle, and removes any `egg-info` from that copy.** This is
-where the recording-installed-projects spec puts a `.dist-info` (alongside the
-importable modules) and what Briefcase does.
+**kivyforge writes the app's metadata itself, from `[project]`, into the app's
+own code directory in the bundle, and removes any development `egg-info` from
+that copy (option A).** This is where the recording-installed-projects spec
+puts a `.dist-info` (alongside the importable modules) and what Briefcase does.
 
 ### 2.1 What is written
 
 `<name>-<version>.dist-info/`. Both fields normalized, as the spec requires of
 new tools: the name lowercased with runs of `-_.` replaced by `_`, the version
-in its normalized PEP 440 form (it contains no `-`). F5: `importlib.metadata`
+in its normalized PEP 440 form (which contains no `-`). F5: `importlib.metadata`
 reads the name from the text before the first hyphen, so an unnormalized name is
 not found; all five backends name it this way.
 
@@ -49,16 +47,21 @@ not found; all five backends name it this way.
 |---|---|
 | `METADATA` | `Metadata-Version: 2.1`, `Name:` as written in `[project]`, `Version:` the resolved version (the same value as the plist, `versionName` and the Windows resource) |
 | `entry_points.txt` | `[project.scripts]` as `console_scripts`, `[project.gui-scripts]` as `gui_scripts`, each `[project.entry-points."<group>"]` as its group. Omitted when there are none. |
-| `top_level.txt` | The top-level modules and packages of `app_dir`, one per line (Briefcase writes it too). It is what `packages_distributions()` uses to map a module to its distribution. |
+| `top_level.txt` | Every top-level `*.py` module and every top-level directory containing an `__init__.py` in `app_dir`, computed from the source before byte-compiling; `main` included. Asset folders and directories without an `__init__.py` are not listed (setuptools' default). |
 | `INSTALLER` | `kivyforge` |
 
-Deliberately absent: `RECORD` (`files()` returns `None`; the spec makes only
-`METADATA` mandatory for an installed project, and without `RECORD` tools must
-not uninstall or upgrade it, which suits an app bundle), and `Requires-Dist`
-(`requires()` returns `None`; it would let `pkg_resources.require()` fail on
-dependencies that `exclude` lists remove on purpose). No script wrappers are
-created for `console_scripts`/`gui_scripts`: an app bundle has no command line
-or `PATH` (section 6, C5).
+`top_level.txt` is what makes `packages_distributions()` work without a
+`RECORD`. It is a setuptools convention, not a spec: of the five backends only
+setuptools writes it (F7); the others rely on `RECORD`, and Briefcase writes
+`top_level.txt` too. `RECORD` is not written: it must list every file as finally
+shipped, and the payload changes after the copy (byte-compiling,
+`strip_source`, Xcode's own steps); `top_level.txt` names only top-level modules,
+which those steps do not change. The spec makes only `METADATA` mandatory for an
+installed project, and without `RECORD` tools must not uninstall or upgrade it,
+which suits an app bundle. `Requires-Dist` is not written either: it would let
+`pkg_resources.require()` fail on dependencies that `exclude` lists remove on
+purpose. No script wrappers are created for `console_scripts`/`gui_scripts`: an
+app bundle has no command line or `PATH` (section 6, C5).
 
 **Validation (config errors, each tested).** The specs forbid, and backends
 reject: `[project.entry-points.console_scripts]` and `.gui_scripts` (they clash
@@ -77,17 +80,26 @@ spacing. Output is byte-identical across runs.
 
 ### 2.2 Where it goes
 
-Into each platform's copy of `app_dir` in the bundle, after the copy, with
-every top-level `*.egg-info` (and any other `.dist-info` of the app's own name)
-removed from that copy. The user's source tree is never written to.
+Into each platform's copy of `app_dir` in the bundle, after the copy. From that
+copy's **top level** kivyforge first removes:
+
+- every `*.egg-info`: in a source tree these are always development-install
+  leftovers (modern pip installs `.dist-info`), and `entry_points()` collects
+  entry points from every distribution it finds, so an `oldname.egg-info` left
+  by a renamed project would keep injecting stale plugins;
+- any `.dist-info` of the app's own normalized name.
+
+Other `.dist-info` folders stay: a library vendored with `pip install --target
+src ...` keeps its metadata. Nothing deeper than the top level is touched;
+setuptools writes only there. The user's source tree is never written to.
 
 | Platform | Copy point | Change |
 |---|---|---|
-| macOS | `platforms/macos/bundle.py` `_copy_app_sources` | exclude, then write |
-| Linux | `platforms/linux/bundle.py` `_copy_app_sources` | exclude, then write |
-| Windows | `platforms/windows/bundle.py` `_copy_app_sources` | exclude, then write |
-| Android | `platforms/android/stage/bundle.py` `_copy_app` | exclude, then write (the app payload is shared by every ABI, so one copy) |
-| iOS | Xcode's Copy Bundle Resources copies the `app` folder reference; the generated **Build Python** script runs after it and before code signing (`buildsettings.py`) | `kivyforge build` stages the `.dist-info` in `<app>-ios/_kivyforge_meta/`; the script deletes `*.egg-info` from the bundle's `app/` and copies the staged folder in. One mechanism for debug and release. |
+| macOS | `platforms/macos/bundle.py` `_copy_app_sources` | remove, then write |
+| Linux | `platforms/linux/bundle.py` `_copy_app_sources` | remove, then write |
+| Windows | `platforms/windows/bundle.py` `_copy_app_sources` | remove, then write |
+| Android | `platforms/android/stage/bundle.py` `_copy_app` | remove, then write. `assemble_bundle` calls it once, after the per-ABI identity check of the dependencies, so the app payload and its metadata are shared by every ABI. |
+| iOS | Xcode's Copy Bundle Resources copies the `app` folder reference; the generated **Build Python** script runs after it and before code signing (`buildsettings.py`) | `kivyforge build` stages the `.dist-info` in `<app>-ios/_kivyforge_meta/`; the script removes the same top-level entries from the bundle's `app/` and copies the staged folder in. One mechanism for debug and release. |
 
 iOS debug builds keep their link from `<app>-ios/app` to `app_dir` (spec 06's
 edit-then-Cmd-R loop): the link lives only in the staging folder, and Xcode
@@ -95,31 +107,72 @@ still copies the folder into the bundle on every build (F6). The script refuses
 to run if the bundle's `app/` is ever a link, so it can never delete from the
 user's tree.
 
-Why not the first draft's option B (a separate directory placed first on the
-import path): it works on every runtime measured (F4), but it departs from the
-spec's location and rests on how CPython's `importlib.metadata` orders lookups,
-which no spec defines. Option A needs neither: with the stale `egg-info` gone,
-exactly one copy of the app's metadata exists, so no ordering question arises.
-B stays the fallback if A's exclusion ever proves impossible on a platform.
+Option B, the first draft (a separate directory placed first on the import
+path), works on every runtime measured (F4) but departs from the spec's
+location and rests on how CPython's `importlib.metadata` orders lookups, which
+no spec defines. Option A needs neither: with the development `egg-info` gone,
+exactly one copy of the app's metadata exists. B stays the fallback if A's
+removal ever proves impossible on a platform.
 
-### 2.3 When nothing is generated
+### 2.3 Entry points declared outside `[project]`: an error
 
-In the D1/D2 cases (section 3) kivyforge cannot know the full set of entry
-points, so it generates no metadata, does not exclude, and warns: the dev
-`egg-info`, if any, ships as it does today. Under option A that never puts two
-copies side by side.
+A setuptools project (its `build-backend` is `setuptools.build_meta` or
+`setuptools.build_meta:__legacy__`, or it has no `[build-system]`) whose
+`[project]` declares none of `scripts`, `gui-scripts` or `entry-points`, and
+that declares entry points elsewhere, fails the build with
+`KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT` (config error, exit 1):
 
-## 3. Decisions needed
+- `setup.cfg` with a non-empty `[options.entry_points]` (parsed exactly);
+- `setup.py` whose text mentions `entry_points`.
 
-| # | Question | What the specs say | Options | Recommendation |
-|---|---|---|---|---|
-| D6 | Placement | The recording-installed-projects spec puts `.dist-info` alongside the importable modules. | A (section 2.2), or B (separate directory first on the path) | **A.** Spec-literal, Briefcase's approach, proven on iOS debug by F6. |
-| D1 | A setuptools project with entry points in `setup.cfg`/`setup.py` but none in `[project]` (F2; found in real Kivy projects) | The `pyproject.toml` spec: a backend cannot fill in a key `[project]` does not list in `dynamic`. So **the project has no entry points**; setuptools including them is non-conforming and deprecated (its own warning says so). | (a) follow the spec: generate from `[project]` (none) and warn; (b) compatibility: warn, generate nothing, ship the dev `egg-info` as today; (c) take the backend's real `.dist-info` (PEP 517 `prepare_metadata_for_build_wheel`) | **(b)**, with the warning citing the spec, and ending when setuptools stops including them. (c) is the long-term route (section 7). |
-| D2 | `entry-points`, `scripts` or `gui-scripts` listed in `dynamic` | Only the backend supplies a dynamic key, and for table keys a static value may also be present and **extended** by the backend, so static entries are only a minimum. | as D1 | **As D1 (b)**, for both "dynamic only" and "static plus dynamic". The existing rule that rejects `version` declared both ways must not be applied to these keys. |
-| D3 | The dev `egg-info` | No spec covers `egg-info`. | exclude when generating, keep otherwise | **Exclude whenever kivyforge generated metadata; keep it in the D1/D2 cases.** Under option A, exclusion is required, not optional. |
-| D4 | iOS staging directory name | none | `_kivyforge_meta` | `_kivyforge_meta` (inside `<app>-ios/`, never on the runtime path) |
-| D5 | Release | none | | Ship `3.0.0.dev1` with the revert (already on `main`); this goes in the next release. |
-| D7 | Extra `METADATA` fields, as Briefcase writes (`Formal-Name`, `App-ID`) | Core metadata allows extra fields only by convention. | add `display_name`/bundle id; or not | **Not now.** Nothing in the Kivy ecosystem reads them. |
+The message names the file and the fix: move them into `[project.entry-points]`
+(or `scripts`/`gui-scripts`). Why an error and not a fallback (decision D1):
+
+- With a `[project]` table, which kivyforge requires, the `pyproject.toml` spec
+  says a backend cannot fill in a key `[project]` neither declares nor lists in
+  `dynamic`: those entry points are not part of the project's metadata.
+  setuptools still includes them, with a deprecation warning saying it will
+  stop (F2). PyPA has not deprecated `setup.py` as a configuration file, only
+  running it as a command; this specific mix is what is deprecated.
+- Every kivyforge project with entry points only in `setup.py`/`setup.cfg` is
+  therefore that deprecated mix, and silently dropping its plugins is the #122
+  failure. An error at build time cannot be missed; a warning can.
+- Apps that keep a `setup.py` for other reasons (a build step) and declare no
+  entry points there get correct generated metadata, which a "fall back to the
+  `egg-info`" rule would have denied them.
+
+When `[project]` declares entry points **and** `setup.py`/`setup.cfg` declare
+others, setuptools uses only `[project]`'s (S2), so generating from `[project]`
+matches what setuptools produces; no error. An empty `[project.entry-points]`
+table does **not** count as declaring them: setuptools 84 still used
+`setup.py`'s entry points with it (F7).
+
+Not detected: a `setup.py` that hides its entry points from a text search (for
+example `setup(**config)`) in a project that also has a `[project]` table.
+Deprecated twice over and rare; documented, not designed around.
+
+### 2.4 Entry points the backend supplies: a warning
+
+When `entry-points`, `scripts` or `gui-scripts` is listed in `[project].dynamic`
+(alone, or alongside static entries, which the spec allows the backend to
+extend), only the backend knows the full set. kivyforge then generates nothing,
+removes nothing, and warns with `KF-METADATA-NOT-GENERATED` (WARNING; `context`:
+`reason` = `dynamic` or `static-and-dynamic`, `fallback` = the path of a
+development `egg-info` that ships instead, or `none`, in which case the message
+says the app has no package metadata). This is decision D2; the existing rule
+that rejects `version` declared both ways does not apply to these keys.
+
+## 3. Decisions (recorded 2026-10-14)
+
+| # | Question | Decision |
+|---|---|---|
+| D6 | Placement | **Option A** (2.2). |
+| D1 | Entry points in `setup.cfg`/`setup.py`, none in `[project]` | **Config error** with the fix (2.3). This replaces the earlier "warn and fall back to the `egg-info`" recommendation, which D1 had accepted; the discussion of Q3 showed it protected only a deprecated, spec-invalid mix while denying correct metadata to other apps with a `setup.py`. |
+| D2 | Entry points listed in `dynamic` | **Warn, generate nothing, remove nothing** (2.4). |
+| D3 | The development `egg-info` | **Removed whenever kivyforge generates metadata**; left in place in the D2 case. |
+| D4 | iOS staging directory | **`_kivyforge_meta`** inside `<app>-ios/`, never on the runtime path. |
+| D5 | Release | **Not in `3.0.0.dev1`**, which ships with the revert already on `main`; this goes in the next release. |
+| D7 | Briefcase-style `Formal-Name`/`App-ID` fields | **Not now**: nothing in the Kivy ecosystem reads them. |
 
 ## 4. Steps
 
@@ -128,12 +181,16 @@ copies side by side.
    before anything changes, so the redesign is measured against it.
 1. Write the hermetic and live tests of section 5. On `main`, the "no
    `egg-info`" cases must fail (that is the gap) and the rest pass.
-2. Generator (`kivyforge/bundle/app_metadata.py`), validation, D1/D2 detection
-   and warning code.
-3. Copy points (section 2.2): exclusion plus writing on four platforms; iOS
-   staging and the Build Python script.
-4. Docs: the versioning guide's metadata section, the pyproject reference
-   (validation), CHANGELOG.
+2. Generator (`kivyforge/bundle/app_metadata.py`), validation, the 2.3 error,
+   the 2.4 warning, and the two codes.
+3. Copy points (2.2): removal plus writing on four platforms; iOS staging and
+   the Build Python script.
+4. Docs: the versioning guide's metadata section (including Q5's note), the
+   pyproject reference (validation, entry points must be in `[project]`), and
+   CHANGELOG with migration notes: entry points declared only in
+   `setup.py`/`setup.cfg` must move to `[project]`; spec-invalid entry-point
+   tables and project names are now errors; the development `egg-info` no
+   longer ships.
 5. Device runs on this Mac (layer 3), the reporter's app (#122), then Linux and
    Windows on their hosts (#118-style prompts).
 
@@ -148,36 +205,46 @@ host, iOS simulator, Android emulator). Each test names what it guards.
   `meta_probe_app-1.2.3.dist-info`, F5); `scripts`/`gui-scripts` mapped to
   `console_scripts`/`gui_scripts`; dotted groups; extras and module-only
   values; **case preserved** (`MyPlugin`); **non-ASCII** names written as UTF-8;
-  no `entry_points.txt` when there are none; `top_level.txt` lists `app_dir`'s
-  top-level modules and packages; a local version in the folder name;
-  byte-identical output across runs.
+  no `entry_points.txt` when there are none; `top_level.txt` per the 2.1 rule
+  (modules, packages, `main`; not asset folders or `__init__`-less
+  directories); a local version in the folder name; byte-identical output
+  across runs.
 - **Validation:** each spec rule of 2.1 is a config error with the file line.
 - **Lookup contract:** `importlib.metadata` over the generated folder finds the
   app by every alias (`metaprobe-app`, `metaprobe_app`, `Metaprobe.App`), with
   `version()`, `metadata()["Name"]`, `entry_points()` and
   `packages_distributions()` correct and `files()`/`requires()` `None` (S0).
-- **Exclusion, every copy path:** with a stale `egg-info` (and a stale
-  `<app>-*.dist-info`) planted in `app_dir`, each platform's real copy function
-  leaves exactly the generated folder; and the user's `app_dir` is unchanged
-  afterwards. The #123 regression test, generalized.
+- **Removal, every copy path:** with top-level `*.egg-info` folders (the app's
+  own and another name's) and a stale `<app>-*.dist-info` planted in
+  `app_dir`, plus a vendored library's `.dist-info` and an `egg-info` one level
+  down, each platform's real copy function leaves exactly the generated folder
+  and the vendored one at the top level, and the deeper `egg-info` untouched;
+  the user's `app_dir` is unchanged afterwards. This replaces the #123
+  regression test (`tests/bundle/test_app_metadata.py`, Q6), rewritten around
+  behaviour: the app's metadata is reachable in every copy.
 - **iOS script:** the rendered Build Python script contains the link guard, the
-  `egg-info` deletion and the copy from `_kivyforge_meta`, after the existing
-  `pip-deps` step; `kivyforge build` stages the folder there.
+  removals and the copy from `_kivyforge_meta`, after the existing `pip-deps`
+  step; `kivyforge build` stages the folder there.
 - **Consistency:** the generated `Version:` equals the plist, `versionName` and
   Windows resource version, for static, dynamic and override sources.
-- **D1/D2:** each detection case (`setup.cfg`, `setup.py`, dynamic only,
-  static plus dynamic) warns with the new code, generates nothing and excludes
-  nothing; a project with entry points only in `[project]` generates them and
-  does not warn.
+- **2.3:** `setup.cfg` with `[options.entry_points]`, and `setup.py` mentioning
+  `entry_points`, each fail with `KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT`
+  and name the file; the same with entry points also in `[project]` generates
+  and does not fail; an empty `[project.entry-points]` table still fails; a
+  hatchling project with a stray `setup.py` does not fail; a setuptools project
+  whose `setup.py` has no entry points generates normally.
+- **2.4:** `dynamic` only, and static plus `dynamic`, each warn with
+  `KF-METADATA-NOT-GENERATED` (`reason` and `fallback` in `context`), generate
+  nothing and remove nothing.
 
 ### Layer 2 — live backends (opt-in `--app-metadata-live`; needs network)
 
 The S1 and S2 spikes as tests, so a backend changing behaviour fails here
 first: setuptools, hatchling, pdm-backend, flit-core and poetry-core agree with
-the generator on a project exercising every entry-point form; and setuptools'
-handling of `setup.cfg`/`setup.py` entry points (F2) is pinned, including the
-deprecation warning D1 cites. When setuptools stops including them, this test
-says D1's allowance can go.
+the generator on a project exercising every entry-point form; setuptools'
+handling of `setup.cfg`/`setup.py` entry points (F2), including the empty-table
+case (F7) and the deprecation warning 2.3 cites, is pinned. When setuptools
+stops including them, this test shows it.
 
 ### Layer 3 — inside real apps, automated on this Mac
 
@@ -199,11 +266,11 @@ otherwise). Variants:
 
 | Variant | Asserts |
 |---|---|
-| static version, no `egg-info` | the app finds its own name, version and every entry point it declares; a dependency's entry point loads |
-| stale `egg-info` planted in `app_dir` | exactly one copy of the app's metadata in the bundle (the generated one); the source tree keeps its `egg-info` |
-| iOS, Xcode-only rebuilds (the captured `xcodebuild` command, as Cmd-R) | no-change rebuild, a `src/` edit, and a rewritten dev `egg-info`: each leaves only the generated metadata, shows the edit, and keeps a valid signature (F6) |
+| static version, no `egg-info` | the app finds its own name, version and every entry point it declares; `packages_distributions()` maps its modules; a dependency's entry point loads |
+| development `egg-info` planted in `app_dir` | exactly one copy of the app's metadata in the bundle (the generated one); the source tree keeps its `egg-info` |
+| iOS, Xcode-only rebuilds (the captured `xcodebuild` command, as Cmd-R) | no-change rebuild, a `src/` edit, and a rewritten development `egg-info`: each leaves only the generated metadata, shows the edit, and keeps a valid signature (F6) |
 | dynamic version (git tag, one commit past) | the reported version equals `data.version` and the plist/`versionName` |
-| `setup.cfg` entry points (D1) | the build warns; the dev `egg-info` still provides them |
+| dynamic entry points (2.4) | the build warns; a development `egg-info`, when present, still provides them |
 | release flavor (macOS, Android) | the same, with byte-compiled, source-stripped apps |
 
 Expected wall time on this Mac, from the spikes: macOS about 10 s per build,
@@ -223,8 +290,8 @@ about 55 s per flavor plus the first emulator boot.
 ### Layer 5 — not on this Mac
 
 Linux and Windows builds (their copy points are covered by layer 1, but no app
-has run there), physical devices, and the #122 reporter's app as the
-acceptance case before release.
+has run there), an iOS release archive and physical devices (both need
+signing), and the #122 reporter's app as the acceptance case before release.
 
 ## 6. Conformance with the PyPA specifications
 
@@ -237,8 +304,9 @@ normalization.
 | C1 | The `.dist-info` belongs alongside the importable modules; option B put it elsewhere. | Option A (2.2). |
 | C2 | Backends must reject reserved and nested entry-point tables; group and entry point names have rules; `Name` must be a valid project name. | Validation in 2.1. |
 | C3 | `entry_points.txt` is UTF-8 with case-sensitive names and `=` delimiters. | Writer rules in 2.1. |
-| C4 | Table keys such as `entry-points` may be both static and dynamic; the backend may append. | D2 covers "static plus dynamic". |
+| C4 | Table keys such as `entry-points` may be both static and dynamic; the backend may append. | 2.4 covers "static plus dynamic". |
 | C5 | Install tools are expected to create wrappers for `console_scripts`/`gui_scripts`. | Recorded, no wrappers created (2.1). |
+| C6 | With a `[project]` table, keys it neither declares nor lists in `dynamic` cannot come from the backend. | Entry points only in `setup.py`/`setup.cfg` are an error (2.3). |
 
 Consistent with the specs: normalized folder name (both fields); only `METADATA`
 mandatory; `Metadata-Version: 2.1` (builders may use the lowest version holding
@@ -247,8 +315,9 @@ recommended but readable; static `[project]` values cannot be changed by a tool,
 which is why reading them gives what a backend would produce (S1).
 
 **Not covered by any spec:** which copy wins when a project appears twice on the
-path (F1, F4). Option A avoids relying on it by ensuring there is one copy;
-layer 3 checks that on every platform this Mac runs.
+path (F1, F4); option A avoids relying on it by ensuring there is one copy, and
+layer 3 checks that on every platform this Mac runs. Also not covered:
+`top_level.txt` (a setuptools convention, F7) and `egg-info` in general.
 
 ## 7. Comparison with Briefcase
 
@@ -260,15 +329,15 @@ Source: `beeware/briefcase` `main` (`bffc7303`, 2026-10-13), `beeware/toga`.
 | Files | `INSTALLER`, `WHEEL`, `METADATA` (with `Formal-Name`, `App-ID`), `top_level.txt` | `INSTALLER`, `METADATA`, `entry_points.txt`, `top_level.txt` |
 | Location | in the app folder (option A) | option A |
 | How code reaches the app | copied fresh every build, every platform | copied, except iOS debug's staging link (handled by the Xcode script) |
-| What is copied | the package directories (`sources = ["src/helloworld"]`), so the `egg-info` in `src/` never comes along | all of `app_dir` (`src/`), hence the exclusion |
-| Entry points | not supported (beeware/briefcase#2868 open) | supported |
-| `setup.py`/`setup.cfg` metadata | not supported (beeware/briefcase#515 open) | D1 |
-| Direction | let the build backend produce it, `pip install . --target` (beeware/briefcase#2867) | D1 (c), later |
+| What is copied | the package directories (`sources = ["src/helloworld"]`), so the `egg-info` in `src/` never comes along | all of `app_dir` (`src/`), hence the removal |
+| Entry points | not supported (beeware/briefcase#2868 open) | supported, from `[project]` only |
+| `setup.py`/`setup.cfg` metadata | not supported (beeware/briefcase#515 open) | entry points there are an error (2.3) |
+| Direction | let the build backend produce it, `pip install . --target` (beeware/briefcase#2867) | out of scope (section 9) |
 
 Toga (`toga.App`) reads `Formal-Name`, `App-ID` and `Version` through
 `importlib.metadata.metadata(app_name)`: a framework built on generated app
 metadata. Briefcase's dev mode writes `{module_name}.dist-info` (no version)
-into the user's source tree; kivyforge's design writes nothing there.
+into the user's source tree; this design writes nothing there.
 
 ## 8. Done when
 
@@ -285,27 +354,22 @@ into the user's source tree; kivyforge's design writes nothing there.
   already do). Independent of this proposal: it changes the output step of
   `build`/`package`, not what is inside the app. Its one dependency,
   `ResolvedVersion.filename_part`, is already on `main`.
-- **Metadata produced by the build backend** (D1 option (c)): the long-term
-  route for `setup.py`/`setup.cfg` and dynamic entry points; not this change.
+- **Metadata produced by the build backend** (PEP 517
+  `prepare_metadata_for_build_wheel`), which would cover dynamic entry points
+  exactly; Briefcase's stated direction. Not this change.
 - **Extra `METADATA` fields** in Briefcase's style (D7).
 - **Script wrappers** for `console_scripts`/`gui_scripts` (C5).
+- **A configuration switch** to force or skip generation.
 
-## 10. Open questions
+## 10. Questions, answered 2026-10-14
 
-Beyond the decisions in section 3, which need an answer before implementation:
-
-| # | Question | Current thinking |
+| # | Question | Answer |
 |---|---|---|
-| Q1 | What exactly goes in `top_level.txt`? `app_dir` holds the entry module (often `main.py`), packages, plain data directories and assets. | Every top-level `*.py` module and every directory with an `__init__.py`, excluding `__pycache__` and metadata directories. Listing `main` maps a generic module name to the app in `packages_distributions()`; harmless, but worth a decision. |
-| Q2 | How far does the exclusion reach? | Top level of the app copy only, where setuptools writes: `*.egg-info`, and any `.dist-info` of the app's own normalized name. A vendored package's own metadata deeper in `app_dir` is left alone. |
-| Q3 | How reliable is D1's detection? `setup.cfg` can be parsed; `setup.py` is code. | Parse `setup.cfg`'s `[options.entry_points]`; for `setup.py`, a textual match on `entry_points`. A false positive only means "warn and generate nothing", which is today's behaviour, never a regression. |
-| Q4 | Name of the new warning code for D1/D2. | e.g. `KF-APP-METADATA-INCOMPLETE`. |
-| Q5 | iOS Xcode-only rebuilds keep the metadata from the last `kivyforge build`. With a dynamic version, a new commit followed only by Cmd-R leaves the version stale. | Accept and document: the plist's version is stale in exactly the same way today, and spec 06 already says `pyproject.toml` changes need `kivyforge build`. |
-| Q6 | The #123 regression test (`tests/bundle/test_app_metadata.py`) asserts the `egg-info` ships. | Rewrite it around behaviour: metadata reachable in every copy; the generated one when kivyforge generates, the dev one in the D1/D2 cases. |
-| Q7 | Untested here: an iOS release archive, any physical device, any Linux or Windows build. | Layer 5: signing-capable runs and #118-style prompts for the other hosts before the release that ships this. |
-| Q8 | Acceptance by the #122 reporter. | Their project declares entry points only in `[project]` and uses a static version, so it takes the generated path; ask them to confirm their APK on the branch before release. |
-
-Settled while writing: Android copies the app payload once, after the per-ABI
-identity check of the dependencies (`assemble_bundle` calls `_copy_app` once),
-so the generated folder needs no per-ABI handling.
-
+| Q1 | What goes in `top_level.txt`? | Top-level `*.py` modules and directories with an `__init__.py`, from the source before byte-compiling; `main` included (2.1). `top_level.txt` rather than `RECORD`, because the payload keeps changing after the copy. |
+| Q2 | How far does the removal reach? | The top level of the app copy: every `*.egg-info`, and a `.dist-info` of the app's own name. Other `.dist-info` folders and anything deeper stay (2.2). |
+| Q3 | How should entry points in `setup.cfg`/`setup.py` be detected and handled? | Spec-strict: a config error when detected and `[project]` declares none (2.3). Alternatives considered: fall back to the development `egg-info` (denies correct metadata to every app with a `setup.py`), warn only (a missed warning is #122 again), ask the backend (keeps honouring what setuptools is removing; slow), a switch (more surface). |
+| Q4 | Code names | `KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT` (error, 2.3) and `KF-METADATA-NOT-GENERATED` (warning, 2.4), following `KF-<AREA>-<CONDITION>`. |
+| Q5 | iOS Xcode-only rebuilds keep the metadata from the last `kivyforge build`; after a new commit, a dynamic version is stale. | Accepted and documented: the plist's version is generated at `kivyforge build` too, so the two stay stale together and agree; run `kivyforge build` (or `run`) before Cmd-R when the version matters. |
+| Q6 | The #123 regression test asserts the `egg-info` ships. | Replaced by the removal test of layer 1. |
+| Q7 | Untested here: iOS release archives, physical devices, Linux, Windows. | Layer 5, before the release that ships this. |
+| Q8 | Acceptance by the #122 reporter. | Their project declares entry points only in `[project]` with a static version, so it takes the generated path; ask them to confirm their APK on the branch before release. |

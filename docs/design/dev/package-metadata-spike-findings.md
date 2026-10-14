@@ -130,6 +130,23 @@ launched the app left installed by an earlier run, reporting its stale result;
 the collector now refuses to run without a fresh build and reinstalls cleanly.
 The automated layer 3 driver must do the same.
 
+### F7. Two follow-up checks (2026-10-14)
+
+- **Only setuptools writes `top_level.txt`.** In S1's five wheels, setuptools'
+  holds `metaprobe`; hatchling, pdm-backend, flit-core and poetry-core write
+  none and rely on `RECORD` for `packages_distributions()`. It is a setuptools
+  convention, not a spec.
+- **An empty `[project.entry-points]` table does not stop setuptools 84 from
+  using `setup.py`'s entry points.** A project with `[project.entry-points]`
+  declared and empty, and `setup(entry_points={"metaprobe.plugins": [...]})` in
+  `setup.py`, produced a wheel whose `entry_points.txt` holds the `setup.py`
+  entry. So an empty table is no opt-out, and the proposal (2.3) does not treat
+  it as one.
+
+The #122 reporter's project (`omaha-bgg/proto-ng` at `66bbc7a3`) has neither
+`setup.py` nor `setup.cfg` (both 404) and declares its entry points in
+`[project]`.
+
 ## What held
 
 - **S1, `[project]` tables vs real backends (A1).** A project with `scripts`,
