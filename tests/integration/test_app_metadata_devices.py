@@ -466,36 +466,8 @@ def _ios_report(udid: str, app: Path, *, wait: float = 120) -> dict:
 
 
 def _codesign_ok(app: Path) -> None:
-    _run(["codesign", "--verify", "--deep", "--strict", str(app)])
-
-
-#: Found by this driver on a physical iPhone, 2026-10-14, and not caused by the
-#: package metadata: with the metadata step switched off it happens the same.
-DEVICE_REBUILD_SIGNING = (
-    "known, not this change: an Xcode-only rebuild of a device build re-runs "
-    "install_python, which rewrites the Frameworks/*.framework binaries, and "
-    "Xcode does not sign them again (test-matrix.md section 7, 2026-10-14)"
-)
-
-
-def _codesign_after_rebuild(app: Path) -> None:
-    """``_codesign_ok``, except for the device rebuild bug above.
-
-    It is excused only while every file codesign names is under
-    ``Frameworks/``; one in ``app/`` would be this change's, and fails.
-    """
-    proc = _run(
-        ["codesign", "--verify", "--deep", "--strict", "-vvvv", str(app)],
-        check=False,
-    )
-    if proc.returncode == 0:
-        return
-    said = proc.stdout + proc.stderr  # -vvvv names the files on stdout
-    named = re.findall(r"^file (?:modified|added|missing): (.*)$", said, re.M)
-    frameworks = app.resolve() / "Frameworks"
-    if named and all(Path(n).resolve().is_relative_to(frameworks) for n in named):
-        pytest.xfail(DEVICE_REBUILD_SIGNING)
-    pytest.fail(_failure("codesign --verify after an Xcode-only rebuild", proc))
+    # -vvvv names the files a broken seal disagrees with, in the failure.
+    _run(["codesign", "--verify", "--deep", "--strict", "-vvvv", str(app)])
 
 
 def _bundle_metadata(app: Path) -> list[str]:
@@ -855,7 +827,7 @@ def test_xcode_only_rebuilds(platform_project, request, tmp_path):
         _run(argv, timeout=1200)
         # Before signing is judged: what the Build Python script left in app/.
         assert _bundle_metadata(app) == [GENERATED]
-        _codesign_after_rebuild(app)
+        _codesign_ok(app)
         return report_of(app)
 
     # 1. Nothing changed.

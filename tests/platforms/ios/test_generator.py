@@ -159,6 +159,33 @@ class TestPbxprojGeneration:
         text = (layout.xcodeproj / "project.pbxproj").read_text()
         assert "alwaysOutOfDate = 1" in text
 
+    def test_run_script_declares_its_bundle_outputs(self, config, project_root):
+        # Xcode re-signs the app after the script only if the script's writes
+        # are declared outputs inside the product; undeclared, an incremental
+        # device build kept a seal over binaries install_python had re-signed.
+        # Xcode tracks an output only if it is under
+        # $(TARGET_BUILD_DIR)/$(WRAPPER_NAME), so the spelling is the contract.
+        from kivyforge.platforms.ios.buildsettings import BUILD_PYTHON_OUTPUTS
+
+        materialize_project(config, project_root)
+        layout = materialize_project(config, project_root)  # regenerated
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        target = project.get_target_by_name("touchtracer")
+        assert target is not None
+        (script,) = [
+            project.get_object(p)
+            for p in target.buildPhases
+            if project.get_object(p).isa == "PBXShellScriptBuildPhase"
+        ]
+        assert list(script.outputPaths) == list(BUILD_PYTHON_OUTPUTS)
+        assert {p.rsplit("/", 1)[1] for p in script.outputPaths} == {
+            "python",
+            "pip-deps",
+            "Frameworks",
+        }
+        for path in script.outputPaths:
+            assert path.startswith("$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/")
+
     def test_always_search_user_paths_no(self, config, project_root):
         layout = materialize_project(config, project_root)
         project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
