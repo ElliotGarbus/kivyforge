@@ -1245,6 +1245,18 @@ jobs:
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
       run: pytest -q
+    - name: Build backends agree with the generated app metadata (live)
+      # docs/design/dev/package-metadata-proposal.md, layer 2: five real build
+      # backends, and setuptools' handling of entry points outside [project],
+      # which the KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT error rests on.
+      run: pytest tests/bundle/test_app_metadata_live.py -v --no-cov --app-metadata-live
+    - name: Package metadata inside a real macOS app (metaprobe)
+      # Layer 3 for macOS: builds and runs tests/fixtures/apps/metaprobe and
+      # reads what importlib.metadata finds in the .app, with and without a
+      # development egg-info, release and dynamic variants included.
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: pytest tests/integration/test_app_metadata_devices.py -v --no-cov --metaprobe macos
 
   # The iOS simulator gate: roadmap item 5 asked for this "when the wheels it
   # waits on are published" — they were, 2026-07-27, and this closes that out.
@@ -1354,8 +1366,8 @@ jobs:
         xcrun simctl io booted screenshot hello-kivy-simulator.png
     - name: Upload the simulator screenshot
       if: always()
-      # Non-gating: the screenshot is for a human, and every gating step has
-      # already run. An artifact-service outage (ENOTFOUND from CreateArtifact,
+      # Non-gating: the screenshot is for a human, and the build, T3 and launch
+      # steps have already run. An artifact-service outage (ENOTFOUND from CreateArtifact,
       # 2026-10-03) must not fail a job whose build, T3 and launch all passed.
       continue-on-error: true
       uses: actions/upload-artifact@v6
@@ -1363,6 +1375,14 @@ jobs:
         name: ios-simulator-screenshot
         path: ${{ env.APP_DIR }}/hello-kivy-simulator.png
         if-no-files-found: ignore
+    - name: Package metadata inside a real iOS app (metaprobe)
+      # Layer 3 of docs/design/dev/package-metadata-proposal.md for the
+      # simulator, Xcode-only rebuilds included. After the screenshot, which
+      # must show hello-kivy; the simulator is booted by then, and the driver
+      # leaves running what it did not boot.
+      env:
+        KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
+      run: pytest tests/integration/test_app_metadata_devices.py -v --no-cov --metaprobe ios-sim
     - name: Upload the generated project on failure (for triage)
       if: failure()
       uses: actions/upload-artifact@v6

@@ -74,3 +74,12 @@ richer case is a *separate* fixture, not this one growing.
 | `linux-gate` | Linux `x86_64` | `kivyforge package -p linux` end to end on a real `appimagetool`, then the full Linux T3 pass over the AppDir it produced |
 | `macos-gate` | macOS `arm64` | `kivyforge package -p macos` end to end ad-hoc signed (no certificate needed), then the full macOS T3 pass — including the `Info.plist`-vs-config comparison — over the `.app` it produced |
 | `windows-gate` | Windows `amd64` | `kivyforge package -p windows` end to end, the full Windows T3 pass over the onedir bundle, then signing that bundle's launcher with a throwaway cert and verifying it — the built-app signature check `windows_signing` cannot do on a vendored binary |
+| `metaprobe` | macOS, iOS simulator, Android emulator | What `importlib.metadata` sees inside the built app: its own name, version, entry points and modules, and its dependencies' entry points. Driven by `tests/integration/test_app_metadata_devices.py` (`--metaprobe`), not by a gate job ([package-metadata-proposal.md](../../../docs/design/dev/package-metadata-proposal.md), layer 3) |
+
+## `metaprobe` commits no lock
+
+It is the exception to the rule above. Its two dependencies are wheels the
+driver builds from `deps/` on every run, and a lock records their hashes, so a
+committed lock would be stale after one run. The driver copies the fixture to a
+temporary directory, builds the wheels and locks there, and the fixture's
+`.gitignore` covers the same outputs for anyone who runs kivyforge in it by hand.

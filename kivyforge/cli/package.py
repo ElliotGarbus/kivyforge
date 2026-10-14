@@ -19,7 +19,7 @@ from ._platform import (
     reject_unread,
     resolve_target,
 )
-from ._version import resolve_for_verb, version_options
+from ._version import check_app_metadata, resolve_for_verb, version_options
 
 
 @click.command()
@@ -140,6 +140,7 @@ def package(
             exports=True,
             export_method=export_method,
         )
+        check_app_metadata(report, project_root)
 
         outcome = backend.package(
             project_root,

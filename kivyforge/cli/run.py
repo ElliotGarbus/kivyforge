@@ -11,7 +11,12 @@ from ..report import Report
 from ..report.transfers import transfers_to
 from ._common import ToolchainError
 from ._platform import platform_option, reject_android_only, resolve_target
-from ._version import reject_unused, resolve_for_verb, version_options
+from ._version import (
+    check_app_metadata,
+    reject_unused,
+    resolve_for_verb,
+    version_options,
+)
 
 
 @click.command()
@@ -167,7 +172,7 @@ def _run(
     def resolve():
         if not builds:
             return None
-        return resolve_for_verb(
+        version = resolve_for_verb(
             report,
             project_root,
             platform=backend.name,
@@ -175,6 +180,8 @@ def _run(
             no_build_isolation=no_build_isolation,
             exports=False,
         )
+        check_app_metadata(report, project_root)
+        return version
 
     reject_android_only(
         backend,
