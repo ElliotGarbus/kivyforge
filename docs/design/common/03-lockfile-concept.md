@@ -118,7 +118,17 @@ rebuilt rather than immutable, and whose builds are not bit-reproducible.
 
 That also keeps `kivyforge lock --check` meaningful for them: it compares a
 committed lock against `pyproject.toml`, so against a gitignored lock it can
-only ever report "out of date". `examples/verify-android.ps1` runs that check
+only ever report "out of date".
+
+`lock --check` does more than compare hashes: it **re-resolves** against the
+index and reports any package whose resolved version moved. With a floor such
+as `more-itertools>=10.5`, a new upstream release fails the check while nothing
+in the repo changed (2026-10-14: `more-itertools` 11.2.0 broke the iOS
+simulator job). So a gate example **pins every package its lock holds exactly**,
+transitive ones included (`hello-kivy` lists `filetype`, which Kivy pulls in).
+Its lock then changes only when someone edits the pins, which is also when its
+on-device result needs re-establishing. `hello-kivy` is pinned; the desktop
+gate fixtures under `tests/fixtures/apps/*-gate` (`kivy>=2.3.1`) are not yet. `examples/verify-android.ps1` runs that check
 and falls back to re-locking, so it stays correct either way — but only the
 gate examples actually exercise it.
 
