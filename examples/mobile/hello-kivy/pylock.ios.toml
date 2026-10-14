@@ -9,6 +9,9 @@ default-groups = []
 name = "filetype"
 version = "1.2.0"
 
+[packages.tool.kivyforge]
+direct_requirement = true
+
 [[packages.wheels]]
 name = "filetype-1.2.0-py2.py3-none-any.whl"
 url = "https://files.pythonhosted.org/packages/18/79/1b8fa1bb3568781e84c9200f951c735f3f157429f44be0495da55894d620/filetype-1.2.0-py2.py3-none-any.whl"
@@ -49,8 +52,8 @@ hashes = { sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd54212
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
-generated_at = "2026-10-13T13:14:28Z"
-pyproject_sha256 = "fc8dbced07c9fe739de7149481eff073d50466d51f91c2a50c57b42a040def88"
+generated_at = "2026-10-14T01:35:03Z"
+pyproject_sha256 = "1bff1e753f806be3858832c405d09ddb26038e01a61a0a317d3cfcde5a84d229"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]
