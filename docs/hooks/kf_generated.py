@@ -215,6 +215,23 @@ _DIAGNOSTIC = {
         "build backend did not run.",
         "Nothing to do; drop the flag for this project.",
     ),
+    "KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT": (
+        "error",
+        "A setuptools project declares entry points in `setup.cfg` or "
+        "`setup.py` and none in `[project]`, where kivyforge reads them to write "
+        "the app's package metadata. Exit 1; `context` names the `path`.",
+        "Move them into `[project.entry-points]` (console scripts into "
+        "`[project.scripts]`, GUI scripts into `[project.gui-scripts]`).",
+    ),
+    "KF-METADATA-NOT-GENERATED": (
+        "warning",
+        "`[project].dynamic` lists `entry-points`, `scripts` or `gui-scripts`, "
+        "so kivyforge writes no package metadata for the app. `context`: "
+        "`reason` (`dynamic` or `static-and-dynamic`) and `fallback`, the "
+        "development egg-info that ships instead, or `none`.",
+        "Declare the entry points statically in `[project]`; until then, run "
+        "`pip install -e .` before each build.",
+    ),
     "KF-ERROR": (
         "error",
         "An expected failure with no more specific code assigned yet.",

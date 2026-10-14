@@ -7,9 +7,12 @@ from pathlib import Path
 from kivyforge.config.model import Config
 
 from .entitlements import xcode_profile_specifier
-from .staging import StagingLayout
+from .staging import APP_METADATA_DIR, StagingLayout
 
-BUILD_PYTHON_SCRIPT = (
+#: The Build Python script up to package metadata (0.x to 3.0.0.dev1). Kept
+#: verbatim: the generator finds the phase to replace by its exact text, so
+#: without it a project generated before would end up with both phases.
+_BUILD_PYTHON_SCRIPT_V1 = (
     "set -e\n"
     'UTILS="$PROJECT_DIR/Python.xcframework/build/build_utils.sh"\n'
     'if [ ! -f "$UTILS" ]; then UTILS="$PROJECT_DIR/Python.xcframework/build/utils.sh"; fi\n'
@@ -39,6 +42,49 @@ BUILD_PYTHON_SCRIPT = (
     'rsync -a --delete "$PIP_DEPS_SRC/" "$CODESIGNING_FOLDER_PATH/pip-deps/"\n'
     "install_python Python.xcframework app pip-deps\n"
 )
+
+#: The app's own package metadata (docs/design/dev/package-metadata-proposal.md
+#: 2.2). Copy Bundle Resources has just copied ``app/`` into the bundle -- in a
+#: debug build, the folder ``<app>-ios/app`` links to, which is ``app_dir`` --
+#: and code signing comes after this script (spike F6). So this is where every
+#: build, debug or release, and every Xcode-only rebuild, replaces the
+#: development egg-info that copy carries, and any stale ``.dist-info`` of the
+#: app's own name, with the folder ``kivyforge build`` staged. With nothing
+#: staged (entry points in ``dynamic``) the copy is left alone. It never runs
+#: through a link: that would delete from the user's source tree.
+APP_METADATA_SCRIPT = (
+    "# The app's own package metadata, staged by `kivyforge build`, in place of\n"
+    "# any development egg-info. Only ever in the bundle's copy of app/.\n"
+    'APP_BUNDLE_DIR="$CODESIGNING_FOLDER_PATH/app"\n'
+    f'APP_METADATA_SRC="$PROJECT_DIR/{APP_METADATA_DIR}"\n'
+    'if [ -L "$APP_BUNDLE_DIR" ]; then\n'
+    '    echo "error: $APP_BUNDLE_DIR is a symlink; refusing to edit through it."\n'
+    "    exit 1\n"
+    "fi\n"
+    'if [ -d "$APP_METADATA_SRC" ]; then\n'
+    '    find "$APP_BUNDLE_DIR" -mindepth 1 -maxdepth 1 -name "*.egg-info" '
+    "-exec rm -rf {} +\n"
+    '    for META in "$APP_METADATA_SRC"/*.dist-info; do\n'
+    '        [ -d "$META" ] || continue\n'
+    '        OWN="$(basename "$META")"\n'
+    '        OWN="${OWN%%-*}"\n'
+    "        # Any spelling of the app's name, normalized as Python reads it.\n"
+    '        for DIST in "$APP_BUNDLE_DIR"/*.dist-info; do\n'
+    '            [ -e "$DIST" ] || continue\n'
+    '            NAME="$(basename "$DIST" .dist-info)"\n'
+    "            NAME=\"$(printf '%s' \"${NAME%%-*}\" | tr '[:upper:]' '[:lower:]' "
+    "| sed -E 's/[-_.]+/_/g')\"\n"
+    '            if [ "$NAME" = "$OWN" ]; then rm -rf "$DIST"; fi\n'
+    "        done\n"
+    "    done\n"
+    '    rsync -a "$APP_METADATA_SRC/" "$APP_BUNDLE_DIR/"\n'
+    "fi\n"
+)
+
+BUILD_PYTHON_SCRIPT = _BUILD_PYTHON_SCRIPT_V1 + APP_METADATA_SCRIPT
+
+#: Every earlier text of the phase, oldest first, for the generator to remove.
+PREVIOUS_BUILD_PYTHON_SCRIPTS = (_BUILD_PYTHON_SCRIPT_V1,)
 
 
 def managed_settings(

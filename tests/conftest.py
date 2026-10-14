@@ -215,6 +215,14 @@ def pytest_addoption(parser):
         action="store_true",
         help="Run the pip metadata-preparation tests: needs git and network.",
     )
+    # Nor these: real build backends, to pin what the generated app metadata
+    # agrees with (docs/design/dev/package-metadata-proposal.md, layer 2).
+    pip_metadata.addoption(
+        "--app-metadata-live",
+        action="store_true",
+        help="Build wheels with five real build backends and compare their "
+        "entry points with kivyforge's generated metadata: needs network.",
+    )
     # Not an artifact: an app built, launched and asked what importlib.metadata
     # sees inside it (docs/design/dev/package-metadata-proposal.md, layer 3).
     metaprobe = parser.getgroup("kivyforge app metadata on devices (live)")

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -47,6 +48,7 @@ LOCK_PLATFORM = {"macos": "macos", "ios-sim": "ios", "android-emu": "android"}
 APP = "metaprobe-app"
 APP_ID = "org.kivyforge.metaprobe"
 VERSION = "1.2.3"
+GENERATED = f"metaprobe_app-{VERSION}.dist-info"
 ALIASES = ("metaprobe-app", "metaprobe_app", "Metaprobe.App")
 AVD = os.environ.get("METAPROBE_AVD", "kf_api35_arm64")
 ABI = "arm64_v8a"
@@ -154,12 +156,43 @@ KIVYFORGE = [
     "from kivyforge.cli import main; main(prog_name='kivyforge')",
 ]
 
+#: ``kivyforge`` that also logs every ``xcodebuild`` argv it runs to the file
+#: named by its first argument: the Xcode-only rebuilds replay that command, as
+#: Cmd-R does. ``kivyforge.cli`` is imported first because the iOS backend
+#: imports it back; the backend's own name for ``run_command`` is replaced too.
+CAPTURING_KIVYFORGE = [
+    sys.executable,
+    "-c",
+    """\
+import json, sys
+import kivyforge.cli
+from kivyforge.platforms.ios import cli as ios_cli
+from kivyforge.platforms.ios.xcode import runner
+
+log = sys.argv.pop(1)
+real = runner.run_command
+
+def capture(argv, *args, **kwargs):
+    if argv and argv[0] == "xcodebuild":
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(list(argv)) + "\\n")
+    return real(argv, *args, **kwargs)
+
+runner.run_command = ios_cli.run_command = capture
+kivyforge.cli.main(prog_name="kivyforge")
+""",
+]
+
 
 def _kf(
-    project: Path, *args: str, env: dict[str, str] | None = None, timeout=1800
+    project: Path,
+    *args: str,
+    env: dict[str, str] | None = None,
+    timeout: float = 1800,
+    command: list[str] = KIVYFORGE,
 ) -> subprocess.CompletedProcess[str]:
     proc = _run(
-        [*KIVYFORGE, *args],
+        [*command, *args],
         cwd=project,
         env=_env(env),
         timeout=timeout,
@@ -168,6 +201,12 @@ def _kf(
     if proc.returncode != 0:
         pytest.fail(_failure(f"kivyforge {' '.join(args)}", proc))
     return proc
+
+
+def _envelope(proc: subprocess.CompletedProcess[str]) -> dict:
+    envelope = json.loads(proc.stdout)
+    assert envelope["ok"], envelope
+    return envelope
 
 
 # --------------------------------------------------------------------------- #
@@ -225,6 +264,20 @@ def _project(locked: dict[str, Path], platform: str, tmp_path: Path) -> Path:
     return project
 
 
+def _relock(platform: str, project: Path) -> None:
+    """After an edit to ``pyproject.toml``, which the lock hashes."""
+    _kf(project, "lock", "-p", LOCK_PLATFORM[platform])
+
+
+def _edit_pyproject(project: Path, *edits: tuple[str, str]) -> None:
+    path = project / "pyproject.toml"
+    text = path.read_text(encoding="utf-8")
+    for old, new in edits:
+        assert old in text, old
+        text = text.replace(old, new)
+    path.write_text(text, encoding="utf-8")
+
+
 def _mark(project: Path) -> str:
     """Stamp ``main.py`` with a fresh ``BUILD_MARK``; return it."""
     mark = uuid.uuid4().hex
@@ -254,6 +307,45 @@ def _dev_install_egg_info(project: Path) -> Path:
     return found[0]
 
 
+def _make_stale(egg_info: Path, version: str) -> None:
+    """The egg-info of an install made before the last edits (#122's state)."""
+    pkg_info = egg_info / "PKG-INFO"
+    text = pkg_info.read_text(encoding="utf-8")
+    pkg_info.write_text(
+        re.sub(r"^Version: .*$", f"Version: {version}", text, flags=re.M),
+        encoding="utf-8",
+    )
+    with (egg_info / "entry_points.txt").open("a", encoding="utf-8") as fh:
+        fh.write("\n[metaprobe.plugins]\nstale-plugin = metaprobe_app.gone:Gone\n")
+
+
+def _plant_renamed_project(project: Path) -> None:
+    """A renamed project's leftover, whose plugins entry_points() would collect."""
+    old = project / "src" / "oldprobe.egg-info"
+    old.mkdir()
+    (old / "PKG-INFO").write_text(
+        "Metadata-Version: 2.1\nName: oldprobe\nVersion: 0.1\n", encoding="utf-8"
+    )
+    (old / "entry_points.txt").write_text(
+        "[metaprobe.plugins]\nold-plugin = oldprobe:Old\n", encoding="utf-8"
+    )
+
+
+def _git(project: Path, *args: str) -> str:
+    # No global or system config, so the user's signing or hooks cannot apply.
+    env = _env(
+        {
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@example.invalid",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@example.invalid",
+        }
+    )
+    return _run(["git", *args], cwd=project, env=env).stdout.strip()
+
+
 # --------------------------------------------------------------------------- #
 # macOS
 # --------------------------------------------------------------------------- #
@@ -266,19 +358,23 @@ def _report_from_lines(text: str) -> dict:
     raise AssertionError(f"no METAPROBE line in the app's output:\n{text[-3000:]}")
 
 
-def _macos_report(project: Path, *, release: bool = False) -> dict:
+def _macos_env(project: Path) -> dict[str, str]:
+    # Without it the probe would write into the home directory.
     out = project.parent / "macos-out"
     out.mkdir(exist_ok=True)
+    return {"METAPROBE_OUT": str(out)}
+
+
+def _macos_report(project: Path, *, release: bool = False) -> dict:
     flags = ["--release"] if release else []
-    proc = _kf(
-        project,
-        "run",
-        "-p",
-        "macos",
-        *flags,
-        env={"METAPROBE_OUT": str(out)},
-        timeout=900,
-    )
+    proc = _kf(project, "run", "-p", "macos", *flags, env=_macos_env(project))
+    return _report_from_lines(proc.stdout)
+
+
+def _macos_launch(project: Path, app: Path) -> dict:
+    """The built ``.app``'s executable, run as ``kivyforge run`` runs it."""
+    (exe,) = (app / "Contents" / "MacOS").iterdir()
+    proc = _run([str(exe)], env=_env(_macos_env(project)), timeout=300)
     return _report_from_lines(proc.stdout)
 
 
@@ -322,11 +418,12 @@ def simulator(selected) -> Iterator[str]:
         _run(["xcrun", "simctl", "shutdown", udid], check=False)
 
 
-def _ios_build(project: Path, *, env: dict[str, str] | None = None) -> dict:
-    proc = _kf(project, "build", "-p", "ios", "--simulator", "--json", env=env)
-    envelope = json.loads(proc.stdout)
-    assert envelope["ok"], envelope
-    return envelope
+def _ios_build(project: Path, *, capture: Path | None = None) -> dict:
+    args = ("build", "-p", "ios", "--simulator", "--json")
+    if capture is None:
+        return _envelope(_kf(project, *args))
+    command = [*CAPTURING_KIVYFORGE, str(capture)]
+    return _envelope(_kf(project, *args, command=command))
 
 
 def _ios_app(project: Path, envelope: dict) -> Path:
@@ -356,6 +453,10 @@ def _ios_report(udid: str, app: Path, *, wait: float = 120) -> dict:
     raise AssertionError(f"no metaprobe.json in {container} after {wait:g} s")
 
 
+def _codesign_ok(app: Path) -> None:
+    _run(["codesign", "--verify", "--deep", "--strict", str(app)])
+
+
 # --------------------------------------------------------------------------- #
 # Android emulator
 # --------------------------------------------------------------------------- #
@@ -383,11 +484,14 @@ def emulator(selected) -> Iterator[str]:
         _run([adb, "-s", serial, "emu", "kill"], check=False)
 
 
-def _android_report(project: Path, serial: str, *, release: bool = False) -> dict:
+def _android_report(
+    project: Path, serial: str, *, release: bool = False, no_build: bool = False
+) -> dict:
     adb = [_adb_path(), "-s", serial]
     # A clean install: an app left by an earlier run must not answer.
     _run([*adb, "uninstall", APP_ID], check=False)
     flags = ["--release"] if release else []
+    flags += ["--no-build"] if no_build else []
     proc = _kf(
         project,
         "run",
@@ -396,11 +500,9 @@ def _android_report(project: Path, serial: str, *, release: bool = False) -> dic
         "--emulator",
         "--avd",
         AVD,
-        "--abi",
-        ABI,
+        *([] if no_build else ["--abi", ABI]),
         "--no-follow",
         *flags,
-        timeout=1800,
     )
     if release:
         # Not debuggable, so run-as cannot read the file: reassemble the
@@ -427,13 +529,29 @@ def _android_report(project: Path, serial: str, *, release: bool = False) -> dic
     raise AssertionError(f"no files/metaprobe.json for {APP_ID}:\n{said}")
 
 
+def _apk_version_name(apk: Path) -> str:
+    tools = Path(_env()["ANDROID_HOME"]) / "build-tools"
+    aapt2 = max(tools.glob("*/aapt2"), key=lambda p: p.parent.name)
+    badging = _run([str(aapt2), "dump", "badging", str(apk)]).stdout
+    found = re.search(r"versionName='([^']*)'", badging)
+    assert found, badging[:500]
+    return found.group(1)
+
+
 # --------------------------------------------------------------------------- #
 # Collecting a report, any platform
 # --------------------------------------------------------------------------- #
 
 
-def _collect(platform: str, project: Path, request, *, release: bool = False) -> dict:
-    mark = _mark(project)
+def _collect(
+    platform: str,
+    project: Path,
+    request,
+    *,
+    release: bool = False,
+    mark: str | None = None,
+) -> dict:
+    mark = mark or _mark(project)
     if platform == "macos":
         report = _macos_report(project, release=release)
     elif platform == "ios-sim":
@@ -442,11 +560,36 @@ def _collect(platform: str, project: Path, request, *, release: bool = False) ->
     else:
         serial = request.getfixturevalue("emulator")
         report = _android_report(project, serial, release=release)
+    return _checked(platform, report, mark)
+
+
+def _checked(platform: str, report: dict, mark: str) -> dict:
     # Shown with the failure, if there is one.
     print(f"{platform} report:", json.dumps(report, indent=1, sort_keys=True))
     assert "error" not in report, report["error"]
     assert report["build_mark"] == mark, "the report came from another build"
     return report
+
+
+def _built_with_json(
+    platform: str, project: Path, request, *, mark: str | None = None
+) -> tuple[dict, dict]:
+    """``build --json`` (for its version and diagnostics), then the app's report."""
+    mark = mark or _mark(project)
+    if platform == "macos":
+        envelope = _envelope(_kf(project, "build", "-p", "macos", "--json"))
+        (app,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "app"]
+        report = _macos_launch(project, project / app["path"])
+    elif platform == "ios-sim":
+        envelope = _ios_build(project)
+        udid = request.getfixturevalue("simulator")
+        report = _ios_report(udid, _ios_app(project, envelope))
+    else:
+        args = ("build", "-p", "android", "--debug", "--abi", ABI, "--json")
+        envelope = _envelope(_kf(project, *args))
+        serial = request.getfixturevalue("emulator")
+        report = _android_report(project, serial, no_build=True)
+    return envelope, _checked(platform, report, mark)
 
 
 @pytest.fixture
@@ -463,28 +606,201 @@ def platform_project(request, selected, locked, tmp_path):
     return platform, _project(locked, platform, tmp_path)
 
 
-def _assert_finds_its_metadata(report: dict) -> None:
+def _assert_finds_its_metadata(report: dict, version: str = VERSION) -> None:
     for alias in ALIASES:
         found = report[f"distribution:{alias}"]
-        assert found is not None, f"{alias!r} not found: {report}"
-        assert found["version"] == VERSION, found
+        assert found is not None, f"{alias!r} not found"
+        assert found["version"] == version, found
         assert found["name"] == APP, found
     assert report["app_entry_points"] == APP_ENTRY_POINTS
     assert report["plugins"] == PLUGINS
     assert report["loaded"] == "metaprobe_dep.Demo"
 
 
+def _assert_generated(report: dict, version: str = VERSION) -> None:
+    """The app's only metadata is the folder kivyforge wrote (2.1, 2.2)."""
+    _assert_finds_its_metadata(report, version)
+    (copy,) = report["app_copies"]
+    assert Path(copy).name == f"metaprobe_app-{version}.dist-info", copy
+    assert Path(copy).parent.name == "app", copy
+    assert report["app_files"] is None  # no RECORD
+    assert report["app_requires"] is None  # no Requires-Dist
+    assert report["packages_distributions"] == {
+        "main": [APP],
+        "metaprobe_app": [APP],
+        "assets": [],  # an asset folder is not a module
+    }
+
+
 # --------------------------------------------------------------------------- #
-# Variants
+# Variants (proposal section 5, layer 3)
 # --------------------------------------------------------------------------- #
+
+RELEASE_PLATFORMS = ("macos", "android-emu")
 
 
 @pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
 def test_dev_install_egg_info(platform_project, request):
-    """The baseline: a src layout after ``pip install -e .`` finds its metadata."""
+    """The baseline: a src layout after ``pip install -e .`` finds its metadata.
+
+    It passed on ``main`` through the egg-info; now through the generated
+    folder, with the egg-info left in the source tree.
+    """
     platform, project = platform_project
-    _dev_install_egg_info(project)
+    egg_info = _dev_install_egg_info(project)
 
     report = _collect(platform, project, request)
 
+    _assert_generated(report)
+    assert egg_info.is_dir()
+
+
+@pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
+def test_no_egg_info(platform_project, request):
+    """No dev install: hatch, flit, a flat layout, a fresh CI checkout (#122)."""
+    platform, project = platform_project
+
+    report = _collect(platform, project, request)
+
+    _assert_generated(report)
+
+
+@pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
+def test_stale_egg_info(platform_project, request):
+    """An old dev install and a renamed project's leftover reach nothing."""
+    platform, project = platform_project
+    _make_stale(_dev_install_egg_info(project), "0.0.1")
+    _plant_renamed_project(project)
+
+    report = _collect(platform, project, request)
+
+    _assert_generated(report)  # no stale-plugin, no old-plugin, version 1.2.3
+
+
+@pytest.mark.parametrize("platform_project", RELEASE_PLATFORMS, indirect=True)
+def test_release(platform_project, request):
+    """Byte-compiled and source-stripped, with a stale egg-info in the tree."""
+    platform, project = platform_project
+    _make_stale(_dev_install_egg_info(project), "0.0.1")
+
+    report = _collect(platform, project, request, release=True)
+
+    assert report["main_file"] == "main.pyc"
+    _assert_generated(report)
+
+
+@pytest.mark.parametrize("platform_project", ["ios-sim"], indirect=True)
+def test_xcode_only_rebuilds(platform_project, request, tmp_path):
+    """Cmd-R after ``kivyforge build`` (F6): Xcode re-copies ``app/`` -- the
+    link to ``app_dir`` in a debug build -- and the Build Python script must
+    remove the egg-info and copy the staged metadata in every time, before
+    signing, without touching the source tree."""
+    _, project = platform_project
+    udid = request.getfixturevalue("simulator")
+    egg_info = _dev_install_egg_info(project)
+    _make_stale(egg_info, "0.0.1")
+    captured = tmp_path / "xcodebuild.jsonl"
+    mark = _mark(project)
+    app = _ios_app(project, _ios_build(project, capture=captured))
+    (argv,) = [
+        json.loads(line)
+        for line in captured.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)[-1] == "build"
+    ]
+    _codesign_ok(app)
+    _assert_generated(_checked("ios-sim", _ios_report(udid, app), mark))
+
+    def xcode_only() -> dict:
+        _run(argv, timeout=1200)
+        _codesign_ok(app)
+        return _ios_report(udid, app)
+
+    # 1. Nothing changed.
+    _assert_generated(_checked("ios-sim", xcode_only(), mark))
+    # 2. An edit in src/ reaches the app: the link loop still works.
+    mark = _mark(project)
+    _assert_generated(_checked("ios-sim", xcode_only(), mark))
+    # 3. A dev install rewrites the egg-info; the bundle still has only ours.
+    _make_stale(egg_info, "0.0.2")
+    _assert_generated(_checked("ios-sim", xcode_only(), mark))
+    assert "Version: 0.0.2" in (egg_info / "PKG-INFO").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
+def test_dynamic_version(platform_project, request):
+    """setuptools-scm, one commit past a tag: one version in every place."""
+    platform, project = platform_project
+    _edit_pyproject(
+        project,
+        ('"setuptools>=64"]', '"setuptools>=64", "setuptools-scm>=8"]'),
+        ('version = "1.2.3"', 'dynamic = ["version"]'),
+    )
+    with (project / "pyproject.toml").open("a", encoding="utf-8") as fh:
+        fh.write("\n[tool.setuptools_scm]\n")
+    _relock(platform, project)
+    mark = _mark(project)  # before the commit: a dirty tree changes the version
+    _git(project, "init", "-q")
+    _git(project, "add", ".")
+    _git(project, "commit", "-q", "-m", "init")
+    _git(project, "tag", "v1.2.3")
+    (project / "CHANGES").write_text("one more\n", encoding="utf-8")
+    _git(project, "add", "CHANGES")
+    _git(project, "commit", "-q", "-m", "after the tag")
+
+    envelope, report = _built_with_json(platform, project, request, mark=mark)
+
+    version = envelope["data"]["version"]
+    assert version["source"] == "backend"
+    assert re.fullmatch(r"1\.2\.4\.dev1\+g[0-9a-f]+", version["value"]), version
+    _assert_generated(report, version["value"])
+    if platform == "android-emu":
+        dest = project / "metaprobe-app-android" / "app" / "build" / "outputs"
+        shipped = _apk_version_name(dest / "apk" / "debug" / "app-debug.apk")
+    else:
+        (app,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "app"]
+        contents = "Contents/" if platform == "macos" else ""
+        plist = (project / app["path"] / f"{contents}Info.plist").read_bytes()
+        shipped = plistlib.loads(plist)["CFBundleShortVersionString"]
+    assert shipped == version["value"]
+
+
+@pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
+def test_dynamic_entry_points(platform_project, request):
+    """D2: entry points from ``setup.cfg``, ``entry-points`` in ``dynamic``.
+
+    kivyforge cannot know them, so it warns, generates nothing and removes
+    nothing; the dev install's egg-info carries them into the app.
+    """
+    platform, project = platform_project
+    _edit_pyproject(
+        project,
+        ('version = "1.2.3"', 'version = "1.2.3"\ndynamic = ["entry-points"]'),
+        (
+            '[project.entry-points."metaprobe.plugins"]\n'
+            'app-plugin = "metaprobe_app.plugins:AppPlugin"\n'
+            'CasePlugin = "metaprobe_app.plugins:CasePlugin"\n',
+            "",
+        ),
+    )
+    (project / "setup.cfg").write_text(
+        "[options.entry_points]\n"
+        "metaprobe.plugins =\n"
+        "    app-plugin = metaprobe_app.plugins:AppPlugin\n"
+        "    CasePlugin = metaprobe_app.plugins:CasePlugin\n",
+        encoding="utf-8",
+    )
+    _relock(platform, project)
+    egg_info = _dev_install_egg_info(project)
+
+    envelope, report = _built_with_json(platform, project, request)
+
+    (warning,) = [
+        d for d in envelope["diagnostics"] if d["code"] == "KF-METADATA-NOT-GENERATED"
+    ]
+    assert warning["context"] == {
+        "reason": "static-and-dynamic",
+        "fallback": egg_info.relative_to(project).as_posix(),
+    }
     _assert_finds_its_metadata(report)
+    (copy,) = report["app_copies"]
+    assert Path(copy).name == "metaprobe_app.egg-info", copy

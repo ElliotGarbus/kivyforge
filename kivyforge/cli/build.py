@@ -22,7 +22,7 @@ from ._platform import (
     reject_unread,
     resolve_target,
 )
-from ._version import resolve_for_verb, version_options
+from ._version import check_app_metadata, resolve_for_verb, version_options
 
 
 @click.command()
@@ -142,6 +142,7 @@ def build(
             exports=target == "release",
             export_method=export_method,
         )
+        check_app_metadata(report, project_root)
 
         outcome = backend.build(
             project_root,

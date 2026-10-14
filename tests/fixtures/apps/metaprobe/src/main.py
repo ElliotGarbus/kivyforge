@@ -52,6 +52,8 @@ def _distribution(name):
 def _report():
     out = {
         "build_mark": BUILD_MARK,
+        # main.pyc in a release build that strips source.
+        "main_file": os.path.basename(__file__),
         "python": sys.version.split()[0],
         "sys_path": list(sys.path),
     }

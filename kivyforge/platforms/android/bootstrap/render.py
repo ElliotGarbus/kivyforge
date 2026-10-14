@@ -25,6 +25,8 @@ Substitution points today:
   process loads libpython itself.
 - ``PythonService.java`` ``SDL_LIB``: the generation's SDL library, which a
   service loads so pyjnius can reach the JavaVM through SDL on API 24-30.
+- ``_kivyforge_selftest.py`` ``EXPECTED_APP_METADATA``: the package metadata
+  kivyforge generated for the app, which the self-test looks up on the device.
 
 The per-service subclasses named by the manifest are generated from config, not
 from a template; see ``generate/services.py``.
@@ -38,6 +40,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
+from kivyforge.bundle.app_metadata import AppMetadata
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -347,9 +351,27 @@ def kivy_bootstrap_source() -> str:
     return _read(TEMPLATES_DIR / "bootstrap_py/_kivy_bootstrap.py")
 
 
-def selftest_source() -> str:
-    """The inert contract self-test, shipped in the asset bundle's bootstrap/."""
-    return _read(TEMPLATES_DIR / "bootstrap_py/_kivyforge_selftest.py")
+def selftest_source(app_metadata: AppMetadata | None = None) -> str:
+    """The inert contract self-test, shipped in the asset bundle's bootstrap/.
+
+    *app_metadata* is what this build generated for the app, which the
+    self-test then expects ``importlib.metadata`` to find on the device;
+    ``None`` when it generated nothing.
+    """
+    source = _read(TEMPLATES_DIR / "bootstrap_py/_kivyforge_selftest.py")
+    if app_metadata is None:
+        return source
+    expected = {
+        "name": app_metadata.name,
+        "version": app_metadata.version,
+        "entry_points": sorted(
+            [e.group, e.name, e.value] for e in app_metadata.entry_points
+        ),
+    }
+    marker = "EXPECTED_APP_METADATA = None\n"
+    if source.count(marker) != 1:
+        raise RenderError(f"the self-test template lost its marker: {marker!r}")
+    return source.replace(marker, f"EXPECTED_APP_METADATA = {expected!r}\n")
 
 
 def androidtest_files() -> list[RenderedFile]:
