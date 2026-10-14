@@ -89,8 +89,10 @@ kivyforge lock -p linux --check
 
 It exits `4` if the lock is out of date (`KF-LOCK-DRIFT`), missing
 (`KF-LOCK-MISSING`), or unreadable (`KF-LOCK-UNREADABLE`). Because it resolves
-again, it needs network access. The check is meaningful only against a
-committed lock.
+again, it needs network access, and a range specifier fails the check when a
+newer match is published.
+[Pin a package version](dependencies.md#pin-a-package-version) to keep the
+check stable. The check is meaningful only against a committed lock.
 
 `build` and `package` also refuse a lock that no longer matches
 `pyproject.toml`. `--no-verify-lock` skips that check. Use it only when a CI step

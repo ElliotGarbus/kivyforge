@@ -48,7 +48,10 @@ out of date. kivyforge calls this **drift**.
 
 - Re-lock with `kivyforge lock -p PLATFORM`, replacing `PLATFORM` with the
   target name. If the lock is already in sync, `lock` leaves it unchanged; add
-  `--update` to re-resolve anyway.
+  `--update` to re-resolve anyway. A re-lock resolves from scratch and takes
+  the newest version each specifier allows.
+  [Pin a package version](../guides/cross-platform/dependencies.md#pin-a-package-version)
+  to hold one still.
 - `build`, `run`, and `package` refuse to use a drifted lock. They exit with
   code 4 and `KF-LOCK-DRIFT` (or `KF-LOCK-MISSING` when there is no lock),
   rather than building something stale.

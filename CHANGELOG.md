@@ -49,6 +49,17 @@
 - **Added:** Android's contract self-test, run by `run --smoke`, checks that
   the app finds the metadata kivyforge generated.
 
+### Guides
+
+- **Added:** [Manage dependencies and re-lock](docs/guides/guides/cross-platform/dependencies.md)
+  explains how to pin a package with an exact specifier
+  ([#107](https://github.com/ElliotGarbus/kivyforge/issues/107)). A re-lock,
+  including one forced by an unrelated edit to `pyproject.toml`, resolves every
+  specifier to its newest match. `lock --check` does that resolve even when the
+  file hash still matches, so a range fails the check when a newer release
+  appears. `build` and `package` keep accepting that lock until the hash
+  changes.
+
 ## [v3.0.0.dev1](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0.dev1) - 2026-10-13
 
 ### Android
