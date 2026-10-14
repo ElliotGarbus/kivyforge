@@ -274,6 +274,28 @@ pass = [
 ]
 
 [[item]]
+id = "ios-device-app-metadata"
+title = "iOS: the app's generated package metadata on a physical iPhone"
+status = "runnable"
+hosts = ["macos"]
+target = "iOS device `arm64` (the app's own package metadata)"
+tier = "T4 + T5"
+needs = [
+    "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`; `METAPROBE_DEVICE` names it when there are several.",
+    "An Apple ID signed into Xcode whose team is passed in `KIVYFORGE_TEAM_ID`; automatic signing registers `org.kivyforge.metaprobe` the first time.",
+    "The phone unlocked for the whole run: every variant launches the app.",
+    "The network: the driver builds two wheels, locks, and lets pip fetch setuptools.",
+]
+commands = [
+    "KIVYFORGE_TEAM_ID=<your team> pytest tests/integration/test_app_metadata_devices.py -v --no-cov --metaprobe ios-device",
+]
+pass = [
+    "Every `[ios-device]` variant passes: dev install, no egg-info, stale egg-info, release (`package --export-method development`, installed from the .ipa), Xcode-only rebuilds, dynamic version and dynamic entry points.",
+    "Each Xcode-only rebuild leaves a signature `codesign --verify --deep --strict` accepts, from a real development identity: the Build Python script edits the bundle before Xcode signs it.",
+]
+record = ["iPhone model and iOS version.", "Xcode version."]
+
+[[item]]
 id = "macos-notarize"
 title = "macOS: Developer ID signing, notarization and stapling"
 status = "runnable"

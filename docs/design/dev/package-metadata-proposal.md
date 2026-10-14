@@ -1,8 +1,8 @@
 # Proposal — the app's own package metadata
 
 > Status: **implemented 2026-10-14** on branch `app-metadata-design`, not yet
-> released; layers 1-3 pass on this Mac, layer 4 is wired into CI, layer 5 is
-> open (section 5). What the implementation decided beyond this plan is in
+> released; layers 1-3 pass on this Mac, layer 4 is wired into CI, and of
+> layer 5 a physical iPhone has run (I8); the rest is open (section 5). What the implementation decided beyond this plan is in
 > section 11. Follows
 > [#122](https://github.com/ElliotGarbus/kivyforge/issues/122): #115 excluded
 > the `*.egg-info` that a src-layout app's `importlib.metadata` reads, and an
@@ -390,3 +390,4 @@ it found. None of it changes a decision in section 3.
 | I5 | The iOS script removes a stale `.dist-info` of the app's name by normalizing each folder's name as Python does, so `MyApp-0.9.dist-info` goes too. `_BUILD_PYTHON_SCRIPT_V1`, the script before this change, is kept as `PREVIOUS_BUILD_PYTHON_SCRIPTS`, so regenerating an existing project replaces its phase instead of adding a second (tested). |
 | I6 | **Found by the metaprobe:** with `scripts` declared in `[project]` and only `entry-points` in `dynamic`, setuptools 84.0.0 builds without `setup.cfg`'s `[options.entry_points]` groups, and says nothing. kivyforge warns (2.4) and generates nothing, so the app gets exactly what setuptools wrote; `tests/bundle/test_app_metadata_live.py` pins it, and the layer 3 variant lists all three keys in `dynamic`. |
 | I7 | The layer 3 driver shares this Mac's devices with other work: it prefers an already booted simulator, shuts down only what it booted, and uninstalls its probe app at the end. `METAPROBE_SIMULATOR` and `METAPROBE_AVD` choose the devices. |
+| I8 | **On a physical iPhone** (layer 5, `--metaprobe ios-device`, hardware checklist `ios-device-app-metadata`, 2026-10-14): the metadata holds in every variant, a release archive exported for development included. An Xcode-only rebuild of a *device* build, though, leaves the `Frameworks/*.framework` extension binaries modified after signing, so `codesign --verify` fails. It happens with the metadata step switched off too: `install_python` rewrites those binaries on every build and Xcode does not sign them again. The simulator is unaffected. Tracked separately; the device variant checks the bundle's `app/` and then xfails on exactly that. |

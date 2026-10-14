@@ -7,8 +7,9 @@ its ``main.py`` writes: which copy of the app's metadata it finds, its version,
 every entry point, ``packages_distributions()``, and whether a dependency's
 entry point loads. Nothing is written to the repository.
 
-Opt in per platform with ``--metaprobe macos,ios-sim,android-emu`` (any
-subset). Once opted in, a missing tool **fails**: the option is a promise that
+Opt in per platform with ``--metaprobe macos,ios-sim,android-emu,ios-device``
+(any subset). ``ios-device`` is a paired iPhone, signed with the team in
+``KIVYFORGE_TEAM_ID``; it is layer 5, so no CI job selects it. Once opted in, a missing tool **fails**: the option is a promise that
 the platform is there. Needs the network (wheels, locks, the setuptools a dev
 install fetches) and takes minutes per platform; the Android emulator and the
 iOS simulator are booted if needed, and shut down at the end only if this run
@@ -19,8 +20,9 @@ A report is accepted only from a build that succeeded, and only if it carries
 the ``BUILD_MARK`` this run wrote into ``main.py``. The spike this replaces
 once collected a stale report from an app a failed build had left installed.
 
-``METAPROBE_SIMULATOR`` (a name or UDID) and ``METAPROBE_AVD`` choose the
-devices; the defaults are the newest iPhone simulator and ``kf_api35_arm64``.
+``METAPROBE_SIMULATOR`` (a name or UDID), ``METAPROBE_AVD`` and
+``METAPROBE_DEVICE`` (a name or identifier) choose the devices; the defaults are
+the newest iPhone simulator, ``kf_api35_arm64`` and the one paired iPhone.
 """
 
 from __future__ import annotations
@@ -43,8 +45,13 @@ pytestmark = pytest.mark.requires_toolchain
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "tests" / "fixtures" / "apps" / "metaprobe"
-PLATFORMS = ("macos", "ios-sim", "android-emu")
-LOCK_PLATFORM = {"macos": "macos", "ios-sim": "ios", "android-emu": "android"}
+PLATFORMS = ("macos", "ios-sim", "android-emu", "ios-device")
+LOCK_PLATFORM = {
+    "macos": "macos",
+    "ios-sim": "ios",
+    "android-emu": "android",
+    "ios-device": "ios",
+}
 
 APP = "metaprobe-app"
 APP_ID = "org.kivyforge.metaprobe"
@@ -421,8 +428,10 @@ def simulator(selected) -> Iterator[str]:
         _run(["xcrun", "simctl", "shutdown", udid], check=False)
 
 
-def _ios_build(project: Path, *, capture: Path | None = None) -> dict:
-    args = ("build", "-p", "ios", "--simulator", "--json")
+def _ios_build(
+    project: Path, *, capture: Path | None = None, target: str = "simulator"
+) -> dict:
+    args = ("build", "-p", "ios", f"--{target}", "--json")
     if capture is None:
         return _envelope(_kf(project, *args))
     command = [*CAPTURING_KIVYFORGE, str(capture)]
@@ -458,6 +467,103 @@ def _ios_report(udid: str, app: Path, *, wait: float = 120) -> dict:
 
 def _codesign_ok(app: Path) -> None:
     _run(["codesign", "--verify", "--deep", "--strict", str(app)])
+
+
+#: Found by this driver on a physical iPhone, 2026-10-14, and not caused by the
+#: package metadata: with the metadata step switched off it happens the same.
+DEVICE_REBUILD_SIGNING = (
+    "known, not this change: an Xcode-only rebuild of a device build re-runs "
+    "install_python, which rewrites the Frameworks/*.framework binaries, and "
+    "Xcode does not sign them again (test-matrix.md section 7, 2026-10-14)"
+)
+
+
+def _codesign_after_rebuild(app: Path) -> None:
+    """``_codesign_ok``, except for the device rebuild bug above.
+
+    It is excused only while every file codesign names is under
+    ``Frameworks/``; one in ``app/`` would be this change's, and fails.
+    """
+    proc = _run(
+        ["codesign", "--verify", "--deep", "--strict", "-vvvv", str(app)],
+        check=False,
+    )
+    if proc.returncode == 0:
+        return
+    said = proc.stdout + proc.stderr  # -vvvv names the files on stdout
+    named = re.findall(r"^file (?:modified|added|missing): (.*)$", said, re.M)
+    frameworks = app.resolve() / "Frameworks"
+    if named and all(Path(n).resolve().is_relative_to(frameworks) for n in named):
+        pytest.xfail(DEVICE_REBUILD_SIGNING)
+    pytest.fail(_failure("codesign --verify after an Xcode-only rebuild", proc))
+
+
+def _bundle_metadata(app: Path) -> list[str]:
+    """The metadata folders at the top of the bundle's ``app/``, on disk."""
+    return sorted(
+        p.name
+        for p in (app / "app").iterdir()
+        if p.name.endswith(("-info", ".egg-info"))
+    )
+
+
+# --------------------------------------------------------------------------- #
+# iOS device
+# --------------------------------------------------------------------------- #
+
+DEVICECTL = ["xcrun", "devicectl", "device"]
+
+
+@pytest.fixture(scope="session")
+def iphone(selected) -> Iterator[str]:
+    """A paired iPhone, by its CoreDevice identifier, as ``run --device`` picks."""
+    if "ios-device" not in selected:
+        pytest.skip("ios-device not in --metaprobe")
+    _need("xcrun")
+    if not os.environ.get("KIVYFORGE_TEAM_ID"):
+        pytest.fail("--metaprobe ios-device signs with KIVYFORGE_TEAM_ID: set it")
+    from kivyforge.platforms.ios.xcode.runner import resolve_device_destination
+
+    device = resolve_device_destination(os.environ.get("METAPROBE_DEVICE"))
+    yield device.identifier
+    _run(
+        [*DEVICECTL, "uninstall", "app", "--device", device.identifier, APP_ID],
+        check=False,
+    )
+
+
+def _device_report(device: str, app: Path, work: Path, *, wait: float = 180) -> dict:
+    """Install, launch, then copy the report out of the app's data container."""
+    _run([*DEVICECTL, "uninstall", "app", "--device", device, APP_ID], check=False)
+    _run([*DEVICECTL, "install", "app", "--device", device, str(app)], timeout=900)
+    launch = ["process", "launch", "--device", device, "--terminate-existing"]
+    _run([*DEVICECTL, *launch, APP_ID], timeout=300)
+    copied = work / f"device-report-{uuid.uuid4().hex}.json"
+    deadline = time.monotonic() + wait
+    said = ""
+    while time.monotonic() < deadline:
+        for source in ("Documents/metaprobe.json", "metaprobe.json"):
+            got = _run(
+                [*DEVICECTL, "copy", "from", "--device", device]
+                + ["--domain-type", "appDataContainer", "--domain-identifier", APP_ID]
+                + ["--source", source, "--destination", str(copied)],
+                check=False,
+                timeout=120,
+            )
+            if got.returncode == 0 and copied.is_file() and copied.stat().st_size:
+                return json.loads(copied.read_text(encoding="utf-8"))
+            said = got.stdout + got.stderr
+        time.sleep(3)
+    raise AssertionError(f"no metaprobe.json from the device after {wait:g} s:\n{said}")
+
+
+def _ios_release_ipa(project: Path) -> Path:
+    """``package``: archive, then export signed for development, so it installs."""
+    envelope = _envelope(
+        _kf(project, "package", "-p", "ios", "--export-method", "development", "--json")
+    )
+    (ipa,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "ipa"]
+    return project / ipa["path"]
 
 
 # --------------------------------------------------------------------------- #
@@ -562,6 +668,13 @@ def _collect(
     elif platform == "ios-sim":
         udid = request.getfixturevalue("simulator")
         report = _ios_report(udid, _ios_app(project, _ios_build(project)))
+    elif platform == "ios-device":
+        device = request.getfixturevalue("iphone")
+        if release:
+            app = _ios_release_ipa(project)
+        else:
+            app = _ios_app(project, _ios_build(project, target="device"))
+        report = _device_report(device, app, project.parent)
     else:
         serial = request.getfixturevalue("emulator")
         report = _android_report(project, serial, release=release)
@@ -589,6 +702,10 @@ def _built_with_json(
         envelope = _ios_build(project)
         udid = request.getfixturevalue("simulator")
         report = _ios_report(udid, _ios_app(project, envelope))
+    elif platform == "ios-device":
+        envelope = _ios_build(project, target="device")
+        device = request.getfixturevalue("iphone")
+        report = _device_report(device, _ios_app(project, envelope), project.parent)
     else:
         args = ("build", "-p", "android", "--debug", "--abi", ABI, "--json")
         envelope = _envelope(_kf(project, *args))
@@ -608,6 +725,8 @@ def platform_project(request, selected, locked, tmp_path):
         request.getfixturevalue("simulator")
     if platform == "android-emu":
         request.getfixturevalue("emulator")
+    if platform == "ios-device":
+        request.getfixturevalue("iphone")
     return platform, _project(locked, platform, tmp_path)
 
 
@@ -641,7 +760,7 @@ def _assert_generated(report: dict, version: str = VERSION) -> None:
 # Variants (proposal section 5, layer 3)
 # --------------------------------------------------------------------------- #
 
-RELEASE_PLATFORMS = ("macos", "android-emu")
+RELEASE_PLATFORMS = ("macos", "android-emu", "ios-device")
 
 
 @pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
@@ -690,44 +809,63 @@ def test_release(platform_project, request):
 
     report = _collect(platform, project, request, release=True)
 
-    assert report["main_file"] == "main.pyc"
+    if platform != "ios-device":
+        assert report["main_file"] == "main.pyc"
+    # iOS release builds byte-compile only with a final CPython 3.15, and the
+    # fixture pins 3.15.0b4 (hardware checklist `ios-strip-source`): source
+    # ships, and what this proves is the archive's metadata.
     _assert_generated(report)
 
 
-@pytest.mark.parametrize("platform_project", ["ios-sim"], indirect=True)
+@pytest.mark.parametrize("platform_project", ["ios-sim", "ios-device"], indirect=True)
 def test_xcode_only_rebuilds(platform_project, request, tmp_path):
     """Cmd-R after ``kivyforge build`` (F6): Xcode re-copies ``app/`` -- the
     link to ``app_dir`` in a debug build -- and the Build Python script must
     remove the egg-info and copy the staged metadata in every time, before
-    signing, without touching the source tree."""
-    _, project = platform_project
-    udid = request.getfixturevalue("simulator")
+    signing, without touching the source tree. On a device the signature it
+    must not break is a real one."""
+    platform, project = platform_project
+    if platform == "ios-device":
+        device = request.getfixturevalue("iphone")
+        target = "device"
+
+        def report_of(app: Path) -> dict:
+            return _device_report(device, app, tmp_path)
+    else:
+        udid = request.getfixturevalue("simulator")
+        target = "simulator"
+
+        def report_of(app: Path) -> dict:
+            return _ios_report(udid, app)
+
     egg_info = _dev_install_egg_info(project)
     _make_stale(egg_info, "0.0.1")
     captured = tmp_path / "xcodebuild.jsonl"
     mark = _mark(project)
-    app = _ios_app(project, _ios_build(project, capture=captured))
+    app = _ios_app(project, _ios_build(project, capture=captured, target=target))
     (argv,) = [
         json.loads(line)
         for line in captured.read_text(encoding="utf-8").splitlines()
         if json.loads(line)[-1] == "build"
     ]
     _codesign_ok(app)
-    _assert_generated(_checked("ios-sim", _ios_report(udid, app), mark))
+    _assert_generated(_checked(platform, report_of(app), mark))
 
     def xcode_only() -> dict:
         _run(argv, timeout=1200)
-        _codesign_ok(app)
-        return _ios_report(udid, app)
+        # Before signing is judged: what the Build Python script left in app/.
+        assert _bundle_metadata(app) == [GENERATED]
+        _codesign_after_rebuild(app)
+        return report_of(app)
 
     # 1. Nothing changed.
-    _assert_generated(_checked("ios-sim", xcode_only(), mark))
+    _assert_generated(_checked(platform, xcode_only(), mark))
     # 2. An edit in src/ reaches the app: the link loop still works.
     mark = _mark(project)
-    _assert_generated(_checked("ios-sim", xcode_only(), mark))
+    _assert_generated(_checked(platform, xcode_only(), mark))
     # 3. A dev install rewrites the egg-info; the bundle still has only ours.
     _make_stale(egg_info, "0.0.2")
-    _assert_generated(_checked("ios-sim", xcode_only(), mark))
+    _assert_generated(_checked(platform, xcode_only(), mark))
     assert "Version: 0.0.2" in (egg_info / "PKG-INFO").read_text(encoding="utf-8")
 
 
