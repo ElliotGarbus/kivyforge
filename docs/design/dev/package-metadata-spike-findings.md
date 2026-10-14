@@ -100,6 +100,36 @@ All five backends (S1) name the folder the same way, lowercase and normalized
 (`meta_probe_app-1.2.3.dist-info`), while `METADATA`'s `Name:` keeps the name as
 written (`Meta.Probe_App`).
 
+### F6. Option A works on iOS debug builds, link kept (S8, 2026-10-14)
+
+iOS debug staging links `<app>-ios/app` to `app_dir` (spec 06's edit, Cmd-R
+loop), so kivyforge cannot exclude or write anything in that copy. But the link
+exists only in staging: Xcode's Copy Bundle Resources copies the `app` folder
+reference into the bundle on every build, and the generated Build Python script
+runs **after** that copy and **before** code signing. The build log of an
+incremental build shows the order: `CpResource .../metaprobe-ios/app ->
+metaprobe.app/app`, then `PhaseScriptExecution`, then `CodeSign`.
+
+The spike appended to that script (in memory, via a wrapper around kivyforge;
+no product code changed): refuse if the bundle's `app/` is a link; delete
+`*.egg-info` from it; copy in a `.dist-info` staged in `<app>-ios/_kf_meta/`.
+`src/` held a stale `probe_a.egg-info` (0.0.1, entry point `a-stale`); the
+staged folder was `probe_a-9.0.dist-info` (entry point `a-gen`).
+
+| Step | Build | Result on the simulator |
+|---|---|---|
+| 1 | fresh `kivyforge build -p ios --simulator` | `probe-a` 9.0, entry point `a-gen` only, one distribution; the bundle's `app/` is a real directory holding only the generated folder; `src/probe_a.egg-info` untouched; signature valid |
+| 2 | the captured `xcodebuild` command alone (Cmd-R), no change | same; the `egg-info` did not come back |
+| 3 | edit `src/main.py`, `xcodebuild` alone | the edit is in the app (`edit-1`): the link loop still works; metadata unchanged |
+| 4 | a dev install rewrites `src/probe_a.egg-info` (0.0.2), `xcodebuild` alone | still only the generated folder in the bundle; the source copy keeps 0.0.2 |
+| 5 | rewrite again (0.0.3), `xcodebuild` alone, with the log | Xcode re-copied `app/` (with the `egg-info`), the script then removed it; final bundle `app/`: `main.py`, `probe_a-9.0.dist-info`; signature valid |
+
+`codesign --verify --deep --strict` passed after every step. The first attempt
+at step 1 failed in the spike wrapper (a circular import) and the collector
+launched the app left installed by an earlier run, reporting its stale result;
+the collector now refuses to run without a fresh build and reinstalls cleanly.
+The automated layer 3 driver must do the same.
+
 ## What held
 
 - **S1, `[project]` tables vs real backends (A1).** A project with `scripts`,
@@ -154,6 +184,8 @@ per-key logcat lines (Android release; logcat truncates one long line at about
 1,000 characters).
 
 ## Not covered
+
+For F6: an iOS **release** archive and a physical device (both need signing).
 
 Linux and Windows runtimes (path order read from source only); iOS release
 (needs signing); a physical device; projects whose entry points come from a
