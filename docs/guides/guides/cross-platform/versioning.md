@@ -120,7 +120,7 @@ writes:
 
 | File | When | What to do |
 |---|---|---|
-| `<name>.egg-info/`, in `src/` or the project root | setuptools, when pip installs the backend | Add `*.egg-info/` to `.gitignore`. kivyforge never copies it into an app, except into iOS debug builds, which link `app_dir` instead of copying it. |
+| `<name>.egg-info/`, in `src/` or the project root | setuptools, when pip installs the backend | Add `*.egg-info/` to `.gitignore`. When it sits inside `app_dir` (a src layout with `app_dir = "src"`), it is copied into the app, which is what lets your app read its own entry points (below). |
 | setuptools-scm's `version_file`, such as `src/myapp/_version.py` | Every build that looks up the version | Don't commit it; setuptools-scm's header for the file says the same. |
 
 While an `egg-info` folder sits in your project root, Python started from that
@@ -128,11 +128,27 @@ directory, such as `uv run pytest`, finds it before the installed copy of your
 project. `importlib.metadata.version("myapp")` then reports the version of the
 last kivyforge build.
 
-## Read the version inside your app
+## Read your package metadata inside the app
 
-A packaged app isn't installed as a Python distribution, so
-`importlib.metadata.version("myapp")` raises `PackageNotFoundError` inside the
-app. Have setuptools-scm write the version into a module in `app_dir` instead:
+A packaged app isn't installed as a Python distribution. `importlib.metadata`
+finds one only when a `<name>.egg-info` folder sits inside `app_dir`, which a
+src layout with setuptools gets from `pip install -e .`, `uv sync`, or
+kivyforge's own lookup of a dynamic version. kivyforge copies that folder into
+the app, so `importlib.metadata.entry_points()` and `version()` work there, for
+example for an app that discovers its plugins through
+`[project.entry-points]`.
+
+That folder records whatever last wrote it, not necessarily the build you are
+making: after changing your entry points, re-run `uv sync` (or
+`pip install -e .`) before building. A project without such a folder (hatch, a
+flat layout, a fresh CI checkout without an install) has no metadata in the
+app. kivyforge generating this metadata itself is tracked in
+[#122](https://github.com/ElliotGarbus/kivyforge/issues/122).
+
+### Read the version
+
+The most reliable source is a module in `app_dir`. Have setuptools-scm write
+the version into one:
 
 ```toml
 [tool.setuptools_scm]
