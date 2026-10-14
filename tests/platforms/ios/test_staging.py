@@ -11,6 +11,17 @@ from kivyforge.platforms.ios.staging import StagingError, create_staging
 
 
 class TestReleaseCopy:
+    @pytest.fixture(autouse=True)
+    def _no_host_compiler(self, monkeypatch):
+        """Copy semantics only, whatever Python the host has.
+
+        Unstubbed, a release copy is byte-compiled and stripped when a final
+        CPython 3.15 is on PATH, so ``main.py`` disappears. That held until
+        3.15.0 shipped and the macos-26-arm64 runner image (20261013.0424)
+        made it ``python3``. Compiling is TestByteCompileResolution's job.
+        """
+        monkeypatch.setattr(staging_mod, "select_compiler", lambda **kw: None)
+
     def test_release_materializes_a_real_copy_not_a_symlink(self, config, project_root):
         layout = create_staging(
             config, project_root, release=True, python_version="3.15.0"
