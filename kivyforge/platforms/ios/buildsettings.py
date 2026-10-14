@@ -40,6 +40,21 @@ BUILD_PYTHON_SCRIPT = (
     "install_python Python.xcframework app pip-deps\n"
 )
 
+#: Where the Build Python script writes inside the app bundle, declared as the
+#: phase's output paths. Xcode re-signs the app only when an input it tracks
+#: has changed, and a script's declared outputs inside the product are the
+#: only way a script's writes become one. Undeclared, an Xcode-only rebuild
+#: (Cmd-R, or re-running kivyforge's ``xcodebuild`` command) left the app
+#: sealed over the bundle as it was before the script ran: on a device every
+#: ``Frameworks/<ext>.framework`` binary, which ``install_python`` re-signs
+#: with a fresh signing time on each run, then failed ``codesign --verify``.
+#: ``app/`` is not listed: Copy Bundle Resources produces it, and the script's
+#: changes there always come with a rewrite of ``Frameworks/``.
+BUILD_PYTHON_OUTPUTS = tuple(
+    f"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/{folder}"
+    for folder in ("python", "pip-deps", "Frameworks")
+)
+
 
 def managed_settings(
     config: Config, *, configuration: str, layout: StagingLayout | None = None
