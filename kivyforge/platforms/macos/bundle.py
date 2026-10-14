@@ -19,7 +19,6 @@ import click
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
-from kivyforge.bundle.appcopy import APP_COPY_EXCLUDES
 from kivyforge.bundle.pycompile import (
     PycompileError,
     byte_compile,
@@ -42,9 +41,7 @@ from .runtime_stage import stage_runtime
 from .signing import sign_bundle_adhoc
 from .wheels_stage import stage_wheels
 
-_IGNORE = shutil.ignore_patterns(
-    "__pycache__", "*.pyc", ".DS_Store", *APP_COPY_EXCLUDES
-)
+_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store")
 
 
 def resolve_assembly_arch(locked: tuple[str, ...], arch: str | None) -> str:

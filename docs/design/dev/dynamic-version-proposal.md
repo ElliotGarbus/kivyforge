@@ -8,9 +8,12 @@
 > section 8 has the runs. Section 7 records what the reviews changed and why.
 > App-level spike: [`dynamic-version-spike-findings.md`](dynamic-version-spike-findings.md)
 > (macOS, Android, iOS simulator); nothing found argues against the design.
-> **Prerequisite, met:** [#115](https://github.com/ElliotGarbus/kivyforge/pull/115)
-> (exclude `*.egg-info` from app copies), which section 3.9 relies on, merged
-> on 2026-10-13 as `c3a0210b`.
+> **#115 reverted (2026-10-13):** [#115](https://github.com/ElliotGarbus/kivyforge/pull/115)
+> excluded `*.egg-info` from app copies, and section 3.9 leaned on it. It broke
+> apps that read their own entry points through `importlib.metadata`
+> ([#122](https://github.com/ElliotGarbus/kivyforge/issues/122)), so it was
+> reverted; the `egg-info` in `app_dir` ships again until kivyforge generates
+> the app's metadata itself. See the note under section 3.9's table.
 
 A project that gets its version from git through setuptools-scm (or hatch-vcs,
 versioningit, ...) declares no version string at all:
@@ -538,10 +541,21 @@ So there is no cleanup. Known writes, for the docs:
 
 | Written | When | Effect |
 |---|---|---|
-| `<name>.egg-info/` where setuptools' discovery puts it: `src/` (that is, `app_dir`) for a converted app with no `[tool.setuptools]` table, the project root with `packages = []` (spike findings 2, 6) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. Kept out of every artifact by [#115](https://github.com/ElliotGarbus/kivyforge/pull/115), which makes every app copy exclude `*.egg-info`. #115 was a prerequisite for that reason (without it, with `app_dir = "src"`, this folder sat inside the copied tree) and merged on 2026-10-13. iOS debug builds stay exposed even after it: they link `app_dir` rather than copy it (spike finding 3). |
+| `<name>.egg-info/` where setuptools' discovery puts it: `src/` (that is, `app_dir`) for a converted app with no `[tool.setuptools]` table, the project root with `packages = []` (spike findings 2, 6) | Isolated mode, setuptools: pip calls `get_requires_for_build_wheel`, which setuptools answers by running `egg_info` in place (section 8) | Same folder `pip install .` leaves; commonly gitignored. When it lands in `app_dir`, it ships in the app, and that is now intended: it is the app's only source of `importlib.metadata` (entry points, version) until kivyforge generates that itself. #115 had excluded it; that was reverted (#122). |
 | setuptools-scm `version_file` (e.g. `src/myapp/_version.py`) | Both modes | Wanted: it usually sits in `app_dir`, ships, and carries the resolved version. Inside a bundle it is how the app can know its version, because `importlib.metadata` cannot work there. |
 | Nothing | hatchling with hatch-vcs, no `version-file` configured (section 8) | Tree untouched. |
 | (consequence of the egg-info row) | Any later Python run from the project root | `importlib.metadata` in the developer's own environment now finds the egg-info before the installed `.dist-info`, so it reports the last build's version (spike finding 14). Standard setuptools behaviour, but now triggered by a kivyforge build. |
+
+**Why the egg-info ships after all (2026-10-13).** #115 treated the copied
+`egg-info` as junk: stale, host paths, only present by accident. All true, but
+it is also the app's package metadata, and `importlib.metadata.entry_points()`
+reads it. An app that discovers its plugins through `[project.entry-points]`
+stopped working ([#122](https://github.com/ElliotGarbus/kivyforge/issues/122)).
+#115 was reverted rather than patched. The replacement is for kivyforge to
+write a fresh `<name>-<version>.dist-info` into the app from `[project]` and
+the resolved version, after which the stale folder can be excluded again.
+Until then, for a dynamic setuptools project in a src layout, the folder
+kivyforge's own isolated pip run writes is at least current.
 
 **The user-facing docs say this as plainly as the table does, outside any
 "cleanup" framing: a build of a dynamic-version project can leave a clean

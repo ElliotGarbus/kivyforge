@@ -1,16 +1,22 @@
-"""Every backend's app_dir copy leaves out ``*.egg-info`` (APP_COPY_EXCLUDES).
+"""Every backend's app_dir copy keeps the app's package metadata (#122).
 
-One test over all five backends, driving each one's real copy function, so a
-backend that grows a new copy path without the shared excludes fails here
-rather than shipping a developer's install metadata inside an app.
+An app can read its own metadata at runtime through ``importlib.metadata``:
+its version, and the entry points it declares in ``[project.entry-points]``,
+which is how plugin-based apps find their plugins. A packaged app is not
+installed, so the only metadata it has is the ``<name>.egg-info`` that
+setuptools writes into a src layout (``pip install -e .``, ``uv sync``, or
+kivyforge's own lookup of a dynamic version). #115 excluded that folder from
+app copies, and plugin discovery broke on the device; it was reverted.
 
-iOS is covered for release builds only: a dev build symlinks app_dir and Xcode
-copies the folder as-is, which no ignore list reaches (the same is already true
-of ``__pycache__``).
+This drives each backend's real copy function and then asks
+``importlib.metadata``, searching only the copied app, for the distribution and
+its entry point -- the call that failed in #122. iOS is covered for release
+builds; a dev build symlinks app_dir, so the folder is there as is.
 """
 
 from __future__ import annotations
 
+import importlib.metadata
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
@@ -87,12 +93,18 @@ def _ios(config: Config, project_root: Path, dest: Path) -> Path:
     ],
     ids=["macos", "linux", "windows", "android", "ios-release"],
 )
-def test_app_copy_excludes_egg_info(tmp_path, copy_app):
+def test_app_copy_keeps_the_package_metadata(tmp_path, copy_app):
     project_root = tmp_path / "proj"
     src = project_root / "src"
-    # What `pip install -e .` leaves in a src layout, next to the app package.
-    (src / "myapp.egg-info").mkdir(parents=True)
-    (src / "myapp.egg-info" / "PKG-INFO").write_text("Version: 0.0.1\n")
+    # What setuptools leaves in a src layout, next to the app package.
+    info = src / "myapp.egg-info"
+    info.mkdir(parents=True)
+    (info / "PKG-INFO").write_text(
+        "Metadata-Version: 2.1\nName: myapp\nVersion: 1.2.3\n"
+    )
+    (info / "entry_points.txt").write_text(
+        "[myapp.boardstyle]\nchecked = myapp.boards:Checked\n"
+    )
     (src / "main.py").write_text("print('hi')\n")
     (src / "myapp").mkdir()
     (src / "myapp" / "__init__.py").write_text("")
@@ -100,6 +112,12 @@ def test_app_copy_excludes_egg_info(tmp_path, copy_app):
 
     copied = copy_app(config, project_root, tmp_path / "out" / "app")
 
-    assert (copied / "main.py").is_file()
-    assert (copied / "myapp" / "__init__.py").is_file()
-    assert not (copied / "myapp.egg-info").exists()
+    found = [
+        d
+        for d in importlib.metadata.distributions(path=[str(copied)])
+        if d.metadata["Name"] == "myapp"
+    ]
+    assert len(found) == 1, "the app's metadata did not reach the app"
+    assert found[0].version == "1.2.3"
+    plugins = found[0].entry_points.select(group="myapp.boardstyle")
+    assert [(e.name, e.value) for e in plugins] == [("checked", "myapp.boards:Checked")]
