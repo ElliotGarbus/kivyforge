@@ -328,6 +328,49 @@ class TestRealProbe:
         monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().simulator_runtimes() == []
 
+    # --- ios_deployment_target_range ---
+
+    def _sdk(self, monkeypatch, tmp_path, settings: str | None) -> RealProbe:
+        if settings is not None:
+            (tmp_path / "SDKSettings.json").write_text(settings, encoding="utf-8")
+        monkeypatch.setattr(
+            "kivyforge.doctor.probe._capture", lambda _: f"{tmp_path}\n"
+        )
+        return self._probe()
+
+    def test_deployment_range_reads_the_sdk_settings(self, monkeypatch, tmp_path):
+        # The shape of Xcode 27.0's iPhoneOS27.0.sdk/SDKSettings.json.
+        settings = (
+            '{"SupportedTargets": {"iphoneos": {'
+            '"MinimumDeploymentTarget": "15.0", '
+            '"MaximumDeploymentTarget": "27.0.99", '
+            '"RecommendedDeploymentTarget": "17.0"}}}'
+        )
+        probe = self._sdk(monkeypatch, tmp_path, settings)
+        assert probe.ios_deployment_target_range() == ("15.0", "27.0.99")
+
+    def test_deployment_range_none_without_an_sdk(self, monkeypatch):
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
+        assert self._probe().ios_deployment_target_range() is None
+
+    @pytest.mark.parametrize(
+        "settings",
+        [
+            None,  # no SDKSettings.json
+            "not json",
+            '{"SupportedTargets": {}}',
+            '{"SupportedTargets": {"iphoneos": {"MinimumDeploymentTarget": 15}}}',
+            '{"SupportedTargets": {"iphoneos": {"MinimumDeploymentTarget": "15.0",'
+            ' "MaximumDeploymentTarget": 27}}}',
+            "[]",
+        ],
+    )
+    def test_deployment_range_none_on_an_unexpected_shape(
+        self, monkeypatch, tmp_path, settings
+    ):
+        probe = self._sdk(monkeypatch, tmp_path, settings)
+        assert probe.ios_deployment_target_range() is None
+
     # --- keychain_identities ---
 
     def test_keychain_identities_parses_lines(self, monkeypatch):

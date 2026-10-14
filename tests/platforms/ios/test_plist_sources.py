@@ -30,7 +30,7 @@ class TestInfoPlist:
         assert plist["CFBundleIdentifier"] == "org.kivy.touchtracer"
         assert plist["CFBundleShortVersionString"] == "1.2.3"
         assert plist["CFBundleVersion"] == "7"
-        assert plist["MinimumOSVersion"] == "13.0"
+        assert plist["MinimumOSVersion"] == "16.0"
 
     def test_short_version_is_the_resolved_one_as_given(self, config):
         built = with_version(config, ResolvedVersion("1.2.4.dev1+gabc", "backend"))

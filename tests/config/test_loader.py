@@ -65,7 +65,8 @@ class TestHappyPath:
         assert cfg.kivy.orientation == ("portrait",)
         ios = cfg.ios_required
         assert ios.build == 1
-        assert ios.deployment_target == "13.0"
+        # 13.0 until Xcode 27 refused it; 16.0 is Kivy's own iOS minimum.
+        assert ios.deployment_target == "16.0"
         assert ios.extra_index_urls == ()
         assert ios.signing.auto_signing is True
         assert ios.signing.upload_symbols is True

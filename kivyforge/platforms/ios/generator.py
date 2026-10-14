@@ -160,6 +160,27 @@ class XcodeProjectGenerator:
                 keep=merged,
             )
             self._apply_project_level_signing(project, signing, configuration)
+            self._sync_project_deployment_target(project, configuration)
+
+    def _sync_project_deployment_target(
+        self, project: XcodeProject, configuration: str
+    ) -> None:
+        """Mirror ``deployment_target`` onto the *project's* build configuration.
+
+        The app target sets its own, but the project level is what Xcode shows
+        in the project editor and what any target without an override inherits.
+        The skeleton used to seed it with a literal 13.0 that nothing updated,
+        so every project carried a value below Xcode 27's 15.0 floor under the
+        correct target-level one. Synced on every run, which also heals
+        projects bootstrapped by those older runs.
+        """
+        assert self.config.ios is not None
+        for config_obj in cast(Any, project).objects.get_project_configurations(
+            configuration_name=configuration
+        ):
+            config_obj.set_flags(
+                "IPHONEOS_DEPLOYMENT_TARGET", self.config.ios.deployment_target
+            )
 
     @staticmethod
     def _drop_stale(

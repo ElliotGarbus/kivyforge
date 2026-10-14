@@ -20,7 +20,7 @@ converting it. For tasks, see [Configure your iOS app](../../guides/ios/configur
 | `schema_version` | integer | required | Overlay schema version. Set to `1`. |
 | `bundle_id` | string | required | Bundle identifier, in reverse-DNS form. Letters, digits, hyphens, and periods only; no underscores. |
 | `build` | integer | `1` | Build number (`CFBundleVersion`). |
-| `deployment_target` | string | `"13.0"` | Minimum iOS version, for example `"16.0"`. |
+| `deployment_target` | string | `"16.0"` | Minimum iOS version. Must be inside the range the installed Xcode accepts (15.0 and later for Xcode 27). |
 | `simulator_archs` | list of string | `["arm64"]` | Simulator architectures to pin. `"arm64"` is the only valid value. |
 | `extra_index_urls` | list of string | `[]` | Extra package indexes, such as the mobile wheel index. |
 | `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. |
