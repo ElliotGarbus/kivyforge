@@ -1,0 +1,94 @@
+# The layer 3 probe of docs/design/dev/package-metadata-proposal.md: built and
+# launched by tests/integration/test_app_metadata_devices.py, which copies this
+# directory, builds the two wheels under deps/ into wheels/, locks, builds, and
+# reads back what importlib.metadata sees inside the app. Not an example, and
+# unlike the other fixtures here it commits no lock: the wheels it locks are
+# built on every run, so their hashes change every run.
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metaprobe-app"
+version = "1.2.3"
+requires-python = ">=3.13"
+dependencies = [
+    "metaprobe-dep==1.0",
+    "metaprobe-extra==2.0",
+    # The iOS and Android launches go through Kivy's SDL window, as in
+    # examples/mobile/hello-kivy and examples/mobile/hello-android; the macOS
+    # app needs no Kivy to run a script and exit.
+    "kivy==3.0.0.dev202610051055; sys_platform == 'ios'",
+    "filetype==1.2.0; sys_platform == 'ios'",
+    "kivy==2.3.1; sys_platform == 'android'",
+]
+
+# One of each form: a group, scripts and gui-scripts, and a name whose case
+# must survive (configparser would lowercase it).
+[project.scripts]
+metaprobe-cli = "metaprobe_app.cli:main"
+
+[project.gui-scripts]
+metaprobe-gui = "metaprobe_app.cli:gui"
+
+[project.entry-points."metaprobe.plugins"]
+app-plugin = "metaprobe_app.plugins:AppPlugin"
+CasePlugin = "metaprobe_app.plugins:CasePlugin"
+
+[tool.kivy]
+display_name = "Metaprobe"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.macos]
+schema_version = 1
+bundle_id = "org.kivyforge.metaprobe"
+build = 1
+archs = ["arm64"]
+find_links = ["wheels"]
+
+[tool.kivy.macos.python]
+version = "3.13.14"
+
+[tool.kivy.ios]
+schema_version = 1
+bundle_id = "org.kivyforge.metaprobe"
+build = 1
+deployment_target = "16.0"
+find_links = ["wheels"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.ios.python]
+version = "3.15.0b4"
+
+[tool.kivy.ios.signing]
+team_id = ""
+identity = "Apple Development"
+provisioning_profile = ""
+auto_signing = true
+upload_symbols = true
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.metaprobe"
+min_sdk = 24
+target_sdk = 35
+kivy_generation = 2
+abis = ["arm64_v8a"]
+find_links = ["wheels"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"

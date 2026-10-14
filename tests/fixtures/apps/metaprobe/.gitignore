@@ -1,0 +1,11 @@
+# Everything the driver produces when it builds this fixture, should anyone run
+# kivyforge here by hand: the wheels it builds from deps/, the locks (whose
+# hashes are of those wheels, so they change on every run), a development
+# egg-info, and each platform's build output.
+wheels/
+pylock.*.toml
+*.egg-info
+build/
+dist/
+metaprobe-app-ios/
+metaprobe-app-android/

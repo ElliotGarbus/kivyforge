@@ -26,6 +26,7 @@ from kivyforge.build_outcome import (
     OutcomeBuilder,
     discard_note,
 )
+from kivyforge.bundle import app_metadata
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
@@ -464,6 +465,7 @@ def android_build(
             f"[stage] byte-compiling the Python payload with {with_what}"
             + (" (.pyc only)" if strip_source else "")
         )
+    generated = app_metadata.for_build(config)
     stamp = _stage(
         lambda: assemble_bundle(
             app_main / "assets" / BUNDLE_DIRNAME,
@@ -476,8 +478,9 @@ def android_build(
             finder_source=finder_source(),
             kivy_bootstrap_source=kivy_bootstrap_source(),
             ext_manifest_json=ext_manifest_json,
-            selftest_source=selftest_source(),
+            selftest_source=selftest_source(generated),
             android_package_sources=android_package_sources(android.kivy_generation),
+            app_metadata=generated,
             byte_compile=compiler,
             strip_source=strip_source,
         ),

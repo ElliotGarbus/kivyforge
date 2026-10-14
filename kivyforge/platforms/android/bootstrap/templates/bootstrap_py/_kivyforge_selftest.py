@@ -14,6 +14,12 @@ the test flag is present.
 import os
 import traceback
 
+#: The app's own package metadata as kivyforge generated it
+#: (docs/design/dev/package-metadata-proposal.md): ``name``, ``version`` and
+#: sorted ``[group, name, value]`` entry points. Rendered in at build time;
+#: ``None`` when kivyforge generated none (entry points in ``dynamic``).
+EXPECTED_APP_METADATA = None
+
 
 def _result_path() -> str:
     private = os.environ.get("ANDROID_PRIVATE", ".")
@@ -121,6 +127,25 @@ def run() -> bool:
     except Exception:
         ok = False
         lines.append("ANDROID_PKG_FAIL")
+        lines.append(traceback.format_exc())
+
+    # 5. The app's own package metadata: importlib.metadata finds what kivyforge
+    #    generated from [project] -- the name, the version every other artifact
+    #    carries, and the entry points a plugin-based app looks itself up by.
+    try:
+        expected = EXPECTED_APP_METADATA
+        if expected is not None:
+            import importlib.metadata as md
+
+            dist = md.distribution(expected["name"])
+            assert dist.metadata["Name"] == expected["name"], dist.metadata["Name"]
+            assert dist.version == expected["version"], dist.version
+            found = sorted([e.group, e.name, e.value] for e in dist.entry_points)
+            assert found == expected["entry_points"], found
+        lines.append("APP_METADATA_OK")
+    except Exception:
+        ok = False
+        lines.append("APP_METADATA_FAIL")
         lines.append(traceback.format_exc())
 
     if ok:

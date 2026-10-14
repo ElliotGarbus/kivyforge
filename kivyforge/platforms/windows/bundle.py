@@ -35,6 +35,7 @@ import click
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
+from kivyforge.bundle import app_metadata
 from kivyforge.bundle.pycompile import (
     PycompileError,
     byte_compile,
@@ -314,6 +315,8 @@ def _copy_app_sources(config: Config, project_root: Path, dest: Path) -> None:
             f"{config.kivy.app_dir}/ (set [tool.kivy].entry_point)."
         )
     shutil.copytree(src, dest, ignore=_IGNORE)
+    # The app's own package metadata, in place of any development egg-info.
+    app_metadata.install(dest, app_metadata.for_build(config))
 
 
 # Re-exported for the verbs/status so they compute the same path.

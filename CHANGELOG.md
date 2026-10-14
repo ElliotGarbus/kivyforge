@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### All platforms: the app's own package metadata
+
+- **Added:** kivyforge writes each app's package metadata into the app, from
+  `[project]` ([#122](https://github.com/ElliotGarbus/kivyforge/issues/122)):
+  a `<name>-<version>.dist-info` folder beside the app's code on macOS, Linux,
+  Windows, Android and iOS. Inside the app, `importlib.metadata` now finds the
+  app's name, its version (the same value as `versionName` and
+  `CFBundleShortVersionString`), the entry points of `[project.scripts]`,
+  `[project.gui-scripts]` and `[project.entry-points]`, and its modules
+  through `packages_distributions()`, for every build backend and layout, with
+  or without a development install. Before, an app had metadata only if a
+  setuptools dev install had left an `egg-info` in `app_dir`, as old as that
+  install. See
+  [Read your package metadata inside the app](docs/guides/guides/cross-platform/versioning.md#read-your-package-metadata-inside-the-app).
+- **Changed:** a development `*.egg-info` folder at the top of `app_dir`, and a
+  `.dist-info` folder of the app's own name there, no longer ship in the app;
+  the generated folder replaces them. Your source tree is not changed. On iOS,
+  `kivyforge build` stages the folder in `<app>-ios/_kivyforge_meta/` and the
+  generated Build Python script copies it into the bundle, so Xcode-only
+  rebuilds keep it. **Migration:** an app that read its metadata from the
+  `egg-info` now reads the same names from the generated folder, current with
+  the build; nothing to change. An app whose code looks for the `egg-info`
+  folder itself should use `importlib.metadata` instead.
+- **Changed:** a setuptools project that declares entry points only in
+  `setup.cfg` (`[options.entry_points]`) or `setup.py` (`entry_points=`), and
+  none in `[project]`, fails `build`, `package` and `run` with
+  `KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT` (exit 1). kivyforge writes the
+  metadata from `[project]`, so the app would otherwise start without them.
+  **Migration:** move them into `[project.entry-points]`, console scripts into
+  `[project.scripts]` and GUI scripts into `[project.gui-scripts]`. setuptools
+  has deprecated reading them from those files for a project with a
+  `[project]` table.
+- **Changed:** `[project]` entry points and `[project].name` are checked as
+  build backends check them, and each violation is a config error at its line
+  in every verb: a `console_scripts` or `gui_scripts` group under
+  `[project.entry-points]`, a nested table (usually a dotted group name left
+  unquoted), an invalid group name, an entry point name with `=` or a leading
+  `[` or whitespace, and a project name that is not valid. **Migration:** pip
+  could not have built such a project either; fix the table the message names.
+- **Added:** when `[project].dynamic` lists `entry-points`, `scripts` or
+  `gui-scripts`, kivyforge cannot know the entry points, so it generates
+  nothing, leaves `app_dir` as it is, and warns with
+  `KF-METADATA-NOT-GENERATED`. Its `context` names the `reason` and the
+  development `egg-info` that ships instead (`fallback`).
+- **Added:** Android's contract self-test, run by `run --smoke`, checks that
+  the app finds the metadata kivyforge generated.
+
 ### Guides
 
 - **Added:** [Manage dependencies and re-lock](docs/guides/guides/cross-platform/dependencies.md)

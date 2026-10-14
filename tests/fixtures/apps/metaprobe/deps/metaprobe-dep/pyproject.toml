@@ -1,0 +1,15 @@
+# A dependency of the probe app, built into wheels/ by the driver. Its entry
+# point is the one the probe loads.
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metaprobe-dep"
+version = "1.0"
+
+[project.entry-points."metaprobe.plugins"]
+dep-plugin = "metaprobe_dep:Demo"
+
+[tool.setuptools]
+py-modules = ["metaprobe_dep"]

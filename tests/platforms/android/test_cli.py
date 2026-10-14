@@ -283,7 +283,7 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
         "androidtest_files": fake_androidtest_files,
         "finder_source": lambda: "",
         "kivy_bootstrap_source": lambda: "",
-        "selftest_source": lambda: "",
+        "selftest_source": lambda app_metadata=None: "",
         "generate_manifest": fake_generate_manifest,
         "write_settings_gradle": lambda dest, android: None,
         "write_root_build_gradle": lambda dest, android: None,

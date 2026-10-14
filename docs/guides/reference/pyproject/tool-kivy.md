@@ -4,6 +4,7 @@ sources:
   - kivyforge/config/model.py
   - kivyforge/config/loader.py
   - docs/design/common/01-pyproject-kivy-spec.md
+  - docs/design/dev/package-metadata-proposal.md
   - examples/desktop/dice-roller/pyproject.toml
 ---
 
@@ -18,6 +19,31 @@ kivyforge reads the app's name and version from `[project]`, and its
 dependencies from `[project].dependencies`. The version can be dynamic, taken
 from git by your build backend; see
 [Set the app version](../../guides/cross-platform/versioning.md).
+
+!!! note "Preview"
+    This paragraph describes behavior that is on `main` but not yet in a
+    released version. It will ship in a future release.
+
+kivyforge also writes the app's package metadata from `[project]`: its name,
+version and entry points (`[project.scripts]`, `[project.gui-scripts]` and
+`[project.entry-points]`); see
+[Read your package metadata inside the app](../../guides/cross-platform/versioning.md#read-your-package-metadata-inside-the-app).
+So it checks them as build backends do, and each of these is a config error at
+the line that breaks it:
+
+- `[project].name` is not a valid project name: ASCII letters and digits, with
+  `.`, `_` or `-` only between them.
+- `[project.entry-points]` holds a `console_scripts` or `gui_scripts` group.
+  Use `[project.scripts]` and `[project.gui-scripts]`.
+- A group holds a nested table, usually a dotted group name without quotes:
+  write `[project.entry-points."myapp.plugins"]`.
+- A group name isn't words of letters, digits and underscores joined by dots.
+- An entry point name contains `=`, starts with `[`, or starts or ends with
+  whitespace.
+
+Entry points must be declared in `[project]`. A setuptools project that
+declares them only in `setup.cfg` or `setup.py` fails to build with
+`KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT`.
 
 ## Keys
 
