@@ -6,9 +6,16 @@ version = "0.1.0"
 # require a local Kivy 3.0 build — desktop examples live under examples/desktop
 # and use Kivy 2.3.1 from PyPI instead).
 requires-python = ">=3.14"
+# Pinned exactly, transitive filetype included: this is an on-device gate
+# example, and CI's `kivyforge lock -p ios --check` re-resolves against the
+# index. A floor such as more-itertools>=10.5 failed that check the day a new
+# release appeared, with nothing in the repo changed. Exact pins make the
+# committed lock change only when someone changes it on purpose (see
+# "Example-repo lock policy" in docs/design/common/03-lockfile-concept.md).
 dependencies = [
-    "kivy>=3.0.0.dev0,<4",
-    "more-itertools>=10.5",
+    "kivy==3.0.0.dev202610051055",
+    "more-itertools==11.1.0",
+    "filetype==1.2.0",
 ]
 
 [tool.kivy]
