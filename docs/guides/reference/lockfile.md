@@ -20,7 +20,10 @@ next to `pyproject.toml`. Each file is a valid
 `[tool.kivyforge]` extension table. For why the lock exists and when to commit
 it, see [Lockfiles](../concepts/lockfiles.md).
 
-kivyforge generates these files. Don't edit them by hand; re-lock instead.
+kivyforge generates these files. Change a version in `[project].dependencies`
+and re-lock. See
+[Pin a package version](../guides/cross-platform/dependencies.md#pin-a-package-version).
+The next `lock` overwrites a hand-edited file.
 
 ## Filenames
 
@@ -121,8 +124,9 @@ file, including a comment, makes the lock stale:
   (ignoring `generated_at`), and exits `4` if they differ. It writes nothing.
 
 To fix a stale lock, run `kivyforge lock -p PLATFORM`, replacing `PLATFORM` with
-the target. See
-[Manage dependencies and re-lock](../guides/cross-platform/dependencies.md).
+the target. That command resolves again and takes the newest version each
+specifier allows. See
+[Pin a package version](../guides/cross-platform/dependencies.md#pin-a-package-version).
 
 ## What's next
 

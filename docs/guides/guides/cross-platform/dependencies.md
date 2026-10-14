@@ -5,6 +5,7 @@ sources:
   - docs/design/common/04-artifact-distribution.md
   - kivyforge/cli/lock.py
   - kivyforge/lock/reader.py
+  - kivyforge/platforms/android/lock/builder.py
   - FAQ.md
 ---
 
@@ -12,8 +13,8 @@ sources:
 
 Your app's dependencies live in `[project].dependencies`. kivyforge resolves them
 separately for each target and pins the result in that target's lockfile. This
-page shows how to add a dependency, re-lock, and keep the lock in sync with
-`pyproject.toml`.
+page shows how to add a dependency, hold a package on one version, re-lock, and
+keep the lock in sync with `pyproject.toml`.
 
 ## Before you begin
 
@@ -47,6 +48,58 @@ page shows how to add a dependency, re-lock, and keep the lock in sync with
 Each target gets its own `pylock.<platform>.toml`, because the wheels differ by
 platform.
 
+## Pin a package version
+
+The version written into the lock is the newest one your specifier allows.
+`kivyforge lock` resolves `[project].dependencies` from scratch when the lock
+is stale, and when you pass `--update`. While the lock is in sync, `lock`
+leaves those versions where they are.
+
+To hold a package on one version, require that version exactly:
+
+```toml
+[project]
+dependencies = [
+    "kivy==2.3.1",
+    "pillow==10.4.0",
+]
+```
+
+A range such as `kivy>=2.3.1` or `pillow>=10` moves to the newest match the
+next time you re-lock. A Kivy 3 development snapshot is a pre-release, so the
+specifier has to name one. See the `kivy_generation` setting in
+[Configure your Android app](../android/configure.md). A range such as
+`kivy>=3.0.0.dev0,<4` still moves to the newest snapshot. Pin the snapshot
+you mean:
+
+```toml
+[project]
+dependencies = [
+    "kivy==3.0.0.dev202607301604",
+]
+```
+
+A package you did not list moves as well. On Android, `lock` adds pyjnius when
+you have not declared it, using a range, so a re-lock picks up newer pyjnius
+releases. Declare it yourself to choose the version. See
+[Call Android APIs with pyjnius](../android/pyjnius.md). A package pulled in by
+another package moves the same way. List it in `[project].dependencies` with
+`==` and that requirement is the one `lock` resolves.
+
+`lock --check` resolves again and compares the result with the lock on disk.
+An exact pin stays stable. A range fails the check when a newer match is
+published, even though `pyproject.toml` has not changed. `build`, `run`, and
+`package` still accept that lock. They refuse it when the file hash no longer
+matches.
+
+The next `lock` overwrites a hand-edited `pylock.<platform>.toml`. Change the
+specifier and re-lock.
+
+When a step edits `pyproject.toml` after the lock was resolved, and this build
+should keep the pins on disk, pass `--no-verify-lock` to `build`, `run`, or
+`package`. That skips the drift check. See
+[Drive kivyforge from CI or an agent](ci-and-agents.md).
+
 ## Make sure every dependency has a wheel
 
 kivyforge installs prebuilt wheels only and never builds a package from source.
@@ -73,11 +126,12 @@ exclude = ["kivy-garden", "docutils", "pygments"]
 
 The lock records a hash of the whole `pyproject.toml`, so any edit to the file
 makes the lock stale, including edits outside `[project].dependencies`. After you
-edit `pyproject.toml`, re-lock the targets you build.
+edit `pyproject.toml`, re-lock the targets you build. That re-lock resolves
+again. [Pin a package version](#pin-a-package-version) so the packages you care
+about stay put.
 
-If the lock is in sync, `lock` leaves it unchanged. To resolve again anyway, for
-example to pick up a newer release that your version specifiers allow, pass
-`--update`:
+If the lock is in sync, `lock` leaves it unchanged. To resolve again anyway and
+take the newest version each specifier allows, pass `--update`:
 
 ```bash
 kivyforge lock -p linux --update
@@ -110,8 +164,12 @@ kivyforge lock -p linux --check
 ```
 
 The command exits `0` and prints that the lock is up to date. If the lock is
-stale, it lists what changed, exits `4` with `KF-LOCK-DRIFT`, and writes
-nothing. A `build` or `package` against a stale lock fails the same way. See
+stale, or a specifier allows a newer release than the lock records, it lists
+what changed, exits `4` with `KF-LOCK-DRIFT`, and writes nothing. `build`,
+`run`, and `package` fail the same way when the `pyproject.toml` hash no
+longer matches the lock. A lock whose hash still matches is accepted, even
+when `--check` would now resolve something newer. See
+[Pin a package version](#pin-a-package-version) and
 [Drive kivyforge from CI or an agent](ci-and-agents.md).
 
 ## What's next

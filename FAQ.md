@@ -43,6 +43,11 @@ Your `pyproject.toml` changed since `pylock.ios.toml` was generated. Re-resolve:
 
     kivyforge lock
 
+That re-lock takes the newest version each specifier in
+`[project].dependencies` allows. Require an exact version, such as
+`kivy==2.3.1`, to hold a package still. See
+[Pin a package version](docs/guides/guides/cross-platform/dependencies.md#pin-a-package-version).
+
 In CI, `kivyforge lock --check` exits non-zero when the lock is stale (it writes
 nothing). Use `--no-verify-lock` on `build` only if you intentionally want to
 skip the drift check.
