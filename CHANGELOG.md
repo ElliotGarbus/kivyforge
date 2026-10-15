@@ -25,6 +25,21 @@
 - **Migration:** none needed. `doctor` now fails a project whose Team ID would
   have failed the build; `build` itself is unchanged.
 
+### Windows and Linux: a failed write into `dist/` is reported, not a traceback
+
+- **Fixed:** when `kivyforge package -p windows` could not copy the bundle into
+  `dist/windows/`, or `kivyforge package -p linux` could not write the
+  `.AppImage` into `dist/linux/`, the filesystem error escaped as a Python
+  traceback, and `--json` printed no envelope. It is now an ordinary failure:
+  `Error: ...` on stderr, and with `--json` one envelope with `ok: false`, code
+  `KF-ERROR` and exit status 1. Your previous package is still restored. A
+  common cause on Windows is a path too long for Windows with long paths off,
+  the default: the `dist\windows\<Name>-<version>-<arch>\` folder is longer
+  than `build\windows\<Name>\`, so a bundle that builds can still fail to
+  copy. The message names the first path that failed and how many failed, and
+  when that path is too long it suggests a shorter project folder.
+- **Migration:** none needed.
+
 ### Guides
 
 - **Added:** [Sign your iOS app](docs/guides/guides/ios/signing.md#find-your-team-id)
