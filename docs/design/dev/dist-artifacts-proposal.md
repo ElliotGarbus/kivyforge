@@ -486,23 +486,35 @@ checked, with the original left in place. The plan is sized to that.
   - `--abi x86_64` with `abis = ["arm64_v8a", "x86_64"]` is qualified;
   - `--abi x86_64` with `abis = ["x86_64"]` is not;
   - a default package from a one-ABI config is not.
-- `package -p ios`, with and without `--export-method ad-hoc`, records one
-  `ipa` at the path in 3.2. stdout has the unchanged `Exported` line followed
-  by the `Packaged` line.
+- `package -p ios`, with the default export method, `ad-hoc` and
+  `development`, records one `ipa` at the path in 3.2. stdout has the
+  unchanged `Exported` line followed by the `Packaged` line. The first of these
+  also starts with no `dist/` folder. Android's first case already covers a
+  clean checkout, but the proposal does not require the two platforms to share
+  one copy function.
 - The file in `dist/` is byte-identical to the in-tree file, and the in-tree
   file still exists.
 - `build -p android --debug` and `build -p ios --release` keep their paths and
   their lines.
 - With a dynamic version that has a local segment, `+` becomes `_` in the name.
-- **The copy fails on Android** (`dist/android` is a file, or the copy
-  raises):
-  - the result is `ok: false`, `artifacts == []`, `KF-ERROR` and exit 1, and
-    stdout is one document;
-  - a same-name file from an earlier run is back in place, byte-identical,
-    and no `.old-*` file remains;
+- **Creating the folder fails on Android** (`dist/android` is a file, so
+  `mkdir(exist_ok=True)` raises `FileExistsError`; `exist_ok` only tolerates an
+  existing folder):
+  - the result is `ok: false`, `artifacts == []`, `KF-ERROR` and exit 1;
+  - stdout is one document;
+  - nothing else in `dist/` is touched.
+  
+  The reserve-and-restore path never runs in this case, which is why the next
+  case is separate.
+- **The copy fails partway on Android** (`copy2` is made to write part of the
+  file and then raise):
+  - the same envelope as above;
+  - a same-name file from an earlier run is back in place, byte-identical;
+  - the partial file is gone, and no `.old-*` file remains;
   - a previous version's file is untouched;
-  - neither is named.
-- **The copy fails on iOS, after a successful export.** This guards the step 2
+  - none of these files is named.
+- **The copy fails partway on iOS, after a successful export,** triggered the
+  same way as on Android. This guards the step 2
   change: `_xcodebuild_step7` records the in-tree `.ipa` as soon as it is
   called (3.5).
   - In `--json` mode, stdout is one failure envelope with `artifacts == []`.
