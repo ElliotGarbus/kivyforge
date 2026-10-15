@@ -51,7 +51,8 @@ The simulator needs no signing. To run on a device or distribute, you need:
   device; distributing an `.ipa` needs a paid Apple Developer Program membership.
 - A signing certificate in your keychain.
 - Your Team ID, in `[tool.kivy.ios.signing].team_id`, passed as `--team-id`, or
-  set in `KIVYFORGE_TEAM_ID`.
+  set in `KIVYFORGE_TEAM_ID`. See
+  [Find your Team ID](../guides/ios/signing.md#find-your-team-id).
 
 Full guide: [Sign the app](../guides/ios/signing.md).
 

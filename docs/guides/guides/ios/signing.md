@@ -21,7 +21,48 @@ not, so if you only run on the Simulator, you can skip this page.
       (iOS App Store Package) for distribution.
 - A signing certificate in your keychain. With automatic signing, the default,
   Xcode creates or downloads it after you add your account.
-- Your Team ID, from the Apple Developer website or Xcode.
+- Your Team ID. See [Find your Team ID](#find-your-team-id).
+
+## Find your Team ID
+
+Your Team ID is the 10-character code, such as `A1B2C3D4E5`, that Apple assigns
+to your team. Where you find it depends on your Apple account.
+
+=== "Paid membership"
+
+    Sign in to your [developer account](https://developer.apple.com/account) and
+    click **Membership details**. Apple describes this in its
+    [Team ID](https://developer.apple.com/help/glossary/team-id/) glossary entry.
+
+=== "Free Apple ID"
+
+    Xcode gives a free Apple ID a *personal team*, and the Apple Developer
+    website doesn't show that team's ID. Read it from the team's signing
+    certificate instead:
+
+    1. If you haven't signed an app with this account yet, create the
+       certificate. In **Xcode > Settings > Accounts**, select your personal
+       team, click **Manage Certificates**, click **+**, and choose
+       **Apple Development**. For the full steps, see Apple's
+       [Synchronizing code signing identities with your developer account](https://developer.apple.com/documentation/xcode/sharing-your-teams-signing-certificates).
+    2. Open Keychain Access, click **My Certificates**, and double-click the
+       certificate whose name starts with `Apple Development:`. See
+       [Get information about a certificate in Keychain Access](https://support.apple.com/guide/keychain-access/get-information-about-a-certificate-kyca15178/mac).
+    3. Under **Details**, copy the **Organizational Unit**. That value is your
+       Team ID. If you have more than one `Apple Development` certificate, the
+       **Organization** field names the team each one belongs to.
+
+    !!! warning "The ID in the certificate's name is not your Team ID"
+        A certificate named `Apple Development: Your Name (F6G7H8I9J0)` ends in
+        a 10-character ID that looks like a Team ID but is a different value.
+        Copy the **Organizational Unit** instead.
+
+    !!! note
+        A personal team's provisioning profiles expire 7 days after Xcode
+        creates them, and the app then stops launching. Run
+        `kivyforge run -p ios --device` to build and install a fresh copy. For
+        the other limits of a personal team, see Apple's
+        [Developer account overview](https://developer.apple.com/support/compare-memberships/).
 
 ## Configure signing
 
@@ -33,8 +74,7 @@ not, so if you only run on the Simulator, you can skip this page.
     auto_signing = true
     ```
 
-    Replace `TEAM_ID` with your 10-character Team ID. For a free Apple ID, use
-    your personal team's ID.
+    Replace `TEAM_ID` with the value from [Find your Team ID](#find-your-team-id).
 
     - `team_id` is required for device builds and release exports.
     - `auto_signing = true` lets Xcode register the App ID and download a
