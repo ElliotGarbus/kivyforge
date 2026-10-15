@@ -355,7 +355,8 @@ into the user's source tree; this design writes nothing there.
   and iOS outputs into `dist/` with versioned names, as Linux and Windows
   already do). Independent of this proposal: it changes the output step of
   `build`/`package`, not what is inside the app. Its one dependency,
-  `ResolvedVersion.filename_part`, is already on `main`.
+  `ResolvedVersion.filename_part`, is already on `main`. Now proposed in
+  [`dist-artifacts-proposal.md`](dist-artifacts-proposal.md) (2026-10-15).
 - **Metadata produced by the build backend** (PEP 517
   `prepare_metadata_for_build_wheel`), which would cover dynamic entry points
   exactly; Briefcase's stated direction. Not this change.
