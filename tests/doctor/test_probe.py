@@ -5,20 +5,11 @@ from __future__ import annotations
 import socket
 import struct
 import subprocess
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Stub heavy optional deps so this module can be collected without the full
-# Xcode / pbxproj tool-chain installed (CI has them; local dev may not).
-if "pbxproj" not in sys.modules:
-    _pbx = MagicMock()
-    sys.modules["pbxproj"] = _pbx
-    sys.modules["pbxproj.pbxextensions"] = _pbx
-    sys.modules["pbxproj.pbxextensions.ProjectFiles"] = _pbx
-
-from kivyforge.doctor.probe import (  # noqa: E402
+from kivyforge.doctor.probe import (
     LC_BUILD_VERSION,
     PLATFORM_NAMES,
     RealProbe,
