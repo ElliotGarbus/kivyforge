@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v3.0.0.dev1](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0.dev1) - 2026-10-14
+
 ### All platforms: the app's own package metadata
 
 - **Added:** kivyforge writes each app's package metadata into the app, from
@@ -117,8 +119,9 @@
   file hash still matches, so a range fails the check when a newer release
   appears. `build` and `package` keep accepting that lock until the hash
   changes.
-
-## [v3.0.0.dev1](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0.dev1) - 2026-10-13
+- **Fixed:** [Install kivyforge](docs/guides/get-started/install.md) now
+  explains that every release so far is a pre-release, and its pipx and pip
+  commands carry the pre-release flag. Without it, both fail to find kivyforge.
 
 ### Android
 

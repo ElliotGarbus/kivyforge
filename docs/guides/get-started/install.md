@@ -20,6 +20,13 @@ so on). Each platform guide covers those.
 - One of these installers: [uv](https://docs.astral.sh/uv/) (recommended),
   [pipx](https://pipx.pypa.io/), or pip.
 
+!!! note "kivyforge is in pre-release"
+    Every kivyforge release on PyPI so far is a pre-release (a version such as
+    `3.0.0.dev1`). pipx and pip skip pre-releases unless you ask for them, so
+    their commands below include a pre-release flag. uv installs a pre-release
+    when a package has no stable release, so its commands need no flag. Once a
+    stable release is published, the flags are no longer needed.
+
 ## Install with uv (recommended)
 
 [uv](https://docs.astral.sh/uv/) installs command-line tools into their own
@@ -50,7 +57,13 @@ uv tool uninstall kivyforge
 environments:
 
 ```bash
-pipx install kivyforge
+pipx install --pip-args="--pre" kivyforge
+```
+
+To upgrade later, keep the flag:
+
+```bash
+pipx upgrade --pip-args="--pre" kivyforge
 ```
 
 ## Install with pip
@@ -62,14 +75,14 @@ it does not collide with other projects:
     ```powershell
     python -m venv .venv
     .venv\Scripts\Activate.ps1
-    pip install kivyforge
+    pip install --pre kivyforge
     ```
 
 === "bash"
     ```bash
     python3 -m venv .venv
     source .venv/bin/activate
-    pip install kivyforge
+    pip install --pre kivyforge
     ```
 
 With this method, `kivyforge` is available only while the virtual environment is

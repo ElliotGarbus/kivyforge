@@ -109,17 +109,18 @@ enabled) before `kivyforge run`.
 ## Installation
 
 kivyforge is a command-line tool and needs Python 3.13 or newer. It is on PyPI,
-but every release so far is a **pre-release** (currently `3.0.0.dev1`), and
-installers skip pre-releases unless you opt in — so each command below carries a
-pre-release flag. The recommended installer is [uv](https://docs.astral.sh/uv/),
-which installs it into its own isolated environment and puts `kivyforge` on your
+but every release so far is a **pre-release** (currently `3.0.0.dev1`). pipx and
+pip skip pre-releases unless you opt in, so their commands below carry a
+pre-release flag; uv picks a pre-release when no stable release exists, so it
+needs none. The recommended installer is [uv](https://docs.astral.sh/uv/), which
+installs it into its own isolated environment and puts `kivyforge` on your
 `PATH`:
 
-      uv tool install --prerelease allow kivyforge
+      uv tool install kivyforge
 
 If your shell reports that `kivyforge` is not found, run `uv tool update-shell`
 and open a new terminal. Upgrade or remove it later with
-`uv tool upgrade --prerelease allow kivyforge` / `uv tool uninstall kivyforge`.
+`uv tool upgrade kivyforge` / `uv tool uninstall kivyforge`.
 Once a stable release is published, the pre-release flags are no longer needed.
 
 Alternatives: [pipx](https://pipx.pypa.io/)
