@@ -375,3 +375,225 @@ class TestFailure:
             assert [p.name for p in dist.iterdir()] == [
                 "demo-app-1.2.3-x86_64.AppImage"
             ]
+
+
+def _refuse_every_copy(monkeypatch, module):
+    """Make copytree fail per file, as a read-only or too-deep target does.
+
+    copytree then raises one ``shutil.Error`` at the end listing every file,
+    which is the shape a staging copy fails in when the target refuses writes.
+    """
+    real_copytree = shutil.copytree
+
+    def per_file(src, dst, **kw):
+        def refuse(s, d):
+            raise PermissionError(errno.EACCES, "Permission denied", d)
+
+        return real_copytree(src, dst, copy_function=refuse, **kw)
+
+    monkeypatch.setattr(module.shutil, "copytree", per_file)
+
+
+def _unclassified(result, env):
+    """The one diagnostic of a failure kivyforge reports but does not classify."""
+    assert result.exit_code == exit_codes.CONFIG_ERROR
+    assert env["ok"] is False
+    (diagnostic,) = env["diagnostics"]
+    assert diagnostic["code"] == diagnostics.UNSPECIFIED
+    assert "Traceback" not in result.stderr
+    assert _artifacts(env) == []
+    return diagnostic
+
+
+class TestStagingWriteFailure:
+    """kivyforge's own writes into the build tree, refused by the filesystem.
+
+    Each backend's assembler writes hundreds of files, and its CLI boundary
+    translated only that backend's error type, so any ``OSError`` on the way --
+    a full disk, a read-only folder, a file where a folder belongs -- escaped
+    ``reporting()`` as a traceback with empty stdout. Each test drives the real
+    assembler with only its downloads and toolchain stubbed.
+    """
+
+    @pytest.fixture
+    def app_dir(self, desktop_project):
+        (desktop_project / "src").mkdir()
+        (desktop_project / "src" / "main.py").write_text("# entry\n")
+        return desktop_project / "src"
+
+    @staticmethod
+    def _desktop_lock(arch):
+        return SimpleNamespace(
+            archs=(arch,),
+            python_runtime=SimpleNamespace(version="3.14.5"),
+            packages=(),
+            native_binaries=(),
+        )
+
+    @pytest.mark.parametrize("blocker", ["build_dir_is_a_file", "app_copy_fails"])
+    def test_macos(self, macos, monkeypatch, desktop_project, app_dir, blocker):
+        from kivyforge.platforms.macos import bundle
+
+        config = SimpleNamespace(
+            app_slug="demo-app",
+            display_name="Demo App",
+            kivy=SimpleNamespace(app_dir="src", entry_point="main"),
+        )
+        monkeypatch.setattr(macos, "_load_config", lambda root, version=None: config)
+        monkeypatch.setattr(
+            macos, "_load_lock", lambda root: self._desktop_lock("arm64")
+        )
+        monkeypatch.setattr(macos, "build_app_bundle", bundle.build_app_bundle)
+        monkeypatch.setattr(bundle, "stage_runtime", lambda *a, **kw: None)
+        monkeypatch.setattr(bundle, "stage_wheels", lambda *a, **kw: None)
+        staging = desktop_project / "build" / "macos"
+        if blocker == "build_dir_is_a_file":
+            staging.parent.mkdir()
+            staging.write_text("not a folder")
+        else:
+            _refuse_every_copy(monkeypatch, bundle)
+
+        result, env = _run(build, ["-p", "macos"])
+        message = _unclassified(result, env)["message"]
+        assert message.startswith("could not assemble the macOS app: ")
+        if blocker == "app_copy_fails":
+            assert "1 path failed, the first " in message
+            assert "main.py" in message
+            assert list(staging.iterdir()) == []  # the temp .app is gone
+
+    @pytest.mark.parametrize(
+        "blocker", ["build_dir_is_a_file", "app_copy_fails", "path_too_long"]
+    )
+    def test_windows(self, windows, monkeypatch, desktop_project, app_dir, blocker):
+        from kivyforge.platforms.windows import bundle
+
+        config = SimpleNamespace(
+            display_name="My App",
+            kivy=SimpleNamespace(app_dir="src", entry_point="main"),
+        )
+        monkeypatch.setattr(
+            windows,
+            "_load_and_verify",
+            lambda root, nv, version=None: (config, self._desktop_lock("amd64")),
+        )
+        monkeypatch.setattr(windows, "build_onedir", bundle.build_onedir)
+        monkeypatch.setattr(bundle, "stage_runtime", lambda *a, **kw: None)
+        monkeypatch.setattr(bundle, "stage_wheels", lambda *a, **kw: None)
+        staging = desktop_project / "build" / "windows"
+        deep = str(staging / "My App" / "python" / ("d" * 300))
+        if blocker == "build_dir_is_a_file":
+            staging.parent.mkdir()
+            staging.write_text("not a folder")
+        elif blocker == "app_copy_fails":
+            _refuse_every_copy(monkeypatch, bundle)
+        else:
+            # A deep wheel under build\windows overflows MAX_PATH with long
+            # paths off; the runtime copy reports every file that failed.
+            why = str(FileNotFoundError(errno.ENOENT, "No such file", deep))
+
+            def too_long(*a, **kw):
+                raise shutil.Error([(f"src{i}", deep, why) for i in range(40)])
+
+            monkeypatch.setattr(bundle, "stage_runtime", too_long)
+
+        result, env = _run(build, ["-p", "windows"])
+        diagnostic = _unclassified(result, env)
+        message = diagnostic["message"]
+        assert message.startswith("could not assemble the Windows bundle: ")
+        if blocker == "app_copy_fails":
+            assert "1 path failed, the first " in message
+            assert not (staging / "My App").exists()  # the half-built tree is gone
+        if blocker == "path_too_long":
+            assert "40 paths failed" in message
+            assert message.count(deep) == 1
+            assert "long paths off" in message
+            assert diagnostic["remediation"].startswith("move the project to a")
+
+    def test_linux_build(self, linux, monkeypatch, desktop_project):
+        from kivyforge.platforms.linux import bundle
+
+        config = SimpleNamespace(display_name="Demo App")
+        monkeypatch.setattr(
+            linux,
+            "_load_and_verify",
+            lambda root, nv, version=None: (config, self._desktop_lock("x86_64")),
+        )
+        monkeypatch.setattr(linux, "build_appdir", bundle.build_appdir)
+        staging = desktop_project / "build" / "linux"
+        staging.parent.mkdir()
+        staging.write_text("not a folder")
+
+        result, env = _run(build, ["-p", "linux"])
+        message = _unclassified(result, env)["message"]
+        assert message.startswith("could not assemble the AppDir: ")
+
+    def test_linux_appimagetool_copy(self, linux, monkeypatch, desktop_project):
+        # appimagetool runs from a copy in the cache's bin/ folder, so the
+        # content-addressed entry is never made executable in place.
+        from kivyforge.artifacts.cache import ArtifactCache
+        from kivyforge.platforms.linux import appimage
+
+        cache = ArtifactCache(desktop_project / "cache" / "artifacts")
+        tool = desktop_project / "appimagetool"
+        tool.write_bytes(b"ELF")
+        (desktop_project / "cache").mkdir()
+        (desktop_project / "cache" / "bin").write_text("not a folder")
+        monkeypatch.setattr(linux, "build_appimage", appimage.build_appimage)
+        monkeypatch.setattr(appimage, "ArtifactCache", lambda: cache)
+        monkeypatch.setattr(appimage, "_host_appimagetool_arch", lambda: "x86_64")
+        monkeypatch.setattr(appimage, "_acquire", lambda *a: tool)
+
+        result, env = _run(package, ["-p", "linux"])
+        message = _unclassified(result, env)["message"]
+        assert message.startswith("could not package the AppImage: ")
+        assert not (desktop_project / "dist" / "linux").exists()
+
+    @pytest.mark.parametrize(
+        "blocker", ["project_is_a_file", "app_is_a_file", "build_dir_is_a_file"]
+    )
+    def test_ios(self, ios, monkeypatch, desktop_project, app_dir, blocker):
+        from kivyforge.platforms.ios import staging
+
+        config = ios._load_config(None)
+        config.kivy = SimpleNamespace(app_dir="src")
+        project = desktop_project / "demo-ios"
+        if blocker == "project_is_a_file":
+            monkeypatch.setattr(ios, "create_staging", staging.create_staging)
+            project.write_text("not a folder")
+        elif blocker == "app_is_a_file":
+            monkeypatch.setattr(ios, "create_staging", staging.create_staging)
+            project.mkdir()
+            (project / "app").write_text("not the app")
+        else:
+            # The release build writes ExportOptions.plist into demo-ios/build.
+            project.mkdir()
+            (project / "build").write_text("not a folder")
+
+        verb = package if blocker == "build_dir_is_a_file" else build
+        result, env = _run(verb, ["-p", "ios"])
+        message = _unclassified(result, env)["message"]
+        if blocker == "app_is_a_file":
+            # Raised on purpose, with its own fix: not dressed up as an errno.
+            assert message.endswith(
+                "exists and is not a symlink; remove it and re-run build."
+            )
+        elif blocker == "project_is_a_file":
+            assert message.startswith("could not generate the Xcode project: ")
+        else:
+            assert message.startswith("could not create the release build folder: ")
+
+    def test_android(self, android, monkeypatch, tmp_path):
+        from kivyforge.platforms.android import cli
+        from kivyforge.platforms.android.stage import bundle
+
+        stdlib = tmp_path / "stdlib"
+        stdlib.mkdir()
+        monkeypatch.setattr(cli, "assemble_bundle", bundle.assemble_bundle)
+        monkeypatch.setattr(cli, "stdlib_dir", lambda prefix, stem: stdlib)
+        _refuse_every_copy(monkeypatch, bundle)
+
+        result, env = _run(build, ["-p", "android", "--debug"])
+        message = _unclassified(result, env)["message"]
+        assert message.startswith("could not write the Android project: ")
+        assert "1 path failed, the first " in message
+        assert "main.py" in message
