@@ -2,13 +2,16 @@
 
 Reuses the platform-neutral checks (pip, toolchain version, app source dir) from
 ``checks_common`` and adds the iOS environment (Xcode, command-line tools,
-simulator runtimes) and project checks (signing, provisioning, icon, Swift
-toolchain, find_links, reachable hosts, native binaries, privacy manifests) over
-the ``pylock.ios.toml`` model.
+simulator runtimes) and project checks (signing, Team ID, provisioning, icon,
+Swift toolchain, find_links, reachable hosts, native binaries, privacy
+manifests) over the ``pylock.ios.toml`` model.
 """
 
 from __future__ import annotations
 
+import os
+import re
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -17,7 +20,7 @@ from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.config.model import DEFAULT_DEPLOYMENT_TARGET, Config
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
-from kivyforge.doctor.probe import Probe, RealProbe
+from kivyforge.doctor.probe import CertificateSubject, Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
@@ -33,6 +36,7 @@ from .entitlements import (
 )
 from .lock import load
 from .lock.model import Lockfile
+from .xcode.commands import TEAM_ID_ENV, resolve_team_id
 
 MIN_XCODE = "15.0"  # devicectl (run --device) requires Xcode 15+
 
@@ -165,6 +169,153 @@ def check_signing_identity(probe: Probe, config: Config) -> CheckResult:
             hint="import the signing certificate or set auto_signing = true.",
         )
     return CheckResult("Signing identity", Status.PASS, signing.identity)
+
+
+_TEAM_ID = re.compile(r"[A-Z0-9]{10}")
+# The ID an Apple certificate's name ends with: "Apple Development: Jo (F6G7H8I9J0)".
+_NAME_ID = re.compile(r"\(([A-Z0-9]{10})\)\s*$")
+_FIND_TEAM_ID = 'see "Find your Team ID" in the iOS signing guide'
+
+
+def check_team_id(
+    probe: Probe,
+    config: Config,
+    project_root: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+    search_dirs: tuple[Path, ...] | None = None,
+) -> CheckResult:
+    """The Team ID that ``--device`` and ``--release`` sign with (issue #108).
+
+    Resolved as ``build`` resolves it, less the ``--team-id`` flag doctor does
+    not take: ``KIVYFORGE_TEAM_ID``, then ``[tool.kivy.ios.signing].team_id``.
+    A wrong value otherwise fails only inside xcodebuild. A signing
+    certificate's Team ID is its subject's Organizational Unit, so doctor lists
+    the teams in the keychain and names the commonest wrong value: the
+    10-character ID in parentheses in an ``Apple Development`` certificate's
+    name. (On a ``Developer ID`` certificate the two are equal; both checked
+    against a real keychain on 2026-10-14.)
+
+    Unset SKIPs rather than WARNs, because a simulator build does not sign. A
+    well-formed ID that no keychain certificate carries WARNs: automatic
+    signing can create the certificate during the build, and the keychain a CI
+    job signs with is not this one.
+    """
+    name = "Team ID"
+    env = os.environ if env is None else env
+    team_id = resolve_team_id(config, env=env)
+    source = TEAM_ID_ENV if env.get(TEAM_ID_ENV) else "[tool.kivy.ios.signing].team_id"
+    certificates = probe.keychain_certificates()
+    teams = _keychain_teams(certificates)
+    in_keychain = f"; in keychain: {_describe_teams(teams)}" if teams else ""
+
+    if not team_id:
+        return CheckResult(
+            name,
+            Status.SKIP,
+            f"not set (needed for --device and --release){in_keychain}",
+            hint=f"set [tool.kivy.ios.signing].team_id or {TEAM_ID_ENV}; "
+            f"{_FIND_TEAM_ID}.",
+        )
+    if not _TEAM_ID.fullmatch(team_id):
+        return CheckResult(
+            name,
+            Status.FAIL,
+            f"{team_id!r} from {source} is not a Team ID, which is 10 capital "
+            "letters and digits",
+            hint=f"the keychain has {_describe_teams(teams)}"
+            if teams
+            else f"{_FIND_TEAM_ID}.",
+        )
+    if team_id not in teams:
+        for cert in certificates:
+            match = _NAME_ID.search(cert.common_name)
+            if match and match.group(1) == team_id:
+                return _certificate_id_result(name, team_id, source, cert)
+
+    profile = _pinned_profile(config, project_root, search_dirs)
+    if profile is not None and profile.team_ids and team_id not in profile.team_ids:
+        return CheckResult(
+            name,
+            Status.FAIL,
+            f"{team_id} is not the team of the pinned profile {profile.name} "
+            f"({', '.join(profile.team_ids)})",
+            hint=f"set {source} to the profile's team, or pin a profile made "
+            f"for {team_id}.",
+        )
+
+    if team_id not in teams:
+        if config.ios_required.signing.auto_signing:
+            fix = (
+                "automatic signing can create one during the build if Xcode is "
+                "signed in to this team (Settings > Accounts)"
+            )
+        else:
+            fix = "manual signing needs this team's certificate in the keychain"
+        return CheckResult(
+            name,
+            Status.WARN,
+            f"{team_id}: no signing certificate in the keychain is for this team"
+            f"{in_keychain}",
+            hint=f"{fix}. If the value is wrong, {_FIND_TEAM_ID}.",
+        )
+    detail = f"{team_id} ({teams[team_id]})" if teams[team_id] else team_id
+    if source == TEAM_ID_ENV:
+        detail += f" from {TEAM_ID_ENV}"
+    return CheckResult(name, Status.PASS, detail)
+
+
+def _keychain_teams(certificates: list[CertificateSubject]) -> dict[str, str]:
+    """Team ID -> team name, for each team a keychain certificate signs for."""
+    teams: dict[str, str] = {}
+    for cert in certificates:
+        if _TEAM_ID.fullmatch(cert.organizational_unit):
+            teams.setdefault(cert.organizational_unit, cert.organization)
+    return teams
+
+
+def _describe_teams(teams: Mapping[str, str]) -> str:
+    return ", ".join(
+        f"{team} ({team_name})" if team_name else team
+        for team, team_name in sorted(teams.items())
+    )
+
+
+def _certificate_id_result(
+    name: str, team_id: str, source: str, cert: CertificateSubject
+) -> CheckResult:
+    """The FAIL for a Team ID copied from the parentheses in a certificate's name."""
+    if _TEAM_ID.fullmatch(cert.organizational_unit):
+        team = _describe_teams({cert.organizational_unit: cert.organization})
+        hint = (
+            f"set {source} to {team}. A certificate's Team ID is its "
+            "Organizational Unit, not the ID in its name."
+        )
+    else:
+        hint = f"use the certificate's Organizational Unit; {_FIND_TEAM_ID}."
+    return CheckResult(
+        name,
+        Status.FAIL,
+        f"{team_id} is the ID in the name of the certificate "
+        f'"{cert.common_name}", not the Team ID',
+        hint=hint,
+    )
+
+
+def _pinned_profile(
+    config: Config, project_root: Path, search_dirs: tuple[Path, ...] | None
+) -> ProvisioningProfile | None:
+    """The pinned profile, or None when none is pinned or it cannot be read.
+
+    The Provisioning profile check reports a pin it cannot find or read.
+    """
+    path = resolve_profile_path(config, project_root, search_dirs=search_dirs)
+    if path is None or not path.exists():
+        return None
+    try:
+        return read_profile(path)
+    except ProfileError:
+        return None
 
 
 def check_swift_toolchain(probe: Probe, config: Config) -> CheckResult:
@@ -538,6 +689,7 @@ def run_ios_checks(
         for name in (
             "App source directory",
             "Signing identity",
+            "Team ID",
             "Provisioning profile",
             "Entitlements vs. profile",
             "App icon",
@@ -566,6 +718,7 @@ def run_ios_checks(
             native=False,
         ),
         check_signing_identity(probe, config),
+        check_team_id(probe, config, project_root),
         check_provisioning_profile(config, project_root),
         check_entitlements_vs_profile(config, project_root),
         check_app_icon(config, project_root),

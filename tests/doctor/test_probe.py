@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import socket
 import struct
 import subprocess
@@ -12,8 +14,11 @@ import pytest
 from kivyforge.doctor.probe import (
     LC_BUILD_VERSION,
     PLATFORM_NAMES,
+    CertificateSubject,
     RealProbe,
     _capture,
+    _certificate_subject,
+    _certificate_subjects,
     _macho_platforms,
     _thin_platforms,
 )
@@ -377,6 +382,40 @@ class TestRealProbe:
         monkeypatch.setattr("kivyforge.doctor.probe._capture", lambda _: "")
         assert self._probe().keychain_identities() == []
 
+    # --- keychain_certificates ---
+
+    def test_keychain_certificates_joins_identities_to_certificates(self, monkeypatch):
+        signing = _certificate_der(_APPLE_SUBJECT)
+        other = _certificate_der([(_OID_CN, 0x0C, b"Some Root CA")])
+        identities = f'  1) {_sha1(signing)} "Apple Development: Jo Doe (X83FAZ586W)"\n'
+        commands = []
+
+        def fake_capture(cmd):
+            commands.append(cmd)
+            if cmd[1] == "find-identity":
+                return identities + "     1 valid identities found\n"
+            return _pem(other) + _pem(signing)
+
+        monkeypatch.setattr("kivyforge.doctor.probe._capture", fake_capture)
+        assert self._probe().keychain_certificates() == [
+            CertificateSubject(
+                "Apple Development: Jo Doe (X83FAZ586W)", "R5PKSQLUZY", "Jo Doe"
+            )
+        ]
+        # -a: without it, find-certificate stops at the first match.
+        assert commands[1] == ["security", "find-certificate", "-a", "-p"]
+
+    def test_keychain_certificates_without_identities_reads_no_certificates(
+        self, monkeypatch
+    ):
+        commands = []
+        monkeypatch.setattr(
+            "kivyforge.doctor.probe._capture",
+            lambda cmd: commands.append(cmd) or "     0 valid identities found\n",
+        )
+        assert self._probe().keychain_certificates() == []
+        assert len(commands) == 1
+
     # --- login_keychain_identities ---
 
     def test_login_keychain_identities_scopes_to_login_keychain(self, monkeypatch):
@@ -502,3 +541,140 @@ class TestRealProbe:
         result = self._probe().filesystem_type(tmp_path)
         # POSIX has no ctypes.windll -> None; Windows returns e.g. "NTFS"/"ReFS".
         assert result is None or isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# X.509 subject parsing (keychain_certificates)
+# ---------------------------------------------------------------------------
+
+_OID_UID = b"\x09\x92\x26\x89\x93\xf2\x2c\x64\x01\x01"
+_OID_CN = b"\x55\x04\x03"
+_OID_OU = b"\x55\x04\x0b"
+_OID_O = b"\x55\x04\x0a"
+_OID_C = b"\x55\x04\x06"
+
+# The subject of a real Apple Development certificate, in its order and string
+# types: subject= /UID=.../CN=.../OU=.../O=.../C=US (LibreSSL, 2026-10-14).
+_APPLE_SUBJECT = [
+    (_OID_UID, 0x0C, b"LQS6DP566H"),
+    (_OID_CN, 0x0C, b"Apple Development: Jo Doe (X83FAZ586W)"),
+    (_OID_OU, 0x0C, b"R5PKSQLUZY"),
+    (_OID_O, 0x0C, b"Jo Doe"),
+    (_OID_C, 0x13, b"US"),
+]
+
+
+def _tlv(tag: int, content: bytes) -> bytes:
+    """One DER element, with a long-form length when the content needs it."""
+    size = len(content)
+    if size < 0x80:
+        return bytes([tag, size]) + content
+    raw = size.to_bytes((size.bit_length() + 7) // 8, "big")
+    return bytes([tag, 0x80 | len(raw)]) + raw + content
+
+
+def _certificate_der(subject, *, version: bool = True) -> bytes:
+    name = _tlv(
+        0x30,
+        b"".join(
+            _tlv(0x31, _tlv(0x30, _tlv(0x06, oid) + _tlv(tag, value)))
+            for oid, tag, value in subject
+        ),
+    )
+    issuer = _tlv(0x30, _tlv(0x31, _tlv(0x30, _tlv(0x06, _OID_CN) + _tlv(0x0C, b"CA"))))
+    fields = [
+        _tlv(0xA0, _tlv(0x02, b"\x02")) if version else b"",
+        _tlv(0x02, b"\x01"),
+        _tlv(0x30, _tlv(0x06, b"\x2a\x86\x48\x86\xf7\x0d\x01\x01\x0b")),
+        issuer,
+        _tlv(0x30, _tlv(0x17, b"260101000000Z") + _tlv(0x17, b"270101000000Z")),
+        name,
+        _tlv(0x30, b""),
+    ]
+    tbs = _tlv(0x30, b"".join(fields))
+    return _tlv(0x30, tbs + _tlv(0x30, b"") + _tlv(0x03, b"\x00"))
+
+
+def _pem(der: bytes) -> str:
+    body = base64.encodebytes(der).decode("ascii")
+    return f"-----BEGIN CERTIFICATE-----\n{body}-----END CERTIFICATE-----\n"
+
+
+def _sha1(der: bytes) -> str:
+    return hashlib.sha1(der).hexdigest().upper()
+
+
+class TestCertificateSubject:
+    def test_reads_cn_ou_and_o(self):
+        assert _certificate_subject(_certificate_der(_APPLE_SUBJECT)) == (
+            CertificateSubject(
+                "Apple Development: Jo Doe (X83FAZ586W)", "R5PKSQLUZY", "Jo Doe"
+            )
+        )
+
+    def test_a_v1_certificate_has_no_version_field(self):
+        subject = _certificate_subject(_certificate_der(_APPLE_SUBJECT, version=False))
+        assert subject is not None
+        assert subject.organizational_unit == "R5PKSQLUZY"
+
+    def test_string_types(self):
+        subject = [
+            (_OID_CN, 0x13, b"Printable"),
+            (_OID_OU, 0x1C, "R5PKSQLUZY".encode("utf-32-be")),
+            (_OID_O, 0x1E, "Jos\u00e9 \u5c71\u7530".encode("utf-16-be")),
+        ]
+        assert _certificate_subject(_certificate_der(subject)) == CertificateSubject(
+            "Printable", "R5PKSQLUZY", "Jos\u00e9 \u5c71\u7530"
+        )
+
+    def test_missing_fields_read_as_empty(self):
+        der = _certificate_der([(_OID_CN, 0x0C, b"Only a name")])
+        assert _certificate_subject(der) == CertificateSubject("Only a name", "", "")
+
+    @pytest.mark.parametrize(
+        "der",
+        [
+            b"",
+            b"\x30",
+            b"\x02\x01\x00",  # not a SEQUENCE
+            b"\x30\x03\x02\x01\x00",  # a SEQUENCE holding no tbsCertificate
+            b"\x30\x80\x00\x00",  # indefinite length is not DER
+            b"\x30\x85\x00\x00\x00\x00\x01\x00",  # a 5-byte length
+        ],
+    )
+    def test_malformed_der_is_none(self, der):
+        assert _certificate_subject(der) is None
+
+    def test_truncated_certificate_is_none(self):
+        der = _certificate_der(_APPLE_SUBJECT)
+        assert _certificate_subject(der[: len(der) // 2]) is None
+
+    def test_too_few_tbs_fields_is_none(self):
+        der = _tlv(0x30, _tlv(0x30, _tlv(0x02, b"\x01")))
+        assert _certificate_subject(der) is None
+
+
+class TestCertificateSubjects:
+    def test_keeps_only_the_wanted_hashes_once_each(self):
+        wanted = _certificate_der(_APPLE_SUBJECT)
+        other = _certificate_der([(_OID_CN, 0x0C, b"Other")])
+        # The same certificate in two keychains is dumped twice.
+        dump = _pem(other) + _pem(wanted) + _pem(wanted)
+        subjects = _certificate_subjects(dump, {_sha1(wanted)})
+        assert [s.common_name for s in subjects] == [
+            "Apple Development: Jo Doe (X83FAZ586W)"
+        ]
+
+    def test_undecodable_entries_are_skipped(self):
+        wanted = _certificate_der(_APPLE_SUBJECT)
+        junk = b"\x30\x02\x05\x00"
+        dump = (
+            "-----BEGIN CERTIFICATE-----\n!!!=\n-----END CERTIFICATE-----\n"
+            + _pem(junk)
+            + _pem(wanted)
+        )
+        subjects = _certificate_subjects(dump, {_sha1(junk), _sha1(wanted)})
+        assert len(subjects) == 1
+
+    def test_empty_dump(self):
+        assert _certificate_subjects("", {"A" * 40}) == []

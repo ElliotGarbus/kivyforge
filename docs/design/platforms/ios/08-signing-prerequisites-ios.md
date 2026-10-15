@@ -108,7 +108,12 @@ kivyforge build -p ios --release        # archive + export a signed .ipa
 
 Run `doctor` first — it pre-checks the setup above. The signing-relevant checks
 are **Signing identity** (when `auto_signing = false`, the named identity is
-present in the keychain) and **Provisioning profile** (when
+present in the keychain), **Team ID** (the value from `KIVYFORGE_TEAM_ID` or
+`team_id` is 10 capital letters and digits, is the `OU` of a signing
+certificate in the keychain, and is a team of the pinned profile; it names the
+mistake when the value is the ID in parentheses in a certificate's name, and
+when no Team ID is set it lists the ones in the keychain) and **Provisioning
+profile** (when
 `provisioning_profile` is set, a profile with that name or UUID is installed —
 or, for a `.mobileprovision` path, the file exists and is installed). `--simulator` and the bare, no-flag
 `build` (which stops after generating the project) skip signing entirely and need

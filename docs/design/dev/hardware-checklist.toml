@@ -296,6 +296,44 @@ pass = [
 record = ["iPhone model and iOS version.", "Xcode version."]
 
 [[item]]
+id = "ios-device-free-team"
+title = "iOS: build and run on a physical iPhone with a free Apple ID's personal team"
+status = "runnable"
+hosts = ["macos"]
+target = "iOS device `arm64` (free personal team)"
+tier = "T4 + T5"
+needs = [
+    "An iPhone paired with this Mac, listed by `xcrun devicectl list devices`, with Developer Mode on.",
+    "An Apple ID with no Apple Developer Program membership, signed into Xcode (Settings > Accounts), where its team shows as `<name> (Personal Team)`.",
+    "That team's `Apple Development` certificate in the keychain (Accounts > Manage Certificates > + > Apple Development), and its Team ID: the Team ID line of `kivyforge doctor -p ios`, run before a Team ID is set, lists it.",
+    "A bundle ID no other team holds. A personal team cannot register one another team has registered, and the owner's paid team holds `hello-kivy`'s (`org.kivy.hello-kivy`), so the commands build a scratch copy with its own bundle ID and leave the example and its tracked lock unedited.",
+    "The phone unlocked when the app launches.",
+]
+commands = [
+    "rm -rf \"$TMPDIR/free-team\" && cp -R examples/mobile/hello-kivy \"$TMPDIR/free-team\"",
+    "cd \"$TMPDIR/free-team\"",
+    "sed -i '' 's/^bundle_id = .*/bundle_id = \"org.example.freeteam.<you>\"/' pyproject.toml",
+    "kivyforge clean",
+    "kivyforge lock -p ios",
+    "kivyforge doctor -p ios",
+    "KIVYFORGE_TEAM_ID=<personal team ID> kivyforge doctor -p ios",
+    "KIVYFORGE_TEAM_ID=<personal team ID> kivyforge build -p ios --device",
+    "KIVYFORGE_TEAM_ID=<personal team ID> kivyforge run -p ios --device",
+]
+pass = [
+    "The first `doctor` reports `[SKIP] Team ID: not set ...` and lists the personal team's ID and name; the second reports `[PASS] Team ID: <ID> (<team name>) from KIVYFORGE_TEAM_ID`.",
+    "`build -p ios --device` succeeds: automatic signing registers the App ID for the personal team and creates its development profile.",
+    "`run -p ios --device` installs and launches the app, which shows its label, and the console streams Kivy's log, including `Start application main loop`. If iOS refuses the first launch because the developer is not trusted, trust it on the phone (Settings > General > VPN & Device Management) and run again.",
+]
+record = [
+    "iPhone model and iOS version.",
+    "Xcode version.",
+    "Whether iOS asked for the developer to be trusted before the first launch.",
+    "The profile's expiry, which Apple sets to 7 days for a personal team: `security cms -D -i hello-kivy-ios/build/DerivedData/Build/Products/Debug-iphoneos/*.app/embedded.mobileprovision | plutil -extract ExpirationDate raw -o - -`.",
+]
+previous = "never: test-matrix section 7 has only paid-team device runs, the first on 2026-09-14"
+
+[[item]]
 id = "macos-notarize"
 title = "macOS: Developer ID signing, notarization and stapling"
 status = "runnable"

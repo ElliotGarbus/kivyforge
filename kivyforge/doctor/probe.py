@@ -7,8 +7,12 @@ object with the same methods, so the check logic never shells out.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import os
 import platform as _platform
+import re
 import shutil
 import socket
 import struct
@@ -16,7 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 # How long to keep retrying to restore the build output after the lock probe
 # moved it aside. It was just renamed there on the same volume with no open
@@ -37,6 +41,28 @@ PLATFORM_NAMES = {
 LC_BUILD_VERSION = 0x32
 _MACHO_MAGICS = {0xFEEDFACE, 0xFEEDFACF, 0xCEFAEDFE, 0xCFFAEDFE}
 
+# `security find-identity` lines: '1) <SHA-1 of the certificate> "<name>"'.
+_IDENTITY_LINE = re.compile(r"\d+\)\s+([0-9A-Fa-f]{40})\s")
+_PEM = re.compile(
+    r"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----", re.DOTALL
+)
+# X.509 subject attribute OIDs (DER-encoded content bytes).
+_OID_CN = b"\x55\x04\x03"
+_OID_O = b"\x55\x04\x0a"
+_OID_OU = b"\x55\x04\x0b"
+
+
+class CertificateSubject(NamedTuple):
+    """The subject fields of a signing certificate that name its team.
+
+    On Apple's certificates the Organizational Unit is the Team ID and the
+    Organization is the team's name.
+    """
+
+    common_name: str
+    organizational_unit: str
+    organization: str
+
 
 class Probe(Protocol):
     def xcode_version(self) -> str | None: ...
@@ -48,6 +74,7 @@ class Probe(Protocol):
     def ios_deployment_target_range(self) -> tuple[str, str] | None: ...
     def latest_kivyforge_version(self) -> str | None: ...
     def keychain_identities(self) -> list[str]: ...
+    def keychain_certificates(self) -> list[CertificateSubject]: ...
     def login_keychain_identities(self) -> list[str]: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
     def binary_platforms(self, path: Path) -> set[str]: ...
@@ -178,6 +205,26 @@ class RealProbe:
     def keychain_identities(self) -> list[str]:
         out = _capture(["security", "find-identity", "-v", "-p", "codesigning"])
         return [line.strip() for line in out.splitlines() if line.strip()]
+
+    def keychain_certificates(self) -> list[CertificateSubject]:
+        """The subjects of the certificates behind ``keychain_identities()``.
+
+        ``find-identity`` names each identity by its certificate's SHA-1, and
+        ``find-certificate -a -p`` dumps every certificate in the search list
+        (without ``-a`` it stops at the first match), so the two are joined on
+        a hash computed here. The subject is read from the DER rather than from
+        ``openssl x509 -subject``, whose format differs between the LibreSSL
+        that macOS ships and OpenSSL 3.
+        """
+        wanted = {
+            match.group(1).upper()
+            for line in self.keychain_identities()
+            if (match := _IDENTITY_LINE.match(line))
+        }
+        if not wanted:
+            return []
+        dump = _capture(["security", "find-certificate", "-a", "-p"])
+        return _certificate_subjects(dump, wanted)
 
     def login_keychain_identities(self) -> list[str]:
         """Identities scoped to ``login.keychain-db`` (Apple recommends keeping
@@ -362,6 +409,97 @@ def _capture(argv: list[str]) -> str:
     except (OSError, ValueError):
         return ""
     return proc.stdout if proc.returncode == 0 else ""
+
+
+def _certificate_subjects(dump: str, sha1s: set[str]) -> list[CertificateSubject]:
+    """Subjects of the PEM certificates in *dump* whose SHA-1 is in *sha1s*.
+
+    A certificate held in two keychains is listed once, and one that cannot be
+    decoded is skipped.
+    """
+    subjects: list[CertificateSubject] = []
+    seen: set[str] = set()
+    for match in _PEM.finditer(dump):
+        try:
+            der = base64.b64decode(match.group(1))
+        except (binascii.Error, ValueError):
+            continue
+        digest = hashlib.sha1(der, usedforsecurity=False).hexdigest().upper()
+        if digest not in sha1s or digest in seen:
+            continue
+        seen.add(digest)
+        subject = _certificate_subject(der)
+        if subject is not None:
+            subjects.append(subject)
+    return subjects
+
+
+def _certificate_subject(der: bytes) -> CertificateSubject | None:
+    """The CN, OU and O of a DER X.509 certificate's subject; None if unreadable.
+
+    The tbsCertificate holds an optional ``[0]`` version, then serialNumber,
+    signature, issuer, validity and subject. The subject is a sequence of sets,
+    each holding (OID, string) pairs.
+    """
+    try:
+        tag, start, end = _der_element(der, 0, len(der))
+        if tag != 0x30:
+            return None
+        tag, start, end = _der_element(der, start, end)
+        if tag != 0x30:
+            return None
+        fields = _der_children(der, start, end)
+        if fields and fields[0][0] == 0xA0:
+            fields = fields[1:]
+        _, start, end = fields[4]
+        values: dict[bytes, str] = {}
+        for _, set_start, set_end in _der_children(der, start, end):
+            for _, pair_start, pair_end in _der_children(der, set_start, set_end):
+                oid, value = _der_children(der, pair_start, pair_end)[:2]
+                values.setdefault(der[oid[1] : oid[2]], _der_string(der, value))
+    except (ValueError, IndexError):
+        return None
+    return CertificateSubject(
+        common_name=values.get(_OID_CN, ""),
+        organizational_unit=values.get(_OID_OU, ""),
+        organization=values.get(_OID_O, ""),
+    )
+
+
+def _der_element(data: bytes, offset: int, limit: int) -> tuple[int, int, int]:
+    """The ``(tag, content start, content end)`` of the element at *offset*.
+
+    Raises ValueError when the element runs past *limit* or its length is not
+    a definite DER length.
+    """
+    if offset + 2 > limit:
+        raise ValueError("truncated DER element")
+    tag, length = data[offset], data[offset + 1]
+    start = offset + 2
+    if length & 0x80:
+        count = length & 0x7F
+        if not 1 <= count <= 4 or start + count > limit:
+            raise ValueError("unsupported DER length")
+        length = int.from_bytes(data[start : start + count], "big")
+        start += count
+    if start + length > limit:
+        raise ValueError("truncated DER element")
+    return tag, start, start + length
+
+
+def _der_children(data: bytes, start: int, end: int) -> list[tuple[int, int, int]]:
+    children = []
+    while start < end:
+        child = _der_element(data, start, end)
+        children.append(child)
+        start = child[2]
+    return children
+
+
+def _der_string(data: bytes, element: tuple[int, int, int]) -> str:
+    tag, start, end = element
+    encoding = {0x1E: "utf-16-be", 0x1C: "utf-32-be"}.get(tag, "utf-8")
+    return data[start:end].decode(encoding, errors="replace")
 
 
 def _macho_platforms(data: bytes) -> set[str]:

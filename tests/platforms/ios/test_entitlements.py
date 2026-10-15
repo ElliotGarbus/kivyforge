@@ -32,7 +32,9 @@ from kivyforge.platforms.ios.xcode.commands import SigningError
 APP_ID = "ABCDE12345.org.example.myapp"
 
 
-def write_profile(path, granted, *, name="Acme Development", uuid="", managed=False):
+def write_profile(
+    path, granted, *, name="Acme Development", uuid="", managed=False, teams=()
+):
     """A .mobileprovision is a CMS envelope wrapping a verbatim XML plist."""
     payload = {
         "Name": name,
@@ -42,6 +44,8 @@ def write_profile(path, granted, *, name="Acme Development", uuid="", managed=Fa
         payload["UUID"] = uuid
     if managed:
         payload["IsXcodeManaged"] = True
+    if teams:
+        payload["TeamIdentifier"] = list(teams)
     path.write_bytes(b"\x30\x82\xde\xad" + plistlib.dumps(payload) + b"\x00\x01\x02")
     return path
 
@@ -108,6 +112,23 @@ class TestReadProfile:
     def test_extracts_uuid(self, tmp_path):
         path = write_profile(tmp_path / "p.mobileprovision", {}, uuid=UUID)
         assert read_profile(path).uuid == UUID
+
+    def test_extracts_team_identifiers(self, tmp_path):
+        path = write_profile(tmp_path / "p.mobileprovision", {}, teams=["ABCDE12345"])
+        assert read_profile(path).team_ids == ("ABCDE12345",)
+
+    def test_team_identifiers_absent_or_malformed_read_as_empty(self, tmp_path):
+        assert (
+            read_profile(write_profile(tmp_path / "a.mobileprovision", {})).team_ids
+            == ()
+        )
+        path = tmp_path / "b.mobileprovision"
+        payload = {"Name": "B", "TeamIdentifier": "ABCDE12345"}  # not an array
+        path.write_bytes(b"\x30" + plistlib.dumps(payload))
+        assert read_profile(path).team_ids == ()
+        payload = {"Name": "C", "TeamIdentifier": ["ABCDE12345", 7]}
+        path.write_bytes(b"\x30" + plistlib.dumps(payload))
+        assert read_profile(path).team_ids == ("ABCDE12345",)
 
 
 UUID = "1A2B3C4D-0000-1111-2222-333344445555"

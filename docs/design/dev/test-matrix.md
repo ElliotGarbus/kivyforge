@@ -1328,6 +1328,7 @@ this table and the TOML listing the same items.
 | `ios-device` | runnable | macOS | 2026-09-30: PASS on an iPhone 18 Pro Max, iOS 27.0 (hardware pass); 2026-09-27: PR #20 validated; first device run 2026-09-14 |
 | `ios-strip-source` | blocked | macOS | never: every iOS example pins `3.15.0b4`; waits on CPython 3.15.0 final |
 | `ios-device-app-metadata` | runnable | macOS | 2026-10-14: PASS on an iPhone 18 Pro Max, iOS 27.0.1, every variant, each Xcode-only rebuild validly signed (hardware pass); earlier that day FAIL: an Xcode-only device rebuild broke the signature of `Frameworks/`, fixed by declaring the Build Python phase's bundle outputs |
+| `ios-device-free-team` | runnable | macOS | never: every device run in §7 signed with a paid team; the guides say a free Apple ID's personal team works |
 | `macos-notarize` | runnable | macOS | 2026-10-01: `dice-roller` notarized, stapled and accepted by `spctl` (hardware pass); 2026-09-14: `notarytool history` showed five Accepted submissions since 2026-07-07 |
 | `windows-authenticode` | needs credentials | Windows | never with a public certificate; the self-signed loop runs in CI (`windows_signing`) |
 | `windows-interactive` | runnable | Windows | 2026-09-29: double-click, shortcut and Ctrl+C passed on `dice-roller`; paths over MAX_PATH moved to CI 2026-09-24 (§5.6) |
