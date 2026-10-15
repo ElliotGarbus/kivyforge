@@ -161,10 +161,21 @@ exactly as they do for the in-tree file.
   - A failure before the copy (signing, Lint, Gradle, Xcode) leaves the file
     untouched.
   - The copy uses `fsswap`'s reserve-and-restore pattern on one file. Rename
-    the existing file aside (`.<name>.old-<pid>`), then copy straight to the
-    final name. On success, delete the old file. On failure, delete the partial
-    file and rename the old one back. Renaming an old file is safe on Windows,
-    as `fsswap` records; only a freshly written one is not.
+    the existing file aside (`.<name>.old-<suffix>`, as the existing helpers
+    name theirs), then copy straight to the final name. On success, delete the
+    old file. On failure, delete the partial file and rename the old one back.
+    Renaming an old file is safe on Windows, as `fsswap` records; only a
+    freshly written one is not.
+  - It reuses the pattern, not `fsswap`'s functions. `reserve_previous` raises
+    `WindowsBundleError`, and `restore_previous` clears its target with
+    `rmtree`; both are shaped for a Windows folder.
+  - `bundle/workdir.py`'s `swap_in` (added in
+    [#137](https://github.com/ElliotGarbus/kivyforge/pull/137)) also keeps the
+    previous output on failure, but it does not fit. It finishes by renaming
+    the freshly written result into place (`work.replace(dest)`), which is the
+    rename `fsswap` records the Windows antivirus scanner can block. That is
+    safe for the macOS `.app` and the Linux AppDir, whose backends never run
+    on Windows. It is not safe for `package -p android`, which does.
   
   So after a failed run, `dist/` can hold a file with exactly the name this run
   would have written. It is the previous successful package, and the envelope
@@ -177,20 +188,32 @@ exactly as they do for the in-tree file.
   package.
 - **Files of other versions are not touched.** Keeping them is the archive #112
   asks for.
-- **A failed copy raises the backend's own error type**: `AndroidBuildError`
-  on Android, `ToolchainError` on iOS. The message names the path and the OS
-  error. It must never be a bare `OSError`. `reporting()` in `cli/_output.py`
-  catches only `ToolchainError`, and nothing above it catches anything, so a
-  bare `OSError` skips the `--json` envelope and prints a traceback.
+- **A failed copy raises the backend's own error type, with its message from
+  `failures.os_failure()`.** It must never be a bare `OSError`.
+  `reporting()` in `cli/_output.py` catches only `ToolchainError`, and nothing
+  above it catches anything, so a bare `OSError` skips the `--json` envelope
+  and prints a traceback.
+  - **The message:** `os_failure()` (added in
+    [#136](https://github.com/ElliotGarbus/kivyforge/pull/136)) turns an
+    `OSError` into one line, `could not <doing>: <why>`, and is what every
+    backend's own filesystem writes now use.
+  - **Android:** `AndroidBuildError(os_failure(f"copy {name} into
+    dist/android", exc))`. The copy wraps its own error. `android_package`
+    carries only `@user_facing`, which catches `AndroidBuildError`, not
+    `OSError`. The `@writes_project` decorator that does catch `OSError` is
+    on `android_build`, and its label, "write the Android project", would
+    misname a copy into `dist/`, so it is not added to `android_package`.
+  - **iOS:** `ToolchainError(failures.os_failure(...))`, as `ios/cli.py`
+    already does for the release build folder.
 
   The failure is unclassified (`KF-ERROR`, exit 1). There is no new code:
   codes are contracts, and nobody has yet hit a full disk or a read-only
   `dist/`.
 
 Windows' existing copy into `dist/windows` had the same bare-`OSError` gap.
-It is fixed separately in
-[#135](https://github.com/ElliotGarbus/kivyforge/pull/135), not as part of
-this change.
+It was fixed separately in
+[#135](https://github.com/ElliotGarbus/kivyforge/pull/135), now merged, not as
+part of this change.
 
 ### 3.5 What is reported
 
