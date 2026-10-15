@@ -329,3 +329,30 @@ class TestBuildAppdir:
         assert appdir.exists()
         assert marker.exists()
         assert not list(out.glob(f".{appdir.name}.tmp-*"))
+
+    def test_failed_swap_preserves_previous_appdir(self, tmp_path, faked, monkeypatch):
+        # The assembly succeeds and only moving the finished tree into place is
+        # refused: the previous AppDir must still be whole, not half-deleted,
+        # and the temp tree must not be left beside it.
+        root = _project(tmp_path)
+        out = tmp_path / "out"
+        appdir = bundle.build_appdir(
+            _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+        )
+        (appdir / "SENTINEL").write_text("prev")
+        real_replace = os.replace
+
+        def refuse_work_tree(src, dst, **kw):
+            if Path(src).name.startswith(".My App.AppDir.tmp-"):
+                raise PermissionError(13, "Permission denied", str(src))
+            real_replace(src, dst, **kw)
+
+        monkeypatch.setattr(os, "replace", refuse_work_tree)
+        with pytest.raises(PermissionError):
+            bundle.build_appdir(
+                _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+            )
+
+        assert (appdir / "SENTINEL").read_text() == "prev"
+        assert (appdir / "usr" / "app" / "main.py").is_file()
+        assert [p.name for p in out.iterdir()] == ["My App.AppDir"]

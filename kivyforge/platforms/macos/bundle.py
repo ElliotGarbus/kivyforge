@@ -26,7 +26,7 @@ from kivyforge.bundle.pycompile import (
     compile_stdlib,
     select_compiler,
 )
-from kivyforge.bundle.workdir import make_work_dir
+from kivyforge.bundle.workdir import make_work_dir, swap_in
 from kivyforge.config.model import Config
 from kivyforge.host import host_runs_natively
 from kivyforge.report import diagnostics
@@ -144,7 +144,8 @@ def build_app_bundle(
     # Assemble into a temp .app and swap it in only on success, so a failure
     # mid-assembly (e.g. a transient runtime/wheel fetch error, or a signing
     # failure) leaves the previous, working .app untouched instead of a
-    # half-written one. Mirrors the Linux AppDir builder's write-then-swap.
+    # half-written one. Mirrors the Linux AppDir builder's write-then-swap;
+    # swap_in keeps the same promise if the swap itself is refused.
     staging_dir.mkdir(parents=True, exist_ok=True)
     work = make_work_dir(staging_dir, prefix=f".{app.name}.tmp-")
     try:
@@ -250,12 +251,7 @@ def build_app_bundle(
         shutil.rmtree(work, ignore_errors=True)
         raise
 
-    # Swap the freshly built tree in for the previous one. The rename is atomic
-    # within staging_dir; the brief rmtree→rename window only exists after a
-    # fully successful build.
-    if app.exists():
-        shutil.rmtree(app)
-    work.replace(app)
+    swap_in(work, app)
     return app
 
 
