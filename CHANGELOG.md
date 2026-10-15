@@ -58,6 +58,25 @@
   traceback.
 - **Migration:** none needed.
 
+### macOS and Linux: a build that fails at the last step keeps your previous app
+
+- **Fixed:** `build`, `package` and `run` for macOS and Linux assemble the new
+  `.app` or AppDir in a hidden temporary folder in `build/macos/` or
+  `build/linux/`, then swap it in for the previous one. The swap deleted the
+  previous `.app` or AppDir first. If that delete failed partway, for example
+  on a folder kivyforge may not write, or the new folder could not take its
+  place, the build failed with your previous app half deleted and the
+  temporary `.<Name>.app.tmp-*` or `.<Name>.AppDir.tmp-*` folder left behind.
+  Now the previous app is renamed aside whole, the new one is renamed into
+  place, and only then is the previous one deleted. If the new one cannot take
+  its place, the previous one is put back, and the temporary folder is always
+  removed. The failure is reported as before, as `KF-ERROR` with exit
+  status 1. If the new app is in place but part of the previous one cannot be
+  deleted, the build still succeeds and leaves a hidden
+  `.<Name>.app.old-*` or `.<Name>.AppDir.old-*` folder you can delete.
+- **Migration:** none needed. A `.<Name>.app.tmp-*` or `.<Name>.AppDir.tmp-*`
+  folder left by an earlier failed build is safe to delete.
+
 ### Guides
 
 - **Added:** [Sign your iOS app](docs/guides/guides/ios/signing.md#find-your-team-id)

@@ -403,6 +403,33 @@ class TestBuildAppBundle:
         assert (app / "SENTINEL").read_text() == "prev"
         assert [p.name for p in out.iterdir()] == ["My App.app"]
 
+    def test_failed_swap_preserves_previous_app(self, tmp_path, faked, monkeypatch):
+        # The assembly succeeds and only moving the finished tree into place is
+        # refused: the previous .app must still be whole, not half-deleted, and
+        # the temp tree must not be left beside it.
+        root = _project(tmp_path)
+        out = tmp_path / "out"
+        app = bundle.build_app_bundle(
+            _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+        )
+        (app / "SENTINEL").write_text("prev")
+        real_replace = os.replace
+
+        def refuse_work_tree(src, dst, **kw):
+            if Path(src).name.startswith(".My App.app.tmp-"):
+                raise PermissionError(13, "Permission denied", str(src))
+            real_replace(src, dst, **kw)
+
+        monkeypatch.setattr(os, "replace", refuse_work_tree)
+        with pytest.raises(PermissionError):
+            bundle.build_app_bundle(
+                _config(), _lock(), root, staging_dir=out, echo=lambda *a: None
+            )
+
+        assert (app / "SENTINEL").read_text() == "prev"
+        assert (app / "Contents" / "Info.plist").is_file()
+        assert [p.name for p in out.iterdir()] == ["My App.app"]
+
     def test_icon_generated_when_configured(self, tmp_path, faked):
         root = _project(tmp_path)
         (root / "assets").mkdir()
