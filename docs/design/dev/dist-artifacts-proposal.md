@@ -1,17 +1,29 @@
 # Proposal — `package` writes its artifact to `dist/`
 
 > Status: **draft 2026-10-15**, trimmed the same day to the smallest change
-> that answers the issue. Not implemented. Answers
-> [#112](https://github.com/ElliotGarbus/kivyforge/issues/112), which asks for
-> packaged artifacts in `dist/` under versioned names: its example is
-> `dist/$APP-$VERSION-debug.apk` instead of
-> `$APP-android/app/build/outputs/apk/debug/app-debug.apk`.
+> that addresses the issue. Not implemented.
+>
+> Responds to [#112](https://github.com/ElliotGarbus/kivyforge/issues/112),
+> which asks for packaged artifacts in `dist/` under versioned names. Its
+> example is `dist/$APP-$VERSION-debug.apk` instead of
+> `$APP-android/app/build/outputs/apk/debug/app-debug.apk`. This proposal
+> covers the location and naming of release artifacts. The debug APK in that
+> example is deferred (5.2), so the change does not resolve #112 on its own:
+> #112 stays open until the reporter says whether they need debug builds
+> (section 11).
+>
 > [`package-metadata-proposal.md`](package-metadata-proposal.md) §9 deferred
 > this to its own change. The design was checked against the PyPA
 > specifications (section 6) and compared with Briefcase (section 7). Its
-> decisions were recorded on 2026-10-15 (section 4), and none is open. A review
-> the same day changed four things: Q1's rule, same-name files (3.4), the CI
-> step (step 5), and the tests (section 9).
+> decisions were recorded on 2026-10-15 (section 4), and none is open.
+>
+> Two reviews the same day changed:
+>
+> - Q1's rule;
+> - same-name files and the parent folder (3.4);
+> - the CI step (step 5);
+> - the tests (section 9);
+> - the scope claimed for #112.
 
 **Summary.** `package -p android` and `package -p ios` copy the file they
 produce to `dist/<platform>/<slug>-<version>[-<qualifier>].<ext>`, as
@@ -134,6 +146,9 @@ exactly as they do for the in-tree file.
 
 ### 3.4 Writing the copy
 
+- **Create the folder first.** `dist/<platform>/` does not exist on a clean
+  checkout, so the copy starts with `mkdir(parents=True, exist_ok=True)` on
+  it, as Windows' `_stage_dist_copy` already does for `dist/windows`.
 - **Copy straight to the final name** (`shutil.copy2`). Writing a temporary
   file and renaming it is not safe here: `platforms/windows/fsswap.py` records
   that Windows cannot reliably rename a freshly written file while the
@@ -465,7 +480,8 @@ checked, with the original left in place. The plan is sized to that.
 `test_build_package_human_output.py`:
 
 - `package -p android`, `-f aab` and `--abi x86_64` each record one `apk` or
-  `aab` at the path in 3.2, and stdout's product line names it.
+  `aab` at the path in 3.2, and stdout's product line names it. The first of
+  these starts with no `dist/` folder, as on a clean checkout (3.4).
 - The ABI qualifier follows the contents (Q1):
   - `--abi x86_64` with `abis = ["arm64_v8a", "x86_64"]` is qualified;
   - `--abi x86_64` with `abis = ["x86_64"]` is not;
@@ -486,14 +502,42 @@ checked, with the original left in place. The plan is sized to that.
     and no `.old-*` file remains;
   - a previous version's file is untouched;
   - neither is named.
-- **The copy fails on iOS, after a successful export:** `artifacts == []`, so
-  neither the in-tree `.ipa` nor a same-name file in `dist/ios/` is named, and
-  the same-name file is restored as on Android.
+- **The copy fails on iOS, after a successful export.** This guards the step 2
+  change: `_xcodebuild_step7` records the in-tree `.ipa` as soon as it is
+  called (3.5).
+  - In `--json` mode, stdout is one failure envelope with `artifacts == []`.
+    Neither the in-tree `.ipa` nor a same-name file in `dist/ios/` is named.
+  - In human mode, the `Exported …` line may appear, and no `Packaged …` line
+    does. Product lines are suppressed under `--json` (`console.line`), which
+    is why the two modes are checked separately.
+  - The same-name file is restored, as on Android.
 - **`package` fails before the copy** (for example, Gradle fails): a same-name
   file in `dist/` is untouched and not named.
 - **Packaging again:** the same version replaces the file, leaving no `.old-*`
   file behind. A different version leaves the old file in place.
 - `clean` removes `dist/android` and `dist/ios`, then `dist/` once it is empty.
+
+**Backend tests in `tests/platforms/android/test_cli.py`.** Some existing tests
+change and some must not:
+
+- **These change,** because `android_package` now records the `dist/` file:
+  - `TestAndroidPackage.test_success_assembles_release_apk`;
+  - `TestAndroidPackage.test_success_bundles_release_aab`;
+  - the manifest-policy test that asserts `out.name == "app-release.apk"`.
+  
+  They assert the 3.2 name, and that the in-tree `app-release.*` still exists.
+- **These stay as they are,** because they cover in-tree paths this change
+  keeps:
+  - `TestDebugReleaseOutputPaths`, which checks the `_debug_output` and
+    `_release_output` names;
+  - the `run --release` and `run --no-build` tests that install
+    `app-release.apk` from the generated project.
+  
+  A failure in these means the change moved something it should only have
+  copied.
+
+`tests/platforms/ios/xcode/test_commands.py` asserts the in-tree `ipa_path`,
+which is also unchanged.
 
 **CI.** With step 5, the existing Android jobs on Linux and on the Windows host
 find the `dist/` file through the `--json` envelope, and run their artifact
@@ -533,3 +577,7 @@ Draft CHANGELOG note:
   - why the debug APK stays in the generated project (5.2), and to say if
     they need debug builds specifically;
   - that distinct names per build need a changing version.
+- The implementation's PR refers to #112 without a closing keyword ("Fixes",
+  "Closes"), because this change does not cover the debug APK. #112 is closed
+  only once the reporter confirms that release artifacts are enough. If they
+  need debug builds, it stays open for 5.2's `-f debug-apk`.
