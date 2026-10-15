@@ -378,7 +378,7 @@ known-unverified list.
 | 10 | Dynamic `[project].version` (setuptools-scm and friends) | S–M | none |
 | 11 | CPython 3.15 on every platform | S–M | CPython 3.15.0 final released |
 | 12 | Enforce Maven artifact hashes at build time (Android) | M | none |
-| 13 | Android and iOS `package` output into `dist/` with versioned names ([#112](https://github.com/ElliotGarbus/kivyforge/issues/112)) | S | none (decisions recorded 2026-10-15) |
+| 13 | Android and iOS `package` output into `dist/` with versioned names ([#112](https://github.com/ElliotGarbus/kivyforge/issues/112)) | S | **implemented 2026-10-15**; the real iOS run and the #112 reply remain |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -2198,4 +2198,6 @@ The proposal copies the Android and iOS artifacts to
 `dist/<platform>/<slug>-<version>[-<qualifier>].<ext>`, leaves `build`'s output
 where it is, and defers macOS and a debug variant of `package -p android`.
 
-**Done when** the proposal's §11 holds.
+**Implemented 2026-10-15** on branch `dist-artifacts`. **Done when** the
+proposal's §11 holds: the real `package -p ios` run is recorded in
+`test-matrix.md` §7, and the reporter has been answered.

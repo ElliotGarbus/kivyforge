@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Android and iOS: `package` puts its artifact in `dist/`
+
+- **Changed:** `kivyforge package -p android` and `-p ios` copy the finished
+  artifact into `dist/android/` and `dist/ios/`, named with the app and its
+  version, as `package -p linux` already does
+  ([#112](https://github.com/ElliotGarbus/kivyforge/issues/112)):
+  - `dist/android/myapp-1.2.0.apk` or `.aab`;
+  - `dist/ios/myapp-1.2.0.ipa`.
+
+  Two cases add to the name:
+  - a package that `--abi` limits to some of your configured ABIs names the
+    ABI (`myapp-1.2.0-x86_64.apk`), so it is never mistaken for the full app;
+  - an `ad-hoc` or `development` export names its method
+    (`myapp-1.2.0-ad-hoc.ipa`), since each embeds a different provisioning
+    profile.
+
+  The `Packaged` line and `data.artifacts` name the copy in `dist/`. A file of
+  the same name from an earlier run is kept until the new copy succeeds, and
+  files of other versions are left alone.
+- **Migration:**
+  - Gradle's `app-release.apk` or `app-release.aab`, and Xcode's
+    `<app>-ios/build/<app>.ipa`, are still written where they were, so a
+    script that reads them keeps working. Read the `dist/` path, or
+    `data.artifacts[].path` from `--json`, instead.
+  - `kivyforge clean` now also removes `dist/android/` and `dist/ios/`, with
+    every version in them.
+  - `build` is unchanged, including `build -p android --debug` and
+    `build -p ios --release`.
+  - If the same checkout also uploads a wheel, `twine upload dist/*` fails on
+    the platform folders, as it already does on `dist/linux/` and
+    `dist/windows/`. See
+    [Drive kivyforge from CI](docs/guides/guides/cross-platform/ci-and-agents.md#upload-python-distributions-from-a-separate-folder).
+
 ### iOS: `doctor` checks the Team ID
 
 - **Added:** `kivyforge doctor -p ios` has a "Team ID" check

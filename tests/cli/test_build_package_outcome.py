@@ -301,7 +301,7 @@ class TestIos:
         assert (
             rec.recorded
             == _recorded(outcome)
-            == [("demo-ios/build/demo.ipa", ArtifactKind.IPA)]
+            == [("dist/ios/demo-1.0.0.ipa", ArtifactKind.IPA)]
         )
 
     def test_failed_package_records_nothing(self, ios, monkeypatch):
@@ -335,13 +335,12 @@ class TestAndroid:
         assert (
             rec.recorded
             == _recorded(outcome)
-            == [
-                (
-                    "demoapp-android/app/build/outputs/apk/release/app-release.apk",
-                    ArtifactKind.APK,
-                )
-            ]
+            == [("dist/android/demoapp-1.0.0.apk", ArtifactKind.APK)]
         )
+        # The copy is the product; Gradle's output stays for run and status.
+        assert Path(
+            "demoapp-android/app/build/outputs/apk/release/app-release.apk"
+        ).is_file()
 
     def test_package_notes_policy_and_byte_compile(self, android):
         from kivyforge.platforms.android import cli

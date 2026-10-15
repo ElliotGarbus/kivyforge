@@ -75,12 +75,16 @@ def clean(
             # Always before the removal below: a live Gradle daemon holds handles
             # under app/build, which makes rmtree fail outright on Windows.
             _stop_gradle_daemon(report, android_project)
-            # Every platform's generated staging/output trees: iOS <app>-ios/,
-            # macOS build/macos/, Linux build/linux/ + dist/linux/, and Windows
-            # build/windows/ + dist/windows/.
+            # Every platform's generated staging/output trees: iOS <app>-ios/ +
+            # dist/ios/, Android <app>-android/ + dist/android/, macOS
+            # build/macos/, Linux build/linux/ + dist/linux/, and Windows
+            # build/windows/ + dist/windows/. The dist/ folders go whole, with
+            # every version kept there.
             targets = [
                 cwd / f"{config.app_slug}-ios",
+                cwd / "dist" / "ios",
                 android_project,
+                cwd / "dist" / "android",
                 cwd / "build" / "macos",
                 cwd / "build" / "linux",
                 cwd / "dist" / "linux",

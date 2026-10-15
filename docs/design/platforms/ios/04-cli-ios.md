@@ -138,7 +138,7 @@ Flags:
    - `--simulator` / `--device`: `xcodebuild build` with the appropriate SDK and Debug configuration. The compiled `.app` lands in Xcode's `DerivedData`.
    - `--release`: two-step pipeline matching Flutter's `flutter build ipa`:
      1. `xcodebuild archive -scheme <app> -configuration Release -archivePath <app>-ios/build/<app>.xcarchive` — produces a `.xcarchive` (kept for dSYM access). Because `DEBUG_INFORMATION_FORMAT = dwarf-with-dsym` is toolchain-managed for Release (see [Xcode project generation §"Toolchain-managed build settings"](05-xcode-project-generation.md#toolchain-managed-build-settings)), the archive always contains a `dSYMs/` folder. **For third-party crash-reporting services (Sentry, Crashlytics, etc.), point your symbol-upload tool at `<app>-ios/build/<app>.xcarchive/dSYMs/`** — this is independent of `[tool.kivy.ios.signing].upload_symbols`, which only governs upload to Apple's App Store Connect.
-     2. `xcodebuild -exportArchive -archivePath <app>-ios/build/<app>.xcarchive -exportPath <app>-ios/build/ -exportOptionsPlist <generated>` — auto-generates `ExportOptions.plist` from `[tool.kivy.ios.signing]` and `--export-method`, then exports the `.ipa` to `<app>-ios/build/<app>.ipa`. The generated plist maps schema fields to export keys as follows: `--export-method` → `method` (`app-store` / `ad-hoc` / `development`); `[tool.kivy.ios.signing].team_id` → `teamID`; `[tool.kivy.ios.signing].upload_symbols` → `uploadSymbols` (`true` includes dSYMs for symbolicated crash reports; `false` sets `uploadSymbols = false` for a smaller export). The `.xcarchive` is retained regardless, so dSYMs remain available for manual symbol upload even when `upload_symbols = false`.
+     2. `xcodebuild -exportArchive -archivePath <app>-ios/build/<app>.xcarchive -exportPath <app>-ios/build/ -exportOptionsPlist <generated>` — auto-generates `ExportOptions.plist` from `[tool.kivy.ios.signing]` and `--export-method`, then exports the `.ipa` to `<app>-ios/build/<app>.ipa`. `build --release` stops there. `package` then **copies** the `.ipa` to `dist/ios/<app>-<version>.ipa` (`-ad-hoc` or `-development` appended for those export methods, since each embeds a different provisioning profile), and only that copy is its product. A same-name file from an earlier run is kept until the copy succeeds; see [dist-artifacts-proposal](../../dev/dist-artifacts-proposal.md). The generated plist maps schema fields to export keys as follows: `--export-method` → `method` (`app-store` / `ad-hoc` / `development`); `[tool.kivy.ios.signing].team_id` → `teamID`; `[tool.kivy.ios.signing].upload_symbols` → `uploadSymbols` (`true` includes dSYMs for symbolicated crash reports; `false` sets `uploadSymbols = false` for a smaller export). The `.xcarchive` is retained regardless, so dSYMs remain available for manual symbol upload even when `upload_symbols = false`.
    - Without a target flag the project is left ready for Xcode IDE.
 
 #### Step 4 — pip platform tag
@@ -216,7 +216,7 @@ If none of `--python`, `--xcframeworks`, or `--name` is given, all pinned artifa
 Flags:
 
 - `--cache` (also flush `~/Library/Caches/kivyforge/artifacts/` — the macOS-standard cache location)
-- `--project-only` (only the generated `<app>-ios/` folder; default)
+- `--project-only` (only the generated `<app>-ios/` folder and `package`'s `dist/ios/`, every version in it; default)
 
 ### `kivyforge status`
 

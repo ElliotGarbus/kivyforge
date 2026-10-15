@@ -13,8 +13,9 @@ sources:
 
 kivyforge writes your app's version into every artifact: Android's
 `versionName`, Apple's `CFBundleShortVersionString`, the Windows version
-resource, and the Linux and Windows file names. This page shows the three ways
-to give it that version, and what each one does to your build.
+resource, and the names of the files `package` writes to `dist/`. This page
+shows the three ways to give it that version, and what each one does to your
+build.
 
 ## Before you begin
 

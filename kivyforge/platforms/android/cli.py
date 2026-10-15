@@ -28,6 +28,7 @@ from kivyforge.build_outcome import (
 )
 from kivyforge.bundle import app_metadata
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
+from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config, read_pyproject_text
 from kivyforge.config.model import AndroidConfig, Config, ResolvedVersion
@@ -791,10 +792,37 @@ def android_package(
         raise _gradle_failure(exc, task) from exc
     out = _require_artifact(_release_output(dest, fmt), task)
     _check_packaged_libs(out)
-    rel = out.relative_to(project_root)
+    # Copied, not moved: run, status and CI still read Gradle's output in the
+    # project. Only the copy is this verb's product (dist-artifacts-proposal).
+    published = _dist_output(project_root, config, abi, fmt)
+    try:
+        copy_in(out, published)
+    except OSError as exc:
+        folder = published.parent.relative_to(project_root).as_posix()
+        raise AndroidBuildError(
+            os_failure(f"copy {out.name} into {folder}", exc)
+        ) from exc
+    rel = published.relative_to(project_root)
+    events.on_progress(f"[package] copied {out.relative_to(project_root)} to {rel}")
     events.on_line(f"Packaged {rel}")
     outcome.add(rel, ArtifactKind.APK if fmt == "apk" else ArtifactKind.AAB)
     return outcome.finish()
+
+
+def _dist_output(project_root: Path, config: Config, abi: str | None, fmt: str) -> Path:
+    """Where ``package`` puts its artifact: ``dist/android/<slug>-<ver>[-<abi>]``.
+
+    The ABI is named only when the package holds a strict subset of the
+    configured ABIs, which only ``--abi`` produces: Play accepts a one-ABI
+    bundle without complaint, so a subset must never pass for the full app.
+    ``--abi`` naming every configured ABI packages the full app, unqualified.
+    """
+    android = config.android_required
+    abis = _select_abis(android, abi)
+    qualifier = "".join(f"-{a}" for a in abis) if set(abis) < set(android.abis) else ""
+    version = config.version_required.filename_part
+    name = f"{config.app_slug}-{version}{qualifier}.{fmt}"
+    return project_root / "dist" / "android" / name
 
 
 def _enforce_merged_manifest(

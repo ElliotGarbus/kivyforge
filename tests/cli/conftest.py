@@ -127,6 +127,8 @@ def ios(desktop_project, monkeypatch):
 
     config = SimpleNamespace(
         app_slug="demo",
+        # package -p ios names its copy in dist/ios from this.
+        version_required=ResolvedVersion("1.0.0", source="static"),
         ios=SimpleNamespace(
             deployment_target="13.0",
             python_build_settings=None,

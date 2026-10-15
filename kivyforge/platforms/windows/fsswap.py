@@ -14,29 +14,10 @@ from __future__ import annotations
 
 import os
 import shutil
-import time
 from pathlib import Path
 
-
-def rename_with_retry(
-    src: Path, dst: Path, *, timeout: float = 30.0, initial_delay: float = 0.1
-) -> None:
-    """``os.replace(src, dst)`` retrying transient Windows sharing locks.
-
-    Retries until *timeout* seconds elapse, backing off from *initial_delay* up
-    to a 1s cap. Re-raises the last ``PermissionError`` if the lock never clears.
-    """
-    deadline = time.monotonic() + timeout
-    delay = initial_delay
-    while True:
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(delay)
-            delay = min(delay * 1.5, 1.0)
+# Shared with the mobile backends' copy into dist/, so it lives with copy_in.
+from kivyforge.bundle.workdir import rename_with_retry
 
 
 def reserve_previous(target: Path, *, timeout: float = 30.0) -> Path | None:
