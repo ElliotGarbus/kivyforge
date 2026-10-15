@@ -63,6 +63,8 @@ class ProvisioningProfile:
     entitlements: dict
     uuid: str = ""
     xcode_managed: bool = False
+    #: The profile's ``TeamIdentifier`` array: the teams it can sign for.
+    team_ids: tuple[str, ...] = ()
 
 
 PROFILE_SUFFIX = ".mobileprovision"
@@ -158,7 +160,7 @@ def xcode_profile_specifier(config: Config, project_root: Path | None) -> str:
 
 
 def read_profile(path: str | Path) -> ProvisioningProfile:
-    """Extract name, App ID, and granted entitlements from a ``.mobileprovision``.
+    """Extract name, App ID, entitlements and teams from a ``.mobileprovision``.
 
     A profile is a CMS envelope wrapping an XML plist stored verbatim, so the
     payload is sliced straight out of the bytes rather than shelling out to
@@ -185,12 +187,15 @@ def read_profile(path: str | Path) -> ProvisioningProfile:
     granted = dict(granted) if isinstance(granted, dict) else {}
     app_id = granted.get("application-identifier", "")
     uuid = payload.get("UUID", "")
+    teams = payload.get("TeamIdentifier")
+    teams = teams if isinstance(teams, list) else []
     return ProvisioningProfile(
         name=str(payload.get("Name", "") or path.name),
         app_id=str(app_id) if isinstance(app_id, str) else "",
         entitlements=granted,
         uuid=uuid if isinstance(uuid, str) else "",
         xcode_managed=payload.get("IsXcodeManaged") is True,
+        team_ids=tuple(team for team in teams if isinstance(team, str)),
     )
 
 

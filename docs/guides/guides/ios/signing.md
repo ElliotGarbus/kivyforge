@@ -64,6 +64,12 @@ to your team. Where you find it depends on your Apple account.
         the other limits of a personal team, see Apple's
         [Developer account overview](https://developer.apple.com/support/compare-memberships/).
 
+!!! tip "List the Team IDs in your keychain"
+    Before you set a Team ID, run `kivyforge doctor -p ios` in your project
+    folder. Its **Team ID** line lists the Team ID and team name of each
+    signing certificate in your keychain. After you set one, that line fails
+    if you copied the ID from a certificate's name.
+
 ## Configure signing
 
 1. Add the signing table to your `pyproject.toml`:

@@ -16,6 +16,7 @@ class FakeProbe:
         self._sdk_range = overrides.get("sdk_range", ("15.0", "27.0.99"))
         self._latest = overrides.get("latest", None)
         self._identities = overrides.get("identities", [])
+        self._certificates = overrides.get("certificates", [])
         self._login_identities = overrides.get("login_identities", [])
         self._reachable = overrides.get("reachable", True)
         self._platforms = overrides.get("platforms", {})
@@ -76,6 +77,9 @@ class FakeProbe:
 
     def keychain_identities(self):
         return list(self._identities)
+
+    def keychain_certificates(self):
+        return list(self._certificates)
 
     def login_keychain_identities(self):
         return list(self._login_identities)

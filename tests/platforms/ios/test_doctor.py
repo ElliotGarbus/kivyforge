@@ -8,11 +8,13 @@ import pytest
 
 from kivyforge.config import load_config_from_text
 from kivyforge.doctor import checks_common as CC
+from kivyforge.doctor.probe import CertificateSubject
 from kivyforge.doctor.result import Status, worst_status
 from kivyforge.platforms.ios import doctor as C
 from kivyforge.platforms.ios.doctor import run_ios_checks as run_checks
 from kivyforge.platforms.ios.lock import LockedSwiftPackage, Lockfile, PythonXcframework
 from tests.doctor.probe_fakes import FakeProbe
+from tests.platforms.ios.test_entitlements import write_profile
 
 _DOCTOR_CONFIG = """
 [project]
@@ -295,14 +297,225 @@ class TestProjectChecks:
         assert "SDL3" in r.detail
 
 
+# Two certificates of one paid team, as read from a real keychain on 2026-10-14:
+# on Apple Development the ID in the name is not the Team ID (the OU); on
+# Developer ID it is.
+APPLE_DEVELOPMENT = CertificateSubject(
+    "Apple Development: Jo Doe (X83FAZ586W)", "R5PKSQLUZY", "Jo Doe"
+)
+DEVELOPER_ID = CertificateSubject(
+    "Developer ID Application: Jo Doe (R5PKSQLUZY)", "R5PKSQLUZY", "Jo Doe"
+)
+PERSONAL_TEAM = CertificateSubject(
+    "Apple Development: jo@example.com (K1L2M3N4P5)", "A1B2C3D4E5", "Jo Doe"
+)
+
+
+def _team_config(team_id="", *, profile="", auto_signing=True):
+    text = (
+        "[project]\nname='a'\nversion='1'\n[tool.kivy]\napp_dir='src'\n"
+        "[tool.kivy.ios]\nschema_version=1\nbundle_id='o.x.a'\n"
+        "[tool.kivy.ios.python]\nversion='3.15.0'\n"
+        f"[tool.kivy.ios.signing]\nteam_id='{team_id}'\n"
+        f"auto_signing={str(auto_signing).lower()}\n"
+    )
+    if profile:
+        text += f"provisioning_profile = '{profile}'\n"
+    return load_config_from_text(text)
+
+
+def _team_check(team_id="", *, certificates=(), env=None, tmp_path=None, **config):
+    from pathlib import Path
+
+    return C.check_team_id(
+        FakeProbe(certificates=list(certificates)),
+        _team_config(team_id, **config),
+        tmp_path or Path("."),
+        env={} if env is None else env,
+        search_dirs=(),
+    )
+
+
+class TestTeamIdCheck:
+    def test_unset_skips_and_lists_the_keychain_teams(self):
+        """A simulator-only user must not be warned (issue #108)."""
+        r = _team_check(certificates=[APPLE_DEVELOPMENT, DEVELOPER_ID, PERSONAL_TEAM])
+        assert r.status is Status.SKIP
+        assert r.detail == (
+            "not set (needed for --device and --release); "
+            "in keychain: A1B2C3D4E5 (Jo Doe), R5PKSQLUZY (Jo Doe)"
+        )
+        assert "KIVYFORGE_TEAM_ID" in r.hint
+
+    def test_unset_with_an_empty_keychain(self):
+        r = _team_check()
+        assert r.status is Status.SKIP
+        assert r.detail == "not set (needed for --device and --release)"
+
+    def test_a_certificate_without_a_team_is_not_listed(self):
+        local = CertificateSubject("My Local Signer", "Engineering", "Acme")
+        r = _team_check(certificates=[local])
+        assert "in keychain" not in r.detail
+
+    @pytest.mark.parametrize(
+        "value", ["ABCDE1234", "ABCDE123456", "abcde12345", "ABCDE-1234", "ABCDE 1234"]
+    )
+    def test_malformed_fails(self, value):
+        r = _team_check(value, certificates=[APPLE_DEVELOPMENT])
+        assert r.status is Status.FAIL
+        assert f"{value!r} from [tool.kivy.ios.signing].team_id" in r.detail
+        assert "R5PKSQLUZY (Jo Doe)" in r.hint
+
+    def test_malformed_with_an_empty_keychain_points_at_the_guide(self):
+        r = _team_check("nope")
+        assert r.status is Status.FAIL
+        assert "Find your Team ID" in r.hint
+
+    def test_the_id_in_a_certificate_name_is_named_as_the_mistake(self):
+        """The commonest wrong paste: it is the certificate's ID, not the team's."""
+        r = _team_check("X83FAZ586W", certificates=[APPLE_DEVELOPMENT])
+        assert r.status is Status.FAIL
+        assert r.detail == (
+            "X83FAZ586W is the ID in the name of the certificate "
+            '"Apple Development: Jo Doe (X83FAZ586W)", not the Team ID'
+        )
+        assert r.hint.startswith(
+            "set [tool.kivy.ios.signing].team_id to R5PKSQLUZY (Jo Doe)."
+        )
+
+    def test_the_certificate_mistake_without_a_readable_team(self):
+        odd = CertificateSubject("Apple Development: Jo (X83FAZ586W)", "", "")
+        r = _team_check("X83FAZ586W", certificates=[odd])
+        assert r.status is Status.FAIL
+        assert "Organizational Unit" in r.hint
+
+    def test_the_id_in_a_developer_id_name_is_the_team_id(self):
+        r = _team_check("R5PKSQLUZY", certificates=[DEVELOPER_ID])
+        assert r.status is Status.PASS
+        assert r.detail == "R5PKSQLUZY (Jo Doe)"
+
+    def test_a_personal_team_passes(self):
+        r = _team_check("A1B2C3D4E5", certificates=[APPLE_DEVELOPMENT, PERSONAL_TEAM])
+        assert r.status is Status.PASS
+        assert r.detail == "A1B2C3D4E5 (Jo Doe)"
+
+    def test_a_team_with_no_certificate_warns(self):
+        r = _team_check("ZZZZZ99999", certificates=[APPLE_DEVELOPMENT])
+        assert r.status is Status.WARN
+        assert r.detail == (
+            "ZZZZZ99999: no signing certificate in the keychain is for this team; "
+            "in keychain: R5PKSQLUZY (Jo Doe)"
+        )
+        assert "automatic signing can create one" in r.hint
+
+    def test_a_team_with_no_certificate_under_manual_signing(self):
+        r = _team_check("ZZZZZ99999", auto_signing=False)
+        assert r.status is Status.WARN
+        assert r.detail.endswith("is for this team")
+        assert "manual signing needs" in r.hint
+
+    def test_the_environment_wins_and_is_named(self):
+        env = {"KIVYFORGE_TEAM_ID": "R5PKSQLUZY"}
+        r = _team_check("bad", certificates=[DEVELOPER_ID], env=env)
+        assert r.status is Status.PASS
+        assert r.detail == "R5PKSQLUZY (Jo Doe) from KIVYFORGE_TEAM_ID"
+
+    def test_a_malformed_environment_value_names_the_variable(self):
+        r = _team_check("R5PKSQLUZY", env={"KIVYFORGE_TEAM_ID": "r5pksqluzy"})
+        assert r.status is Status.FAIL
+        assert "'r5pksqluzy' from KIVYFORGE_TEAM_ID" in r.detail
+
+    def test_an_empty_environment_value_falls_back_to_pyproject(self):
+        r = _team_check(
+            "R5PKSQLUZY", certificates=[DEVELOPER_ID], env={"KIVYFORGE_TEAM_ID": ""}
+        )
+        assert r.status is Status.PASS
+        assert r.detail == "R5PKSQLUZY (Jo Doe)"
+
+    def test_a_pinned_profile_of_another_team_fails(self, tmp_path):
+        write_profile(tmp_path / "p.mobileprovision", {}, teams=["OTHER12345"])
+        r = _team_check(
+            "R5PKSQLUZY",
+            certificates=[DEVELOPER_ID],
+            tmp_path=tmp_path,
+            profile="p.mobileprovision",
+            auto_signing=False,
+        )
+        assert r.status is Status.FAIL
+        assert r.detail == (
+            "R5PKSQLUZY is not the team of the pinned profile Acme Development "
+            "(OTHER12345)"
+        )
+
+    def test_a_pinned_profile_of_this_team_passes(self, tmp_path):
+        write_profile(tmp_path / "p.mobileprovision", {}, teams=["R5PKSQLUZY"])
+        r = _team_check(
+            "R5PKSQLUZY",
+            certificates=[DEVELOPER_ID],
+            tmp_path=tmp_path,
+            profile="p.mobileprovision",
+            auto_signing=False,
+        )
+        assert r.status is Status.PASS
+
+    def test_a_profile_mismatch_outranks_a_missing_certificate(self, tmp_path):
+        write_profile(tmp_path / "p.mobileprovision", {}, teams=["OTHER12345"])
+        r = _team_check(
+            "ZZZZZ99999",
+            tmp_path=tmp_path,
+            profile="p.mobileprovision",
+            auto_signing=False,
+        )
+        assert r.status is Status.FAIL
+
+    @pytest.mark.parametrize("contents", [None, b"not a profile", "no teams"])
+    def test_an_unusable_profile_is_left_to_the_profile_check(self, tmp_path, contents):
+        path = tmp_path / "p.mobileprovision"
+        if contents == "no teams":
+            write_profile(path, {})
+        elif contents is not None:
+            path.write_bytes(contents)
+        r = _team_check(
+            "R5PKSQLUZY",
+            certificates=[DEVELOPER_ID],
+            tmp_path=tmp_path,
+            profile="p.mobileprovision",
+            auto_signing=False,
+        )
+        assert r.status is Status.PASS
+
+    def test_an_unknown_profile_name_is_left_to_the_profile_check(self):
+        r = _team_check(
+            "R5PKSQLUZY",
+            certificates=[DEVELOPER_ID],
+            profile="No Such Profile",
+            auto_signing=False,
+        )
+        assert r.status is Status.PASS
+
+    def test_messages_encode_in_cp1252(self):
+        """Every outcome's text survives a redirected Windows stream."""
+        results = [
+            _team_check(),
+            _team_check(certificates=[APPLE_DEVELOPMENT]),
+            _team_check("nope"),
+            _team_check("X83FAZ586W", certificates=[APPLE_DEVELOPMENT]),
+            _team_check("ZZZZZ99999", certificates=[APPLE_DEVELOPMENT]),
+        ]
+        for r in results:
+            r.render().encode("cp1252")
+            r.hint.encode("cp1252")
+
+
 class TestRunModes:
     def test_environment_mode_skips_project(self, fake_probe):
         results = run_checks(fake_probe, kivyforge_version="3.0.0", config=None)
         skipped = [r for r in results if r.status is Status.SKIP]
-        assert len(skipped) == 12
+        assert len(skipped) == 13
         # Every project check must be represented, not silently dropped.
         names = {r.name for r in skipped}
         assert "Entitlements vs. profile" in names
+        assert "Team ID" in names
         assert CC.BYTE_COMPILE_NAME in names
 
     def test_project_mode_runs_all(self, fake_probe, config, tmp_path):
@@ -316,6 +529,7 @@ class TestRunModes:
         assert "Deployment target" in names
         assert "App source directory" in names
         assert "Signing identity" in names
+        assert "Team ID" in names
         assert "find_links directories" in names
         assert "App icon" in names
         assert "App-level privacy manifest" in names

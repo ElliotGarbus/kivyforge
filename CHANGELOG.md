@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### iOS: `doctor` checks the Team ID
+
+- **Added:** `kivyforge doctor -p ios` has a "Team ID" check
+  ([#108](https://github.com/ElliotGarbus/kivyforge/issues/108)). It reads the
+  Team ID that `--device` and `--release` builds sign with, from
+  `KIVYFORGE_TEAM_ID` or `[tool.kivy.ios.signing].team_id`, and compares it
+  with the teams of the signing certificates in your keychain. The check:
+  - fails when the value is not 10 capital letters and digits;
+  - fails when the value is the ID in parentheses in an `Apple Development`
+    certificate's name, which is not a Team ID but is often pasted as one,
+    and names that certificate's Team ID instead;
+  - fails when a pinned `provisioning_profile` is for a different team;
+  - warns when no certificate in your keychain is for that team, because
+    automatic signing can still create one during the build.
+
+  Before, a wrong Team ID failed only at the end of the build, inside
+  xcodebuild. With no Team ID set, the check is skipped, since simulator builds
+  don't sign, and it lists the Team IDs in your keychain, each with its team's
+  name, so you can copy one. See
+  [Find your Team ID](docs/guides/guides/ios/signing.md#find-your-team-id).
+- **Migration:** none needed. `doctor` now fails a project whose Team ID would
+  have failed the build; `build` itself is unchanged.
+
 ### Guides
 
 - **Added:** [Sign your iOS app](docs/guides/guides/ios/signing.md#find-your-team-id)
