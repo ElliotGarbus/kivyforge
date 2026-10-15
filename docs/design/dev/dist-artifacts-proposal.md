@@ -146,6 +146,11 @@ exactly as they do for the in-tree file.
 
 ### 3.4 Writing the copy
 
+- **One function does the copy for both platforms**: `copy_in(src, dest)`, in
+  `bundle/workdir.py` beside `swap_in`. It follows every rule in this section.
+  It raises the original exception unchanged, and each backend wraps that in
+  its own error type (last bullet). The keep-previous behaviour is therefore
+  written, and tested, once (section 9). Android and iOS only call it.
 - **Create the folder first.** `dist/<platform>/` does not exist on a clean
   checkout, so the copy starts with `mkdir(parents=True, exist_ok=True)` on
   it, as Windows' `_stage_dist_copy` already does for `dist/windows`.
@@ -160,13 +165,31 @@ exactly as they do for the in-tree file.
   `appimagetool` fails (checked on 2026-09-16, `test-matrix.md` §7).
   - A failure before the copy (signing, Lint, Gradle, Xcode) leaves the file
     untouched.
-  - The copy uses `fsswap`'s reserve-and-restore pattern on one file. Rename
-    the existing file aside (`.<name>.old-<suffix>`, as the existing helpers
-    name theirs), then copy straight to the final name. On success, delete the
-    old file. On failure, delete the partial file and rename the old one back.
-    Renaming an old file is safe on Windows, as `fsswap` records; only a
-    freshly written one is not.
-  - It reuses the pattern, not `fsswap`'s functions. `reserve_previous` raises
+  - The copy uses `fsswap`'s reserve-and-restore pattern on one file:
+    1. Rename the existing file aside (`.<name>.old-<suffix>`, as the existing
+       helpers name theirs).
+    2. Copy straight to the final name.
+    3. On success, delete the old file.
+    
+    On any failure, delete the partial file and rename the old one back.
+  - **Any failure includes an interruption.** The restore runs on
+    `BaseException`, not only `OSError`, as `swap_in` and `fsswap` already
+    do. Otherwise a Ctrl-C between steps 1 and 3 would leave the old file
+    under its hidden `.old-*` name and nothing under the real one. The
+    exception still propagates unchanged.
+  - **Renaming the old file aside retries.** It uses `rename_with_retry`,
+    which retries while Windows reports `PermissionError`, for up to 30
+    seconds by default. A file written long ago renames at once. One that a
+    previous `package` wrote seconds earlier may still be held by the
+    antivirus scanner, and that is the case `fsswap` retries for. If the
+    rename still fails, the copy stops before writing anything, and the old
+    file stays in place.
+  - **`rename_with_retry` moves** from `platforms/windows/fsswap.py` to
+    `bundle/workdir.py`, and `fsswap` imports it from there. Android code
+    importing from `platforms/windows/` would be the cross-backend coupling
+    the [abstraction-leak retro](../common/abstraction-leak-retro.md) warns
+    against. The function itself is not Windows-specific.
+  - **The rest of `fsswap` is not reused.** `reserve_previous` raises
     `WindowsBundleError`, and `restore_previous` clears its target with
     `rmtree`; both are shaped for a Windows folder.
   - `bundle/workdir.py`'s `swap_in` (added in
@@ -416,13 +439,17 @@ Sources, read on 2026-10-15 from the `main` branch of
 
 ## 8. Steps
 
-1. **Android.** `android_package` copies the artifact after
-   `_check_packaged_libs`, as described in 3.4, records the `dist/` path, and
-   prints `Packaged dist/android/...`.
-2. **iOS.** `ios_package` copies the `.ipa` after the export, records the
-   `dist/` path instead of the in-tree one, and prints
-   `Packaged dist/ios/...`. `_xcodebuild_step7` records the `.ipa` only for
-   `build --release`.
+1. **The copy function, then Android.**
+   - Add `copy_in` to `bundle/workdir.py`.
+   - Move `rename_with_retry` there from `fsswap`, which then imports it
+     (3.4).
+   - `android_package` calls `copy_in` after `_check_packaged_libs`, wraps a
+     failure with `os_failure()`, records the `dist/` path, and prints
+     `Packaged dist/android/...`.
+2. **iOS.** `ios_package` calls `copy_in` after the export, wraps a failure
+   with `os_failure()`, records the `dist/` path instead of the in-tree one,
+   and prints `Packaged dist/ios/...`. `_xcodebuild_step7` records the `.ipa`
+   only for `build --release`.
 3. **`clean`.** Add the two folders.
 4. **Repository.** Add an unanchored `dist/` rule to the root `.gitignore` for
    the examples. Today's `dist/*` rule only matches at the root, and no mobile
@@ -497,59 +524,66 @@ Sources, read on 2026-10-15 from the `main` branch of
 The risk is small: one file copy after the artifact is built, signed and
 checked, with the original left in place. The plan is sized to that.
 
-**Hermetic, on every `pytest` run.** These cases extend the
-`(command, flags) → artifacts[]` matrix in
-`tests/cli/test_build_package_outcome.py`, `test_build_package_json.py` and
-`test_build_package_human_output.py`:
+**The copy function, in `tests/bundle/test_workdir.py`**, beside `swap_in`'s
+tests. The keep-previous rules in 3.4 are tested here, once:
+
+- **Clean start:** it creates the folder, and the copy is byte-identical to the
+  source.
+- **Creating the folder fails.** The folder's path is a file, so
+  `mkdir(exist_ok=True)` raises `FileExistsError`: `exist_ok` only tolerates an
+  existing folder. The error propagates unchanged, and nothing is renamed or
+  written. The reserve-and-restore path never runs in this case, which is why
+  the next case is separate.
+- **The copy fails partway** (`copy2` writes part of the file, then raises):
+  - a same-name file from an earlier run is back in place, byte-identical;
+  - the partial file is gone, and no `.old-*` file remains;
+  - the error propagates unchanged.
+- **The copy is interrupted** (`copy2` raises `KeyboardInterrupt`): the same
+  restore, and the `KeyboardInterrupt` propagates.
+- **Renaming the old file aside is refused** (`os.replace` raises
+  `PermissionError`), with a short timeout passed in:
+  - refused a few times, then allowed: the copy completes;
+  - refused past the timeout: the error propagates, the old file stays in
+    place, and nothing is written.
+- **Copying again:** the same name is replaced, with no `.old-*` file left
+  behind. A file of another version is untouched.
+
+**The CLI matrix.** These cases extend the `(command, flags) → artifacts[]`
+matrix in `tests/cli/test_build_package_outcome.py`,
+`test_build_package_json.py` and `test_build_package_human_output.py`. They
+check how each backend uses the copy function, not the function's own rules:
 
 - `package -p android`, `-f aab` and `--abi x86_64` each record one `apk` or
   `aab` at the path in 3.2, and stdout's product line names it. The first of
-  these starts with no `dist/` folder, as on a clean checkout (3.4).
+  these starts with no `dist/` folder, as on a clean checkout, as an
+  end-to-end check.
 - The ABI qualifier follows the contents (Q1):
   - `--abi x86_64` with `abis = ["arm64_v8a", "x86_64"]` is qualified;
   - `--abi x86_64` with `abis = ["x86_64"]` is not;
   - a default package from a one-ABI config is not.
 - `package -p ios`, with the default export method, `ad-hoc` and
   `development`, records one `ipa` at the path in 3.2. stdout has the
-  unchanged `Exported` line followed by the `Packaged` line. The first of these
-  also starts with no `dist/` folder. Android's first case already covers a
-  clean checkout, but the proposal does not require the two platforms to share
-  one copy function.
-- The file in `dist/` is byte-identical to the in-tree file, and the in-tree
-  file still exists.
+  unchanged `Exported` line followed by the `Packaged` line.
+- The in-tree file still exists after `package`, because the copy is not a
+  move.
 - `build -p android --debug` and `build -p ios --release` keep their paths and
   their lines.
 - With a dynamic version that has a local segment, `+` becomes `_` in the name.
-- **Creating the folder fails on Android** (`dist/android` is a file, so
-  `mkdir(exist_ok=True)` raises `FileExistsError`; `exist_ok` only tolerates an
-  existing folder):
+- **The copy fails on Android** (`copy_in` raises `OSError`):
   - the result is `ok: false`, `artifacts == []`, `KF-ERROR` and exit 1;
   - stdout is one document;
-  - nothing else in `dist/` is touched.
-  
-  The reserve-and-restore path never runs in this case, which is why the next
-  case is separate.
-- **The copy fails partway on Android** (`copy2` is made to write part of the
-  file and then raise):
-  - the same envelope as above;
-  - a same-name file from an earlier run is back in place, byte-identical;
-  - the partial file is gone, and no `.old-*` file remains;
-  - a previous version's file is untouched;
-  - none of these files is named.
-- **The copy fails partway on iOS, after a successful export,** triggered the
-  same way as on Android. This guards the step 2
-  change: `_xcodebuild_step7` records the in-tree `.ipa` as soon as it is
-  called (3.5).
+  - the message is `os_failure()`'s, `could not copy … into dist/android: …`;
+  - no file in `dist/` is named.
+- **The copy fails on iOS, after a successful export** (`copy_in` raises
+  `OSError`). This guards the step 2 change: `_xcodebuild_step7` records the
+  in-tree `.ipa` as soon as it is called (3.5).
   - In `--json` mode, stdout is one failure envelope with `artifacts == []`.
     Neither the in-tree `.ipa` nor a same-name file in `dist/ios/` is named.
   - In human mode, the `Exported …` line may appear, and no `Packaged …` line
     does. Product lines are suppressed under `--json` (`console.line`), which
     is why the two modes are checked separately.
-  - The same-name file is restored, as on Android.
 - **`package` fails before the copy** (for example, Gradle fails): a same-name
   file in `dist/` is untouched and not named.
-- **Packaging again:** the same version replaces the file, leaving no `.old-*`
-  file behind. A different version leaves the old file in place.
 - `clean` removes `dist/android` and `dist/ios`, then `dist/` once it is empty.
 
 **Backend tests in `tests/platforms/android/test_cli.py`.** Some existing tests
