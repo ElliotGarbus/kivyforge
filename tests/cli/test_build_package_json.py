@@ -8,9 +8,14 @@ stray human line, or a second ``emit``, and it fails.
 
 from __future__ import annotations
 
+import errno
 import json
+import shutil
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from click.testing import CliRunner
 
 from kivyforge.cli.build import build
@@ -271,3 +276,102 @@ class TestFailure:
         assert env["ok"] is False
         assert (previous / "OLD.txt").exists()  # rolled back...
         assert _artifacts(env) == []  # ...and not claimed as this run's product
+
+    @pytest.mark.parametrize("failure", ["immediate", "per_file"])
+    def test_failed_windows_dist_copy_is_an_envelope(
+        self, windows, monkeypatch, desktop_project, failure
+    ):
+        # copytree fails two ways: a bare OSError from its first makedirs, or
+        # one shutil.Error at the end listing every file that failed, which is
+        # what a too-long path with long paths off produces. Neither is a
+        # ToolchainError, so both used to escape reporting() as a traceback.
+        previous = desktop_project / "dist" / "windows" / "My App-1.2.3-amd64"
+        previous.mkdir(parents=True)
+        (previous / "OLD.txt").write_text("previous package")
+        real_copytree = shutil.copytree
+
+        def immediate(src, dst, **kw):
+            raise PermissionError(errno.EACCES, "Permission denied", str(dst))
+
+        def per_file(src, dst, **kw):
+            def refuse(s, d):
+                raise OSError(errno.ENOENT, "No such file or directory", d)
+
+            return real_copytree(src, dst, copy_function=refuse, **kw)
+
+        copy = {"immediate": immediate, "per_file": per_file}[failure]
+        monkeypatch.setattr(windows.shutil, "copytree", copy)
+        result, env = _run(package, ["-p", "windows"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        assert env["ok"] is False
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["code"] == diagnostics.UNSPECIFIED
+        assert diagnostic["message"].startswith("could not copy the bundle into ")
+        assert "Traceback" not in result.stderr
+        assert _artifacts(env) == []
+        # The previous package is back, and no reserved copy is left beside it.
+        assert (previous / "OLD.txt").read_text() == "previous package"
+        assert list(previous.parent.iterdir()) == [previous]
+
+    def test_too_long_windows_paths_name_the_first_and_count_the_rest(
+        self, windows, monkeypatch, desktop_project
+    ):
+        # A bundle that fits in build/ can overflow MAX_PATH under the longer
+        # dist/ name, and then every deep file fails: name one, count the rest.
+        dest = desktop_project / "dist" / "windows" / "My App-1.2.3-amd64"
+        deep = str(dest / ("d" * 300))
+
+        def entry(i):  # shaped as copytree records one: (src, dst, str(why))
+            dst = f"{deep}{i}.pyc"
+            return (f"src{i}", dst, str(FileNotFoundError(errno.ENOENT, "gone", dst)))
+
+        failures = [entry(i) for i in range(2000)]
+
+        def too_long(src, dst, **kw):
+            raise shutil.Error(failures)
+
+        monkeypatch.setattr(windows.shutil, "copytree", too_long)
+        _, env = _run(package, ["-p", "windows"])
+        (diagnostic,) = env["diagnostics"]
+        message = diagnostic["message"]
+        assert "2000 paths failed" in message
+        assert message.count(f"{deep}0.pyc") == 1  # named once, not twice...
+        assert f"{deep}1.pyc" not in message  # ...and not the whole list
+        assert "long paths off" in message
+        assert diagnostic["remediation"].startswith("move the project to a shorter")
+
+    @pytest.mark.parametrize("blocker", ["dist_is_a_file", "output_is_a_folder"])
+    def test_failed_linux_dist_write_is_an_envelope(
+        self, linux, monkeypatch, desktop_project, blocker
+    ):
+        # The real build_appimage, minus the download and the tool: kivyforge's
+        # own writes around appimagetool are what is under test.
+        from kivyforge.platforms.linux import appimage
+
+        def appimagetool(cmd, **kw):
+            Path(cmd[-1]).write_bytes(b"ELF")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        monkeypatch.setattr(linux, "build_appimage", appimage.build_appimage)
+        monkeypatch.setattr(appimage, "_host_appimagetool_arch", lambda: "x86_64")
+        monkeypatch.setattr(appimage, "_acquire", lambda *a: desktop_project / "t")
+        monkeypatch.setattr(appimage, "_executable_copy", lambda tool, cache: tool)
+        monkeypatch.setattr(appimage.subprocess, "run", appimagetool)
+        dist = desktop_project / "dist" / "linux"
+        if blocker == "dist_is_a_file":
+            dist.parent.mkdir()
+            dist.write_text("not a folder")
+        else:
+            (dist / "demo-app-1.2.3-x86_64.AppImage").mkdir(parents=True)
+
+        result, env = _run(package, ["-p", "linux"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        assert env["ok"] is False
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["code"] == diagnostics.UNSPECIFIED
+        assert "Traceback" not in result.stderr
+        assert _artifacts(env) == []
+        if dist.is_dir():  # no half-written temp file left behind
+            assert [p.name for p in dist.iterdir()] == [
+                "demo-app-1.2.3-x86_64.AppImage"
+            ]

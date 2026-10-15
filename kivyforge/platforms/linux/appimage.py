@@ -15,6 +15,7 @@ tools, not app dependencies, so they never enter the app's lockfile.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import platform
 import shutil
@@ -122,12 +123,17 @@ def build_appimage(
     # content-addressed cache entry is never mutated.
     tool = _executable_copy(tool, cache)
 
-    output.parent.mkdir(parents=True, exist_ok=True)
     # Emit to a temp file and swap it in only on success, so a tool failure (or
     # crash) leaves any previous .AppImage intact rather than deleting it up
     # front — the write-in-place guarantee the other platforms also uphold.
+    # An OSError from these writes of kivyforge's own is translated, not left
+    # bare: a bare one escaped the CLI as a traceback with no --json envelope.
     tmp_out = output.parent / f".{output.name}.tmp-{os.getpid()}"
-    tmp_out.unlink(missing_ok=True)
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        tmp_out.unlink(missing_ok=True)
+    except OSError as exc:
+        raise AppDirError(f"could not make room for {output}: {exc}") from exc
 
     echo(f"Packaging {output.name} with appimagetool {APPIMAGETOOL_VERSION} ...")
     env = {
@@ -148,12 +154,12 @@ def build_appimage(
             cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
         )
     except OSError as exc:
-        tmp_out.unlink(missing_ok=True)
+        _discard(tmp_out)
         raise AppDirError(
             f"failed to run appimagetool: {exc}", **spawn_failure("appimagetool", exc)
         ) from exc
     if proc.returncode != 0:
-        tmp_out.unlink(missing_ok=True)
+        _discard(tmp_out)
         # The transcript is build log: both streams go to progress, and the
         # error stays a summary a --json consumer can read without a log in it.
         for stream in (proc.stdout, proc.stderr):
@@ -164,9 +170,19 @@ def build_appimage(
             "its output is above.",
             **build_tool_failed("appimagetool", "package"),
         )
-    tmp_out.chmod(0o755)
-    os.replace(tmp_out, output)
+    try:
+        tmp_out.chmod(0o755)
+        os.replace(tmp_out, output)
+    except OSError as exc:
+        _discard(tmp_out)
+        raise AppDirError(f"could not move the AppImage to {output}: {exc}") from exc
     return output
+
+
+def _discard(tmp_out: Path) -> None:
+    """Remove a temp output on a failure path, never masking that failure."""
+    with contextlib.suppress(OSError):
+        tmp_out.unlink(missing_ok=True)
 
 
 def _acquire(

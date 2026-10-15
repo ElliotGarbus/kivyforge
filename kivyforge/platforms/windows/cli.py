@@ -46,7 +46,12 @@ from .bundle import (
 from .fsswap import discard_reserved, reserve_previous, restore_previous
 from .lock import WindowsLockfile
 from .lock import load as load_windows_lock
-from .pathdepth import MIN_FOLDER_HEADROOM, deepest_relative_path, folder_headroom
+from .pathdepth import (
+    MAX_PATH_CHARS,
+    MIN_FOLDER_HEADROOM,
+    deepest_relative_path,
+    folder_headroom,
+)
 from .signing import select_signer
 
 # Never copy VCS metadata or editor droppings into the shipped dist tree. The
@@ -326,20 +331,58 @@ def _stage_dist_copy(bundle: Path, dest: Path) -> Path | None:
     :func:`discard_reserved` only after every later step (e.g. signing) succeeds,
     or :func:`restore_previous` to roll back. This keeps the previous known-good
     artifact recoverable across a post-copy failure.
+
+    An ``OSError`` here is the filesystem refusing kivyforge's own write, not a
+    tool failing, so it becomes an unclassified :class:`ToolchainError`: left
+    bare it escaped ``reporting()`` as a traceback with no ``--json`` envelope.
     """
-    dest.parent.mkdir(parents=True, exist_ok=True)
     try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
         trash = reserve_previous(dest)
     except WindowsBundleError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        raise ToolchainError(f"could not make room for {dest}: {exc}") from exc
     try:
         # copytree needs a non-existent target; the reserve moved any prior away.
         shutil.copytree(bundle, dest, ignore=_PACKAGE_IGNORE)
-    except BaseException:
+    except BaseException as exc:
         shutil.rmtree(dest, ignore_errors=True)
         restore_previous(trash, dest)
+        if isinstance(exc, OSError):
+            raise ToolchainError(_copy_failure(dest, exc)) from exc
         raise
     return trash
+
+
+def _copy_failure(dest: Path, exc: OSError) -> str:
+    """Describe a failed copy into *dest* in a few lines.
+
+    ``copytree`` raises a bare ``OSError`` when it cannot even start, and
+    otherwise one ``shutil.Error`` at the end carrying ``(src, dst, reason)``
+    for every path that failed. A too-long *dest* fails every deep file, which
+    is thousands of entries, so name the first and count the rest.
+    """
+    path = exc.filename if isinstance(exc.filename, str) else ""
+    reason = str(exc)
+    message = f"could not copy the bundle into {dest}: {reason}"
+    failed = exc.args[0] if isinstance(exc, shutil.Error) and exc.args else None
+    if isinstance(failed, list) and failed and len(failed[0]) == 3:
+        _src, path, reason = failed[0]
+        # The reason usually ends by repeating the path; it is named once.
+        reason = reason.removesuffix(f": {path!r}")
+        count = "1 path" if len(failed) == 1 else f"{len(failed)} paths"
+        message = (
+            f"could not copy the bundle into {dest}: {count} failed, "
+            f"the first {path} ({reason})"
+        )
+    if path and (len(path) > MAX_PATH_CHARS or "[WinError 206]" in reason):
+        message += (
+            f"\n  That path is {len(path)} characters, too long for Windows with "
+            "long paths off (the default).\n"
+            "  Fix: move the project to a shorter folder, or enable long paths."
+        )
+    return message
 
 
 def _load_and_verify(
