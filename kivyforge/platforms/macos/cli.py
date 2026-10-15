@@ -82,6 +82,12 @@ def macos_build(
         )
     except AppBundleError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        # The assembler's own writes into build/macos: hundreds of files, any
+        # of which the filesystem can refuse. Left bare, a traceback.
+        raise ToolchainError(
+            failures.os_failure("assemble the macOS app", exc)
+        ) from exc
 
     rel = app.relative_to(project_root)
     events.on_line(f"Built {rel}")

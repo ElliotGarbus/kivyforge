@@ -235,6 +235,12 @@ def prepare_build(
         raise ToolchainError.wrap(exc) from exc
     except StagingError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        # The staging tree, Frameworks/ and pip-deps/ are kivyforge's own
+        # writes, any of which the filesystem can refuse. Left bare, a traceback.
+        raise ToolchainError(
+            failures.os_failure("generate the Xcode project", exc)
+        ) from exc
 
     staging = project_root / f"{config.app_slug}-ios"
     events.on_line(f"Generated {staging.relative_to(project_root)}")
@@ -302,7 +308,12 @@ def _xcodebuild_step7(
         raise SigningError(
             "code signing required for --release, but no team_id is set."
         )
-    xb.build_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        xb.build_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ToolchainError(
+            failures.os_failure("create the release build folder", exc)
+        ) from exc
     events.on_progress("xcodebuild archive ...")
     run_command(
         archive_command(
@@ -320,8 +331,13 @@ def _xcodebuild_step7(
         signing_identity=release_identity,
     )
     options_path = xb.build_dir / "ExportOptions.plist"
-    with open(options_path, "wb") as fh:
-        plistlib.dump(options, fh)
+    try:
+        with open(options_path, "wb") as fh:
+            plistlib.dump(options, fh)
+    except OSError as exc:
+        raise ToolchainError(
+            failures.os_failure(f"write {options_path.name}", exc)
+        ) from exc
 
     events.on_progress("xcodebuild -exportArchive ...")
     run_command(

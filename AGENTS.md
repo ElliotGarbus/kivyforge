@@ -54,7 +54,8 @@ document, on success *and* every failure class).
 never reuse or repurpose a code. Codes live in `kivyforge/report/diagnostics.py`,
 exit statuses in `kivyforge/report/exit_codes.py`, and the classification
 plumbing in `kivyforge/report/failures.py` — `ClassifiedError` so a raise site *can* classify,
-`spawn_failure()` for a tool that would not start, `reclassify()` when
+`spawn_failure()` for a tool that would not start, `os_failure()` for a
+filesystem write the OS refused, `reclassify()` when
 re-raising one layer down, `ToolchainError.wrap()` at the CLI boundary. An
 unclassified failure is `KF-ERROR`/exit 1: unspecific, never wrong.
 

@@ -169,7 +169,7 @@ def _refresh_app_symlink(
         # symlink so switching back to build/run after a package works.
         shutil.rmtree(link)
     elif link.exists():
-        raise FileExistsError(
+        raise StagingError(
             f"{link} exists and is not a symlink; remove it and re-run build."
         )
     link.symlink_to(target)
@@ -200,7 +200,7 @@ def _materialize_app_copy(
     elif link.is_dir():
         shutil.rmtree(link)
     elif link.exists():
-        raise FileExistsError(
+        raise StagingError(
             f"{link} exists and is neither a symlink nor a directory; remove "
             "it and re-run build."
         )

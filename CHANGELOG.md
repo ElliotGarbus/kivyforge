@@ -40,6 +40,24 @@
   when that path is too long it suggests a shorter project folder.
 - **Migration:** none needed.
 
+### All platforms: a failed write into the build folder is reported, not a traceback
+
+- **Fixed:** when `kivyforge build` or `kivyforge package` could not write
+  into the folder it assembles the app in (`build/macos/`, `build/windows/`,
+  `build/linux/`, `<app>-ios/` or `<app>-android/`), the filesystem error
+  escaped as a Python traceback, and `--json` printed no envelope. A full disk,
+  a read-only folder, or a file where a folder belongs all did this. It is now
+  an ordinary failure: `Error: could not ...` on stderr, and with `--json` one
+  envelope with `ok: false`, code `KF-ERROR` and exit status 1. As for `dist/`,
+  a copy that fails for many files names the first and counts the rest, and on
+  Windows a path too long with long paths off gets the same advice. This also
+  covers the copy of `appimagetool` that `package -p linux` runs from the
+  artifact cache, and `ExportOptions.plist` in an iOS release build. When an
+  iOS build finds a file where the `<app>-ios/app` folder belongs, its "remove
+  it and re-run build" message is now an error, not the last line of a
+  traceback.
+- **Migration:** none needed.
+
 ### Guides
 
 - **Added:** [Sign your iOS app](docs/guides/guides/ios/signing.md#find-your-team-id)

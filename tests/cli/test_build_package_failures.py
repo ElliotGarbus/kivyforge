@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import errno
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -22,7 +23,13 @@ from kivyforge.cli.package import package
 from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.linux import AppDirError
 from kivyforge.report import diagnostics, exit_codes
-from kivyforge.report.failures import ClassifiedError, reclassify, spawn_failure
+from kivyforge.report.failures import (
+    ClassifiedError,
+    failed_path,
+    os_failure,
+    reclassify,
+    spawn_failure,
+)
 
 # Bound at import, before the suite-wide autouse fixture replaces it.
 _REAL_IOS_GATE = ios_cli._require_macos_host
@@ -47,6 +54,34 @@ class TestWrap:
         wrapped = ToolchainError.wrap(ValueError("plain"))
         assert wrapped.code == diagnostics.UNSPECIFIED
         assert wrapped.exit_code == exit_codes.CONFIG_ERROR
+
+
+class TestOsFailure:
+    """The message for a write the filesystem refused, whatever shape it came in.
+
+    The CLI tests (``test_build_package_json.py``) drive it through every
+    backend; these are the shapes no backend happens to produce yet.
+    """
+
+    def test_a_plain_error_reads_as_python_prints_it(self):
+        exc = PermissionError(errno.EACCES, "Permission denied", "/p/build/x")
+        assert os_failure("write x", exc) == (
+            "could not write x: [Errno 13] Permission denied: '/p/build/x'"
+        )
+        assert failed_path(exc) == "/p/build/x"
+
+    def test_an_error_naming_no_path(self):
+        exc = OSError(errno.ENOSPC, "No space left on device")
+        assert os_failure("write x", exc).endswith("No space left on device")
+        assert failed_path(exc) == ""
+
+    def test_a_shutil_error_that_is_not_a_copytree_list(self):
+        # shutil.move raises one with a sentence, not (src, dst, why) entries.
+        exc = shutil.Error("Destination path '/p/x' already exists")
+        assert os_failure("move x", exc) == (
+            "could not move x: Destination path '/p/x' already exists"
+        )
+        assert failed_path(exc) == ""
 
 
 class TestReclassify:

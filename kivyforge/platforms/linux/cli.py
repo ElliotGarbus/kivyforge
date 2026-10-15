@@ -122,6 +122,9 @@ def linux_package(
         )
     except AppDirError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        # e.g. the executable copy of appimagetool in the cache's bin/ folder.
+        raise ToolchainError(failures.os_failure("package the AppImage", exc)) from exc
 
     rel = result.relative_to(project_root)
     events.on_line(f"Packaged {rel}.")
@@ -154,6 +157,10 @@ def _assemble(
         )
     except AppDirError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        # The assembler's own writes into build/linux: hundreds of files, any
+        # of which the filesystem can refuse. Left bare, a traceback.
+        raise ToolchainError(failures.os_failure("assemble the AppDir", exc)) from exc
 
 
 def _resolve_arch(lock: LinuxLockfile, arch: str | None) -> str:

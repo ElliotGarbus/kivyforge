@@ -34,7 +34,7 @@ from kivyforge.config.model import AndroidConfig, Config, ResolvedVersion
 from kivyforge.config.version import android_version_code, with_version
 from kivyforge.lock.reader import LockError, is_in_sync
 from kivyforge.report import diagnostics
-from kivyforge.report.failures import reclassify
+from kivyforge.report.failures import os_failure, reclassify
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from . import (
@@ -132,6 +132,30 @@ def user_facing(fn):
             return fn(*args, **kwargs)
         except AndroidBuildError as exc:
             raise ToolchainError.wrap(exc) from exc
+
+    return wrapper
+
+
+def writes_project(fn):
+    """Report a write into the generated project that the OS refused.
+
+    Everything ``android_build`` stages -- the runtime, wheels, jniLibs, the
+    asset bundle, the Gradle files -- is kivyforge's own write, any of which
+    the filesystem can refuse, and a bare ``OSError`` escaped the CLI as a
+    traceback with no ``--json`` envelope. Kept off :func:`user_facing`, which
+    also wraps entry points that only read or launch a tool, so the message
+    never claims a write that was not one.
+    """
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except OSError as exc:
+            raise AndroidBuildError(
+                os_failure("write the Android project", exc)
+            ) from exc
 
     return wrapper
 
@@ -261,6 +285,7 @@ def _resolve_byte_compile(
 
 
 @user_facing
+@writes_project
 def android_build(
     project_root: Path,
     *,

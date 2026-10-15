@@ -292,6 +292,10 @@ def _assemble(
         )
     except WindowsBundleError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        # The assembler's own writes into build/windows: hundreds of files, any
+        # of which the filesystem can refuse. Left bare, a traceback.
+        raise ToolchainError(_os_failure("assemble the Windows bundle", exc)) from exc
 
 
 def _resolve_arch(lock: WindowsLockfile, arch: str | None) -> str:
@@ -350,33 +354,23 @@ def _stage_dist_copy(bundle: Path, dest: Path) -> Path | None:
         shutil.rmtree(dest, ignore_errors=True)
         restore_previous(trash, dest)
         if isinstance(exc, OSError):
-            raise ToolchainError(_copy_failure(dest, exc)) from exc
+            raise ToolchainError(
+                _os_failure(f"copy the bundle into {dest}", exc)
+            ) from exc
         raise
     return trash
 
 
-def _copy_failure(dest: Path, exc: OSError) -> str:
-    """Describe a failed copy into *dest* in a few lines.
+def _os_failure(doing: str, exc: OSError) -> str:
+    """:func:`failures.os_failure`, plus the fix when the path is too long.
 
-    ``copytree`` raises a bare ``OSError`` when it cannot even start, and
-    otherwise one ``shutil.Error`` at the end carrying ``(src, dst, reason)``
-    for every path that failed. A too-long *dest* fails every deep file, which
-    is thousands of entries, so name the first and count the rest.
+    Both writes this backend makes, into build/windows and dist/windows, are
+    deep enough to pass MAX_PATH with long paths off, which Windows often
+    reports as a path it cannot find rather than one that is too long.
     """
-    path = exc.filename if isinstance(exc.filename, str) else ""
-    reason = str(exc)
-    message = f"could not copy the bundle into {dest}: {reason}"
-    failed = exc.args[0] if isinstance(exc, shutil.Error) and exc.args else None
-    if isinstance(failed, list) and failed and len(failed[0]) == 3:
-        _src, path, reason = failed[0]
-        # The reason usually ends by repeating the path; it is named once.
-        reason = reason.removesuffix(f": {path!r}")
-        count = "1 path" if len(failed) == 1 else f"{len(failed)} paths"
-        message = (
-            f"could not copy the bundle into {dest}: {count} failed, "
-            f"the first {path} ({reason})"
-        )
-    if path and (len(path) > MAX_PATH_CHARS or "[WinError 206]" in reason):
+    message = failures.os_failure(doing, exc)
+    path = failures.failed_path(exc)
+    if path and (len(path) > MAX_PATH_CHARS or "[WinError 206]" in message):
         message += (
             f"\n  That path is {len(path)} characters, too long for Windows with "
             "long paths off (the default).\n"
