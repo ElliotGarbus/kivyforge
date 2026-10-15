@@ -9,7 +9,9 @@
 > [`package-metadata-proposal.md`](package-metadata-proposal.md) §9 deferred
 > this to its own change. The design was checked against the PyPA
 > specifications (section 6) and compared with Briefcase (section 7). Its
-> decisions were recorded on 2026-10-15 (section 4), and none is open.
+> decisions were recorded on 2026-10-15 (section 4), and none is open. A review
+> the same day changed four things: Q1's rule, same-name files (3.4), the CI
+> step (step 5), and the tests (section 9).
 
 **Summary.** `package -p android` and `package -p ios` copy the file they
 produce to `dist/<platform>/<slug>-<version>[-<qualifier>].<ext>`, as
@@ -93,7 +95,7 @@ rather than files: Linux `-f folder` and macOS. This change leaves them alone
 |---|---|
 | `package -p android` | `dist/android/<slug>-<ver>.apk` |
 | `package -p android -f aab` | `dist/android/<slug>-<ver>.aab` |
-| `package -p android --abi <abi>` | `dist/android/<slug>-<ver>-<abi>.apk` (or `.aab`) |
+| `package -p android --abi <abi>`, when `<abi>` is a strict subset of `abis` | `dist/android/<slug>-<ver>-<abi>.apk` (or `.aab`) |
 | `package -p ios` | `dist/ios/<slug>-<ver>.ipa` |
 | `package -p ios --export-method ad-hoc` | `dist/ios/<slug>-<ver>-ad-hoc.ipa` |
 | `package -p ios --export-method development` | `dist/ios/<slug>-<ver>-development.ipa` |
@@ -104,8 +106,11 @@ the problem in section 1.
 
 - **Android ABI.** By default the artifact carries every ABI in
   `[tool.kivy.android].abis`, like a macOS universal binary, so the name has
-  no arch. `--abi` builds a subset, and the name gets that ABI in its
-  wheel-tag spelling (`arm64_v8a`, `x86_64`).
+  no arch. When the packaged ABIs are a strict subset of `abis`, which only
+  `--abi` can produce, the name gets that ABI in its wheel-tag spelling
+  (`arm64_v8a`, `x86_64`). The rule follows the contents, not the flag:
+  `--abi x86_64` with `abis = ["x86_64"]` packages the full app and gets no
+  qualifier.
 - **iOS export method.** The export method changes the provisioning embedded
   in the `.ipa`, so an ad-hoc and an App Store export of one version are
   different files.
@@ -129,14 +134,34 @@ exactly as they do for the in-tree file.
 
 ### 3.4 Writing the copy
 
-- **Copy straight to the final name** (`shutil.copy2`), and delete the partial
-  file if the copy fails. Writing a temporary file and renaming it is not safe
-  here: `platforms/windows/fsswap.py` records that Windows cannot reliably
-  rename a freshly written file while the antivirus scanner holds it open, and
-  the `android_windows_host` job packages on Windows.
-- **Only the same name is replaced.** An existing file of the same name is
-  overwritten. Files of other versions are not touched: keeping them is the
-  archive #112 asks for.
+- **Copy straight to the final name** (`shutil.copy2`). Writing a temporary
+  file and renaming it is not safe here: `platforms/windows/fsswap.py` records
+  that Windows cannot reliably rename a freshly written file while the
+  antivirus scanner holds it open, and the `android_windows_host` job packages
+  on Windows.
+- **A same-name file from an earlier run is kept until this run's copy
+  succeeds.** This is the rule Windows already follows ("a broken package never
+  destroys a working one", `fsswap.py`), and what Linux does when
+  `appimagetool` fails (checked on 2026-09-16, `test-matrix.md` §7).
+  - A failure before the copy (signing, Lint, Gradle, Xcode) leaves the file
+    untouched.
+  - The copy uses `fsswap`'s reserve-and-restore pattern on one file. Rename
+    the existing file aside (`.<name>.old-<pid>`), then copy straight to the
+    final name. On success, delete the old file. On failure, delete the partial
+    file and rename the old one back. Renaming an old file is safe on Windows,
+    as `fsswap` records; only a freshly written one is not.
+  
+  So after a failed run, `dist/` can hold a file with exactly the name this run
+  would have written. It is the previous successful package, and the envelope
+  does not name it (3.5). CI is unaffected: a failed `package` exits non-zero,
+  which stops the job before any upload step.
+
+  Deleting the same-name file at the start of `package` was considered and
+  rejected. It would make Android and iOS behave unlike Windows and Linux, and
+  a transient failure, such as a Gradle download, would destroy a good
+  package.
+- **Files of other versions are not touched.** Keeping them is the archive #112
+  asks for.
 - **A failed copy raises the backend's own error type**: `AndroidBuildError`
   on Android, `ToolchainError` on iOS. The message names the path and the OS
   error. It must never be a bare `OSError`. `reporting()` in `cli/_output.py`
@@ -147,17 +172,25 @@ exactly as they do for the in-tree file.
   codes are contracts, and nobody has yet hit a full disk or a read-only
   `dist/`.
 
-Windows' existing copy into `dist/windows` appears to have the bare-`OSError`
-gap today. That is a separate fix, proposed on its own, and not part of this
-change.
+Windows' existing copy into `dist/windows` had the same bare-`OSError` gap.
+It is fixed separately in
+[#135](https://github.com/ElliotGarbus/kivyforge/pull/135), not as part of
+this change.
 
 ### 3.5 What is reported
 
 - **`artifacts` names the `dist/` path only.** The in-tree file is an
   intermediate of `package`, as the generated project already is. A failure at
-  any point, including the copy, records `[]`, so the previous version's file
-  in `dist/` is never named. See
+  any point, including the copy, records `[]`. A file left in `dist/` by an
+  earlier run is therefore never named in the envelope, even when it has the
+  name this run would have written (3.4). See
   [build-package-output-proposal](build-package-output-proposal.md) §4.1b.
+
+  iOS needs care here. `OutcomeBuilder.add` reports an artifact the moment it
+  is called, and `_xcodebuild_step7` calls it right after the export. Under
+  `package`, it must not record the in-tree `.ipa`; otherwise a copy that fails
+  after a successful export would report that `.ipa` (step 2, tested in
+  section 9).
 - **Android's product line names the `dist/` path.** Today's
   `Packaged <in-tree path>` becomes `Packaged dist/android/demo-1.0.0.apk`.
 - **iOS gains a line and loses none.** The `Exported <slug>-ios/build/<slug>.ipa`
@@ -168,7 +201,9 @@ change.
   `build -p ios --release` is unchanged.
 - **`status` is unchanged.** Linux's and Windows' `status` report only the build
   tree. The `dist/` name also depends on a version that `status` does not
-  resolve: resolving a dynamic version runs the build backend.
+  resolve: resolving a dynamic version runs the build backend. Android's
+  `status` keeps listing `apk (release)` at the in-tree path, so the Android
+  guide says that `status` shows the build tree, not `dist/` (step 6).
 
 ### 3.6 `clean`, and two costs
 
@@ -198,7 +233,7 @@ This brings two costs that are real, not just churn:
 
 | # | Question | Decision |
 |---|---|---|
-| Q1 | Android: put the ABI in the name only for `--abi`? | **Yes.** The failure this prevents is silent: Play accepts a one-ABI AAB, and devices on the missing ABI cannot get the app. Without the qualifier, an `--abi` package would also overwrite the full package of the same version. Always listing the ABIs (`-arm64_v8a.x86_64`) was rejected: it adds nothing for the default package, and the name would change whenever the config does. |
+| Q1 | Android: put the ABI in the name only for a subset build? | **Yes: when the packaged ABIs are a strict subset of `[tool.kivy.android].abis`.** The failure this prevents is silent: Play accepts a one-ABI AAB, and devices on the missing ABI cannot get the app. Without the qualifier, a subset package would also overwrite the full package of the same version. The rule follows the contents rather than the `--abi` flag, so an `--abi` that names every configured ABI gets no qualifier. A config that lists one ABI is unqualified too: that is the app the user chose, not an accidental subset. Always listing the ABIs (`-arm64_v8a.x86_64`) was rejected: it adds nothing for the default package, and the name would change whenever the config does. The first decision followed the flag; review changed it to follow the contents (2026-10-15). |
 | Q2 | iOS: put the export method in the name for `ad-hoc` and `development`? | **Yes**, with `app-store`, the default, unqualified. This is the weakest of the naming rules, because a mix-up fails loudly: App Store Connect rejects a development or ad-hoc `.ipa`. It is kept because one version can legitimately have both an ad-hoc build for testers and an App Store build. |
 | Q3 | Should `build -p ios --release`, which produces a distribution-signed `.ipa`, also copy to `dist/`? | **No.** The verb rule holds. `package -p ios` runs the same archive and export, and the iOS guide points at `package`. |
 | Q4 | A debug variant of `package -p android` (Briefcase's `debug-apk`), for #112's literal example? | **Deferred** (section 5.2). Briefcase's reason for it does not apply to kivyforge. |
@@ -294,6 +329,16 @@ tools assume it:
 | `pypa/gh-action-pypi-publish` | runs `twine upload <packages-dir>/*` without filtering; `packages-dir` defaults to `dist` | fails the same way |
 | `uv publish` | skips folders and files that are not distributions | unaffected |
 
+These are the tools' behaviours, not anything in a specification, and they
+can change between releases. Checked on 2026-10-15:
+
+- **twine:** at its 7.0.0 tag (released 2026-07-27), in
+  `twine/commands/__init__.py` and `twine/package.py`.
+- **`pypa/gh-action-pypi-publish`:** its `unstable/v1` branch, in
+  `twine-upload.sh` and `action.yml`. The latest release is v1.14.2.
+- **uv:** its `main` branch, in `crates/uv-publish/src/lib.rs`. The latest
+  release is 0.13.1.
+
 So a project that packages with kivyforge and publishes a wheel from the same
 checkout already breaks the twine and GitHub Action uploads on Linux and
 Windows. This change extends that to Android and iOS; it does not create it.
@@ -344,17 +389,27 @@ Sources, read on 2026-10-15 from the `main` branch of
 4. **Repository.** Add an unanchored `dist/` rule to the root `.gitignore` for
    the examples. Today's `dist/*` rule only matches at the root, and no mobile
    example's `.gitignore` lists `dist/`.
-5. **CI.** The `android_gradle`, `android_bundle` and `android_windows_host`
-   steps that read `app-release.*` after `package` read the `dist/` path
-   instead, so the existing artifact and signature checks run against the copy,
-   including on Windows.
+5. **CI.** In the `android_gradle`, `android_windows_host` and
+   `android_bundle` jobs:
+   - The `package` step runs with `--json > package.json`.
+   - The check steps take the APK or AAB path from `data.artifacts[0].path`,
+     instead of today's hard-coded `app-release.*` path.
+
+   A fixed `dist/` path would not work. The first two jobs pass `--abi`, so
+   under Q1 their file names carry the ABI, and all three carry the example's
+   version. Reading the envelope keeps working when either changes. It also
+   checks, end to end, that the envelope names a file that exists, and the
+   existing artifact and signature checks then run against the copy, including
+   on Windows.
 6. **Docs.** Every document that states an Android or iOS output path,
    describes what `clean` removes, or lists which file names carry the version:
    - **README:** the comments on the two `package -p android` examples, which
      give Gradle's output paths.
    - **Guides:**
-     - `guides/android/signing.md`: the "Verify" paths, and a warning that
-       `clean` deletes `dist/android/`, including older versions.
+     - `guides/android/signing.md`: the "Verify" paths, a warning that
+       `clean` deletes `dist/android/`, including older versions, and a
+       sentence that `status` shows the build tree, so its `apk (release)` row
+       is the in-tree file, not the one in `dist/` (3.5).
      - `guides/ios/signing.md`: the `.ipa` path, and the same `clean` warning.
        Its sentence saying `build -p ios --release` "does the same" becomes:
        the same export, but the file stays in the Xcode project (Q3).
@@ -411,6 +466,10 @@ checked, with the original left in place. The plan is sized to that.
 
 - `package -p android`, `-f aab` and `--abi x86_64` each record one `apk` or
   `aab` at the path in 3.2, and stdout's product line names it.
+- The ABI qualifier follows the contents (Q1):
+  - `--abi x86_64` with `abis = ["arm64_v8a", "x86_64"]` is qualified;
+  - `--abi x86_64` with `abis = ["x86_64"]` is not;
+  - a default package from a one-ABI config is not.
 - `package -p ios`, with and without `--export-method ad-hoc`, records one
   `ipa` at the path in 3.2. stdout has the unchanged `Exported` line followed
   by the `Packaged` line.
@@ -419,16 +478,26 @@ checked, with the original left in place. The plan is sized to that.
 - `build -p android --debug` and `build -p ios --release` keep their paths and
   their lines.
 - With a dynamic version that has a local segment, `+` becomes `_` in the name.
-- When the copy fails (`dist/android` is a file, or the copy raises), the
-  result is `ok: false`, `artifacts == []`, `KF-ERROR` and exit 1, and stdout
-  is one document. A previous version's file in `dist/android` is untouched and
-  not named.
-- Packaging the same version again replaces the file. Packaging a different
-  version leaves the old file in place.
+- **The copy fails on Android** (`dist/android` is a file, or the copy
+  raises):
+  - the result is `ok: false`, `artifacts == []`, `KF-ERROR` and exit 1, and
+    stdout is one document;
+  - a same-name file from an earlier run is back in place, byte-identical,
+    and no `.old-*` file remains;
+  - a previous version's file is untouched;
+  - neither is named.
+- **The copy fails on iOS, after a successful export:** `artifacts == []`, so
+  neither the in-tree `.ipa` nor a same-name file in `dist/ios/` is named, and
+  the same-name file is restored as on Android.
+- **`package` fails before the copy** (for example, Gradle fails): a same-name
+  file in `dist/` is untouched and not named.
+- **Packaging again:** the same version replaces the file, leaving no `.old-*`
+  file behind. A different version leaves the old file in place.
 - `clean` removes `dist/android` and `dist/ios`, then `dist/` once it is empty.
 
 **CI.** With step 5, the existing Android jobs on Linux and on the Windows host
-run their artifact and signature checks against the `dist/` file.
+find the `dist/` file through the `--json` envelope, and run their artifact
+and signature checks against it.
 
 **Real toolchain, on this Mac.** No CI job runs `package -p ios`, so run it
 once on an example with real signing, confirm the `.ipa` in `dist/ios/` matches
