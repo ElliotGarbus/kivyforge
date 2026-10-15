@@ -43,10 +43,16 @@ Complete these on the macOS build host before a signed build.
      profile type); leave it unset for `--release`.
 
 4. **Your Apple Developer Team ID.** Required for `--device` and `--release`
-   (it becomes `DEVELOPMENT_TEAM`). Find it in the
-   [Developer portal](https://developer.apple.com/account) (Membership details)
-   or in Xcode. `build` fails fast **before** invoking `xcodebuild` if a signed
-   target has no resolvable `team_id`.
+   (it becomes `DEVELOPMENT_TEAM`). With a paid membership, find it in the
+   [Developer portal](https://developer.apple.com/account) (Membership details).
+   A free personal team has no portal page: its Team ID is the
+   **Organizational Unit** (`OU`) of its `Apple Development` certificate, which
+   Xcode creates under *Settings → Accounts → Manage Certificates*. The
+   10-character ID in parentheses in that certificate's name is a different
+   value, and the commonest wrong paste. (On distribution certificates, such as
+   `Developer ID Application`, the parenthesised ID does equal the `OU`;
+   verified 2026-10-14 against a real keychain.) `build` fails fast **before**
+   invoking `xcodebuild` if a signed target has no resolvable `team_id`.
 
 5. **Add the signing table to `pyproject.toml`** (or supply the equivalents by
    flag/env for CI):

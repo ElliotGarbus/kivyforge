@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Guides
+
+- **Added:** [Sign your iOS app](docs/guides/guides/ios/signing.md#find-your-team-id)
+  explains how to find your Team ID
+  ([#108](https://github.com/ElliotGarbus/kivyforge/issues/108)). With a paid
+  membership it is on the Apple Developer website. A free Apple ID's personal
+  team has no page there, so the guide shows how to read the ID from the
+  team's `Apple Development` certificate in Keychain Access, and warns that
+  the ID in parentheses in the certificate's name is a different value.
+
 ## [v3.0.0.dev1](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0.dev1) - 2026-10-14
 
 ### All platforms: the app's own package metadata
