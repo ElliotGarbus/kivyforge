@@ -1,9 +1,10 @@
 # Proposal — `package` writes its artifact to `dist/`
 
 > Status: **implemented 2026-10-15** on branch `dist-artifacts`, not yet
-> released. The hermetic tests in section 9 pass; the real `package -p ios`
-> run and the reply on #112 (section 11) are still open. Drafted the same day,
-> and trimmed to the smallest change that addresses the issue.
+> released. The hermetic tests in section 9 pass, and the real
+> `package -p ios` run passed on 2026-10-16 (`test-matrix.md` §7). The reply
+> on #112 (section 11) is still open. Drafted on 2026-10-15, and trimmed to the
+> smallest change that addresses the issue.
 >
 > Responds to [#112](https://github.com/ElliotGarbus/kivyforge/issues/112),
 > which asks for packaged artifacts in `dist/` under versioned names. Its
