@@ -861,13 +861,24 @@ class TestRealAndroidProbe:
             Accel.UNKNOWN, "no emulator binary found"
         )
 
-    def test_parse_accel_check_reads_what_a_real_emulator_printed(self):
-        # Emulator 37.1.11.0 on macOS 26.6.2 (Apple M5 Pro), exit status 0.
-        stdout = "accel:\n0\nHypervisor.Framework OS X Version 26.6\naccel\n"
-        assert parse_accel_check(stdout) == (
-            0,
-            "Hypervisor.Framework OS X Version 26.6",
-        )
+    # Captured from emulator 37.1.11.0 on macOS 26.6.2 (Apple M5 Pro); each
+    # exited with the status it printed.
+    @pytest.mark.parametrize(
+        ("stdout", "expected"),
+        [
+            (
+                "accel:\n0\nHypervisor.Framework OS X Version 26.6\naccel\n",
+                (0, "Hypervisor.Framework OS X Version 26.6"),
+            ),
+            # With `HVF = off` in advancedFeatures.ini: no description at all.
+            ("accel:\n138\n\naccel\n", (138, "")),
+        ],
+        ids=["accelerated", "feature-switched-off"],
+    )
+    def test_parse_accel_check_reads_what_a_real_emulator_printed(
+        self, stdout, expected
+    ):
+        assert parse_accel_check(stdout) == expected
 
     @pytest.mark.parametrize(
         ("stdout", "expected"),

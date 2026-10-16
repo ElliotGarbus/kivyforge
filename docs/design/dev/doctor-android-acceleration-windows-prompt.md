@@ -34,21 +34,31 @@ What has been verified, on macOS 26.6.2 with emulator 37.1.11.0:
 - The Windows code path itself, driven on the Mac against that real emulator
   binary (only doctor's view of the platform changed): it returned *usable* with
   the emulator's description in 0.03 s.
+- A negative case without touching the machine: `HVF = off` in an
+  `advancedFeatures.ini` under a scratch `ANDROID_EMULATOR_HOME` (with
+  `ANDROID_AVD_HOME` keeping the real AVDs visible). `-accel-check` logged the
+  override on stderr, printed `accel:\n138\n\naccel` (no description) and
+  exited 138, and the Windows branch of the check then warned with the WHPX/AEHD
+  hint. So the exit status matches a non-zero printed status, on macOS.
 - The hermetic tests: the verdict, the crash, timeout and will-not-start
-  cases, and the parser.
+  cases, and the parser, including both real outputs above.
 
 **Not verified, and only a Windows host can say:**
 
 1. `emulator.exe -accel-check` prints the same frame **on stdout** on Windows,
    with the status on its own line. If the frame goes elsewhere, the probe says
    *unknown* on every Windows host: no false WARN, but no answer either.
-2. The **exit status equals the printed status**, above all when it is
-   non-zero. The parser reads the printed one; record both.
+2. `WindowsHypervisorPlatform = off` switches WHPX off the way `HVF = off` does
+   on a Mac, and the exit status again equals the printed status.
 3. How long it takes, the **first** time too (Defender scans a newly spawned
    binary), against the 30 s timeout.
 4. A redirected report (`doctor > report.txt`) does not crash on the emulator's
    description. The probe decodes it as ASCII with `backslashreplace`, so it
    should not.
+
+The same checks, as a repeatable hardware-pass item, are
+`android-doctor-accel-windows` in
+[`hardware-checklist.toml`](hardware-checklist.toml).
 
 ---
 
@@ -112,15 +122,32 @@ and a hint naming WHPX and AEHD. If the line says `acceleration not verified`,
 the probe found no frame: record its reason and Step 1's raw output side by
 side. That is the defect this prompt exists to catch.
 
-### Step 3 — a host *without* acceleration (only if one is already at hand)
+### Step 3 — the emulator *without* acceleration, without touching the machine
 
-The useful negative case is a Windows machine where the emulator is *already*
-unaccelerated: a virtual machine without nested virtualization, say. Run
-Steps 1 and 2 there if one exists.
+Switch WHPX off for the emulator only, through a feature override in a scratch
+emulator home. This works only where AEHD is not installed (`sc.exe query aehd`
+in Step 0 says the service does not exist); with AEHD present the emulator
+would fall back to it, so record that and skip this step.
 
-**Do not turn off Hyper-V, WHPX or AEHD on the host to make one.** It needs an
-administrator and a reboot, and it changes the user's machine; that is their
-call, not this prompt's. If no such machine exists, report Step 3 as not run.
+```powershell
+New-Item -ItemType Directory -Force "$env:TEMP\kf-emu-home" | Out-Null
+Set-Content "$env:TEMP\kf-emu-home\advancedFeatures.ini" 'WindowsHypervisorPlatform = off'
+$env:ANDROID_EMULATOR_HOME = "$env:TEMP\kf-emu-home"
+$env:ANDROID_AVD_HOME = "$env:USERPROFILE\.android\avd"   # keep the real AVDs visible
+& $emu -accel-check; "exit=$LASTEXITCODE"
+pushd $env:TEMP\kf-empty; & $kf doctor -p android --offline; "exit=$LASTEXITCODE"; popd
+Remove-Item Env:ANDROID_EMULATOR_HOME, Env:ANDROID_AVD_HOME
+```
+
+Expect stderr to say the feature `WindowsHypervisorPlatform` is overridden to
+`disabled`, a non-zero status with `exit=` showing the same number, and
+`[WARN] Emulator / virtualization: AVDs present (N) but no hardware acceleration`
+with the WHPX/AEHD hint. If there is no override line, the feature name is wrong
+for this emulator version: record what it printed.
+
+**Do not turn off Hyper-V, WHPX or AEHD in Windows itself.** That needs an
+administrator and a reboot, and it changes the user's machine: their call, not
+this prompt's.
 
 ### Step 4 — report
 
@@ -132,8 +159,10 @@ verbatim. Lead with any defect.
 If you fix one, put the fix and a hermetic test in
 `tests/platforms/android/test_doctor.py` in a separate commit from the findings.
 
-Add a row to [`test-matrix.md`](test-matrix.md) §7: dated, `local`, Windows,
-saying whether the negative case ran.
+Record the result into [`test-matrix.md`](test-matrix.md) §7 with
+`python scripts/hardware_pass.py record android-doctor-accel-windows --result pass|fail --device "<Windows build, CPU>" --note "..."`,
+saying in the note whether Step 3 ran, and update that item's "Last known
+result" in §6.
 
 ### Rules of engagement
 
