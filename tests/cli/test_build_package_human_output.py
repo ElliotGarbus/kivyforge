@@ -215,15 +215,32 @@ class TestIos:
 
     def test_package(self, ios):
         result = _invoke(package, ["-p", "ios"])
+        # The export's line stays; the copy in dist/ follows it, and only the
+        # copy is recorded (dist-artifacts-proposal 3.5).
         exported = f"Exported {_p('demo-ios', 'build', 'demo.ipa')}\n"
+        packaged = f"Packaged {_p('dist', 'ios', 'demo-1.0.0.ipa')}\n"
         _assert_streams(
             result,
             merged=_ios_prepare(_IOS_DEVICE_TAGS)
             + "xcodebuild archive ...\n"
             + "xcodebuild -exportArchive ...\n"
-            + exported,
-            stdout="Generated demo-ios\n" + exported,
+            + exported
+            + packaged,
+            stdout="Generated demo-ios\n" + exported + packaged,
         )
+
+    def test_package_copy_failure_prints_no_packaged_line(self, ios, monkeypatch):
+        # The export succeeded and printed its line; the copy did not, so
+        # nothing claims a package.
+        def refuse(src, dest, **kw):
+            raise OSError(28, "No space left on device", str(dest))
+
+        monkeypatch.setattr(ios, "copy_in", refuse)
+        result = CliRunner().invoke(package, ["-p", "ios"])
+        assert result.exit_code == 1
+        assert f"Exported {_p('demo-ios', 'build', 'demo.ipa')}\n" in result.stdout
+        assert "Packaged" not in result.output
+        assert "could not copy demo.ipa into dist/ios" in result.stderr
 
 
 _ANDROID_NO_BYTECOMPILE = (
@@ -288,9 +305,11 @@ class TestAndroid:
         from kivyforge.platforms.android.policy import LINT_CHECKS
 
         result = _invoke(package, ["-p", "android"])
-        packaged = (
-            f"Packaged {_ANDROID_OUTPUTS / 'apk' / 'release' / 'app-release.apk'}\n"
-        )
+        # Gradle's output is named on stderr only; stdout names the copy in
+        # dist/, the one artifact package records.
+        in_tree = _ANDROID_OUTPUTS / "apk" / "release" / "app-release.apk"
+        dist = _p("dist", "android", "demoapp-1.0.0.apk")
+        packaged = f"Packaged {dist}\n"
         _assert_streams(
             result,
             merged=_android_generate(byte_compile_note=True)
@@ -299,6 +318,7 @@ class TestAndroid:
             + "[policy] merged release manifest\n"
             + "[policy] INFO (merged): org.example.Receiver is exported\n"
             + "[gradle] assembleRelease\n"
+            + f"[package] copied {in_tree} to {dist}\n"
             + packaged,
             stdout=_ANDROID_GENERATED + packaged,
         )

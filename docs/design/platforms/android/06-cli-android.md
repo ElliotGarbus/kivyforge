@@ -29,7 +29,7 @@ themselves needs a Linux/macOS host, but that is an out-of-band, upstream step;
 | `build` | Download artifacts, stage `jniLibs/` + the Python bundle, and (re)generate the `<app>-android/` Gradle project. Without `--debug`, stops here — ready to open in Android Studio or assemble. |
 | `build --debug [-f apk\|aab]` | Same as `build`, then `assembleDebug` (`.apk`) / `bundleDebug` (`.aab`, niche), debug-keystore signed — the fast dev-loop build. |
 | `run [--emulator\|--device]` | Build (unless `--no-build`), install via `adb`, launch on an emulator or connected device. |
-| `package -f apk\|aab` | Produce the **signed release** distributable: `assembleRelease` (`.apk`) / `bundleRelease` (`.aab`). Runs the release signing pre-flight first. |
+| `package -f apk\|aab` | Produce the **signed release** distributable: `assembleRelease` (`.apk`) / `bundleRelease` (`.aab`), copied to `dist/android/<app>-<version>[-<abi>].{apk,aab}`. Runs the release signing pre-flight first. |
 | `open` | Open `<app>-android/` in Android Studio. |
 | `upgrade` | Re-download the pinned python.org runtime and `.aar`/`.jar` artifacts per the existing lock. |
 | `clean [--cache\|--cache-all]` | Remove generated artifacts (stopping the project's Gradle daemon first); with `--cache`, also flush the download cache; with `--cache-all`, the shared Gradle caches too. |
@@ -164,6 +164,7 @@ Flags:
   
   A FAIL in either pass aborts **before** the release is assembled and therefore before it is signed. Fix a flagged attribute through the manifest escape hatches (passthrough / raw XML) or, for a component a dependency insists on exporting, `allow_exported` — never by editing the generated file. See [gradle-project-generation §"Manifest generation"](04-gradle-project-generation.md#manifest-generation).
 - **Gradle release build + sign.** `-f apk` → `gradlew assembleRelease` → signed `.apk` in `app/build/outputs/apk/release/`; `-f aab` → `gradlew bundleRelease` → signed `.aab` in `app/build/outputs/bundle/release/`.
+- **Copy to `dist/android/`.** After the native-library alignment check, the signed artifact is **copied** (not moved) to `dist/android/<app>-<version>.{apk,aab}`, and only that copy is `package`'s product: it is the `Packaged` line on stdout and the one entry in `data.artifacts`. Gradle's output stays, because `run --no-build`, `run --release` and `status` read it. `<version>` is the resolved version with a local segment's `+` written as `_`. When `--abi` packages a strict subset of `[tool.kivy.android].abis`, the name ends in that ABI (`-x86_64`), so a partial package is never mistaken for the full app; `--abi` naming every configured ABI is unqualified. A same-name file from an earlier run is kept until the copy succeeds, and restored if it fails; files of other versions are left alone. See [dist-artifacts-proposal](../../dev/dist-artifacts-proposal.md).
 - **APK vs AAB signing.** For `.apk` Gradle invokes `apksigner` and the v1–v4 scheme toggles from `[tool.kivy.android.signing]` apply directly. An `.aab` is **JAR-signed (`jarsigner`) with the same key** — the v2–v4 APK signature schemes do **not** apply to the `.aab` container; they apply to the per-device APKs Play (or `bundletool`) derives from it (with Play App Signing, signed by Google with the app key).
 - **Native debug symbols.** A stripped release (`build_settings.strip_native_libs` on, the default) also emits `app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip` per `build_settings.debug_symbols`, for Play/crash-reporter symbolication — the Android analog of iOS dSYMs. See [pyproject-android §"Native debug symbols"](01-pyproject-android.md#native-debug-symbols).
 
@@ -261,7 +262,8 @@ invoke Gradle. To pick up newer versions, edit `pyproject.toml` and re-run
 
 Flags: `--cache` (also flush the artifact download cache), `--cache-all`
 (`--cache` plus the shared Gradle caches), `--project-only` (default; only the
-generated `<app>-android/`).
+generated `<app>-android/` and `package`'s `dist/android/`, every version in
+it).
 
 Removing `<app>-android/` takes the project's Gradle state (`app/build/`,
 `.gradle/`) with it, so `clean` always runs `gradlew --stop` first when that

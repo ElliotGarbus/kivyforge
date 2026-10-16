@@ -106,13 +106,32 @@ manifest. A finding in either blocks the release.
 
 ## Verify
 
-`package` prints the path of the artifact it produced:
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
+    `package` leaves the artifact in the Gradle project, as
+    `app-release.apk` or `app-release.aab`.
 
-- APK: `<app>-android/app/build/outputs/apk/release/app-release.apk`
-- AAB: `<app>-android/app/build/outputs/bundle/release/app-release.aab`
+`package` prints the path of the artifact it produced, in `dist/android/`:
 
-`<app>` is your `[project].name`. With `--json`, the same path is in
+- APK: `dist/android/APP_NAME-VERSION.apk`
+- AAB: `dist/android/APP_NAME-VERSION.aab`
+
+`APP_NAME` is your `[project].name` and `VERSION` is your app's version. A
+package made with `--abi` for only some of your configured ABIs also names the
+ABI, for example `dist/android/APP_NAME-VERSION-x86_64.apk`, so it cannot be
+mistaken for the full app. With `--json`, the same path is in
 `data.artifacts`.
+
+`package` copies the artifact into `dist/android/` from the Gradle project,
+where Gradle's own `app-release.apk` or `app-release.aab` stays.
+`kivyforge status -p android` reports the Gradle project, so its
+`apk (release)` row is Gradle's file, not the one in `dist/`.
+
+!!! warning "`kivyforge clean` deletes `dist/android/`"
+    Each version gets its own file, so `dist/android/` keeps earlier versions,
+    until `kivyforge clean` deletes the whole folder. Copy any version you want
+    to keep somewhere else first.
 
 ## Publish to Google Play
 

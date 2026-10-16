@@ -24,6 +24,7 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
+from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import (
     ECHO_EVENTS,
     LOCKFILE_NAME,
@@ -121,7 +122,7 @@ def ios_build(
         return outcome.finish()
 
     try:
-        _xcodebuild_step7(
+        ipa = _xcodebuild_step7(
             xb,
             config,
             target=target,
@@ -136,6 +137,10 @@ def ios_build(
         raise _tool_failure(exc, events) from exc
     except SigningError as exc:
         raise ToolchainError.wrap(exc) from exc
+    if ipa is not None:
+        # build --release keeps its .ipa in the Xcode project; only package
+        # copies it to dist/ (dist-artifacts-proposal, Q3).
+        outcome.add(ipa.relative_to(project_root), ArtifactKind.IPA)
     return outcome.finish()
 
 
@@ -258,7 +263,15 @@ def _xcodebuild_step7(
     export_method: str,
     events: BuildEvents,
     outcome: OutcomeBuilder,
-) -> None:
+) -> Path | None:
+    """Run xcodebuild for *target*; return the exported ``.ipa`` for a release.
+
+    A simulator or device build records its ``.app`` here. A release's ``.ipa``
+    is returned for the caller to record: ``build --release`` records it as
+    is, while ``package`` records only its copy in ``dist/ios/``. Recording it
+    here would name the in-tree ``.ipa`` even when that copy then fails, since
+    a recorded artifact is reported at once.
+    """
     auto_signing = config.ios.signing.auto_signing
     if target in ("simulator", "device"):
         # Effective signing identity: --signing-identity → env → pyproject.
@@ -294,7 +307,7 @@ def _xcodebuild_step7(
         rel = app.relative_to(xb.project_root)
         events.on_line(f"Built {rel}")
         outcome.add(rel, ArtifactKind.APP)
-        return
+        return None
 
     # --release: archive, then export a signed .ipa (spec 05 step 7).
     # Only an *explicit* --signing-identity flag or KIVYFORGE_SIGNING_IDENTITY
@@ -344,9 +357,8 @@ def _xcodebuild_step7(
         export_command(xb, options_path, allow_provisioning_updates=auto_signing)
     )
     ipa = _require_product(xb.ipa_path, xb)
-    rel = ipa.relative_to(xb.project_root)
-    events.on_line(f"Exported {rel}")
-    outcome.add(rel, ArtifactKind.IPA)
+    events.on_line(f"Exported {ipa.relative_to(xb.project_root)}")
+    return ipa
 
 
 def _require_product(path: Path, xb: XcodeBuild) -> Path:
@@ -625,7 +637,7 @@ def ios_package(
             events=events,
         )
         xb = XcodeBuild.from_config(config, project_root)
-        _xcodebuild_step7(
+        ipa = _xcodebuild_step7(
             xb,
             config,
             target="release",
@@ -640,7 +652,33 @@ def ios_package(
         raise _tool_failure(exc, events) from exc
     except SigningError as exc:
         raise ToolchainError.wrap(exc) from exc
+    assert ipa is not None  # a release always exports one, or raises
+    # Copied, not moved: the .xcarchive's dSYMs and the export stay in the
+    # Xcode project. Only the copy is this verb's product.
+    published = _dist_output(project_root, config, export_method)
+    try:
+        copy_in(ipa, published)
+    except OSError as exc:
+        folder = published.parent.relative_to(project_root).as_posix()
+        raise ToolchainError(
+            failures.os_failure(f"copy {ipa.name} into {folder}", exc)
+        ) from exc
+    rel = published.relative_to(project_root)
+    events.on_line(f"Packaged {rel}")
+    outcome.add(rel, ArtifactKind.IPA)
     return outcome.finish()
+
+
+def _dist_output(project_root: Path, config, export_method: str) -> Path:
+    """Where ``package`` puts its ``.ipa``: ``dist/ios/<slug>-<ver>[-<method>]``.
+
+    The export method changes the provisioning inside the ``.ipa``, so an ad-hoc
+    and an App Store export of one version are different files. App Store, the
+    default, is unqualified.
+    """
+    qualifier = "" if export_method == "app-store" else f"-{export_method}"
+    version = config.version_required.filename_part
+    return project_root / "dist" / "ios" / f"{config.app_slug}-{version}{qualifier}.ipa"
 
 
 # ---- open ---------------------------------------------------------------- #

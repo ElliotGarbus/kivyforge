@@ -4,6 +4,7 @@ sources:
   - docs/design/common/02-cli-and-platform-resolution.md
   - docs/design/common/06-packaging-scope.md
   - kivyforge/capabilities.py
+  - docs/design/dev/dist-artifacts-proposal.md
 ---
 
 # Build versus package
@@ -48,6 +49,32 @@ flowchart LR
     run -.iterate.-> build
     build --> package
 ```
+
+## Where the output goes
+
+`build` leaves its output in the build tree, where `run` and your IDE expect
+it: `build/PLATFORM/` for the desktop platforms, and the generated
+`APP_NAME-android/` or `APP_NAME-ios/` project for Android and iOS.
+
+`package` writes the file it produces to `dist/PLATFORM/`, with your app's
+version in the name:
+
+| Platform | Where `package` puts the artifact |
+|---|---|
+| `linux` | `dist/linux/APP_NAME-VERSION-ARCH.AppImage`. With `-f folder`, the AppDir stays in `build/linux/`. |
+| `windows` | `dist/windows/DISPLAY_NAME-VERSION-ARCH/`, a copy of the folder in `build/windows/` |
+| `macos` | `build/macos/DISPLAY_NAME.app`, signed in place |
+| `android` | `dist/android/APP_NAME-VERSION.apk` or `.aab` |
+| `ios` | `dist/ios/APP_NAME-VERSION.ipa` |
+
+`APP_NAME` is your `[project].name`, `DISPLAY_NAME` is
+`[tool.kivy].display_name`, `VERSION` is your app's version, and `ARCH` is the
+architecture packaged. With `--json`, the path is in `data.artifacts`.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
+    Android and iOS `package` leave the artifact in the generated project.
 
 ## The `-f` format selector
 

@@ -509,7 +509,7 @@ needs = [
 commands = [
     "cd <your project>",
     "kivyforge package -p android -f aab",
-    "Upload app/build/outputs/bundle/release/app-release.aab to an internal testing track in Play Console.",
+    "Upload the bundle `package` names (dist/android/<app>-<version>.aab) to an internal testing track in Play Console.",
     "Install the release on a phone from the Play Store link for testers.",
 ]
 pass = [
@@ -531,7 +531,7 @@ needs = [
 commands = [
     "cd <your project>",
     "kivyforge package -p ios --export-method app-store",
-    "Upload the exported .ipa with Transporter (or `xcrun altool --upload-app`).",
+    "Upload the .ipa `package` names (dist/ios/<app>-<version>.ipa) with Transporter (or `xcrun altool --upload-app`).",
     "Install the build from TestFlight on an iPhone.",
 ]
 pass = [

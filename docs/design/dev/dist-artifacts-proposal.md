@@ -1,7 +1,11 @@
 # Proposal — `package` writes its artifact to `dist/`
 
-> Status: **draft 2026-10-15**, trimmed the same day to the smallest change
-> that addresses the issue. Not implemented.
+> Status: **implemented 2026-10-15** on branch `dist-artifacts`, not yet
+> released. The hermetic tests in section 9 pass. On 2026-10-16 real
+> `package -p ios` and `package -p android` runs on this Mac passed, the
+> Android one including an install from `dist/android/` on an emulator
+> (`test-matrix.md` §7). The reply on #112 (section 11) is still open. Drafted on 2026-10-15, and trimmed to the
+> smallest change that addresses the issue.
 >
 > Responds to [#112](https://github.com/ElliotGarbus/kivyforge/issues/112),
 > which asks for packaged artifacts in `dist/` under versioned names. Its
