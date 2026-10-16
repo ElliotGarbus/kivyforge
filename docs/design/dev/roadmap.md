@@ -378,6 +378,7 @@ known-unverified list.
 | 10 | Dynamic `[project].version` (setuptools-scm and friends) | S–M | none |
 | 11 | CPython 3.15 on every platform | S–M | CPython 3.15.0 final released |
 | 12 | Enforce Maven artifact hashes at build time (Android) | M | none |
+| 13 | Android and iOS `package` output into `dist/` with versioned names ([#112](https://github.com/ElliotGarbus/kivyforge/issues/112)) | S | none (decisions recorded 2026-10-15) |
 
 **Why this order.** Item 1 was first because it closes a *correctness* gap: a
 feature that ships today could silently strip sources and produce a bundle a
@@ -2178,3 +2179,23 @@ everything else, so no build runs. See
 **Done when** a build of `examples/mobile/qr-maven` fails, naming the artifact,
 after one byte of a resolved ZXing artifact is changed in the Gradle cache, and
 passes again after re-locking.
+
+---
+
+### 13. Android and iOS `package` output into `dist/`
+
+**New 2026-10-15**, from
+[#112](https://github.com/ElliotGarbus/kivyforge/issues/112). Design:
+[`dist-artifacts-proposal.md`](dist-artifacts-proposal.md).
+
+`package -p android` leaves `app-release.apk` or `app-release.aab` inside the
+Gradle project, and `package -p ios` leaves `<slug>.ipa` inside the Xcode
+project. Neither name carries a version, so archived copies cannot be told
+apart and versions overwrite each other. Linux and Windows already write
+versioned names into `dist/<platform>/`.
+
+The proposal copies the Android and iOS artifacts to
+`dist/<platform>/<slug>-<version>[-<qualifier>].<ext>`, leaves `build`'s output
+where it is, and defers macOS and a debug variant of `package -p android`.
+
+**Done when** the proposal's §11 holds.
