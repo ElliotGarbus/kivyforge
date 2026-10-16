@@ -37,6 +37,7 @@ from .splash import SPLASH_MIN_COMPILE_SDK
 
 _EXE = ".exe" if os.name == "nt" else ""
 _BAT = ".bat" if os.name == "nt" else ""
+_KVM_DEVICE = Path("/dev/kvm")
 
 
 class AndroidProbe(Protocol):
@@ -52,7 +53,7 @@ class AndroidProbe(Protocol):
     def accepted_licenses(self, sdk: Path) -> list[str]: ...
     def avds(self) -> list[str]: ...
     def connected_devices(self) -> list[str]: ...
-    def has_kvm_or_haxm(self) -> bool: ...
+    def has_hardware_acceleration(self) -> bool: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
     def latest_kivyforge_version(self) -> str | None: ...
     def byte_compile_interpreter(
@@ -188,10 +189,42 @@ class RealAndroidProbe:
 
         return RealProbe().latest_kivyforge_version()
 
-    def has_kvm_or_haxm(self) -> bool:
-        if os.name == "nt":
-            return True  # WHPX/HAXM presence is hard to probe cheaply; assume ok
-        return Path("/dev/kvm").exists()
+    def has_hardware_acceleration(self) -> bool:
+        """Whether the emulator can run hardware-accelerated on this host.
+
+        Each OS has its own hypervisor: KVM on Linux, Hypervisor.Framework on
+        macOS, WHPX or AEHD on Windows.
+        """
+        if sys.platform == "win32":
+            return True  # WHPX/AEHD presence is hard to probe cheaply; assume ok
+        if sys.platform == "darwin":
+            return self._hv_support()
+        return _KVM_DEVICE.exists()
+
+    def _hv_support(self) -> bool:
+        """``sysctl kern.hv_support``: whether Hypervisor.Framework can run here.
+
+        Read from the kernel rather than from ``emulator -accel-check``. On a Mac
+        Hypervisor.Framework is the only accelerator the emulator has, so the
+        kernel's answer is the whole question, and this one needs neither the
+        SDK's emulator package nor parsing its output. It is 0 inside a virtual
+        machine without nested virtualization, and on an Intel CPU without the
+        VT-x features the framework needs.
+        """
+        import subprocess
+
+        try:
+            proc = subprocess.run(
+                # Absolute: /usr/sbin is not on every PATH (a CI job's, cron's).
+                ["/usr/sbin/sysctl", "-n", "kern.hv_support"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return proc.returncode == 0 and proc.stdout.strip() == "1"
 
     def tcp_reachable(self, host: str, port: int) -> bool:
         import socket
@@ -478,9 +511,35 @@ def _check_adb(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
     return CheckResult("adb", Status.PASS, f"{adb}; {', '.join(devices)}")
 
 
+def _acceleration_hint(platform: str) -> str:
+    """How to give the emulator hardware acceleration on the host *platform*.
+
+    Each OS has its own hypervisor; HAXM, which this hint used to suggest for
+    macOS and Windows, is discontinued. The Windows text is reached only through
+    a probe that reports no acceleration there, which the real one never does.
+    """
+    if platform == "darwin":
+        return (
+            "the emulator uses Hypervisor.Framework, which macOS turns on by "
+            "default; `sysctl kern.hv_support` prints 0 when this Mac cannot "
+            "provide it, as inside a virtual machine without nested virtualization."
+        )
+    if platform == "win32":
+        return (
+            "turn on Windows Hypervisor Platform (WHPX) in Windows Features, or "
+            "install the Android Emulator hypervisor driver (AEHD) from the SDK "
+            "Manager."
+        )
+    return (
+        "enable virtualization (VT-x or AMD-V) in the firmware and load the kvm "
+        "module so /dev/kvm exists; your user also needs read and write access "
+        "to it (usually the kvm group)."
+    )
+
+
 def _check_emulator(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
     avds = probe.avds()
-    accel = probe.has_kvm_or_haxm()
+    accel = probe.has_hardware_acceleration()
     if not avds:
         return CheckResult(
             "Emulator / virtualization",
@@ -494,7 +553,7 @@ def _check_emulator(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
             "Emulator / virtualization",
             Status.WARN,
             f"AVDs present ({len(avds)}) but no hardware acceleration",
-            hint="enable KVM (Linux) / HAXM or Hyper-V (macOS/Windows).",
+            hint=_acceleration_hint(sys.platform),
         )
     return CheckResult(
         "Emulator / virtualization", Status.PASS, f"{len(avds)} AVD(s), accelerated"
