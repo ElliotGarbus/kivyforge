@@ -26,6 +26,9 @@ src/ios/ios.c
 # project whose own directory ends in `-android`, so those are re-included.
 *-android/
 !examples/mobile/hello-android/
+# What `kivyforge package` writes in an example (dist/<platform>/). The
+# dist/* rule above only matches at the repository root.
+examples/**/dist/
 # Per-user Xcode state inside local Swift packages (e.g. example swift-shims/).
 .swiftpm/
 __pycache__

@@ -129,10 +129,29 @@ To also install and launch it, use `kivyforge run -p ios --device`. See
 kivyforge package -p ios
 ```
 
-`package` archives the app and exports a signed `.ipa` to
-`<app>-ios/build/<app>.ipa`. `kivyforge build -p ios --release` does the same.
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
+    `package` leaves the `.ipa` at `<app>-ios/build/<app>.ipa`.
+
+`package` archives the app, exports a signed `.ipa`, and copies it to
+`dist/ios/APP_NAME-VERSION.ipa`. `APP_NAME` is your `[project].name` and
+`VERSION` is your app's version.
+
 Choose the export method with `--export-method`: `app-store` (the default),
-`ad-hoc`, or `development`.
+`ad-hoc`, or `development`. Because each method embeds a different
+provisioning profile, the name says which one it is unless it is `app-store`,
+for example `dist/ios/APP_NAME-VERSION-ad-hoc.ipa`.
+
+`kivyforge build -p ios --release` runs the same archive and export but leaves
+the `.ipa` in the Xcode project, at `<app>-ios/build/<app>.ipa`. The archive
+stays there too, at `<app>-ios/build/<app>.xcarchive`, with the `dSYMs/` a
+crash-reporting service needs.
+
+!!! warning "`kivyforge clean` deletes `dist/ios/`"
+    Each version gets its own file, so `dist/ios/` keeps earlier versions,
+    until `kivyforge clean` deletes the whole folder. Copy any version you want
+    to keep somewhere else first.
 
 !!! warning "Signing identity for a release"
     The `identity` key in `pyproject.toml` applies only to device debug builds.
@@ -160,7 +179,7 @@ against: Xcode fetches or creates the profile during the build.
 ## Verify
 
 `kivyforge package -p ios --json` exits with status `0`, and `data.artifacts`
-names the `.ipa`.
+names the `.ipa` in `dist/ios/`.
 
 ## What's next
 

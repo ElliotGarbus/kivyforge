@@ -128,6 +128,27 @@ no display on a headless runner, don't change its exit code.
     `GITHUB_TOKEN` on the `lock` step to raise the limit. See
     [Environment variables](../../reference/environment.md).
 
+## Upload Python distributions from a separate folder
+
+`package` writes into platform folders under `dist/`, such as `dist/linux/`
+and `dist/windows/`. `python -m build` and `uv build` write wheels and source
+distributions to the same `dist/`. If one checkout does both, `twine upload
+dist/*` and the `pypa/gh-action-pypi-publish` action fail on the platform
+folders, because twine accepts only wheels and source distributions.
+
+Upload the Python distributions one of these ways instead:
+
+- Name them: `twine upload dist/*.whl dist/*.tar.gz`.
+- Build them elsewhere with `python -m build --outdir wheels`, and point the
+  action's `packages-dir` at `wheels`.
+- Use `uv publish`, which skips anything that is not a distribution.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. `package -p android` and
+    `package -p ios` also write into `dist/`, as `dist/android/` and
+    `dist/ios/`.
+
 ## Verify
 
 Your pipeline is wired correctly when:
@@ -137,6 +158,9 @@ Your pipeline is wired correctly when:
   `dist/linux/APP_NAME-VERSION-x86_64.AppImage`.
 
 `APP_NAME` and `VERSION` are your `[project].name` and `[project].version`.
+Read the path from `data.artifacts` rather than building it yourself: some
+names carry more than the version, such as the ABI of an Android package made
+with `--abi`.
 
 ## What's next
 

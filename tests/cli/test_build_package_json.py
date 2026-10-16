@@ -71,9 +71,21 @@ class TestSuccess:
             ("demo-ios/build/demo.ipa", "ipa"),
         ]
 
-    def test_ios_package_reports_only_the_ipa(self, ios):
-        _, env = _run(package, ["-p", "ios"])
-        assert _artifacts(env) == [("demo-ios/build/demo.ipa", "ipa")]
+    @pytest.mark.parametrize(
+        ("method", "name"),
+        [
+            ("app-store", "demo-1.0.0.ipa"),
+            ("ad-hoc", "demo-1.0.0-ad-hoc.ipa"),
+            ("development", "demo-1.0.0-development.ipa"),
+        ],
+    )
+    def test_ios_package_reports_only_the_copy_in_dist(self, ios, method, name):
+        # Starts with no dist/ folder, as on a clean checkout.
+        assert not Path("dist").exists()
+        _, env = _run(package, ["-p", "ios", "--export-method", method])
+        assert _artifacts(env) == [(f"dist/ios/{name}", "ipa")]
+        # Copied, not moved: the export stays in the Xcode project.
+        assert Path("demo-ios/build/demo.ipa").is_file()
 
     def test_android_debug_build_reports_project_and_apk(self, android):
         result, env = _run(build, ["-p", "android", "--debug"])
@@ -82,6 +94,17 @@ class TestSuccess:
             ("demoapp-android/app/build/outputs/apk/debug/app-debug.apk", "apk"),
         ]
         assert "[gradle] assembleDebug" in result.stderr
+
+    def test_android_package_reports_only_the_copy_in_dist(self, android):
+        result, env = _run(package, ["-p", "android"])
+        assert result.exit_code == 0
+        assert _artifacts(env) == [("dist/android/demoapp-1.0.0.apk", "apk")]
+        # Gradle's output is an intermediate: named on stderr, kept on disk.
+        assert "app-release.apk" not in result.stdout
+        assert "app-release.apk" in result.stderr
+        assert Path(
+            "demoapp-android/app/build/outputs/apk/release/app-release.apk"
+        ).is_file()
 
     def test_android_bare_build_reports_only_the_project(self, android):
         result, env = _run(build, ["-p", "android"])
@@ -163,6 +186,28 @@ class TestFailure:
         assert _artifacts(env) == []
         assert env["diagnostics"][0]["message"].startswith("xcodebuild archive failed")
 
+    def test_failed_ios_dist_copy_names_nothing(self, ios, monkeypatch):
+        # step 7 used to record the in-tree .ipa the moment it was exported, so
+        # a copy failing after a successful export would have named it.
+        earlier = Path("dist/ios/demo-1.0.0.ipa")
+        earlier.parent.mkdir(parents=True)
+        earlier.write_bytes(b"earlier package")
+
+        def refuse(src, dest, **kw):
+            raise OSError(errno.ENOSPC, "No space left on device", str(dest))
+
+        monkeypatch.setattr(ios, "copy_in", refuse)
+        result, env = _run(package, ["-p", "ios"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        assert env["ok"] is False
+        assert _artifacts(env) == []
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["code"] == diagnostics.UNSPECIFIED
+        assert diagnostic["message"].startswith(
+            "could not copy demo.ipa into dist/ios: "
+        )
+        assert earlier.read_bytes() == b"earlier package"
+
     def test_failed_android_package_reports_no_artifacts(self, android, monkeypatch):
         from kivyforge.platforms.android import cli
         from kivyforge.platforms.android.gradlew import GradleError
@@ -170,10 +215,16 @@ class TestFailure:
         def fail(dest, tasks, **kw):
             raise GradleError("Gradle failed (exit 1) running: assembleRelease")
 
+        # A same-name package from an earlier run is not this run's product:
+        # it stays on disk and the envelope does not name it.
+        earlier = Path("dist/android/demoapp-1.0.0.apk")
+        earlier.parent.mkdir(parents=True)
+        earlier.write_bytes(b"earlier package")
         monkeypatch.setattr(cli, "run_gradle", fail)
         _, env = _run(package, ["-p", "android"])
         assert env["ok"] is False
         assert _artifacts(env) == []
+        assert earlier.read_bytes() == b"earlier package"
 
     def test_android_download_failure_is_an_envelope(self, android, monkeypatch):
         """Not a traceback with empty stdout: a 503 from the wheel host is a
@@ -312,6 +363,38 @@ class TestFailure:
         # The previous package is back, and no reserved copy is left beside it.
         assert (previous / "OLD.txt").read_text() == "previous package"
         assert list(previous.parent.iterdir()) == [previous]
+
+    def test_failed_android_dist_copy_is_an_envelope(self, android, monkeypatch):
+        # The copy into dist/ is kivyforge's own write after Gradle succeeded.
+        # A refusal is reported, not raised bare, and the earlier package of
+        # the same name is back in place (bundle/workdir.copy_in).
+        from kivyforge.bundle import workdir
+
+        earlier = Path("dist/android/demoapp-1.0.0.apk")
+        earlier.parent.mkdir(parents=True)
+        earlier.write_bytes(b"earlier package")
+
+        def partway(src, dst, **kw):
+            Path(dst).write_bytes(b"half")
+            raise OSError(errno.ENOSPC, "No space left on device", str(dst))
+
+        monkeypatch.setattr(
+            workdir, "shutil", SimpleNamespace(copy2=partway, rmtree=shutil.rmtree)
+        )
+        result, env = _run(package, ["-p", "android"])
+        assert result.exit_code == exit_codes.CONFIG_ERROR
+        assert env["ok"] is False
+        (diagnostic,) = [
+            d for d in env["diagnostics"] if d["severity"] == diagnostics.ERROR
+        ]
+        assert diagnostic["code"] == diagnostics.UNSPECIFIED
+        assert diagnostic["message"].startswith(
+            "could not copy app-release.apk into dist/android: "
+        )
+        assert "Traceback" not in result.stderr
+        assert _artifacts(env) == []
+        assert earlier.read_bytes() == b"earlier package"
+        assert list(earlier.parent.iterdir()) == [earlier]
 
     def test_too_long_windows_paths_name_the_first_and_count_the_rest(
         self, windows, monkeypatch, desktop_project

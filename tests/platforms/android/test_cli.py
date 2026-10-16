@@ -20,7 +20,9 @@ import pytest
 
 from kivyforge.build_outcome import ArtifactKind, BuildEvents
 from kivyforge.cli._common import ToolchainError
+from kivyforge.config import load_config
 from kivyforge.config.model import ResolvedVersion
+from kivyforge.config.version import with_version
 from kivyforge.lock.model import LockedPackage, LockedWheel
 from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.platforms.android import AndroidBuildError, cli
@@ -1326,6 +1328,52 @@ class TestDebugReleaseOutputPaths:
         assert cli._release_output(tmp_path, "aab").name == "app-release.aab"
 
 
+class TestDistOutputName:
+    """``dist/android/<slug>-<ver>[-<abi>].<fmt>``: the ABI only for a strict subset."""
+
+    def _config(self, project, abis: str, version=None):
+        pyproject = project / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8").replace(
+                'abis = ["arm64_v8a"]', f"abis = {abis}"
+            ),
+            encoding="utf-8",
+        )
+        config = load_config(pyproject, require_ios=False, require_android=True)
+        return with_version(config, version)
+
+    @pytest.mark.parametrize(
+        ("abis", "abi", "fmt", "name"),
+        [
+            # A subset of a two-ABI config is qualified ...
+            ('["arm64_v8a", "x86_64"]', "x86_64", "apk", "demoapp-1.0.0-x86_64.apk"),
+            (
+                '["arm64_v8a", "x86_64"]',
+                "arm64_v8a",
+                "aab",
+                "demoapp-1.0.0-arm64_v8a.aab",
+            ),
+            # ... the full set is not, however it was asked for ...
+            ('["arm64_v8a", "x86_64"]', None, "apk", "demoapp-1.0.0.apk"),
+            ('["x86_64"]', "x86_64", "apk", "demoapp-1.0.0.apk"),
+            # ... and a one-ABI config is the app the user chose, not a subset.
+            ('["arm64_v8a"]', None, "aab", "demoapp-1.0.0.aab"),
+        ],
+    )
+    def test_name(self, project, abis, abi, fmt, name):
+        config = self._config(project, abis)
+        assert cli._dist_output(project, config, abi, fmt) == (
+            project / "dist" / "android" / name
+        )
+
+    def test_local_version_segment_is_filename_safe(self, project):
+        version = ResolvedVersion("0.1.dev3+g1a2b3c", source="override")
+        config = self._config(project, '["arm64_v8a"]', version)
+        assert cli._dist_output(project, config, None, "apk").name == (
+            "demoapp-0.1.dev3_g1a2b3c.apk"
+        )
+
+
 class TestAndroidPackage:
     def test_signing_not_configured_raises(self, build_env):
         project, _ = build_env
@@ -1357,14 +1405,20 @@ class TestAndroidPackage:
         self._fake_signing(monkeypatch)
         self._fake_manifest_ok(monkeypatch)
         outcome = cli.android_package(project, fmt="apk")
-        # Only the release APK: the project is package's intermediate.
-        assert [(a.path.name, a.kind) for a in outcome.artifacts] == [
-            ("app-release.apk", ArtifactKind.APK)
+        # Only the copy in dist/: the project and Gradle's own output are
+        # package's intermediates.
+        assert [(a.path, a.kind) for a in outcome.artifacts] == [
+            (Path("dist", "android", "demoapp-1.0.0.apk"), ArtifactKind.APK)
         ]
         assert calls["run_gradle"] == [
             ("lintRelease", MERGED_MANIFEST_TASK),
             ("assembleRelease",),
         ]
+        # Copied, not moved: run --no-build and status read Gradle's output.
+        in_tree = project / "demoapp-android/app/build/outputs/apk/release"
+        assert (in_tree / "app-release.apk").read_bytes() == (
+            project / "dist/android/demoapp-1.0.0.apk"
+        ).read_bytes()
 
     def test_the_version_reaches_the_inner_build(self, build_env, monkeypatch):
         # package builds through android_build, which loads config again; the
@@ -1380,13 +1434,54 @@ class TestAndroidPackage:
         self._fake_signing(monkeypatch)
         self._fake_manifest_ok(monkeypatch)
         outcome = cli.android_package(project, fmt="aab")
-        assert [(a.path.name, a.kind) for a in outcome.artifacts] == [
-            ("app-release.aab", ArtifactKind.AAB)
+        assert [(a.path, a.kind) for a in outcome.artifacts] == [
+            (Path("dist", "android", "demoapp-1.0.0.aab"), ArtifactKind.AAB)
         ]
+        assert (
+            (project / "demoapp-android/app/build/outputs/bundle/release")
+            .joinpath("app-release.aab")
+            .is_file()
+        )
         assert calls["run_gradle"] == [
             ("lintRelease", MERGED_MANIFEST_TASK),
             ("bundleRelease",),
         ]
+
+    def test_abi_naming_every_configured_abi_is_unqualified(
+        self, build_env, monkeypatch
+    ):
+        # The fixture configures arm64_v8a alone, so --abi arm64_v8a packages
+        # the full app: the name follows the contents, not the flag.
+        project, _ = build_env
+        self._fake_signing(monkeypatch)
+        self._fake_manifest_ok(monkeypatch)
+        outcome = cli.android_package(project, fmt="apk", abi="arm64_v8a")
+        assert [a.path.name for a in outcome.artifacts] == ["demoapp-1.0.0.apk"]
+
+    def test_a_failed_copy_is_reported_with_nothing_recorded(
+        self, build_env, monkeypatch
+    ):
+        project, _ = build_env
+        self._fake_signing(monkeypatch)
+        self._fake_manifest_ok(monkeypatch)
+        recorded = []
+
+        def refuse(src, dest, **kw):
+            raise OSError(28, "No space left on device", str(dest))
+
+        monkeypatch.setattr(cli, "copy_in", refuse)
+        events = BuildEvents(
+            on_line=lambda _s: None,
+            on_progress=lambda _s: None,
+            on_artifact=recorded.append,
+            on_note=lambda code, message, context=None: None,
+        )
+        with pytest.raises(ToolchainError) as raised:
+            cli.android_package(project, fmt="apk", events=events)
+        assert str(raised.value).startswith(
+            "could not copy app-release.apk into dist/android: "
+        )
+        assert recorded == []
 
     def test_manifest_policy_violation_blocks_before_gradle(
         self, build_env, monkeypatch
@@ -1529,7 +1624,7 @@ class TestMergedManifestPolicy:
             "</intent-filter></activity>",
         )
         (out,) = _built_paths(cli.android_package(project), project)
-        assert out.name == "app-release.apk"
+        assert out.name == "demoapp-1.0.0.apk"
 
     def test_a_lint_finding_points_at_the_report(self, build_env, monkeypatch):
         project, _ = self._ready(build_env, monkeypatch)

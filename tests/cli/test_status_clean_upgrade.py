@@ -232,6 +232,23 @@ class TestClean:
             assert "Removed build/linux/" in result.output
             assert "Removed dist/linux/" in result.output
 
+    def test_removes_mobile_dist_folders_with_every_version(self, runner, tmp_path):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write(fs)
+            root = Path(fs)
+            for platform, names in (
+                ("android", ("myapp-1.0.0.apk", "myapp-0.9.0.aab")),
+                ("ios", ("myapp-1.0.0.ipa",)),
+            ):
+                (root / "dist" / platform).mkdir(parents=True)
+                for name in names:
+                    (root / "dist" / platform / name).write_text("x")
+            result = runner.invoke(clean, [])
+            assert result.exit_code == 0, result.output
+            assert not (root / "dist").exists()
+            assert "Removed dist/android/" in result.output
+            assert "Removed dist/ios/" in result.output
+
     def test_desktop_only_project_cleans(self, runner, tmp_path):
         """A project with no [tool.kivy.ios] overlay must still clean."""
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:

@@ -322,8 +322,8 @@ Windows, macOS, or Linux. 64-bit only (`arm64_v8a`, `x86_64`).
       kivyforge run -p android --emulator
 
       # 4b. ...or produce the signed release distributable
-      kivyforge package -p android            # -> <app>-android/app/build/outputs/apk/release/
-      kivyforge package -p android -f aab     # -> .../outputs/bundle/release/ (Play upload)
+      kivyforge package -p android            # -> dist/android/<app>-<version>.apk
+      kivyforge package -p android -f aab     # -> dist/android/<app>-<version>.aab (Play upload)
 
 **Android wheels.** Kivy has no Android wheel on PyPI, so `kivyforge lock -p android`
 fails with "pip could not resolve the Android ABI" until you point it at the

@@ -714,8 +714,10 @@ jobs:
           -storepass "$KIVYFORGE_KEYSTORE_PASSWORD" \
           -keypass "$KIVYFORGE_KEYSTORE_PASSWORD" \
           -keyalg RSA -keysize 2048 -validity 30 -dname "CN=kivyforge CI"
+        # --json: the checks below take the APK from data.artifacts, because
+        # --abi puts the ABI in its dist/android/ name (dist-artifacts-proposal).
         kivyforge package -p android --abi "$ABI" \
-          --keystore ci.keystore --key-alias ci
+          --keystore ci.keystore --key-alias ci --json > package.json
     - name: Assert the release APK is stripped and byte-compiled (T3)
       # The gate roadmap item 1 needed and did not have. byte_compile and
       # strip_source both default to "release", so this APK has been stripped and
@@ -724,7 +726,7 @@ jobs:
       # .pyc carrying the magic this job's pinned CPython writes (which is why the
       # setup-python pin above is load-bearing, not incidental).
       run: |
-        apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
+        apk="$APP_DIR/$(python -c 'import json, sys; [a] = json.load(open(sys.argv[1]))["data"]["artifacts"]; assert a["path"].startswith("dist/android/"), a; print(a["path"])' "$APP_DIR/package.json")"
         pytest tests/platforms/android/test_apk_artifact.py -q --no-cov \
           --android-apk "$apk" --android-abi "$ANDROID_ABI" --android-stripped
     - name: Assert the merged release manifest says what pyproject.toml declared (T3)
@@ -754,7 +756,7 @@ jobs:
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
       run: |
-        apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
+        apk="$APP_DIR/$(python -c 'import json, sys; [a] = json.load(open(sys.argv[1]))["data"]["artifacts"]; assert a["path"].startswith("dist/android/"), a; print(a["path"])' "$APP_DIR/package.json")"
         pytest tests/platforms/android/test_apk_signature.py -q --no-cov \
           --android-apk "$apk" --android-project "$APP_DIR"
     - name: Lint kivyforge's Java for calls above min_sdk (NewApi)
@@ -839,7 +841,10 @@ jobs:
           -storepass "$KIVYFORGE_KEYSTORE_PASSWORD" \
           -keypass "$KIVYFORGE_KEYSTORE_PASSWORD" \
           -keyalg RSA -keysize 2048 -validity 30 -dname "CN=kivyforge CI"
-        kivyforge package -p android -f aab --keystore ci.keystore --key-alias ci
+        # --json: the check below takes the bundle from data.artifacts rather
+        # than repeating the dist/android/ naming rule.
+        kivyforge package -p android -f aab --keystore ci.keystore --key-alias ci \
+          --json > package.json
     - name: Assert the bundle is what Play should receive (T3)
       # Content, BundleConfig.pb and signature (test_bundle_artifact.py), plus
       # the merged release manifest, which the release build exports for a
@@ -848,7 +853,7 @@ jobs:
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
       run: |
-        aab="$APP_DIR/hello-android-android/app/build/outputs/bundle/release/app-release.aab"
+        aab="$APP_DIR/$(python -c 'import json, sys; [a] = json.load(open(sys.argv[1]))["data"]["artifacts"]; assert a["path"].startswith("dist/android/"), a; print(a["path"])' "$APP_DIR/package.json")"
         manifest="$APP_DIR/hello-android-android/app/build/kivyforge/AndroidManifest-merged-release.xml"
         pytest tests/platforms/android/test_bundle_artifact.py \
                tests/platforms/android/test_merged_manifest.py \
@@ -1056,8 +1061,10 @@ jobs:
           -storepass "$KIVYFORGE_KEYSTORE_PASSWORD" \
           -keypass "$KIVYFORGE_KEYSTORE_PASSWORD" \
           -keyalg RSA -keysize 2048 -validity 30 -dname "CN=kivyforge CI"
+        # --json: the check below takes the APK from data.artifacts, which
+        # also proves the copy into dist/android/ works on a Windows host.
         kivyforge package -p android --abi "$ABI" \
-          --keystore ci.keystore --key-alias ci
+          --keystore ci.keystore --key-alias ci --json > package.json
     - name: Assert the Windows-built APK is what the build promised (T3)
       # The same three checks android_gradle runs, against an APK produced by
       # the Windows code path. --android-stripped is what makes the .pyc magic
@@ -1069,7 +1076,7 @@ jobs:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
         PY314: ${{ steps.py314.outputs.python-path }}
       run: |
-        apk="$APP_DIR/hello-android-android/app/build/outputs/apk/release/app-release.apk"
+        apk="$APP_DIR/$(python -c 'import json, sys; [a] = json.load(open(sys.argv[1]))["data"]["artifacts"]; assert a["path"].startswith("dist/android/"), a; print(a["path"])' "$APP_DIR/package.json")"
         manifest="$APP_DIR/hello-android-android/app/build/kivyforge/AndroidManifest-merged-release.xml"
         "$PY314" -m pytest tests/platforms/android/test_apk_artifact.py \
                tests/platforms/android/test_merged_manifest.py \
