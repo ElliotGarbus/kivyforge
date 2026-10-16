@@ -16,8 +16,9 @@ import os
 import re
 import shutil
 import sys
+from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config
@@ -40,6 +41,24 @@ _BAT = ".bat" if os.name == "nt" else ""
 _KVM_DEVICE = Path("/dev/kvm")
 
 
+class Accel(Enum):
+    """Whether the emulator can run hardware-accelerated on this host."""
+
+    USABLE = "usable"
+    #: No hypervisor the emulator can use.
+    MISSING = "missing"
+    #: Linux: ``/dev/kvm`` exists, but this user cannot open it.
+    NO_ACCESS = "no-access"
+    #: The probe could not tell.
+    UNKNOWN = "unknown"
+
+
+class Acceleration(NamedTuple):
+    state: Accel
+    #: The emulator's own words on Windows, or why the probe could not tell.
+    note: str = ""
+
+
 class AndroidProbe(Protocol):
     def which(self, name: str) -> str | None: ...
     def java_home(self) -> str | None: ...
@@ -53,12 +72,32 @@ class AndroidProbe(Protocol):
     def accepted_licenses(self, sdk: Path) -> list[str]: ...
     def avds(self) -> list[str]: ...
     def connected_devices(self) -> list[str]: ...
-    def has_hardware_acceleration(self) -> bool: ...
+    def hardware_acceleration(self) -> Acceleration: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
     def latest_kivyforge_version(self) -> str | None: ...
     def byte_compile_interpreter(
         self, python_version: str
     ) -> tuple[str, ...] | None: ...
+
+
+def parse_accel_check(stdout: str) -> tuple[int, str] | None:
+    """The status number and description in ``emulator -accel-check`` output.
+
+    The command prints a frame: ``accel:``, the status number (0 is usable), a
+    description of one or more lines, ``accel``. The emulator also exits with
+    the status, but the printed one is read: it comes inside the frame, and the
+    frame proves the emulator got far enough to answer, where a bare non-zero
+    exit may be a crash. ``None`` when there is no frame.
+    """
+    lines = [line.strip() for line in stdout.splitlines()]
+    try:
+        start = lines.index("accel:")
+        status = int(lines[start + 1])
+    except (ValueError, IndexError):
+        return None
+    rest = lines[start + 2 :]
+    end = rest.index("accel") if "accel" in rest else len(rest)
+    return status, " ".join(line for line in rest[:end] if line)
 
 
 class RealAndroidProbe:
@@ -189,17 +228,64 @@ class RealAndroidProbe:
 
         return RealProbe().latest_kivyforge_version()
 
-    def has_hardware_acceleration(self) -> bool:
+    def hardware_acceleration(self) -> Acceleration:
         """Whether the emulator can run hardware-accelerated on this host.
 
         Each OS has its own hypervisor: KVM on Linux, Hypervisor.Framework on
         macOS, WHPX or AEHD on Windows.
         """
         if sys.platform == "win32":
-            return True  # WHPX/AEHD presence is hard to probe cheaply; assume ok
+            return self._emulator_accel_check()
         if sys.platform == "darwin":
-            return self._hv_support()
-        return _KVM_DEVICE.exists()
+            return Acceleration(Accel.USABLE if self._hv_support() else Accel.MISSING)
+        if not _KVM_DEVICE.exists():
+            return Acceleration(Accel.MISSING)
+        # Existing is not enough: hosted CI runners have /dev/kvm but open it
+        # only to the kvm group, and the emulator then refuses to start.
+        if not os.access(_KVM_DEVICE, os.R_OK | os.W_OK):
+            return Acceleration(Accel.NO_ACCESS)
+        return Acceleration(Accel.USABLE)
+
+    def _emulator_accel_check(self) -> Acceleration:
+        """``emulator -accel-check``: the emulator's own verdict.
+
+        Windows has two accelerators, WHPX and AEHD, and the emulator picks
+        between them by rules of its own: AEHD will not run beside Hyper-V, WHPX
+        needs a Windows feature turned on, and either needs virtualization on in
+        the firmware. Asking the emulator is the only answer that cannot drift
+        from those rules. It needs the SDK's emulator package, but so does an
+        AVD: the AVD list this check reports came from the same binary.
+        """
+        import subprocess
+
+        from .adb import AdbError, sdk_tool
+
+        try:
+            emulator = sdk_tool("emulator", subdir="emulator")
+        except AdbError:
+            return Acceleration(Accel.UNKNOWN, "no emulator binary found")
+        try:
+            proc = subprocess.run(
+                [emulator, "-accel-check"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                # Its words reach the report; keep them encodable anywhere.
+                encoding="ascii",
+                errors="backslashreplace",
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            return Acceleration(Accel.UNKNOWN, "emulator -accel-check timed out")
+        except (OSError, subprocess.SubprocessError):
+            return Acceleration(Accel.UNKNOWN, "emulator -accel-check would not start")
+        verdict = parse_accel_check(proc.stdout or "")
+        if verdict is None:
+            return Acceleration(
+                Accel.UNKNOWN,
+                f"emulator -accel-check gave no verdict (exit {proc.returncode})",
+            )
+        status, description = verdict
+        return Acceleration(Accel.USABLE if status == 0 else Accel.MISSING, description)
 
     def _hv_support(self) -> bool:
         """``sysctl kern.hv_support``: whether Hypervisor.Framework can run here.
@@ -515,8 +601,7 @@ def _acceleration_hint(platform: str) -> str:
     """How to give the emulator hardware acceleration on the host *platform*.
 
     Each OS has its own hypervisor; HAXM, which this hint used to suggest for
-    macOS and Windows, is discontinued. The Windows text is reached only through
-    a probe that reports no acceleration there, which the real one never does.
+    macOS and Windows, is discontinued.
     """
     if platform == "darwin":
         return (
@@ -528,7 +613,7 @@ def _acceleration_hint(platform: str) -> str:
         return (
             "turn on Windows Hypervisor Platform (WHPX) in Windows Features, or "
             "install the Android Emulator hypervisor driver (AEHD) from the SDK "
-            "Manager."
+            "Manager; either needs virtualization turned on in the firmware."
         )
     return (
         "enable virtualization (VT-x or AMD-V) in the firmware and load the kvm "
@@ -537,27 +622,51 @@ def _acceleration_hint(platform: str) -> str:
     )
 
 
+_KVM_ACCESS_HINT = (
+    "add your user to the group that owns /dev/kvm (usually kvm): "
+    "`sudo usermod -aG kvm $USER`, then log in again. On a CI runner, a udev "
+    'rule can open it to the job instead: KERNEL=="kvm", GROUP="kvm", MODE="0666".'
+)
+
+
 def _check_emulator(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
+    name = "Emulator / virtualization"
     avds = probe.avds()
-    accel = probe.has_hardware_acceleration()
     if not avds:
         return CheckResult(
-            "Emulator / virtualization",
+            name,
             Status.WARN,
             "no AVD found",
             hint="create an AVD (Android Studio Device Manager or avdmanager) "
             "for `kivyforge run --emulator`.",
         )
-    if not accel:
+    # Asked only once there is an AVD: on Windows the answer costs a spawn.
+    state, note = probe.hardware_acceleration()
+    if state is Accel.UNKNOWN:
+        # Not a WARN. A probe that cannot tell has found nothing wrong, and
+        # warning on that is how every Mac came to warn.
         return CheckResult(
-            "Emulator / virtualization",
+            name,
+            Status.PASS,
+            f"{len(avds)} AVD(s); acceleration not verified ({note})",
+            hint="`emulator -accel-check` prints the emulator's own verdict.",
+        )
+    if state is Accel.NO_ACCESS:
+        return CheckResult(
+            name,
             Status.WARN,
-            f"AVDs present ({len(avds)}) but no hardware acceleration",
+            f"AVDs present ({len(avds)}) but this user cannot open /dev/kvm",
+            hint=_KVM_ACCESS_HINT,
+        )
+    if state is Accel.MISSING:
+        detail = f"AVDs present ({len(avds)}) but no hardware acceleration"
+        return CheckResult(
+            name,
+            Status.WARN,
+            f"{detail}: {note}" if note else detail,
             hint=_acceleration_hint(sys.platform),
         )
-    return CheckResult(
-        "Emulator / virtualization", Status.PASS, f"{len(avds)} AVD(s), accelerated"
-    )
+    return CheckResult(name, Status.PASS, f"{len(avds)} AVD(s), accelerated")
 
 
 # --------------------------------------------------------------------------- #

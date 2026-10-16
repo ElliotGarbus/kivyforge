@@ -12,9 +12,13 @@ import pytest
 from kivyforge.config.loader import load_config, load_config_from_text
 from kivyforge.doctor.result import Status
 from kivyforge.lock.model import LockedPackage, LockedWheel
+from kivyforge.platforms.android import adb as adb_mod
 from kivyforge.platforms.android import doctor as doctor_mod
 from kivyforge.platforms.android import toolchain
+from kivyforge.platforms.android.adb import AdbError
 from kivyforge.platforms.android.doctor import (
+    Accel,
+    Acceleration,
     RealAndroidProbe,
     _check_16k_alignment,
     _check_abi_coverage,
@@ -32,6 +36,7 @@ from kivyforge.platforms.android.doctor import (
     _check_splash,
     android_doctor,
     java_major,
+    parse_accel_check,
 )
 from kivyforge.platforms.android.elf import PAGE_16K, ElfError, read_elf, scan_alignment
 from kivyforge.platforms.android.lock.model import (
@@ -51,7 +56,8 @@ class FakeProbe:
         self._cmake = kw.get("cmake", [])
         self._platforms = kw.get("platforms", set())
         self._avds = kw.get("avds", [])
-        self._accel = kw.get("accel", True)
+        self._accel = kw.get("accel", Acceleration(Accel.USABLE))
+        self.accel_probed = False
         self._reachable = kw.get("reachable", True)
         self._licenses = kw.get("licenses", ["android-sdk-license"])
         self._devices = kw.get("devices", ["emulator-5554"])
@@ -102,7 +108,8 @@ class FakeProbe:
     def connected_devices(self):
         return list(self._devices)
 
-    def has_hardware_acceleration(self):
+    def hardware_acceleration(self):
+        self.accel_probed = True
         return self._accel
 
     def tcp_reachable(self, host, port):
@@ -126,12 +133,18 @@ def _healthy_probe(sdk: Path):
         build_tools=["35.0.0"],
         platforms={35},
         avds=["kivyforge_x86_64"],
-        accel=True,
     )
 
 
 def _by_name(results):
     return {r.name: r for r in results}
+
+
+_EMULATOR = "/sdk/emulator/emulator"
+
+
+def _no_emulator(name, *, subdir):
+    raise AdbError(f"{name} not found")
 
 
 class TestEnvironmentChecks:
@@ -209,7 +222,7 @@ class TestEnvironmentChecks:
 
     def test_no_acceleration_warns(self, tmp_path):
         probe = _healthy_probe(tmp_path)
-        probe._accel = False
+        probe._accel = Acceleration(Accel.MISSING)
         by = _by_name(
             android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
         )
@@ -222,11 +235,57 @@ class TestEnvironmentChecks:
         """The old hint offered HAXM, which is discontinued, to every Mac."""
         monkeypatch.setattr(doctor_mod.sys, "platform", "darwin")
         probe = _healthy_probe(tmp_path)
-        probe._accel = False
+        probe._accel = Acceleration(Accel.MISSING)
         by = _by_name(
             android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
         )
         assert "Hypervisor.Framework" in by["Emulator / virtualization"].hint
+
+    def test_no_acceleration_detail_carries_the_emulators_reason(self, tmp_path):
+        probe = _healthy_probe(tmp_path)
+        probe._accel = Acceleration(Accel.MISSING, "WHPX is not installed.")
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        check = by["Emulator / virtualization"]
+        assert check.status is Status.WARN
+        assert check.detail.endswith("no hardware acceleration: WHPX is not installed.")
+
+    def test_kvm_without_access_warns_with_the_group_hint(self, tmp_path):
+        """Hosted CI exposes /dev/kvm only to the kvm group: existing is not
+        enough, and passing on it left the emulator to refuse to start."""
+        probe = _healthy_probe(tmp_path)
+        probe._accel = Acceleration(Accel.NO_ACCESS)
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        check = by["Emulator / virtualization"]
+        assert check.status is Status.WARN
+        assert "cannot open /dev/kvm" in check.detail
+        assert "kvm" in check.hint and "usermod" in check.hint
+        assert "udev" in check.hint
+
+    def test_unverified_acceleration_passes_without_claiming_it(self, tmp_path):
+        """A probe that cannot tell must not warn (every Mac warned that way),
+        nor say "accelerated"."""
+        probe = _healthy_probe(tmp_path)
+        probe._accel = Acceleration(Accel.UNKNOWN, "emulator -accel-check timed out")
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        check = by["Emulator / virtualization"]
+        assert check.status is Status.PASS
+        assert check.detail == (
+            "1 AVD(s); acceleration not verified (emulator -accel-check timed out)"
+        )
+
+    def test_acceleration_is_not_probed_without_an_avd(self, tmp_path):
+        """On Windows the probe spawns the emulator; without an AVD the
+        answer could not change the result."""
+        probe = _healthy_probe(tmp_path)
+        probe._avds = []
+        android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        assert probe.accel_probed is False
 
     @pytest.mark.parametrize(
         ("platform", "names"),
@@ -632,17 +691,45 @@ class TestRealAndroidProbe:
         monkeypatch.setattr(adb_mod, "available_avds", boom)
         assert RealAndroidProbe().avds() == []
 
-    def test_has_hardware_acceleration_returns_bool(self):
-        assert isinstance(RealAndroidProbe().has_hardware_acceleration(), bool)
+    def test_hardware_acceleration_answers_on_this_host(self, monkeypatch):
+        # On Windows the probe would spawn the SDK's emulator, and the hermetic
+        # suite runs no toolchain.
+        monkeypatch.setattr(adb_mod, "sdk_tool", _no_emulator)
+        assert isinstance(RealAndroidProbe().hardware_acceleration(), Acceleration)
 
-    @pytest.mark.parametrize("present", [True, False], ids=["kvm", "no-kvm"])
-    def test_linux_acceleration_is_dev_kvm(self, tmp_path, monkeypatch, present):
+    @pytest.mark.parametrize(
+        ("exists", "accessible", "state"),
+        [
+            (True, True, Accel.USABLE),
+            (True, False, Accel.NO_ACCESS),
+            (False, False, Accel.MISSING),
+        ],
+        ids=["usable", "no-access", "missing"],
+    )
+    def test_linux_acceleration_is_an_openable_dev_kvm(
+        self, tmp_path, monkeypatch, exists, accessible, state
+    ):
+        """Hosted CI has /dev/kvm but opens it only to the kvm group, so a
+        check for existence passed where the emulator would not start."""
         kvm = tmp_path / "kvm"
-        if present:
+        if exists:
             kvm.touch()
+        real_access = os.access
+        asked = []
+
+        def fake_access(path, mode):
+            if Path(path) != kvm:
+                return real_access(path, mode)
+            asked.append(mode)
+            return accessible
+
         monkeypatch.setattr(doctor_mod.sys, "platform", "linux")
         monkeypatch.setattr(doctor_mod, "_KVM_DEVICE", kvm)
-        assert RealAndroidProbe().has_hardware_acceleration() is present
+        # Faked rather than chmod 000: root opens anything, and CI containers
+        # often run as root.
+        monkeypatch.setattr(doctor_mod.os, "access", fake_access)
+        assert RealAndroidProbe().hardware_acceleration() == Acceleration(state)
+        assert asked == ([os.R_OK | os.W_OK] if exists else [])
 
     @pytest.mark.parametrize(
         ("returncode", "stdout", "accelerated"),
@@ -668,7 +755,9 @@ class TestRealAndroidProbe:
         monkeypatch.setattr(doctor_mod.sys, "platform", "darwin")
         monkeypatch.setattr(doctor_mod, "_KVM_DEVICE", tmp_path / "kvm")
         monkeypatch.setattr(subprocess, "run", fake_run)
-        assert RealAndroidProbe().has_hardware_acceleration() is accelerated
+        assert RealAndroidProbe().hardware_acceleration() == Acceleration(
+            Accel.USABLE if accelerated else Accel.MISSING
+        )
         [(argv, kwargs)] = calls
         assert argv == ["/usr/sbin/sysctl", "-n", "kern.hv_support"]
         # Nothing may wait for input, and a hung sysctl must not hang doctor.
@@ -680,22 +769,131 @@ class TestRealAndroidProbe:
         [OSError("no sysctl"), subprocess.TimeoutExpired("sysctl", 10)],
         ids=["will-not-start", "timed-out"],
     )
-    def test_macos_acceleration_is_false_when_sysctl_fails(self, monkeypatch, error):
+    def test_macos_acceleration_is_missing_when_sysctl_fails(self, monkeypatch, error):
         def fake_run(argv, **kwargs):
             raise error
 
         monkeypatch.setattr(doctor_mod.sys, "platform", "darwin")
         monkeypatch.setattr(subprocess, "run", fake_run)
-        assert RealAndroidProbe().has_hardware_acceleration() is False
+        assert RealAndroidProbe().hardware_acceleration() == Acceleration(Accel.MISSING)
 
-    def test_windows_acceleration_is_assumed(self, tmp_path, monkeypatch):
+    def _on_windows(self, monkeypatch, run):
+        monkeypatch.setattr(doctor_mod.sys, "platform", "win32")
+        monkeypatch.setattr(adb_mod, "sdk_tool", lambda name, *, subdir: _EMULATOR)
+        monkeypatch.setattr(subprocess, "run", run)
+
+    # The frame is the one a real emulator printed (see the parse tests); the
+    # Windows descriptions inside it are illustrative, not captured.
+    @pytest.mark.parametrize(
+        ("stdout", "expected"),
+        [
+            (
+                "accel:\n0\nWHPX(10.0.26200) is installed and usable.\naccel\n",
+                Acceleration(Accel.USABLE, "WHPX(10.0.26200) is installed and usable."),
+            ),
+            (
+                "accel:\n6\nWHPX is not installed.\nAEHD is not installed.\naccel\n",
+                Acceleration(
+                    Accel.MISSING, "WHPX is not installed. AEHD is not installed."
+                ),
+            ),
+        ],
+        ids=["usable", "missing"],
+    )
+    def test_windows_acceleration_is_the_emulators_verdict(
+        self, monkeypatch, stdout, expected
+    ):
+        """Windows used to be assumed accelerated, so doctor said so without
+        asking, and its Windows hint could never appear."""
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            status = int(stdout.splitlines()[1])
+            return subprocess.CompletedProcess(argv, status, stdout, "")
+
+        self._on_windows(monkeypatch, fake_run)
+        assert RealAndroidProbe().hardware_acceleration() == expected
+        [(argv, kwargs)] = calls
+        assert argv == [_EMULATOR, "-accel-check"]
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["timeout"]
+
+    @pytest.mark.parametrize(
+        ("outcome", "note"),
+        [
+            (
+                # STATUS_DLL_NOT_FOUND: a crash, which no frame means.
+                subprocess.CompletedProcess([], 0xC0000135, "", "a DLL is missing"),
+                "emulator -accel-check gave no verdict (exit 3221225781)",
+            ),
+            (
+                subprocess.TimeoutExpired("emulator", 30),
+                "emulator -accel-check timed out",
+            ),
+            (
+                OSError("not a valid Win32 application"),
+                "emulator -accel-check would not start",
+            ),
+        ],
+        ids=["crashed", "timed-out", "will-not-start"],
+    )
+    def test_windows_acceleration_is_unknown_when_the_emulator_cannot_answer(
+        self, monkeypatch, outcome, note
+    ):
+        def fake_run(argv, **kwargs):
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+
+        self._on_windows(monkeypatch, fake_run)
+        assert RealAndroidProbe().hardware_acceleration() == Acceleration(
+            Accel.UNKNOWN, note
+        )
+
+    def test_windows_acceleration_is_unknown_without_an_emulator(self, monkeypatch):
         def fake_run(argv, **kwargs):
             raise AssertionError(f"spawned {argv}")
 
-        monkeypatch.setattr(doctor_mod.sys, "platform", "win32")
-        monkeypatch.setattr(doctor_mod, "_KVM_DEVICE", tmp_path / "kvm")
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        assert RealAndroidProbe().has_hardware_acceleration() is True
+        self._on_windows(monkeypatch, fake_run)
+        monkeypatch.setattr(adb_mod, "sdk_tool", _no_emulator)
+        assert RealAndroidProbe().hardware_acceleration() == Acceleration(
+            Accel.UNKNOWN, "no emulator binary found"
+        )
+
+    def test_parse_accel_check_reads_what_a_real_emulator_printed(self):
+        # Emulator 37.1.11.0 on macOS 26.6.2 (Apple M5 Pro), exit status 0.
+        stdout = "accel:\n0\nHypervisor.Framework OS X Version 26.6\naccel\n"
+        assert parse_accel_check(stdout) == (
+            0,
+            "Hypervisor.Framework OS X Version 26.6",
+        )
+
+    @pytest.mark.parametrize(
+        ("stdout", "expected"),
+        [
+            ("INFO | a log line\naccel:\n0\nusable\naccel\n", (0, "usable")),
+            ("accel:\r\n9\r\nVT-x is disabled\r\naccel\r\n", (9, "VT-x is disabled")),
+            ("accel:\n11\nline one\n\nline two\naccel\n", (11, "line one line two")),
+            ("accel:\n8\nno closing line", (8, "no closing line")),
+            ("", None),
+            ("Segmentation fault\n", None),
+            ("accel:\n", None),
+            ("accel:\nunknown\naccel\n", None),
+        ],
+        ids=[
+            "noise-before",
+            "crlf",
+            "multi-line",
+            "unclosed",
+            "empty",
+            "no-frame",
+            "no-status",
+            "status-not-a-number",
+        ],
+    )
+    def test_parse_accel_check(self, stdout, expected):
+        assert parse_accel_check(stdout) == expected
 
     def test_tcp_reachable_false_for_closed_port(self):
         # Port 1 on the loopback address should refuse/time out immediately.
