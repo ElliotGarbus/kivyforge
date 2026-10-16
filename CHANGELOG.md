@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Android: `doctor` no longer warns about acceleration on every Mac
+
+- **Fixed:** `kivyforge doctor -p android` warned "AVDs present (N) but no
+  hardware acceleration" on every Mac, even when the emulator was accelerated,
+  because it looked for `/dev/kvm`, which only Linux has. On macOS it now asks
+  the kernel whether Hypervisor.Framework is available
+  (`sysctl kern.hv_support`), so the check passes on a Mac that can run an
+  accelerated emulator. When acceleration is missing, the hint now names your
+  host's own hypervisor: KVM on Linux, Hypervisor.Framework on macOS, WHPX or
+  AEHD on Windows. It no longer suggests HAXM, which is discontinued. Windows
+  is otherwise unchanged: acceleration is still assumed there.
+- **Migration:** none needed.
+
 ### iOS: `doctor` checks the Team ID
 
 - **Added:** `kivyforge doctor -p ios` has a "Team ID" check

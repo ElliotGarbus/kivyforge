@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import struct
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -101,7 +102,7 @@ class FakeProbe:
     def connected_devices(self):
         return list(self._devices)
 
-    def has_kvm_or_haxm(self):
+    def has_hardware_acceleration(self):
         return self._accel
 
     def tcp_reachable(self, host, port):
@@ -214,6 +215,32 @@ class TestEnvironmentChecks:
         )
         assert by["Emulator / virtualization"].status is Status.WARN
         assert "acceleration" in by["Emulator / virtualization"].detail
+
+    def test_no_acceleration_hint_names_the_hosts_own_hypervisor(
+        self, tmp_path, monkeypatch
+    ):
+        """The old hint offered HAXM, which is discontinued, to every Mac."""
+        monkeypatch.setattr(doctor_mod.sys, "platform", "darwin")
+        probe = _healthy_probe(tmp_path)
+        probe._accel = False
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert "Hypervisor.Framework" in by["Emulator / virtualization"].hint
+
+    @pytest.mark.parametrize(
+        ("platform", "names"),
+        [
+            ("linux", ["KVM", "/dev/kvm"]),
+            ("darwin", ["Hypervisor.Framework", "by default"]),
+            ("win32", ["WHPX", "AEHD"]),
+        ],
+    )
+    def test_acceleration_hint_is_per_host(self, platform, names):
+        hint = doctor_mod._acceleration_hint(platform)
+        for name in names:
+            assert name.lower() in hint.lower()
+        assert "HAXM" not in hint
 
     def test_no_build_tools_fails(self, tmp_path):
         probe = FakeProbe(
@@ -605,8 +632,70 @@ class TestRealAndroidProbe:
         monkeypatch.setattr(adb_mod, "available_avds", boom)
         assert RealAndroidProbe().avds() == []
 
-    def test_has_kvm_or_haxm_returns_bool(self):
-        assert isinstance(RealAndroidProbe().has_kvm_or_haxm(), bool)
+    def test_has_hardware_acceleration_returns_bool(self):
+        assert isinstance(RealAndroidProbe().has_hardware_acceleration(), bool)
+
+    @pytest.mark.parametrize("present", [True, False], ids=["kvm", "no-kvm"])
+    def test_linux_acceleration_is_dev_kvm(self, tmp_path, monkeypatch, present):
+        kvm = tmp_path / "kvm"
+        if present:
+            kvm.touch()
+        monkeypatch.setattr(doctor_mod.sys, "platform", "linux")
+        monkeypatch.setattr(doctor_mod, "_KVM_DEVICE", kvm)
+        assert RealAndroidProbe().has_hardware_acceleration() is present
+
+    @pytest.mark.parametrize(
+        ("returncode", "stdout", "accelerated"),
+        [
+            (0, "1\n", True),
+            (0, "0\n", False),
+            # Before Hypervisor.Framework existed the OID is unknown.
+            (1, "", False),
+        ],
+        ids=["supported", "unsupported", "no-such-oid"],
+    )
+    def test_macos_acceleration_is_kern_hv_support(
+        self, tmp_path, monkeypatch, returncode, stdout, accelerated
+    ):
+        """/dev/kvm never exists on a Mac, so checking for it warned on every
+        Mac, including one whose emulator was accelerated."""
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return subprocess.CompletedProcess(argv, returncode, stdout, "")
+
+        monkeypatch.setattr(doctor_mod.sys, "platform", "darwin")
+        monkeypatch.setattr(doctor_mod, "_KVM_DEVICE", tmp_path / "kvm")
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert RealAndroidProbe().has_hardware_acceleration() is accelerated
+        [(argv, kwargs)] = calls
+        assert argv == ["/usr/sbin/sysctl", "-n", "kern.hv_support"]
+        # Nothing may wait for input, and a hung sysctl must not hang doctor.
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["timeout"]
+
+    @pytest.mark.parametrize(
+        "error",
+        [OSError("no sysctl"), subprocess.TimeoutExpired("sysctl", 10)],
+        ids=["will-not-start", "timed-out"],
+    )
+    def test_macos_acceleration_is_false_when_sysctl_fails(self, monkeypatch, error):
+        def fake_run(argv, **kwargs):
+            raise error
+
+        monkeypatch.setattr(doctor_mod.sys, "platform", "darwin")
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert RealAndroidProbe().has_hardware_acceleration() is False
+
+    def test_windows_acceleration_is_assumed(self, tmp_path, monkeypatch):
+        def fake_run(argv, **kwargs):
+            raise AssertionError(f"spawned {argv}")
+
+        monkeypatch.setattr(doctor_mod.sys, "platform", "win32")
+        monkeypatch.setattr(doctor_mod, "_KVM_DEVICE", tmp_path / "kvm")
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert RealAndroidProbe().has_hardware_acceleration() is True
 
     def test_tcp_reachable_false_for_closed_port(self):
         # Port 1 on the loopback address should refuse/time out immediately.
