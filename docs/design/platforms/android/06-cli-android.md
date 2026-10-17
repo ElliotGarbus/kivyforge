@@ -27,7 +27,7 @@ themselves needs a Linux/macOS host, but that is an out-of-band, upstream step;
 | `init` | Seed `[tool.kivy]` + `[tool.kivy.android]` into `pyproject.toml`. |
 | `lock` | Resolve `[project].dependencies` (per ABI), the python.org runtime, `.aar`/`.jar`, and Gradle/Maven deps; write `pylock.android.toml`. `--check` for CI pre-flight. |
 | `build` | Download artifacts, stage `jniLibs/` + the Python bundle, and (re)generate the `<app>-android/` Gradle project. Without `--debug`, stops here — ready to open in Android Studio or assemble. |
-| `build --debug [-f apk\|aab]` | Same as `build`, then `assembleDebug` (`.apk`) / `bundleDebug` (`.aab`, niche), debug-keystore signed — the fast dev-loop build. |
+| `build --debug [-f apk\|aab]` | Same as `build`, then `assembleDebug` (`.apk`, debug-keystore signed) / `bundleDebug` (`.aab`, niche, **unsigned**: AGP does not sign debuggable bundles, per [`FinalizeBundleTask`](https://android.googlesource.com/platform/tools/base/+/refs/heads/studio-main/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/tasks/FinalizeBundleTask.kt); `bundletool` debug-signs the APKs it derives) — the fast dev-loop build. |
 | `run [--emulator\|--device]` | Build (unless `--no-build`), install via `adb`, launch on an emulator or connected device. |
 | `package -f apk\|aab` | Produce the **signed release** distributable: `assembleRelease` (`.apk`) / `bundleRelease` (`.aab`), copied to `dist/android/<app>-<version>[-<abi>].{apk,aab}`. Runs the release signing pre-flight first. |
 | `open` | Open `<app>-android/` in Android Studio. |
