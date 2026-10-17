@@ -29,6 +29,9 @@ Signing has to operate on the bundled binaries, so it happens inside kivyforge
 rather than afterward. What signing means depends on the platform:
 
 - **iOS** and **Android**: `package` requires signing to be configured.
+  On Android, `package --debug` is the exception: it packages a debug build
+  and needs no keystore. A debug APK is signed with the Android SDK's debug
+  key, and a debug AAB is unsigned.
 - **macOS**: Developer ID signing when you configure it, otherwise an ad-hoc
   signature.
 - **Windows**: Authenticode signing when you configure it, otherwise unsigned.
@@ -64,7 +67,7 @@ version in the name:
 | `linux` | `dist/linux/APP_NAME-VERSION-ARCH.AppImage`. With `-f folder`, the AppDir stays in `build/linux/`. |
 | `windows` | `dist/windows/DISPLAY_NAME-VERSION-ARCH/`, a copy of the folder in `build/windows/` |
 | `macos` | `build/macos/DISPLAY_NAME.app`, signed in place |
-| `android` | `dist/android/APP_NAME-VERSION.apk` or `.aab` |
+| `android` | `dist/android/APP_NAME-VERSION.apk` or `.aab`. With `--debug`, `APP_NAME-VERSION-debug.apk` or `.aab`. |
 | `ios` | `dist/ios/APP_NAME-VERSION.ipa` |
 
 `APP_NAME` is your `[project].name`, `DISPLAY_NAME` is
@@ -88,6 +91,9 @@ than one. Without `-f`, `package` uses the platform's default:
 | `windows` | `folder` (an onedir folder with a launcher `.exe`) | `folder` |
 | `linux` | `appimage` (a single `.AppImage` file), `folder` (an AppDir) | `appimage` |
 | `android` | `apk`, `aab` | `apk` |
+
+On Android, `--debug` chooses the build type and `-f` the file type, as they
+do on `build`: `package -p android --debug -f aab` produces a debug AAB.
 
 ## The installer boundary
 

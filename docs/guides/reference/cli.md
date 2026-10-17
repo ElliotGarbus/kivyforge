@@ -51,7 +51,7 @@ with `--signing-identity (ios/macos only) is not valid for windows.`
 
 | Target | Flags | Guide |
 |---|---|---|
-| Android | `build`: `--debug`, `-f apk\|aab`, `--abi`. `run`: `--emulator`, `--device`, `--avd`, `--serial`, `--smoke`, `--abi`. `package`: `--keystore`, `--key-alias`, `--abi`. | [Run on a device or emulator](../guides/android/run.md), [Sign and publish to Google Play](../guides/android/signing.md) |
+| Android | `build`: `--debug`, `-f apk\|aab`, `--abi`. `run`: `--emulator`, `--device`, `--avd`, `--serial`, `--smoke`, `--abi`. `package`: `--keystore`, `--key-alias`, `--abi`, `--debug`. | [Run on a device or emulator](../guides/android/run.md), [Sign and publish to Google Play](../guides/android/signing.md) |
 | iOS | `build`: `--simulator`, `--device`, `--release`, `--arch`, `--team-id`, `--signing-identity`, `--export-method`. `run`: `--simulator`, `--device`, `--destination`, `--list-devices`. `package`: `--team-id`, `--signing-identity`, `--export-method`. | [Run on the simulator or a device](../guides/ios/run.md), [Sign the app](../guides/ios/signing.md) |
 | macOS | `build` and `package`: `--arch`. `package`: `--signing-identity`, `--notarize` / `--no-notarize`, `--notary-profile`. | [Sign, notarize, and staple](../guides/macos/signing.md) |
 | Linux | `build` and `package`: `--arch x86_64\|aarch64` (default: the first entry in `archs`). `package`: `-f appimage\|folder`. | [Build an AppImage or folder](../guides/linux/build.md) |

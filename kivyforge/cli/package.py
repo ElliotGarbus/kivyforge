@@ -90,6 +90,13 @@ from ._version import check_app_metadata, resolve_for_verb, version_options
     default=None,
     help="Android: override [tool.kivy.android.signing].key_alias.",
 )
+@click.option(
+    "--debug",
+    is_flag=True,
+    help="Android: package the debug build as "
+    "dist/android/<name>-<version>-debug.apk (or .aab). The APK is signed with "
+    "the SDK's debug key; Gradle leaves a debug AAB unsigned. Needs no keystore.",
+)
 @version_options
 @output_options
 def package(
@@ -106,6 +113,7 @@ def package(
     abi: str | None,
     keystore: str | None,
     key_alias: str | None,
+    debug: bool,
     app_version: str | None,
     no_build_isolation: bool,
     json_out: bool,
@@ -120,6 +128,11 @@ def package(
             backend,
             {"--abi": abi, "--keystore": keystore, "--key-alias": key_alias},
         )
+        if debug and not backend.package_debug:
+            raise ToolchainError(
+                f"--debug is not valid for {backend.name}; only Android "
+                "packages a debug build."
+            )
         reject_unread(
             backend,
             {
@@ -158,6 +171,7 @@ def package(
             abi=abi,
             keystore=keystore,
             key_alias=key_alias,
+            debug=debug,
         )
         for note in outcome.notes:
             report.line(note)

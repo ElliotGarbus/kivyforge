@@ -14,7 +14,7 @@ from click.testing import CliRunner
 
 from kivyforge.capabilities import HOSTS, collect
 from kivyforge.cli import main
-from kivyforge.cli.capabilities import capabilities
+from kivyforge.cli.capabilities import capabilities, render
 from kivyforge.platforms import available_platform_names, get_platform
 from kivyforge.report import diagnostics, exit_codes
 
@@ -59,6 +59,7 @@ class TestDerivedFromTheRegistry:
             assert tuple(entry["package_formats"]) == backend.package_formats
             assert tuple(entry["aliases"]) == backend.aliases
             assert entry["default_package_format"] == backend.default_package_format
+            assert entry["package_debug"] is backend.package_debug
             assert tuple(entry["archs"]) == backend.archs
 
     def test_the_host_matrix_is_asked_of_each_backend(self, runner):
@@ -128,6 +129,12 @@ class TestHumanReport:
         assert "macOS" in result.stdout  # friendlier than "Darwin" for a human
         assert "Human-only verbs:  run" in result.stdout
         assert "5  build failed" in result.stdout
+
+    def test_marks_formats_that_also_package_debug(self):
+        lines = render(collect())
+        formats = [line for line in lines if "formats:" in line]
+        debug = [line for line in formats if "(also with --debug)" in line]
+        assert len(debug) == sum(p.package_debug for p in collect().platforms) == 1
 
     def test_json_suppresses_the_human_report(self, runner):
         result = runner.invoke(capabilities, ["--json"])

@@ -4,17 +4,20 @@
 > released. The hermetic tests in section 9 pass. On 2026-10-16 real
 > `package -p ios` and `package -p android` runs on this Mac passed, the
 > Android one including an install from `dist/android/` on an emulator
-> (`test-matrix.md` §7). The reply on #112 (section 11) is still open. Drafted on 2026-10-15, and trimmed to the
+> (`test-matrix.md` §7). Drafted on 2026-10-15, and trimmed to the
 > smallest change that addresses the issue.
+>
+> **Update 2026-10-17:** the reporter replied on #112 that they need debug
+> builds. Section 5.2 now records the decided design, `package -p android
+> --debug`, which is not yet implemented. Q4 changed from deferred to decided.
 >
 > Responds to [#112](https://github.com/ElliotGarbus/kivyforge/issues/112),
 > which asks for packaged artifacts in `dist/` under versioned names. Its
 > example is `dist/$APP-$VERSION-debug.apk` instead of
-> `$APP-android/app/build/outputs/apk/debug/app-debug.apk`. This proposal
+> `$APP-android/app/build/outputs/apk/debug/app-debug.apk`. The first change
 > covers the location and naming of release artifacts. The debug APK in that
-> example is deferred (5.2), so the change does not resolve #112 on its own:
-> #112 stays open until the reporter says whether they need debug builds
-> (section 11).
+> example follows as `package --debug` (5.2), and #112 stays open until it
+> lands (section 11).
 >
 > [`package-metadata-proposal.md`](package-metadata-proposal.md) §9 deferred
 > this to its own change. The design was checked against the PyPA
@@ -301,7 +304,7 @@ This brings two costs that are real, not just churn:
 | Q1 | Android: put the ABI in the name only for a subset build? | **Yes: when the packaged ABIs are a strict subset of `[tool.kivy.android].abis`.** The failure this prevents is silent: Play accepts a one-ABI AAB, and devices on the missing ABI cannot get the app. Without the qualifier, a subset package would also overwrite the full package of the same version. The rule follows the contents rather than the `--abi` flag, so an `--abi` that names every configured ABI gets no qualifier. A config that lists one ABI is unqualified too: that is the app the user chose, not an accidental subset. Always listing the ABIs (`-arm64_v8a.x86_64`) was rejected: it adds nothing for the default package, and the name would change whenever the config does. The first decision followed the flag; review changed it to follow the contents (2026-10-15). |
 | Q2 | iOS: put the export method in the name for `ad-hoc` and `development`? | **Yes**, with `app-store`, the default, unqualified. This is the weakest of the naming rules, because a mix-up fails loudly: App Store Connect rejects a development or ad-hoc `.ipa`. It is kept because one version can legitimately have both an ad-hoc build for testers and an App Store build. |
 | Q3 | Should `build -p ios --release`, which produces a distribution-signed `.ipa`, also copy to `dist/`? | **No.** The verb rule holds. `package -p ios` runs the same archive and export, and the iOS guide points at `package`. |
-| Q4 | A debug variant of `package -p android` (Briefcase's `debug-apk`), for #112's literal example? | **Deferred** (section 5.2). Briefcase's reason for it does not apply to kivyforge. |
+| Q4 | A debug variant of `package -p android` (Briefcase's `debug-apk`), for #112's literal example? | **Yes, as `package -p android --debug`** (section 5.2), decided 2026-10-17 after the reporter said they need debug builds. First deferred on 2026-10-15, because Briefcase's reason for it does not apply to kivyforge. A `--debug` flag was chosen over Briefcase's `-f debug-apk` format. |
 | Q5 | macOS and Linux `-f folder`? | **Deferred** (section 5.1). |
 | Q6 | Per-platform subfolders, rather than Briefcase's flat `dist/`? | **Yes.** Linux and Windows already use them, a multi-platform CI job can upload `dist/android/*` without a filter, and the choice makes no difference to the twine problem (section 6). |
 
@@ -324,40 +327,90 @@ is also the `run` target. It moves when macOS does, if at all.
 
 ### 5.2 A debug `package -p android`
 
+Decided 2026-10-17, as a follow-up change; not yet implemented.
+
 #112's example is a debug APK. `build -p android --debug` produces it in the
-generated project, and the rule in 3.1 keeps it there. The `-debug` in the
-reporter's suggested name carries over from the path quoted in the issue,
-which asks for a predictable location and an identifying name, not for debug
-builds as such.
+generated project, and the rule in 3.1 keeps it there. The first change
+deferred a debug package (the reasoning is kept below). The reporter then
+said they need debug builds, for reasons the deferral had not weighed:
 
-If it is added, it takes Briefcase's shape: a third package format,
-`package -p android -f debug-apk`. That means no new option, and
-`capabilities --json` lists it automatically. It runs what `build --debug`
-runs (`assembleDebug`, signed with the SDK's debug keystore), skips the
-release-only checks, and writes `dist/android/<slug>-<ver>-debug.apk` as an
-`apk`.
+- Test builds should not be signed with the release key. Using it for every
+  test build exposes it more than necessary.
+- Before a first release, the SDK's generated debug key is enough. Requiring
+  a release keystore before a build can be kept is a barrier.
+- Per-machine debug keys matter only to someone who needs one debug build to
+  install over another made elsewhere. They can give CI a fixed key, or give
+  CI builds their own package name.
 
-It is deferred because Briefcase's reason for it does not carry over. Its
+**The design.** `package -p android --debug`, alongside the existing
+`-f apk|aab`:
+
+| Invocation | Gradle task | Path |
+|---|---|---|
+| `package -p android --debug` | `assembleDebug` | `dist/android/<slug>-<ver>-debug.apk` |
+| `package -p android --debug -f aab` | `bundleDebug` | `dist/android/<slug>-<ver>-debug.aab` |
+| `... --debug --abi <abi>`, a strict subset | as above | `dist/android/<slug>-<ver>-<abi>-debug.{apk,aab}` |
+
+- **What it builds.** The same artifact as `build -p android --debug -f <fmt>`:
+  the debug payload (the debug side of the `"release"` build settings), the
+  debug build type, and Gradle's debug signing. That signs an APK with the
+  SDK's debug keystore and leaves an AAB unsigned (found on the first real
+  run, 2026-10-17, AGP 8.10). It is then copied into
+  `dist/` with `copy_in`, as the release package is. Like any `package`
+  output, it is reported as an `apk` or `aab` artifact.
+- **Checks.** `_check_packaged_libs` still runs: a misaligned library fails on
+  any device. The release-only checks do not: the release manifest policy and
+  the merged-manifest Lint pass, which hold an app to what a store accepts.
+- **Signing options.** `--keystore` and `--key-alias` with `--debug` are an
+  error rather than ignored, because a user who passes them expects their key
+  to be used. No keystore is needed or read.
+- **Other platforms.** `--debug` is Android-only on `package`, and other
+  platforms reject it, as `build` rejects its Android-only `--debug`. If
+  another platform needs a debug package later, the flag's meaning extends to
+  it.
+- **Qualifier order.** `-debug` goes last, after the ABI. It describes how the
+  file was built, and the ABI describes what is in it. Ending with `-debug`
+  also keeps debug files easy to pick out with a glob.
+- **`capabilities --json`.** The output lists `package_formats` per platform
+  but no per-platform options, so it does not show the new flag on its own. A
+  `Platform.package_debug` attribute, true only for Android, adds a
+  per-platform `package_debug` key there, and the CLI rejects `--debug` where
+  it is false, so both read the same fact.
+
+**Why a flag, not a format.** Briefcase's shape, a third format
+`-f debug-apk`, was the first sketch. It needs no new option, and
+`capabilities --json` would list it with no extra work. It was rejected because:
+
+- `build` already chooses build type and file type separately:
+  `build --debug -f apk|aab`. A `debug-apk` format would choose them together
+  on `package`, so the same choice would be spelled two ways.
+- `-f` would stop meaning only the file type, and a debug AAB would need
+  `debug-aab`, giving four formats for two choices. `build --debug -f aab`
+  already exists, so leaving it out of `package` would be an arbitrary gap.
+- A flag that matches `build` answers the reporter's own confusion about
+  debug and release going through different commands. Debug versus release
+  is a flag on both verbs. The verbs differ in what they produce: `build`
+  makes working state in the generated project, and `package` makes a file
+  in `dist/`.
+
+**Why it was first deferred (2026-10-15).** Briefcase's
 [issue #1136](https://github.com/beeware/briefcase/issues/1136) added
 `debug-apk` because Briefcase's release APK was unsigned
 (`app-release-unsigned.apk`), so the debug APK was the only one that would
 install on another device. Its Android release signing is still an open pull
 request ([#2724](https://github.com/beeware/briefcase/pull/2724)).
-kivyforge's release APK is signed and installable. What remains is a user with
-no release keystore. Creating one is a single `keytool` command, and after that
-`package` produces a properly signed APK with every release check applied.
+kivyforge's release APK is signed and installable, so that reason does not
+carry over. The deferral also argued that per-machine debug keys work against
+comparing builds: a debug APK built elsewhere cannot install over one already
+on the device, which Briefcase hit in
+[#1479](https://github.com/beeware/briefcase/issues/1479). The reporter's
+answer above is that a fixed CI key or a separate package name handles that
+where it matters.
 
-A debug APK would also work against #112's goal of comparing builds. Each
-machine has its own debug keystore, and a fresh CI runner gets a new one, so
-a debug APK built elsewhere cannot install over one already on the device.
-Briefcase hit this in
-[#1479](https://github.com/beeware/briefcase/issues/1479).
-
-Revisit if the reporter, or a second user, needs debug builds specifically.
-
-Letting `package` fall back to the debug keystore when no keystore is
-configured, as `run --release` does, was also considered and rejected. It
-would silently weaken what a plain `package` promises.
+**Still rejected:** letting a plain `package` fall back to the debug keystore
+when no keystore is configured, as `run --release` does. It would silently
+weaken what a plain `package` promises. `--debug` is an explicit request for a
+debug build, and its name says so.
 
 Whatever the location and whatever the build type, a file built from a static
 version gets the same name on every build. Distinct names per build need a
@@ -430,7 +483,7 @@ The differences:
 - **Android:** it moves Gradle's output rather than copying it, to `.aab`
   (default), `.apk`, or `.debug.apk` (its `debug-apk` format, which runs
   `assembleDebug`). Its release `.apk` is unsigned, which is why `debug-apk`
-  exists (section 5.2).
+  exists. kivyforge's debug package is a `--debug` flag instead (section 5.2).
 - **iOS:** `briefcase package iOS` produces nothing and says iOS apps "must be
   published through Xcode".
 - **macOS and Windows:** containers only (`.dmg`, `.pkg`, `.app.zip`; `.msi`,
@@ -653,4 +706,18 @@ Draft CHANGELOG note:
 - The implementation's PR refers to #112 without a closing keyword ("Fixes",
   "Closes"), because this change does not cover the debug APK. #112 is closed
   only once the reporter confirms that release artifacts are enough. If they
-  need debug builds, it stays open for 5.2's `-f debug-apk`.
+  need debug builds, it stays open for 5.2.
+
+The reporter was told all of the above, and replied that they need debug
+builds (2026-10-17). The follow-up, `package -p android --debug` (5.2), is
+done when:
+
+- Hermetic tests cover each row of 5.2's table: the Gradle task, the `dist/`
+  path and the reported artifact kind. They also cover the rejected
+  combinations: `--keystore` or `--key-alias` with `--debug`, and `--debug`
+  on a platform other than Android.
+- `capabilities --json` shows the option, and the build-versus-package guide,
+  the Android signing guide and `06-cli-android.md` describe it.
+- `test-matrix.md` §7 has a dated row for a real `package -p android --debug`
+  installed from `dist/android/`.
+- Its PR closes #112.

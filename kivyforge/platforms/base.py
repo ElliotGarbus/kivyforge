@@ -51,6 +51,10 @@ class Platform(ABC):
     #: Distributable artifact shapes for ``package -f`` (first = default).
     package_formats: tuple[str, ...] = ()
 
+    #: Whether ``package --debug`` builds a debug package in each of
+    #: ``package_formats``. The CLI rejects ``--debug`` where this is false.
+    package_debug: bool = False
+
     #: Build target architectures this platform accepts, in the spelling its
     #: config and ``--arch``/``--abi`` use. Sourced from the same constants the
     #: config validator rejects against, so the published set cannot drift from
@@ -143,6 +147,7 @@ class Platform(ABC):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
+        debug: bool = False,
     ) -> BuildOutcome:
         raise NotImplementedError(f"package is not supported for {self.name!r}.")
 

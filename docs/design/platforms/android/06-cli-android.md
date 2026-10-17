@@ -144,8 +144,9 @@ Flags:
 - `-f apk|aab` / `--format apk|aab` (default `apk`). `-f apk` → `assembleRelease` (`.apk`, sideload / store-independent). `-f aab` → `bundleRelease` (`.aab`, Play upload).
 - `--abi`, `--no-verify-lock`, `--no-cache` (as in `build`).
 - `--keystore PATH` / `--key-alias NAME` (override `[tool.kivy.android.signing]`; passwords via `KIVYFORGE_KEYSTORE_PASSWORD` / `KIVYFORGE_KEY_PASSWORD`). Useful for CI where signing config isn't committed.
+- `--debug` (2026-10-17, [dist-artifacts-proposal §5.2](../../dev/dist-artifacts-proposal.md#52-a-debug-package--p-android)). Packages what `build --debug -f apk|aab` builds instead of the release: the debug payload, `assembleDebug` / `bundleDebug`. The APK is signed with the SDK's debug keystore; AGP leaves the debug `.aab` unsigned (verified 2026-10-17, AGP 8.10), and `bundletool` signs the APKs it derives from it. The signing pre-flight, both manifest-policy passes and `lintRelease` are skipped; the native-library alignment check still runs. The artifact is copied to `dist/android/<app>-<version>[-<abi>]-debug.{apk,aab}` as below. `--keystore` / `--key-alias` with `--debug` is an error, and `--debug` on any other platform's `package` is rejected.
 
-`package` performs the same staging + generation steps 1–7 as `build`, then:
+`package` (without `--debug`) performs the same staging + generation steps 1–7 as `build`, then:
 
 - **Signing pre-flight (fail fast).** Resolve the effective keystore + alias (precedence: `--keystore`/`--key-alias` → `[tool.kivy.android.signing]`) and confirm the passwords are present in the configured env vars. If unresolved, exit non-zero **before** invoking Gradle:
 

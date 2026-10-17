@@ -36,9 +36,10 @@ def render(found: Capabilities) -> list[str]:
         default = " (host default)" if platform.host_default_for else ""
         lines.append(f"  {platform.name}")
         lines.append(f"    {'archs:':<{_COLUMN}}{', '.join(platform.archs) or '-'}")
-        lines.append(
-            f"    {'formats:':<{_COLUMN}}{', '.join(platform.package_formats) or '-'}"
-        )
+        formats = ", ".join(platform.package_formats) or "-"
+        if platform.package_debug:
+            formats += " (also with --debug)"
+        lines.append(f"    {'formats:':<{_COLUMN}}{formats}")
         lines.append(f"    {'hosts:':<{_COLUMN}}{hosts}{default}")
 
     json_verbs = [name for name, supported in found.verbs.items() if supported]
