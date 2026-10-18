@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from kivyforge.build_outcome import ArtifactKind, BuildEvents
-from kivyforge.cli._common import ToolchainError
+from kivyforge.cli._common import ECHO_EVENTS, ToolchainError
 from kivyforge.config import load_config
 from kivyforge.config.model import ResolvedVersion
 from kivyforge.config.version import with_version
@@ -1366,6 +1366,26 @@ class TestDistOutputName:
             project / "dist" / "android" / name
         )
 
+    @pytest.mark.parametrize(
+        ("abis", "abi", "fmt", "name"),
+        [
+            ('["arm64_v8a"]', None, "apk", "demoapp-1.0.0-debug.apk"),
+            ('["arm64_v8a"]', None, "aab", "demoapp-1.0.0-debug.aab"),
+            # -debug comes after the ABI.
+            (
+                '["arm64_v8a", "x86_64"]',
+                "x86_64",
+                "apk",
+                "demoapp-1.0.0-x86_64-debug.apk",
+            ),
+        ],
+    )
+    def test_debug_name(self, project, abis, abi, fmt, name):
+        config = self._config(project, abis)
+        assert cli._dist_output(project, config, abi, fmt, debug=True) == (
+            project / "dist" / "android" / name
+        )
+
     def test_local_version_segment_is_filename_safe(self, project):
         version = ResolvedVersion("0.1.dev3+g1a2b3c", source="override")
         config = self._config(project, '["arm64_v8a"]', version)
@@ -1527,6 +1547,74 @@ class TestAndroidPackage:
         monkeypatch.setattr(cli, "run_gradle", boom)
         with pytest.raises(ToolchainError, match="release build failed"):
             cli.android_package(project)
+
+
+class TestAndroidDebugPackage:
+    """``package --debug``: build --debug's artifact, copied into dist/ (5.2)."""
+
+    def _no_release_checks(self, monkeypatch):
+        # The fixture configures no signing, so resolve_signing would refuse;
+        # the release policy must not run either.
+        def refuse(*a, **kw):
+            raise AssertionError("release-only step ran for a debug package")
+
+        monkeypatch.setattr(signing_mod, "resolve_signing", refuse)
+        monkeypatch.setattr(policy_mod, "enforce_release_manifest", refuse)
+
+    @pytest.mark.parametrize(
+        ("fmt", "task", "kind", "gradle_out"),
+        [
+            ("apk", "assembleDebug", ArtifactKind.APK, "apk/debug/app-debug.apk"),
+            ("aab", "bundleDebug", ArtifactKind.AAB, "bundle/debug/app-debug.aab"),
+        ],
+    )
+    def test_copies_the_debug_artifact_into_dist(
+        self, build_env, monkeypatch, fmt, task, kind, gradle_out
+    ):
+        project, calls = build_env
+        self._no_release_checks(monkeypatch)
+        outcome = cli.android_package(project, fmt=fmt, debug=True)
+        published = Path("dist", "android", f"demoapp-1.0.0-debug.{fmt}")
+        assert [(a.path, a.kind) for a in outcome.artifacts] == [(published, kind)]
+        assert calls["run_gradle"] == [(task,)]
+        in_tree = project / "demoapp-android/app/build/outputs" / gradle_out
+        assert in_tree.read_bytes() == (project / published).read_bytes()
+
+    @pytest.mark.parametrize(
+        "signing", [{"keystore": "release.keystore"}, {"key_alias": "upload"}]
+    )
+    def test_release_signing_options_are_refused(self, build_env, signing):
+        project, calls = build_env
+        with pytest.raises(ToolchainError, match="cannot be used with --debug"):
+            cli.android_package(project, debug=True, **signing)
+        assert not calls["run_gradle"]
+
+    def test_the_platform_passes_debug_through(self, build_env, monkeypatch):
+        from kivyforge.platforms.android import AndroidPlatform
+
+        seen = {}
+
+        def fake_package(project_root, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setattr(cli, "android_package", fake_package)
+        project, _ = build_env
+        AndroidPlatform().package(
+            project,
+            events=ECHO_EVENTS,
+            version=_OVERRIDE,
+            fmt="apk",
+            arch=None,
+            team_id=None,
+            signing_identity=None,
+            export_method="app-store",
+            notarize=None,
+            notary_profile=None,
+            no_verify_lock=False,
+            no_cache=False,
+            debug=True,
+        )
+        assert seen["debug"] is True
 
 
 _CLEAN_MANIFEST = (

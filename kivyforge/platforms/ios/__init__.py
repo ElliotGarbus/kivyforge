@@ -128,6 +128,7 @@ class IosPlatform(Platform):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
+        debug: bool = False,
     ) -> BuildOutcome:
         from .cli import ios_package
 

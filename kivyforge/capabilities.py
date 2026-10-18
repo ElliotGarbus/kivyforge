@@ -35,6 +35,8 @@ class PlatformCapability:
     archs: tuple[str, ...]
     package_formats: tuple[str, ...]
     default_package_format: str | None
+    #: Whether ``package --debug`` is accepted for this platform.
+    package_debug: bool
     #: The host this platform is the default target for, or ``None`` for a
     #: cross-compiled target that always needs explicit selection.
     host_default_for: str | None
@@ -48,6 +50,7 @@ class PlatformCapability:
             "archs": list(self.archs),
             "package_formats": list(self.package_formats),
             "default_package_format": self.default_package_format,
+            "package_debug": self.package_debug,
             "host_default_for": self.host_default_for,
             "hosts": dict(self.hosts),
         }
@@ -98,6 +101,7 @@ def _platform_capability(backend: Platform) -> PlatformCapability:
         archs=backend.archs,
         package_formats=backend.package_formats,
         default_package_format=backend.default_package_format,
+        package_debug=backend.package_debug,
         host_default_for=backend.host_system,
         hosts={host: _can_build(backend, host) for host in HOSTS},
     )

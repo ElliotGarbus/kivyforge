@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Android: `package --debug` puts a debug build in `dist/`
+
+- **Added:** `kivyforge package -p android --debug` packages a debug build
+  ([#112](https://github.com/ElliotGarbus/kivyforge/issues/112)). It builds
+  what `build -p android --debug` builds, needs no keystore, and copies it
+  into `dist/android/` with a `-debug` suffix:
+  - `dist/android/myapp-1.2.0-debug.apk`, signed with the Android SDK's debug
+    key;
+  - `dist/android/myapp-1.2.0-debug.aab` with `-f aab`, unsigned, as Gradle
+    builds a debug AAB.
+
+  The release-only checks, Lint and the manifest policy, are skipped.
+  `--keystore` and `--key-alias` cannot be combined with `--debug`, and
+  `--debug` is rejected for other platforms. `capabilities --json` reports a
+  new `package_debug` key for each platform.
+- **Migration:** none needed. A plain `package` is unchanged.
+
 ### Android: `doctor` no longer warns about acceleration on every Mac
 
 - **Fixed:** `kivyforge doctor -p android` warned "AVDs present (N) but no

@@ -22,7 +22,12 @@ Google Play.
 
 !!! note
     Debug builds need none of this. `kivyforge build --debug` and
-    `kivyforge run` use the standard Android debug keystore.
+    `kivyforge run` use the standard Android debug keystore. To keep a debug
+    build as a file, run `kivyforge package -p android --debug`, which writes
+    `dist/android/APP_NAME-VERSION-debug.apk`, signed with the debug key. A
+    debug APK installs only over another one signed with the same key, and
+    each machine has its own debug key. With `-f aab`, the debug AAB is
+    unsigned, as Gradle builds it.
 
 ## Choose a signing model
 

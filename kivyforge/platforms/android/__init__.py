@@ -123,6 +123,8 @@ class AndroidPlatform(Platform):
     host_system = None
     # apk = sideload/CI unit (default); aab = Play upload unit.
     package_formats = ("apk", "aab")
+    # package --debug: the build --debug artifact, copied into dist/.
+    package_debug = True
     # Android spells its architectures as ABIs, and ``--abi`` takes these.
     archs = tuple(sorted(VALID_ANDROID_ABIS))
 
@@ -219,6 +221,7 @@ class AndroidPlatform(Platform):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
+        debug: bool = False,
     ) -> BuildOutcome:
         from .cli import android_package
 
@@ -230,6 +233,7 @@ class AndroidPlatform(Platform):
             abi=abi or arch,
             keystore=keystore,
             key_alias=key_alias,
+            debug=debug,
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
         )

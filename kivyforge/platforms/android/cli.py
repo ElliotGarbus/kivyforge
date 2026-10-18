@@ -719,6 +719,7 @@ def android_package(
     abi: str | None = None,
     keystore: str | None = None,
     key_alias: str | None = None,
+    debug: bool = False,
     no_verify_lock: bool = False,
     no_cache: bool = False,
     events: BuildEvents = ECHO_EVENTS,
@@ -727,6 +728,10 @@ def android_package(
 
     The inner ``android_build`` prints as usual but records nothing: the
     generated project is this verb's intermediate, not its product.
+
+    ``debug`` packages what ``build --debug`` builds instead: the debug payload,
+    without the release-only checks (dist-artifacts-proposal 5.2). Gradle signs
+    a debug APK with the SDK's debug keystore and leaves a debug AAB unsigned.
     """
     from .policy import ManifestPolicyError, enforce_release_manifest
     from .signing import SigningError, resolve_signing, signing_config_gradle
@@ -734,6 +739,32 @@ def android_package(
     outcome = OutcomeBuilder(events.on_artifact)
     config, _lock = _load(project_root, version, no_verify_lock=no_verify_lock)
     android = config.android_required
+
+    if debug:
+        if keystore is not None or key_alias is not None:
+            # Ignoring them would sign with a key other than the one asked for.
+            raise AndroidBuildError(
+                "--keystore and --key-alias sign the release package and cannot "
+                "be used with --debug, which uses the Android SDK's debug key. "
+                "Pass one or the other."
+            )
+        # android_build assembles the debug artifact and checks its libraries.
+        android_build(
+            project_root,
+            version=version,
+            debug=True,
+            fmt=fmt,
+            abi=abi,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+            events=events.without_artifacts(),
+        )
+        dest = project_dir_for(project_root, config)
+        published = _dist_output(project_root, config, abi, fmt, debug=True)
+        _publish(
+            project_root, _debug_output(dest, fmt), published, fmt, outcome, events
+        )
+        return outcome.finish()
 
     # Signing pre-flight (fail fast, BEFORE staging/generation).
     try:
@@ -792,9 +823,30 @@ def android_package(
         raise _gradle_failure(exc, task) from exc
     out = _require_artifact(_release_output(dest, fmt), task)
     _check_packaged_libs(out)
-    # Copied, not moved: run, status and CI still read Gradle's output in the
-    # project. Only the copy is this verb's product (dist-artifacts-proposal).
-    published = _dist_output(project_root, config, abi, fmt)
+    _publish(
+        project_root,
+        out,
+        _dist_output(project_root, config, abi, fmt),
+        fmt,
+        outcome,
+        events,
+    )
+    return outcome.finish()
+
+
+def _publish(
+    project_root: Path,
+    out: Path,
+    published: Path,
+    fmt: str,
+    outcome: OutcomeBuilder,
+    events: BuildEvents,
+) -> None:
+    """Copy Gradle's verified *out* to *published* and record it as the product.
+
+    Copied, not moved: run, status and CI still read Gradle's output in the
+    project. Only the copy is this verb's product (dist-artifacts-proposal).
+    """
     try:
         copy_in(out, published)
     except OSError as exc:
@@ -806,20 +858,29 @@ def android_package(
     events.on_progress(f"[package] copied {out.relative_to(project_root)} to {rel}")
     events.on_line(f"Packaged {rel}")
     outcome.add(rel, ArtifactKind.APK if fmt == "apk" else ArtifactKind.AAB)
-    return outcome.finish()
 
 
-def _dist_output(project_root: Path, config: Config, abi: str | None, fmt: str) -> Path:
-    """Where ``package`` puts its artifact: ``dist/android/<slug>-<ver>[-<abi>]``.
+def _dist_output(
+    project_root: Path,
+    config: Config,
+    abi: str | None,
+    fmt: str,
+    *,
+    debug: bool = False,
+) -> Path:
+    """Where ``package`` puts its artifact: ``dist/android/<slug>-<ver>[-<abi>][-debug]``.
 
     The ABI is named only when the package holds a strict subset of the
     configured ABIs, which only ``--abi`` produces: Play accepts a one-ABI
     bundle without complaint, so a subset must never pass for the full app.
     ``--abi`` naming every configured ABI packages the full app, unqualified.
+    ``-debug`` comes last, so a debug package never takes a release name.
     """
     android = config.android_required
     abis = _select_abis(android, abi)
     qualifier = "".join(f"-{a}" for a in abis) if set(abis) < set(android.abis) else ""
+    if debug:
+        qualifier += "-debug"
     version = config.version_required.filename_part
     name = f"{config.app_slug}-{version}{qualifier}.{fmt}"
     return project_root / "dist" / "android" / name
