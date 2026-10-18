@@ -12,7 +12,8 @@ import dataclasses
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from ... import __version__
 from ...artifacts.verify import sha256_file
@@ -176,7 +177,11 @@ def _normalize_wheel_source(
     if url.startswith(("http://", "https://")):
         return url, None
     if url.startswith("file:"):
-        local = Path(unquote(urlparse(url).path))
+        # url2pathname turns a file URL path into a native path on every host
+        # ("/C:/x" -> "C:\x" on Windows). unquote+Path kept the leading slash,
+        # which resolve() made drive-relative, and the lock recorded the wheel
+        # as "Users/..." with no drive.
+        local = Path(url2pathname(urlparse(url).path))
     else:
         local = Path(url)
     resolved = local.resolve()

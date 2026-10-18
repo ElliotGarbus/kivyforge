@@ -103,6 +103,11 @@ def _bootstrap():
     # mirrors the macOS/Linux launchers, which exec the interpreter on the entry
     # script (importing it as an ordinary module would not run that block).
     app_dir = _BUNDLE / "app"
+    # The native launcher already put app on PYTHONPATH. Move it to the front
+    # rather than add it twice: two copies make importlib.metadata find the
+    # app's own distribution twice (package-metadata layer 3 on Windows).
+    key = os.path.normcase(str(app_dir))
+    sys.path[:] = [p for p in sys.path if os.path.normcase(p) != key]
     sys.path.insert(0, str(app_dir))
     os.chdir(app_dir)
     import runpy

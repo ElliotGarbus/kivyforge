@@ -7,8 +7,9 @@ its ``main.py`` writes: which copy of the app's metadata it finds, its version,
 every entry point, ``packages_distributions()``, and whether a dependency's
 entry point loads. Nothing is written to the repository.
 
-Opt in per platform with ``--metaprobe macos,ios-sim,android-emu,ios-device``
-(any subset). ``ios-device`` is a paired iPhone, signed with the team in
+Opt in per platform with
+``--metaprobe macos,windows,ios-sim,android-emu,ios-device`` (any subset).
+``windows`` needs a Windows host and ``macos`` a Mac. ``ios-device`` is a paired iPhone, signed with the team in
 ``KIVYFORGE_TEAM_ID``; it is layer 5, so no CI job selects it. Once opted in, a missing tool **fails**: the option is a promise that
 the platform is there. Needs the network (wheels, locks, the setuptools a dev
 install fetches) and takes minutes per platform; the Android emulator and the
@@ -45,9 +46,10 @@ pytestmark = pytest.mark.requires_toolchain
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "tests" / "fixtures" / "apps" / "metaprobe"
-PLATFORMS = ("macos", "ios-sim", "android-emu", "ios-device")
+PLATFORMS = ("macos", "windows", "ios-sim", "android-emu", "ios-device")
 LOCK_PLATFORM = {
     "macos": "macos",
+    "windows": "windows",
     "ios-sim": "ios",
     "android-emu": "android",
     "ios-device": "ios",
@@ -387,6 +389,51 @@ def _macos_launch(project: Path, app: Path) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Windows
+# --------------------------------------------------------------------------- #
+
+
+def _windows_out(project: Path) -> Path:
+    """Where the probe writes its report: the launcher attaches to the parent
+    console rather than writing to a pipe, so its stdout cannot be captured."""
+    out = project.parent / "windows-out"
+    out.mkdir(exist_ok=True)
+    (out / "metaprobe.json").unlink(missing_ok=True)
+    return out
+
+
+def _windows_read(out: Path) -> dict:
+    report = out / "metaprobe.json"
+    assert report.is_file(), f"the app wrote no {report}"
+    return json.loads(report.read_text(encoding="utf-8"))
+
+
+def _windows_report(project: Path, *, release: bool = False) -> dict:
+    out = _windows_out(project)
+    flags = ["--release"] if release else []
+    _kf(project, "run", "-p", "windows", *flags, env={"METAPROBE_OUT": str(out)})
+    return _windows_read(out)
+
+
+def _windows_launcher(folder: Path) -> Path:
+    (exe,) = folder.glob("*.exe")
+    return exe
+
+
+def _windows_launch(project: Path, folder: Path) -> dict:
+    """The built folder's launcher, run as ``kivyforge run`` runs it."""
+    out = _windows_out(project)
+    _run([str(_windows_launcher(folder))], env=_env({"METAPROBE_OUT": str(out)}))
+    return _windows_read(out)
+
+
+def _product_version(exe: Path) -> str:
+    """The launcher's string ProductVersion, which carries the full PEP 440."""
+    query = f"(Get-Item -LiteralPath '{exe}').VersionInfo.ProductVersion"
+    return _run(["powershell", "-NoProfile", "-Command", query]).stdout.strip()
+
+
+# --------------------------------------------------------------------------- #
 # iOS simulator
 # --------------------------------------------------------------------------- #
 
@@ -637,6 +684,8 @@ def _collect(
     mark = mark or _mark(project)
     if platform == "macos":
         report = _macos_report(project, release=release)
+    elif platform == "windows":
+        report = _windows_report(project, release=release)
     elif platform == "ios-sim":
         udid = request.getfixturevalue("simulator")
         report = _ios_report(udid, _ios_app(project, _ios_build(project)))
@@ -670,6 +719,10 @@ def _built_with_json(
         envelope = _envelope(_kf(project, "build", "-p", "macos", "--json"))
         (app,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "app"]
         report = _macos_launch(project, project / app["path"])
+    elif platform == "windows":
+        envelope = _envelope(_kf(project, "build", "-p", "windows", "--json"))
+        (folder,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "folder"]
+        report = _windows_launch(project, project / folder["path"])
     elif platform == "ios-sim":
         envelope = _ios_build(project)
         udid = request.getfixturevalue("simulator")
@@ -693,6 +746,8 @@ def platform_project(request, selected, locked, tmp_path):
         pytest.skip(f"{platform} not in --metaprobe")
     if platform == "macos" and sys.platform != "darwin":
         pytest.fail("--metaprobe macos needs a macOS host")
+    if platform == "windows" and sys.platform != "win32":
+        pytest.fail("--metaprobe windows needs a Windows host")
     if platform == "ios-sim":
         request.getfixturevalue("simulator")
     if platform == "android-emu":
@@ -732,7 +787,7 @@ def _assert_generated(report: dict, version: str = VERSION) -> None:
 # Variants (proposal section 5, layer 3)
 # --------------------------------------------------------------------------- #
 
-RELEASE_PLATFORMS = ("macos", "android-emu", "ios-device")
+RELEASE_PLATFORMS = ("macos", "windows", "android-emu", "ios-device")
 
 
 @pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
@@ -871,6 +926,9 @@ def test_dynamic_version(platform_project, request):
     if platform == "android-emu":
         dest = project / "metaprobe-app-android" / "app" / "build" / "outputs"
         shipped = _apk_version_name(dest / "apk" / "debug" / "app-debug.apk")
+    elif platform == "windows":
+        (folder,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "folder"]
+        shipped = _product_version(_windows_launcher(project / folder["path"]))
     else:
         (app,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "app"]
         contents = "Contents/" if platform == "macos" else ""
