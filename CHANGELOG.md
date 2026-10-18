@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Windows: local wheels lock correctly, and an app finds its metadata once
+
+- **Fixed:** on a Windows host, `kivyforge lock` for macOS, Linux or Windows
+  recorded a wheel from `find_links` as an absolute path with its drive letter
+  missing (`Users/you/project/wheels/...`), so the next `build` failed with
+  "vendored artifact not found". It now records the path relative to the
+  project (`wheels/...`), as iOS and Android already did.
+- **Fixed:** a Windows app had its `app` folder on `sys.path` twice, so
+  `importlib.metadata.distributions()` returned the app's own distribution
+  twice. It is now on `sys.path` once, still first.
+- **Migration:** on Windows, run `kivyforge lock -p <platform>` again if the
+  project uses `find_links`, to rewrite a lock with the drive-less path. The
+  launcher change takes effect on the next `build`.
+
 ### Android: `package --debug` puts a debug build in `dist/`
 
 - **Added:** `kivyforge package -p android --debug` packages a debug build
