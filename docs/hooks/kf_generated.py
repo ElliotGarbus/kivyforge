@@ -50,8 +50,16 @@ _EXIT_REACTION = {
 _DIAGNOSTIC = {
     "KF-LOCK-DRIFT": (
         "error",
-        "The committed lock no longer matches `pyproject.toml`.",
-        "Run `kivyforge lock -p <platform>`.",
+        "A lock input in `pyproject.toml` (a dependency, the Python version, an "
+        "index, a native library) changed since the lock was written.",
+        "Run `kivyforge lock -p <platform>`; it keeps the versions already locked.",
+    ),
+    "KF-LOCK-PINS-CONFLICT": (
+        "error",
+        "`lock` could not resolve the changed lock inputs while keeping the "
+        "versions already in the lock, though it can without them.",
+        "Run `kivyforge lock -p <platform> --update` to take the newest version "
+        "of everything, or pin the package that has to move.",
     ),
     "KF-LOCK-MISSING": (
         "error",
