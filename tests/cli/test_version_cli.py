@@ -73,10 +73,14 @@ def project(tmp_path, monkeypatch):
         (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
         backend = FakeBackend(platform, fail)
         pip = Pip()
+
+        def resolve_target(cli_platform, verb, report=None):
+            if report is not None:
+                report.platform = backend.name
+            return backend, tmp_path
+
         for module in (build_mod, package_mod, run_mod):
-            monkeypatch.setattr(
-                module, "resolve_target", lambda cli_platform, verb: (backend, tmp_path)
-            )
+            monkeypatch.setattr(module, "resolve_target", resolve_target)
         monkeypatch.setattr(versioning, "_run", pip)
         return backend, pip
 

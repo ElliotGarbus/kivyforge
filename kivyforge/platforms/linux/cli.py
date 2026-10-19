@@ -33,7 +33,6 @@ from kivyforge.lock.reader import LockError
 from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
-from .. import HostCapabilityError, get_platform
 from . import AppDirError
 from .appimage import build_appimage
 from .bundle import build_appdir, resolve_assembly_arch
@@ -53,7 +52,6 @@ def linux_build(
 ) -> BuildOutcome:
     """Assemble the Linux AppDir."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_linux_host()
     config, lock = _load_and_verify(project_root, no_verify_lock, version)
     appdir = _assemble(
         config,
@@ -82,7 +80,6 @@ def linux_package(
 ) -> BuildOutcome:
     """Produce the distributable artifact: an ``.AppImage`` (default) or the AppDir."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_linux_host()
     config, lock = _load_and_verify(project_root, no_verify_lock, version)
     target_arch = _resolve_arch(lock, arch)
     appdir = _assemble(
@@ -206,7 +203,6 @@ def linux_run(
             "the existing build."
         )
     if no_build:
-        _require_linux_host()
         config = _load_config(project_root)
         appdir = project_root / "build" / "linux" / f"{config.display_name}.AppDir"
         if not appdir.exists():
@@ -262,13 +258,6 @@ def _lock_status(project_root: Path, config: Config) -> LockStatus:
         return LockStatus(LockState.UNREADABLE, relock)
     in_sync = is_in_sync(lock, config, "linux")
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
-
-
-def _require_linux_host() -> None:
-    try:
-        get_platform("linux").check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path):

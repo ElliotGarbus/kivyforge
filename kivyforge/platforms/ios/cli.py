@@ -37,7 +37,6 @@ from kivyforge.config.icons import IconSourceError
 from kivyforge.config.model import VALID_SIMULATOR_ARCHS, Config, ResolvedVersion
 from kivyforge.config.version import with_version
 from kivyforge.lock import LockError, is_in_sync
-from kivyforge.platforms.base import HostCapabilityError
 from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
@@ -89,7 +88,6 @@ def ios_build(
 ) -> BuildOutcome:
     """Download artifacts, generate the Xcode project, and optionally build it."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
     config = with_version(_load_config(project_root / "pyproject.toml"), version)
@@ -453,21 +451,6 @@ def _encode_last_upgrade_check(version: str) -> str | None:
     return str(major * 100 + minor * 10 + patch)
 
 
-def _require_macos_host() -> None:
-    """Gate the Xcode-bound verbs (mirrors the macOS/Linux/Windows backends).
-
-    ``IosPlatform.check_host_capability`` has always described this rule; until
-    now nothing called it, so an off-macOS invocation failed later with
-    whatever error xcodebuild or SPM happened to raise first.
-    """
-    from kivyforge.platforms import get_platform
-
-    try:
-        get_platform("ios").check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
-
-
 def _load_config(pyproject: Path):
     try:
         return load_config(pyproject)
@@ -500,7 +483,6 @@ def ios_run(
     no_build: bool,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
-    _require_macos_host()
     try:
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:
@@ -616,7 +598,6 @@ def ios_package(
     are intermediates of ``package``, however visible the former's line is.
     """
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     config = with_version(_load_config(project_root / "pyproject.toml"), version)
     try:
         # Resolve before prepare_build so the generated .xcodeproj carries the
@@ -685,7 +666,6 @@ def _dist_output(project_root: Path, config, export_method: str) -> Path:
 
 def ios_open(project_root: Path, *, events: BuildEvents = ECHO_EVENTS) -> Path:
     """Open ``<app>-ios/<app>.xcodeproj`` in Xcode; return the project opened."""
-    _require_macos_host()
     try:
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:

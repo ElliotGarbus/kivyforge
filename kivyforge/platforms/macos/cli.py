@@ -33,7 +33,6 @@ from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
-from .. import HostCapabilityError, get_platform
 from . import AppBundleError
 from .bundle import build_app_bundle
 from .lock import MacosLockfile
@@ -55,7 +54,6 @@ def macos_build(
 ) -> BuildOutcome:
     """Assemble (and ad-hoc sign) the macOS ``.app``."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     config = _load_config(project_root, version)
     lock = _load_lock(project_root)
     if not no_verify_lock and not is_in_sync(lock, config, "macos"):
@@ -113,7 +111,6 @@ def macos_run(
             "the existing build."
         )
     if no_build:
-        _require_macos_host()
         config = _load_config(project_root)
         app = project_root / "build" / "macos" / f"{config.display_name}.app"
         if not app.exists():
@@ -168,7 +165,6 @@ def macos_package(
     not even signed yet.
     """
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     config = _load_config(project_root, version)
     signing = config.macos_required.signing
     identity = signing_identity or signing.identity
@@ -292,13 +288,6 @@ def _executable_name(app: Path) -> str:
     if not entries:
         raise ToolchainError(f"{app.name} has no launcher in Contents/MacOS.")
     return entries[0].name
-
-
-def _require_macos_host() -> None:
-    try:
-        get_platform("macos").check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path, version: ResolvedVersion | None = None):

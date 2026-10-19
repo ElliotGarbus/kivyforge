@@ -36,8 +36,9 @@ def status(cli_platform: str | None, json_out: bool, no_color: bool) -> None:
     with reporting("status", json_out=json_out, no_color=no_color) as report:
         # Inside the block: resolving the target reads pyproject.toml, so it is
         # one of the things that can fail, and that failure needs an envelope.
-        backend, project_root = resolve_target(cli_platform, verb="status")
-        report.platform = backend.name
+        backend, project_root = resolve_target(
+            cli_platform, verb="status", report=report
+        )
 
         snapshot = backend.status(project_root)
 

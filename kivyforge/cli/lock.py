@@ -24,7 +24,6 @@ from ..config import ConfigError, load_config
 from ..lock.inputs import is_in_sync
 from ..lock.prefer import PinsConflict
 from ..lock.reader import LockError
-from ..platforms.base import HostCapabilityError
 from ..platforms.ios.lock import (
     BuildError,
     build_lockfile,
@@ -59,11 +58,6 @@ class _LockOps:
     emits_warnings: bool = False
     #: The backend accepts ``on_progress``/``on_transfer`` and reports with them.
     emits_progress: bool = False
-    # Most backends resolve with pip alone, so `lock` runs anywhere and the
-    # result is committed. iOS is the exception: resolving declared Swift
-    # packages shells out to `swift package resolve`, which needs the Xcode
-    # toolchain, so the whole iOS workflow — lock included — is macOS-only.
-    requires_host_toolchain: bool = False
 
 
 def _lock_ops(platform: str) -> _LockOps:
@@ -79,7 +73,6 @@ def _lock_ops(platform: str) -> _LockOps:
             build_error=BuildError,
             require_ios=True,
             require_macos=False,
-            requires_host_toolchain=True,
         )
     if platform == "macos":
         from ..platforms.macos import lock as macos_lock
@@ -148,18 +141,6 @@ def _lock_ops(platform: str) -> _LockOps:
     )
 
 
-def _require_host_toolchain(backend) -> None:
-    """Gate `lock` for backends whose resolution needs a host toolchain."""
-    try:
-        backend.check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(
-            str(exc),
-            code=diagnostics.HOST_INCAPABLE,
-            exit_code=exit_codes.ENVIRONMENT_ERROR,
-        ) from exc
-
-
 @click.command()
 @platform_option
 @click.option("--update", is_flag=True, help="Re-resolve even if the lock is in sync.")
@@ -180,11 +161,8 @@ def lock(
 ) -> None:
     """Generate pylock.<platform>.toml from pyproject.toml."""
     with reporting("lock", json_out=json_out, no_color=no_color) as report:
-        backend, project_root = resolve_target(cli_platform, verb="lock")
-        report.platform = backend.name
+        backend, project_root = resolve_target(cli_platform, verb="lock", report=report)
         ops = _lock_ops(backend.name)
-        if ops.requires_host_toolchain:
-            _require_host_toolchain(backend)
 
         pyproject = project_root / "pyproject.toml"
         out_path = lockfile_path_for(backend.name, project_root)

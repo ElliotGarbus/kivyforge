@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Hosts: every target verb refuses a host that cannot build the target
+
+- **Changed:** `lock`, `build`, `run`, `package`, `open`, `status` and `upgrade`
+  now all apply the host table from `kivyforge capabilities`, and fail with
+  `KF-HOST-INCAPABLE` (exit `3`) on the wrong host. iOS and macOS build on
+  macOS, Windows on Windows, Linux on Linux, and Android on any of them. Before,
+  only `build`, `run` and `package` checked the host, plus `lock` and `open`
+  for iOS. `lock -p macos` on Windows resolved a lock, and `status` and
+  `upgrade` worked for any target. The JSON envelope still names the refused
+  target in `platform`.
+- **Changed:** Linux targets build only on an x86_64 Linux host. A Raspberry
+  Pi is a target, not a build host: add `"aarch64"` to `[tool.kivy.linux].archs`
+  on an x86_64 Linux machine and copy the AppImage to the Pi. kivyforge refuses
+  aarch64 hosts because none is in the test matrix. `capabilities --json`
+  publishes the rule as `host_machines` on each platform (an empty list means
+  any CPU).
+- **Unchanged:** `init` still writes configuration for any target on any host,
+  so one `pyproject.toml` can describe every platform. `doctor` still runs on
+  the wrong host and reports why the host cannot build the target.
+- **Migration:** run each target's `lock`, `status` and `upgrade` on a host that
+  can build that target, as CI already does.
+
 ### Locks: re-lock only when a lock input changes, and keep existing pins
 
 - **Changed:** a lock goes stale only when something it was resolved from

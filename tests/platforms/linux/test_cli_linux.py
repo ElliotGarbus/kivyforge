@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -18,15 +17,10 @@ from kivyforge.lock.wheelruntime.model import (
     RuntimeArtifact,
     WheelRuntimeLock,
 )
-from kivyforge.platforms import HostCapabilityError
 from kivyforge.platforms.linux import AppDirError
 from kivyforge.platforms.linux import cli as _linux
 from kivyforge.platforms.linux.lock import dumps
 from tests.lock_hash import inputs_sha
-
-# Captured before the autouse fixture below monkeypatches it away, so tests
-# that want the *real* host-capability check can restore it explicitly.
-_REAL_REQUIRE_LINUX_HOST = _linux._require_linux_host
 
 PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.0.0'\nrequires-python='>=3.15'\n"
@@ -90,7 +84,6 @@ def fake_bundler(monkeypatch):
 
     monkeypatch.setattr(_linux, "build_appdir", fake_build)
     # Linux is the host default only on Linux; force the capability check to pass.
-    monkeypatch.setattr(_linux, "_require_linux_host", lambda: None)
     return calls
 
 
@@ -364,7 +357,6 @@ class TestAssembleErrorWrapping:
             raise AppDirError("bundler exploded")
 
         monkeypatch.setattr(_linux, "build_appdir", fake_build)
-        monkeypatch.setattr(_linux, "_require_linux_host", lambda: None)
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             _write_project(fs)
             result = runner.invoke(build, ["-p", "linux"])
@@ -406,21 +398,6 @@ class TestRunEdgeCases:
             result = runner.invoke(run, ["-p", "linux"])
             assert result.exit_code != 0
             assert "exited with status 7" in result.output
-
-
-class TestRequireLinuxHost:
-    def test_host_capability_error_wrapped(self, monkeypatch):
-        # fake_bundler (autouse) stubs _require_linux_host itself, so restore
-        # the real function to exercise its HostCapabilityError wrapping.
-        monkeypatch.setattr(_linux, "_require_linux_host", _REAL_REQUIRE_LINUX_HOST)
-
-        class FakePlatform:
-            def check_host_capability(self):
-                raise HostCapabilityError("no X11/Wayland session")
-
-        with patch.object(_linux, "get_platform", return_value=FakePlatform()):
-            with pytest.raises(_linux.ToolchainError, match="no X11/Wayland session"):
-                _linux._require_linux_host()
 
 
 class TestLockStateUnreadable:

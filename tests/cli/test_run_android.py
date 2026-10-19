@@ -39,9 +39,12 @@ def fake_project_root(tmp_path):
 def _patch_resolve_target(monkeypatch, backend, project_root):
     import kivyforge.cli.run as run_mod
 
-    monkeypatch.setattr(
-        run_mod, "resolve_target", lambda cli_platform, verb: (backend, project_root)
-    )
+    def resolve_target(cli_platform, verb, report=None):
+        if report is not None:
+            report.platform = backend.name
+        return backend, project_root
+
+    monkeypatch.setattr(run_mod, "resolve_target", resolve_target)
 
 
 class TestAndroidOnlyFlagsGuard:
