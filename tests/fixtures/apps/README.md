@@ -56,9 +56,10 @@ cd tests/fixtures/apps/<name> && kivyforge lock -p <platform> --update
 
 A plain `kivyforge lock` after an input change keeps the pinned versions and
 moves only what the change requires; `--update` takes the newest of
-everything. Lock `linux-gate` and `macos-gate` from a Linux or macOS host: from
-Windows, pip evaluates Kivy's dependency markers for the Windows host and asks
-for `kivy-deps.angle`.
+everything. Lock each gate on its own target's host: `linux-gate` on Linux,
+`macos-gate` on a Mac, `windows-gate` on Windows. pip evaluates dependency
+markers for the host it runs on, so a lock made elsewhere can fail
+(`kivy-deps.angle` from Windows) or silently miss a target-only dependency.
 
 Testing against newer dependencies is a thing you decide to do, not
 something that happens to you between pushes.
