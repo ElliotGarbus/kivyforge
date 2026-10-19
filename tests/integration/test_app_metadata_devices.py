@@ -8,8 +8,8 @@ every entry point, ``packages_distributions()``, and whether a dependency's
 entry point loads. Nothing is written to the repository.
 
 Opt in per platform with
-``--metaprobe macos,windows,ios-sim,android-emu,ios-device`` (any subset).
-``windows`` needs a Windows host and ``macos`` a Mac. ``ios-device`` is a paired iPhone, signed with the team in
+``--metaprobe macos,windows,linux,ios-sim,android-emu,ios-device`` (any subset).
+``windows`` needs a Windows host, ``linux`` a Linux one and ``macos`` a Mac. ``ios-device`` is a paired iPhone, signed with the team in
 ``KIVYFORGE_TEAM_ID``; it is layer 5, so no CI job selects it. Once opted in, a missing tool **fails**: the option is a promise that
 the platform is there. Needs the network (wheels, locks, the setuptools a dev
 install fetches) and takes minutes per platform; the Android emulator and the
@@ -46,10 +46,11 @@ pytestmark = pytest.mark.requires_toolchain
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "tests" / "fixtures" / "apps" / "metaprobe"
-PLATFORMS = ("macos", "windows", "ios-sim", "android-emu", "ios-device")
+PLATFORMS = ("macos", "windows", "linux", "ios-sim", "android-emu", "ios-device")
 LOCK_PLATFORM = {
     "macos": "macos",
     "windows": "windows",
+    "linux": "linux",
     "ios-sim": "ios",
     "android-emu": "android",
     "ios-device": "ios",
@@ -438,6 +439,31 @@ def _product_version(exe: Path) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Linux
+# --------------------------------------------------------------------------- #
+
+
+def _linux_env(project: Path) -> dict[str, str]:
+    # Without it the probe would write into the home directory.
+    out = project.parent / "linux-out"
+    out.mkdir(exist_ok=True)
+    return {"METAPROBE_OUT": str(out)}
+
+
+def _linux_report(project: Path, *, release: bool = False) -> dict:
+    # `run -p linux` runs AppRun in the foreground with stdout inherited.
+    flags = ["--release"] if release else []
+    proc = _kf(project, "run", "-p", "linux", *flags, env=_linux_env(project))
+    return _report_from_lines(proc.stdout)
+
+
+def _linux_launch(project: Path, appdir: Path) -> dict:
+    """The built AppDir's ``AppRun``, run as ``kivyforge run`` runs it."""
+    proc = _run([str(appdir / "AppRun")], env=_env(_linux_env(project)), timeout=300)
+    return _report_from_lines(proc.stdout)
+
+
+# --------------------------------------------------------------------------- #
 # iOS simulator
 # --------------------------------------------------------------------------- #
 
@@ -690,6 +716,8 @@ def _collect(
         report = _macos_report(project, release=release)
     elif platform == "windows":
         report = _windows_report(project, release=release)
+    elif platform == "linux":
+        report = _linux_report(project, release=release)
     elif platform == "ios-sim":
         udid = request.getfixturevalue("simulator")
         report = _ios_report(udid, _ios_app(project, _ios_build(project)))
@@ -727,6 +755,10 @@ def _built_with_json(
         envelope = _envelope(_kf(project, "build", "-p", "windows", "--json"))
         (folder,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "folder"]
         report = _windows_launch(project, project / folder["path"])
+    elif platform == "linux":
+        envelope = _envelope(_kf(project, "build", "-p", "linux", "--json"))
+        (folder,) = [a for a in envelope["data"]["artifacts"] if a["kind"] == "folder"]
+        report = _linux_launch(project, project / folder["path"])
     elif platform == "ios-sim":
         envelope = _ios_build(project)
         udid = request.getfixturevalue("simulator")
@@ -752,6 +784,8 @@ def platform_project(request, selected, locked, tmp_path):
         pytest.fail("--metaprobe macos needs a macOS host")
     if platform == "windows" and sys.platform != "win32":
         pytest.fail("--metaprobe windows needs a Windows host")
+    if platform == "linux" and not sys.platform.startswith("linux"):
+        pytest.fail("--metaprobe linux needs a Linux host")
     if platform == "ios-sim":
         request.getfixturevalue("simulator")
     if platform == "android-emu":
@@ -791,7 +825,7 @@ def _assert_generated(report: dict, version: str = VERSION) -> None:
 # Variants (proposal section 5, layer 3)
 # --------------------------------------------------------------------------- #
 
-RELEASE_PLATFORMS = ("macos", "windows", "android-emu", "ios-device")
+RELEASE_PLATFORMS = ("macos", "windows", "linux", "android-emu", "ios-device")
 
 
 @pytest.mark.parametrize("platform_project", PLATFORMS, indirect=True)
@@ -927,6 +961,11 @@ def test_dynamic_version(platform_project, request):
     assert version["source"] == "backend"
     assert re.fullmatch(r"1\.2\.4\.dev1\+g[0-9a-f]+", version["value"]), version
     _assert_generated(report, version["value"])
+    if platform == "linux":
+        # An AppDir records the version nowhere: only the packaged .AppImage's
+        # file name carries it, and a build does not package. The report's
+        # version, checked against data.version above, is the whole check.
+        return
     if platform == "android-emu":
         dest = project / "metaprobe-app-android" / "app" / "build" / "outputs"
         shipped = _apk_version_name(dest / "apk" / "debug" / "app-debug.apk")

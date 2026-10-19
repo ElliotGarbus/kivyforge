@@ -2,8 +2,8 @@
 
 > Status: **implemented 2026-10-14** on branch `app-metadata-design`, not yet
 > released; layers 1-3 pass on this Mac, layer 4 is wired into CI, and of
-> layer 5 a physical iPhone has run (I8), and Windows (I9, 2026-10-17); Linux and
-> the #122 reporter's app are open (section 5). What the implementation decided beyond this plan is in
+> layer 5 a physical iPhone has run (I8), Windows (I9, 2026-10-17) and Linux
+> (I10, 2026-10-18); only the #122 reporter's app is open (section 5). What the implementation decided beyond this plan is in
 > section 11. Follows
 > [#122](https://github.com/ElliotGarbus/kivyforge/issues/122): #115 excluded
 > the `*.egg-info` that a src-layout app's `importlib.metadata` reads, and an
@@ -293,8 +293,8 @@ about 55 s per flavor plus the first emulator boot.
 ### Layer 5 — not on this Mac
 
 Linux and Windows builds (their copy points are covered by layer 1, but no app
-had run there; Windows has since, I9: the driver's `--metaprobe windows` runs
-every layer 3 variant that is not iOS-only), an iOS release archive and physical devices (both need
+had run there; both have since, I9 and I10: the driver's `--metaprobe windows`
+and `--metaprobe linux` run every layer 3 variant that is not iOS-only), an iOS release archive and physical devices (both need
 signing), and the #122 reporter's app as the acceptance case before release.
 
 ## 6. Conformance with the PyPA specifications
@@ -377,7 +377,7 @@ into the user's source tree; this design writes nothing there.
 | Q4 | Code names | `KF-METADATA-ENTRY-POINTS-OUTSIDE-PROJECT` (error, 2.3) and `KF-METADATA-NOT-GENERATED` (warning, 2.4), following `KF-<AREA>-<CONDITION>`. |
 | Q5 | iOS Xcode-only rebuilds keep the metadata from the last `kivyforge build`; after a new commit, a dynamic version is stale. | Accepted and documented: the plist's version is generated at `kivyforge build` too, so the two stay stale together and agree; run `kivyforge build` (or `run`) before Cmd-R when the version matters. |
 | Q6 | The #123 regression test asserts the `egg-info` ships. | Replaced by the removal test of layer 1. |
-| Q7 | Untested here: iOS release archives, physical devices, Linux, Windows. | Layer 5, before the release that ships this. iOS archives and a device: I8. Windows: I9. Linux: still open. |
+| Q7 | Untested here: iOS release archives, physical devices, Linux, Windows. | Layer 5, before the release that ships this. iOS archives and a device: I8. Windows: I9. Linux: I10. |
 | Q8 | Acceptance by the #122 reporter. | Their project declares entry points only in `[project]` with a static version, so it takes the generated path; ask them to confirm their APK on the branch before release. |
 
 ## 11. Implementation notes, 2026-10-14
@@ -396,3 +396,4 @@ it found. None of it changes a decision in section 3.
 | I7 | The layer 3 driver shares this Mac's devices with other work: it prefers an already booted simulator, shuts down only what it booted, and uninstalls its probe app at the end. `METAPROBE_SIMULATOR` and `METAPROBE_AVD` choose the devices. |
 | I8 | **On a physical iPhone** (layer 5, `--metaprobe ios-device`, hardware checklist `ios-device-app-metadata`, 2026-10-14): the metadata holds in every variant, a release archive exported for development included. An Xcode-only rebuild of a *device* build, though, leaves the `Frameworks/*.framework` extension binaries modified after signing, so `codesign --verify` fails. It happens with the metadata step switched off too: `install_python` rewrites those binaries on every build and Xcode does not sign them again. The simulator is unaffected. Fixed the same day: the Build Python phase now declares its bundle outputs, so Xcode signs the app again after it ([spec 05](../platforms/ios/05-xcode-project-generation.md), "The phase declares its outputs"). The xfail is gone, and every device variant passes ([test-matrix](test-matrix.md) section 7). |
 | I9 | **On Windows** (layer 5, `--metaprobe windows`, 2026-10-17, Windows 11): the driver gained a `windows` target, which reads the report from `METAPROBE_OUT` because the launcher attaches to the parent console instead of writing to a captured pipe, and checks a dynamic version against the launcher's string `ProductVersion`. The first run found two Windows bugs, neither in the metadata step. (1) The shared desktop lock builder turned pip's `file:///C:/...` URL into a drive-relative path, so `pylock.windows.toml` recorded `Users/...` and every build failed to find the `find_links` wheels; it now uses `url2pathname`, as iOS and Android did. (2) The bootstrap added `app` to `sys.path` that the native launcher had already put on `PYTHONPATH`, so `distributions()` returned the app twice; it now moves the entry to the front instead. With both fixed, all six variants pass: dev-install, no and stale `egg-info`, release (`main.pyc`), dynamic version and dynamic entry points ([test-matrix](test-matrix.md) section 7). |
+| I10 | **On Linux** (layer 5, `--metaprobe linux`, 2026-10-18, Ubuntu 26.04 under WSL2, x86_64): the driver gained a `linux` target, which reads the report from `run -p linux`'s stdout as macOS does (`AppRun` runs in the foreground with stdout inherited), and launches the built AppDir's `AppRun` for the `build --json` variants. A dynamic version is checked against `data.version` only: an AppDir records the version nowhere, and only the packaged `.AppImage`'s file name carries it. All six variants pass with no kivyforge change; Linux's `AppRun` puts `app` on `sys.path` once. The first run's three failures were the host's 3.9 GB tmpfs `/tmp` filling up (`ENOSPC`); with `TMPDIR` and `--basetemp` on disk, all pass. Bare-metal Linux, `aarch64` and `--metaprobe android-emu` from Linux are not run: the WSL emulator cannot start without `libpulse0` ([test-matrix](test-matrix.md) section 7). |

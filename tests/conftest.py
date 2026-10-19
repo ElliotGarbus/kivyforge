@@ -231,7 +231,7 @@ def pytest_addoption(parser):
         default=None,
         metavar="PLATFORMS",
         help="Build and launch the metaprobe fixture app on these platforms "
-        "(comma-separated: macos, windows, ios-sim, android-emu, ios-device). "
+        "(comma-separated: macos, windows, linux, ios-sim, android-emu, ios-device). "
         "Needs their toolchains and the network, and takes minutes per platform.",
     )
     resolver.addoption(
