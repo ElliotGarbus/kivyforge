@@ -123,12 +123,26 @@ class TestPipInvocation:
     def test_no_build_isolation_on_request(self):
         assert "--no-build-isolation" in pip_command(ROOT, isolated=False)
 
+    def test_ignores_requires_python(self):
+        # An Android app declaring >=3.14 must resolve from a 3.13 host (#118).
+        for isolated in (True, False):
+            assert "--ignore-requires-python" in pip_command(ROOT, isolated=isolated)
+
     def test_never_waits_for_input_and_captures_both_streams(self):
         pip = FakePip()
         resolve(runner=pip)
         _cmd, kwargs = pip.calls[0]
         assert kwargs["stdin"] is subprocess.DEVNULL
         assert kwargs["capture_output"] is True
+
+    def test_decodes_pip_as_utf8_not_the_locale(self):
+        # pip writes UTF-8 to a pipe on a cp1252 Windows host too; the locale
+        # default garbled the backend error #118 quoted ("café" came out "cafÃ©").
+        pip = FakePip()
+        resolve(runner=pip)
+        _cmd, kwargs = pip.calls[0]
+        assert kwargs["encoding"] == "utf-8"
+        assert kwargs["errors"] == "replace"
 
     def test_inherits_the_environment(self):
         # PIP_INDEX_URL and SETUPTOOLS_SCM_PRETEND_VERSION depend on it.
