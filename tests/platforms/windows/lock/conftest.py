@@ -38,6 +38,7 @@ class FakeWindowsResolver:
         extra_index_urls,
         find_links=None,
         offline=False,
+        constraints=None,
     ):
         self.calls.append(
             {
@@ -49,6 +50,7 @@ class FakeWindowsResolver:
                 "extra_index_urls": list(extra_index_urls),
                 "find_links": list(find_links or []),
                 "offline": offline,
+                "constraints": dict(constraints or {}),
             }
         )
         if not requirements:

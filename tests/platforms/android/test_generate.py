@@ -276,7 +276,7 @@ class TestProjectFiles:
             ),
             kivyforge_version="0",
             generated_at="t",
-            pyproject_sha256="b" * 64,
+            lock_inputs_sha256="b" * 64,
             tool_kivy_android_schema_version=1,
             kivy_generation=2,
             gradle=gradle,

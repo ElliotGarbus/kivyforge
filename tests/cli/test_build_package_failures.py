@@ -290,8 +290,13 @@ class TestLock:
         from kivyforge.platforms.android import cli
 
         pyproject = Path("pyproject.toml")
+        # A lock input changes; a comment alone would not be drift (#126).
         pyproject.write_text(
-            pyproject.read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8"
+            pyproject.read_text(encoding="utf-8").replace(
+                "[tool.kivy.android]\n",
+                '[tool.kivy.android]\nexclude = ["unused-dist"]\n',
+            ),
+            encoding="utf-8",
         )
         with pytest.raises(ToolchainError) as info:
             cli.android_build(Path.cwd())

@@ -17,7 +17,6 @@ def _build(text, tmp_path, **kw):
     )
     return build_windows_lockfile(
         cfg,
-        text,
         project_root=tmp_path,
         resolver=FakeWindowsResolver(**kw),
         runtime_provider=FakeRuntimeProvider(),

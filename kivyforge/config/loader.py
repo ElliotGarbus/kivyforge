@@ -134,9 +134,7 @@ def read_pyproject_text(path: str | Path) -> str:
     """``pyproject.toml`` as text, without a leading byte-order mark.
 
     tomllib rejects a BOM, and some editors and PowerShell's ``-Encoding utf8``
-    write one. Every reader goes through here because the lock's
-    ``pyproject_sha256`` hashes this text: a site that kept the BOM would see a
-    freshly locked file as drifted.
+    write one, so every reader goes through here.
     """
     return Path(path).read_text(encoding="utf-8-sig")
 

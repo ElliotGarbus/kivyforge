@@ -33,7 +33,7 @@ default-groups = []
 schema_version = 1
 kivyforge_version = "0"
 generated_at = "t"
-pyproject_sha256 = "a"
+lock_inputs_sha256 = "a"
 tool_kivy_android_schema_version = 1
 kivy_generation = 2
 
@@ -55,7 +55,7 @@ class TestBaseSanity:
 
 class TestMalformedWrapping:
     def test_missing_required_runtime_field_wrapped_as_lockerror(self):
-        # Target only the runtime's sha256 line (not pyproject_sha256, whose
+        # Target only the runtime's sha256 line (not lock_inputs_sha256, whose
         # line also contains the substring "sha256 = ...").
         text = _BASE.replace('sha256 = "a"\nmin_api = 24\n', "min_api = 24\n")
         with pytest.raises(reader.LockError, match="malformed"):

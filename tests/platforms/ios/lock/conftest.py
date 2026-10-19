@@ -31,6 +31,7 @@ class FakeResolver:
         extra_index_urls,
         find_links=None,
         offline=False,
+        constraints=None,
         simulator_archs=None,
     ):
         self.calls.append(

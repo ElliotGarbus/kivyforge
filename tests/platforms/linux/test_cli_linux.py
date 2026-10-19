@@ -13,7 +13,6 @@ from kivyforge.cli.build import build
 from kivyforge.cli.package import package
 from kivyforge.cli.run import run
 from kivyforge.cli.status import status
-from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
@@ -23,6 +22,7 @@ from kivyforge.platforms import HostCapabilityError
 from kivyforge.platforms.linux import AppDirError
 from kivyforge.platforms.linux import cli as _linux
 from kivyforge.platforms.linux.lock import dumps
+from tests.lock_hash import inputs_sha
 
 # Captured before the autouse fixture below monkeypatches it away, so tests
 # that want the *real* host-capability check can restore it explicitly.
@@ -59,7 +59,7 @@ def _write_project(
         archs=archs,
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(compute_pyproject_sha256(PYPROJECT) if in_sync else "0" * 64),
+        lock_inputs_sha256=(inputs_sha(PYPROJECT, "linux") if in_sync else "0" * 64),
         tool_kivyforge_schema_version=1,
     )
     (root / "pylock.linux.toml").write_text(dumps(lock))

@@ -83,7 +83,7 @@ class Lockfile:
     python_xcframework: PythonXcframework
     kivyforge_version: str
     generated_at: str
-    pyproject_sha256: str
+    lock_inputs_sha256: str
     tool_kivyforge_schema_version: int
     xcframeworks: tuple[LockedXcframework, ...] = ()
     swift_packages: tuple[LockedSwiftPackage, ...] = ()

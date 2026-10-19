@@ -30,10 +30,11 @@ from kivyforge.bundle import app_metadata
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
-from kivyforge.config import ConfigError, load_config, read_pyproject_text
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config, ResolvedVersion
 from kivyforge.config.version import android_version_code, with_version
-from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.lock.inputs import is_in_sync
+from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import os_failure, reclassify
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -1464,8 +1465,9 @@ def _verify_include_file(
 @user_facing
 def android_status(project_root: Path) -> StatusReport:
     """Read-only project snapshot (android/06 §status)."""
+    from kivyforge.lock.inputs import is_in_sync
     from kivyforge.lock.model import canonical_name
-    from kivyforge.lock.reader import LockError, is_in_sync
+    from kivyforge.lock.reader import LockError
 
     config, _ = _load_config_only(project_root)
     android = config.android_required
@@ -1482,9 +1484,7 @@ def android_status(project_root: Path) -> StatusReport:
             kivy_ver = kivy.version if kivy else "—"
             state = (
                 LockState.IN_SYNC
-                if is_in_sync(
-                    lock, read_pyproject_text(project_root / "pyproject.toml")
-                )
+                if is_in_sync(lock, config, "android")
                 else LockState.OUT_OF_DATE
             )
         except LockError:
@@ -1630,7 +1630,7 @@ def _load(project_root: Path, version: ResolvedVersion | None, *, no_verify_lock
         lock = lock_reader.load(lock_path)
     except LockError as exc:
         raise LockUnreadable(str(exc)) from exc
-    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
+    if not no_verify_lock and not is_in_sync(lock, config, "android"):
         raise LockDrift(
             "pyproject.toml has changed since pylock.android.toml was "
             "generated.\n  Run: kivyforge lock -p android\n"

@@ -52,6 +52,12 @@ LOCK_UNREADABLE = "KF-LOCK-UNREADABLE"
 #: move -- but the same remedy: re-lock.
 LOCK_INCOMPLETE = "KF-LOCK-INCOMPLETE"
 
+#: ``lock`` re-resolved with the existing lock's versions as preferences, and
+#: pip could not keep them with the changed inputs, though it can resolve
+#: without them. Not drift: ``lock --update`` (newest of everything) is the fix,
+#: and a plain re-lock would only fail the same way.
+LOCK_PINS_CONFLICT = "KF-LOCK-PINS-CONFLICT"
+
 #: Resolution succeeded but made a judgement call worth surfacing (e.g. the
 #: macOS/Linux backends accepting a vendored plain ``linux_*`` wheel). Always
 #: WARNING: the lock written is usable, and the run is ``ok``.

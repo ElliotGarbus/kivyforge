@@ -15,7 +15,6 @@ from kivyforge.cli.clean import clean
 from kivyforge.cli.doctor import doctor
 from kivyforge.cli.status import status
 from kivyforge.cli.upgrade import upgrade
-from kivyforge.lock import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
@@ -29,6 +28,7 @@ from kivyforge.platforms.ios.lock import (
     dumps,
 )
 from kivyforge.status import humanize_age
+from tests.lock_hash import inputs_sha
 
 PYPROJECT = (
     textwrap.dedent(
@@ -89,7 +89,7 @@ def _lock(text: str, *, xcframeworks=()) -> Lockfile:
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="t",
-        pyproject_sha256=compute_pyproject_sha256(text),
+        lock_inputs_sha256=inputs_sha(text, "ios"),
         tool_kivyforge_schema_version=1,
         xcframeworks=tuple(xcframeworks),
     )
@@ -550,7 +550,7 @@ def _wheelruntime_lock(
         archs=archs,
         kivyforge_version="3.0.0.dev0",
         generated_at="t",
-        pyproject_sha256=compute_pyproject_sha256(text),
+        lock_inputs_sha256=inputs_sha(text, platform),
         tool_kivyforge_schema_version=1,
     )
 

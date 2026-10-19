@@ -83,7 +83,7 @@ class WheelRuntimeLock:
     archs: tuple[str, ...]
     kivyforge_version: str
     generated_at: str
-    pyproject_sha256: str
+    lock_inputs_sha256: str
     tool_kivyforge_schema_version: int
     schema_version: int = TOOL_SCHEMA_VERSION
     lock_version: str = LOCK_VERSION

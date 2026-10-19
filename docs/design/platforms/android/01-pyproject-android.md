@@ -488,7 +488,7 @@ dependencies = ["com.google.firebase:firebase-analytics"]   # version from the B
 **Plugins are version-pinned, not hashed.** A Gradle plugin runs code during the
 build, and kivyforge resolves it the same way it resolves AGP and the Kotlin
 plugin: by exact version from the plugin repositories, with no SHA-256 in the
-lock. `pyproject_sha256` still makes any plugin change a lock drift. Rejected
+lock. `lock_inputs_sha256` still makes any plugin change a lock drift. Rejected
 alternative: an allowlist of plugins kivyforge knows (Firebase's two, say), which
 would need a kivyforge release for every new plugin a library documents.
 

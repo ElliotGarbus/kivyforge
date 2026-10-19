@@ -35,7 +35,6 @@ from kivyforge.cli.package import package
 from kivyforge.cli.run import run
 from kivyforge.cli.status import status
 from kivyforge.cli.upgrade import upgrade
-from kivyforge.lock import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
@@ -44,6 +43,7 @@ from kivyforge.lock.wheelruntime.model import (
 from kivyforge.platforms import get_platform
 from kivyforge.platforms.ios.lock import Lockfile, PythonXcframework
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
+from tests.lock_hash import inputs_sha
 
 MINIMAL_PYPROJECT = '[project]\nname = "myapp"\nversion = "1.0.0"\n'
 
@@ -261,7 +261,7 @@ def _ios_lockfile(text: str) -> Lockfile:
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="t",
-        pyproject_sha256=compute_pyproject_sha256(text),
+        lock_inputs_sha256=inputs_sha(text, "ios"),
         tool_kivyforge_schema_version=1,
     )
 
@@ -285,7 +285,7 @@ def _wheelruntime_lockfile(text: str, platform_name: str) -> WheelRuntimeLock:
         archs=("arm64",),
         kivyforge_version="3.0.0.dev0",
         generated_at="t",
-        pyproject_sha256=compute_pyproject_sha256(text),
+        lock_inputs_sha256=inputs_sha(text, platform_name),
         tool_kivyforge_schema_version=1,
     )
 
@@ -300,7 +300,9 @@ class TestLockDispatchViaEnvVar:
     def test_ios(self, runner, tmp_path, monkeypatch):
         monkeypatch.setenv("KIVYFORGE_PLATFORM", "ios")
         monkeypatch.setattr(
-            lock_mod, "build_lockfile", lambda config, text, **kw: _ios_lockfile(text)
+            lock_mod,
+            "build_lockfile",
+            lambda config, **kw: _ios_lockfile(PYPROJECT_IOS),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             (Path(fs) / "pyproject.toml").write_text(PYPROJECT_IOS)
@@ -316,7 +318,7 @@ class TestLockDispatchViaEnvVar:
         monkeypatch.setattr(
             macos_lock,
             "build_macos_lockfile",
-            lambda config, text, **kw: _wheelruntime_lockfile(text, "macos"),
+            lambda config, **kw: _wheelruntime_lockfile(PYPROJECT_MACOS, "macos"),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             (Path(fs) / "pyproject.toml").write_text(PYPROJECT_MACOS)
@@ -332,7 +334,7 @@ class TestLockDispatchViaEnvVar:
         monkeypatch.setattr(
             linux_lock,
             "build_linux_lockfile",
-            lambda config, text, **kw: _wheelruntime_lockfile(text, "linux"),
+            lambda config, **kw: _wheelruntime_lockfile(PYPROJECT_LINUX, "linux"),
         )
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             (Path(fs) / "pyproject.toml").write_text(PYPROJECT_LINUX)

@@ -42,7 +42,7 @@ def _lock(binaries):
         archs=("amd64",),
         kivyforge_version="0",
         generated_at="t",
-        pyproject_sha256="0" * 64,
+        lock_inputs_sha256="0" * 64,
         tool_kivyforge_schema_version=1,
         native_binaries=tuple(binaries),
     )

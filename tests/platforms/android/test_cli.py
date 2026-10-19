@@ -24,7 +24,6 @@ from kivyforge.config import load_config
 from kivyforge.config.model import ResolvedVersion
 from kivyforge.config.version import with_version
 from kivyforge.lock.model import LockedPackage, LockedWheel
-from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.platforms.android import AndroidBuildError, cli
 from kivyforge.platforms.android import adb as adb_mod
 from kivyforge.platforms.android import policy as policy_mod
@@ -52,6 +51,7 @@ from kivyforge.platforms.android.stage.runtime import RuntimeStageError
 from kivyforge.platforms.android.stage.wheels import WheelStageError
 from kivyforge.report import diagnostics, exit_codes
 from kivyforge.status import LockState
+from tests.lock_hash import inputs_sha
 
 PYPROJECT = """\
 [project]
@@ -156,7 +156,7 @@ def _write_lock(
         ),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(compute_pyproject_sha256(text) if in_sync else "0" * 64),
+        lock_inputs_sha256=(inputs_sha(text, "android") if in_sync else "0" * 64),
         tool_kivy_android_schema_version=1,
         kivy_generation=kivy_generation,
         include_files=tuple(include_files),

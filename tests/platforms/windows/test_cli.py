@@ -355,13 +355,13 @@ def _config(project):
 
 
 def _write_windows_lock(project, *, in_sync=True):
-    from kivyforge.lock.reader import compute_pyproject_sha256
     from kivyforge.lock.wheelruntime.model import (
         PythonRuntime,
         RuntimeArtifact,
         WheelRuntimeLock,
     )
     from kivyforge.platforms.windows.lock import dumps
+    from tests.lock_hash import inputs_sha
 
     text = (project / "pyproject.toml").read_text(encoding="utf-8")
     lock = WheelRuntimeLock(
@@ -378,7 +378,7 @@ def _write_windows_lock(project, *, in_sync=True):
         archs=("amd64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(compute_pyproject_sha256(text) if in_sync else "0" * 64),
+        lock_inputs_sha256=(inputs_sha(text, "windows") if in_sync else "0" * 64),
         tool_kivyforge_schema_version=1,
     )
     (project / "pylock.windows.toml").write_text(dumps(lock), encoding="utf-8")
@@ -394,20 +394,32 @@ class TestLockState:
 
     def test_in_sync(self, project):
         _write_windows_lock(project, in_sync=True)
-        assert cli._lock_status(project).state is LockState.IN_SYNC
+        assert (
+            cli._lock_status(project, cli._load_config(project)).state
+            is LockState.IN_SYNC
+        )
 
     def test_out_of_date(self, project):
         _write_windows_lock(project, in_sync=False)
-        assert cli._lock_status(project).state is LockState.OUT_OF_DATE
+        assert (
+            cli._lock_status(project, cli._load_config(project)).state
+            is LockState.OUT_OF_DATE
+        )
 
     def test_unreadable(self, project):
         (project / "pylock.windows.toml").write_text("{{ not toml", encoding="utf-8")
-        assert cli._lock_status(project).state is LockState.UNREADABLE
+        assert (
+            cli._lock_status(project, cli._load_config(project)).state
+            is LockState.UNREADABLE
+        )
 
     def test_remediation_names_the_windows_target(self, project):
         """The relock command is now a field, so it cannot be misread out of the
         middle of a sentence."""
-        assert cli._lock_status(project).relock_command == "kivyforge lock -p windows"
+        assert (
+            cli._lock_status(project, cli._load_config(project)).relock_command
+            == "kivyforge lock -p windows"
+        )
 
 
 class TestHostAndLoaderErrors:

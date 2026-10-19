@@ -30,7 +30,7 @@ hashes = { sha256 = "aa" }
 schema_version = 1
 kivyforge_version = "3.0.0"
 generated_at = "2026-05-27T00:00:00Z"
-pyproject_sha256 = "deadbeef"
+lock_inputs_sha256 = "deadbeef"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]

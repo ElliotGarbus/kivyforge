@@ -12,7 +12,6 @@ from kivyforge.cli.build import build
 from kivyforge.cli.package import package
 from kivyforge.cli.run import run
 from kivyforge.cli.status import status
-from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
@@ -20,6 +19,7 @@ from kivyforge.lock.wheelruntime.model import (
 )
 from kivyforge.platforms.macos import cli as _macos
 from kivyforge.platforms.macos.lock import dumps
+from tests.lock_hash import inputs_sha
 
 PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.0.0'\nrequires-python='>=3.14'\n"
@@ -58,7 +58,7 @@ def _write_project(
         archs=("arm64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(compute_pyproject_sha256(pyproject) if in_sync else "0" * 64),
+        lock_inputs_sha256=(inputs_sha(pyproject, "macos") if in_sync else "0" * 64),
         tool_kivyforge_schema_version=1,
     )
     (root / "pylock.macos.toml").write_text(dumps(lock))

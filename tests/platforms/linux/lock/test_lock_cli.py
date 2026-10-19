@@ -24,10 +24,9 @@ def patch_linux_build(monkeypatch):
 
     real_build = linux_lock.build_linux_lockfile
 
-    def fake_build(config, text, *, project_root=None, offline=False, **_kw):
+    def fake_build(config, *, project_root=None, offline=False, **_kw):
         return real_build(
             config,
-            text,
             project_root=project_root,
             resolver=FakeLinuxResolver(),
             runtime_provider=FakeRuntimeProvider(floor="2.17"),
@@ -67,7 +66,23 @@ class TestLinuxLockCli:
             pp = Path(fs) / "pyproject.toml"
             pp.write_text(linux_pyproject + "\n")
             runner.invoke(lock, ["-p", "linux"])
-            pp.write_text(linux_pyproject + "\n# changed\n")
+            pp.write_text(
+                linux_pyproject.replace(
+                    "[tool.kivy.linux]\n",
+                    '[tool.kivy.linux]\nexclude = ["unused-dist"]\n',
+                )
+            )
             result = runner.invoke(lock, ["-p", "linux", "--check"])
             assert result.exit_code != 0
             assert "out of date" in result.output or "stale" in result.output
+
+    def test_a_comment_is_not_drift(self, runner, tmp_path, linux_pyproject):
+        """Only lock inputs count (#126): a comment leaves the lock alone."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = Path(fs) / "pyproject.toml"
+            pp.write_text(linux_pyproject + "\n")
+            runner.invoke(lock, ["-p", "linux"])
+            pp.write_text(linux_pyproject + "\n# changed\n")
+            result = runner.invoke(lock, ["-p", "linux", "--check"])
+            assert result.exit_code == 0, result.output
+            assert "up to date" in result.output

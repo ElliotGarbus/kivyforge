@@ -141,7 +141,7 @@ wheel resolved from; omitted means PyPI). Invisible to stock pip.
 schema_version = 1
 kivyforge_version = "3.0.0"
 generated_at = "2026-08-01T00:00:00Z"
-pyproject_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+lock_inputs_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 tool_kivy_android_schema_version = 1
 kivy_generation = 2
 
@@ -165,7 +165,7 @@ kivy_generation = 2
 | `schema_version` | integer | yes | This lockfile's `[tool.kivyforge]` schema version (independent of PEP 751's `lock-version` and the pyproject overlay schema). |
 | `kivyforge_version` | string | yes | Version of `kivyforge` that generated the lock. |
 | `generated_at` | string | yes | ISO 8601 UTC timestamp. |
-| `pyproject_sha256` | string | yes | SHA-256 of the source `pyproject.toml` at lock time. `kivyforge build` recomputes and errors on mismatch (drift detection). |
+| `lock_inputs_sha256` | string | yes | SHA-256 of the lock's inputs: the parsed values of the `pyproject.toml` fields the lock was resolved from. `kivyforge build` recomputes it and errors on mismatch (drift detection). |
 | `tool_kivy_android_schema_version` | integer | yes | Echoes `[tool.kivy.android].schema_version` from the source pyproject. |
 | `kivy_generation` | integer | yes | The Kivy generation this lock targets (`2` or `3`), echoed from `[tool.kivy.android].kivy_generation`. Recorded because it governs which SDL native library the bootstrap load order and the pyjnius runtime resolver expect (see [bootstrap-android](05-bootstrap-android.md)). |
 
@@ -295,7 +295,7 @@ entries are build tooling, not app dependencies: the lock's scratch resolve does
 not apply them, and no hash is recorded for the plugin jars. Each is pinned by
 exact version in the generated root `build.gradle` — the same treatment as AGP
 and the Kotlin plugin — and a change to one is still caught as lock drift by
-`pyproject_sha256`. Hashing plugins would mean resolving the build classpath,
+`lock_inputs_sha256` (`gradle` is a lock input). Hashing plugins would mean resolving the build classpath,
 the same whole-classpath problem the note above defers.
 
 This is the **SPM-parallel channel**: Gradle performs the download and compile,
@@ -369,7 +369,7 @@ tag) so diffs across `lock` runs show only real changes.
 
 ## Drift detection
 
-`kivyforge build` recomputes `pyproject_sha256`; a mismatch aborts with:
+`kivyforge build` recomputes `lock_inputs_sha256`, the SHA-256 of the lock's inputs: the parsed `[project].dependencies` and `requires-python`, and the fields of `[tool.kivy.android]` the lock is resolved from (Python version, `abis`, `min_sdk`, `kivy_generation`, `extra_index_urls`, `find_links`, `exclude`, `aars`, `jars`, `gradle`, `include_files`). The list is `LOCK_INPUTS["android"]` in `kivyforge/lock/inputs.py`. Comments, key order and every other field (signing, icons, splash, permissions, the manifest, services, another platform's overlay) are read on every build, so editing them never stales the lock. A mismatch aborts with:
 
 ```
 Error: pyproject.toml has changed since pylock.android.toml was generated.
@@ -454,7 +454,7 @@ hashes = { sha256 = "..." }
 schema_version = 1
 kivyforge_version = "3.0.0"
 generated_at = "2026-08-01T00:00:00Z"
-pyproject_sha256 = "e3b0c4..."
+lock_inputs_sha256 = "e3b0c4..."
 tool_kivy_android_schema_version = 1
 kivy_generation = 2
 

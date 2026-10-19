@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Locks: re-lock only when a lock input changes, and keep existing pins
+
+- **Changed:** a lock goes stale only when something it was resolved from
+  changes ([#126](https://github.com/ElliotGarbus/kivyforge/issues/126)): the
+  dependencies and `requires-python`, plus that platform's Python version,
+  architectures, OS floor, package indexes, `find_links`, `exclude` and native
+  libraries. Comments, key order, signing, icons, the display name, the version
+  and every other platform's overlay no longer stale it. Editing iOS signing
+  leaves `pylock.android.toml` in sync. The lock records this as
+  `lock_inputs_sha256`, replacing `pyproject_sha256`.
+- **Changed:** `kivyforge lock` keeps the versions already in the lock. After
+  an input change it moves only what the change requires; a dependency whose new
+  specifier excludes its locked version moves, and the rest stay. If the locked
+  versions cannot be kept, it fails with the new `KF-LOCK-PINS-CONFLICT` (exit
+  `1`) and names the conflict. `kivyforge lock --update` still takes the newest
+  version each specifier allows.
+- **Changed:** `kivyforge lock --check` resolves the same way, so a new upstream
+  release no longer fails CI while `pyproject.toml` is unchanged.
+- **Migration:** run `kivyforge lock -p <platform>` once for each platform you
+  lock. Every existing lock reads as out of date, because it records the old
+  whole-file hash. The re-lock keeps the versions already pinned.
+
 ### Dynamic version: a quoted pip error keeps its non-ASCII characters on Windows
 
 - **Fixed:** when a dynamic `[project].version` could not be resolved

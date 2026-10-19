@@ -107,7 +107,7 @@ def _base_lock(**kw) -> WheelRuntimeLock:
         archs=("arm64",),
         kivyforge_version="0.1.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
     )
     return dataclasses.replace(lock, **kw)

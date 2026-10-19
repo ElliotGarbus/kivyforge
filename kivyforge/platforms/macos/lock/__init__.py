@@ -9,11 +9,12 @@ generic package directly.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 
 from kivyforge.config.model import Config
+from kivyforge.lock.model import LockedPackage
 from kivyforge.lock.wheelruntime import (
     PythonRuntime as MacosPythonRuntime,
 )
@@ -73,11 +74,11 @@ __all__ = [
 
 def build_macos_lockfile(
     config: Config,
-    pyproject_text: str,
     *,
     project_root: Path | None = None,
     resolver: WheelResolver | None = None,
     runtime_provider: RuntimeProvider | None = None,
+    prefer: Iterable[LockedPackage] = (),
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
@@ -85,11 +86,11 @@ def build_macos_lockfile(
     return build_wheel_runtime_lock(
         _PROFILE,
         config,
-        pyproject_text,
         project_root=project_root,
         resolver=resolver,
         runtime_provider=runtime_provider,
         native_binaries=config.macos.binaries if config.macos else (),
+        prefer=prefer,
         offline=offline,
         now=now,
         on_warning=on_warning,

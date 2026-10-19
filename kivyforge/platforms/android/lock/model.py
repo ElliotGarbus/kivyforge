@@ -100,7 +100,7 @@ class AndroidLockfile:
     python_android: tuple[PythonAndroidRuntime, ...]
     kivyforge_version: str
     generated_at: str
-    pyproject_sha256: str
+    lock_inputs_sha256: str
     tool_kivy_android_schema_version: int
     kivy_generation: int
     android_libs: tuple[LockedAndroidLib, ...] = ()

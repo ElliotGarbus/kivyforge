@@ -23,12 +23,12 @@ from click.testing import CliRunner
 
 from kivyforge.cli.build import build
 from kivyforge.cli.package import package
-from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
     WheelRuntimeLock,
 )
+from tests.lock_hash import inputs_sha
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ def _macos_project(root: Path) -> None:
         archs=("arm64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=compute_pyproject_sha256(_MACOS_PYPROJECT),
+        lock_inputs_sha256=inputs_sha(_MACOS_PYPROJECT, "macos"),
         tool_kivyforge_schema_version=1,
     )
     from kivyforge.platforms.macos.lock import dumps
@@ -170,7 +170,7 @@ def _linux_project(root: Path) -> None:
         archs=("x86_64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=compute_pyproject_sha256(_LINUX_PYPROJECT),
+        lock_inputs_sha256=inputs_sha(_LINUX_PYPROJECT, "linux"),
         tool_kivyforge_schema_version=1,
     )
     from kivyforge.platforms.linux.lock import dumps
@@ -262,7 +262,7 @@ def _windows_project(root: Path) -> None:
         archs=("amd64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=compute_pyproject_sha256(_WINDOWS_PYPROJECT),
+        lock_inputs_sha256=inputs_sha(_WINDOWS_PYPROJECT, "windows"),
         tool_kivyforge_schema_version=1,
     )
     from kivyforge.platforms.windows.lock import dumps

@@ -25,7 +25,6 @@ def test_golden_lockfile(linux_pyproject, tmp_path, monkeypatch):
     )
     lock = build_linux_lockfile(
         cfg,
-        linux_pyproject,
         project_root=tmp_path,
         resolver=FakeLinuxResolver(),
         runtime_provider=FakeRuntimeProvider(floor="2.17"),
@@ -81,7 +80,6 @@ def test_golden_lockfile_with_native_binary(tmp_path, monkeypatch):
     )
     lock = build_linux_lockfile(
         cfg,
-        pyproject,
         project_root=tmp_path,
         resolver=FakeLinuxResolver(),
         runtime_provider=FakeRuntimeProvider(floor="2.17"),

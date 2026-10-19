@@ -41,7 +41,7 @@ def dumps(lock: Lockfile) -> str:
     lines.append(f"schema_version = {lock.schema_version}")
     lines.append(f"kivyforge_version = {_s(lock.kivyforge_version)}")
     lines.append(f"generated_at = {_s(lock.generated_at)}")
-    lines.append(f"pyproject_sha256 = {_s(lock.pyproject_sha256)}")
+    lines.append(f"lock_inputs_sha256 = {_s(lock.lock_inputs_sha256)}")
     lines.append(
         f"tool_kivyforge_schema_version = {lock.tool_kivyforge_schema_version}"
     )

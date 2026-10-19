@@ -21,11 +21,11 @@ because they are the same verification pointed at different files:
   2026-09-22, and it *does* verify that bundle's launcher — through the
   first test above, after signing it with a throwaway cert. What it cannot
   exercise is this path, because this path requires a project that
-  configures ``[tool.kivy.windows.signing]``, and no fixture does: a per-run
-  thumbprint in a fixture's ``pyproject.toml`` would change its
-  ``pyproject_sha256`` and break the same job's ``lock --check``
-  (test-matrix.md §5.3). So this covers a real project that signs through
-  ``package`` itself, which CI has no way to be.
+  configures ``[tool.kivy.windows.signing]``, and no fixture does: CI would
+  have to edit a fixture's ``pyproject.toml`` to add a per-run thumbprint
+  (test-matrix.md §5.3; signing is not a lock input since #126, so that edit
+  would no longer stale the lock). So this covers a real project that signs
+  through ``package`` itself.
 
 Both skip without their options so a local `pytest` run stays green. The
 report parsing is hermetic and unit-tested in ``tests/test_artifact_checks.py``

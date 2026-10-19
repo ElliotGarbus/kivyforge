@@ -36,6 +36,7 @@ from typing import Protocol
 from kivyforge.lock import _pip_shim
 from kivyforge.lock._pip_shim import MARKER_ENV_VAR
 from kivyforge.lock.model import canonical_name
+from kivyforge.lock.prefer import Pins, constraint_args
 from kivyforge.lock.resolver import (
     MIN_PIP_VERSION,
     abi_tags,
@@ -116,6 +117,7 @@ class Resolver(Protocol):
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
         simulator_archs: tuple[str, ...] | None = None,
     ) -> list[ResolvedPackage]:
         """Resolve requirements to per-slice iOS wheels (all slices pinned)."""
@@ -144,6 +146,7 @@ class PipResolver:
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
         simulator_archs: tuple[str, ...] | None = None,
     ) -> list[ResolvedPackage]:
         if not requirements:
@@ -171,6 +174,7 @@ class PipResolver:
                 extra_index_urls=extra_index_urls,
                 find_links=find_links or [],
                 offline=offline,
+                constraints=constraints,
                 marker_environment=environment,
             )
             for item in report.get("install", []):
@@ -244,6 +248,7 @@ class PipResolver:
         extra_index_urls: list[str],
         find_links: list[str],
         offline: bool,
+        constraints: Pins | None = None,
         marker_environment: dict[str, str],
     ) -> dict:
         with tempfile.TemporaryDirectory(prefix="kivy-lock-") as tmp:
@@ -277,6 +282,7 @@ class PipResolver:
                 cmd += ["--find-links", link]
             if offline:
                 cmd += ["--no-index"]
+            cmd += constraint_args(Path(tmp), constraints or {})
             cmd += list(requirements)
 
             env = dict(os.environ)
