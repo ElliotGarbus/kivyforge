@@ -39,12 +39,12 @@ hashes = { sha256 = "9afbf702f8bb9a993c48f39c018ca3b4d2ec381a5d3f82fe65bdaa6af0b
 
 [[packages]]
 name = "kivy_deps.glew"
-version = "0.3.1"
+version = "0.3.2"
 
 [[packages.wheels]]
-name = "kivy_deps.glew-0.3.1-cp313-cp313-win_amd64.whl"
-url = "https://files.pythonhosted.org/packages/21/99/e3478c34afed7a820b3348ce7fefc53f2034fa340348dca57162695e69d9/kivy_deps.glew-0.3.1-cp313-cp313-win_amd64.whl"
-hashes = { sha256 = "f4aa8322078359862ccd9e16e5cea61976d75fb43125d87922e20c916fa31a11" }
+name = "kivy_deps_glew-0.3.2-cp313-cp313-win_amd64.whl"
+url = "https://files.pythonhosted.org/packages/93/e5/e7f6d86ca258f9da6503f29b7d3ff9d02edebb22d603816f206855c4fb17/kivy_deps_glew-0.3.2-cp313-cp313-win_amd64.whl"
+hashes = { sha256 = "95f83a49ac19313827a04eb5799f2c27112d91f283bdf321af21a2ae5381c287" }
 
 [[packages]]
 name = "kivy_deps.sdl2"
@@ -78,7 +78,7 @@ hashes = { sha256 = "c53e878d15a1c44788082bfe712a905433473aa38f86375b7cf8b45e3ac
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
-generated_at = "2026-09-22T21:21:00Z"
+generated_at = "2026-10-19T01:08:25Z"
 pyproject_sha256 = "8f30436a00170a76010f8d2f0d78cbd55ef60cadd8e24d4c02f35ba314a22174"
 tool_kivyforge_schema_version = 1
 archs = ["amd64"]

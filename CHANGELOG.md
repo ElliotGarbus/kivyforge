@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Dynamic version: a quoted pip error keeps its non-ASCII characters on Windows
+
+- **Fixed:** when a dynamic `[project].version` could not be resolved
+  (`KF-VERSION-UNRESOLVED`), the pip lines kivyforge quotes were decoded with
+  the locale's encoding. On a cp1252 Windows host, every non-ASCII character in
+  them came out garbled (`café` as `cafÃ©`). They are now decoded as UTF-8,
+  which is what pip writes to a pipe.
+- **Fixed:** a dynamic version could not be resolved when the interpreter
+  running kivyforge was older than `[project].requires-python`, for example
+  an Android app declaring `>=3.14` built from a host with Python 3.13. pip
+  refused with "requires a different Python". `requires-python` describes the
+  bundled runtime, so the version lookup now ignores it.
+- **Migration:** none needed.
+
 ### Windows: local wheels lock correctly, and an app finds its metadata once
 
 - **Fixed:** on a Windows host, `kivyforge lock` for macOS, Linux or Windows

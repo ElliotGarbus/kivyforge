@@ -118,6 +118,9 @@ def pip_command(project_root: Path, *, isolated: bool) -> list[str]:
         # Under `uv run` the project is usually installed, often editable and
         # often stale, in this very interpreter; the tree is what is built.
         "--ignore-installed",
+        # requires-python describes the bundled runtime (3.14 for Android), not
+        # the interpreter kivyforge runs on, which only reads the metadata.
+        "--ignore-requires-python",
         "--no-deps",
         "--quiet",
         "--disable-pip-version-check",
@@ -150,12 +153,16 @@ def _from_backend(
         )
     try:
         # The child inherits this environment on purpose: PIP_INDEX_URL and
-        # SETUPTOOLS_SCM_PRETEND_VERSION only work because it does.
+        # SETUPTOOLS_SCM_PRETEND_VERSION only work because it does. pip writes
+        # UTF-8 to a pipe whatever the locale, so decoding with the locale's
+        # cp1252 would garble every non-ASCII character it quotes.
         proc = runner(
             pip_command(project_root, isolated=isolated),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except OSError as exc:
         raise VersionUnresolved(
