@@ -260,7 +260,12 @@ def _host_matrix_md() -> str:
     sep = "|" + "---|" * (len(labels) + 1)
     rows = [header, sep]
     for platform in caps.platforms:
-        cells = ["Yes" if platform.hosts.get(h) else "No" for h in HOSTS]
+        only = (
+            f" ({' or '.join(platform.host_machines)} only)"
+            if platform.host_machines
+            else ""
+        )
+        cells = [f"Yes{only}" if platform.hosts.get(h) else "No" for h in HOSTS]
         rows.append(f"| `{platform.name}` | " + " | ".join(cells) + " |")
     return "\n".join(rows)
 

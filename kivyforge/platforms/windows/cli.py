@@ -35,7 +35,6 @@ from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
-from .. import HostCapabilityError, get_platform
 from . import WindowsBundleError
 from .bundle import (
     build_onedir,
@@ -92,7 +91,6 @@ def windows_build(
 ) -> BuildOutcome:
     """Assemble the Windows onedir bundle."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock, version)
     bundle = _assemble(
         config,
@@ -125,7 +123,6 @@ def windows_package(
     copied tree is the portable, run-from-folder distributable.
     """
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock, version)
     target_arch = _resolve_arch(lock, arch)
     bundle = _assemble(
@@ -231,7 +228,6 @@ def windows_run(
             "the existing build."
         )
     if no_build:
-        _require_windows_host()
         config = _load_config(project_root)
         bundle = onedir_path(config, project_root)
         if not bundle.exists():
@@ -407,13 +403,6 @@ def _lock_status(project_root: Path, config: Config) -> LockStatus:
         return LockStatus(LockState.UNREADABLE, relock)
     in_sync = is_in_sync(lock, config, "windows")
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
-
-
-def _require_windows_host() -> None:
-    try:
-        get_platform("windows").check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path):

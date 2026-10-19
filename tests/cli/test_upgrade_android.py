@@ -304,7 +304,7 @@ class TestUpgradeUnsupportedPlatform:
         monkeypatch.setattr(
             upgrade_mod,
             "resolve_target",
-            lambda cli_platform, verb: (_FakeBackend(), tmp_path),
+            lambda cli_platform, verb, report=None: (_FakeBackend(), tmp_path),
         )
         result = runner.invoke(upgrade, [])
         assert result.exit_code != 0

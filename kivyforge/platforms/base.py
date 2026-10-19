@@ -61,6 +61,12 @@ class Platform(ABC):
     #: the accepted one.
     archs: tuple[str, ...] = ()
 
+    #: Host CPUs (lower-cased ``platform.machine()``) that may build this
+    #: target, on top of :meth:`check_host_capability`'s OS rule. Empty means
+    #: any CPU. :meth:`check_host` enforces it and ``capabilities`` publishes
+    #: it, so the rule and the matrix read the same tuple.
+    host_machines: tuple[str, ...] = ()
+
     @property
     def default_package_format(self) -> str | None:
         return self.package_formats[0] if self.package_formats else None
@@ -78,6 +84,30 @@ class Platform(ABC):
         injectable so the check is unit-testable off the target host.
         """
         raise NotImplementedError
+
+    def check_host(
+        self, *, host_system: str | None = None, host_machine: str | None = None
+    ) -> None:
+        """The whole host gate every target verb runs: OS, then CPU.
+
+        Raises :class:`HostCapabilityError`. Both arguments default to the real
+        host and are injectable for tests.
+        """
+        self.check_host_capability(host_system=host_system)
+        if not self.host_machines:
+            return
+        from kivyforge.host import host_machine as _host_machine
+
+        machine = host_machine if host_machine is not None else _host_machine()
+        if machine not in self.host_machines:
+            raise HostCapabilityError(self.host_machine_error(machine))
+
+    def host_machine_error(self, machine: str) -> str:
+        """The message for a host whose CPU is not in :attr:`host_machines`."""
+        return (
+            f"building for {self.name} requires a "
+            f"{' or '.join(self.host_machines)} host; this host is {machine!r}."
+        )
 
     # -- verb dispatch ----------------------------------------------------- #
     #

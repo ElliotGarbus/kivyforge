@@ -69,8 +69,9 @@ def upgrade(
 ) -> None:
     """Re-fetch pinned runtime/native artifacts for the resolved platform's lock."""
     with reporting("upgrade", json_out=json_out, no_color=no_color) as report:
-        backend, project_root = resolve_target(cli_platform, verb="upgrade")
-        report.platform = backend.name
+        backend, project_root = resolve_target(
+            cli_platform, verb="upgrade", report=report
+        )
         # A hash mismatch or a dead URL half way through leaves the earlier
         # artifacts genuinely refreshed; recording as they land keeps that in
         # the failure envelope.

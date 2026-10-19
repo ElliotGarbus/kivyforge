@@ -46,9 +46,13 @@ def _patch(monkeypatch, module, backend, project_root):
     (project_root / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "1.0.0"\n', encoding="utf-8"
     )
-    monkeypatch.setattr(
-        module, "resolve_target", lambda cli_platform, verb: (backend, project_root)
-    )
+
+    def resolve_target(cli_platform, verb, report=None):
+        if report is not None:
+            report.platform = backend.name
+        return backend, project_root
+
+    monkeypatch.setattr(module, "resolve_target", resolve_target)
 
 
 class TestAndroidBuildOptions:

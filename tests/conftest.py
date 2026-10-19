@@ -313,19 +313,17 @@ def _default_target_platform(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _allow_ios_verbs_off_macos(monkeypatch):
-    """Neutralize the iOS macOS-host gate for the suite.
+def _allow_any_host(monkeypatch):
+    """Neutralize the host gate for the suite.
 
-    The whole iOS workflow — ``lock`` included, because resolving Swift
-    packages shells out to ``swift package resolve`` — is macOS-only, but the
-    tests must still run on Linux and Windows CI. Same approach the macOS and
-    Linux suites use: no-op the module-level ``_require_*`` helper.
+    Every target verb refuses a host that cannot build its target (iOS and
+    macOS off macOS, Windows off Windows, Linux off x86_64 Linux), but the
+    tests must still run on every CI host. There is one gate,
+    ``kivyforge.cli._platform.require_host``, so there is one seam.
 
     The gate's own behaviour is covered directly in
-    ``tests/platforms/test_host_gating.py``, which calls the real helpers.
+    ``tests/platforms/test_host_gating.py``, which calls the real function.
     """
-    from kivyforge.cli import lock as lock_cli
-    from kivyforge.platforms.ios import cli as ios_cli
+    from kivyforge.cli import _platform
 
-    monkeypatch.setattr(ios_cli, "_require_macos_host", lambda: None)
-    monkeypatch.setattr(lock_cli, "_require_host_toolchain", lambda backend: None)
+    monkeypatch.setattr(_platform, "require_host", lambda backend: None)

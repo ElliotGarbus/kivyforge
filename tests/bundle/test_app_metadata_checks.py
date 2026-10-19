@@ -186,9 +186,13 @@ def verb(tmp_path, monkeypatch):
     monkeypatch.delenv("KIVYFORGE_APP_VERSION", raising=False)
     backend = FakeBackend()
     for module in (build_mod, package_mod, run_mod):
-        monkeypatch.setattr(
-            module, "resolve_target", lambda cli_platform, verb: (backend, tmp_path)
-        )
+
+        def resolve_target(cli_platform, verb, report=None):
+            if report is not None:
+                report.platform = backend.name
+            return backend, tmp_path
+
+        monkeypatch.setattr(module, "resolve_target", resolve_target)
     return backend
 
 

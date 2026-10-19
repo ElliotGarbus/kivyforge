@@ -118,8 +118,9 @@ def build(
         report.record(artifacts=[])
         # Resolve the target platform before any work so an unresolved target
         # fails fast with an actionable message (common design doc 02).
-        backend, project_root = resolve_target(cli_platform, verb="build")
-        report.platform = backend.name
+        backend, project_root = resolve_target(
+            cli_platform, verb="build", report=report
+        )
         reject_android_only(
             backend, {"--debug": debug, "-f/--format": fmt, "--abi": abi}
         )

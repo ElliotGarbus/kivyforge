@@ -2,7 +2,8 @@
 
 Everything here is **derived**, never restated. The platform list is the
 registry, the host matrix comes from asking each backend's own
-``check_host_capability`` — the function the verbs actually gate on — the verb
+``check_host_capability`` and reading its ``host_machines`` — the two halves of
+``Platform.check_host``, the gate every target verb runs — the verb
 list is the click group, and the code vocabularies are the modules that define
 them. A second copy of any of these would be a copy that drifts, and the first
 symptom would be an agent trusting it.
@@ -42,6 +43,9 @@ class PlatformCapability:
     host_default_for: str | None
     #: Per host: can this host build this target at all?
     hosts: dict[str, bool]
+    #: Host CPUs (``platform.machine()``, lower-cased) that may build it, on
+    #: top of ``hosts``; empty means any CPU.
+    host_machines: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -53,6 +57,7 @@ class PlatformCapability:
             "package_debug": self.package_debug,
             "host_default_for": self.host_default_for,
             "hosts": dict(self.hosts),
+            "host_machines": list(self.host_machines),
         }
 
     @property
@@ -104,6 +109,7 @@ def _platform_capability(backend: Platform) -> PlatformCapability:
         package_debug=backend.package_debug,
         host_default_for=backend.host_system,
         hosts={host: _can_build(backend, host) for host in HOSTS},
+        host_machines=backend.host_machines,
     )
 
 

@@ -122,8 +122,9 @@ def package(
     """Build the signed, distributable artifact for the resolved platform."""
     with reporting("package", json_out=json_out, no_color=no_color) as report:
         report.record(artifacts=[])
-        backend, project_root = resolve_target(cli_platform, verb="package")
-        report.platform = backend.name
+        backend, project_root = resolve_target(
+            cli_platform, verb="package", report=report
+        )
         reject_android_only(
             backend,
             {"--abi": abi, "--keystore": keystore, "--key-alias": key_alias},

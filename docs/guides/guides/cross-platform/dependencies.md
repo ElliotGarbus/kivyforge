@@ -20,8 +20,9 @@ keep the lock in sync with `pyproject.toml`.
 
 - A project with an overlay for each target you build. See
   [Project configuration](../../concepts/configuration.md).
-- A host that can lock the target. `lock` runs on any host for every target
-  except iOS, which needs macOS. See
+- A host that can build the target. `lock` follows the same host rules as
+  `build`: lock iOS and macOS on a Mac, Windows on Windows, and Linux on x86_64
+  Linux. Android locks on any of them. See
   [Which host builds which target](../../get-started/hosts.md).
 - For an Android project that declares Maven dependencies in
   `[tool.kivy.android.gradle]`, a JDK. `lock` runs Gradle to resolve them.

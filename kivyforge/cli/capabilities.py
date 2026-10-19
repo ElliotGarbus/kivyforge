@@ -33,6 +33,8 @@ def render(found: Capabilities) -> list[str]:
     lines = ["Platforms"]
     for platform in found.platforms:
         hosts = ", ".join(host_label(h) for h in platform.buildable_on) or "none"
+        if platform.host_machines:
+            hosts += f" ({' or '.join(platform.host_machines)} only)"
         default = " (host default)" if platform.host_default_for else ""
         lines.append(f"  {platform.name}")
         lines.append(f"    {'archs:':<{_COLUMN}}{', '.join(platform.archs) or '-'}")

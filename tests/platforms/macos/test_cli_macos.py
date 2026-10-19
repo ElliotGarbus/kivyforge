@@ -88,7 +88,6 @@ def fake_bundler(monkeypatch):
 
     monkeypatch.setattr(_macos, "build_app_bundle", fake_build)
     # macOS is the host default only on Darwin; force the capability check to pass.
-    monkeypatch.setattr(_macos, "_require_macos_host", lambda: None)
     return calls
 
 

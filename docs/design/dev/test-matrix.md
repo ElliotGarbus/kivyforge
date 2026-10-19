@@ -23,11 +23,17 @@ Three rules for keeping this file honest:
 
 ## 1. What can be built where
 
-Derived from each backend's `check_host_capability()` and the arch sets in
-`kivyforge/config/model.py`, not from intent.
+Derived from each backend's `check_host()` (`check_host_capability()` for the
+OS, `host_machines` for the CPU) and the arch sets in
+`kivyforge/config/model.py`, not from intent. Every target verb (`lock`,
+`build`, `run`, `package`, `open`, `status`, `upgrade`) runs this one gate via
+`cli/_platform.require_host`; `init` and `doctor` do not.
 
-The host gates are **OS-only**. No backend gates on host CPU, and Windows
-documents that as deliberate (`platforms/windows/__init__.py`: "Do NOT add a
+The host gates are **OS-only except Linux**, which also requires an `x86_64`
+host. That is a testing constraint, not a technical one: an aarch64 Linux
+build host (a Pi) is not in this matrix, so it is refused rather than shipped
+unexercised. No other backend gates on host CPU, and Windows documents that as
+deliberate (`platforms/windows/__init__.py`: "Do NOT add a
 host==target check"). Android has no gate at all — it consumes prebuilt wheels
 and drives the cross-platform Android SDK/NDK, so host adequacy (JDK, SDK, NDK)
 is doctor's problem rather than a capability error.
@@ -36,8 +42,8 @@ is doctor's problem rather than a capability error.
 |---|---|---|---|---|
 | Windows `amd64` | native | ✗ | ✗ | `Windows` only |
 | macOS `arm64` | ✗ | native | ✗ | `Darwin` only |
-| Linux `x86_64` | ✗ (WSL2 is a Linux host) | ✗ | native | `Linux` only |
-| Linux `aarch64` | ✗ (WSL2 is a Linux host) | ✗ | cross | `Linux` only |
+| Linux `x86_64` | ✗ (WSL2 is a Linux host) | ✗ | native | `Linux` + `x86_64` host |
+| Linux `aarch64` | ✗ (WSL2 is a Linux host) | ✗ | cross | `Linux` + `x86_64` host |
 | Android `arm64_v8a` | cross | cross | cross | none |
 | Android `x86_64` | cross | cross | cross | none |
 | iOS device `arm64` | ✗ | native-only | ✗ | `Darwin` only |

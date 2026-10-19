@@ -14,8 +14,7 @@ from ._platform import platform_option, resolve_target
 def open_(cli_platform: str | None, json_out: bool, no_color: bool) -> None:
     """Open the generated project in its IDE: Xcode for iOS, Android Studio for Android."""
     with reporting("open", json_out=json_out, no_color=no_color) as report:
-        backend, project_root = resolve_target(cli_platform, verb="open")
-        report.platform = backend.name
+        backend, project_root = resolve_target(cli_platform, verb="open", report=report)
         opened = backend.open_project(project_root, events=report_events(report))
         # What was opened, not that something was: the path is the one fact a
         # consumer cannot derive, since it differs per platform and per app.
