@@ -61,7 +61,9 @@ VERSION = "1.2.3"
 GENERATED = f"metaprobe_app-{VERSION}.dist-info"
 ALIASES = ("metaprobe-app", "metaprobe_app", "Metaprobe.App")
 AVD = os.environ.get("METAPROBE_AVD", "kf_api35_arm64")
-ABI = "arm64_v8a"
+#: An x86_64 AVD (the usual one on a Windows or Linux host) needs ``x86_64``.
+ABI = os.environ.get("METAPROBE_ABI", "arm64_v8a")
+EXE = ".exe" if sys.platform == "win32" else ""
 
 #: What ``[project]`` declares, as ``(group, name, value)``.
 APP_ENTRY_POINTS = sorted(
@@ -244,6 +246,8 @@ def wheelhouse(tmp_path_factory) -> Path:
 def _copy_fixture(dest: Path, wheels: Path) -> Path:
     shutil.copytree(FIXTURE, dest, ignore=shutil.ignore_patterns("deps"))
     shutil.copytree(wheels, dest / "wheels")
+    if ABI != "arm64_v8a":
+        _edit_pyproject(dest, ('abis = ["arm64_v8a"]', f'abis = ["{ABI}"]'))
     return dest
 
 
@@ -591,7 +595,7 @@ def _ios_release_ipa(project: Path) -> Path:
 
 
 def _adb_path() -> str:
-    adb = Path(_env()["ANDROID_HOME"]) / "platform-tools" / "adb"
+    adb = Path(_env()["ANDROID_HOME"]) / "platform-tools" / f"adb{EXE}"
     if not adb.is_file():
         pytest.fail(f"--metaprobe android-emu: no adb at {adb} (set ANDROID_HOME)")
     return str(adb)
@@ -661,7 +665,7 @@ def _android_report(
 
 def _apk_version_name(apk: Path) -> str:
     tools = Path(_env()["ANDROID_HOME"]) / "build-tools"
-    aapt2 = max(tools.glob("*/aapt2"), key=lambda p: p.parent.name)
+    aapt2 = max(tools.glob(f"*/aapt2{EXE}"), key=lambda p: p.parent.name)
     badging = _run([str(aapt2), "dump", "badging", str(apk)]).stdout
     found = re.search(r"versionName='([^']*)'", badging)
     assert found, badging[:500]
