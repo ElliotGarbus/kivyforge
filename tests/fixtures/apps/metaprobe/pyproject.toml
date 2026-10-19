@@ -16,8 +16,8 @@ dependencies = [
     "metaprobe-dep==1.0",
     "metaprobe-extra==2.0",
     # The iOS and Android launches go through Kivy's SDL window, as in
-    # examples/mobile/hello-kivy and examples/mobile/hello-android; the macOS
-    # and Windows apps need no Kivy to run a script and exit.
+    # examples/mobile/hello-kivy and examples/mobile/hello-android; the macOS,
+    # Windows and Linux apps need no Kivy to run a script and exit.
     "kivy==3.0.0.dev202610051055; sys_platform == 'ios'",
     "filetype==1.2.0; sys_platform == 'ios'",
     "kivy==2.3.1; sys_platform == 'android'",
@@ -58,6 +58,15 @@ archs = ["amd64"]
 find_links = ["wheels"]
 
 [tool.kivy.windows.python]
+version = "3.13.14"
+
+[tool.kivy.linux]
+schema_version = 1
+app_id = "org.kivyforge.metaprobe"
+archs = ["x86_64"]
+find_links = ["wheels"]
+
+[tool.kivy.linux.python]
 version = "3.13.14"
 
 [tool.kivy.ios]
