@@ -274,21 +274,39 @@ class TestAvailableAvds:
         assert adb_mod.available_avds() == ["Pixel_API_35", "kivyforge_x86_64"]
 
 
-class TestBootEmulator:
-    def _no_sleep(self, monkeypatch):
-        monkeypatch.setattr(adb_mod.time, "sleep", lambda _s: None)
+class _FakeEmulator:
+    """A stand-in for the emulator process: writes ``output`` to the stdout it
+    was given, then reports ``exit_code`` (``None`` keeps it running)."""
 
-    def _stub_popen(self, monkeypatch):
-        monkeypatch.setattr(
-            adb_mod.subprocess,
-            "Popen",
-            lambda *a, **k: None,
-        )
+    def __init__(self, output: bytes = b"", exit_code: int | None = None):
+        self.output = output
+        self.returncode = exit_code
+        self.kwargs: dict = {}
+
+    def popen(self, cmd, **kwargs):
+        self.kwargs = kwargs
+        kwargs["stdout"].write(self.output)
+        return self
+
+    def poll(self):
+        return self.returncode
+
+
+class TestBootEmulator:
+    @pytest.fixture(autouse=True)
+    def _env(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(adb_mod.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(adb_mod, "sdk_tool", lambda name, *, subdir: "emulator")
+        self.log = tmp_path / "logs" / "emulator-kivyforge_x86_64.log"
+        monkeypatch.setattr(adb_mod, "emulator_log_path", lambda avd: self.log)
+
+    def _emulator(self, monkeypatch, output=b"", exit_code=None):
+        fake = _FakeEmulator(output, exit_code)
+        monkeypatch.setattr(adb_mod.subprocess, "Popen", fake.popen)
+        return fake
 
     def test_returns_serial_once_booted(self, monkeypatch):
-        self._no_sleep(monkeypatch)
-        self._stub_popen(monkeypatch)
-        monkeypatch.setattr(adb_mod, "sdk_tool", lambda name, *, subdir: "emulator")
+        fake = self._emulator(monkeypatch)
         devices_seq = iter([[], ["emulator-5554"], ["emulator-5554"]])
         monkeypatch.setattr(
             adb_mod,
@@ -297,11 +315,11 @@ class TestBootEmulator:
         )
         monkeypatch.setattr(adb_mod, "adb", lambda *a, **k: "1")
         assert adb_mod.boot_emulator("kivyforge_x86_64") == "emulator-5554"
+        assert fake.kwargs["stderr"] is subprocess.STDOUT
+        assert fake.kwargs["stdin"] is subprocess.DEVNULL
 
     def test_waits_for_boot_completed_before_returning(self, monkeypatch):
-        self._no_sleep(monkeypatch)
-        self._stub_popen(monkeypatch)
-        monkeypatch.setattr(adb_mod, "sdk_tool", lambda name, *, subdir: "emulator")
+        self._emulator(monkeypatch)
         # First call captures the pre-boot device set (empty); every call after
         # that sees the new emulator serial already attached.
         calls = {"n": 0}
@@ -315,14 +333,92 @@ class TestBootEmulator:
         monkeypatch.setattr(adb_mod, "adb", lambda *a, **k: next(boot_calls))
         assert adb_mod.boot_emulator("kivyforge_x86_64") == "emulator-5554"
 
-    def test_timeout_raises(self, monkeypatch):
-        self._no_sleep(monkeypatch)
-        self._stub_popen(monkeypatch)
-        monkeypatch.setattr(adb_mod, "sdk_tool", lambda name, *, subdir: "emulator")
-        monkeypatch.setattr(adb_mod, "BOOT_TIMEOUT_SEC", 0)
+    def test_output_goes_to_the_log(self, monkeypatch):
+        self._emulator(monkeypatch, b"INFO | Booting\n")
         monkeypatch.setattr(adb_mod, "connected_devices", lambda: [])
-        with pytest.raises(adb_mod.AdbError, match="did not finish booting"):
+        monkeypatch.setattr(adb_mod, "BOOT_TIMEOUT_SEC", 0)
+        with pytest.raises(adb_mod.AdbError):
             adb_mod.boot_emulator("kivyforge_x86_64")
+        assert self.log.read_bytes() == b"INFO | Booting\n"
+
+    def test_early_exit_fails_at_once_with_the_log_tail(self, monkeypatch):
+        """WSL2 without libpulse0: the emulator exits immediately, and the old
+        code waited out the full timeout to report "serial: never appeared"."""
+        self._emulator(
+            monkeypatch,
+            b"INFO | starting\n"
+            b"qemu-system-x86_64: error while loading shared libraries: "
+            b"libpulse.so.0: cannot open shared object file\n",
+            exit_code=127,
+        )
+        monkeypatch.setattr(adb_mod, "connected_devices", lambda: [])
+        ticks = iter(range(1000))
+        monkeypatch.setattr(adb_mod.time, "monotonic", lambda: next(ticks))
+        with pytest.raises(adb_mod.AdbError) as exc:
+            adb_mod.boot_emulator("kivyforge_x86_64")
+        message = str(exc.value)
+        assert "exited (status 127) before a device appeared" in message
+        assert "libpulse.so.0" in message
+        assert str(self.log) in message
+        # Failed on the first poll rather than spinning towards the timeout.
+        assert next(ticks) < 5
+
+    def test_exit_after_the_device_appeared_also_fails_fast(self, monkeypatch):
+        fake = self._emulator(monkeypatch, b"FATAL | crashed\n")
+        seq = iter([[], ["emulator-5554"]])
+        monkeypatch.setattr(adb_mod, "connected_devices", lambda: next(seq, []))
+
+        def not_booted(*a, **k):
+            fake.returncode = 1  # dies while still booting
+            return "0"
+
+        monkeypatch.setattr(adb_mod, "adb", not_booted)
+        with pytest.raises(adb_mod.AdbError, match="after its device appeared"):
+            adb_mod.boot_emulator("kivyforge_x86_64")
+
+    def test_never_booting_times_out_naming_the_log(self, monkeypatch):
+        self._emulator(monkeypatch, b"INFO | waiting for the guest\n")
+        monkeypatch.setattr(adb_mod, "connected_devices", lambda: [])
+        ticks = iter(range(0, 10_000, 100))
+        monkeypatch.setattr(adb_mod.time, "monotonic", lambda: next(ticks))
+        with pytest.raises(adb_mod.AdbError) as exc:
+            adb_mod.boot_emulator("kivyforge_x86_64")
+        message = str(exc.value)
+        assert "did not finish booting within 300s (serial: never appeared)" in message
+        assert "waiting for the guest" in message
+        assert f"Full log: {self.log}" in message
+
+    def test_log_tail_is_cp1252_safe_and_bounded(self, tmp_path):
+        log = tmp_path / "e.log"
+        lines = [f"line {i}" for i in range(50)] + ["arrow → here"]
+        log.write_text("\n".join(lines), encoding="utf-8")
+        tail = adb_mod._log_tail(log)
+        tail.encode("cp1252")  # would raise on an unencodable character
+        assert "line 30" not in tail and "line 31" in tail
+        assert "arrow ? here" in tail
+
+    def test_log_tail_when_empty_or_missing(self, tmp_path):
+        empty = tmp_path / "empty.log"
+        empty.write_bytes(b"")
+        assert "wrote nothing" in adb_mod._log_tail(empty)
+        assert "could not be read" in adb_mod._log_tail(tmp_path / "nope.log")
+
+    def test_unwritable_log_is_an_adb_error(self, monkeypatch, tmp_path):
+        blocker = tmp_path / "file"
+        blocker.write_bytes(b"")
+        monkeypatch.setattr(
+            adb_mod, "emulator_log_path", lambda avd: blocker / "sub" / "e.log"
+        )
+        monkeypatch.setattr(adb_mod, "connected_devices", lambda: [])
+        with pytest.raises(adb_mod.AdbError, match="cannot write the emulator log"):
+            adb_mod.boot_emulator("kivyforge_x86_64")
+
+    def test_default_log_path_is_per_avd_under_temp(self, monkeypatch, tmp_path):
+        monkeypatch.undo()  # the autouse stub replaced emulator_log_path
+        monkeypatch.setattr(adb_mod.tempfile, "gettempdir", lambda: str(tmp_path))
+        assert adb_mod.emulator_log_path("pixel") == (
+            tmp_path / "kivyforge" / "emulator-pixel.log"
+        )
 
 
 class TestDeviceCommands:

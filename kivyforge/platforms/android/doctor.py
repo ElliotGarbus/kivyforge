@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -38,6 +39,11 @@ from .splash import SPLASH_MIN_COMPILE_SDK
 _EXE = ".exe" if os.name == "nt" else ""
 _BAT = ".bat" if os.name == "nt" else ""
 _KVM_DEVICE = Path("/dev/kvm")
+#: The port every adb client looks for its server on (ADB_SERVER_SOCKET aside).
+ADB_SERVER_PORT = 5037
+
+#: Runs a short host command and returns its stdout, or ``None`` if it failed.
+CommandRunner = Callable[[list[str]], str | None]
 
 
 class AndroidProbe(Protocol):
@@ -55,13 +61,64 @@ class AndroidProbe(Protocol):
     def connected_devices(self) -> list[str]: ...
     def has_hardware_acceleration(self) -> bool: ...
     def tcp_reachable(self, host: str, port: int) -> bool: ...
+    def adb_port_owner(self) -> tuple[int, str] | None: ...
     def latest_kivyforge_version(self) -> str | None: ...
     def byte_compile_interpreter(
         self, python_version: str
     ) -> tuple[str, ...] | None: ...
 
 
+def _run_command(cmd: list[str]) -> str | None:
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def listener_pid(netstat: str, port: int) -> int | None:
+    """The PID listening on local TCP ``port`` in ``netstat -ano`` output.
+
+    A listener is recognised by its all-zero foreign address rather than by the
+    State column, which Windows translates (``ABHÖREN`` on a German host).
+    """
+    for line in netstat.splitlines():
+        parts = line.split()
+        if len(parts) != 5 or not parts[0].upper().startswith("TCP"):
+            continue
+        _proto, local, foreign, _state, pid = parts
+        if (
+            local.rsplit(":", 1)[-1] == str(port)
+            and foreign in ("0.0.0.0:0", "[::]:0")
+            and pid.isdigit()
+        ):
+            return int(pid)
+    return None
+
+
+def tasklist_image(tasklist: str, pid: int) -> str | None:
+    """The image name for ``pid`` in ``tasklist /FO CSV /NH`` output."""
+    import csv
+
+    for row in csv.reader(tasklist.splitlines()):
+        if len(row) >= 2 and row[1].strip() == str(pid):
+            return row[0].strip()
+    return None
+
+
 class RealAndroidProbe:
+    def __init__(self, runner: CommandRunner | None = None) -> None:
+        self._run = runner or _run_command
+
     def which(self, name: str) -> str | None:
         return shutil.which(name)
 
@@ -234,6 +291,25 @@ class RealAndroidProbe:
                 return True
         except OSError:
             return False
+
+    def adb_port_owner(self) -> tuple[int, str] | None:
+        """``(pid, image name)`` of the process listening on the adb port.
+
+        Windows only, where the port is shared with WSL: WSL's localhost
+        forwarding makes ``wslrelay.exe`` listen on it whenever an adb server
+        runs inside the distro. ``netstat`` and ``tasklist`` ship with every
+        Windows, so this needs no dependency; ``None`` means nobody listens, or
+        the answer could not be had.
+        """
+        if sys.platform != "win32":
+            return None
+        netstat = self._run(["netstat", "-ano"])
+        pid = listener_pid(netstat, ADB_SERVER_PORT) if netstat else None
+        if pid is None:
+            return None
+        tasks = self._run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"])
+        image = tasklist_image(tasks, pid) if tasks else None
+        return (pid, image or "an unidentified process")
 
 
 # --------------------------------------------------------------------------- #
@@ -500,6 +576,9 @@ def _check_adb(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
             hint="sdkmanager platform-tools (needed for `kivyforge run`).",
         )
     devices = probe.connected_devices()
+    owner = probe.adb_port_owner()
+    if owner is not None and owner[1].lower() != "adb.exe":
+        return _adb_port_conflict(adb, devices, *owner)
     if not devices:
         return CheckResult(
             "adb",
@@ -509,6 +588,36 @@ def _check_adb(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
             "`kivyforge run` and `run --smoke` need one.",
         )
     return CheckResult("adb", Status.PASS, f"{adb}; {', '.join(devices)}")
+
+
+def _adb_port_conflict(
+    adb: str, devices: list[str], pid: int, image: str
+) -> CheckResult:
+    """Someone other than adb holds the adb server port.
+
+    adb then talks to whatever answers there. When that is ``wslrelay.exe`` the
+    server is the one inside WSL, which sees neither Windows emulators nor USB
+    devices, so the symptom is only "no device" -- and the cause is invisible.
+    """
+    attached = ", ".join(devices) or "no device or emulator attached"
+    detail = (
+        f"{adb}; {attached}; port {ADB_SERVER_PORT} is held by {image} "
+        f"(PID {pid}), not adb.exe"
+    )
+    if image.lower() == "wslrelay.exe":
+        hint = (
+            "an adb server is running inside WSL, and Windows adb is reaching "
+            "it through WSL's port forwarding; it cannot see Windows emulators "
+            "or USB devices. Run `adb kill-server` (here or inside WSL) or stop "
+            "adb in WSL, then re-run doctor."
+        )
+    else:
+        hint = (
+            f"adb clients expect their own server on port {ADB_SERVER_PORT}. "
+            f"Stop {image} (PID {pid}) or move it to another port, run "
+            "`adb kill-server`, then re-run doctor."
+        )
+    return CheckResult("adb", Status.WARN, detail, hint=hint)
 
 
 def _acceleration_hint(platform: str) -> str:
