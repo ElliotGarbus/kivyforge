@@ -16,6 +16,9 @@ full key list, see the [iOS overlay reference](../../reference/pyproject/ios.md)
 - A Mac with [Xcode](https://developer.apple.com/xcode/) installed. iOS builds
   run only on macOS.
 - [Install kivyforge](../../get-started/install.md).
+- Kivy 3. kivyforge builds Kivy 3 only on iOS: a `kivy` requirement that
+  admits only 2.x, such as `kivy<3`, fails `kivyforge lock -p ios` with
+  `KF-IOS-KIVY-UNSUPPORTED`. kivy-ios serves Kivy 2.x.
 - A project with `[project]` section (`kivyforge init` adds `[tool.kivy]`, below). See
   [Project configuration](../../concepts/configuration.md).
 

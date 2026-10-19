@@ -41,7 +41,7 @@ from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .entitlements import preflight_profile
-from .lock import load
+from .lock import KivyUnsupported, check_kivy_supported, load
 from .materialize import materialize_project
 from .staging import StagingError, create_staging
 from .xcode import (
@@ -191,6 +191,12 @@ def prepare_build(
             "to build against the stale lock anyway).",
             **failures.LOCK_DRIFT,
         )
+    # The same check `lock` ran before writing, for a lock written by hand or
+    # by an older kivyforge: a 2.x pin would otherwise fail in wheel selection.
+    try:
+        check_kivy_supported(lock.packages, lockfile=LOCKFILE_NAME)
+    except KivyUnsupported as exc:
+        raise ToolchainError.wrap(exc) from exc
 
     build_slices = _resolve_slices(target, arch, config.ios.deployment_target)
     tags = ", ".join(s.platform_tag for s in build_slices)
