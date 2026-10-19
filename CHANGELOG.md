@@ -24,6 +24,23 @@
   lock. Every existing lock reads as out of date, because it records the old
   whole-file hash. The re-lock keeps the versions already pinned.
 
+### Android: emulator and adb failures say why
+
+- **Fixed:** when `run -p android` or `run --smoke` booted an AVD and the
+  emulator could not start, kivyforge waited five minutes and then reported
+  only that the emulator "did not finish booting (serial: never appeared)".
+  The emulator's output now goes to a log (`<temp>/kivyforge/emulator-<avd>.log`).
+  If the emulator exits before its device is ready, the run fails at once and
+  shows the last lines of that log, for example a missing `libpulse.so.0` in
+  WSL. Every boot failure, including the timeout, names the log's path.
+- **Added:** on Windows, `doctor -p android` warns when the adb server port
+  (5037) is held by a process other than `adb.exe`, names that process, and
+  says how to fix it. The usual cause is `wslrelay.exe`: an adb server running
+  inside WSL, which Windows adb then reaches and which cannot see Windows
+  emulators or USB devices. Before, doctor said only "no device or emulator
+  attached".
+- **Migration:** none needed.
+
 ### Dynamic version: a quoted pip error keeps its non-ASCII characters on Windows
 
 - **Fixed:** when a dynamic `[project].version` could not be resolved

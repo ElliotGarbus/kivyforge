@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
 _EXE = ".exe" if os.name == "nt" else ""
 BOOT_TIMEOUT_SEC = 300
+EMULATOR_LOG_TAIL_LINES = 20
 
 
 def _sdk_root() -> Path | None:
@@ -105,16 +107,58 @@ def available_avds() -> list[str]:
     return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
+def emulator_log_path(avd: str) -> Path:
+    """Where :func:`boot_emulator` sends ``avd``'s console output.
+
+    A temp directory rather than the project's build dir: device selection runs
+    before a project is necessarily generated, and ``run --serial``-less smoke
+    runs from outside one. The emulator outlives kivyforge and keeps writing
+    here, so the file is also the place to look after a later crash.
+    """
+    return Path(tempfile.gettempdir()) / "kivyforge" / f"emulator-{avd}.log"
+
+
+def _log_tail(path: Path, lines: int = EMULATOR_LOG_TAIL_LINES) -> str:
+    """The last ``lines`` lines of ``path``, indented, safe to print anywhere.
+
+    The emulator writes whatever its host libraries print, so the text is made
+    cp1252-encodable here: it ends up in an error message, and an unencodable
+    character there would crash the print on a redirected Windows stream.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "    (the log could not be read)"
+    tail = [line.rstrip() for line in text.splitlines() if line.strip()][-lines:]
+    if not tail:
+        return "    (the emulator wrote nothing)"
+    joined = "\n".join(f"    {line}" for line in tail)
+    return joined.encode("cp1252", errors="replace").decode("cp1252")
+
+
 def boot_emulator(avd: str) -> str:
-    """Boot ``avd`` headless-friendly; return the emulator serial once booted."""
+    """Boot ``avd`` headless-friendly; return the emulator serial once booted.
+
+    The emulator's output goes to :func:`emulator_log_path` rather than being
+    discarded: when it cannot start (a missing host library, a locked AVD, no
+    hypervisor) it says why there and exits at once, and without the log all
+    that is left is a boot timeout five minutes later that names no cause.
+    """
     before = set(connected_devices())
     emulator = sdk_tool("emulator", subdir="emulator")
-    subprocess.Popen(
-        [emulator, "-avd", avd, "-no-boot-anim", "-no-audio"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        stdin=subprocess.DEVNULL,
-    )
+    log_path = emulator_log_path(avd)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log = open(log_path, "wb")
+    except OSError as exc:
+        raise AdbError(f"cannot write the emulator log {log_path}: {exc}") from exc
+    with log:
+        proc = subprocess.Popen(
+            [emulator, "-avd", avd, "-no-boot-anim", "-no-audio"],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        )
     deadline = time.monotonic() + BOOT_TIMEOUT_SEC
     serial: str | None = None
     while time.monotonic() < deadline:
@@ -130,10 +174,21 @@ def boot_emulator(avd: str) -> str:
             ).strip()
             if booted == "1":
                 return serial
+        elif proc.poll() is not None:
+            # Gone with no device to show for it: nothing more will happen, so
+            # waiting out the timeout would only hide the reason.
+            when = "after its device appeared" if serial else "before a device appeared"
+            raise AdbError(
+                f"emulator {avd!r} exited (status {proc.returncode}) {when}. "
+                f"Last lines of its output:\n{_log_tail(log_path)}\n"
+                f"  Full log: {log_path}"
+            )
         time.sleep(2)
     raise AdbError(
         f"emulator {avd!r} did not finish booting within "
-        f"{BOOT_TIMEOUT_SEC}s (serial: {serial or 'never appeared'})."
+        f"{BOOT_TIMEOUT_SEC}s (serial: {serial or 'never appeared'}). "
+        f"Last lines of its output:\n{_log_tail(log_path)}\n"
+        f"  Full log: {log_path}"
     )
 
 
