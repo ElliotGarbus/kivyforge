@@ -1,8 +1,7 @@
-"""Parse ``pylock.ios.toml`` back into a ``Lockfile`` and detect drift (spec 02).
+"""Parse ``pylock.ios.toml`` back into a ``Lockfile`` (spec 02).
 
-The neutral drift helpers (``LockError``, ``compute_pyproject_sha256``,
-``is_in_sync``) live in ``kivyforge.lock.reader``; this module adds the iOS
-``pylock.ios.toml`` parsing on top.
+``LockError`` lives in ``kivyforge.lock.reader`` and the drift check in
+``kivyforge.lock.inputs``; this module adds the iOS ``pylock.ios.toml`` parsing.
 """
 
 from __future__ import annotations
@@ -11,11 +10,7 @@ import tomllib
 from pathlib import Path
 
 from kivyforge.lock.pep751 import parse_package as _parse_package
-from kivyforge.lock.reader import (
-    LockError,
-    compute_pyproject_sha256,
-    is_in_sync,
-)
+from kivyforge.lock.reader import LockError
 
 from .model import (
     LOCK_VERSION,
@@ -28,8 +23,6 @@ from .model import (
 
 __all__ = [
     "LockError",
-    "compute_pyproject_sha256",
-    "is_in_sync",
     "load",
     "loads",
 ]
@@ -93,7 +86,7 @@ def _from_raw(raw: dict) -> Lockfile:
         python_xcframework=python_xcframework,
         kivyforge_version=tool.get("kivyforge_version", ""),
         generated_at=tool.get("generated_at", ""),
-        pyproject_sha256=tool.get("pyproject_sha256", ""),
+        lock_inputs_sha256=tool.get("lock_inputs_sha256", ""),
         tool_kivyforge_schema_version=tool.get("tool_kivyforge_schema_version", 1),
         xcframeworks=xcframeworks,
         swift_packages=swift_packages,

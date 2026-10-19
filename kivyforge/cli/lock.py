@@ -3,7 +3,11 @@
 The verb resolves the target platform (``-p`` / ``KIVYFORGE_PLATFORM`` / host)
 and dispatches to that backend's lock engine, writing ``pylock.<platform>.toml``.
 Each backend supplies its own build/serialize/compare callables; the drift check
-(``pyproject_sha256``) and atomic write are shared.
+(``lock_inputs_sha256``, ``kivyforge.lock.inputs``) and atomic write are shared.
+
+A lock that exists is re-resolved with its own versions as the preference, so
+an input change moves only what it has to (``kivyforge.lock.prefer``);
+``--update`` resolves every package to the newest version allowed.
 """
 
 from __future__ import annotations
@@ -16,8 +20,10 @@ from pathlib import Path
 
 import click
 
-from ..config import ConfigError, load_config, read_pyproject_text
-from ..lock.reader import LockError, is_in_sync
+from ..config import ConfigError, load_config
+from ..lock.inputs import is_in_sync
+from ..lock.prefer import PinsConflict
+from ..lock.reader import LockError
 from ..platforms.base import HostCapabilityError
 from ..platforms.ios.lock import (
     BuildError,
@@ -181,7 +187,6 @@ def lock(
             _require_host_toolchain(backend)
 
         pyproject = project_root / "pyproject.toml"
-        pyproject_text = read_pyproject_text(pyproject)
         out_path = lockfile_path_for(backend.name, project_root)
         # Recorded before anything can fail, so even a drift or resolution
         # failure names the file it was talking about (agent-friendliness point
@@ -201,17 +206,16 @@ def lock(
             raise ToolchainError(exc.format()) from exc
 
         if check:
-            _run_check(
-                report, ops, config, pyproject_text, out_path, project_root, offline
-            )
+            _run_check(report, ops, config, out_path, project_root, offline)
             return
 
+        existing = None
         if out_path.is_file() and not update:
             try:
                 existing = ops.load(out_path)
             except LockError:
                 existing = None
-            if existing is not None and is_in_sync(existing, pyproject_text):
+            if existing is not None and is_in_sync(existing, config, backend.name):
                 report.line(f"{out_path.name} is already in sync with pyproject.toml.")
                 report.line("  (use --update to force re-resolution)")
                 report.emit(
@@ -224,7 +228,14 @@ def lock(
                 )
                 return
 
-        new_lock = _build(report, ops, config, pyproject_text, project_root, offline)
+        new_lock = _build(
+            report,
+            ops,
+            config,
+            project_root,
+            offline,
+            prefer=existing.packages if existing is not None else (),
+        )
         _atomic_write(out_path, ops.dumps(new_lock))
         report.line(
             f"Wrote {out_path.name} ({len(new_lock.packages)} packages pinned)."
@@ -243,12 +254,14 @@ def _run_check(
     report: Report,
     ops: _LockOps,
     config,
-    pyproject_text: str,
     out_path: Path,
     project_root: Path,
     offline: bool,
 ) -> None:
     """The CI pre-flight: report drift, write nothing.
+
+    The candidate is resolved preferring the existing lock's versions, as
+    ``lock`` would, so a new upstream release alone does not fail the check.
 
     All three failures here mean "your lock is not the lock this
     ``pyproject.toml`` implies", so all three exit ``LOCK_DRIFT`` and differ only
@@ -274,7 +287,9 @@ def _run_check(
             remediation=relock,
         ) from exc
 
-    candidate = _build(report, ops, config, pyproject_text, project_root, offline)
+    candidate = _build(
+        report, ops, config, project_root, offline, prefer=existing.packages
+    )
     if ops.semantic_equal(existing, candidate):
         report.line(f"{out_path.name} is up to date.")
         report.emit(
@@ -307,9 +322,10 @@ def _build(
     report: Report,
     ops: _LockOps,
     config,
-    pyproject_text: str,
     project_root: Path,
     offline: bool,
+    *,
+    prefer=(),
 ):
     kwargs = {}
     if ops.emits_warnings:
@@ -325,12 +341,12 @@ def _build(
     try:
         return ops.build(
             config,
-            pyproject_text,
             project_root=project_root,
+            prefer=prefer,
             offline=offline,
             **kwargs,
         )
-    except ops.build_error as exc:
+    except (ops.build_error, PinsConflict) as exc:
         raise ToolchainError.wrap(exc) from exc
 
 

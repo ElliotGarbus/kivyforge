@@ -101,7 +101,7 @@ def test_collect_installs_python_wheels_and_frameworks(tmp_path, layout, cache):
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
         xcframeworks=(
             LockedXcframework(
@@ -179,7 +179,7 @@ def test_collect_zero_dep_app_stamps_empty_slice(tmp_path, layout, cache):
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
         xcframeworks=(),
     )
@@ -241,7 +241,7 @@ def test_collect_both_slices_installs_each_pip_deps(tmp_path, layout, cache):
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
     )
 
@@ -299,7 +299,7 @@ def test_collect_no_packages_skips_pip(tmp_path, layout, cache):
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
     )
 
@@ -454,7 +454,7 @@ class TestCollectArtifactsByteCompileWiring:
             ),
             kivyforge_version="3.0.0.dev0",
             generated_at="2026-01-01T00:00:00Z",
-            pyproject_sha256="d" * 64,
+            lock_inputs_sha256="d" * 64,
             tool_kivyforge_schema_version=1,
         )
 
@@ -520,7 +520,7 @@ class TestCollectArtifactsByteCompileWiring:
             ),
             kivyforge_version="3.0.0.dev0",
             generated_at="2026-01-01T00:00:00Z",
-            pyproject_sha256="d" * 64,
+            lock_inputs_sha256="d" * 64,
             tool_kivyforge_schema_version=1,
         )
 

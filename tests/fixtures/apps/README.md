@@ -10,13 +10,12 @@ The distinction is load-bearing for one reason — **these commit their
 `pylock.*.toml`, and `examples/**` deliberately does not.**
 
 [`common/03-lockfile-concept.md`](../../../docs/design/common/03-lockfile-concept.md)
-§"Example-repo lock policy" gitignores example locks because
-`pyproject_sha256` hashes the whole `pyproject.toml`, so any overlay edit —
-a signing identity, a bundle id, an icon path — regenerates the lock and
-churns the diff with no pinned package having changed. That reasoning is
-about files maintainers edit for cosmetic reasons. Nobody edits a fixture's
-overlay to change an icon, because a fixture has no audience to impress, so
-the churn the policy objects to does not arise here.
+§"Example-repo lock policy" gitignores example locks because an edit to a
+lock input (a dependency, a deployment target, an index) regenerates the
+lock and churns the diff even when no pinned package changed. That
+reasoning is about files maintainers edit often. A fixture's inputs change
+only when a gate is meant to test something new, so the churn the policy
+objects to does not arise here.
 
 The policy's other objection — that a committed lock "can go silently
 stale" — also does not apply, and for a sharper reason: that risk is about a
@@ -35,15 +34,13 @@ people learn to ignore.
 ## Line endings are not a concern here
 
 Worth stating, because it looks like one and was briefly treated as one. A
-committed lock records `pyproject_sha256`, and `core.autocrlf` rewrites line
-endings on checkout, so it is natural to assume a Windows checkout would
-change the digest and make `kivyforge lock --check` disagree across hosts.
+committed lock records a hash, and `core.autocrlf` rewrites line endings on
+checkout, so it is natural to assume a Windows checkout would change the
+digest and make `kivyforge lock --check` disagree across hosts.
 
-It does not. `compute_pyproject_sha256` hashes
-`pyproject.read_text(encoding="utf-8")` — **text mode**, so Python's universal
-newlines translate `\r\n` to `\n` before the hash is taken. CRLF and LF produce
-the same digest. Verified against the committed `hello-android` lock, which
-matches either form of its `pyproject.toml`.
+It does not. `lock_inputs_sha256` hashes the *parsed* values of the lock
+inputs (`kivyforge/lock/inputs.py`), not the file's bytes, so line endings,
+comments and whitespace cannot reach it.
 
 So these fixtures need no `.gitattributes` treatment, and neither do the three
 committed mobile gate locks. Recorded here so the concern is not rediscovered
@@ -56,6 +53,13 @@ Deliberately, as its own reviewable change:
 ```bash
 cd tests/fixtures/apps/<name> && kivyforge lock -p <platform> --update
 ```
+
+A plain `kivyforge lock` after an input change keeps the pinned versions and
+moves only what the change requires; `--update` takes the newest of
+everything. Lock each gate on its own target's host: `linux-gate` on Linux,
+`macos-gate` on a Mac, `windows-gate` on Windows. pip evaluates dependency
+markers for the host it runs on, so a lock made elsewhere can fail
+(`kivy-deps.angle` from Windows) or silently miss a target-only dependency.
 
 Testing against newer dependencies is a thing you decide to do, not
 something that happens to you between pushes.

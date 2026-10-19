@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
+from kivyforge.lock.inputs import LOCK_INPUTS
 from kivyforge.lock.wheelruntime import (
     PythonRuntime,
     ResolvedPackage,
@@ -85,6 +86,7 @@ class FakeResolver:
         extra_index_urls,
         find_links=None,
         offline=False,
+        constraints=None,
     ):
         wheels = [
             ResolvedWheel(
@@ -129,12 +131,13 @@ def _config(tmp_path):
 
 
 class TestCoreIsPlatformAgnostic:
-    def test_second_profile_builds_and_round_trips(self, tmp_path):
+    def test_second_profile_builds_and_round_trips(self, tmp_path, monkeypatch):
+        # Its lock inputs are the overlay it borrows.
+        monkeypatch.setitem(LOCK_INPUTS, "faux", LOCK_INPUTS["macos"])
         cfg = _config(tmp_path)
         lock = build_wheel_runtime_lock(
             FauxLinuxProfile(),
             cfg,
-            _PYPROJECT,
             project_root=tmp_path,
             resolver=FakeResolver(),
             runtime_provider=FakeProvider(),

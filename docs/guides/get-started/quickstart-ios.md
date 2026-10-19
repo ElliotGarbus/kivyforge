@@ -37,8 +37,9 @@ cd kivyforge/examples/mobile/hello-kivy
 ```
 
 This example ships a committed `pylock.ios.toml`, so you can build without
-running `kivyforge lock`. Do not edit `pyproject.toml` during this quickstart:
-any edit makes the lockfile out of date, and the build then asks you to re-lock.
+running `kivyforge lock`. Do not change the dependencies or the `[tool.kivy.ios]` table's
+build settings during this quickstart: those edits make the lockfile out of
+date, and the build then asks you to re-lock.
 
 ## Step 2: Check your environment
 

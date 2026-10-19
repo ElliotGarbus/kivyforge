@@ -9,7 +9,7 @@ platform-specific inputs come from the ``PlatformLockProfile``.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -26,8 +26,9 @@ from ..find_links import (
     validate_find_links,
     wheel_path_from_project_root,
 )
+from ..inputs import lock_inputs_sha256
 from ..model import LockedPackage, LockedWheel, PackageDep, canonical_name
-from ..reader import compute_pyproject_sha256
+from ..prefer import preferred_pins, resolve_preferring
 from .model import WheelRuntimeLock
 from .native_binaries import NativeBinaryResolverError, resolve_native_binaries
 from .profile import PlatformLockProfile
@@ -42,16 +43,22 @@ class WheelRuntimeBuildError(Exception):
 def build_wheel_runtime_lock(
     profile: PlatformLockProfile,
     config: Config,
-    pyproject_text: str,
     *,
     project_root: Path | None = None,
     resolver: WheelResolver | None = None,
     runtime_provider: RuntimeProvider | None = None,
     native_binaries: tuple[NativeBinaryDep, ...] = (),
+    prefer: Iterable[LockedPackage] = (),
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
 ) -> WheelRuntimeLock:
+    """Lock ``config`` for ``profile.platform``.
+
+    ``prefer`` is the existing lock's packages: their versions are kept unless
+    the inputs force a move (``kivyforge.lock.prefer``). Empty resolves to the
+    newest version each specifier allows (``lock --update``).
+    """
     if profile.overlay(config) is None:
         raise WheelRuntimeBuildError(profile.missing_overlay_error())
 
@@ -95,14 +102,26 @@ def build_wheel_runtime_lock(
     direct = {canonical_name(_req_name(d)) for d in config.project.dependencies}
     excluded = {canonical_name(e) for e in profile.exclude(config)} - direct
 
-    try:
-        resolved = resolver.resolve(
-            list(config.project.dependencies),
+    requirements = list(config.project.dependencies)
+    extra_index_urls = list(profile.extra_index_urls(config))
+
+    def resolve(pins):
+        return resolver.resolve(
+            requirements,
             python_version=python_version,
             variants=variants,
-            extra_index_urls=list(profile.extra_index_urls(config)),
+            extra_index_urls=extra_index_urls,
             find_links=find_links,
             offline=offline,
+            constraints=pins,
+        )
+
+    try:
+        resolved = resolve_preferring(
+            resolve,
+            preferred_pins(prefer, requirements),
+            errors=(WheelResolverError,),
+            platform=profile.platform,
         )
     except WheelResolverError as exc:
         hint = find_links_resolution_hint(
@@ -144,7 +163,7 @@ def build_wheel_runtime_lock(
         archs=archs,
         kivyforge_version=__version__,
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        pyproject_sha256=compute_pyproject_sha256(pyproject_text),
+        lock_inputs_sha256=lock_inputs_sha256(config, profile.platform),
         tool_kivyforge_schema_version=profile.schema_version(config),
         native_binaries=locked_native_binaries,
     )

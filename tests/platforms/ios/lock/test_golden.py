@@ -21,7 +21,6 @@ def test_golden_lockfile(
     cfg = load_config_from_text(minimal_pyproject)
     lock = build_lockfile(
         cfg,
-        minimal_pyproject,
         resolver=fake_resolver,
         python_provider=fake_python_provider,
         now=datetime(2026, 5, 27, 0, 0, 0, tzinfo=UTC),

@@ -24,10 +24,9 @@ def patch_macos_build(monkeypatch):
 
     real_build = macos_lock.build_macos_lockfile
 
-    def fake_build(config, text, *, project_root=None, offline=False, **_kw):
+    def fake_build(config, *, project_root=None, offline=False, **_kw):
         return real_build(
             config,
-            text,
             project_root=project_root,
             resolver=FakeMacosResolver(),
             runtime_provider=FakeRuntimeProvider(floor="11.0"),
@@ -67,7 +66,12 @@ class TestMacosLockCli:
             pp = Path(fs) / "pyproject.toml"
             pp.write_text(macos_pyproject + "\n")
             runner.invoke(lock, ["-p", "macos"])
-            pp.write_text(macos_pyproject + "\n# changed\n")
+            pp.write_text(
+                macos_pyproject.replace(
+                    "[tool.kivy.macos]\n",
+                    '[tool.kivy.macos]\nexclude = ["unused-dist"]\n',
+                )
+            )
             result = runner.invoke(lock, ["-p", "macos", "--check"])
             assert result.exit_code != 0
             assert "out of date" in result.output or "stale" in result.output
@@ -86,3 +90,14 @@ class TestMacosLockCli:
             result = runner.invoke(lock, ["-p", "macos"])
             assert result.exit_code == 0, result.output
             assert (Path(fs) / "pylock.macos.toml").is_file()
+
+    def test_a_comment_is_not_drift(self, runner, tmp_path, macos_pyproject):
+        """Only lock inputs count (#126): a comment leaves the lock alone."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = Path(fs) / "pyproject.toml"
+            pp.write_text(macos_pyproject + "\n")
+            runner.invoke(lock, ["-p", "macos"])
+            pp.write_text(macos_pyproject + "\n# changed\n")
+            result = runner.invoke(lock, ["-p", "macos", "--check"])
+            assert result.exit_code == 0, result.output
+            assert "up to date" in result.output

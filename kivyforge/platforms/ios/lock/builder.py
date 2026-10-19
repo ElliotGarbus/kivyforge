@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,13 +21,14 @@ from kivyforge.lock.find_links import (
     validate_find_links,
     wheel_path_from_project_root,
 )
+from kivyforge.lock.inputs import lock_inputs_sha256
 from kivyforge.lock.model import (
     LockedPackage,
     LockedWheel,
     PackageDep,
     canonical_name,
 )
-from kivyforge.lock.reader import compute_pyproject_sha256
+from kivyforge.lock.prefer import preferred_pins, resolve_preferring
 
 from .model import (
     LockedSwiftPackage,
@@ -53,13 +55,13 @@ class BuildError(Exception):
 
 def build_lockfile(
     config: Config,
-    pyproject_text: str,
     *,
     project_root: Path | None = None,
     resolver: Resolver | None = None,
     python_provider: PythonXcframeworkProvider | None = None,
     spm_resolver: SpmResolver | None = None,
     xcframework_downloader: Downloader | None = None,
+    prefer: Iterable[LockedPackage] = (),
     offline: bool = False,
     now: datetime | None = None,
 ) -> Lockfile:
@@ -104,15 +106,27 @@ def build_lockfile(
     # the exclusion set — you can't exclude what you explicitly depend on.
     excluded -= direct
 
-    try:
-        resolved = resolver.resolve(
-            list(config.project.dependencies),
+    ios = config.ios
+    requirements = list(config.project.dependencies)
+
+    def resolve(pins):
+        return resolver.resolve(
+            requirements,
             python_version=python_version,
-            deployment_target=config.ios.deployment_target,
-            extra_index_urls=list(config.ios.extra_index_urls),
+            deployment_target=ios.deployment_target,
+            extra_index_urls=list(ios.extra_index_urls),
             find_links=find_links,
             offline=offline,
-            simulator_archs=tuple(config.ios.simulator_archs),
+            simulator_archs=tuple(ios.simulator_archs),
+            constraints=pins,
+        )
+
+    try:
+        resolved = resolve_preferring(
+            resolve,
+            preferred_pins(prefer, requirements),
+            errors=(ResolverError,),
+            platform="ios",
         )
     except ResolverError as exc:
         hint = find_links_resolution_hint(
@@ -165,7 +179,7 @@ def build_lockfile(
         ),
         kivyforge_version=__version__,
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        pyproject_sha256=compute_pyproject_sha256(pyproject_text),
+        lock_inputs_sha256=lock_inputs_sha256(config, "ios"),
         tool_kivyforge_schema_version=config.ios.schema_version,
         xcframeworks=tuple(xcframeworks),
         swift_packages=tuple(swift_packages),

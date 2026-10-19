@@ -1041,7 +1041,7 @@ def _doctor_lock(*, packages=(), vendored=False, include_files=()):
         include_files=tuple(include_files),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="0" * 64,
+        lock_inputs_sha256="0" * 64,
         tool_kivy_android_schema_version=1,
         kivy_generation=2,
     )

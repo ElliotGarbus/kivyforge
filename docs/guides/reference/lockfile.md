@@ -73,7 +73,7 @@ Every lock has these keys:
 | `schema_version` | Version of the `[tool.kivyforge]` table layout. |
 | `kivyforge_version` | The kivyforge version that wrote the lock. |
 | `generated_at` | When the lock was written. |
-| `pyproject_sha256` | SHA-256 of the whole `pyproject.toml` the lock was resolved from. Used for drift detection. |
+| `lock_inputs_sha256` | SHA-256 of the lock inputs: the parsed `pyproject.toml` values the lock was resolved from. Used for drift detection. |
 
 The rest of the table depends on the target.
 
@@ -115,17 +115,23 @@ order, so re-locking changes only the lines whose pins changed.
 
 ## Drift
 
-Because `pyproject_sha256` hashes the whole `pyproject.toml`, any edit to the
-file, including a comment, makes the lock stale:
+`lock_inputs_sha256` hashes the lock inputs: `[project].dependencies` and
+`requires-python`, plus the target's Python version, architectures, OS floor,
+indexes, `find_links`, `exclude`, and native libraries. When one of them
+changes, the lock is stale. Comments, key order, and every other field are
+not inputs.
 
 - `build` and `package` refuse a stale lock with `KF-LOCK-DRIFT` and exit code `4`.
   `--no-verify-lock` skips this check.
-- `lock --check` re-resolves, compares the result with the committed lock
-  (ignoring `generated_at`), and exits `4` if they differ. It writes nothing.
+- `lock --check` re-resolves, keeping the locked versions, compares the result
+  with the committed lock (ignoring `generated_at`), and exits `4` if they
+  differ. It writes nothing.
 
 To fix a stale lock, run `kivyforge lock -p PLATFORM`, replacing `PLATFORM` with
-the target. That command resolves again and takes the newest version each
-specifier allows. See
+the target. That command keeps the locked versions and moves only what the
+change requires. If it cannot, it fails with `KF-LOCK-PINS-CONFLICT`, and
+`kivyforge lock -p PLATFORM --update` takes the newest version each specifier
+allows. See
 [Pin a package version](../guides/cross-platform/dependencies.md#pin-a-package-version).
 
 ## What's next

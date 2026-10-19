@@ -32,9 +32,9 @@ from kivyforge.cli._common import (
     ToolchainError,
     lockfile_path,
 )
-from kivyforge.config import ConfigError, load_config, read_pyproject_text
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import IconSourceError
-from kivyforge.config.model import VALID_SIMULATOR_ARCHS, ResolvedVersion
+from kivyforge.config.model import VALID_SIMULATOR_ARCHS, Config, ResolvedVersion
 from kivyforge.config.version import with_version
 from kivyforge.lock import LockError, is_in_sync
 from kivyforge.platforms.base import HostCapabilityError
@@ -185,9 +185,8 @@ def prepare_build(
     Prints ``Generated`` but records nothing: whether the project is a product
     depends on the verb, so the caller decides.
     """
-    pyproject = project_root / "pyproject.toml"
     lock = _load_lock(project_root)
-    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
+    if not no_verify_lock and not is_in_sync(lock, config, "ios"):
         raise ToolchainError(
             f"{LOCKFILE_NAME} is out of date with pyproject.toml.\n"
             "  Run `kivyforge lock` to regenerate it (or pass --no-verify-lock "
@@ -731,7 +730,7 @@ def ios_status(project_root: Path) -> StatusReport:
         app_name=config.display_name,
         app_id=ios.bundle_id,
         python_version=ios.python_version or "(unset)",
-        lock=_lock_status(project_root, pyproject),
+        lock=_lock_status(project_root, config),
         artifacts=tuple(
             BuildArtifact.probe(
                 product_app_path(build_dir, config.app_slug, target), label
@@ -741,7 +740,7 @@ def ios_status(project_root: Path) -> StatusReport:
     )
 
 
-def _lock_status(project_root: Path, pyproject: Path) -> LockStatus:
+def _lock_status(project_root: Path, config: Config) -> LockStatus:
     # No -p: iOS is the default target, and the shorter command is the one the
     # iOS docs have always shown.
     relock = "kivyforge lock"
@@ -752,5 +751,5 @@ def _lock_status(project_root: Path, pyproject: Path) -> LockStatus:
         lock = load(lockfile)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    in_sync = is_in_sync(lock, read_pyproject_text(pyproject))
+    in_sync = is_in_sync(lock, config, "ios")
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)

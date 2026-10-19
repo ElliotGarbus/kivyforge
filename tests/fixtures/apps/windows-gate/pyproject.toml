@@ -54,5 +54,5 @@ version = "3.13.14"
 # separate step with a throwaway self-signed cert and verifies it, which is
 # what test-matrix.md §5.1 asked for ("on a built app rather than on the
 # vendored launcher"). Configuring signing here instead would mean CI editing
-# this file to inject a per-run thumbprint, which would change
-# pyproject_sha256 and break `lock --check` in the same job.
+# this file to inject a per-run thumbprint. (Signing is not a lock input
+# since #126, so that would no longer break `lock --check`.)

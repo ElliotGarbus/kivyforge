@@ -617,7 +617,7 @@ def _lock_with_python_url(url: str) -> Lockfile:
         ),
         kivyforge_version="3.0.0",
         generated_at="t",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
     )
 
@@ -629,7 +629,7 @@ def _lock_with_swift_url(url: str) -> Lockfile:
         python_xcframework=PythonXcframework(version="3.15.0", url="", sha256="c" * 64),
         kivyforge_version="3.0.0",
         generated_at="t",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
         swift_packages=(
             LockedSwiftPackage(

@@ -9,6 +9,7 @@ surface lives in ``kivyforge.platforms.ios.lock``; the macOS/Linux surfaces in
 
 from __future__ import annotations
 
+from .inputs import LOCK_INPUTS, is_in_sync, lock_inputs_sha256
 from .model import (
     LOCK_VERSION,
     LockedPackage,
@@ -16,7 +17,7 @@ from .model import (
     PackageDep,
     canonical_name,
 )
-from .reader import LockError, compute_pyproject_sha256, is_in_sync
+from .reader import LockError
 from .resolver import (
     MIN_PIP_VERSION,
     abi_tags,
@@ -31,9 +32,10 @@ __all__ = [
     "LockedWheel",
     "PackageDep",
     "canonical_name",
+    "LOCK_INPUTS",
     "LockError",
-    "compute_pyproject_sha256",
     "is_in_sync",
+    "lock_inputs_sha256",
     "MIN_PIP_VERSION",
     "abi_tags",
     "pip_python_version",

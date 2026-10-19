@@ -344,6 +344,33 @@ class TestPipWheelResolverRunReport:
         )
         assert "--no-index" in captured[0]
 
+    def test_constraints_reach_pip_as_a_constraints_file(self, monkeypatch):
+        """The preferred versions from an existing lock (#126)."""
+        seen: list[str] = []
+
+        def fake_run(cmd, **kw):
+            constraints = cmd[cmd.index("-c") + 1]
+            seen.append(Path(constraints).read_text(encoding="utf-8"))
+            assert cmd.index("-c") < cmd.index("kivy")
+            report_path = Path(next(a for a in cmd if a.endswith("report.json")))
+            report_path.write_text(json.dumps({"install": []}))
+            result = MagicMock()
+            result.returncode = 0
+            return result
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        PipWheelResolver()._run_report(
+            ["kivy"],
+            python_version="3.15.0",
+            platform_tags=("macosx_11_0_x86_64",),
+            abis=("cp315",),
+            extra_index_urls=[],
+            find_links=[],
+            offline=False,
+            constraints={"kivy": "3.0.0"},
+        )
+        assert seen == ["kivy==3.0.0\n"]
+
     def test_find_links_added_to_command(self, monkeypatch):
         captured: list[list[str]] = []
 

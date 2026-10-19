@@ -185,7 +185,6 @@ class TestBuildUsesFindLinksValidation:
         with pytest.raises(BuildError, match="does not exist"):
             build_lockfile(
                 cfg,
-                toml,
                 project_root=tmp_path,
                 resolver=resolver,
                 python_provider=FakePythonProvider(),

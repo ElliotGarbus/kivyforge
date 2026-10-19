@@ -27,7 +27,6 @@ class TestBuild:
         cfg = _config(macos_pyproject, tmp_path)
         lock = build_macos_lockfile(
             cfg,
-            macos_pyproject,
             project_root=tmp_path,
             resolver=fake_macos_resolver,
             runtime_provider=FakeRuntimeProvider(floor="11.0"),
@@ -37,14 +36,13 @@ class TestBuild:
         assert lock.archs == ("arm64",)
         assert lock.python_runtime.version == "3.15.0"
         assert {a.arch for a in lock.python_runtime.artifacts} == {"arm64"}
-        assert lock.pyproject_sha256
+        assert lock.lock_inputs_sha256
 
     def test_resolver_gets_arch_and_default_floor(self, macos_pyproject, tmp_path):
         cfg = _config(macos_pyproject, tmp_path)
         resolver = FakeMacosResolver()
         build_macos_lockfile(
             cfg,
-            macos_pyproject,
             project_root=tmp_path,
             resolver=resolver,
             runtime_provider=FakeRuntimeProvider(),
@@ -68,7 +66,6 @@ class TestBuild:
         resolver = FakeMacosResolver()
         build_macos_lockfile(
             cfg,
-            text,
             project_root=tmp_path,
             resolver=resolver,
             runtime_provider=FakeRuntimeProvider(),
@@ -80,7 +77,6 @@ class TestBuild:
         cfg = _config(macos_pyproject, tmp_path)
         lock = build_macos_lockfile(
             cfg,
-            macos_pyproject,
             project_root=tmp_path,
             resolver=FakeMacosResolver(universal2=True),
             runtime_provider=FakeRuntimeProvider(),
@@ -94,7 +90,6 @@ class TestBuild:
         with pytest.raises(MacosBuildError, match="missing macOS wheel"):
             build_macos_lockfile(
                 cfg,
-                macos_pyproject,
                 project_root=tmp_path,
                 resolver=FakeMacosResolver(drop_arch="arm64"),
                 runtime_provider=FakeRuntimeProvider(),
@@ -113,7 +108,6 @@ class TestBuild:
         with pytest.raises(MacosBuildError, match="below the macOS"):
             build_macos_lockfile(
                 cfg,
-                text,
                 project_root=tmp_path,
                 resolver=FakeMacosResolver(),
                 runtime_provider=FakeRuntimeProvider(floor="11.0"),
@@ -131,7 +125,6 @@ class TestBuild:
         cfg = _config(text, tmp_path)
         lock = build_macos_lockfile(
             cfg,
-            text,
             project_root=tmp_path,
             resolver=FakeMacosResolver(),
             runtime_provider=FakeRuntimeProvider(),
@@ -146,7 +139,7 @@ class TestBuild:
         )
         cfg = load_config_from_text(text, project_root=tmp_path)
         with pytest.raises(MacosBuildError, match="no \\[tool.kivy.macos\\]"):
-            build_macos_lockfile(cfg, text, project_root=tmp_path)
+            build_macos_lockfile(cfg, project_root=tmp_path)
 
 
 class TestSemanticEqual:
@@ -164,7 +157,6 @@ class TestSemanticEqual:
         cfg = _config(macos_pyproject, tmp_path)
         lock = build_macos_lockfile(
             cfg,
-            macos_pyproject,
             project_root=tmp_path,
             resolver=fake_macos_resolver,
             runtime_provider=FakeRuntimeProvider(floor="11.0"),

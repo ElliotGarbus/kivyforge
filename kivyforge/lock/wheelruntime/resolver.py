@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..model import canonical_name
+from ..prefer import Pins, constraint_args
 from ..resolver import (
     MIN_PIP_VERSION,
     _dep_names,
@@ -86,6 +87,7 @@ class WheelResolver(Protocol):
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
     ) -> list[ResolvedPackage]:
         """Resolve requirements to wheels covering every requested variant."""
         ...
@@ -106,6 +108,7 @@ class PipWheelResolver:
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
     ) -> list[ResolvedPackage]:
         if not requirements:
             return []
@@ -123,6 +126,7 @@ class PipWheelResolver:
                 extra_index_urls=extra_index_urls,
                 find_links=find_links or [],
                 offline=offline,
+                constraints=constraints,
             )
             for item in report.get("install", []):
                 self._absorb(item, merged, seen_filenames)
@@ -184,6 +188,7 @@ class PipWheelResolver:
         extra_index_urls: list[str],
         find_links: list[str],
         offline: bool,
+        constraints: Pins | None = None,
     ) -> dict:
         with tempfile.TemporaryDirectory(prefix="kivy-wheel-lock-") as tmp:
             report_path = Path(tmp) / "report.json"
@@ -217,6 +222,7 @@ class PipWheelResolver:
                 cmd += ["--find-links", link]
             if offline:
                 cmd += ["--no-index"]
+            cmd += constraint_args(Path(tmp), constraints or {})
             cmd += list(requirements)
 
             proc = subprocess.run(

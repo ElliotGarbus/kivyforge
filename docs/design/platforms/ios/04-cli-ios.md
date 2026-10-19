@@ -85,7 +85,7 @@ Flags:
 
 - `--simulator` / `--device` / `--release` (optional; mutually exclusive; **no default**). When none is passed, `build` stops after generating the Xcode project (step 6) and leaves it ready to open in Xcode; because no target is named, the bare build collects **both** the device and simulator pip-deps slices (step 4) so the project builds either Xcode destination — Xcode usually defaults to a simulator — without re-running the toolchain. When one is passed, `build` collects only that target's slice and also invokes `xcodebuild` (step 7): `--simulator` → iphonesimulator SDK + Debug; `--device` → iphoneos SDK + Debug; `--release` → archive + export `.ipa` via iphoneos SDK + Release (see step 7 details below).
 - `--arch arm64|x86_64` (default: auto-detect from host; needed for Intel simulator builds on `macos-15-intel`)
-- `--no-verify-lock` (skip the `[tool.kivyforge].pyproject_sha256` drift check; for CI only)
+- `--no-verify-lock` (skip the `[tool.kivyforge].lock_inputs_sha256` drift check; for CI only)
 - `--no-cache` (force re-download of every artifact)
 - `--team-id ID` (override `[tool.kivy.ios.signing].team_id`; also read from `KIVYFORGE_TEAM_ID` env var; useful for CI and team projects where signing config is not committed)
 - `--signing-identity NAME` (override `[tool.kivy.ios.signing].identity`; also read from `KIVYFORGE_SIGNING_IDENTITY` env var). The precedence chain differs by target: for `--device`, flag → env → `[tool.kivy.ios.signing].identity` (the pyproject default, `"Apple Development"`, applies — correct for a local debug build). For `--release`, only an explicit flag or env value is honored; the pyproject default is **never** applied to a distribution archive/export — forcing a `"Apple Development"` identity onto it would request a Development-type profile instead of letting automatic signing pick the Distribution certificate the chosen `--export-method` actually needs. Leave `--signing-identity` unset for `--release` unless you need to pin a specific certificate.
@@ -93,7 +93,7 @@ Flags:
 
 `build` always performs steps 1–6; step 7 only runs when a target flag is passed.
 
-1. Verify `pyproject.toml` and `pylock.ios.toml` are present and in sync (drift check on `[tool.kivyforge].pyproject_sha256`).
+1. Verify `pyproject.toml` and `pylock.ios.toml` are present and in sync (drift check on `[tool.kivyforge].lock_inputs_sha256`).
 2. Download (or cache hit) `Python.xcframework` from `[tool.kivyforge.python_xcframework]`, extract into `<app>-ios/Python.xcframework/`.
 3. Download (or cache hit) every `[[tool.kivyforge.xcframeworks]]` artifact into `<app>-ios/Frameworks/`.
 4. Install the pinned wheels for every `[[packages]]` entry with iOS cross-install flags (see step details below) into the per-target slice directory — `pip-deps-device/` or `pip-deps-simulator/` — never a shared `pip-deps/`, so device and simulator builds never mix compiled `.so` extensions. A targeted `build` populates only the slice it is about to build; a bare `build` (no target) populates both. The Xcode "Build Python" run script later `rsync`s the slice matching the active destination into the app bundle, and fails the build with an actionable error if that slice was never collected (see [Xcode project generation](05-xcode-project-generation.md)). The lock already holds the full transitive set with resolved URLs/hashes, so `--no-deps` is used and pip does not re-resolve. This does **not** go through pip's experimental `-r pylock.toml` reader (which, as of pip 26.1, ignores these platform-selection flags); `kivyforge build` installs the pinned wheels itself.
@@ -238,7 +238,7 @@ Build:
 | App name | `[project].name` / `[tool.kivy].display_name` |
 | Bundle ID | `[tool.kivy.ios].bundle_id` |
 | Python version | `[tool.kivy.ios.python].version` (from pyproject) |
-| Lock | compares `pyproject_sha256` in lock against current `pyproject.toml` hash — reports `in sync`, `out of date` (run `kivyforge lock`), or `missing` |
+| Lock | compares `lock_inputs_sha256` in the lock against the current lock inputs' hash — reports `in sync`, `out of date` (run `kivyforge lock`), or `missing` |
 | Build / simulator | presence and mtime of the simulator `.app` in `DerivedData` or `<app>-ios/build/` |
 | Build / device | same for the device build |
 

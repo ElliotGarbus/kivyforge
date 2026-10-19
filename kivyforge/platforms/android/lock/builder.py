@@ -9,7 +9,7 @@ pins (skipped without declared coordinates), ``include_files`` hashes.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -25,13 +25,14 @@ from kivyforge.lock.find_links import (
     validate_find_links,
     wheel_path_from_project_root,
 )
+from kivyforge.lock.inputs import lock_inputs_sha256
 from kivyforge.lock.model import (
     LockedPackage,
     LockedWheel,
     PackageDep,
     canonical_name,
 )
-from kivyforge.lock.reader import compute_pyproject_sha256
+from kivyforge.lock.prefer import preferred_pins, resolve_preferring
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
 
@@ -100,13 +101,13 @@ def _reject_android_distribution(packages: list[LockedPackage]) -> None:
 
 def build_lockfile(
     config: Config,
-    pyproject_text: str,
     *,
     project_root: Path | None = None,
     resolver: Resolver | None = None,
     python_provider: PythonAndroidProvider | None = None,
     maven_resolver: GradleMavenResolver | None = None,
     lib_downloader: Downloader | None = None,
+    prefer: Iterable[LockedPackage] = (),
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
@@ -172,8 +173,8 @@ def build_lockfile(
     # Never excludable: an app without it crashes at launch.
     excluded.discard(PYJNIUS)
 
-    try:
-        resolved = resolver.resolve(
+    def resolve(pins):
+        return resolver.resolve(
             requirements,
             python_version=python_version,
             min_sdk=android.min_sdk,
@@ -181,6 +182,17 @@ def build_lockfile(
             extra_index_urls=list(android.extra_index_urls),
             find_links=find_links,
             offline=offline,
+            constraints=pins,
+        )
+
+    try:
+        # Against `requirements`, not the project's list: the pyjnius range
+        # kivyforge adds can release a locked pyjnius too.
+        resolved = resolve_preferring(
+            resolve,
+            preferred_pins(prefer, requirements),
+            errors=(ResolverError,),
+            platform="android",
         )
     except ResolverError as exc:
         hint = find_links_resolution_hint(
@@ -243,7 +255,7 @@ def build_lockfile(
         python_android=tuple(runtimes),
         kivyforge_version=__version__,
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        pyproject_sha256=compute_pyproject_sha256(pyproject_text),
+        lock_inputs_sha256=lock_inputs_sha256(config, "android"),
         tool_kivy_android_schema_version=android.schema_version,
         kivy_generation=android.kivy_generation,
         android_libs=tuple(android_libs),

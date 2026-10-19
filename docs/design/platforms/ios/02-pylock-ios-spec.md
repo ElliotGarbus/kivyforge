@@ -180,7 +180,7 @@ Everything iOS-specific that PEP 751 doesn't model lives here:
 schema_version = 1
 kivyforge_version = "3.0.0"
 generated_at = "2026-05-27T00:00:00Z"
-pyproject_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+lock_inputs_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]
@@ -199,7 +199,7 @@ sha256 = "abd43fc362bb6e40a5233a499aa3fa96bf49306ca10b4cbcb27418778e429eb8"
 | `schema_version` | integer | yes | This lockfile's `[tool.kivyforge]` schema version (independent from PEP 751's `lock-version` and from `[tool.kivy.ios].schema_version` in `pyproject.toml`; all three start at 1). |
 | `kivyforge_version` | string | yes | Version of `kivyforge` that generated this lock. |
 | `generated_at` | string | yes | ISO 8601 UTC timestamp. |
-| `pyproject_sha256` | string | yes | SHA-256 of the source `pyproject.toml` at lock time. `kivyforge build` recomputes the hash and exits with an error if it doesn't match. See "Drift detection" below. |
+| `lock_inputs_sha256` | string | yes | SHA-256 of the lock's inputs: the parsed values of the `pyproject.toml` fields the lock was resolved from. `kivyforge build` recomputes it and exits with an error if it doesn't match. See "Drift detection" below. |
 | `tool_kivyforge_schema_version` | integer | yes | Mirrors `[tool.kivy.ios].schema_version` from the source pyproject — lets future `kivyforge` versions know which iOS overlay schema produced this lock. This is an iOS-only lockfile; a lock for another platform records that platform's overlay schema version instead. |
 
 ### `[tool.kivyforge.python_xcframework]`
@@ -284,7 +284,7 @@ The order of `[[packages]]` and `[[tool.kivyforge.xcframeworks]]` entries within
 
 ## Drift detection
 
-`kivyforge build` recomputes `pyproject_sha256` from the current `pyproject.toml`. If it doesn't match `[tool.kivyforge].pyproject_sha256` in the lock, `kivyforge build` exits with:
+`kivyforge build` recomputes `lock_inputs_sha256`, the SHA-256 of the lock's inputs: the parsed `[project].dependencies` and `requires-python`, and the fields of `[tool.kivy.ios]` the lock is resolved from (Python version, `deployment_target`, `simulator_archs`, `extra_index_urls`, `find_links`, `exclude`, `xcframeworks`, `swift_packages`). The list is `LOCK_INPUTS["ios"]` in `kivyforge/lock/inputs.py`. Comments, key order and every other field (signing, icons, `Info.plist` keys, entitlements, another platform's overlay) are read on every build, so editing them never stales the lock. A mismatch aborts with:
 
 ```
 Error: pyproject.toml has changed since pylock.ios.toml was generated.
@@ -293,6 +293,8 @@ Error: pyproject.toml has changed since pylock.ios.toml was generated.
 ```
 
 The `--no-verify-lock` escape hatch exists for CI scenarios where lock and pyproject may be regenerated in the same job.
+
+`kivyforge lock` re-resolves a stale lock with its own versions as the preference, so only what the change requires moves; `kivyforge lock --update` resolves every package to the newest version allowed.
 
 ## Hash verification
 
@@ -360,7 +362,7 @@ hashes = { sha256 = "..." }
 schema_version = 1
 kivyforge_version = "3.0.0"
 generated_at = "2026-05-27T00:00:00Z"
-pyproject_sha256 = "e3b0c4..."
+lock_inputs_sha256 = "e3b0c4..."
 tool_kivyforge_schema_version = 1
 [tool.kivyforge.python_xcframework]
 version = "3.15.0"

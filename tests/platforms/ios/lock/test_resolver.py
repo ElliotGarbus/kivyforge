@@ -683,6 +683,7 @@ class TestPipResolverResolve:
             find_links,
             offline,
             marker_environment,
+            constraints=None,
         ):
             return {"install": next(call_iter)}
 
@@ -720,6 +721,7 @@ class TestPipResolverResolve:
             find_links,
             offline,
             marker_environment,
+            constraints=None,
         ):
             return {"install": next(call_iter)}
 
@@ -766,6 +768,7 @@ class TestPipResolverResolve:
             find_links,
             offline,
             marker_environment,
+            constraints=None,
         ):
             return {"install": next(call_iter, [])}
 

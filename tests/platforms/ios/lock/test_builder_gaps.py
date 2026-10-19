@@ -48,7 +48,7 @@ _BASE = _toml()
 
 def _build(toml, resolver, provider, **kw):
     cfg = load_config_from_text(toml)
-    return build_lockfile(cfg, toml, resolver=resolver, python_provider=provider, **kw)
+    return build_lockfile(cfg, resolver=resolver, python_provider=provider, **kw)
 
 
 class TestMissingIosTable:
@@ -57,7 +57,6 @@ class TestMissingIosTable:
         with pytest.raises(BuildError, match="nothing to lock"):
             build_lockfile(
                 cfg,
-                _NO_IOS_TOML,
                 resolver=fake_resolver,
                 python_provider=fake_python_provider,
             )
@@ -72,7 +71,6 @@ class TestFindLinksValidation:
         with pytest.raises(BuildError, match="does not exist"):
             build_lockfile(
                 cfg,
-                toml,
                 resolver=fake_resolver,
                 python_provider=fake_python_provider,
                 project_root=tmp_path,
@@ -87,7 +85,6 @@ class TestFindLinksValidation:
         with pytest.raises(BuildError, match="pip exploded") as exc_info:
             build_lockfile(
                 cfg,
-                _BASE,
                 resolver=Boom(),
                 python_provider=fake_python_provider,
                 project_root=tmp_path,
@@ -108,7 +105,6 @@ class TestFindLinksValidation:
         with pytest.raises(BuildError, match="find_links check"):
             build_lockfile(
                 cfg,
-                toml,
                 resolver=Boom(),
                 python_provider=fake_python_provider,
                 project_root=tmp_path,
@@ -181,7 +177,6 @@ class TestWheelSourceNormalization:
         cfg = load_config_from_text(toml)
         lock = build_lockfile(
             cfg,
-            toml,
             resolver=_LocalWheelResolver(str(wheel)),
             python_provider=fake_python_provider,
             project_root=tmp_path,
@@ -205,7 +200,6 @@ class TestWheelSourceNormalization:
         cfg = load_config_from_text(toml)
         lock = build_lockfile(
             cfg,
-            toml,
             resolver=_LocalWheelResolver(wheel.as_uri()),
             python_provider=fake_python_provider,
             project_root=tmp_path,
@@ -224,7 +218,6 @@ class TestWheelSourceNormalization:
         with pytest.raises(BuildError, match="could not determine SHA-256") as excinfo:
             build_lockfile(
                 cfg,
-                toml,
                 resolver=_LocalWheelResolver("https://example.com/localpkg.whl", ""),
                 python_provider=fake_python_provider,
                 project_root=tmp_path,
@@ -249,7 +242,6 @@ class TestWheelSourceNormalization:
             ):
                 build_lockfile(
                     cfg,
-                    toml,
                     resolver=_LocalWheelResolver(str(wheel), "a" * 64),
                     python_provider=fake_python_provider,
                     project_root=project_root,
@@ -296,7 +288,6 @@ class TestSliceCoverageEdgeCases:
         with pytest.raises(BuildError, match="missing iOS wheel slice"):
             build_lockfile(
                 cfg,
-                toml,
                 resolver=_SliceEdgeCaseResolver(),
                 python_provider=fake_python_provider,
             )
@@ -320,7 +311,7 @@ class TestDiffSummary:
             ),
             kivyforge_version="0",
             generated_at="t",
-            pyproject_sha256="b" * 64,
+            lock_inputs_sha256="b" * 64,
             tool_kivyforge_schema_version=1,
         )
         return dataclasses.replace(base, **overrides)

@@ -42,21 +42,27 @@ byte-for-byte the same file or fails. A lock records:
 
 ## Drift: when to re-lock
 
-A lock records a SHA-256 hash of the `pyproject.toml` it was resolved from. Any
-edit to `pyproject.toml`, even to a comment or a signing setting, makes the lock
-out of date. kivyforge calls this **drift**.
+A lock records a SHA-256 hash of its **lock inputs**: the parts of
+`pyproject.toml` it was resolved from. Those are `[project].dependencies` and
+`requires-python`, plus the target's Python version, architectures, OS floor,
+package indexes, `find_links`, `exclude`, and native libraries. When one of
+them changes, the lock is out of date. kivyforge calls this **drift**.
+Everything else, such as comments, signing, icons, the display name, or another
+platform's settings, is read on every build and never makes a lock stale.
 
 - Re-lock with `kivyforge lock -p PLATFORM`, replacing `PLATFORM` with the
   target name. If the lock is already in sync, `lock` leaves it unchanged; add
-  `--update` to re-resolve anyway. A re-lock resolves from scratch and takes
-  the newest version each specifier allows.
-  [Pin a package version](../guides/cross-platform/dependencies.md#pin-a-package-version)
-  to hold one still.
+  `--update` to re-resolve anyway. A re-lock keeps the versions already in the
+  lock and moves only the packages the change requires. If the locked
+  versions cannot be kept, `lock` fails with `KF-LOCK-PINS-CONFLICT`; run
+  `kivyforge lock -p PLATFORM --update` to take the newest version each
+  specifier allows.
 - `build`, `run`, and `package` refuse to use a drifted lock. They exit with
   code 4 and `KF-LOCK-DRIFT` (or `KF-LOCK-MISSING` when there is no lock),
   rather than building something stale.
-- In CI, run `kivyforge lock --check` as a pre-flight. It re-resolves, writes
-  nothing, and exits with code 4 if the result differs from the lock on disk.
+- In CI, run `kivyforge lock --check` as a pre-flight. It re-resolves, keeping
+  the locked versions, writes nothing, and exits with code 4 if the result
+  differs from the lock on disk. A new upstream release alone does not fail it.
 
 See [Manage dependencies and re-lock](../guides/cross-platform/dependencies.md)
 for the workflow.

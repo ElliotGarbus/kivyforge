@@ -48,7 +48,7 @@ def dumps(lock: WheelRuntimeLock) -> str:
     lines.append(f"schema_version = {lock.schema_version}")
     lines.append(f"kivyforge_version = {_s(lock.kivyforge_version)}")
     lines.append(f"generated_at = {_s(lock.generated_at)}")
-    lines.append(f"pyproject_sha256 = {_s(lock.pyproject_sha256)}")
+    lines.append(f"lock_inputs_sha256 = {_s(lock.lock_inputs_sha256)}")
     lines.append(
         f"tool_kivyforge_schema_version = {lock.tool_kivyforge_schema_version}"
     )
@@ -127,7 +127,7 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
         archs=tuple(tool.get("archs", [])),
         kivyforge_version=tool.get("kivyforge_version", ""),
         generated_at=tool.get("generated_at", ""),
-        pyproject_sha256=tool.get("pyproject_sha256", ""),
+        lock_inputs_sha256=tool.get("lock_inputs_sha256", ""),
         tool_kivyforge_schema_version=tool.get("tool_kivyforge_schema_version", 1),
         schema_version=schema_version,
         lock_version=lock_version,

@@ -28,7 +28,6 @@ def test_golden_lockfile(windows_pyproject, tmp_path, monkeypatch):
     )
     lock = build_windows_lockfile(
         cfg,
-        windows_pyproject,
         project_root=tmp_path,
         resolver=FakeWindowsResolver(),
         runtime_provider=FakeRuntimeProvider(),
@@ -85,7 +84,6 @@ def test_golden_lockfile_with_native_binary(tmp_path, monkeypatch):
     )
     lock = build_windows_lockfile(
         cfg,
-        pyproject,
         project_root=tmp_path,
         resolver=FakeWindowsResolver(),
         runtime_provider=FakeRuntimeProvider(),

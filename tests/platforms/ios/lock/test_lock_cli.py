@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from click.testing import CliRunner
 
@@ -23,20 +25,20 @@ def patch_backends(monkeypatch, fake_resolver, fake_python_provider):
 
     def fake_build(
         config,
-        text,
         *,
         project_root=None,
         resolver=None,
         python_provider=None,
+        prefer=(),
         offline=False,
         now=None,
     ):
         return real_build(
             config,
-            text,
             project_root=project_root,
             resolver=fake_resolver,
             python_provider=fake_python_provider,
+            prefer=prefer,
             offline=offline,
             now=now,
         )
@@ -84,7 +86,12 @@ class TestLockCli:
             pp.write_text(minimal_pyproject + "\n")
             runner.invoke(lock, [])
             # edit pyproject so the recorded hash no longer matches
-            pp.write_text(minimal_pyproject + "\n# changed\n")
+            pp.write_text(
+                minimal_pyproject.replace(
+                    "[tool.kivy.ios]\n",
+                    '[tool.kivy.ios]\nexclude = ["unused-dist"]\n',
+                )
+            )
             result = runner.invoke(lock, ["--check"])
             assert result.exit_code != 0
             assert "out of date" in result.output or "stale" in result.output
@@ -103,3 +110,14 @@ class TestLockCli:
             result = runner.invoke(lock, [])
             assert result.exit_code != 0
             assert "no pyproject.toml" in result.output
+
+    def test_a_comment_is_not_drift(self, runner, tmp_path, minimal_pyproject):
+        """Only lock inputs count (#126): a comment leaves the lock alone."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = Path(fs) / "pyproject.toml"
+            pp.write_text(minimal_pyproject + "\n")
+            runner.invoke(lock, [])
+            pp.write_text(minimal_pyproject + "\n# changed\n")
+            result = runner.invoke(lock, ["--check"])
+            assert result.exit_code == 0, result.output
+            assert "up to date" in result.output

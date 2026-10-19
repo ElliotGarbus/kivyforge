@@ -21,7 +21,6 @@ class TestBuild:
         cfg = _config(windows_pyproject, tmp_path)
         lock = build_windows_lockfile(
             cfg,
-            windows_pyproject,
             project_root=tmp_path,
             resolver=fake_windows_resolver,
             runtime_provider=FakeRuntimeProvider(),
@@ -33,14 +32,13 @@ class TestBuild:
         assert lock.python_runtime.version == "3.13.14"
         assert {a.arch for a in lock.python_runtime.artifacts} == {"amd64"}
         assert lock.python_runtime.floor is None
-        assert lock.pyproject_sha256
+        assert lock.lock_inputs_sha256
 
     def test_single_win_amd64_variant(self, windows_pyproject, tmp_path):
         cfg = _config(windows_pyproject, tmp_path)
         resolver = FakeWindowsResolver()
         build_windows_lockfile(
             cfg,
-            windows_pyproject,
             project_root=tmp_path,
             resolver=resolver,
             runtime_provider=FakeRuntimeProvider(),
@@ -53,7 +51,6 @@ class TestBuild:
         cfg = _config(windows_pyproject, tmp_path)
         lock = build_windows_lockfile(
             cfg,
-            windows_pyproject,
             project_root=tmp_path,
             resolver=FakeWindowsResolver(),
             runtime_provider=FakeRuntimeProvider(),
@@ -67,7 +64,6 @@ class TestBuild:
         with pytest.raises(WindowsBuildError, match="no win_amd64 wheel"):
             build_windows_lockfile(
                 cfg,
-                windows_pyproject,
                 project_root=tmp_path,
                 resolver=FakeWindowsResolver(drop_wheel=True),
                 runtime_provider=FakeRuntimeProvider(),
@@ -85,7 +81,6 @@ class TestBuild:
         cfg = _config(text, tmp_path)
         lock = build_windows_lockfile(
             cfg,
-            text,
             project_root=tmp_path,
             resolver=FakeWindowsResolver(),
             runtime_provider=FakeRuntimeProvider(),
@@ -100,4 +95,4 @@ class TestBuild:
         )
         cfg = load_config_from_text(text, project_root=tmp_path)
         with pytest.raises(WindowsBuildError, match="no \\[tool.kivy.windows\\]"):
-            build_windows_lockfile(cfg, text, project_root=tmp_path)
+            build_windows_lockfile(cfg, project_root=tmp_path)

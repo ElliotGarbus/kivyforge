@@ -106,7 +106,7 @@ Flags:
 - `--debug` (optional; **no default**). Without it, `build` stops after generating the project (ready for Android Studio or a manual `gradlew`). With it, `build` invokes Gradle after staging: `assembleDebug` (debug-keystore signed) — the fast dev-loop build. **Signed release artifacts are produced by [`kivyforge package`](#kivyforge-package), not `build`.**
 - `-f apk|aab` / `--format apk|aab` (default `apk`; only meaningful with `--debug`). `-f apk` → `assembleDebug` (`.apk`). `-f aab` → `bundleDebug` (`.aab`, niche — only to test bundle delivery via `bundletool`).
 - `--abi arm64_v8a|x86_64` (restrict this build to one ABI; default: all `[tool.kivy.android].abis`). Handy for a fast emulator loop with the host-architecture ABI: `--abi x86_64` on an x86_64 host, `--abi arm64_v8a` on an arm64 host (Apple Silicon).
-- `--no-verify-lock` (skip the `pyproject_sha256` drift check; CI only).
+- `--no-verify-lock` (skip the `lock_inputs_sha256` drift check; CI only).
 - `--no-cache` (force re-download of every artifact).
 
 `build` always performs the staging + generation steps 1–7; step 8 only runs with `--debug`.
@@ -297,7 +297,7 @@ Build:
 | Python | `[tool.kivy.android.python].version` |
 | Kivy/SDL | resolved `kivy` version from the lock (`—` if absent, `?` with no lock) + `[tool.kivy.android].kivy_generation` |
 | ABIs | `[tool.kivy.android].abis` |
-| Lock | `pyproject_sha256` compare — `in sync` / `out of date` / `missing` / `unreadable` |
+| Lock | `lock_inputs_sha256` compare — `in sync` / `out of date` / `missing` / `unreadable` |
 | Build | presence + mtime of all three artifacts under `app/build/outputs/` — debug `.apk`, release `.apk`, release `.aab` — as `built YYYY-MM-DD HH:MM` or `not built` |
 
 ### `kivyforge doctor`

@@ -25,7 +25,6 @@ class TestBuild:
         cfg = _config(linux_pyproject, tmp_path)
         lock = build_linux_lockfile(
             cfg,
-            linux_pyproject,
             project_root=tmp_path,
             resolver=fake_linux_resolver,
             runtime_provider=FakeRuntimeProvider(floor="2.17"),
@@ -37,14 +36,13 @@ class TestBuild:
         assert lock.python_runtime.version == "3.15.0"
         assert {a.arch for a in lock.python_runtime.artifacts} == {"x86_64"}
         assert lock.python_runtime.floor == "2.17"
-        assert lock.pyproject_sha256
+        assert lock.lock_inputs_sha256
 
     def test_resolver_gets_full_tag_ladder(self, linux_pyproject, tmp_path):
         cfg = _config(linux_pyproject, tmp_path)
         resolver = FakeLinuxResolver()
         build_linux_lockfile(
             cfg,
-            linux_pyproject,
             project_root=tmp_path,
             resolver=resolver,
             runtime_provider=FakeRuntimeProvider(),
@@ -69,7 +67,6 @@ class TestBuild:
         resolver = FakeLinuxResolver()
         build_linux_lockfile(
             cfg,
-            text,
             project_root=tmp_path,
             resolver=resolver,
             runtime_provider=FakeRuntimeProvider(),
@@ -81,7 +78,6 @@ class TestBuild:
         cfg = _config(linux_pyproject, tmp_path)
         lock = build_linux_lockfile(
             cfg,
-            linux_pyproject,
             project_root=tmp_path,
             resolver=FakeLinuxResolver(),
             runtime_provider=FakeRuntimeProvider(floor="2.17"),
@@ -94,7 +90,6 @@ class TestBuild:
         with pytest.raises(LinuxBuildError, match="no manylinux wheel"):
             build_linux_lockfile(
                 cfg,
-                linux_pyproject,
                 project_root=tmp_path,
                 resolver=FakeLinuxResolver(drop_wheel=True),
                 runtime_provider=FakeRuntimeProvider(),
@@ -108,7 +103,6 @@ class TestBuild:
         with pytest.raises(LinuxBuildError, match="no manylinux wheel"):
             build_linux_lockfile(
                 cfg,
-                linux_pyproject,
                 project_root=tmp_path,
                 resolver=FakeLinuxResolver(plain_linux=True),
                 runtime_provider=FakeRuntimeProvider(),
@@ -130,7 +124,6 @@ class TestBuild:
         warnings: list[str] = []
         lock = build_linux_lockfile(
             cfg,
-            text,
             project_root=tmp_path,
             resolver=FakeLinuxResolver(plain_linux=True, vendored=True),
             runtime_provider=FakeRuntimeProvider(),
@@ -154,7 +147,6 @@ class TestBuild:
         with pytest.raises(LinuxBuildError, match="below the glibc"):
             build_linux_lockfile(
                 cfg,
-                text,
                 project_root=tmp_path,
                 resolver=FakeLinuxResolver(),
                 runtime_provider=FakeRuntimeProvider(floor="2.17"),
@@ -172,7 +164,6 @@ class TestBuild:
         cfg = _config(text, tmp_path)
         lock = build_linux_lockfile(
             cfg,
-            text,
             project_root=tmp_path,
             resolver=FakeLinuxResolver(),
             runtime_provider=FakeRuntimeProvider(),
@@ -187,4 +178,4 @@ class TestBuild:
         )
         cfg = load_config_from_text(text, project_root=tmp_path)
         with pytest.raises(LinuxBuildError, match="no \\[tool.kivy.linux\\]"):
-            build_linux_lockfile(cfg, text, project_root=tmp_path)
+            build_linux_lockfile(cfg, project_root=tmp_path)

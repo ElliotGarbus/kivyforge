@@ -50,10 +50,10 @@ platform.
 
 ## Pin a package version
 
-The version written into the lock is the newest one your specifier allows.
-`kivyforge lock` resolves `[project].dependencies` from scratch when the lock
-is stale, and when you pass `--update`. While the lock is in sync, `lock`
-leaves those versions where they are.
+The first lock takes the newest version your specifier allows. After that,
+`kivyforge lock` keeps the versions already locked: when a lock input
+changes, only the packages that change requires move. `--update` resolves
+everything to the newest version allowed.
 
 To hold a package on one version, require that version exactly:
 
@@ -66,7 +66,7 @@ dependencies = [
 ```
 
 A range such as `kivy>=2.3.1` or `pillow>=10` moves to the newest match the
-next time you re-lock. A Kivy 3 development snapshot is a pre-release, so the
+next time you pass `--update`. A Kivy 3 development snapshot is a pre-release, so the
 specifier has to name one. See the `kivy_generation` setting in
 [Configure your Android app](../android/configure.md). A range such as
 `kivy>=3.0.0.dev0,<4` still moves to the newest snapshot. Pin the snapshot
@@ -124,11 +124,12 @@ exclude = ["kivy-garden", "docutils", "pygments"]
 
 ## Keep the lock in sync
 
-The lock records a hash of the whole `pyproject.toml`, so any edit to the file
-makes the lock stale, including edits outside `[project].dependencies`. After you
-edit `pyproject.toml`, re-lock the targets you build. That re-lock resolves
-again. [Pin a package version](#pin-a-package-version) so the packages you care
-about stay put.
+The lock records a hash of its lock inputs: `[project].dependencies`,
+`requires-python`, and the target's Python version, architectures, indexes,
+`find_links`, `exclude`, and native libraries. When you change one of them,
+re-lock the targets you build. The re-lock keeps the versions already locked
+and moves only what the change requires. Editing anything else, such as
+signing, icons, or another platform's settings, leaves the lock in sync.
 
 If the lock is in sync, `lock` leaves it unchanged. To resolve again anyway and
 take the newest version each specifier allows, pass `--update`:
@@ -163,12 +164,11 @@ Check that the lock matches `pyproject.toml`:
 kivyforge lock -p linux --check
 ```
 
-The command exits `0` and prints that the lock is up to date. If the lock is
-stale, or a specifier allows a newer release than the lock records, it lists
-what changed, exits `4` with `KF-LOCK-DRIFT`, and writes nothing. `build`,
-`run`, and `package` fail the same way when the `pyproject.toml` hash no
-longer matches the lock. A lock whose hash still matches is accepted, even
-when `--check` would now resolve something newer. See
+The command exits `0` and prints that the lock is up to date. It resolves
+while keeping the locked versions, so a newer upstream release alone does not
+fail it. If a lock input changed, it lists what would change, exits `4` with
+`KF-LOCK-DRIFT`, and writes nothing. `build`, `run`, and `package` fail the
+same way when the lock inputs' hash no longer matches the lock. See
 [Pin a package version](#pin-a-package-version) and
 [Drive kivyforge from CI or an agent](ci-and-agents.md).
 

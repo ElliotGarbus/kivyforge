@@ -25,10 +25,11 @@ from kivyforge.cli._common import (
     ToolchainError,
     lockfile_path_for,
 )
-from kivyforge.config import ConfigError, load_config, read_pyproject_text
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import Config, ResolvedVersion
 from kivyforge.config.version import with_version
-from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.lock.inputs import is_in_sync
+from kivyforge.lock.reader import LockError
 from kivyforge.report import failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
@@ -175,8 +176,7 @@ def _load_and_verify(
 ) -> tuple[Config, LinuxLockfile]:
     config = with_version(_load_config(project_root), version)
     lock = _load_lock(project_root)
-    pyproject = project_root / "pyproject.toml"
-    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
+    if not no_verify_lock and not is_in_sync(lock, config, "linux"):
         raise ToolchainError(
             f"{lockfile_path_for('linux').name} is out of date with "
             "pyproject.toml.\n"
@@ -246,12 +246,12 @@ def linux_status(project_root: Path) -> StatusReport:
         app_name=config.display_name,
         app_id=linux.app_id,
         python_version=linux.python_version or "(unset)",
-        lock=_lock_status(project_root),
+        lock=_lock_status(project_root, config),
         artifacts=(BuildArtifact.probe(appdir),),
     )
 
 
-def _lock_status(project_root: Path) -> LockStatus:
+def _lock_status(project_root: Path, config: Config) -> LockStatus:
     relock = "kivyforge lock -p linux"
     path = lockfile_path_for("linux", project_root)
     if not path.is_file():
@@ -260,8 +260,7 @@ def _lock_status(project_root: Path) -> LockStatus:
         lock = load_linux_lock(path)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    pyproject = project_root / "pyproject.toml"
-    in_sync = is_in_sync(lock, read_pyproject_text(pyproject))
+    in_sync = is_in_sync(lock, config, "linux")
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
 
 
