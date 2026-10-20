@@ -119,7 +119,9 @@ Only 64-bit ABIs are supported: `arm64_v8a` and `x86_64`. The 32-bit
 You need a Mac to build for iOS.
 
 1. Create a `pyproject.toml` with a `[project]` table, listing your dependencies.
-   iOS builds use Kivy 3.0.
+   Kivy 3 is required on iOS: a `kivy` requirement that admits only 2.x, such
+   as `kivy<3`, fails `kivyforge lock -p ios` with `KF-IOS-KIVY-UNSUPPORTED`;
+   kivy-ios serves Kivy 2.x.
 
 2. Seed the kivyforge tables:
 

@@ -113,6 +113,14 @@ IDE_NOT_FOUND = "KF-IDE-NOT-FOUND"
 #: This host cannot build this target at all (e.g. iOS from Windows).
 HOST_INCAPABLE = "KF-HOST-INCAPABLE"
 
+#: iOS: the project would run Kivy 2.x there. kivyforge builds Kivy 3 only on
+#: iOS; the mobile wheel index serves no Kivy 2.x iOS wheel, and kivy-ios is
+#: the tool that serves Kivy 2.x. ``lock`` catches a ``kivy`` requirement that
+#: admits no 3.x release before resolving, and a resolved ``kivy`` below
+#: ``3.0.0.dev0`` after; ``build`` applies the second check to the lock it
+#: reads. Exit 1. ``context`` names the ``requirement`` or the ``version``.
+IOS_KIVY_UNSUPPORTED = "KF-IOS-KIVY-UNSUPPORTED"
+
 #: Android: a dependency provides a top-level ``android`` module, which would
 #: be shadowed by the ``android`` package kivyforge bundles. ``lock`` catches a
 #: distribution named ``android``; ``build`` catches any wheel that installs

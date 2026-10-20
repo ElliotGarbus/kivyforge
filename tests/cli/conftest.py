@@ -134,6 +134,7 @@ def ios(desktop_project, monkeypatch):
     )
     lock = SimpleNamespace(
         python_xcframework=SimpleNamespace(version="3.14.0"),
+        packages=(),
         swift_packages=(),
         xcframeworks=(),
     )

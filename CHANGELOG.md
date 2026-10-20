@@ -17,6 +17,21 @@
   the app.
 - **Migration:** none needed.
 
+### iOS: Kivy 2.x is refused with a clear error
+
+- **Added:** `kivyforge lock -p ios` fails with `KF-IOS-KIVY-UNSUPPORTED` (exit
+  `1`) when the `kivy` requirement admits no Kivy 3 release, such as `kivy<3`
+  or `kivy==2.3.1`, and when the resolved `kivy` is below `3.0.0.dev0`.
+  `kivyforge build -p ios` applies the second check to the lock it reads, so a
+  lock written by hand or by an older kivyforge gets the same error
+  ([#109](https://github.com/ElliotGarbus/kivyforge/issues/109)). Before, a
+  2.x requirement failed inside pip's resolver with pip's wording, and
+  nothing said that Kivy 2.x is unsupported on iOS. kivyforge builds Kivy 3
+  only there; kivy-ios serves Kivy 2.x.
+- **Migration:** none for a project already on Kivy 3. A project that pins
+  Kivy 2.x now gets this error instead of pip's: require Kivy 3 (for example
+  `kivy>=3.0,<4`) and run `kivyforge lock -p ios`.
+
 ### Hosts: every target verb refuses a host that cannot build the target
 
 - **Changed:** `lock`, `build`, `run`, `package`, `open`, `status` and `upgrade`
