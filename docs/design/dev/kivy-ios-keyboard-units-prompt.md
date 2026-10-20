@@ -186,13 +186,11 @@ keyboard. Include both screenshots in the PR.
 
 ## After the Kivy fix lands (kivyforge side)
 
-kivyforge currently works around this by multiplying `kivy.mobile`'s iOS
-values by `get_scale()`. When a Kivy wheel with the fix is published to the
-kivy-mobile-wheels index, remove the iOS workaround everywhere it appears, in
-the same change that bumps the locked Kivy for the on-device gate examples.
-`git grep "get_scale()" -- examples docs` lists the candidates (on 2026-10-20:
-the `mobile-geometry` guide and ten examples); not every hit is the
-workaround, since Android values were already pixels, so read each one. Also
-update the `get_kheight` row of `ios-module-proposal.md` and the ios-module
-guide. Re-run the affected iOS examples on the simulator and record the run in
-`test-matrix.md` §7.
+The fix is [kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441).
+kivyforge removed its `× get_scale()` workaround from the guides and examples
+on 2026-10-20, before that PR merged (see `CHANGELOG.md`), so until a fixed
+wheel is on the kivy-mobile-wheels index those examples' iOS insets and
+keyboard heights are a third of the right size. What is left: when the wheel
+is published, bump the locked Kivy for the on-device gate examples, re-run the
+affected iOS examples on the simulator, and record the run in `test-matrix.md`
+§7.

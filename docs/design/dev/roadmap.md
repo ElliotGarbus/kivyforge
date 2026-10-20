@@ -535,8 +535,9 @@ on purpose.
 
 **Implementation.** Follow `svg-explorer`'s `safe_area_insets()` helper: it
 imports `kivy.mobile` defensively (degrades to zeros when absent, so the
-example still runs on desktop), and converts UIKit points to Kivy pixels via
-`get_scale()`. Duplicate that small helper per example rather than factoring
+example still runs on desktop), and uses the insets unscaled, since
+`kivy.mobile` reports Kivy pixels (on iOS since kivy/kivy#9441; the helpers
+multiplied by `get_scale()` until 2026-10-20). Duplicate that small helper per example rather than factoring
 it into a shared module — examples must stay individually copy-pasteable, and
 a shared import would make each one non-self-contained.
 

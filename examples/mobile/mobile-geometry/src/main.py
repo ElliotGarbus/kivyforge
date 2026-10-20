@@ -91,9 +91,9 @@ class MobileGeometryApp(App):
     def _apply_keyboard_height(self, height: float) -> None:
         self.keyboard_height = height
         root = self.root
-        root.ids.lbl_kb.text = f"{height:.1f} pt"
-        # Scale bar width: max expected keyboard height ~350 pt
-        self.kb_bar_width = min(1.0, height / 350.0)
+        root.ids.lbl_kb.text = f"{height:.1f} px"
+        # A phone keyboard covers well under half the window.
+        self.kb_bar_width = min(1.0, height / (Window.height / 2))
 
     def _on_rotate(self, window, rotation) -> None:
         # UIKit updates safeAreaInsets asynchronously — defer one frame.
@@ -109,16 +109,16 @@ class MobileGeometryApp(App):
         ids.lbl_scale.text = f"{get_scale():.2f}x"
         ids.lbl_density.text = f"{get_density():.2f}"
         self._refresh_safe_area()
-        ids.lbl_kb.text = f"{get_keyboard_height():.1f} pt"
+        ids.lbl_kb.text = f"{get_keyboard_height():.1f} px"
 
     def _refresh_safe_area(self) -> None:
         sa = get_safe_area()
         self.safe_area = sa
         ids = self.root.ids
-        ids.lbl_sa_top.text = f"{sa['top']:.1f} pt"
-        ids.lbl_sa_bottom.text = f"{sa['bottom']:.1f} pt"
-        ids.lbl_sa_left.text = f"{sa['left']:.1f} pt"
-        ids.lbl_sa_right.text = f"{sa['right']:.1f} pt"
+        ids.lbl_sa_top.text = f"{sa['top']:.1f} px"
+        ids.lbl_sa_bottom.text = f"{sa['bottom']:.1f} px"
+        ids.lbl_sa_left.text = f"{sa['left']:.1f} px"
+        ids.lbl_sa_right.text = f"{sa['right']:.1f} px"
 
 
 MobileGeometryApp().run()
