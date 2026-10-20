@@ -108,8 +108,43 @@ def simctl_list_json(*, state: str = "available") -> list[str]:
     return ["xcrun", "simctl", "list", "devices", state, "-j"]
 
 
-def open_simulator_app() -> list[str]:
-    return ["open", "-a", "Simulator"]
+DEVICE_HUB_BUNDLE_ID = "com.apple.dt.Devices"
+
+
+def xcode_select_path() -> list[str]:
+    return ["xcode-select", "-p"]
+
+
+def simulator_window_commands(udid: str, developer_dir: str | None) -> list[list[str]]:
+    """The ways to show a booted simulator's screen, best first.
+
+    Xcode 26 and earlier show it in Simulator.app. Xcode 27 replaced that app
+    with Device Hub, which only Xcode opens for you; ``simctl`` boots a
+    simulator without any window. Device Hub registers a ``devices://`` URL
+    scheme whose ``device/open?id=<UDID>`` path opens the given simulator's
+    screen, and the bare app is the fallback.
+
+    Simulator.app is opened by path from the selected Xcode, not by name, so a
+    Mac with several Xcodes does not get another version's Simulator.app.
+    """
+    commands: list[list[str]] = []
+    if developer_dir:
+        simulator_app = Path(developer_dir) / "Applications" / "Simulator.app"
+        if simulator_app.is_dir():
+            commands.append(["open", str(simulator_app)])
+    commands.append(["open", f"devices://device/open?id={udid}"])
+    commands.append(["open", "-b", DEVICE_HUB_BUNDLE_ID])
+    return commands
+
+
+def show_simulator(udid: str, *, runner=subprocess.run) -> bool:
+    """Bring up the window showing simulator ``udid``. False if none opened."""
+    proc = run_command(xcode_select_path(), runner=runner, check=False)
+    developer_dir = proc.stdout.strip() if proc.returncode == 0 else None
+    for argv in simulator_window_commands(udid, developer_dir):
+        if run_command(argv, runner=runner, check=False).returncode == 0:
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -169,7 +204,6 @@ def resolve_simulator_destination(
     device = pick_simulator(devices, destination)
     if device.state != "Booted":
         run_command(simctl_boot(device.udid), runner=runner, check=False)
-        run_command(open_simulator_app(), runner=runner, check=False)
     return device
 
 

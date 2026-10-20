@@ -338,6 +338,23 @@ class TestRun:
             # Captured output would show the app's console only after it exits.
             assert [c[:3] for c in launches] == [["xcrun", "simctl", "launch"]]
             assert "--console-pty" in launches[0]
+            opens = [i for i, c in enumerate(record_xcodebuild) if c[0] == "open"]
+            installs = [i for i, j in enumerate(joined) if "simctl install" in j]
+            assert opens and opens[0] < installs[0]
+
+    def test_run_simulator_warns_when_no_window_opens(
+        self, runner, tmp_path, record_xcodebuild, launches, monkeypatch
+    ):
+        monkeypatch.setattr(ios_cli, "show_simulator", lambda udid: False)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            app = Path(fs) / "myapp-ios/build/DerivedData/Build/Products"
+            (app / "Debug-iphonesimulator" / "myapp.app").mkdir(parents=True)
+            result = runner.invoke(run_cmd, ["--simulator"])
+            assert result.exit_code == 0, result.output
+            assert "could not open a window" in result.stderr
+            assert "could not open a window" not in result.stdout
+            assert launches, "the app still launches without a window"
 
     def test_run_device_builds_for_the_chosen_phone(
         self, runner, tmp_path, record_xcodebuild, launches
