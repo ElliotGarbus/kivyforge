@@ -32,6 +32,8 @@ def patch_backends(monkeypatch, fake_resolver, fake_python_provider):
         prefer=(),
         offline=False,
         now=None,
+        on_progress=None,
+        on_transfer=None,
     ):
         return real_build(
             config,

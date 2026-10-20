@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from kivyforge.platforms.android.streaming import elapsed, run_streaming
+from kivyforge.streaming import elapsed, run_streaming
 
 
 def _python(code: str) -> list[str]:

@@ -12,14 +12,16 @@ platform-neutral pip helpers are shared from ``kivyforge.lock.resolver``.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from ...streaming import run_streaming
 from ..model import canonical_name
+from ..pip_progress import PROGRESS_ARGS, PipProgress, without_progress
 from ..prefer import Pins, constraint_args
 from ..resolver import (
     MIN_PIP_VERSION,
@@ -96,8 +98,16 @@ class WheelResolver(Protocol):
 class PipWheelResolver:
     """Default backend: stock pip cross-resolution via ``pip install --report``."""
 
-    def __init__(self, python_executable: str | None = None) -> None:
+    def __init__(
+        self,
+        python_executable: str | None = None,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+        on_transfer: Callable[[str, int, int, str], None] | None = None,
+    ) -> None:
         self._python = python_executable or sys.executable
+        self._on_progress = on_progress
+        self._on_transfer = on_transfer
 
     def resolve(
         self,
@@ -118,8 +128,11 @@ class PipWheelResolver:
         seen_filenames: dict[str, set[str]] = {}
 
         for variant in variants:
+            if self._on_progress is not None:
+                self._on_progress(f"[lock] {variant.arch}: resolving wheels")
             report = self._run_report(
                 requirements,
+                label=variant.arch,
                 python_version=python_version,
                 platform_tags=variant.request_tags,
                 abis=abis,
@@ -182,6 +195,7 @@ class PipWheelResolver:
         self,
         requirements: list[str],
         *,
+        label: str = "",
         python_version: str,
         platform_tags: tuple[str, ...],
         abis: tuple[str, ...],
@@ -209,6 +223,9 @@ class PipWheelResolver:
                 str(Path(tmp) / "target"),
                 "--report",
                 str(report_path),
+                # Machine-readable byte counts even when not on a terminal,
+                # which is the only way to show download progress (#88).
+                *PROGRESS_ARGS,
             ]
             # pip accepts --platform multiple times; a wheel matching ANY of the
             # tags is eligible while a single consistent version set is resolved.
@@ -225,17 +242,19 @@ class PipWheelResolver:
             cmd += constraint_args(Path(tmp), constraints or {})
             cmd += list(requirements)
 
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+            progress = PipProgress(
+                label or platform_tags[0], self._on_progress, self._on_transfer
             )
-            if proc.returncode != 0:
+            # Streamed, so a slow resolve shows its downloads instead of
+            # looking like a hang; run_streaming decodes pip's UTF-8.
+            returncode, transcript = run_streaming(
+                cmd,
+                on_segment=progress,
+                on_quiet=progress.quiet if self._on_progress else None,
+            )
+            if returncode != 0:
                 tags = ", ".join(platform_tags)
-                output = proc.stderr or proc.stdout
+                output = without_progress(transcript)
                 culprit = unresolved_requirement(output)
                 what = (
                     f"no wheel for {culprit!r}"

@@ -23,6 +23,7 @@ from typing import Protocol
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.net import request
+from kivyforge.report.transfers import report_transfer
 
 # python.org publishes the official iOS xcframework from 3.15.0b1 onward.
 PYTHON_ORG_URL = "https://www.python.org/ftp/python/{version}/python-{version}-iOS-XCframework.tar.gz"
@@ -157,14 +158,25 @@ class PythonOrgProvider:
     def _download(self, url: str, version: str) -> tuple[str, str]:
         """Download the archive; return ``(sha256, ios_floor)``."""
         last_exc: OSError | None = None
+        label = f"[download] Python.xcframework {version}"
         for attempt in range(_DOWNLOAD_ATTEMPTS):
             try:
                 digest = hashlib.sha256()
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
                     with urllib.request.urlopen(request(url)) as resp:  # noqa: S310
-                        for chunk in iter(lambda: resp.read(1 << 20), b""):
+                        # Tens of MB downloaded only to hash it: without a bar,
+                        # a slow line looks like a hang (#88). No Content-Length
+                        # (a chunked response) still downloads, without a total.
+                        total = int(resp.headers.get("Content-Length") or 0)
+                        done = 0
+                        report_transfer(label, done, total)
+                        # 64 KiB, as the shared downloader reads, so the bar
+                        # moves on a slow line.
+                        for chunk in iter(lambda: resp.read(1 << 16), b""):
                             digest.update(chunk)
                             tmp.write(chunk)
+                            done += len(chunk)
+                            report_transfer(label, done, total)
                     tmp.flush()
                     tmp.seek(0)
                     floor = _read_ios_floor_from_fileobj(tmp)

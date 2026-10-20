@@ -82,6 +82,8 @@ def build_windows_lockfile(
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    on_transfer: Callable[[str, int, int, str], None] | None = None,
 ) -> WindowsLockfile:
     return build_wheel_runtime_lock(
         _PROFILE,
@@ -94,6 +96,8 @@ def build_windows_lockfile(
         offline=offline,
         now=now,
         on_warning=on_warning,
+        on_progress=on_progress,
+        on_transfer=on_transfer,
     )
 
 

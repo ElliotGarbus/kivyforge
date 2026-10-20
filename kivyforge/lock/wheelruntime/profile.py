@@ -73,8 +73,9 @@ class PlatformLockProfile(ABC):
 
     # --- fields with cross-platform defaults (overlay-name agnostic accessors) ---
 
-    def wheel_resolver(self) -> WheelResolver:
-        return get_wheel_resolver("pip")
+    def wheel_resolver(self, **progress) -> WheelResolver:
+        """The default resolver; ``progress`` is its ``on_progress``/``on_transfer``."""
+        return get_wheel_resolver("pip", **progress)
 
     def extra_index_urls(self, config: Config) -> tuple[str, ...]:
         return tuple(getattr(self.overlay(config), "extra_index_urls", ()) or ())

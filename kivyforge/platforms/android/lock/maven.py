@@ -25,8 +25,8 @@ from pathlib import Path
 from typing import Protocol
 
 from kivyforge.config.model import AndroidGradleConfig
+from kivyforge.streaming import elapsed, run_streaming
 
-from ..streaming import elapsed, run_streaming
 from .model import GradleArtifact, GradlePins, GradleResolvedModule
 
 _VERIFICATION_NS = "{https://schema.gradle.org/dependency-verification}"
