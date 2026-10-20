@@ -113,30 +113,47 @@ the one that is wrong. The web-view frame confirms it from the other side:
 puts the view exactly over the Kivy area (owner-confirmed, and in screenshots
 taken during the run).
 
-## Keyboard — a Kivy defect
+## Keyboard — a Kivy defect (units only)
 
-From the owner's taps into the URL field:
+Rechecked 2026-10-20 against Kivy master (`bdac6a6`), whose
+`kivy/mobile/__init__.py`, `kivy/mobile/_platform/ios.py` and `Window`
+keyboard code are identical to the wheel this run used
+(3.0.0.dev202610051055, `git-56baa54`).
+
+**Units: confirmed.** With the keyboard on screen, logged by the app's own
+Kivy log:
 
 ```text
-keyboard: kivy.mobile.get_keyboard_height()=289.0 pt, Window.keyboard_height=0.0, scale=3.0, Window.height=2736.0
 keyboard: kivy.mobile.get_keyboard_height()=347.0 pt, Window.keyboard_height=347.0, scale=3.0, Window.height=2736.0
-keyboard: kivy.mobile.get_keyboard_height()=347.0 pt, Window.keyboard_height=0.0, scale=3.0, Window.height=2736.0
 ```
 
-Two problems, both in Kivy:
+A simulator screenshot taken at the same time is 1260 x 2736, the same as
+`Window.size`, and the keyboard covers its bottom ~1040 px: 347 pt x 3. So
+`Window.keyboard_height` is the keyboard height in UIKit points, while the
+iOS window is laid out in pixels (`SDL_WINDOW_HIGH_PIXEL_DENSITY`; touch
+positions are multiplied by the pixel density in `window_sdl3.py`). Every
+consumer is short by the scale factor: `softinput_mode` `pan` and
+`below_target` move content 347 px instead of 1041, and `scale` shrinks the
+viewport by a third of the keyboard. The cause is `kivy.mobile`'s iOS
+backend, whose docstring says points "equal Kivy layout coordinates on iOS
+(nativeScale applies only to rasterization, not layout)"; under SDL3 they do
+not. `get_safe_area()` has the same mismatch, so `Window.safe_area` is in
+points too. The Android backend returns pixels for both, which do match
+Kivy's layout there, so this is iOS-only.
 
-- **Units.** When `Window.keyboard_height` is non-zero it equals the point
-  value (347), but the window is in pixels, so it is low by the scale factor:
-  the keyboard is 1041 px tall. `_get_kheight` returns
-  `get_keyboard_height()` unscaled, as the prompt suspected.
-- **Mostly zero.** Of 12 readings taken while `kivy.mobile` reported a
-  keyboard (241, 289 or 347 pt), `Window.keyboard_height` was non-zero in 3,
-  all at 347 pt. The app reads it on the
-  next frame after the subscription fires, so either the property is not
-  updated from the same notification, or it updates later. Either way, an app
-  that sizes to it gets 0.
+**Not a defect: "mostly zero".** The first version of this section reported
+`Window.keyboard_height` as 0 in 9 of 12 readings. That came from the app's
+logging, not from Kivy. `Window.keyboard_height` is an `AliasProperty` whose
+getter returns the same live `get_keyboard_height()`, and the log line
+printed the height passed to the subscription callback next to
+`Window.keyboard_height` read one frame later. A line like `289.0 pt ...
+Window.keyboard_height=0.0` is the keyboard reporting 289 and then, before
+the next frame, 0. Whenever the keyboard stayed up, the two agreed (347 and
+347).
 
-To report upstream; not patched here. Until it is fixed, the guide's
+To report upstream; not patched here. The fix belongs in
+`kivy/mobile/_platform/ios.py` (return pixels, multiplying by `get_scale()`,
+as Android does) or in `Window` when it reads it. Until then, the guide's
 `get_kheight` row should use `kivy.mobile.get_keyboard_height() * get_scale()`.
 
 ## Rotation

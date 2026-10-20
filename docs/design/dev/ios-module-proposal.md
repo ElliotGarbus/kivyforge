@@ -136,10 +136,13 @@ scale for the same reason (E2). Two consequences:
   unscaled (`core/window/__init__.py`, `_get_kheight`). **Measured** by the
   spike on 2026-10-19 (`ios-webview-spike-findings.md`): with the keyboard
   up, `kivy.mobile` reported 347 pt and `Window.keyboard_height` read 347,
-  in a window 2736 px tall at scale 3, so it is low by the scale factor; and
-  it read 0 in 9 of 12 readings while `kivy.mobile` reported a keyboard. Two
-  Kivy defects to report upstream; the guide steers around them by using
-  `kivy.mobile.get_keyboard_height() * get_scale()` directly.
+  in a window 2736 px tall at scale 3, so it is low by the scale factor
+  (re-measured 2026-10-20 against Kivy master, same code: the keyboard is
+  about 1040 px tall in a 1260 x 2736 screenshot). One Kivy defect to report
+  upstream; the guide steers around it by using
+  `kivy.mobile.get_keyboard_height() * get_scale()` directly. The spike's
+  first report of a second defect, `Window.keyboard_height` reading 0 while
+  a keyboard was up, came from its own logging and is withdrawn.
 
 **Measured** by the same run: `Window.size` was `(1260, 2736)` and
 `UIScreen.bounds` `420 × 912` pt at `nativeScale` 3, so the window is in

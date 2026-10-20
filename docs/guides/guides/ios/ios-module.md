@@ -67,11 +67,11 @@ old `get_kheight()` multiplied by the scale for you, and `get_safe_area()` never
 did, so code moving from `ios` keeps its multiplication for the keyboard and
 adds one for the safe area.
 
-Do not use `Window.keyboard_height` on iOS until Kivy fixes it. It returns the
-points value without the multiplication, and it was `0` in 9 of 12 readings
-taken while `kivy.mobile` reported a keyboard (the measurements are in
-`docs/design/dev/ios-webview-spike-findings.md`). Read
-`kivy.mobile.get_keyboard_height()` directly, as above.
+`Window.keyboard_height` and `Window.safe_area` have the same problem on iOS:
+they pass the points values through without the multiplication, so they are a
+third of the right size on a scale-3 device (the measurements are in
+`docs/design/dev/ios-webview-spike-findings.md`). Until Kivy fixes it, read
+`kivy.mobile` and multiply, as above.
 
 ## Show a web view
 
