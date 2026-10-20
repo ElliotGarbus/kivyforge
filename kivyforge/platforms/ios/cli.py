@@ -64,6 +64,7 @@ from .xcode import (
     resolve_simulator_destination,
     run_command,
     run_foreground,
+    show_simulator,
     simctl_install,
     simctl_launch,
     simctl_list,
@@ -570,6 +571,13 @@ def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     label = f"{device.name} ({device.udid})"
     # Progress, so stderr: stdout belongs to the app console launched below,
     # which is `run`'s product (AGENTS.md).
+    if not show_simulator(device.udid):
+        click.echo(
+            f"Warning: could not open a window for simulator {label}; the app "
+            "will run, but nothing shows it. Open Device Hub (Xcode 27) or "
+            "Simulator (earlier Xcode) and select the device.",
+            err=True,
+        )
     click.echo(f"Installing on simulator {label} ...", err=True)
     run_command(simctl_install(device.udid, app))
     click.echo(f"Launching {bundle_id} ...", err=True)
