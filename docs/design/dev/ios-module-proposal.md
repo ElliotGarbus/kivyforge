@@ -133,9 +133,18 @@ scale for the same reason (E2). Two consequences:
 - Code moving from `ios` keeps its `× get_scale()` for the keyboard and adds
   one for the safe area; the mapping below says so.
 - Kivy's own `Window.keyboard_height` returns `get_keyboard_height()`
-  unscaled (`core/window/__init__.py`, `_get_kheight`), which would make
-  `softinput_mode` move the window by too little on iOS. That is a probable
-  Kivy defect; the spike (E9) measures it before it is reported.
+  unscaled (`core/window/__init__.py`, `_get_kheight`). **Measured** by the
+  spike on 2026-10-19 (`ios-webview-spike-findings.md`): with the keyboard
+  up, `kivy.mobile` reported 347 pt and `Window.keyboard_height` read 347,
+  in a window 2736 px tall at scale 3, so it is low by the scale factor; and
+  it read 0 in 9 of 12 readings while `kivy.mobile` reported a keyboard. Two
+  Kivy defects to report upstream; the guide steers around them by using
+  `kivy.mobile.get_keyboard_height() * get_scale()` directly.
+
+**Measured** by the same run: `Window.size` was `(1260, 2736)` and
+`UIScreen.bounds` `420 × 912` pt at `nativeScale` 3, so the window is in
+pixels, and `get_safe_area()` returned a top inset of 68 pt on an iPhone Air
+simulator, so the key-window lookup worked there (E10's check).
 
 The same seven names exist on Android, backed by pyjnius, so an app that
 reads `kivy.mobile` needs no platform fork between the two.
@@ -216,17 +225,37 @@ a clear error would be added. It is in progress as stage 0.
 
 ### E9. The web view in `pyobjus`
 
-The one function with no drop-in replacement is the web view overlay. plyer's
-iOS facades show the idiom, verified by reading `filechooser.py` and `email.py`:
-`load_framework` on a system framework, `autoclass` for the classes,
-`keyWindow.rootViewController()` for the presenting controller, and
-`presentViewController_animated_completion_` or `addSubview_`. A `WKWebView`
-needs `initWithFrame_` with a `CGRect`, which `pyobjus` passes as its
-`NSRect` struct. The guide's snippet (below) is a sketch; it has not run.
-The spike that runs it is `examples/mobile/ios-webview`, driven by
-[`ios-webview-spike-prompt.md`](ios-webview-spike-prompt.md): it tries the
-pyobjus recipe and a ctypes fallback side by side, and logs the numbers that
-settle the units question in E3.
+The one function with no drop-in replacement is the web view overlay. The
+spike `examples/mobile/ios-webview`, driven by
+[`ios-webview-spike-prompt.md`](ios-webview-spike-prompt.md), ran on an
+iPhone Air simulator (iOS 27.0, Xcode 27.0, pyobjus 1.2.4) on 2026-10-19;
+[`ios-webview-spike-findings.md`](ios-webview-spike-findings.md) has the
+verbatim log. The recipe as first sketched, pure pyobjus, failed twice over:
+
+- **`pyobjus.dylib_manager.load_framework` is a silent no-op on iOS.** It
+  calls `NSBundle.bundleWithPath_` with the macOS framework path, gets nil,
+  and `load()` on nil raises nothing. `autoclass("WKWebView")` then fails
+  with `Unable to find class b'WKWebView'`. Loading the framework binary
+  with `ctypes.CDLL` (dyld) works on the simulator and should on a device.
+- **pyobjus 1.2.4 passes floating-point arguments unreliably on arm64.**
+  `initWithFrame_(NSRect(...))` produced a 0×0 view on one launch and the
+  right frame on the next; a `CGFloat` constraint constant arrived as 0.0.
+  Object, string and integer arguments, and struct *returns*, were correct
+  every time. Setting the frame with `setFrame:` through `objc_msgSend`
+  (ctypes, using `get_address()` for the pyobjus object) worked on every
+  launch.
+
+What worked, and what the guide carries: pyobjus for objects and strings,
+plus about twenty-five lines of ctypes to load WebKit and set the frame. A
+pure-ctypes variant also worked but is longer for no gain. Properties:
+`keyWindow`, `rootViewController` and `view` came back from pyobjus
+sometimes as values and sometimes as callables, so the recipe reads them
+through a small helper that accepts either. The run also confirmed the
+units in E3 from the other side: a Kivy rectangle of
+`(60, 162, 1140, 1842)` px mapped to `(20, 244, 380, 614)` pt put the view
+exactly over the Kivy area, and `Close` (`removeFromSuperview`) removed it.
+A typed URL without a scheme loads nothing silently (`NSURL` parses it as a
+relative path); the recipe adds `https://`.
 
 ### E10. What the kivy and kivy-ios trackers show
 
@@ -258,8 +287,11 @@ Two things to carry forward:
 
 ## What was not verified
 
-- Nothing in this note has run on a device or the simulator, including the
-  web view snippet (E9).
+- The web view spike has run on the simulator (E9), not on a device. The
+  `dlopen` of WebKit and the frame call are expected to behave the same on a
+  device; not shown.
+- The condensed recipe below is the spike's working code shortened for the
+  guide; the guide's own copy must be run once before it is published.
 - plyer's iOS facades were read, not run, on kivyforge.
 - Whether a Kivy 3 app's `keyWindow.rootViewController.view` behaves the same
   under SDL3's UIKit view controller as it did under SDL2's. Both are SDL's
@@ -354,27 +386,66 @@ and `07-recipe-triage.md`.
 | `get_scale()` | `kivy.mobile.get_scale()` | same value |
 | `get_dpi()` | `kivy.mobile.get_dpi()` | float, and an estimate (`163 × scale`, `132 × scale` on iPad) rather than a per-model table, which Kivy dropped because it "topped out at iPhone 13" (kivy#9331); this is also what `Metrics.dpi` reports on Kivy 3 |
 | `get_safe_area()` | `kivy.mobile.get_safe_area()`, or bind `Window.safe_area` | same dict, same keys, same unit (UIKit points). Multiply by `get_scale()` for Kivy pixels, as the mobile geometry guide shows; the old function needed the same |
-| `get_kheight()` | `kivy.mobile.get_keyboard_height() * kivy.mobile.get_scale()` | the old function returned **pixels** (it multiplied by the scale internally); `kivy.mobile` returns **points**, so the caller multiplies. `Window.keyboard_height` is the unscaled value today, pending the spike's measurement (E3). Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
+| `get_kheight()` | `kivy.mobile.get_keyboard_height() * kivy.mobile.get_scale()` | the old function returned **pixels** (it multiplied by the scale internally); `kivy.mobile` returns **points**, so the caller multiplies. Do not read `Window.keyboard_height` for this on iOS yet: measured, it is the unscaled points value and reads 0 most of the time the keyboard is up (E3); a Kivy defect to report. Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
 | `IOSKeyboard`, `iOSKeyboard` | `kivy.mobile.subscribe_keyboard_height(callback)` | Kivy's `Window` already subscribes; most apps need nothing |
 | `open_url(url)`, `IosBrowser` | `webbrowser.open(url)` | the standard library registers the iOS backend itself; works on every platform |
-| `IOSWebView().open(url, x, y, width, height)`, `open_url_wbv(...)` | `WKWebView` through `pyobjus` (recipe below) | add `pyobjus` to `[project].dependencies`. The frame is UIKit points with a top-left origin, as before: from a Kivy rectangle, divide by `get_scale()` and take `y` from the top |
+| `IOSWebView().open(url, x, y, width, height)`, `open_url_wbv(...)` | `WKWebView` through `pyobjus`, with WebKit loaded and the frame set through ctypes (recipe below, verified in the spike) | add `pyobjus` to `[project].dependencies`. The frame is UIKit points with a top-left origin, as before: from a Kivy rectangle, divide by `get_scale()` and take `y` from the top |
 | `send_email(...)` | plyer's `email` facade (`mailto:`, any default mail app) for subject and body; `UIActivityViewController` through `pyobjus` for a file | the old function worked only where the Apple Mail app has an account |
 | the file chooser | plyer's `filechooser` facade (needs `pyobjus`), or `PHPickerViewController` through `pyobjus` | the old module never exposed one to Python |
 | `import ios` in cross-platform code | `from kivy.utils import platform`, then `if platform in ("ios", "android"): import kivy.mobile` | `kivy.mobile` raises `ImportError` on desktop by design |
 
-### The web view recipe (sketch; the spike in `examples/mobile/ios-webview` verifies it)
+### The web view recipe
+
+The spike's working code (`examples/mobile/ios-webview/src/main.py`, the
+pyobjus variant), condensed for the guide. The two ctypes pieces are there
+because of the two pyobjus defects in E9; the comments say which.
 
 ```python
-from pyobjus import autoclass, objc_str
-from pyobjus.dylib_manager import load_framework
-from pyobjus.objc_py_types import NSPoint, NSRect, NSSize
+import ctypes
 
-load_framework("/System/Library/Frameworks/WebKit.framework")
+from pyobjus import autoclass, objc_str
+
+# The app does not link WebKit, so WKWebView does not exist until the
+# framework is loaded. pyobjus's load_framework() is a silent no-op on iOS
+# (it uses the macOS bundle path), so load the binary through dyld instead.
+ctypes.CDLL("/System/Library/Frameworks/WebKit.framework/WebKit")
 
 WKWebView = autoclass("WKWebView")
 NSURL = autoclass("NSURL")
 NSURLRequest = autoclass("NSURLRequest")
 UIApplication = autoclass("UIApplication")
+
+
+class _CGPoint(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+
+class _CGSize(ctypes.Structure):
+    _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+
+class _CGRect(ctypes.Structure):
+    _fields_ = [("origin", _CGPoint), ("size", _CGSize)]
+
+
+def _get(obj, name):
+    """pyobjus returns a property such as keyWindow or view sometimes as a
+    value and sometimes as a callable; accept either."""
+    value = getattr(obj, name)
+    return value() if callable(value) else value
+
+
+def _set_frame(view, x, y, width, height):
+    """pyobjus 1.2.4 passes CGRect and CGFloat arguments unreliably on arm64,
+    so the frame is sent through objc_msgSend directly."""
+    lib = ctypes.CDLL(None)
+    lib.sel_registerName.restype = ctypes.c_void_p
+    lib.sel_registerName.argtypes = [ctypes.c_char_p]
+    send = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, _CGRect)(
+        ctypes.cast(lib.objc_msgSend, ctypes.c_void_p).value
+    )
+    rect = _CGRect(_CGPoint(x, y), _CGSize(width, height))
+    send(view.get_address(), lib.sel_registerName(b"setFrame:"), rect)
 
 
 def open_web_view(url, x, y, width, height):
@@ -386,19 +457,31 @@ def open_web_view(url, x, y, width, height):
     and use (Window.height - top_edge) / scale for y. Keep the returned
     object and call .removeFromSuperview() to close it.
     """
-    root = UIApplication.sharedApplication().keyWindow.rootViewController()
-    frame = NSRect(NSPoint(x, y), NSSize(width, height))
-    web_view = WKWebView.alloc().initWithFrame_(frame)
-    root.view().addSubview_(web_view)
-    request = NSURLRequest.requestWithURL_(NSURL.URLWithString_(objc_str(url)))
-    web_view.loadRequest_(request)
+    app = UIApplication.sharedApplication()
+    window = _get(app, "keyWindow")
+    if not window:
+        window = _get(_get(app, "windows"), "firstObject")
+    root_view = _get(_get(window, "rootViewController"), "view")
+
+    web_view = WKWebView.alloc().init()
+    _set_frame(web_view, x, y, width, height)
+    root_view.addSubview_(web_view)
+
+    if "://" not in url:
+        url = "https://" + url  # NSURL reads a bare host as a relative path
+    ns_url = NSURL.URLWithString_(objc_str(url))
+    if not ns_url:
+        web_view.removeFromSuperview()
+        raise ValueError(f"not a URL: {url!r}")
+    web_view.loadRequest_(NSURLRequest.requestWithURL_(ns_url))
     return web_view
 ```
 
 Closing it from Python replaces the old module's hard-coded "X" button, which
 is why the guide prefers this over reproducing the overlay exactly. The guide
-also says the view does not follow rotation unless the app resizes it, as
-before, and that UIKit calls must come from the main thread, where Kivy runs.
+also says the view does not follow rotation unless the app resizes it (the
+spike app is portrait-only, so this was not exercised), and that UIKit calls
+must come from the main thread, where Kivy runs.
 
 ## The signpost
 
@@ -437,16 +520,20 @@ before, and that UIKit calls must come from the main thread, where Kivy runs.
 ## Verification plan
 
 - Hermetic tests for the signpost (above).
-- The spike, `examples/mobile/ios-webview`, run on the simulator before the
-  guide is written, following
+- **Done 2026-10-19:** the spike, `examples/mobile/ios-webview`, on the
+  simulator, following
   [`ios-webview-spike-prompt.md`](ios-webview-spike-prompt.md); findings in
-  `ios-webview-spike-findings.md`. It settles which variant the guide carries
-  (pyobjus or ctypes), the units in E3 with logged numbers, and whether
-  `Window.keyboard_height` is low by the scale on iOS. It is not a CI gate:
-  it exercises `pyobjus` and Kivy, not kivyforge.
-- A `kivy.mobile` safe-area check on the simulator, once, on a notched
-  device: `kivy.mobile.get_safe_area()["top"]` is non-zero (E10). If it is
-  zero, the key-window lookup needs the delegate's window, upstream.
+  [`ios-webview-spike-findings.md`](ios-webview-spike-findings.md), row in
+  `test-matrix.md` §7. It settled the variant (pyobjus plus ctypes for the
+  load and the frame), the units (pixels), and the `Window.keyboard_height`
+  defect (E3, E9). The example stays as a permanent one: it is the only code
+  in the repo that exercises both pyobjus failure modes, and the guide's
+  Verify section can point at it. Not a CI gate.
+- **Done, same run:** `kivy.mobile.get_safe_area()["top"]` was 68 pt on an
+  iPhone Air simulator, so the key-window lookup (E10) worked there. A
+  device and a landscape app remain unchecked.
+- The guide's own copy of the recipe, run once on the simulator before the
+  guide is published (it is the spike's code condensed, not the spike's code).
 - A plyer smoke on the simulator, once: `pyobjus` in the lock, import
   `plyer.platforms.ios.filechooser` and open the picker. It turns E5's reading
   into an observation and tells the guide what to say about the file chooser.
@@ -462,8 +549,9 @@ iOS configure guide and the migration guide, a changelog entry.
 
 ### Stage 1: the guide and the signpost (this repo)
 
-1. Run the spike on the simulator (`ios-webview-spike-prompt.md`); write the
-   findings; fix the sketch and the units rows from them.
+1. Done 2026-10-19: the spike ran, the findings are in
+   `ios-webview-spike-findings.md`, and E3, E9, the mapping and the recipe
+   above are corrected from them.
 2. Write the guide and the doc changes above.
 3. The signpost check, its code, and its tests.
 4. `CHANGELOG.md`.
@@ -481,10 +569,15 @@ it costs. The bar is real apps, not the possibility of them.
    5) owns the change of direction and gives the reporter the four mappings
    they need; their port is one import change, deleting browser code, the web
    view recipe, and plyer for the file chooser, which they already use.
-2. **The web view recipe is unverified** (E9). The spike tries pyobjus and a
-   ctypes variant side by side. If pyobjus cannot pass the `CGRect`, the
-   guide carries the ctypes form; if neither works, a Swift package exposing
-   a one-method `@objc` class, as `guides/ios/swift-packages.md` describes.
+2. **The recipe rests on two pyobjus defects staying as they are** (E9):
+   `load_framework` doing nothing on iOS, and floating-point arguments
+   arriving wrong. Both are worked around with ctypes, which keeps working
+   whether or not pyobjus is fixed. Both should be reported to kivy/pyobjus
+   with the spike's log lines; the pyobjus iOS pin in kivy-mobile-wheels is
+   from 2025-12 and has no upstream iOS CI.
+   **Also upstream:** `Window.keyboard_height` on iOS is unscaled and mostly
+   0 (E3), to report to kivy/kivy with the findings' numbers. Until it is
+   fixed the guide tells apps to read `kivy.mobile` directly.
 3. **The units note already posted on #109 is inverted.** The reply said
    `get_kheight` moves to points and that dividing by the scale must stop;
    E3 shows Kivy lays out in pixels and the caller multiplies instead. A
@@ -501,6 +594,9 @@ it costs. The bar is real apps, not the possibility of them.
 
 - **`pyobjus` in every iOS lock** (decision 7).
 - **plyer on Kivy 3 iOS.** A findings doc after the smoke test.
+- **Docs that say "open Simulator".** Xcode 27 ships Device Hub instead of
+  Simulator.app (findings, defect 4); `kivyforge run -p ios --simulator`
+  still works. Any guide wording that names Simulator.app wants the new name.
 - **Sharing a file from a Kivy app** (the share sheet through `pyobjus`) is
   the answer this note gives to mail-with-attachment, and it deserves a short
   example under `examples/mobile/` once `pyobjus` has been exercised there.
