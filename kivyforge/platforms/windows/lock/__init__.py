@@ -35,6 +35,9 @@ from kivyforge.lock.wheelruntime import (
     semantic_equal,
 )
 from kivyforge.lock.wheelruntime import serialize as _ser
+from kivyforge.lock.wheelruntime.model import (
+    PythonRuntime as WheelRuntimePython,
+)
 
 from .profile import WindowsProfile, wheel_arch, windows_platform_tag
 from .runtime import PythonBuildStandaloneProvider
@@ -79,6 +82,7 @@ def build_windows_lockfile(
     resolver: WheelResolver | None = None,
     runtime_provider: RuntimeProvider | None = None,
     prefer: Iterable[LockedPackage] = (),
+    prefer_runtime: WheelRuntimePython | None = None,
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
@@ -93,6 +97,7 @@ def build_windows_lockfile(
         runtime_provider=runtime_provider,
         native_binaries=config.windows.binaries if config.windows else (),
         prefer=prefer,
+        prefer_runtime=prefer_runtime,
         offline=offline,
         now=now,
         on_warning=on_warning,

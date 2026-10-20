@@ -58,6 +58,10 @@ class _LockOps:
     emits_warnings: bool = False
     #: The backend accepts ``on_progress``/``on_transfer`` and reports with them.
     emits_progress: bool = False
+    #: The backend can keep the existing lock's runtime (``prefer_runtime``):
+    #: the desktop wheel+runtime engine, whose runtime lookup is a slow
+    #: GitHub API query.
+    prefers_runtime: bool = False
 
 
 def _lock_ops(platform: str) -> _LockOps:
@@ -89,6 +93,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=True,
             emits_warnings=True,
             emits_progress=True,
+            prefers_runtime=True,
         )
     if platform == "linux":
         from ..platforms.linux import lock as linux_lock
@@ -105,6 +110,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_linux=True,
             emits_warnings=True,
             emits_progress=True,
+            prefers_runtime=True,
         )
     if platform == "windows":
         from ..platforms.windows import lock as windows_lock
@@ -121,6 +127,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_windows=True,
             emits_warnings=True,
             emits_progress=True,
+            prefers_runtime=True,
         )
     if platform == "android":
         from ..platforms.android.lock import builder as android_builder
@@ -217,6 +224,7 @@ def lock(
             project_root,
             offline,
             prefer=existing.packages if existing is not None else (),
+            prefer_runtime=getattr(existing, "python_runtime", None),
         )
         _atomic_write(out_path, ops.dumps(new_lock))
         report.line(
@@ -270,7 +278,13 @@ def _run_check(
         ) from exc
 
     candidate = _build(
-        report, ops, config, project_root, offline, prefer=existing.packages
+        report,
+        ops,
+        config,
+        project_root,
+        offline,
+        prefer=existing.packages,
+        prefer_runtime=getattr(existing, "python_runtime", None),
     )
     if ops.semantic_equal(existing, candidate):
         report.line(f"{out_path.name} is up to date.")
@@ -308,8 +322,12 @@ def _build(
     offline: bool,
     *,
     prefer=(),
+    prefer_runtime=None,
 ):
     kwargs = {}
+    if ops.prefers_runtime and prefer_runtime is not None:
+        # Skips a slow GitHub lookup when the locked runtime still fits.
+        kwargs["prefer_runtime"] = prefer_runtime
     if ops.emits_warnings:
         # Shown *and* recorded. These used to go to stderr only, so a --json
         # consumer could not see that (say) a vendored plain linux_* wheel had

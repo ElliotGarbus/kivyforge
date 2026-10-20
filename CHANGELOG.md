@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Locks: a desktop re-lock keeps its Python runtime
+
+- **Changed:** on macOS, Linux and Windows, `kivyforge lock` and
+  `lock --check` keep the python-build-standalone runtime already in the lock
+  while its CPython version, architectures and floor are unchanged, the way
+  they keep package pins. That skips the GitHub lookup for the runtime, which
+  took 20 to 30 seconds on Windows: a re-lock of `dice-roller` after an
+  input edit went from about 25 seconds to 6, and `lock --check` makes no
+  GitHub API call at all, so it no longer counts against CI's rate limit.
+  `lock --update`, a new Python version, or a new architecture looks the
+  runtime up again.
+- **Migration:** none needed. A newer python-build-standalone build of the
+  same CPython version is picked up by `lock --update`.
+
 ### Locks: desktop `lock` shows the Python runtime lookup
 
 - **Fixed:** `kivyforge lock -p macos`, `-p linux` and `-p windows` showed

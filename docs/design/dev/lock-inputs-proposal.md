@@ -66,9 +66,13 @@ existing lock as a preference. Each locked package is passed to pip as a
 - `--update` resolves to newest, as before. Exact `==` pins in
   `pyproject.toml` still forbid movement entirely.
 
-The preference covers pip packages only. Runtimes are chosen by their
-configured version, as before. Gradle, Swift package and xcframework pins are
-re-resolved as before.
+The preference covers pip packages and, for macOS, Linux and Windows, the
+python-build-standalone runtime: a re-lock or `--check` keeps the locked
+runtime while its CPython version, provider, provider floor and per-arch
+artifacts still match, which skips a GitHub API lookup that pages through
+releases (20 to 30 s on Windows, 2026-10-20). `--update` looks it up again.
+The Android and iOS runtimes, and Gradle, Swift package and xcframework pins,
+are re-resolved as before.
 
 `lock --check` builds its candidate with the same preference, so a new upstream
 release no longer fails CI while `pyproject.toml` is unchanged.
