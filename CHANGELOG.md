@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### iOS: `run --simulator` shows the simulator with Xcode 27
+
+- **Fixed:** with Xcode 27, `run -p ios --simulator` launched the app on a
+  simulator with no window. Xcode 27 replaced Simulator.app with Device Hub,
+  and kivyforge opened the window with `open -a Simulator`, which now fails,
+  and ignored the failure. kivyforge now opens the simulator's screen in
+  Device Hub (`devices://device/open?id=<UDID>`). With Xcode 26 and earlier it
+  opens the selected Xcode's own Simulator.app.
+- **Changed:** the window is opened on every `run --simulator`, not only when
+  kivyforge boots the simulator. A simulator that was already booted with no
+  window now gets one.
+- **Added:** if no window can be opened, `run` warns on stderr and still runs
+  the app.
+- **Migration:** none needed.
+
 ### Hosts: every target verb refuses a host that cannot build the target
 
 - **Changed:** `lock`, `build`, `run`, `package`, `open`, `status` and `upgrade`
