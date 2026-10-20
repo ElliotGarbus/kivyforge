@@ -21,10 +21,20 @@ the guide depends on:
    keyboard height from ``Window`` and from ``kivy.mobile`` side by side when
    the URL field is focused.
 
+What the simulator run (iOS 27.0, pyobjus 1.2.4) settled:
+
+- pyobjus's ``load_framework(INCLUDE.WebKit)`` does nothing on iOS, so
+  ``autoclass("WKWebView")`` fails. ``load_webkit()`` uses ``dlopen`` instead.
+- pyobjus does not pass ``CGRect`` (or other floating-point) arguments
+  reliably. Both variants set the frame with ctypes; the pyobjus variant hands
+  ctypes its object via ``get_address()``.
+- Kivy lays out in pixels: ``Window.size == UIScreen.bounds * nativeScale``.
+
 Every observation is logged as ``ios-webview: ...`` so the Xcode console can
 be grepped. Run it with ``kivyforge run -p ios --simulator`` from this
 directory (after ``kivyforge lock -p ios``); the prompt that drives the run
-is docs/design/dev/ios-webview-spike-prompt.md.
+is docs/design/dev/ios-webview-spike-prompt.md. Without a simulator window,
+set ``IOS_WEBVIEW_AUTORUN`` (see ``_schedule_autorun``).
 
 On desktop the buttons are disabled and the layout still renders.
 """
@@ -32,6 +42,7 @@ On desktop the buttons are disabled and the layout still renders.
 from __future__ import annotations
 
 import ctypes
+import os
 import traceback
 
 from kivy.app import App
@@ -51,6 +62,22 @@ IS_IOS = platform == "ios"
 
 def log(message: str) -> None:
     Logger.info("ios-webview: %s", message)
+
+
+def normalize_url(text: str) -> str:
+    """Turn what was typed into an absolute URL.
+
+    ``NSURL`` parses ``google.com`` as a relative path, and ``WKWebView``
+    loads nothing for it without reporting an error, so a bare host gets
+    ``https://``. Backslashes become slashes, as a browser's address bar does.
+    """
+    text = text.strip().replace("\\", "/")
+    if not text:
+        return DEFAULT_URL
+    scheme, sep, rest = text.partition("://")
+    if not sep:
+        return "https://" + text
+    return scheme.lower() + "://" + rest
 
 
 # ---------------------------------------------------------------------------
@@ -93,12 +120,35 @@ def _get(obj, name):
     return value() if callable(value) else value
 
 
-def open_with_pyobjus(url: str, frame_points: tuple):
-    from pyobjus import autoclass, objc_str
-    from pyobjus.dylib_manager import INCLUDE, load_framework
-    from pyobjus.objc_py_types import NSPoint, NSRect, NSSize
+WEBKIT_BINARY = "/System/Library/Frameworks/WebKit.framework/WebKit"
 
-    load_framework(INCLUDE.WebKit)
+
+def load_webkit() -> None:
+    """Load WebKit so the runtime can find ``WKWebView``.
+
+    The app does not link WebKit, so the class does not exist until the
+    framework is loaded. pyobjus's ``load_framework(INCLUDE.WebKit)`` cannot do
+    it on iOS: it calls ``NSBundle.bundleWithPath_`` on the macOS path, which
+    returns nil on the simulator, and ``bundle.load()`` on nil fails silently.
+    ``dlopen`` goes through dyld, which resolves system frameworks on device
+    and simulator alike. Loading an already loaded image is a no-op.
+    """
+    ctypes.CDLL(WEBKIT_BINARY)
+
+
+def open_with_pyobjus(url: str, frame_points: tuple):
+    """Objects through pyobjus, the frame through ctypes.
+
+    pyobjus 1.2.4 does not pass floating-point arguments reliably on arm64:
+    ``initWithFrame_(NSRect(...))`` gave a 0x0 view on one launch and the
+    right frame on the next, and ``constraintEqualToAnchor_constant_`` received
+    0.0 for its constant. Object and string arguments are fine. So the view is
+    created with a zero frame and placed with ``setFrame:`` sent through
+    ``objc_msgSend``, using the pointer from ``get_address()``.
+    """
+    from pyobjus import autoclass, objc_str
+
+    load_webkit()
     WKWebView = autoclass("WKWebView")
     NSURL = autoclass("NSURL")
     NSURLRequest = autoclass("NSURLRequest")
@@ -112,12 +162,15 @@ def open_with_pyobjus(url: str, frame_points: tuple):
     root_view = _get(root_vc, "view")
     log(f"pyobjus: rootViewController={root_vc!r}")
 
-    x, y, w, h = frame_points
-    frame = NSRect(NSPoint(x, y), NSSize(w, h))
-    web_view = WKWebView.alloc().initWithFrame_(frame)
+    web_view = WKWebView.alloc().init()
+    set_frame(web_view.get_address(), frame_points)
     root_view.addSubview_(web_view)
-    request = NSURLRequest.requestWithURL_(NSURL.URLWithString_(objc_str(url)))
-    web_view.loadRequest_(request)
+    log(f"pyobjus: frame={get_frame(web_view.get_address())}")
+    ns_url = NSURL.URLWithString_(objc_str(url))
+    if not ns_url:
+        web_view.removeFromSuperview()
+        raise ValueError(f"NSURL cannot parse {url!r}")
+    web_view.loadRequest_(NSURLRequest.requestWithURL_(ns_url))
     return web_view
 
 
@@ -146,7 +199,7 @@ class _ObjC:
     """The few runtime entry points the recipe needs, typed per call."""
 
     def __init__(self) -> None:
-        ctypes.CDLL("/System/Library/Frameworks/WebKit.framework/WebKit")
+        load_webkit()
         self.lib = ctypes.CDLL(None)
         self.lib.objc_getClass.restype = ctypes.c_void_p
         self.lib.objc_getClass.argtypes = [ctypes.c_char_p]
@@ -178,11 +231,31 @@ class _ObjC:
 _objc: _ObjC | None = None
 
 
-def open_with_ctypes(url: str, frame_points: tuple):
+def _runtime() -> _ObjC:
     global _objc
     if _objc is None:
         _objc = _ObjC()
-    rt = _objc
+    return _objc
+
+
+def set_frame(view, frame_points: tuple) -> None:
+    x, y, w, h = frame_points
+    _runtime().send(
+        view,
+        b"setFrame:",
+        _CGRect(_CGPoint(x, y), _CGSize(w, h)),
+        argtypes=(_CGRect,),
+        restype=None,
+    )
+
+
+def get_frame(view) -> tuple:
+    rect = _runtime().send(view, b"frame", restype=_CGRect)
+    return (rect.origin.x, rect.origin.y, rect.size.width, rect.size.height)
+
+
+def open_with_ctypes(url: str, frame_points: tuple):
+    rt = _runtime()
 
     app = rt.send(rt.cls(b"UIApplication"), b"sharedApplication")
     window = rt.send(app, b"keyWindow")
@@ -198,12 +271,16 @@ def open_with_ctypes(url: str, frame_points: tuple):
     # CGRect by value: four doubles, an arm64 homogeneous aggregate in d0-d3.
     web_view = rt.send(web_view, b"initWithFrame:", frame, argtypes=(_CGRect,))
     rt.send(root_view, b"addSubview:", web_view, argtypes=(ctypes.c_void_p,))
+    log(f"ctypes: frame={get_frame(web_view)}")
     ns_url = rt.send(
         rt.cls(b"NSURL"),
         b"URLWithString:",
         rt.ns_string(url),
         argtypes=(ctypes.c_void_p,),
     )
+    if not ns_url:
+        close_with_ctypes(web_view)
+        raise ValueError(f"NSURL cannot parse {url!r}")
     request = rt.send(
         rt.cls(b"NSURLRequest"), b"requestWithURL:", ns_url, argtypes=(ctypes.c_void_p,)
     )
@@ -283,7 +360,10 @@ KV = """
         size_hint_y: None
         height: "40dp"
         multiline: False
+        input_type: "url"
+        keyboard_suggestions: False
         text: root.url
+        on_text_validate: root.open_web_view("pyobjus")
 
     BoxLayout:
         size_hint_y: None
@@ -328,11 +408,34 @@ class WebViewSpikeRoot(BoxLayout):
         )
         Clock.schedule_once(lambda dt: log_units(), 0)
         if IS_IOS:
-            from kivy.mobile import subscribe_keyboard_height
+            from kivy.mobile import get_safe_area, subscribe_keyboard_height
 
+            inset = get_safe_area()
+            scale = ui_scale()
+            self.padding = [
+                dp(16) + inset["left"] * scale,
+                dp(16) + inset["top"] * scale,
+                dp(16) + inset["right"] * scale,
+                dp(16) + inset["bottom"] * scale,
+            ]
             subscribe_keyboard_height(
                 lambda h: Clock.schedule_once(lambda dt: log_keyboard(h), 0)
             )
+        self._schedule_autorun(os.environ.get("IOS_WEBVIEW_AUTORUN", ""))
+
+    def _schedule_autorun(self, steps: str) -> None:
+        """Press the buttons from ``IOS_WEBVIEW_AUTORUN``, e.g. ``"pyobjus close"``.
+
+        For a simulator with no window to tap in (``xcrun simctl launch`` with
+        ``SIMCTL_CHILD_IOS_WEBVIEW_AUTORUN=...``). One step every 3 seconds.
+        """
+        for n, step in enumerate(steps.split(), start=1):
+            action = (
+                self.close_web_view
+                if step == "close"
+                else (lambda s=step: self.open_web_view(s))
+            )
+            Clock.schedule_once(lambda dt, a=action: a(), 3 * n)
 
     def _web_area_frame_points(self) -> tuple:
         area = self.ids.web_area
@@ -349,7 +452,8 @@ class WebViewSpikeRoot(BoxLayout):
 
     def open_web_view(self, variant: str) -> None:
         self.close_web_view()
-        url = self.ids.url.text.strip() or DEFAULT_URL
+        url = normalize_url(self.ids.url.text)
+        self.ids.url.text = url
         frame = self._web_area_frame_points()
         try:
             if variant == "pyobjus":
