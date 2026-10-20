@@ -11,7 +11,14 @@ from __future__ import annotations
 
 from kivyforge.lock.model import LockedPackage, LockedWheel
 
-from .builder import BuildError, build_lockfile, diff_summary, semantic_equal
+from .builder import (
+    BuildError,
+    KivyUnsupported,
+    build_lockfile,
+    check_kivy_supported,
+    diff_summary,
+    semantic_equal,
+)
 from .model import (
     LockedSwiftPackage,
     LockedXcframework,
@@ -40,7 +47,9 @@ from .xcframework import XcframeworkResolverError, resolve_xcframeworks
 
 __all__ = [
     "BuildError",
+    "KivyUnsupported",
     "build_lockfile",
+    "check_kivy_supported",
     "diff_summary",
     "semantic_equal",
     "Lockfile",

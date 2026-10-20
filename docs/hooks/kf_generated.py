@@ -146,6 +146,15 @@ _DIAGNOSTIC = {
         "This host cannot build this target at all (for example iOS from Windows).",
         "Build on a supported host; see the host matrix.",
     ),
+    "KF-IOS-KIVY-UNSUPPORTED": (
+        "error",
+        "iOS: the project would run Kivy 2.x, which kivyforge does not build "
+        "there; iOS builds are Kivy 3 only. `lock` refuses a `kivy` requirement "
+        "that admits no 3.x release, and a resolved 2.x; `build` refuses a lock "
+        "that pins one.",
+        "Require Kivy 3 (for example `kivy>=3.0,<4`) and re-lock; kivy-ios "
+        "serves Kivy 2.x. `context` names the `requirement` or the `version`.",
+    ),
     "KF-ANDROID-DEPENDENCY-CONFLICT": (
         "error",
         "Android: a dependency provides its own `android` module. kivyforge bundles "

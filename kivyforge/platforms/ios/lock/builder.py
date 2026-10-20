@@ -6,9 +6,13 @@ import dataclasses
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlparse
 from urllib.request import url2pathname
+
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 from kivyforge import __version__
 from kivyforge.artifacts.verify import sha256_file
@@ -29,7 +33,10 @@ from kivyforge.lock.model import (
     canonical_name,
 )
 from kivyforge.lock.prefer import preferred_pins, resolve_preferring
+from kivyforge.report import diagnostics
+from kivyforge.report.failures import ClassifiedError
 
+from .markers import ios_marker_environment
 from .model import (
     LockedSwiftPackage,
     Lockfile,
@@ -51,6 +58,131 @@ if TYPE_CHECKING:
 
 class BuildError(Exception):
     """A lock build failure surfaced with an actionable message."""
+
+
+class KivyUnsupported(BuildError, ClassifiedError):
+    """The project would run Kivy 2.x on iOS, which kivyforge does not build.
+
+    kivyforge builds Kivy 3 only on iOS: the mobile wheel index serves no Kivy
+    2.x iOS wheel, so a 2.x requirement used to fail inside pip's resolver with
+    pip's wording and nothing said that 2.x is unsupported (#109). Raised by
+    :func:`check_kivy_requirements` before resolving and by
+    :func:`check_kivy_supported` after, and by ``build`` on the lock it reads.
+    """
+
+    code = diagnostics.IOS_KIVY_UNSUPPORTED
+
+
+#: The first Kivy 3 version. Everything below it is Kivy 2.x or older.
+KIVY_3 = Version("3.0.0.dev0")
+
+_KIVY_UNSUPPORTED = (
+    "Kivy 2.x is not supported on iOS; kivyforge builds Kivy 3 only there; "
+    "kivy-ios serves Kivy 2.x."
+)
+_KIVY_FIX = (
+    "Fix: require Kivy 3 in [project].dependencies (for example "
+    '"kivy>=3.0,<4"), then run `kivyforge lock -p ios`.'
+)
+
+
+class _Pinned(Protocol):
+    """What the post-resolve check reads: a resolved or a locked package."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def version(self) -> str: ...
+
+
+def check_kivy_requirements(
+    requirements: Iterable[str], *, python_version: str
+) -> None:
+    """Fail before resolving when ``kivy`` is required at 2.x only.
+
+    A requirement that admits no version from ``3.0.0.dev0`` up (``kivy<3``,
+    ``kivy==2.3.1``, ``kivy~=2.3``, ``kivy==2.*``) can only resolve to Kivy
+    2.x, which the iOS index does not serve, so pip's "no matching
+    distribution" would be the only report. A requirement whose marker does
+    not apply on iOS (``kivy<3; sys_platform != "ios"``) is not an iOS
+    requirement and is left alone. Raises :class:`KivyUnsupported`.
+    """
+    environment = ios_marker_environment(
+        python_version=python_version, slice_suffix="arm64_iphoneos"
+    )
+    for text in requirements:
+        try:
+            req = Requirement(text)
+        except InvalidRequirement:
+            continue
+        if canonical_name(req.name) != "kivy":
+            continue
+        if req.marker is not None:
+            try:
+                if not req.marker.evaluate(environment):
+                    continue
+            except Exception:  # noqa: BLE001 -- an odd marker is pip's to judge
+                continue
+        if not _admits_kivy_3(req.specifier):
+            raise KivyUnsupported(
+                f"[project].dependencies requires {text!r}, which admits no "
+                f"Kivy 3 release.\n  {_KIVY_UNSUPPORTED}\n  {_KIVY_FIX}",
+                context={"requirement": text},
+            )
+
+
+def _admits_kivy_3(specifier: SpecifierSet) -> bool:
+    """Whether a ``kivy`` specifier set admits any version from 3.0.0.dev0 up.
+
+    The clauses of a set are ANDed, so one clause that alone rejects every
+    such version decides it. Only a cap (``<``, ``<=``), an exact pin (``==``,
+    ``===``) or a compatible release (``~=``) can be that clause; a floor or a
+    ``!=`` never is. ``Specifier.contains`` applies PEP 440's rule that ``<3``
+    rejects 3.0.0's pre-releases while ``<3.0.0a0`` admits ``3.0.0.dev0``.
+    """
+    for clause in specifier:
+        op, text = clause.operator, clause.version
+        if op in ("<", "<="):
+            if not clause.contains(KIVY_3, prereleases=True):
+                return False
+        elif op in ("==", "===", "~="):
+            wildcard = text.endswith(".*")
+            try:
+                pinned = Version(text[:-2] if wildcard else text)
+            except InvalidVersion:
+                continue
+            if op == "~=" or wildcard:
+                if pinned.major < 3:
+                    return False
+            elif pinned < KIVY_3:
+                return False
+    return True
+
+
+def check_kivy_supported(packages: Iterable[_Pinned], *, lockfile: str = "") -> None:
+    """Fail when the resolved or locked ``kivy`` is below Kivy 3.
+
+    Run on the resolver's result before a lock is written, and by ``build`` on
+    the lock it reads, so a lock written by hand or by an older kivyforge gets
+    the same error. *lockfile* names the file in the message when there is
+    one. A set without ``kivy`` passes: the app does not use it. Raises
+    :class:`KivyUnsupported`.
+    """
+    for package in packages:
+        if canonical_name(package.name) != "kivy":
+            continue
+        try:
+            version = Version(package.version)
+        except InvalidVersion:
+            continue
+        if version < KIVY_3:
+            where = f"{lockfile} pins" if lockfile else "the lock would pin"
+            raise KivyUnsupported(
+                f"{where} kivy {package.version}, which is Kivy 2.x.\n"
+                f"  {_KIVY_UNSUPPORTED}\n  {_KIVY_FIX}",
+                context={"version": package.version},
+            )
 
 
 def build_lockfile(
@@ -108,6 +240,7 @@ def build_lockfile(
 
     ios = config.ios
     requirements = list(config.project.dependencies)
+    check_kivy_requirements(requirements, python_version=python_version)
 
     def resolve(pins):
         return resolver.resolve(
@@ -137,6 +270,7 @@ def build_lockfile(
         if hint:
             raise BuildError(f"{exc}\n{hint}") from exc
         raise BuildError(str(exc)) from exc
+    check_kivy_supported(resolved)
 
     packages = []
     for rp in resolved:
@@ -423,8 +557,6 @@ def diff_summary(old: Lockfile, new: Lockfile) -> list[str]:
 
 
 def _req_name(requirement: str) -> str:
-    from packaging.requirements import InvalidRequirement, Requirement
-
     try:
         return Requirement(requirement).name
     except InvalidRequirement:
