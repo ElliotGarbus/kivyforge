@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### iOS: a guide to replacing the kivy-ios `ios` module, and a warning
+
+- **Added:** the guide
+  [Replace the kivy-ios ios module](docs/guides/guides/ios/ios-module.md).
+  kivyforge does not provide the module
+  ([#109](https://github.com/ElliotGarbus/kivyforge/issues/109)): Kivy 3 and
+  the standard library replace every function, on every platform. The guide
+  maps each old name to its replacement, states that `kivy.mobile` returns UIKit
+  points where Kivy lays out in pixels, and gives a web view recipe. It is
+  linked from the migration and mobile geometry guides.
+- **Added:** `kivyforge build -p ios` and `kivyforge doctor -p ios` warn with
+  `KF-IOS-LEGACY-IOS-MODULE` when a `.py` file under `app_dir` imports `ios`,
+  naming the file and line and pointing at the guide. The build goes on, and
+  under `--json` the warning is in `diagnostics` on an `ok: true` run. It is
+  quiet when `app_dir` has its own `ios.py` or `ios/`. Dependencies aren't
+  scanned.
+- **Docs:** [Call iOS APIs with pyobjus](docs/guides/guides/ios/pyobjus.md) now
+  says plyer's iOS facades need `pyobjus`, that `pyobjus`'s `load_framework`
+  does nothing on iOS, and that floating-point arguments should go through
+  ctypes.
 ### iOS: `run --simulator` shows the simulator with Xcode 27
 
 - **Fixed:** with Xcode 27, `run -p ios --simulator` launched the app on a

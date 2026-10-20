@@ -121,6 +121,14 @@ HOST_INCAPABLE = "KF-HOST-INCAPABLE"
 #: reads. Exit 1. ``context`` names the ``requirement`` or the ``version``.
 IOS_KIVY_UNSUPPORTED = "KF-IOS-KIVY-UNSUPPORTED"
 
+#: iOS: a ``.py`` file under ``app_dir`` imports the kivy-ios ``ios`` module,
+#: which kivyforge does not provide (Kivy 3 and the standard library replace
+#: it). WARNING: the import may be guarded, so the build goes on and the run is
+#: ``ok``. Quiet when ``app_dir`` has its own ``ios.py`` or ``ios/``.
+#: ``build`` and ``doctor`` report it. ``context`` names the first ``file``, its
+#: ``line``, and how many ``files`` import it.
+IOS_LEGACY_IOS_MODULE = "KF-IOS-LEGACY-IOS-MODULE"
+
 #: Android: a dependency provides a top-level ``android`` module, which would
 #: be shadowed by the ``android`` package kivyforge bundles. ``lock`` catches a
 #: distribution named ``android``; ``build`` catches any wheel that installs
