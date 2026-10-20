@@ -60,8 +60,8 @@ class PlatformLockProfile(ABC):
         return self.wheel_covers(wheel.platform_tag, archs), None
 
     @abstractmethod
-    def runtime_provider(self, config: Config) -> RuntimeProvider:
-        """The default runtime provider for this platform."""
+    def runtime_provider(self, config: Config, **progress) -> RuntimeProvider:
+        """The default runtime provider; ``progress`` is its ``on_progress``."""
 
     @abstractmethod
     def coverage_error(self, name: str, missing: list[str]) -> str:

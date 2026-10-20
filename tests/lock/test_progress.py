@@ -157,6 +157,54 @@ class TestDesktopBuilderWiresProgress:
         assert seen == {"on_progress": on_progress, "on_transfer": on_transfer}
 
 
+class TestDesktopRuntimeLookup:
+    """The python-build-standalone lookup: a GitHub API call that took 10-40 s
+    with nothing shown before the first wheel line (#88, found on Windows)."""
+
+    def test_the_lookup_is_announced_and_its_provider_gets_the_callback(
+        self, monkeypatch, tmp_path
+    ):
+        from kivyforge.config.loader import load_config_from_text
+        from kivyforge.lock.wheelruntime import runtime as runtime_mod
+        from kivyforge.lock.wheelruntime.runtime import ReleaseAsset
+        from kivyforge.platforms.windows.lock import build_windows_lockfile
+        from tests.platforms.windows.lock.conftest import FakeWindowsResolver
+
+        seen: dict = {}
+
+        class Fetcher:
+            def fetch(self, version, triple, *, offline=False):
+                return ReleaseAsset(
+                    url=f"https://dl/{version}-{triple}", sha256="e" * 64
+                )
+
+        def default_fetcher(on_progress=None):
+            seen["on_progress"] = on_progress
+            return Fetcher()
+
+        monkeypatch.setattr(runtime_mod, "_default_fetcher", default_fetcher)
+        config = load_config_from_text(
+            '[project]\nname = "myapp"\nversion = "1.0.0"\nrequires-python = ">=3.13"\n'
+            'dependencies = ["kivy>=3.0,<4", "more-itertools>=10.5"]\n'
+            '[tool.kivy]\napp_dir = "src"\n'
+            '[tool.kivy.windows]\nschema_version = 1\napp_id = "Example.MyApp"\n'
+            '[tool.kivy.windows.python]\nversion = "3.13.14"\n',
+            require_ios=False,
+            require_windows=True,
+        )
+        lines: list[str] = []
+        build_windows_lockfile(
+            config,
+            project_root=tmp_path,
+            resolver=FakeWindowsResolver(),
+            on_progress=lines.append,
+        )
+        assert lines[0] == (
+            "[lock] CPython 3.13.14: finding the python-build-standalone build"
+        )
+        assert seen["on_progress"] == lines.append
+
+
 class TestIosPipResolve:
     def test_downloads_become_transfers_and_steps_become_lines(self, monkeypatch):
         captured: list[list[str]] = []

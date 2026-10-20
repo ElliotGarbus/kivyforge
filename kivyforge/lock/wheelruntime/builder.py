@@ -69,7 +69,9 @@ def build_wheel_runtime_lock(
     resolver = resolver or profile.wheel_resolver(
         on_progress=on_progress, on_transfer=on_transfer
     )
-    runtime_provider = runtime_provider or profile.runtime_provider(config)
+    runtime_provider = runtime_provider or profile.runtime_provider(
+        config, on_progress=on_progress
+    )
     root = (project_root or Path.cwd()).resolve()
 
     python_version = profile.python_version(config)
@@ -83,6 +85,12 @@ def build_wheel_runtime_lock(
         raise WheelRuntimeBuildError(str(exc)) from exc
     find_links = resolve_find_links(root, find_links_entries)
 
+    if on_progress is not None:
+        # A GitHub API lookup, not a download: quick for a version in the
+        # newest release, tens of seconds for an older one (#88).
+        on_progress(
+            f"[lock] CPython {python_version}: finding the python-build-standalone build"
+        )
     try:
         runtime = runtime_provider.resolve(python_version, archs, offline=offline)
     except RuntimeProviderError as exc:
