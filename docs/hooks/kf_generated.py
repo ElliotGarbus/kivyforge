@@ -155,6 +155,15 @@ _DIAGNOSTIC = {
         "Require Kivy 3 (for example `kivy>=3.0,<4`) and re-lock; kivy-ios "
         "serves Kivy 2.x. `context` names the `requirement` or the `version`.",
     ),
+    "KF-IOS-LEGACY-IOS-MODULE": (
+        "warning",
+        "iOS: a `.py` file under `app_dir` imports the kivy-ios `ios` module, "
+        "which kivyforge does not provide. The import may be guarded, so the "
+        "build goes on. Quiet when `app_dir` has its own `ios.py` or `ios/`.",
+        "Replace it with `kivy.mobile` and the standard library; the migration "
+        "guide maps each name. `context` names the first `file`, its `line` and "
+        "the number of `files`.",
+    ),
     "KF-ANDROID-DEPENDENCY-CONFLICT": (
         "error",
         "Android: a dependency provides its own `android` module. kivyforge bundles "

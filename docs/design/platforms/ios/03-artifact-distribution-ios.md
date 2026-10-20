@@ -6,7 +6,7 @@ This document defines, for the iOS target, **where artifacts live**, **how they'
 
 For iOS, kivyforge sources native dependencies through three deliberate channels, each matched to the shape the artifact naturally takes:
 
-1. **iOS wheels** — for Python packages with C extensions (Kivy itself, pyobjus, the iOS support package, pillow, numpy, etc.), distributed via pip-compatible indexes. The natural shape for things Python imports.
+1. **iOS wheels** — for Python packages with C extensions (Kivy itself, pyobjus, pillow, numpy, etc.), distributed via pip-compatible indexes. The natural shape for things Python imports.
 2. **`.xcframework` archives** — for pure-native libraries that aren't bundled inside any Python wheel, distributed as zip or tarball archives. The natural shape for things Xcode links and embeds. In the canonical Kivy app this channel goes unused: the kivy iOS wheel bundles every xcframework it links against (ANGLE, SDL3 family) inside the wheel under `.frameworks/`. The channel exists for apps that need *additional* third-party native libraries.
 3. **Swift Package Manager packages** — for third-party iOS libraries that ship *only* as SPM packages (binary, source, or hybrid), with no standalone `.xcframework` release asset. Declared by Git URL (or local path) and resolved by Xcode. The natural shape for the growing set of SDKs distributed solely through SPM. Full design in [Swift packages](06-swift-packages.md).
 

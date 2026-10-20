@@ -37,10 +37,11 @@ from kivyforge.config.icons import IconSourceError
 from kivyforge.config.model import VALID_SIMULATOR_ARCHS, Config, ResolvedVersion
 from kivyforge.config.version import with_version
 from kivyforge.lock import LockError, is_in_sync
-from kivyforge.report import failures
+from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .entitlements import preflight_profile
+from .legacy_module import find_legacy_ios_imports
 from .lock import KivyUnsupported, check_kivy_supported, load
 from .materialize import materialize_project
 from .staging import StagingError, create_staging
@@ -197,6 +198,16 @@ def prepare_build(
         check_kivy_supported(lock.packages, lockfile=LOCKFILE_NAME)
     except KivyUnsupported as exc:
         raise ToolchainError.wrap(exc) from exc
+
+    # A warning, not a refusal: the import may be guarded and the app run fine.
+    legacy = find_legacy_ios_imports(project_root / config.kivy.app_dir, project_root)
+    if legacy is not None:
+        events.on_progress(f"[build] warning: {legacy.message}.\n  {legacy.hint}")
+        events.note(
+            diagnostics.IOS_LEGACY_IOS_MODULE,
+            f"{legacy.message}. {legacy.hint}",
+            legacy.context,
+        )
 
     build_slices = _resolve_slices(target, arch, config.ios.deployment_target)
     tags = ", ".join(s.platform_tag for s in build_slices)
