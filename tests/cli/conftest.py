@@ -124,6 +124,7 @@ def ios(desktop_project, monkeypatch):
 
     config = SimpleNamespace(
         app_slug="demo",
+        kivy=SimpleNamespace(app_dir="src"),
         # package -p ios names its copy in dist/ios from this.
         version_required=ResolvedVersion("1.0.0", source="static"),
         ios=SimpleNamespace(

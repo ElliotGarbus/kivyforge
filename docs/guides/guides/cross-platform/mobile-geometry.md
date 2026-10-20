@@ -44,6 +44,10 @@ for it.
 `kivy.mobile` works only on Android and iOS. Guard the import so the same code
 also runs on the desktop.
 
+On iOS, `kivy.mobile` replaces the kivy-ios `ios.get_safe_area()` and
+`ios.get_kheight()`, with the same multiplication by `get_scale()` for Kivy
+pixels. See [Replace the kivy-ios ios module](../ios/ios-module.md).
+
 ## Pad your layout by the safe area
 
 1. Add a helper that returns the insets in Kivy pixels. `get_safe_area()`
