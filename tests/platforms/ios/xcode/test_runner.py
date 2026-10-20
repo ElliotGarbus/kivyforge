@@ -19,9 +19,11 @@ from kivyforge.platforms.ios.xcode.runner import (
     resolve_simulator_destination,
     run_command,
     run_foreground,
+    show_simulator,
     simctl_boot,
     simctl_install,
     simctl_launch,
+    simulator_window_commands,
 )
 
 
@@ -226,7 +228,67 @@ class TestSimulatorSelection:
         device = resolve_simulator_destination(None, runner=fake)
         assert device.udid == "NEW-UDID"
         assert ["xcrun", "simctl", "boot", "NEW-UDID"] in calls
-        assert ["open", "-a", "Simulator"] in calls
+        # Opening a window is show_simulator's job, done on every run.
+        assert not any(c[0] == "open" for c in calls)
+
+
+class TestShowSimulator:
+    """Xcode 27 replaced Simulator.app with Device Hub; `open -a Simulator`
+    failed silently there and the app ran with no window (2026-10-19)."""
+
+    def test_xcode_26_opens_its_own_simulator_app(self, tmp_path):
+        (tmp_path / "Applications" / "Simulator.app").mkdir(parents=True)
+        commands = simulator_window_commands("U", str(tmp_path))
+        assert commands[0] == [
+            "open",
+            str(tmp_path / "Applications" / "Simulator.app"),
+        ]
+
+    def test_xcode_27_opens_the_device_in_device_hub(self, tmp_path):
+        assert simulator_window_commands("U", str(tmp_path)) == [
+            ["open", "devices://device/open?id=U"],
+            ["open", "-b", "com.apple.dt.Devices"],
+        ]
+
+    def test_no_selected_xcode_still_tries_device_hub(self):
+        commands = simulator_window_commands("U", None)
+        assert commands[0] == ["open", "devices://device/open?id=U"]
+
+    def _runner(self, developer_dir, failing=()):
+        calls: list[list[str]] = []
+
+        def fake(argv, capture_output=True, text=True, stdin=None):
+            calls.append(argv)
+            if argv == ["xcode-select", "-p"]:
+                return _Proc(0, f"{developer_dir}\n")
+            return _Proc(1 if argv in failing else 0)
+
+        return fake, calls
+
+    def test_stops_at_the_first_window_that_opens(self, tmp_path):
+        fake, calls = self._runner(tmp_path)
+        assert show_simulator("U", runner=fake)
+        assert calls == [
+            ["xcode-select", "-p"],
+            ["open", "devices://device/open?id=U"],
+        ]
+
+    def test_falls_back_to_the_bare_app(self, tmp_path):
+        fake, calls = self._runner(
+            tmp_path, failing=[["open", "devices://device/open?id=U"]]
+        )
+        assert show_simulator("U", runner=fake)
+        assert calls[-1] == ["open", "-b", "com.apple.dt.Devices"]
+
+    def test_reports_when_nothing_opens(self, tmp_path):
+        fake, _ = self._runner(
+            tmp_path,
+            failing=[
+                ["open", "devices://device/open?id=U"],
+                ["open", "-b", "com.apple.dt.Devices"],
+            ],
+        )
+        assert not show_simulator("U", runner=fake)
 
 
 class TestDeviceSelection:
