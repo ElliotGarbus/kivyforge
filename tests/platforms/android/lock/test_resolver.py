@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from kivyforge.lock import pip_progress
 from kivyforge.platforms.android.lock import resolver as resolver_mod
 from kivyforge.platforms.android.lock.markers import android_marker_environment
 from kivyforge.platforms.android.lock.resolver import (
@@ -25,6 +26,7 @@ from kivyforge.platforms.android.lock.resolver import (
     get_resolver,
     version_str,
 )
+from tests.streaming_fake import streaming
 
 
 @pytest.fixture(autouse=True)
@@ -41,19 +43,6 @@ def _modern_host_pip(monkeypatch):
 # ---------------------------------------------------------------------------
 # abi_platform_tag
 # ---------------------------------------------------------------------------
-
-
-def _streaming(fake_run):
-    """Adapt a ``subprocess.run``-shaped fake to the resolver's streaming seam."""
-
-    def run_streaming(cmd, *, on_segment, env=None, cwd=None, on_quiet=None, **_kw):
-        result = fake_run(
-            cmd, env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL
-        )
-        parts = (getattr(result, "stdout", None), getattr(result, "stderr", None))
-        return result.returncode, "\n".join(p for p in parts if isinstance(p, str))
-
-    return run_streaming
 
 
 class TestAbiPlatformTag:
@@ -324,7 +313,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         result = pr._run_report(
             ["kivy"],
@@ -346,7 +335,7 @@ class TestPipResolverRunReport:
             result.stdout = ""
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         with pytest.raises(ResolverError, match="pip could not resolve"):
             pr._run_report(
@@ -378,7 +367,7 @@ class TestPipResolverRunReport:
             result.stdout = ""
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         with pytest.raises(ResolverError) as excinfo:
             PipResolver()._run_report(
                 ["numpy"],
@@ -403,7 +392,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         with pytest.raises(ResolverError, match="could not read pip report"):
             pr._run_report(
@@ -428,7 +417,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -453,7 +442,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -480,7 +469,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -505,7 +494,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -635,7 +624,7 @@ class TestDownloadProgress:
 
     def test_progress_after_a_download_line_becomes_transfers(self):
         transfers = []
-        parse = resolver_mod._PipProgress(
+        parse = pip_progress.PipProgress(
             "arm64_v8a", None, lambda *a: transfers.append(a)
         )
         assert parse("Progress 5 of 10") is False  # nothing is downloading yet
@@ -652,21 +641,21 @@ class TestDownloadProgress:
 
     def test_labels_name_the_package_not_the_whole_filename(self):
         """The full wheel filename does not fit beside a bar in a narrow terminal."""
-        assert resolver_mod._short_name(self.URL) == "Kivy-2.3.1"
-        assert resolver_mod._short_name("https://x/archive.tar.gz") == "archive.tar.gz"
+        assert pip_progress.short_name(self.URL) == "Kivy-2.3.1"
+        assert pip_progress.short_name("https://x/archive.tar.gz") == "archive.tar.gz"
 
     def test_other_pip_lines_are_not_shown(self):
-        parse = resolver_mod._PipProgress("x86_64", None, lambda *a: None)
+        parse = pip_progress.PipProgress("x86_64", None, lambda *a: None)
         assert parse("Collecting kivy==2.3.1") is False
 
     def test_quiet_names_the_abi_and_time(self):
         lines = []
-        resolver_mod._PipProgress("x86_64", lines.append, None).quiet(65)
+        pip_progress.PipProgress("x86_64", lines.append, None).quiet(65)
         assert lines == ["[lock] x86_64: still resolving (1m 05s)"]
 
     def test_error_text_drops_the_byte_counts(self):
         text = "Collecting kivy\nProgress 1 of 9\nERROR: No matching distribution"
-        assert resolver_mod._without_progress(text) == (
+        assert pip_progress.without_progress(text) == (
             "Collecting kivy\nERROR: No matching distribution"
         )
 
@@ -681,7 +670,7 @@ class TestDownloadProgress:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(resolver_mod, "run_streaming", _streaming(fake_run))
+        monkeypatch.setattr(resolver_mod, "run_streaming", streaming(fake_run))
         PipResolver(on_progress=lines.append).resolve(
             ["kivy"],
             python_version="3.14.0",

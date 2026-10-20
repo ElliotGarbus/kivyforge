@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Locks: iOS and desktop `lock` show their progress
+
+- **Added:** `kivyforge lock -p ios`, `-p macos`, `-p linux` and `-p windows`
+  now report each step on stderr, as `lock -p android` has since #87
+  ([#88](https://github.com/ElliotGarbus/kivyforge/issues/88)): a line per
+  slice or arch as pip resolves, a byte bar for each wheel pip downloads, a bar
+  for the python.org iOS framework download, the packages
+  `swift package resolve` fetches, and a "still resolving" line after 30
+  seconds with nothing new to show. In a log or a pipe, each bar becomes a few
+  lines. Before, these steps ran silently, so a slow lock looked like a hang.
+- **Migration:** none needed. stdout, and the `--json` envelope, are unchanged.
+
 ### iOS: a guide to replacing the kivy-ios `ios` module, and a warning
 
 - **Added:** the guide

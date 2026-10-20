@@ -1,6 +1,7 @@
 # Download progress output
 
-**Status:** implemented in PR #87 (issues #84 and #74), 2026-10-05.
+**Status:** implemented in PR #87 (issues #84 and #74), 2026-10-05, for
+Android; extended to the iOS and desktop lock backends for #88, 2026-10-20.
 
 `lock` and `build` both do long downloads. Before this change, `lock -p android`
 printed nothing until it finished, and `build` let Gradle download a missing NDK
@@ -62,6 +63,34 @@ quietly), a line says the step is still alive:
 [lock] x86_64: still resolving (1m 30s)
 [lock] Gradle: still resolving (2m 00s)
 ```
+
+### `lock -p ios` and the desktop targets
+
+The same rules, with the label naming the iOS slice or the desktop arch. (The
+sizes and versions below are illustrative, not a recorded run: replace them with
+the output of the Mac check in `lock-progress-mac-prompt.md`.)
+
+```
+[download] Python.xcframework 3.15.0 ━━━━━━━━━━━━━━━━━━━ 100% 41.2 MB / 41.2 MB 0:00:00
+[lock] arm64_iphoneos: resolving wheels
+[lock] arm64_iphoneos: kivy-3.0.0.dev202610051055 ━━━━━━━━ 100% 6.1 MB / 6.1 MB 0:00:00
+[lock] arm64_iphonesimulator: resolving wheels
+[lock] swift: resolving KeychainAccess
+[lock] swift: Fetching https://github.com/kishikawakatsumi/KeychainAccess.git
+Wrote pylock.ios.toml (2 packages pinned).
+```
+
+- The python.org iOS framework is downloaded in full only to hash it, the
+  first time it is not in the artifact cache.
+- `swift package resolve` names each package it fetches; nothing else it
+  prints is shown. It gets the same 30-second "still resolving" line.
+- XCFramework archives come through the shared downloader, so they draw as
+  `[download]` bars like a `build` download.
+- On macOS, Linux and Windows, `lock` shows `[lock] <arch>: resolving wheels`.
+  Desktop Kivy comes from PyPI, which publishes PEP 658 metadata, so pip
+  usually reads metadata and downloads nothing: there is no bar, only the
+  step line (checked on Windows with a cold pip cache, 2026-10-20). A
+  `find_links` wheel or an index without metadata gets a bar.
 
 ### `build` and `run`, when the artifact cache is cold
 
@@ -145,8 +174,9 @@ Backends report numbers, never formatted bars, which keeps the rule that backend
 do not print (AGENTS.md):
 
 - `BuildEvents.on_transfer(label, done, total, unit)`, next to `on_progress`,
-  where `unit` is `"bytes"` or `"percent"`. The Android lock builder takes the
-  same two callbacks.
+  where `unit` is `"bytes"` or `"percent"`. Every lock builder takes the same
+  two callbacks (`_LockOps.emits_progress` is set for all of them) and passes
+  them to its default resolvers; an injected resolver keeps its own signature.
 - `Report.transfer(...)` renders them through `report/transfers.py`: a Rich
   `Progress` on a terminal, `TransferLines` otherwise.
 - The bar uses its own Rich console on the same stream. The report console sets
@@ -161,18 +191,18 @@ do not print (AGENTS.md):
   `report/transfers.py`). `reporting()` sets the sink to the verb's report;
   `run`, which has no `reporting()` context, sets one of its own. With no sink set
   (a library caller, a test) the downloader reports nothing.
-- Long-running tools run through `platforms/android/streaming.py`
-  (`run_streaming`). It reads their output live, splits it on `\r` as well as `\n`
+- Long-running tools run through `kivyforge/streaming.py` (`run_streaming`),
+  shared by every pip resolver, `swift package resolve`, Gradle and
+  `sdkmanager`. It reads their output live, splits it on `\r` as well as `\n`
   (`sdkmanager` redraws with `\r`), and hands each piece to a small parser:
   - pip runs with `--progress-bar raw`, which prints `Progress <done> of <total>`
-    lines even when its output is not a terminal (pip 24.1 and later; Android
-    already requires 25.1);
+    lines even when its output is not a terminal (pip 24.1 and later; every
+    resolver requires 24.3 or newer). One parser reads them for all three
+    resolvers: `kivyforge/lock/pip_progress.py` (`PipProgress`);
   - `sdkmanager` prints `[====    ] 42% Downloading …`, read for the percentage.
 
 ## Not covered, and follow-ups
 
-- **Only Android's `lock` reports progress.** The desktop and iOS lock backends
-  are unchanged; `_LockOps.emits_progress` turns it on per backend.
 - **Gradle's own downloads during `build`** (AGP, dependencies) are still shown
   only as Gradle's plain console prints them.
 - **The kivy-mobile-wheels index could publish PEP 658 metadata.** pip would then

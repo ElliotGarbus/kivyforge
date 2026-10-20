@@ -73,6 +73,7 @@ def _lock_ops(platform: str) -> _LockOps:
             build_error=BuildError,
             require_ios=True,
             require_macos=False,
+            emits_progress=True,
         )
     if platform == "macos":
         from ..platforms.macos import lock as macos_lock
@@ -87,6 +88,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_ios=False,
             require_macos=True,
             emits_warnings=True,
+            emits_progress=True,
         )
     if platform == "linux":
         from ..platforms.linux import lock as linux_lock
@@ -102,6 +104,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=False,
             require_linux=True,
             emits_warnings=True,
+            emits_progress=True,
         )
     if platform == "windows":
         from ..platforms.windows import lock as windows_lock
@@ -117,6 +120,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=False,
             require_windows=True,
             emits_warnings=True,
+            emits_progress=True,
         )
     if platform == "android":
         from ..platforms.android.lock import builder as android_builder

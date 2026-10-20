@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import kivyforge.lock.wheelruntime.resolver as pip_resolver
 from kivyforge.lock.wheelruntime.resolver import (
     MIN_PIP_VERSION,
     PipWheelResolver,
@@ -24,6 +25,7 @@ from kivyforge.lock.wheelruntime.resolver import (
     get_wheel_resolver,
     version_str,
 )
+from tests.streaming_fake import streaming
 
 
 @pytest.fixture(autouse=True)
@@ -307,7 +309,7 @@ class TestPipWheelResolverRunReport:
             result.stdout = ""
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipWheelResolver()
         with pytest.raises(WheelResolverError, match="pip could not resolve wheels"):
             pr._run_report(
@@ -331,7 +333,7 @@ class TestPipWheelResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipWheelResolver()
         pr._run_report(
             ["kivy"],
@@ -358,7 +360,7 @@ class TestPipWheelResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         PipWheelResolver()._run_report(
             ["kivy"],
             python_version="3.15.0",
@@ -382,7 +384,7 @@ class TestPipWheelResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipWheelResolver()
         pr._run_report(
             ["kivy"],
@@ -408,7 +410,7 @@ class TestPipWheelResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipWheelResolver()
         pr._run_report(
             ["kivy"],
@@ -432,7 +434,7 @@ class TestPipWheelResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipWheelResolver()
         pr._run_report(
             ["kivy"],

@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import kivyforge.platforms.ios.lock.resolver as pip_resolver
 from kivyforge.lock.resolver import _dep_names
 from kivyforge.platforms.ios.lock.markers import ios_marker_environment
 from kivyforge.platforms.ios.lock.resolver import (
@@ -29,6 +30,7 @@ from kivyforge.platforms.ios.lock.resolver import (
     slice_tags,
     version_str,
 )
+from tests.streaming_fake import streaming
 
 
 @pytest.fixture(autouse=True)
@@ -479,7 +481,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         result = pr._run_report(
             ["kivy"],
@@ -501,7 +503,7 @@ class TestPipResolverRunReport:
             result.stdout = ""
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         with pytest.raises(ResolverError, match="pip could not resolve"):
             pr._run_report(
@@ -524,7 +526,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         with pytest.raises(ResolverError, match="could not read pip report"):
             pr._run_report(
@@ -549,7 +551,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -574,7 +576,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -601,7 +603,7 @@ class TestPipResolverRunReport:
             result.returncode = 0
             return result
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         pr = PipResolver()
         pr._run_report(
             ["kivy"],
@@ -676,6 +678,7 @@ class TestPipResolverResolve:
             self_inner,
             requirements,
             *,
+            label="",
             python_version,
             platform_tag,
             abis,
@@ -714,6 +717,7 @@ class TestPipResolverResolve:
             self_inner,
             requirements,
             *,
+            label="",
             python_version,
             platform_tag,
             abis,
@@ -761,6 +765,7 @@ class TestPipResolverResolve:
             self_inner,
             requirements,
             *,
+            label="",
             python_version,
             platform_tag,
             abis,

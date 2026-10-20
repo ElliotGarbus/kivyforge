@@ -52,6 +52,8 @@ def build_wheel_runtime_lock(
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    on_transfer: Callable[[str, int, int, str], None] | None = None,
 ) -> WheelRuntimeLock:
     """Lock ``config`` for ``profile.platform``.
 
@@ -62,7 +64,11 @@ def build_wheel_runtime_lock(
     if profile.overlay(config) is None:
         raise WheelRuntimeBuildError(profile.missing_overlay_error())
 
-    resolver = resolver or profile.wheel_resolver()
+    # Progress is wired into the default resolver only; an injected one
+    # (tests) keeps its own signature.
+    resolver = resolver or profile.wheel_resolver(
+        on_progress=on_progress, on_transfer=on_transfer
+    )
     runtime_provider = runtime_provider or profile.runtime_provider(config)
     root = (project_root or Path.cwd()).resolve()
 

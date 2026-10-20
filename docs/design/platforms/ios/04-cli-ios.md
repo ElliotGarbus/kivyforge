@@ -79,6 +79,13 @@ Lock acts on the current working directory's `pyproject.toml`. Exits non-zero wi
 - run: kivyforge lock --check   # fail PR if pyproject.toml was edited without re-locking
 ```
 
+**Progress.** `lock` reports each step on stderr: a byte bar for the
+python.org `Python.xcframework` download (on a cache miss) and for each wheel
+pip downloads, `[lock] <slice>: resolving wheels` per slice, the packages
+`swift package resolve` fetches, and a "still resolving" line after 30
+seconds with nothing to show. In a log or a pipe the bars become a few lines
+each. See [download-progress-output](../../dev/download-progress-output.md).
+
 ### `kivyforge build`
 
 Flags:
@@ -207,7 +214,8 @@ Flags:
 
 `upgrade` re-fetches the pinned `Python.xcframework` and/or `[[tool.kivyforge.xcframeworks]]` artifacts per the **existing lockfile** — it does not reinstall pip-deps, does not regenerate the Xcode project, and does not invoke xcodebuild. Its purpose is narrowly "refresh a downloaded artifact without touching the rest of the project": use it when an artifact was deleted from the local cache, when you want to verify the cached copy against the pinned SHA-256 again, or when a CI job needs a clean artifact cache warmed before the build step.
 
-To pick up *newer* versions, the user edits `pyproject.toml` and re-runs `kivyforge lock` — then `kivyforge build` (or `kivyforge run`) materializes the new lock. Separation of concerns: `lock` changes versions; `upgrade` re-downloads the current pins; `build` installs everything and regenerates the project.
+To pick up *newer* versions, the user runs `kivyforge lock --update` (a plain
+`lock` keeps the versions already locked) — then `kivyforge build` (or `kivyforge run`) materializes the new lock. Separation of concerns: `lock` changes versions; `upgrade` re-downloads the current pins; `build` installs everything and regenerates the project.
 
 If none of `--python`, `--xcframeworks`, or `--name` is given, all pinned artifact downloads (Python.xcframework + every `[[tool.kivyforge.xcframeworks]]` entry) are refreshed. Pip-deps wheels are never touched by `upgrade`; re-running `kivyforge build` handles those.
 

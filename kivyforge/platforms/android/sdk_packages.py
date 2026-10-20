@@ -18,7 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .streaming import elapsed, run_streaming
+from kivyforge.streaming import elapsed, run_streaming
+
 from .toolchain import CMAKE_VERSION, NDK_VERSION
 
 _BAT = ".bat" if os.name == "nt" else ""

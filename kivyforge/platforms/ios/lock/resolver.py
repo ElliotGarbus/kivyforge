@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -36,6 +36,11 @@ from typing import Protocol
 from kivyforge.lock import _pip_shim
 from kivyforge.lock._pip_shim import MARKER_ENV_VAR
 from kivyforge.lock.model import canonical_name
+from kivyforge.lock.pip_progress import (
+    PROGRESS_ARGS,
+    PipProgress,
+    without_progress,
+)
 from kivyforge.lock.prefer import Pins, constraint_args
 from kivyforge.lock.resolver import (
     MIN_PIP_VERSION,
@@ -46,6 +51,7 @@ from kivyforge.lock.resolver import (
     unresolved_requirement,
     version_str,
 )
+from kivyforge.streaming import run_streaming
 
 from .markers import ios_marker_environment
 
@@ -134,8 +140,16 @@ class PipResolver:
     (fail fast at lock time, host-independent).
     """
 
-    def __init__(self, python_executable: str | None = None) -> None:
+    def __init__(
+        self,
+        python_executable: str | None = None,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+        on_transfer: Callable[[str, int, int, str], None] | None = None,
+    ) -> None:
         self._python = python_executable or sys.executable
+        self._on_progress = on_progress
+        self._on_transfer = on_transfer
 
     def resolve(
         self,
@@ -166,8 +180,11 @@ class PipResolver:
             environment = ios_marker_environment(
                 python_version=python_version, slice_suffix=suffix
             )
+            if self._on_progress is not None:
+                self._on_progress(f"[lock] {suffix}: resolving wheels")
             report = self._run_report(
                 requirements,
+                label=suffix,
                 python_version=python_version,
                 platform_tag=tag,
                 abis=abis,
@@ -242,6 +259,7 @@ class PipResolver:
         self,
         requirements: list[str],
         *,
+        label: str = "",
         python_version: str,
         platform_tag: str,
         abis: tuple[str, ...],
@@ -273,6 +291,10 @@ class PipResolver:
                 str(Path(tmp) / "target"),
                 "--report",
                 str(report_path),
+                # Machine-readable byte counts even when not on a terminal:
+                # the mobile wheel index has no PEP 658 metadata, so pip
+                # downloads whole wheels to read them (#88).
+                *PROGRESS_ARGS,
             ]
             for abi in abis:
                 cmd += ["--abi", abi]
@@ -287,11 +309,17 @@ class PipResolver:
 
             env = dict(os.environ)
             env[MARKER_ENV_VAR] = json.dumps(marker_environment)
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
+            progress = PipProgress(
+                label or platform_tag, self._on_progress, self._on_transfer
             )
-            if proc.returncode != 0:
-                output = proc.stderr or proc.stdout
+            returncode, transcript = run_streaming(
+                cmd,
+                env=env,
+                on_segment=progress,
+                on_quiet=progress.quiet if self._on_progress else None,
+            )
+            if returncode != 0:
+                output = without_progress(transcript)
                 culprit = unresolved_requirement(output)
                 what = (
                     f"no wheel for {culprit!r}"

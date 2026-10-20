@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -196,13 +196,20 @@ def build_lockfile(
     prefer: Iterable[LockedPackage] = (),
     offline: bool = False,
     now: datetime | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    on_transfer: Callable[[str, int, int, str], None] | None = None,
 ) -> Lockfile:
     if config.ios is None:
         raise BuildError(
             "pyproject.toml has no [tool.kivy.ios] table; nothing to lock."
         )
 
-    resolver = resolver or get_resolver("pip")
+    # Progress is wired into the default resolvers only; an injected one
+    # (tests) keeps its own signature. Downloads (the python.org framework,
+    # xcframework archives) report through the verb's transfer sink.
+    resolver = resolver or get_resolver(
+        "pip", on_progress=on_progress, on_transfer=on_transfer
+    )
     python_provider = python_provider or PythonOrgProvider()
     root = (project_root or Path.cwd()).resolve()
 
@@ -302,7 +309,10 @@ def build_lockfile(
     )
 
     swift_packages = _resolve_swift_packages(
-        config.ios.swift_packages, spm_resolver, root, offline
+        config.ios.swift_packages,
+        spm_resolver or get_spm_resolver(on_progress=on_progress),
+        root,
+        offline,
     )
 
     return Lockfile(

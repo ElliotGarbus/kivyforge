@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Callable
@@ -34,6 +33,11 @@ from typing import Protocol
 from kivyforge.lock import _pip_shim
 from kivyforge.lock._pip_shim import MARKER_ENV_VAR
 from kivyforge.lock.model import canonical_name
+from kivyforge.lock.pip_progress import (
+    PROGRESS_ARGS,
+    PipProgress,
+    without_progress,
+)
 from kivyforge.lock.prefer import Pins, constraint_args
 from kivyforge.lock.resolver import (
     MIN_PIP_VERSION,
@@ -44,8 +48,8 @@ from kivyforge.lock.resolver import (
     unresolved_requirement,
     version_str,
 )
+from kivyforge.streaming import run_streaming
 
-from ..streaming import elapsed, run_streaming
 from .markers import android_marker_environment
 
 # Run by path, not ``-m``: the shim imports nothing from kivyforge, so it also
@@ -260,8 +264,7 @@ class PipResolver:
                 str(report_path),
                 # Machine-readable byte counts even when not on a terminal,
                 # which is the only way to show download progress (#84).
-                "--progress-bar",
-                "raw",
+                *PROGRESS_ARGS,
             ]
             for abi in abis:
                 cmd += ["--abi", abi]
@@ -276,7 +279,7 @@ class PipResolver:
 
             env = dict(os.environ)
             env[MARKER_ENV_VAR] = json.dumps(marker_environment)
-            progress = _PipProgress(
+            progress = PipProgress(
                 label or platform_tag, self._on_progress, self._on_transfer
             )
             returncode, transcript = run_streaming(
@@ -286,7 +289,7 @@ class PipResolver:
                 on_quiet=progress.quiet if self._on_progress else None,
             )
             if returncode != 0:
-                output = _without_progress(transcript)
+                output = without_progress(transcript)
                 culprit = unresolved_requirement(output)
                 what = (
                     f"no {platform_tag} wheel for {culprit!r}"
@@ -317,63 +320,6 @@ class PipResolver:
                 return json.loads(report_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise ResolverError(f"could not read pip report: {exc}") from exc
-
-
-_DOWNLOADING = re.compile(r"^\s*Downloading (\S+)(?: \(([^)]+)\))?")
-_PROGRESS = re.compile(r"^Progress (\d+) of (\d+)$")
-
-
-class _PipProgress:
-    """Turn ``pip --progress-bar raw`` output into transfer events."""
-
-    def __init__(
-        self,
-        label: str,
-        on_progress: Callable[[str], None] | None,
-        on_transfer: Callable[[str, int, int, str], None] | None,
-    ) -> None:
-        self._label = label
-        self._on_progress = on_progress
-        self._on_transfer = on_transfer
-        self._current = ""
-
-    def __call__(self, segment: str) -> bool:
-        line = segment.strip()
-        downloading = _DOWNLOADING.match(line)
-        if downloading:
-            self._current = f"[lock] {self._label}: {_short_name(downloading.group(1))}"
-            return False
-        progress = _PROGRESS.match(line)
-        if progress and self._current and self._on_transfer is not None:
-            done, total = int(progress.group(1)), int(progress.group(2))
-            self._on_transfer(self._current, done, total, "bytes")
-            return True
-        return False
-
-    def quiet(self, seconds: float) -> None:
-        if self._on_progress is not None:
-            self._on_progress(
-                f"[lock] {self._label}: still resolving ({elapsed(seconds)})"
-            )
-
-
-def _short_name(url: str) -> str:
-    """``.../Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl`` -> ``Kivy-2.3.1``.
-
-    The ABI is already in the label, and the full filename does not fit beside
-    a bar in a narrow terminal.
-    """
-    filename = url.rsplit("/", 1)[-1]
-    if filename.endswith(".whl"):
-        return "-".join(filename.split("-")[:2])
-    return filename
-
-
-def _without_progress(transcript: str) -> str:
-    """pip's output for an error message, minus the raw byte-count lines."""
-    return "\n".join(
-        line for line in transcript.splitlines() if not _PROGRESS.match(line.strip())
-    )
 
 
 def get_resolver(backend: str = "pip", **kwargs) -> Resolver:

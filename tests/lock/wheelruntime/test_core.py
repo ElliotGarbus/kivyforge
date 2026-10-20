@@ -9,11 +9,11 @@ thin profile — not copying the engine.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
 
+import kivyforge.lock.wheelruntime.resolver as pip_resolver
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.lock.inputs import LOCK_INPUTS
 from kivyforge.lock.wheelruntime import (
@@ -29,6 +29,7 @@ from kivyforge.lock.wheelruntime import (
 from kivyforge.lock.wheelruntime.profile import PlatformLockProfile
 from kivyforge.lock.wheelruntime.resolver import PipWheelResolver, WheelResolverError
 from kivyforge.platforms.macos.lock import MacosProfile
+from tests.streaming_fake import streaming
 
 
 class FauxLinuxProfile(PlatformLockProfile):
@@ -181,7 +182,7 @@ class TestRunReportReadsUtf8:
 
             return _Proc()
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(pip_resolver, "run_streaming", streaming(fake_run))
         return pr._run_report(
             ["pkg"],
             python_version="3.13.0",
