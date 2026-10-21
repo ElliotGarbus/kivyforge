@@ -46,6 +46,7 @@ from ._common import PYPROJECT_NAME, ToolchainError
 from ._output import output_options, reporting
 from ._platform import configured_platforms
 from .init_writer import (
+    GuiScripts,
     append_block,
     has_platform_overlay,
     has_shared_table,
@@ -504,6 +505,7 @@ def _update_one_platform(
     app_slug = _project_slug(raw)
     include_shared = not has_shared_table(text)
     table = _platform_table(raw, platform_name)
+    gui_scripts = _read_gui_scripts(raw)
 
     if existing_overlay and force:
         stripped = strip_platform_tables(text, platform_name)
@@ -513,6 +515,7 @@ def _update_one_platform(
             table,
             include_shared=include_shared,
             preserve=True,
+            gui_scripts=gui_scripts,
         )
         new_text = append_block(stripped, block)
         pyproject.write_text(new_text, encoding="utf-8")
@@ -528,6 +531,7 @@ def _update_one_platform(
             table,
             include_shared=include_shared,
             preserve=False,
+            gui_scripts=gui_scripts,
         )
         new_text = append_block(text, block)
         pyproject.write_text(new_text, encoding="utf-8")
@@ -537,6 +541,8 @@ def _update_one_platform(
         action = "added"
         tables = [table_key] if not include_shared else ["tool.kivy", table_key]
         report.line(f"Added {added} to pyproject.toml.")
+        if include_shared and gui_scripts.entries:
+            report.line(_entry_point_note(gui_scripts))
 
     report.line(
         f"Next: fill in the TODOs in [{table_key}], then `kivyforge lock -p {platform_name}`."
@@ -551,6 +557,7 @@ def _render_overlay(
     *,
     include_shared: bool,
     preserve: bool,
+    gui_scripts: GuiScripts,
 ) -> str:
     """Render the (optional) shared ``[tool.kivy]`` + the target platform's overlay."""
     if platform_name == "ios":
@@ -568,6 +575,7 @@ def _render_overlay(
             splash_source=splash_source,
             splash_background=splash_background,
             include_shared=include_shared,
+            gui_scripts=gui_scripts,
         )
     if platform_name == "macos":
         return render_macos_tables(
@@ -577,6 +585,7 @@ def _render_overlay(
             archs=_read_str_list(table, "archs") if preserve else None,
             icon_source=_read_icon_source(table) if preserve else None,
             include_shared=include_shared,
+            gui_scripts=gui_scripts,
         )
     if platform_name == "linux":
         return render_linux_tables(
@@ -586,6 +595,7 @@ def _render_overlay(
             icon_source=_read_icon_source(table) if preserve else None,
             categories=_read_categories(table) if preserve else None,
             include_shared=include_shared,
+            gui_scripts=gui_scripts,
         )
     if platform_name == "windows":
         return render_windows_tables(
@@ -595,6 +605,7 @@ def _render_overlay(
             archs=_read_str_list(table, "archs") if preserve else None,
             icon_source=_read_icon_source(table) if preserve else None,
             include_shared=include_shared,
+            gui_scripts=gui_scripts,
         )
     if platform_name == "android":
         splash_source, splash_background = (
@@ -616,6 +627,7 @@ def _render_overlay(
             splash_source=splash_source,
             splash_background=splash_background,
             include_shared=include_shared,
+            gui_scripts=gui_scripts,
         )
     raise ToolchainError(
         f"`kivyforge init` does not support platform {platform_name!r} yet."
@@ -656,6 +668,38 @@ def _project_slug(raw: dict) -> str:
     if isinstance(name, str) and name:
         return normalize_package_name(name)
     return "app"
+
+
+def _read_gui_scripts(raw: dict) -> GuiScripts:
+    """``[project.gui-scripts]``, read leniently: the loader rejects bad ones."""
+    project = raw.get("project")
+    if not isinstance(project, dict):
+        return GuiScripts()
+    scripts = project.get("gui-scripts")
+    entries = (
+        tuple((n, v) for n, v in scripts.items() if isinstance(v, str))
+        if isinstance(scripts, dict)
+        else ()
+    )
+    dynamic = project.get("dynamic")
+    return GuiScripts(
+        entries=entries,
+        dynamic=isinstance(dynamic, list) and "gui-scripts" in dynamic,
+    )
+
+
+def _entry_point_note(gui_scripts: GuiScripts) -> str:
+    """What ``init`` did about the entry point, when gui-scripts decided it."""
+    name = gui_scripts.entries[0][0]
+    if len(gui_scripts.entries) == 1 and not gui_scripts.dynamic:
+        return (
+            f"Entry point: [project.gui-scripts] {name}, so [tool.kivy] sets no "
+            "entry_point."
+        )
+    return (
+        f"Entry point: set to [project.gui-scripts] {name}; change entry_point "
+        "in [tool.kivy] if the app should start another."
+    )
 
 
 def _platform_table(raw: dict, platform_name: str) -> dict:

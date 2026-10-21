@@ -733,6 +733,16 @@ def _is_dotted_identifier(text: str) -> bool:
 _EXTRAS = re.compile(r"\s*\[[^\]]*\]\s*$")
 
 
+def script_entry_point(value: str) -> str:
+    """A script's object reference as ``entry_point`` takes it.
+
+    The spec lets a reference carry extras and spaces around the colon
+    (``"pkg.app : main [gui]"``); ``entry_point`` takes neither. Used for the
+    suggestion in a config error and by ``kivyforge init``.
+    """
+    return "".join(_EXTRAS.sub("", value).split())
+
+
 def _gui_script_entry_point(
     project: ProjectMeta, finder: _LineFinder
 ) -> tuple[str, str | None, str]:
@@ -743,10 +753,7 @@ def _gui_script_entry_point(
     """
     gui_scripts = [e for e in project.entry_points if e.group == "gui_scripts"]
     line = finder.table_line("project", "gui-scripts") or finder.line("gui-scripts")
-    # The suggestion is written as entry_point takes it: no extras, no spaces.
-    example = (
-        "".join(_EXTRAS.sub("", gui_scripts[0].value).split()) if gui_scripts else ""
-    )
+    example = script_entry_point(gui_scripts[0].value) if gui_scripts else ""
     hint = (
         "set [tool.kivy].entry_point to the one kivyforge should start, e.g. "
         f'entry_point = "{example}"'

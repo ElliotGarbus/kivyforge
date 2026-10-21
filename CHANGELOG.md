@@ -18,6 +18,12 @@
   and Windows: kivyforge generates a small launcher that each platform runs
   as `__main__`, and `strip_source` release builds compile it to `.pyc` with
   the rest of the app.
+- **Changed:** `kivyforge init` no longer writes `entry_point = "main"` for a
+  project that declares GUI scripts. That line would override the GUI
+  script. With one GUI script, `init` writes no `entry_point` and adds a
+  comment naming the script. With several, it sets `entry_point` to the
+  first and lists the others. A project without GUI scripts gets the same
+  line as before. `init --force` still leaves `[tool.kivy]` alone.
 - **Migration:** none needed for an app that sets `entry_point` or declares no
   GUI scripts. `entry_point = "main"` and other module names still run as
   `__main__`, exactly as before. A project that declares exactly one GUI

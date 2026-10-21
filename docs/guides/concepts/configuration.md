@@ -102,7 +102,15 @@ kivyforge init -p macos -p windows
 ```
 
 To regenerate an overlay that already exists, add `--force`. Your signing
-settings are preserved.
+settings are preserved, and `--force` never changes `[tool.kivy]`.
+
+The `entry_point` that `init` writes depends on your `[project.gui-scripts]`:
+
+- With no GUI scripts, `init` writes `entry_point = "main"`.
+- With one GUI script, `init` writes no `entry_point`, so the app starts that
+  script. A comment in `[tool.kivy]` says so.
+- With several, `init` sets `entry_point` to the first one and lists the others
+  in a comment. Change it if the app should start a different one.
 
 ## Icons and splash screens
 

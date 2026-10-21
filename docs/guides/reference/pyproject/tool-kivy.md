@@ -129,6 +129,10 @@ When `entry_point` is unset, kivyforge picks the entry point like this:
    Set `entry_point` to the one the app should start.
 3. If there are no GUI scripts, kivyforge uses `"main"`.
 
+`kivyforge init` follows the same rule when it writes `[tool.kivy]`: for a
+project with one GUI script it writes no `entry_point`, and for several it sets
+`entry_point` to the first.
+
 kivyforge never reads `[project.scripts]`, because those are console scripts.
 A GUI script must name a function. If you want a module to run as `__main__`
 instead, set `entry_point` to the module name. If `[project].dynamic` lists
