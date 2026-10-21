@@ -49,7 +49,12 @@ dlopen(.../Foundation.framework/Versions/Current/Foundation ...)` comes from
 pyobjus's own module, which uses the same macOS layout. It is harmless: the
 classes come from the already-loaded image, and `UIScreen` works right after.
 
-### 2. pyobjus does not pass floating-point arguments reliably
+### 2. pyobjus corrupts the heap passing a `CGRect` by value
+
+**Corrected 2026-10-20.** This section first called the defect unreliable
+floating-point arguments, guessing at arm64 register setup. The cause, found in
+pyobjus's source and confirmed on macOS, is a heap overflow when pyobjus passes
+a struct by value (see "Root cause" below). The observations stand.
 
 With WebKit loaded, `WKWebView.alloc().initWithFrame_(NSRect(NSPoint(x, y), NSSize(w, h)))`
 reported success but showed nothing. Reading the frame back through pyobjus:
@@ -63,10 +68,38 @@ the right frame (`initWithFrame_ gave frame=(20.0, 176.0, 380.0, 716.0)`). An
 Auto Layout workaround then failed the other way:
 `constraintEqualToAnchor_constant_(anchor, 20.0)` received `0.0` for the
 constant (`after constraints frame=(0.0, 0.0, 380.0, 716.0)`), while
-`constraintEqualToConstant_` (a single double) worked. On arm64 that looks
-like floating-point registers not being set up for every argument. Object,
-string and integer arguments, and struct *returns* (`UIScreen.bounds`, `frame`),
-were correct every time.
+`constraintEqualToConstant_` (a single double) worked. Object, string and
+integer arguments, and struct *returns* (`UIScreen.bounds`, `frame`), were
+correct every time.
+
+**Root cause** (pyobjus 1.2.4, unchanged on master at `5a43e83`).
+`ObjcMethod.__call__` sizes each argument's buffer from
+`type_encoding_to_ffitype(sig).size`. For a struct that size is 0 by design,
+since libffi fills it in only when the call is prepared, later and on a
+different copy of the type. `cast_to_cy_data_type` then does `malloc(0)` and
+copies the whole struct into it. Apple's `malloc(0)` returns a 16-byte block,
+so a 32-byte `CGRect` keeps its `origin` and writes its `size` past the end.
+The next allocation, the 8-byte return-value buffer in the same size class,
+can land there and overwrite it before the call. That is the origin-right,
+size-zero frame that came and went between launches. Structs of 16 bytes or
+less (`CGPoint`, `CGSize`, `NSRange`) fit in the block by luck. This is
+[kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90), open since 2022
+without a diagnosis.
+
+Confirmed on this Mac with pyobjus master built from source: the normal
+allocator gave 0 wrong frames in 2000 `NSView.initWithFrame_` calls, but under
+Guard Malloc (`DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib`) the first call
+crashed in `cast_to_cy_data_type`, at the struct copy. Sizing the buffer with
+`ctypes.sizeof(arg)` for a struct passed by value removed the crash, and 200
+calls under Guard Malloc all read back the right frame.
+
+The constraint constant is probably not a separate bug. A `double` argument
+gets a correctly sized buffer, and on macOS `constraintEqualToAnchor_constant_`
+passed its constant correctly in every call, Guard Malloc included. The spike's
+evidence was also indirect: it read the view's frame right after activating the
+constraints, not `constraint.constant`. Heap damage from an earlier
+`initWithFrame_` in the same process, or a frame read before layout, would
+explain it; neither is confirmed on iOS.
 
 **Fix:** the pyobjus variant creates the view with `init()` and sets the frame
 with `setFrame:` through `objc_msgSend`, using the object's pointer from
@@ -167,7 +200,7 @@ directly; a landscape-capable app would.
 ## Which variant the guide carries
 
 Neither as originally written. Both need the WebKit load fix, and pyobjus
-cannot pass the frame. The recipe the guide should print is the pyobjus
+cannot pass the frame safely, because it is a `CGRect` by value. The recipe the guide should print is the pyobjus
 variant in `examples/mobile/ios-webview/src/main.py`: pyobjus for objects and
 strings, plus about 25 lines of ctypes for `load_webkit()` and `setFrame:`.
 The pure-ctypes variant also works, but it is longer and harder to read for

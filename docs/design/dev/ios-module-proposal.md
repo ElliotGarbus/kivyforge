@@ -144,6 +144,14 @@ scale for the same reason (E2). Two consequences:
   first report of a second defect, `Window.keyboard_height` reading 0 while
   a keyboard was up, came from its own logging and is withdrawn.
 
+**Update 2026-10-20.** The defect is reported and fixed upstream in
+[kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441), which makes the iOS
+backend return Kivy layout pixels for the keyboard height and the safe area,
+as Android does. kivyforge's guides and examples dropped their `× get_scale()`
+the same day, before that PR merged, so on an earlier Kivy 3 build their iOS
+insets and keyboard heights are a third of the right size. The mapping below
+is written for the fixed Kivy.
+
 **Measured** by the same run: `Window.size` was `(1260, 2736)` and
 `UIScreen.bounds` `420 × 912` pt at `nativeScale` 3, so the window is in
 pixels, and `get_safe_area()` returned a top inset of 68 pt on an iPhone Air
@@ -240,13 +248,17 @@ verbatim log. The recipe as first sketched, pure pyobjus, failed twice over:
   and `load()` on nil raises nothing. `autoclass("WKWebView")` then fails
   with `Unable to find class b'WKWebView'`. Loading the framework binary
   with `ctypes.CDLL` (dyld) works on the simulator and should on a device.
-- **pyobjus 1.2.4 passes floating-point arguments unreliably on arm64.**
+- **pyobjus 1.2.4 corrupts the heap passing a `CGRect` by value.**
   `initWithFrame_(NSRect(...))` produced a 0×0 view on one launch and the
-  right frame on the next; a `CGFloat` constraint constant arrived as 0.0.
-  Object, string and integer arguments, and struct *returns*, were correct
-  every time. Setting the frame with `setFrame:` through `objc_msgSend`
-  (ctypes, using `get_address()` for the pyobjus object) worked on every
-  launch.
+  right frame on the next. pyobjus copies any struct passed by value into a
+  `malloc(0)` buffer, so a struct over 16 bytes overruns it
+  ([kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90); root cause
+  in the findings, corrected 2026-10-20 from "unreliable floating-point
+  arguments"). A constraint constant also seemed to arrive as 0.0, but that
+  was read indirectly and did not reproduce on macOS. Object, string and
+  integer arguments, and struct *returns*, were correct every time. Setting
+  the frame with `setFrame:` through `objc_msgSend` (ctypes, using
+  `get_address()` for the pyobjus object) worked on every launch.
 
 What worked, and what the guide carries: pyobjus for objects and strings,
 plus about twenty-five lines of ctypes to load WebKit and set the frame. A
@@ -388,8 +400,8 @@ and `07-recipe-triage.md`.
 |---|---|---|
 | `get_scale()` | `kivy.mobile.get_scale()` | same value |
 | `get_dpi()` | `kivy.mobile.get_dpi()` | float, and an estimate (`163 × scale`, `132 × scale` on iPad) rather than a per-model table, which Kivy dropped because it "topped out at iPhone 13" (kivy#9331); this is also what `Metrics.dpi` reports on Kivy 3 |
-| `get_safe_area()` | `kivy.mobile.get_safe_area()`, or bind `Window.safe_area` | same dict, same keys, same unit (UIKit points). Multiply by `get_scale()` for Kivy pixels, as the mobile geometry guide shows; the old function needed the same |
-| `get_kheight()` | `kivy.mobile.get_keyboard_height() * kivy.mobile.get_scale()` | the old function returned **pixels** (it multiplied by the scale internally); `kivy.mobile` returns **points**, so the caller multiplies. Do not read `Window.keyboard_height` for this on iOS yet: measured, it is the unscaled points value and reads 0 most of the time the keyboard is up (E3); a Kivy defect to report. Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
+| `get_safe_area()` | `kivy.mobile.get_safe_area()`, or bind `Window.safe_area` | same dict and keys, but Kivy **pixels** where the old function returned UIKit points, so drop any `× get_scale()` (needs kivy#9441, E3) |
+| `get_kheight()` | `kivy.mobile.get_keyboard_height()`, or bind `Window.keyboard_height` | same unit, Kivy **pixels** (needs kivy#9441, E3). Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
 | `IOSKeyboard`, `iOSKeyboard` | `kivy.mobile.subscribe_keyboard_height(callback)` | Kivy's `Window` already subscribes; most apps need nothing |
 | `open_url(url)`, `IosBrowser` | `webbrowser.open(url)` | the standard library registers the iOS backend itself; works on every platform |
 | `IOSWebView().open(url, x, y, width, height)`, `open_url_wbv(...)` | `WKWebView` through `pyobjus`, with WebKit loaded and the frame set through ctypes (recipe below, verified in the spike) | add `pyobjus` to `[project].dependencies`. The frame is UIKit points with a top-left origin, as before: from a Kivy rectangle, divide by `get_scale()` and take `y` from the top |
@@ -439,8 +451,8 @@ def _get(obj, name):
 
 
 def _set_frame(view, x, y, width, height):
-    """pyobjus 1.2.4 passes CGRect and CGFloat arguments unreliably on arm64,
-    so the frame is sent through objc_msgSend directly."""
+    """pyobjus 1.2.4 corrupts the heap when it passes a CGRect by value
+    (kivy/pyobjus#90), so the frame is sent through objc_msgSend directly."""
     lib = ctypes.CDLL(None)
     lib.sel_registerName.restype = ctypes.c_void_p
     lib.sel_registerName.argtypes = [ctypes.c_char_p]
@@ -573,8 +585,8 @@ it costs. The bar is real apps, not the possibility of them.
    they need; their port is one import change, deleting browser code, the web
    view recipe, and plyer for the file chooser, which they already use.
 2. **The recipe rests on two pyobjus defects staying as they are** (E9):
-   `load_framework` doing nothing on iOS, and floating-point arguments
-   arriving wrong. Both are worked around with ctypes, which keeps working
+   `load_framework` doing nothing on iOS, and the heap overflow when a
+   `CGRect` is passed by value. Both are worked around with ctypes, which keeps working
    whether or not pyobjus is fixed. Both should be reported to kivy/pyobjus
    with the spike's log lines; the pyobjus iOS pin in kivy-mobile-wheels is
    from 2025-12 and has no upstream iOS CI.

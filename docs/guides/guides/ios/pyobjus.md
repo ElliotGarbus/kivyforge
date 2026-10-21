@@ -93,10 +93,14 @@ commands bring in the Swift package it wraps.
   `autoclass` then fails with `Unable to find class`. To use a system framework
   your app doesn't link, such as WebKit, open its binary with ctypes instead:
   `ctypes.CDLL("/System/Library/Frameworks/WebKit.framework/WebKit")`.
-- **Floating-point arguments arrive unreliably.** With pyobjus 1.2.4 on arm64, a
-  `CGRect` or `CGFloat` argument sometimes reached the method as zero. Object,
-  string and integer arguments, and returned structs, were correct. Send
-  floating-point arguments through `objc_msgSend` with ctypes.
+- **Passing a `CGRect` by value corrupts memory.** pyobjus 1.2.4 copies a
+  struct argument into a buffer too small for any struct over 16 bytes
+  ([kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90)). A
+  `CGRect` then reaches the method with its size zeroed on some launches and
+  intact on others, and the heap is damaged either way. `CGPoint` and
+  `CGSize` fit. Object, string, integer and floating-point arguments, and
+  returned structs, are fine. Send a `CGRect` argument, such as a frame,
+  through `objc_msgSend` with ctypes.
 
 The `ios-webview` example (`examples/mobile/ios-webview`) does both, and
 [Replace the kivy-ios ios module](ios-module.md) prints the working code.
