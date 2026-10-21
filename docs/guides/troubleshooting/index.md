@@ -96,6 +96,9 @@ The [FAQ](../faq.md) covers common platform problems, including:
 - Linux: `libfuse2` errors, headless builds, the glibc floor, and WSL2.
 - Windows: SmartScreen warnings, long-path errors, and a black console window.
 
+To find your app's own output in a noisy Android log, see [Filter the app's
+log](../guides/android/run.md#filter-the-apps-log).
+
 ## What's next
 
 - [Exit and diagnostic codes](../reference/codes.md)
