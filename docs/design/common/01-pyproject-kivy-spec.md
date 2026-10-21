@@ -80,7 +80,7 @@ orientation = ["portrait", "portrait-upside-down"]
 | -------------- | -------------- | -------- | ----------------------- | ----------- |
 | `display_name` | string         | no       | `[project].name` titled | App display name shown to the user. Each platform maps it to its native slot (iOS `CFBundleDisplayName`, Android `android:label`, etc.). |
 | `app_dir`      | string         | yes      | —                       | Folder containing your `.py` source files, relative to `pyproject.toml`. **Must be a subdirectory** (e.g. `"src"`); the project root (`"."`), an empty value, an absolute path, or a path escaping the project are all rejected — see "`app_dir` + `entry_point` interaction" below. |
-| `entry_point`  | string         | no       | `"main"`                | Python module reference (dotted name), resolved after putting `app_dir` on `sys.path` and **run as `__main__`** (the equivalent of `python -m entry_point`) on every platform — see the callout below for what that means for packages. |
+| `entry_point`  | string         | no       | the one `[project.gui-scripts]` entry, else `"main"` | Where the app starts, resolved after putting `app_dir` on `sys.path`. A dotted module (`"main"`, `"pkg.start"`) is **run as `__main__`** (the equivalent of `python -m entry_point`) on every platform — see the callout below for what that means for packages. A `module:function` reference (`"pkg.app:main"`) is **called**, the way an installed script calls it — see "[`module:function` and `[project.gui-scripts]`](#modulefunction-and-projectgui-scripts)". |
 | `orientation`  | list of string | no       | `["portrait"]`          | Allowed orientations. Valid: `portrait`, `portrait-upside-down`, `landscape-left`, `landscape-right`. Platforms map the declared list to their own conventions (see each overlay doc for platform-specific handling). |
 
 ### `app_dir` + `entry_point` interaction
@@ -101,12 +101,45 @@ Example layouts:
 | `./src/app.py`                                           | `"src"`   | `"app"`         |
 | `./src/start.py` (no `src/__init__.py`)                  | `"src"`   | `"start"`       |
 | `./src/myapp/start.py` (only `src/myapp/__init__.py`)    | `"src"`   | `"myapp.start"` |
+| `./src/myapp/app.py` with `def main()`, a package using relative imports | `"src"` | `"myapp.app:main"`, or unset with `[project.gui-scripts] myapp = "myapp.app:main"` |
 
 > **`entry_point` runs as `__main__` on every platform — as of 2026-09-21, unified.** All five launchers now do the equivalent of `python -m entry_point`: `runpy.run_module(entry_point, run_name="__main__", alter_sys=True)` on Android/iOS, `runpy.run_module(..., run_name="__main__")` on Windows, an `-m`-style exec on Linux/macOS. `if __name__ == "__main__": App().run()` — the ordinary Python idiom, and how a buildozer/python-for-android app is normally written — now works everywhere. Calling `App().run()` unconditionally at module top level also still works everywhere (a `runpy`/`-m`-style run executes top-level code exactly like an import does), so either style is portable.
 >
 > **This was a real, silent migration trap until it was fixed, and existing code should be re-checked.** Before 2026-09-21, Android and iOS *imported* `entry_point` (`PyImport_ImportModule`) instead, so `__name__` was the module's own dotted name and `if __name__ == "__main__":` blocks silently never ran — no traceback, nothing in the log naming the cause (docs/design/dev/roadmap.md and test-matrix.md §7 have the full history; credit to [PR #1](https://github.com/ElliotGarbus/kivyforge/pull/1) for catching the iOS half first). If your project predates this fix and worked around it by calling `App().run()` unconditionally, no change is needed. If it relied on the *old* Android/iOS import-only behavior in some other way — see the next paragraph — check it against the new behavior.
 >
 > **Pointing `entry_point` at a package now requires a `__main__.py` on every platform**, matching ordinary `python -m` semantics (`runpy` runs the package's `__main__.py`, and fails if it has none). Before 2026-09-21, Android and iOS ran the package's `__init__.py` instead, since they used a plain import — if your project used a package-style `entry_point` relying on that, either add a `__main__.py` or move to an explicitly-named module (e.g. `myapp/start.py` with `entry_point = "myapp.start"`).
+
+### `module:function` and `[project.gui-scripts]`
+
+A project laid out as a package usually already declares how it starts, for `pip install` and `uv run`, as a PEP 621 script:
+
+```toml
+[project.gui-scripts]
+myapp = "myapp.app:main"
+
+[tool.kivy]
+app_dir = "src"          # src/myapp/__init__.py, src/myapp/app.py, ...
+# no entry_point: the one gui-script above is used
+```
+
+kivyforge resolves the entry point in this order:
+
+1. `[tool.kivy].entry_point`, if set — in either form below.
+2. Otherwise, the `[project.gui-scripts]` entry, if there is exactly one.
+3. Otherwise, with no gui-scripts, `"main"`, as before.
+
+More than one gui-script and no `entry_point` is a config error naming them: an app starts one entry point, so set `entry_point` to the one it should. `[project.scripts]` (console scripts) is never used: no kivyforge app is a console program. A gui-script must name a function (the entry-points spec's `module:object`), since that is all an installer accepts; a bare module there is an error that suggests setting `entry_point` to it instead. If `[project].dynamic` lists `gui-scripts`, the build backend may add entries kivyforge cannot see, so a static gui-script is not taken to be the only one: set `entry_point`.
+
+The two forms of an entry point behave differently, and on purpose:
+
+| Written as | What runs | Use it for |
+| --- | --- | --- |
+| `"main"`, `"pkg.start"` | that module, as `__main__` (`python -m`) | a script-style app, including every Buildozer-style app; **unchanged** |
+| `"pkg.app:main"`, `"pkg.app:App.launch"` | `from pkg.app import main; sys.exit(main())` | a package whose code uses relative imports, and anything declared as a gui-script |
+
+The function form follows the [entry-points spec](https://packaging.python.org/en/latest/specifications/entry-points/#use-for-scripts): the function is called with no arguments, and what it returns is the exit status (`None` is `0`). kivyforge generates the small launcher an installer would (`kivyforge/bundle/entry_launcher.py`) and runs *that* as `__main__`. That is the difference that matters: run as `__main__`, `src/pkg/app.py` is not part of its package, so `from . import helper` fails; imported by the launcher, it is `pkg.app`, exactly as under `uv run myapp`. The module part may also be a package (`"pkg:main"` imports `pkg/__init__.py`). Extras on a gui-script (`"pkg.app:main [gui]"`) are ignored, as the spec allows.
+
+Where the launcher lives: Windows, macOS, Linux and Android write it into the bundle's copy of `app_dir` as `_kivyforge_main.py`, before byte-compiling, so a `strip_source` release ships it as a sourceless `.pyc` like the rest of the app; it is not listed in the app's `top_level.txt`. iOS compiles the same source into `main_config.h` (`ENTRY_LAUNCHER`), because a debug build's `app/` is a link to your source tree, which kivyforge never writes into. The package metadata (`entry_points.txt`) lists the gui-script exactly as declared, on every platform.
 
 ## Icons and splash screens are per-platform
 
@@ -152,4 +185,4 @@ Three things are deliberately not checked:
 
 ## Validation
 
-Each platform's backend validates `[project]`, `[tool.kivy]`, and its own `[tool.kivy.<platform>]` overlay when a command targets that platform. The shared rules (present `[project].name`/`version`; `app_dir` names a real subdirectory; `entry_point` is a valid dotted identifier; `orientation` values are in the allowed set) apply everywhere; platform-specific rules live in each overlay doc (e.g. [iOS validation rules](../platforms/ios/01-pyproject-ios.md#validation-rules-ios)). Validation errors are printed with the offending line number (TOML parsers expose this) and a remediation hint.
+Each platform's backend validates `[project]`, `[tool.kivy]`, and its own `[tool.kivy.<platform>]` overlay when a command targets that platform. The shared rules (present `[project].name`/`version`; `app_dir` names a real subdirectory; `entry_point` is a valid dotted identifier, optionally followed by `:function`; without `entry_point`, at most one `[project.gui-scripts]` entry; `orientation` values are in the allowed set) apply everywhere; platform-specific rules live in each overlay doc (e.g. [iOS validation rules](../platforms/ios/01-pyproject-ios.md#validation-rules-ios)). Validation errors are printed with the offending line number (TOML parsers expose this) and a remediation hint.

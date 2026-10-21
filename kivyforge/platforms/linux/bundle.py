@@ -20,7 +20,7 @@ import click
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
-from kivyforge.bundle import app_metadata
+from kivyforge.bundle import app_metadata, entry_launcher
 from kivyforge.bundle.pycompile import (
     PycompileError,
     byte_compile,
@@ -36,7 +36,7 @@ from kivyforge.report.failures import reclassify
 from . import AppDirError
 from .desktop import validate_desktop_file, write_desktop_entry
 from .icons import stage_icons
-from .launcher import build_apprun, entry_point_rel_path
+from .launcher import build_apprun
 from .lock import LinuxLockfile
 from .native_stage import stage_native_binaries
 from .runtime_stage import stage_runtime
@@ -225,7 +225,7 @@ def build_appdir(
 
         build_apprun(
             work / "AppRun",
-            entry_point=config.kivy.entry_point,
+            entry_point=entry_launcher.main_module(config.kivy),
             app_id=config.linux_required.app_id,
             has_native_binaries=bool(lock.native_binaries),
         )
@@ -249,13 +249,15 @@ def _copy_app_sources(config: Config, project_root: Path, dest: Path) -> None:
         )
     # A dotted entry_point (e.g. "pkg.start") maps to a nested source file
     # (src/pkg/start.py), matching the shared app_dir/entry_point layout.
-    entry_rel = f"{entry_point_rel_path(config.kivy.entry_point)}.py"
-    entry = src / entry_rel
-    if not entry.is_file():
+    missing = entry_launcher.missing_entry_module(src, config.kivy)
+    if missing is not None:
         raise AppDirError(
-            f"entry point {entry_rel} not found in "
-            f"{config.kivy.app_dir}/ (set [tool.kivy].entry_point)."
+            entry_launcher.missing_entry_message(
+                config.kivy.app_dir, config.kivy, missing
+            )
         )
     shutil.copytree(src, dest, ignore=_IGNORE)
     # The app's own package metadata, in place of any development egg-info.
     app_metadata.install(dest, app_metadata.for_build(config))
+    # After the metadata, so top_level.txt does not list kivyforge's module.
+    entry_launcher.write_launcher(dest, config.kivy)

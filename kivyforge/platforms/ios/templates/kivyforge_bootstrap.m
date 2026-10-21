@@ -41,6 +41,7 @@
 
 typedef struct {
     const char *entry_module;
+    const char *entry_launcher;
     const char *app_dir;
     const char *python_ver;
 } _BootstrapArgs;
@@ -74,6 +75,20 @@ static void _run_entry_module(const char *name) {
 
     Py_DECREF(result);
     Py_XDECREF(runpy);
+}
+
+/* Run the launcher kivyforge generated for a module:function entry point
+ * (kivyforge/bundle/entry_launcher.py) as __main__. It imports the app's
+ * module as part of its package and calls the function, as an installed
+ * gui-script does. Desktop and Android ship it as a module beside the app;
+ * here it is source compiled into the binary, because a debug build's app/
+ * is the user's own source tree, which kivyforge never writes into. A
+ * function that returns success ends the launcher normally; any other status
+ * is a SystemExit, which PyErr_Print turns into the process exit, as it does
+ * for an entry module that calls sys.exit(). */
+static void _run_entry_launcher(const char *source) {
+    if (PyRun_SimpleString(source) != 0)
+        _crash(@"the entry point launcher raised");
 }
 
 /* Add every package-contributed native module to the interpreter's inittab.
@@ -140,7 +155,10 @@ static void _run_python(void) {
     if (PyRun_SimpleString([addsite UTF8String]) != 0)
         _crash(@"failed to add pip-deps as a site directory");
 
-    _run_entry_module(_g_args.entry_module);
+    if (_g_args.entry_launcher[0] != '\0')
+        _run_entry_launcher(_g_args.entry_launcher);
+    else
+        _run_entry_module(_g_args.entry_module);
     Py_Finalize();
 }
 
@@ -160,12 +178,14 @@ int kivyforge_main(
     int         argc,
     char       *argv[],
     const char *entry_module,
+    const char *entry_launcher,
     const char *app_dir,
     const char *python_ver)
 {
-    _g_args.entry_module = entry_module;
-    _g_args.app_dir      = app_dir;
-    _g_args.python_ver   = python_ver;
+    _g_args.entry_module   = entry_module;
+    _g_args.entry_launcher = entry_launcher;
+    _g_args.app_dir        = app_dir;
+    _g_args.python_ver     = python_ver;
     return SDL_RunApp(argc, argv, _sdl_callback, NULL);
 }
 
@@ -188,14 +208,16 @@ int kivyforge_main(
     int         argc,
     char       *argv[],
     const char *entry_module,
+    const char *entry_launcher,
     const char *app_dir,
     const char *python_ver)
 {
     (void)argc;
     (void)argv;
-    _g_args.entry_module = entry_module;
-    _g_args.app_dir      = app_dir;
-    _g_args.python_ver   = python_ver;
+    _g_args.entry_module   = entry_module;
+    _g_args.entry_launcher = entry_launcher;
+    _g_args.app_dir        = app_dir;
+    _g_args.python_ver     = python_ver;
     @autoreleasepool { _run_python(); }
     return 0;
 }

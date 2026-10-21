@@ -12,7 +12,9 @@ a TOML writer (which would drop comments and reorder keys).
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
+from ..config.loader import script_entry_point
 from ..config.model import (
     DEFAULT_DEPLOYMENT_TARGET,
     AndroidSigningConfig,
@@ -93,7 +95,61 @@ def mobile_index_line(*, what: str) -> str:
     )
 
 
-def shared_table_lines(display: str, *, mobile: bool) -> list[str]:
+@dataclass(frozen=True)
+class GuiScripts:
+    """The project's ``[project.gui-scripts]``, as ``init`` needs to see them.
+
+    Without ``[tool.kivy].entry_point`` the loader starts the one gui-script
+    (issue #68), so the ``entry_point`` line ``init`` writes depends on them.
+    """
+
+    #: ``(name, value)`` in declared order, values as written.
+    entries: tuple[tuple[str, str], ...] = ()
+    #: ``[project].dynamic`` lists ``gui-scripts``: the backend may add more.
+    dynamic: bool = False
+
+
+def entry_point_lines(gui_scripts: GuiScripts = GuiScripts()) -> list[str]:
+    """The ``entry_point`` line(s) of the shared table.
+
+    With no gui-scripts, the line ``init`` has always written. With exactly
+    one, no ``entry_point`` at all, because an explicit one would override the
+    script; a comment says where the entry point comes from. With several, or
+    with a dynamic table that may gain more, the loader needs an explicit
+    choice, so the first is written and the comment names the rest.
+    """
+    entries = gui_scripts.entries
+    if not entries:
+        return [
+            'entry_point = "main"  # module run as __main__ at launch (src/main.py)'
+        ]
+    name, value = entries[0]
+    if len(entries) == 1 and not gui_scripts.dynamic:
+        return [
+            f"# entry_point is unset, so the app starts [project.gui-scripts] "
+            f"{name} = {_toml_string(value)}.",
+            '# Set entry_point = "main" to run src/main.py as __main__ instead.',
+        ]
+    names = ", ".join(n for n, _ in entries)
+    why = (
+        "dynamic, so name the one to start"
+        if gui_scripts.dynamic
+        else f"has {len(entries)} entries ({names}); pick the one to start"
+    )
+    return [
+        f"entry_point = {_toml_string(script_entry_point(value))}  "
+        f"# [project.gui-scripts] {why}"
+    ]
+
+
+def _toml_string(text: str) -> str:
+    """*text* as a TOML basic string."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def shared_table_lines(
+    display: str, *, mobile: bool, gui_scripts: GuiScripts = GuiScripts()
+) -> list[str]:
     """The cross-platform ``[tool.kivy]`` table, documented key by key.
 
     ``orientation`` is read only by the iOS and Android backends, so it is
@@ -104,7 +160,7 @@ def shared_table_lines(display: str, *, mobile: bool) -> list[str]:
         "[tool.kivy]",
         f'display_name = "{display}"  # the app name users see (e.g. the icon label)',
         'app_dir = "src"  # folder holding your Python source; edit your code here',
-        'entry_point = "main"  # module run as __main__ at launch (src/main.py)',
+        *entry_point_lines(gui_scripts),
     ]
     if mobile:
         lines.append(
@@ -160,6 +216,7 @@ def render_kivy_tables(
     splash_source: str | None = None,
     splash_background: str | None = None,
     include_shared: bool = True,
+    gui_scripts: GuiScripts = GuiScripts(),
 ) -> str:
     """Render the ``[tool.kivy]`` + ``[tool.kivy.ios]`` block.
 
@@ -188,7 +245,7 @@ def render_kivy_tables(
         sim_line = '# simulator_archs = ["arm64"]  # the only supported slice (default)'
     lines: list[str] = []
     if include_shared:
-        lines += shared_table_lines(display, mobile=True)
+        lines += shared_table_lines(display, mobile=True, gui_scripts=gui_scripts)
     lines += [
         "[tool.kivy.ios]",
         "schema_version = 1",
@@ -385,6 +442,7 @@ def render_macos_tables(
     archs: list[str] | tuple[str, ...] | None = None,
     icon_source: str | None = None,
     include_shared: bool = True,
+    gui_scripts: GuiScripts = GuiScripts(),
 ) -> str:
     """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.macos]`` block."""
     display = app_slug.replace("_", " ").title()
@@ -395,7 +453,7 @@ def render_macos_tables(
         archs_line = 'archs = ["arm64"]  # the only supported macOS arch'
     lines: list[str] = []
     if include_shared:
-        lines += shared_table_lines(display, mobile=False)
+        lines += shared_table_lines(display, mobile=False, gui_scripts=gui_scripts)
     lines += [
         "[tool.kivy.macos]",
         "schema_version = 1",
@@ -463,6 +521,7 @@ def render_linux_tables(
     icon_source: str | None = None,
     categories: list[str] | tuple[str, ...] | None = None,
     include_shared: bool = True,
+    gui_scripts: GuiScripts = GuiScripts(),
 ) -> str:
     """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.linux]`` block."""
     display = app_slug.replace("_", " ").title()
@@ -477,7 +536,7 @@ def render_linux_tables(
         )
     lines: list[str] = []
     if include_shared:
-        lines += shared_table_lines(display, mobile=False)
+        lines += shared_table_lines(display, mobile=False, gui_scripts=gui_scripts)
     lines += [
         "[tool.kivy.linux]",
         "schema_version = 1",
@@ -543,6 +602,7 @@ def render_windows_tables(
     archs: list[str] | tuple[str, ...] | None = None,
     icon_source: str | None = None,
     include_shared: bool = True,
+    gui_scripts: GuiScripts = GuiScripts(),
 ) -> str:
     """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.windows]`` block."""
     display = app_slug.replace("_", " ").title()
@@ -553,7 +613,7 @@ def render_windows_tables(
         archs_line = 'archs = ["amd64"]'
     lines: list[str] = []
     if include_shared:
-        lines += shared_table_lines(display, mobile=False)
+        lines += shared_table_lines(display, mobile=False, gui_scripts=gui_scripts)
     lines += [
         "[tool.kivy.windows]",
         "schema_version = 1",
@@ -608,6 +668,7 @@ def render_android_tables(
     splash_source: str | None = None,
     splash_background: str | None = None,
     include_shared: bool = True,
+    gui_scripts: GuiScripts = GuiScripts(),
 ) -> str:
     """Render the ``[tool.kivy]`` (optional) + ``[tool.kivy.android]`` block.
 
@@ -632,7 +693,7 @@ def render_android_tables(
     )
     lines: list[str] = []
     if include_shared:
-        lines += shared_table_lines(display, mobile=True)
+        lines += shared_table_lines(display, mobile=True, gui_scripts=gui_scripts)
     lines += [
         "[tool.kivy.android]",
         "schema_version = 1",

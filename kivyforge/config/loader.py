@@ -32,6 +32,7 @@ from .model import (
     DEFAULT_BUILD_BACKEND,
     DEFAULT_DEPLOYMENT_TARGET,
     DEFAULT_DESKTOP_CATEGORIES,
+    DEFAULT_ENTRY_POINT,
     DEFAULT_LINUX_ARCHS,
     DEFAULT_MACOS_ARCHS,
     DEFAULT_SIMULATOR_ARCHS,
@@ -224,7 +225,7 @@ def load_config_from_text(
     finder = _LineFinder(text)
     project = _parse_project(raw, finder)
     _reject_unknown_keys(raw, finder)
-    kivy = _parse_kivy(raw, finder)
+    kivy = _parse_kivy(raw, finder, project)
     ios = _parse_ios(raw, finder, project, project_root=project_root)
     macos = _parse_macos(raw, finder, project, project_root=project_root)
     linux = _parse_linux(raw, finder, project, project_root=project_root)
@@ -623,7 +624,7 @@ def _parse_project_version(
 # --------------------------------------------------------------------------- #
 # [tool.kivy]
 # --------------------------------------------------------------------------- #
-def _parse_kivy(raw: dict, finder: _LineFinder) -> KivyMeta:
+def _parse_kivy(raw: dict, finder: _LineFinder, project: ProjectMeta) -> KivyMeta:
     tool = raw.get("tool", {})
     kivy = tool.get("kivy") if isinstance(tool, dict) else None
     if not isinstance(kivy, dict):
@@ -635,8 +636,13 @@ def _parse_kivy(raw: dict, finder: _LineFinder) -> KivyMeta:
 
     app_dir = _validate_app_dir(kivy.get("app_dir"), finder)
 
-    entry_point = kivy.get("entry_point", "main")
-    _validate_entry_point(entry_point, finder)
+    if "entry_point" in kivy:
+        entry_point, entry_function = _validate_entry_point(kivy["entry_point"], finder)
+        entry_origin = "[tool.kivy].entry_point"
+    else:
+        entry_point, entry_function, entry_origin = _gui_script_entry_point(
+            project, finder
+        )
 
     orientation = kivy.get("orientation", ["portrait"])
     _validate_orientation(orientation, finder)
@@ -646,6 +652,8 @@ def _parse_kivy(raw: dict, finder: _LineFinder) -> KivyMeta:
         display_name=kivy.get("display_name"),
         entry_point=entry_point,
         orientation=tuple(orientation),
+        entry_function=entry_function,
+        entry_origin=entry_origin,
     )
 
 
@@ -687,22 +695,109 @@ def _validate_app_dir(app_dir: object, finder: _LineFinder) -> str:
     return app_dir
 
 
-def _validate_entry_point(entry_point: object, finder: _LineFinder) -> None:
-    # Rule 5: entry_point must be a valid (dotted) Python identifier.
+def _validate_entry_point(
+    entry_point: object, finder: _LineFinder
+) -> tuple[str, str | None]:
+    """Rule 5: a (dotted) module, optionally ``:object.attr`` -- (module, object).
+
+    Without the ``:`` the module runs as ``__main__``, as it always has; with
+    it, the object is called as an installed script calls it (issue #68).
+    """
     if not isinstance(entry_point, str) or entry_point == "":
         raise ConfigError(
             "[tool.kivy].entry_point must be a non-empty string",
             key_path="tool.kivy.entry_point",
             line=finder.line("entry_point"),
         )
-    parts = entry_point.split(".")
-    if not all(p.isidentifier() and not keyword.iskeyword(p) for p in parts):
+    module, _, function = entry_point.partition(":")
+    if not _is_dotted_identifier(module) or (
+        ":" in entry_point and not _is_dotted_identifier(function)
+    ):
         raise ConfigError(
-            f"entry_point {entry_point!r} is not a valid dotted Python identifier",
+            f"entry_point {entry_point!r} is not a valid dotted Python identifier, "
+            "optionally followed by :function",
             key_path="tool.kivy.entry_point",
             line=finder.line("entry_point"),
-            hint='e.g. "main" for src/main.py, or "pkg.start" for src/pkg/start.py.',
+            hint='e.g. "main" to run src/main.py as __main__, or "pkg.app:main" '
+            "to call main() from src/pkg/app.py.",
         )
+    return module, (function if ":" in entry_point else None)
+
+
+def _is_dotted_identifier(text: str) -> bool:
+    return all(p.isidentifier() and not keyword.iskeyword(p) for p in text.split("."))
+
+
+#: An object reference's optional extras, which a script ignores (the
+#: entry-points spec: consumers "may then ignore them").
+_EXTRAS = re.compile(r"\s*\[[^\]]*\]\s*$")
+
+
+def script_entry_point(value: str) -> str:
+    """A script's object reference as ``entry_point`` takes it.
+
+    The spec lets a reference carry extras and spaces around the colon
+    (``"pkg.app : main [gui]"``); ``entry_point`` takes neither. Used for the
+    suggestion in a config error and by ``kivyforge init``.
+    """
+    return "".join(_EXTRAS.sub("", value).split())
+
+
+def _gui_script_entry_point(
+    project: ProjectMeta, finder: _LineFinder
+) -> tuple[str, str | None, str]:
+    """With no ``entry_point``: the only ``[project.gui-scripts]`` entry.
+
+    ``[project.scripts]`` is a console script, which no kivyforge app is, so it
+    is never read. Without gui-scripts the default ``main`` holds, as before.
+    """
+    gui_scripts = [e for e in project.entry_points if e.group == "gui_scripts"]
+    line = finder.table_line("project", "gui-scripts") or finder.line("gui-scripts")
+    example = script_entry_point(gui_scripts[0].value) if gui_scripts else ""
+    hint = (
+        "set [tool.kivy].entry_point to the one kivyforge should start, e.g. "
+        f'entry_point = "{example}"'
+    )
+    if gui_scripts and "gui-scripts" in project.dynamic:
+        raise ConfigError(
+            "[project].dynamic lists gui-scripts, so the build backend may add "
+            "entries kivyforge cannot see, and [tool.kivy].entry_point is not set",
+            key_path="tool.kivy.entry_point",
+            line=line,
+            hint=hint + ".",
+        )
+    if not gui_scripts:
+        return DEFAULT_ENTRY_POINT, None, "[tool.kivy].entry_point"
+    if len(gui_scripts) > 1:
+        names = ", ".join(e.name for e in gui_scripts)
+        raise ConfigError(
+            f"[project.gui-scripts] has {len(gui_scripts)} entries ({names}) and "
+            "[tool.kivy].entry_point is not set",
+            key_path="tool.kivy.entry_point",
+            line=line,
+            hint=hint + "; an app starts one entry point.",
+        )
+    entry = gui_scripts[0]
+    origin = f"[project.gui-scripts] {entry.name}"
+    reference = _EXTRAS.sub("", entry.value)
+    module, colon, function = (p.strip() for p in reference.partition(":"))
+    if not colon:
+        raise ConfigError(
+            f"{origin} = {entry.value!r} names a module, not a function",
+            key_path="project.gui-scripts",
+            line=finder.key_line(entry.name, after=line) or line,
+            hint="a script names the function it calls (module:function, the "
+            "entry-points spec). To run the module as __main__ instead, set "
+            f'[tool.kivy].entry_point = "{module}".',
+        )
+    if not _is_dotted_identifier(module) or not _is_dotted_identifier(function):
+        raise ConfigError(
+            f"{origin} = {entry.value!r} is not a valid module:function reference",
+            key_path="project.gui-scripts",
+            line=finder.key_line(entry.name, after=line) or line,
+            hint='e.g. "pkg.app:main" to call main() from pkg/app.py.',
+        )
+    return module, function, origin
 
 
 def _validate_orientation(orientation: object, finder: _LineFinder) -> None:

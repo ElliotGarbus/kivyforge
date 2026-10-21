@@ -19,7 +19,7 @@ import click
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
-from kivyforge.bundle import app_metadata
+from kivyforge.bundle import app_metadata, entry_launcher
 from kivyforge.bundle.pycompile import (
     PycompileError,
     byte_compile,
@@ -191,7 +191,7 @@ def build_app_bundle(
 
         build_launcher(
             contents / "MacOS" / exe,
-            entry_point=config.kivy.entry_point,
+            entry_point=entry_launcher.main_module(config.kivy),
             arch=target_arch,
         )
 
@@ -262,15 +262,18 @@ def _copy_app_sources(config: Config, project_root: Path, dest: Path) -> None:
             f"[tool.kivy].app_dir points to {config.kivy.app_dir!r}, which is not "
             f"a directory under {project_root}."
         )
-    entry = src / f"{config.kivy.entry_point}.py"
-    if not entry.is_file():
+    missing = entry_launcher.missing_entry_module(src, config.kivy)
+    if missing is not None:
         raise AppBundleError(
-            f"entry point {config.kivy.entry_point}.py not found in "
-            f"{config.kivy.app_dir}/ (set [tool.kivy].entry_point)."
+            entry_launcher.missing_entry_message(
+                config.kivy.app_dir, config.kivy, missing
+            )
         )
     shutil.copytree(src, dest, ignore=_IGNORE)
     # The app's own package metadata, in place of any development egg-info.
     app_metadata.install(dest, app_metadata.for_build(config))
+    # After the metadata, so top_level.txt does not list kivyforge's module.
+    entry_launcher.write_launcher(dest, config.kivy)
 
 
 def _stage_icon(

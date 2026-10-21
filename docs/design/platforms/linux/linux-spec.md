@@ -302,7 +302,11 @@ compiled Mach-O stub on macOS. It resolves its own directory via
 and `exec`s `"$HERE/usr/python/bin/python3" "$HERE/usr/app/<entry_point>.py"
 "$@"`. A dotted `entry_point` (e.g. `pkg.start`, per the shared
 [`app_dir`/`entry_point` contract](../../common/01-pyproject-kivy-spec.md#app_dir--entry_point-interaction))
-maps to the nested source path `usr/app/pkg/start.py`. The base launcher sets
+maps to the nested source path `usr/app/pkg/start.py`. (Since the strip_source
+fix the exec is `python3 -P -m <entry_point>`, which finds a sourceless `.pyc`
+too.) For a `module:function` entry point the module is `_kivyforge_main`, the
+launcher staged into `usr/app` that calls the function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)).
+The base launcher sets
 **no `LD_LIBRARY_PATH`**: PBS rpaths are `$ORIGIN`-relative and manylinux wheels
 vendor their native libs (auditwheel), so the environment stays clean for the
 host's own libGL. The one exception is the declared native-binaries channel,
