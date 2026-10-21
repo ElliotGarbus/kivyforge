@@ -118,9 +118,12 @@ def package(
     no_build_isolation: bool,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
 ) -> None:
     """Build the signed, distributable artifact for the resolved platform."""
-    with reporting("package", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "package", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         report.record(artifacts=[])
         backend, project_root = resolve_target(
             cli_platform, verb="package", report=report

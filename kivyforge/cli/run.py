@@ -9,7 +9,9 @@ from .. import __version__
 from ..platforms.ios.cli import ios_list_devices
 from ..report import Report
 from ..report.transfers import transfers_to
+from ..report.verbosity import verbosity_to
 from ._common import ToolchainError
+from ._output import verbosity_option
 from ._platform import platform_option, reject_android_only, resolve_target
 from ._version import (
     check_app_metadata,
@@ -93,6 +95,7 @@ from ._version import (
     ),
 )
 @version_options
+@verbosity_option
 def run(
     cli_platform: str | None,
     target: str,
@@ -109,14 +112,16 @@ def run(
     no_follow: bool,
     app_version: str | None,
     no_build_isolation: bool,
+    verbosity: int,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
     # run takes no --json, so no reporting() context gives it a report; its
     # implicit build still downloads, so downloads draw through one of their
-    # own (stderr only, like all progress).
+    # own (stderr only, like all progress). The -v level is set here for the
+    # same reason.
     report = Report(command="run", kivyforge_version=__version__)
     try:
-        with transfers_to(report.transfer):
+        with transfers_to(report.transfer), verbosity_to(verbosity):
             _run(
                 cli_platform=cli_platform,
                 target=target,

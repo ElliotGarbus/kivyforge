@@ -46,6 +46,8 @@ class PlatformCapability:
     #: Host CPUs (``platform.machine()``, lower-cased) that may build it, on
     #: top of ``hosts``; empty means any CPU.
     host_machines: tuple[str, ...] = ()
+    #: Whether the backend acts on ``-v``, which every verb accepts.
+    verbose: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -58,6 +60,7 @@ class PlatformCapability:
             "host_default_for": self.host_default_for,
             "hosts": dict(self.hosts),
             "host_machines": list(self.host_machines),
+            "verbose": self.verbose,
         }
 
     @property
@@ -66,10 +69,18 @@ class PlatformCapability:
 
 
 @dataclass(frozen=True)
+class VerbCapability:
+    #: Whether the verb accepts ``--json``.
+    json: bool
+    #: Whether it accepts ``-v``; which platforms act on it is
+    #: :attr:`PlatformCapability.verbose`.
+    verbose: bool
+
+
+@dataclass(frozen=True)
 class Capabilities:
     platforms: tuple[PlatformCapability, ...]
-    #: Verb name -> whether it accepts ``--json``.
-    verbs: dict[str, bool]
+    verbs: dict[str, VerbCapability]
     exit_codes: dict[int, str]
     diagnostic_codes: tuple[str, ...]
 
@@ -80,8 +91,8 @@ class Capabilities:
             # String keys: JSON object keys are strings anyway, and spelling it
             # here keeps round-tripping honest.
             "verbs": [
-                {"name": name, "json": supported}
-                for name, supported in self.verbs.items()
+                {"name": name, "json": verb.json, "verbose": verb.verbose}
+                for name, verb in self.verbs.items()
             ],
             "exit_codes": {
                 str(code): meaning for code, meaning in self.exit_codes.items()
@@ -110,19 +121,25 @@ def _platform_capability(backend: Platform) -> PlatformCapability:
         host_default_for=backend.host_system,
         hosts={host: _can_build(backend, host) for host in HOSTS},
         host_machines=backend.host_machines,
+        verbose=backend.verbose,
     )
 
 
-def _verbs() -> dict[str, bool]:
-    """Every registered verb, and whether it accepts ``--json``.
+def _verbs() -> dict[str, VerbCapability]:
+    """Every registered verb, and whether it accepts ``--json`` and ``-v``.
 
     Read off the click group rather than listed, so a verb that gains or loses
-    the flag cannot leave this behind.
+    a flag cannot leave this behind.
     """
     from .cli import main
 
+    def accepts(command, name: str) -> bool:
+        return any(param.name == name for param in command.params)
+
     return {
-        name: any(param.name == "json_out" for param in command.params)
+        name: VerbCapability(
+            json=accepts(command, "json_out"), verbose=accepts(command, "verbosity")
+        )
         for name, command in sorted(main.commands.items())
     }
 

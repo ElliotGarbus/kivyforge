@@ -9,6 +9,7 @@ import pytest
 from kivyforge.platforms.android import gradlew as gradlew_mod
 from kivyforge.platforms.android import sdk_packages as sp
 from kivyforge.platforms.android.toolchain import CMAKE_VERSION, NDK_VERSION
+from kivyforge.report.verbosity import command_line, verbosity_to
 
 _BAT = ".bat" if os.name == "nt" else ""
 
@@ -164,3 +165,22 @@ def test_run_gradle_installs_missing_packages_first(tmp_path, monkeypatch):
     )
     gradlew_mod.run_gradle(project, ["assembleDebug"])
     assert [step[0] for step in order] == ["sdk", "gradle"]
+
+
+@pytest.mark.parametrize("level", [0, 1, 2])
+def test_v_prints_the_sdkmanager_command(sdk, monkeypatch, level):
+    """Printed once at -v; -vv adds nothing, the output is already a bar."""
+    tool = _with_sdkmanager(sdk)
+    (sdk / "cmake" / CMAKE_VERSION).mkdir(parents=True)
+
+    def fake_run(cmd, **kw):
+        (sdk / "ndk" / NDK_VERSION).mkdir(parents=True)
+        return 0, ""
+
+    monkeypatch.setattr(sp, "run_streaming", fake_run)
+    rec = Recorder()
+    with verbosity_to(level):
+        sp.ensure_sdk_packages(sdk, on_progress=rec.progress)
+    expected = command_line([str(tool), f"--sdk_root={sdk}", f"ndk;{NDK_VERSION}"])
+    printed = [line for line in rec.lines if expected in line]
+    assert printed == ([f"[sdk] NDK {NDK_VERSION}: {expected}"] if level else [])

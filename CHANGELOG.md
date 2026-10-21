@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### `-v` / `-vv`: Gradle's stack trace and detail, without leaving kivyforge
+
+- **Added:** every verb accepts `-v` / `--verbose`, and `-vv`, or
+  `KIVYFORGE_VERBOSE=1|2` ([#64](https://github.com/ElliotGarbus/kivyforge/issues/64)).
+  On Android, `-v` adds `--stacktrace` to every Gradle run and prints the
+  folder and exact `gradlew` command first, so you can rerun it by hand; `-vv`
+  also adds `--info`. When Gradle fails, kivyforge's message now says to rerun
+  with `-v` (or, at `-v`, repeats the command) instead of leaving you with
+  Gradle's "Run with --stacktrace", which you could not pass. Other platforms
+  accept the flag and ignore it for now. The extra lines go to stderr, so
+  `--json` output is unchanged. `kivyforge capabilities` reports which verbs
+  accept it and which platforms act on it (`verbose` in each `verbs` and
+  `platforms` entry).
+- **Migration:** none needed; without the flag, Gradle runs exactly as before.
+
 ### Locks: the desktop Python runtime lookup takes seconds, not half a minute
 
 - **Changed:** to pin the python-build-standalone runtime, `kivyforge lock`

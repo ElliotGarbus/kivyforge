@@ -85,6 +85,40 @@ toolchain's own log, to stderr. To capture both in one file:
 
 If you redirect only stdout, the file doesn't contain the build log.
 
+## When Gradle fails
+
+Gradle's own advice, "Run with --stacktrace" or "Run with --info", means
+rerunning the same kivyforge command with `-v` or `-vv`:
+
+```bash
+kivyforge build -p android --debug -v
+```
+
+`-v` adds `--stacktrace` to every Gradle run and prints the folder and the exact
+`gradlew` command before it starts. `-vv` also adds `--info`, which makes the
+log thousands of lines longer. `KIVYFORGE_VERBOSE=1` or `2` does the same for
+every command, which is useful in CI. See [Verbose output](../reference/cli.md#verbose-output).
+
+For any other Gradle flag, run Gradle yourself. The generated project,
+`<app>-android/` next to your `pyproject.toml`, is complete on its own, so the
+command `-v` printed works from that folder, with whatever flags you add:
+
+=== "PowerShell"
+    ```powershell
+    cd hello-android-android
+    .\gradlew.bat --console=plain --stacktrace assembleDebug --debug
+    ```
+
+=== "bash"
+    ```bash
+    cd hello-android-android
+    ./gradlew --console=plain --stacktrace assembleDebug --debug
+    ```
+
+For a release task (`package`, or `run --release`), first set the keystore
+password variables that `-v` names. The next `kivyforge build` overwrites any
+edit you make in that folder, so use it to diagnose a failure, not to fix it.
+
 ## Platform-specific problems
 
 The [FAQ](../faq.md) covers common platform problems, including:

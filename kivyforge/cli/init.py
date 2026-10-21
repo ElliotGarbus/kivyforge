@@ -222,10 +222,16 @@ _REQUIREMENTS_MSG = (
 )
 @output_options
 def init(
-    cli_platforms: tuple[str, ...], force: bool, json_out: bool, no_color: bool
+    cli_platforms: tuple[str, ...],
+    force: bool,
+    json_out: bool,
+    no_color: bool,
+    verbosity: int,
 ) -> None:
     """Seed [tool.kivy] + the target platform's overlay into pyproject.toml."""
-    with reporting("init", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "init", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         _init(report, cli_platforms, force=force)
 
 

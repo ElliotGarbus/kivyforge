@@ -313,6 +313,12 @@ def _default_target_platform(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _default_verbosity(monkeypatch):
+    """A developer's own ``KIVYFORGE_VERBOSE`` must not change what verbs run."""
+    monkeypatch.delenv("KIVYFORGE_VERBOSE", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _allow_any_host(monkeypatch):
     """Neutralize the host gate for the suite.
 
