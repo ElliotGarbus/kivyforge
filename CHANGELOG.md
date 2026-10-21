@@ -74,8 +74,9 @@
   scanned.
 - **Docs:** [Call iOS APIs with pyobjus](docs/guides/guides/ios/pyobjus.md) now
   says plyer's iOS facades need `pyobjus`, that `pyobjus`'s `load_framework`
-  does nothing on iOS, and that floating-point arguments should go through
-  ctypes.
+  does nothing on iOS, and that a `CGRect` argument should go through ctypes,
+  because pyobjus corrupts the heap passing one by value
+  ([kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90)).
 ### iOS: `run --simulator` shows the simulator with Xcode 27
 
 - **Fixed:** with Xcode 27, `run -p ios --simulator` launched the app on a

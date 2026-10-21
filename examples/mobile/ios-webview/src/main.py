@@ -26,9 +26,9 @@ What the simulator run (iOS 27.0, pyobjus 1.2.4) settled:
 
 - pyobjus's ``load_framework(INCLUDE.WebKit)`` does nothing on iOS, so
   ``autoclass("WKWebView")`` fails. ``load_webkit()`` uses ``dlopen`` instead.
-- pyobjus does not pass ``CGRect`` (or other floating-point) arguments
-  reliably. Both variants set the frame with ctypes; the pyobjus variant hands
-  ctypes its object via ``get_address()``.
+- pyobjus corrupts the heap when it passes a ``CGRect`` by value
+  (kivy/pyobjus#90). Both variants set the frame with ctypes; the pyobjus
+  variant hands ctypes its object via ``get_address()``.
 - Kivy lays out in pixels: ``Window.size == UIScreen.bounds * nativeScale``.
 
 Every observation is logged as ``ios-webview: ...`` so the Xcode console can
@@ -140,11 +140,11 @@ def load_webkit() -> None:
 def open_with_pyobjus(url: str, frame_points: tuple):
     """Objects through pyobjus, the frame through ctypes.
 
-    pyobjus 1.2.4 does not pass floating-point arguments reliably on arm64:
+    pyobjus 1.2.4 copies a struct argument into a ``malloc(0)`` buffer, so a
+    32-byte ``CGRect`` overruns it (kivy/pyobjus#90):
     ``initWithFrame_(NSRect(...))`` gave a 0x0 view on one launch and the
-    right frame on the next, and ``constraintEqualToAnchor_constant_`` received
-    0.0 for its constant. Object and string arguments are fine. So the view is
-    created with a zero frame and placed with ``setFrame:`` sent through
+    right frame on the next. Object and string arguments are fine. So the view
+    is created with a zero frame and placed with ``setFrame:`` sent through
     ``objc_msgSend``, using the pointer from ``get_address()``.
     """
     from pyobjus import autoclass, objc_str
