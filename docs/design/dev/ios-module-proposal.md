@@ -254,8 +254,10 @@ verbatim log. The recipe as first sketched, pure pyobjus, failed twice over:
   `malloc(0)` buffer, so a struct over 16 bytes overruns it
   ([kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90); root cause
   in the findings, corrected 2026-10-20 from "unreliable floating-point
-  arguments"). A constraint constant also seemed to arrive as 0.0, but that
-  was read indirectly and did not reproduce on macOS. Object, string and
+  arguments"). On the iOS 27 simulator the stock wheel can crash the app
+  outright; the fix is [kivy/pyobjus#157](https://github.com/kivy/pyobjus/pull/157).
+  A constraint constant also seemed to arrive as 0.0, but read from the
+  constraint itself it was correct on iOS and macOS. Object, string and
   integer arguments, and struct *returns*, were correct every time. Setting
   the frame with `setFrame:` through `objc_msgSend` (ctypes, using
   `get_address()` for the pyobjus object) worked on every launch.

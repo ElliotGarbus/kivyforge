@@ -97,10 +97,12 @@ commands bring in the Swift package it wraps.
   struct argument into a buffer too small for any struct over 16 bytes
   ([kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90)). A
   `CGRect` then reaches the method with its size zeroed on some launches and
-  intact on others, and the heap is damaged either way. `CGPoint` and
-  `CGSize` fit. Object, string, integer and floating-point arguments, and
-  returned structs, are fine. Send a `CGRect` argument, such as a frame,
-  through `objc_msgSend` with ctypes.
+  intact on others, and the heap is damaged either way; on iOS 27 the app can
+  crash. `CGPoint` and `CGSize` fit. Object, string, integer and
+  floating-point arguments, and returned structs, are fine. Send a `CGRect`
+  argument, such as a frame, through `objc_msgSend` with ctypes. The fix,
+  [kivy/pyobjus#157](https://github.com/kivy/pyobjus/pull/157), is not in a
+  released pyobjus yet.
 
 The `ios-webview` example (`examples/mobile/ios-webview`) does both, and
 [Replace the kivy-ios ios module](ios-module.md) prints the working code.
