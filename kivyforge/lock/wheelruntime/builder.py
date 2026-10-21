@@ -29,7 +29,7 @@ from ..find_links import (
 from ..inputs import lock_inputs_sha256
 from ..model import LockedPackage, LockedWheel, PackageDep, canonical_name
 from ..prefer import preferred_pins, resolve_preferring
-from .model import WheelRuntimeLock
+from .model import PythonRuntime, WheelRuntimeLock
 from .native_binaries import NativeBinaryResolverError, resolve_native_binaries
 from .profile import PlatformLockProfile
 from .resolver import WheelResolver, WheelResolverError
@@ -49,6 +49,7 @@ def build_wheel_runtime_lock(
     runtime_provider: RuntimeProvider | None = None,
     native_binaries: tuple[NativeBinaryDep, ...] = (),
     prefer: Iterable[LockedPackage] = (),
+    prefer_runtime: PythonRuntime | None = None,
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
@@ -58,7 +59,9 @@ def build_wheel_runtime_lock(
     """Lock ``config`` for ``profile.platform``.
 
     ``prefer`` is the existing lock's packages: their versions are kept unless
-    the inputs force a move (``kivyforge.lock.prefer``). Empty resolves to the
+    the inputs force a move (``kivyforge.lock.prefer``). ``prefer_runtime`` is
+    its runtime, kept while the version, archs and provider floor still
+    match, which skips the GitHub lookup. Empty resolves to the
     newest version each specifier allows (``lock --update``).
     """
     if profile.overlay(config) is None:
@@ -85,16 +88,25 @@ def build_wheel_runtime_lock(
         raise WheelRuntimeBuildError(str(exc)) from exc
     find_links = resolve_find_links(root, find_links_entries)
 
-    if on_progress is not None:
-        # A GitHub API lookup, not a download: quick for a version in the
-        # newest release, tens of seconds for an older one (#88).
-        on_progress(
-            f"[lock] CPython {python_version}: finding the python-build-standalone build"
-        )
-    try:
-        runtime = runtime_provider.resolve(python_version, archs, offline=offline)
-    except RuntimeProviderError as exc:
-        raise WheelRuntimeBuildError(str(exc)) from exc
+    runtime = _locked_runtime(prefer_runtime, runtime_provider, python_version, archs)
+    if runtime is not None:
+        if on_progress is not None:
+            on_progress(
+                f"[lock] CPython {python_version}: keeping the locked "
+                "python-build-standalone build"
+            )
+    else:
+        if on_progress is not None:
+            # A GitHub API lookup, not a download: quick for a version in
+            # the newest release, tens of seconds for an older one (#88).
+            on_progress(
+                f"[lock] CPython {python_version}: finding the "
+                "python-build-standalone build"
+            )
+        try:
+            runtime = runtime_provider.resolve(python_version, archs, offline=offline)
+        except RuntimeProviderError as exc:
+            raise WheelRuntimeBuildError(str(exc)) from exc
 
     try:
         locked_native_binaries = resolve_native_binaries(
@@ -181,6 +193,33 @@ def build_wheel_runtime_lock(
         tool_kivyforge_schema_version=profile.schema_version(config),
         native_binaries=locked_native_binaries,
     )
+
+
+def _locked_runtime(
+    locked: PythonRuntime | None,
+    provider: RuntimeProvider,
+    version: str,
+    archs: tuple[str, ...],
+) -> PythonRuntime | None:
+    """The existing lock's runtime, if a fresh lookup would ask for the same.
+
+    A re-lock keeps its packages (#126); this keeps its runtime the same way,
+    which skips a python-build-standalone lookup that pages through GitHub
+    releases. Kept only while the CPython version, the provider, the
+    provider's floor (Linux's glibc floor is a kivyforge constant that moves
+    with PBS) and an artifact for every requested arch all still match;
+    `lock --update` always looks up again.
+    """
+    if locked is None or locked.version != version:
+        return None
+    if locked.provider != getattr(provider, "name", None):
+        return None
+    if locked.floor != getattr(provider, "floor", object()):
+        return None
+    by_arch = {artifact.arch: artifact for artifact in locked.artifacts}
+    if any(arch not in by_arch for arch in archs):
+        return None
+    return dataclasses.replace(locked, artifacts=tuple(by_arch[arch] for arch in archs))
 
 
 def _locked_wheel_from_resolved(

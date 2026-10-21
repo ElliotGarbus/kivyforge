@@ -109,6 +109,10 @@ class FakeRuntimeProvider:
         self.calls: list[dict] = []
         self._floor = floor
 
+    @property
+    def floor(self):
+        return self._floor
+
     def resolve(self, version, archs, *, offline=False):
         self.calls.append(
             {"version": version, "archs": tuple(archs), "offline": offline}

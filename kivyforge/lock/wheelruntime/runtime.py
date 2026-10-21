@@ -107,6 +107,11 @@ class PbsProvider:
         self._fetcher = metadata_fetcher
         self._floor = floor
 
+    @property
+    def floor(self) -> str | None:
+        """The OS floor this provider records for its runtime."""
+        return self._floor
+
     def resolve(
         self, version: str, archs: tuple[str, ...], *, offline: bool = False
     ) -> PythonRuntime:

@@ -86,8 +86,11 @@ Wrote pylock.ios.toml (2 packages pinned).
   prints is shown. It gets the same 30-second "still resolving" line.
 - XCFramework archives come through the shared downloader, so they draw as
   `[download]` bars like a `build` download.
-- On macOS, Linux and Windows, `lock` first looks up the python-build-standalone
-  build of the pinned CPython. That is a GitHub API query, not a download: it
+- On macOS, Linux and Windows, a re-lock or `lock --check` keeps the runtime
+  already in the lock while its version, archs and floor still match, and says
+  so (`[lock] CPython 3.13.14: keeping the locked python-build-standalone
+  build`). A first lock, `--update`, or a new version looks up the
+  python-build-standalone build of the pinned CPython. That is a GitHub API query, not a download: it
   reads the release that ships the version, and its SHA-256, from the release
   list. A version in the newest release is found in a few seconds. An older one
   means paging back through releases, about 10 s per page, so each page gets a
