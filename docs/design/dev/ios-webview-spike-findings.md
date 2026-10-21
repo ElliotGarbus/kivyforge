@@ -93,13 +93,28 @@ crashed in `cast_to_cy_data_type`, at the struct copy. Sizing the buffer with
 `ctypes.sizeof(arg)` for a struct passed by value removed the crash, and 200
 calls under Guard Malloc all read back the right frame.
 
-The constraint constant is probably not a separate bug. A `double` argument
-gets a correctly sized buffer, and on macOS `constraintEqualToAnchor_constant_`
-passed its constant correctly in every call, Guard Malloc included. The spike's
-evidence was also indirect: it read the view's frame right after activating the
-constraints, not `constraint.constant`. Heap damage from an earlier
-`initWithFrame_` in the same process, or a frame read before layout, would
-explain it; neither is confirmed on iOS.
+**Confirmed on the iOS simulator** (iPhone Air, iOS 27.0, 2026-10-20), in a
+scratch Kivy app built with kivyforge. Each run made 500 calls of
+`NSValue.valueWithCGRect_`, of `UIView.initWithFrame_` with the frame read back,
+and of `constraintEqualToAnchor_constant_` with `constraint.constant` read back:
+
+| pyobjus build | Normal allocator | Guard Malloc |
+|---|---|---|
+| 1.2.4 wheel from kivy-mobile-wheels | crash: SIGTRAP, iOS's allocator detects the corrupted heap, called from `cast_to_cy_data_type` | crash: SIGSEGV in `cast_to_cy_data_type` |
+| master, unpatched (control) | 0 wrong | crash: SIGSEGV in `cast_to_cy_data_type` |
+| master with the fix | 0 wrong | 0 wrong |
+
+On iOS 27, then, the stock wheel does not just garble a frame; it can abort the
+app. The control and fixed builds were compiled by hand for the arm64
+simulator with the same toolchain, against the simulator's own libffi rather
+than the wheel's static one, and swapped into the built app. They differ only
+by the fix, which is
+[kivy/pyobjus#157](https://github.com/kivy/pyobjus/pull/157).
+
+The constraint constant is not a pyobjus bug. Read from `constraint.constant`,
+it was correct in every run, including under the unpatched builds. The spike's
+0.0 came from reading the view's frame right after activating the constraints,
+before layout.
 
 **Fix:** the pyobjus variant creates the view with `init()` and sets the frame
 with `setFrame:` through `objc_msgSend`, using the object's pointer from
