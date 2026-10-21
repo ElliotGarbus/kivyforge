@@ -129,10 +129,12 @@ def load_webkit() -> None:
 
     The app does not link WebKit, so the class does not exist until the
     framework is loaded. pyobjus's ``load_framework(INCLUDE.WebKit)`` cannot do
-    it on iOS: it calls ``NSBundle.bundleWithPath_`` on the macOS path, which
-    returns nil on the simulator, and ``bundle.load()`` on nil fails silently.
-    ``dlopen`` goes through dyld, which resolves system frameworks on device
-    and simulator alike. Loading an already loaded image is a no-op.
+    it on iOS: it uses ``NSBundle``, and the WebKit bundle has no binary on
+    disk there (it lives only in the dyld shared cache), so ``load()``
+    returns NO and ``load_framework`` ignores it (kivy/pyobjus#158).
+    ``dlopen`` goes through dyld, which resolves system frameworks from the
+    shared cache on device and simulator alike. Loading an already loaded
+    image is a no-op.
     """
     ctypes.CDLL(WEBKIT_BINARY)
 
