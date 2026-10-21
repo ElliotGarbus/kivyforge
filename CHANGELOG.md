@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### iOS: safe-area insets and keyboard height are used as Kivy pixels
+
+- **Changed:** the mobile geometry and kivy-ios `ios` module guides, and the
+  examples that pad by the safe area (`android-safe-area`, `ios-webview`,
+  `keychain-spm`, `mobile-geometry`, `pyjnius-deviceinfo`, `pyobjus-ball`,
+  `pyobjus-deviceinfo`, `qr-maven`, `svg-explorer`), no longer multiply
+  `kivy.mobile.get_safe_area()` or `get_keyboard_height()` by `get_scale()`
+  on iOS. [kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441) makes the
+  iOS backend return Kivy layout pixels, as Android already did, which also
+  fixes `Window.keyboard_height`, `Window.safe_area` and `softinput_mode` on
+  iOS. `mobile-geometry` now labels these values `px`.
+- **Migration:** this needs a Kivy build that includes kivy/kivy#9441. On an
+  earlier Kivy 3 build, these examples' iOS insets and keyboard heights are a
+  third of the right size on current iPhones. If your own app multiplies these
+  values by `get_scale()` on iOS, remove the multiplication when you move to
+  the fixed Kivy, or they are scaled twice.
+
 ### Locks: a desktop re-lock keeps its Python runtime
 
 - **Changed:** on macOS, Linux and Windows, `kivyforge lock` and
@@ -46,8 +63,8 @@
   kivyforge does not provide the module
   ([#109](https://github.com/ElliotGarbus/kivyforge/issues/109)): Kivy 3 and
   the standard library replace every function, on every platform. The guide
-  maps each old name to its replacement, states that `kivy.mobile` returns UIKit
-  points where Kivy lays out in pixels, and gives a web view recipe. It is
+  maps each old name to its replacement, explains which values are UIKit
+  points and which are Kivy pixels, and gives a web view recipe. It is
   linked from the migration and mobile geometry guides.
 - **Added:** `kivyforge build -p ios` and `kivyforge doctor -p ios` warn with
   `KF-IOS-LEGACY-IOS-MODULE` when a `.py` file under `app_dir` imports `ios`,

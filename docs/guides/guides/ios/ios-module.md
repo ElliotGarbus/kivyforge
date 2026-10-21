@@ -31,8 +31,8 @@ is built on SDL3, so this is a small part of a change you are making anyway.
 |---|---|---|
 | `get_scale()` | `kivy.mobile.get_scale()` | same value |
 | `get_dpi()` | `kivy.mobile.get_dpi()` | float, and an estimate (`163 × scale`, `132 × scale` on iPad) rather than a per-model table, which Kivy dropped because it "topped out at iPhone 13" (kivy#9331); this is also what `Metrics.dpi` reports on Kivy 3 |
-| `get_safe_area()` | `kivy.mobile.get_safe_area()`, or bind `Window.safe_area` | same dict, same keys, same unit (UIKit points). Multiply by `get_scale()` for Kivy pixels, as the [mobile geometry guide](../cross-platform/mobile-geometry.md) shows; the old function needed the same |
-| `get_kheight()` | `kivy.mobile.get_keyboard_height() * kivy.mobile.get_scale()` | the old function returned **pixels** (it multiplied by the scale internally); `kivy.mobile` returns **points**, so the caller multiplies. Do not read `Window.keyboard_height` for this on iOS yet: measured, it is the unscaled points value and reads 0 most of the time the keyboard is up (see [Points and pixels](#points-and-pixels)); a Kivy defect to report. Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
+| `get_safe_area()` | `kivy.mobile.get_safe_area()`, or bind `Window.safe_area` | same dict and keys, but in Kivy **pixels**: the old function returned UIKit points, so drop any multiplication by the scale (see [Points and pixels](#points-and-pixels)) |
+| `get_kheight()` | `kivy.mobile.get_keyboard_height()`, or bind `Window.keyboard_height` | same unit, Kivy **pixels**. Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
 | `IOSKeyboard`, `iOSKeyboard` | `kivy.mobile.subscribe_keyboard_height(callback)` | Kivy's `Window` already subscribes; most apps need nothing |
 | `open_url(url)`, `IosBrowser` | `webbrowser.open(url)` | the standard library registers the iOS backend itself; works on every platform |
 | `IOSWebView().open(url, x, y, width, height)`, `open_url_wbv(...)` | `WKWebView` through `pyobjus`, with WebKit loaded and the frame set through ctypes ([recipe below](#show-a-web-view), condensed from the spike's working code) | add `pyobjus` to `[project].dependencies`. The frame is UIKit points with a top-left origin, as before: from a Kivy rectangle, divide by `get_scale()` and take `y` from the top |
@@ -46,9 +46,14 @@ ones you use.
 
 ## Points and pixels
 
-`kivy.mobile` returns UIKit **points**. Kivy 3 lays out in **pixels** on iOS.
-Multiply everything `kivy.mobile` returns by `kivy.mobile.get_scale()` before you
-use it as a Kivy size:
+Kivy 3 lays out in **pixels** on iOS. On an iPhone Air simulator (scale 3) the
+Kivy window was 1260 × 2736 and `UIScreen.bounds` was 420 × 912 points, so one
+point is three Kivy pixels. UIKit, and so the web view below, works in
+**points**.
+
+`kivy.mobile.get_keyboard_height()` and `kivy.mobile.get_safe_area()`, and
+`Window.keyboard_height` and `Window.safe_area`, which come from them, are in
+Kivy pixels, so use them as Kivy sizes directly:
 
 ```python
 from kivy.utils import platform
@@ -56,22 +61,19 @@ from kivy.utils import platform
 if platform == "ios":
     import kivy.mobile as mobile
 
-    scale = mobile.get_scale()
-    keyboard = mobile.get_keyboard_height() * scale  # was ios.get_kheight()
-    insets = {side: value * scale for side, value in mobile.get_safe_area().items()}
+    keyboard = mobile.get_keyboard_height()  # was ios.get_kheight()
+    insets = mobile.get_safe_area()  # was ios.get_safe_area(), in points
 ```
 
-On an iPhone Air simulator (scale 3) the Kivy window was 1260 × 2736 and
-`UIScreen.bounds` was 420 × 912 points, so one point is three Kivy pixels. The
-old `get_kheight()` multiplied by the scale for you, and `get_safe_area()` never
-did, so code moving from `ios` keeps its multiplication for the keyboard and
-adds one for the safe area.
+This needs a Kivy build that includes
+[kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441). Earlier Kivy 3
+builds return UIKit points for both, a third of the right size on a scale-3
+device (the measurements are in
+`docs/design/dev/ios-webview-spike-findings.md`).
 
-`Window.keyboard_height` and `Window.safe_area` have the same problem on iOS:
-they pass the points values through without the multiplication, so they are a
-third of the right size on a scale-3 device (the measurements are in
-`docs/design/dev/ios-webview-spike-findings.md`). Until Kivy fixes it, read
-`kivy.mobile` and multiply, as above.
+The old `get_kheight()` already returned pixels, so code moving from `ios`
+changes nothing for the keyboard. The old `get_safe_area()` returned points, so
+remove any multiplication by `get_scale()` you applied to it.
 
 ## Show a web view
 

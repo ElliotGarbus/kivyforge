@@ -144,6 +144,14 @@ scale for the same reason (E2). Two consequences:
   first report of a second defect, `Window.keyboard_height` reading 0 while
   a keyboard was up, came from its own logging and is withdrawn.
 
+**Update 2026-10-20.** The defect is reported and fixed upstream in
+[kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441), which makes the iOS
+backend return Kivy layout pixels for the keyboard height and the safe area,
+as Android does. kivyforge's guides and examples dropped their `× get_scale()`
+the same day, before that PR merged, so on an earlier Kivy 3 build their iOS
+insets and keyboard heights are a third of the right size. The mapping below
+is written for the fixed Kivy.
+
 **Measured** by the same run: `Window.size` was `(1260, 2736)` and
 `UIScreen.bounds` `420 × 912` pt at `nativeScale` 3, so the window is in
 pixels, and `get_safe_area()` returned a top inset of 68 pt on an iPhone Air
@@ -388,8 +396,8 @@ and `07-recipe-triage.md`.
 |---|---|---|
 | `get_scale()` | `kivy.mobile.get_scale()` | same value |
 | `get_dpi()` | `kivy.mobile.get_dpi()` | float, and an estimate (`163 × scale`, `132 × scale` on iPad) rather than a per-model table, which Kivy dropped because it "topped out at iPhone 13" (kivy#9331); this is also what `Metrics.dpi` reports on Kivy 3 |
-| `get_safe_area()` | `kivy.mobile.get_safe_area()`, or bind `Window.safe_area` | same dict, same keys, same unit (UIKit points). Multiply by `get_scale()` for Kivy pixels, as the mobile geometry guide shows; the old function needed the same |
-| `get_kheight()` | `kivy.mobile.get_keyboard_height() * kivy.mobile.get_scale()` | the old function returned **pixels** (it multiplied by the scale internally); `kivy.mobile` returns **points**, so the caller multiplies. Do not read `Window.keyboard_height` for this on iOS yet: measured, it is the unscaled points value and reads 0 most of the time the keyboard is up (E3); a Kivy defect to report. Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
+| `get_safe_area()` | `kivy.mobile.get_safe_area()`, or bind `Window.safe_area` | same dict and keys, but Kivy **pixels** where the old function returned UIKit points, so drop any `× get_scale()` (needs kivy#9441, E3) |
+| `get_kheight()` | `kivy.mobile.get_keyboard_height()`, or bind `Window.keyboard_height` | same unit, Kivy **pixels** (needs kivy#9441, E3). Kivy removed `get_kheight` itself as "internal convention, never documented as public API" (kivy#9331) |
 | `IOSKeyboard`, `iOSKeyboard` | `kivy.mobile.subscribe_keyboard_height(callback)` | Kivy's `Window` already subscribes; most apps need nothing |
 | `open_url(url)`, `IosBrowser` | `webbrowser.open(url)` | the standard library registers the iOS backend itself; works on every platform |
 | `IOSWebView().open(url, x, y, width, height)`, `open_url_wbv(...)` | `WKWebView` through `pyobjus`, with WebKit loaded and the frame set through ctypes (recipe below, verified in the spike) | add `pyobjus` to `[project].dependencies`. The frame is UIKit points with a top-left origin, as before: from a Kivy rectangle, divide by `get_scale()` and take `y` from the top |

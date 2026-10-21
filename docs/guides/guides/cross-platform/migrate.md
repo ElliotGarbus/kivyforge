@@ -125,9 +125,8 @@ You need a Mac to build for iOS.
 
     The kivy-ios `ios` module is not provided either. If your app imports it,
     `kivyforge build -p ios` warns with `KF-IOS-LEGACY-IOS-MODULE`. Kivy 3 and
-    the standard library replace each function, and `kivy.mobile` reports UIKit
-    points where Kivy lays out in pixels, so its values need multiplying by
-    `get_scale()`. See [Replace the kivy-ios ios module](../ios/ios-module.md).
+    the standard library replace each function. See
+    [Replace the kivy-ios ios module](../ios/ios-module.md).
 
 2. Seed the kivyforge tables:
 

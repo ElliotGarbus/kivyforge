@@ -15,8 +15,9 @@ the guide depends on:
    with ``ctypes``, the fallback the guide would carry if pyobjus cannot.
 
 2. Which unit is which. Kivy 3's SDL3 window is created high-pixel-density
-   and lays out in **pixels**; ``kivy.mobile`` reports UIKit **points**; UIKit
-   frames are points with a top-left origin. The app logs every number it
+   and lays out in **pixels**; ``kivy.mobile`` reports Kivy pixels too (with
+   kivy/kivy#9441; earlier Kivy 3 builds return UIKit points); UIKit frames
+   are points with a top-left origin. The app logs every number it
    uses so the findings can state the conversion with evidence, and logs the
    keyboard height from ``Window`` and from ``kivy.mobile`` side by side when
    the URL field is focused.
@@ -326,9 +327,9 @@ def log_units() -> None:
     )
 
 
-def log_keyboard(height_points: float) -> None:
+def log_keyboard(height: float) -> None:
     log(
-        f"keyboard: kivy.mobile.get_keyboard_height()={height_points} pt, "
+        f"keyboard: kivy.mobile.get_keyboard_height()={height}, "
         f"Window.keyboard_height={Window.keyboard_height}, "
         f"scale={ui_scale()}, Window.height={Window.height}"
     )
@@ -411,12 +412,11 @@ class WebViewSpikeRoot(BoxLayout):
             from kivy.mobile import get_safe_area, subscribe_keyboard_height
 
             inset = get_safe_area()
-            scale = ui_scale()
             self.padding = [
-                dp(16) + inset["left"] * scale,
-                dp(16) + inset["top"] * scale,
-                dp(16) + inset["right"] * scale,
-                dp(16) + inset["bottom"] * scale,
+                dp(16) + inset["left"],
+                dp(16) + inset["top"],
+                dp(16) + inset["right"],
+                dp(16) + inset["bottom"],
             ]
             subscribe_keyboard_height(
                 lambda h: Clock.schedule_once(lambda dt: log_keyboard(h), 0)

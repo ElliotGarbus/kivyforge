@@ -44,14 +44,17 @@ for it.
 `kivy.mobile` works only on Android and iOS. Guard the import so the same code
 also runs on the desktop.
 
+The safe-area insets and the keyboard height are in Kivy pixels, the unit your
+layout uses, on both platforms. On iOS this needs a Kivy build that includes
+[kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441); earlier Kivy 3 builds
+return UIKit points there, a third of the right size on current iPhones.
+
 On iOS, `kivy.mobile` replaces the kivy-ios `ios.get_safe_area()` and
-`ios.get_kheight()`, with the same multiplication by `get_scale()` for Kivy
-pixels. See [Replace the kivy-ios ios module](../ios/ios-module.md).
+`ios.get_kheight()`. See [Replace the kivy-ios ios module](../ios/ios-module.md).
 
 ## Pad your layout by the safe area
 
-1. Add a helper that returns the insets in Kivy pixels. `get_safe_area()`
-   returns pixels on Android but points on iOS, so scale only on iOS:
+1. Add a helper that returns the insets:
 
     ```python
     from kivy.utils import platform
@@ -64,8 +67,7 @@ pixels. See [Replace the kivy-ios ios module](../ios/ios-module.md).
         import kivy.mobile as mobile
 
         insets = mobile.get_safe_area()
-        scale = mobile.get_scale() if platform == "ios" else 1.0
-        return [insets[side] * scale for side in ("left", "top", "right", "bottom")]
+        return [insets[side] for side in ("left", "top", "right", "bottom")]
     ```
 
 2. Apply the insets as padding on your root layout, and refresh them on the next

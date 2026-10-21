@@ -16,12 +16,11 @@ generation-2 / generation-3 coverage split intact.
 
 ## Two things worth knowing
 
-**Units differ per platform.** `get_safe_area()` returns **pixels** on Android,
-which is already Kivy's layout coordinate system there, but UIKit **points** on
-iOS, which must be scaled by `get_scale()`. Scaling on Android too would
-inflate the padding by the display density (typically 2–3.5×). Kivy's own
-`kivy/mobile/__init__.py` currently documents "layout points" for both, without
-the per-platform caveat — following that doc verbatim over-pads Android.
+**The insets are already Kivy pixels.** `get_safe_area()` returns Kivy's layout
+unit, so use it as padding unscaled; multiplying by `get_scale()` would inflate
+the padding by the display density (typically 2–3.5×). On iOS this needs a
+Kivy build with [kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441);
+earlier Kivy 3 builds return UIKit points there.
 
 **Typed `WindowInsets` needs API 30+.** Below that Kivy returns all-zero
 insets. The app reports that case explicitly rather than just showing no red.
