@@ -116,8 +116,8 @@ def _get(obj, name):
 
 
 def _set_frame(view, x, y, width, height):
-    """pyobjus 1.2.4 passes CGRect and CGFloat arguments unreliably on arm64,
-    so the frame is sent through objc_msgSend directly."""
+    """pyobjus 1.2.4 corrupts the heap when it passes a CGRect by value
+    (kivy/pyobjus#90), so the frame is sent through objc_msgSend directly."""
     lib = ctypes.CDLL(None)
     lib.sel_registerName.restype = ctypes.c_void_p
     lib.sel_registerName.argtypes = [ctypes.c_char_p]

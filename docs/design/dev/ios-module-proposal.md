@@ -240,13 +240,17 @@ verbatim log. The recipe as first sketched, pure pyobjus, failed twice over:
   and `load()` on nil raises nothing. `autoclass("WKWebView")` then fails
   with `Unable to find class b'WKWebView'`. Loading the framework binary
   with `ctypes.CDLL` (dyld) works on the simulator and should on a device.
-- **pyobjus 1.2.4 passes floating-point arguments unreliably on arm64.**
+- **pyobjus 1.2.4 corrupts the heap passing a `CGRect` by value.**
   `initWithFrame_(NSRect(...))` produced a 0×0 view on one launch and the
-  right frame on the next; a `CGFloat` constraint constant arrived as 0.0.
-  Object, string and integer arguments, and struct *returns*, were correct
-  every time. Setting the frame with `setFrame:` through `objc_msgSend`
-  (ctypes, using `get_address()` for the pyobjus object) worked on every
-  launch.
+  right frame on the next. pyobjus copies any struct passed by value into a
+  `malloc(0)` buffer, so a struct over 16 bytes overruns it
+  ([kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90); root cause
+  in the findings, corrected 2026-10-20 from "unreliable floating-point
+  arguments"). A constraint constant also seemed to arrive as 0.0, but that
+  was read indirectly and did not reproduce on macOS. Object, string and
+  integer arguments, and struct *returns*, were correct every time. Setting
+  the frame with `setFrame:` through `objc_msgSend` (ctypes, using
+  `get_address()` for the pyobjus object) worked on every launch.
 
 What worked, and what the guide carries: pyobjus for objects and strings,
 plus about twenty-five lines of ctypes to load WebKit and set the frame. A
@@ -439,8 +443,8 @@ def _get(obj, name):
 
 
 def _set_frame(view, x, y, width, height):
-    """pyobjus 1.2.4 passes CGRect and CGFloat arguments unreliably on arm64,
-    so the frame is sent through objc_msgSend directly."""
+    """pyobjus 1.2.4 corrupts the heap when it passes a CGRect by value
+    (kivy/pyobjus#90), so the frame is sent through objc_msgSend directly."""
     lib = ctypes.CDLL(None)
     lib.sel_registerName.restype = ctypes.c_void_p
     lib.sel_registerName.argtypes = [ctypes.c_char_p]
@@ -573,8 +577,8 @@ it costs. The bar is real apps, not the possibility of them.
    they need; their port is one import change, deleting browser code, the web
    view recipe, and plyer for the file chooser, which they already use.
 2. **The recipe rests on two pyobjus defects staying as they are** (E9):
-   `load_framework` doing nothing on iOS, and floating-point arguments
-   arriving wrong. Both are worked around with ctypes, which keeps working
+   `load_framework` doing nothing on iOS, and the heap overflow when a
+   `CGRect` is passed by value. Both are worked around with ctypes, which keeps working
    whether or not pyobjus is fixed. Both should be reported to kivy/pyobjus
    with the spike's log lines; the pyobjus iOS pin in kivy-mobile-wheels is
    from 2025-12 and has no upstream iOS CI.
