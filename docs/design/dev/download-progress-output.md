@@ -90,21 +90,24 @@ Wrote pylock.ios.toml (2 packages pinned).
   already in the lock while its version, archs and floor still match, and says
   so (`[lock] CPython 3.13.14: keeping the locked python-build-standalone
   build`). A first lock, `--update`, or a new version looks up the
-  python-build-standalone build of the pinned CPython. That is a GitHub API query, not a download: it
-  reads the release that ships the version, and its SHA-256, from the release
-  list. A version in the newest release is found in a few seconds. An older one
-  means paging back through releases, about 10 s per page, so each page gets a
-  line. Measured on Windows for CPython 3.13.14, 2026-10-20: 28 s of silence
-  before the first line, now the first line at 0.7 s and at most about 10 s
-  between lines:
+  python-build-standalone build of the pinned CPython. It lists the release
+  tags (one GitHub API call) and reads each release's small `SHA256SUMS`,
+  newest first and eight at a time, until one lists the build; that line gives
+  the archive and its SHA-256. Each batch after the first gets a line:
 
   ```
   [lock] CPython 3.13.14: finding the python-build-standalone build
-  [lock] CPython 3.13.14: checking older releases (page 1)
-  [lock] CPython 3.13.14: checking older releases (page 2)
+  [lock] CPython 3.13.14: checking releases 9-16
   [lock] amd64: resolving wheels
   Wrote pylock.windows.toml (7 packages pinned).
   ```
+
+  Measured on Windows for CPython 3.13.14, twelve releases back, 2026-10-20:
+  the lookup takes 2 to 3 s. It used to read the releases API's full release
+  records, about 15 MB per page of ten, and took 10 to 47 s; that search is
+  now the fallback, for a release with no `SHA256SUMS` or a build older than
+  the tags read, and still announces each page
+  (`checking older releases (page N)`).
 
   Then `[lock] <arch>: resolving wheels`. Desktop Kivy comes from PyPI, which
   publishes PEP 658 metadata, so pip usually reads metadata and downloads
