@@ -67,7 +67,7 @@ class FauxLinuxProfile(PlatformLockProfile):
                 return {a}
         return {arch} & set(archs) if arch else set()
 
-    def runtime_provider(self, config):  # pragma: no cover - injected in tests
+    def runtime_provider(self, config, **progress):  # pragma: no cover - injected
         raise NotImplementedError
 
     def coverage_error(self, name, missing):

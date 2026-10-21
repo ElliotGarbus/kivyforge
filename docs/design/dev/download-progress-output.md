@@ -86,11 +86,28 @@ Wrote pylock.ios.toml (2 packages pinned).
   prints is shown. It gets the same 30-second "still resolving" line.
 - XCFramework archives come through the shared downloader, so they draw as
   `[download]` bars like a `build` download.
-- On macOS, Linux and Windows, `lock` shows `[lock] <arch>: resolving wheels`.
-  Desktop Kivy comes from PyPI, which publishes PEP 658 metadata, so pip
-  usually reads metadata and downloads nothing: there is no bar, only the
-  step line (checked on Windows with a cold pip cache, 2026-10-20). A
-  `find_links` wheel or an index without metadata gets a bar.
+- On macOS, Linux and Windows, `lock` first looks up the python-build-standalone
+  build of the pinned CPython. That is a GitHub API query, not a download: it
+  reads the release that ships the version, and its SHA-256, from the release
+  list. A version in the newest release is found in a few seconds. An older one
+  means paging back through releases, about 10 s per page, so each page gets a
+  line. Measured on Windows for CPython 3.13.14, 2026-10-20: 28 s of silence
+  before the first line, now the first line at 0.7 s and at most about 10 s
+  between lines:
+
+  ```
+  [lock] CPython 3.13.14: finding the python-build-standalone build
+  [lock] CPython 3.13.14: checking older releases (page 1)
+  [lock] CPython 3.13.14: checking older releases (page 2)
+  [lock] amd64: resolving wheels
+  Wrote pylock.windows.toml (7 packages pinned).
+  ```
+
+  Then `[lock] <arch>: resolving wheels`. Desktop Kivy comes from PyPI, which
+  publishes PEP 658 metadata, so pip usually reads metadata and downloads
+  nothing: there is no bar, only the step line (checked on Windows with a cold
+  pip cache, 2026-10-20). A `find_links` wheel or an index without metadata
+  gets a bar.
 
 ### `build` and `run`, when the artifact cache is cold
 

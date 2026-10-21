@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Locks: desktop `lock` shows the Python runtime lookup
+
+- **Fixed:** `kivyforge lock -p macos`, `-p linux` and `-p windows` showed
+  nothing while finding the python-build-standalone build of the pinned
+  CPython, a GitHub API lookup that pages back through releases for a version
+  not in the newest one. On Windows, CPython 3.13.14 took 28 seconds before
+  the first line. `lock` now announces the lookup and each page it checks:
+  `[lock] CPython 3.13.14: finding the python-build-standalone build`, then
+  `checking older releases (page N)`.
+- **Migration:** none needed.
+
 ### Locks: iOS and desktop `lock` show their progress
 
 - **Added:** `kivyforge lock -p ios`, `-p macos`, `-p linux` and `-p windows`

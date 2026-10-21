@@ -28,8 +28,8 @@ def _asset(name, *, digest=None):
 class _Fetcher(GithubPbsMetadataFetcher):
     """Stubs the HTTP layer with in-memory releases + text bodies."""
 
-    def __init__(self, latest, pages=None, texts=None):
-        super().__init__()
+    def __init__(self, latest, pages=None, texts=None, on_progress=None):
+        super().__init__(on_progress=on_progress)
         self._latest = latest
         self._pages = pages or []
         self._texts = texts or {}
@@ -76,6 +76,28 @@ class TestFetch:
         page1 = [{"assets": [_asset(_NAME, digest="sha256:" + "d" * 64)]}]
         asset = _Fetcher(latest, pages=[page1]).fetch("3.14.5", "aarch64-apple-darwin")
         assert asset.sha256 == "d" * 64
+
+    def test_each_older_page_is_announced(self):
+        """A page is slow (10 s or more), so each one says so (#88)."""
+        latest = {"assets": [_asset("cpython-3.13.0+x-other-install_only.tar.gz")]}
+        page1 = [{"assets": []}]
+        page2 = [{"assets": [_asset(_NAME, digest="sha256:" + "d" * 64)]}]
+        lines: list[str] = []
+        _Fetcher(latest, pages=[page1, page2], on_progress=lines.append).fetch(
+            "3.14.5", "aarch64-apple-darwin"
+        )
+        assert lines == [
+            "[lock] CPython 3.14.5: checking older releases (page 1)",
+            "[lock] CPython 3.14.5: checking older releases (page 2)",
+        ]
+
+    def test_a_build_in_the_newest_release_needs_no_lines(self):
+        latest = {"assets": [_asset(_NAME, digest="sha256:" + "a" * 64)]}
+        lines: list[str] = []
+        _Fetcher(latest, on_progress=lines.append).fetch(
+            "3.14.5", "aarch64-apple-darwin"
+        )
+        assert lines == []
 
     def test_not_found_anywhere_errors(self):
         latest = {"assets": []}

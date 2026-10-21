@@ -18,6 +18,7 @@ import json
 import os
 import re
 import urllib.request
+from collections.abc import Callable
 
 from ...net import USER_AGENT
 from .runtime import ReleaseAsset, RuntimeProviderError
@@ -91,8 +92,14 @@ def _is_rate_limited(exc: BaseException) -> bool:
 class GithubPbsMetadataFetcher:
     """Resolve a PBS asset by querying the GitHub releases API."""
 
-    def __init__(self, latest_url: str = _LATEST_URL) -> None:
+    def __init__(
+        self,
+        latest_url: str = _LATEST_URL,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+    ) -> None:
         self._latest_url = latest_url
+        self._on_progress = on_progress
 
     def fetch(
         self, version: str, target_triple: str, *, offline: bool = False
@@ -106,7 +113,7 @@ class GithubPbsMetadataFetcher:
             rf"^cpython-{re.escape(version)}\+\d+-{re.escape(target_triple)}"
             r"-install_only\.tar\.gz$"
         )
-        for release in self._candidate_releases():
+        for release in self._candidate_releases(version):
             asset = self._match_release(release, pattern)
             if asset is not None:
                 return asset
@@ -117,10 +124,18 @@ class GithubPbsMetadataFetcher:
             f"https://github.com/astral-sh/python-build-standalone/releases."
         )
 
-    def _candidate_releases(self):
-        """Yield the latest release, then older releases page by page."""
+    def _candidate_releases(self, version: str):
+        """Yield the latest release, then older releases page by page.
+
+        Each page lists every asset of its releases, so one is large and slow:
+        a pin a few releases back took 10 to 40 s with nothing shown (#88).
+        """
         yield self._get_json(self._latest_url)
         for page in range(1, _MAX_PAGES + 1):
+            if self._on_progress is not None:
+                self._on_progress(
+                    f"[lock] CPython {version}: checking older releases (page {page})"
+                )
             url = _RELEASES_URL.format(per_page=_PAGE_SIZE, page=page)
             releases = self._get_json(url)
             if not releases:
