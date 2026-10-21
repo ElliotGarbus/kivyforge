@@ -15,8 +15,9 @@ the guide depends on:
    with ``ctypes``, the fallback the guide would carry if pyobjus cannot.
 
 2. Which unit is which. Kivy 3's SDL3 window is created high-pixel-density
-   and lays out in **pixels**; ``kivy.mobile`` reports UIKit **points**; UIKit
-   frames are points with a top-left origin. The app logs every number it
+   and lays out in **pixels**; ``kivy.mobile`` reports Kivy pixels too (with
+   kivy/kivy#9441; earlier Kivy 3 builds return UIKit points); UIKit frames
+   are points with a top-left origin. The app logs every number it
    uses so the findings can state the conversion with evidence, and logs the
    keyboard height from ``Window`` and from ``kivy.mobile`` side by side when
    the URL field is focused.
@@ -25,9 +26,9 @@ What the simulator run (iOS 27.0, pyobjus 1.2.4) settled:
 
 - pyobjus's ``load_framework(INCLUDE.WebKit)`` does nothing on iOS, so
   ``autoclass("WKWebView")`` fails. ``load_webkit()`` uses ``dlopen`` instead.
-- pyobjus does not pass ``CGRect`` (or other floating-point) arguments
-  reliably. Both variants set the frame with ctypes; the pyobjus variant hands
-  ctypes its object via ``get_address()``.
+- pyobjus corrupts the heap when it passes a ``CGRect`` by value
+  (kivy/pyobjus#90). Both variants set the frame with ctypes; the pyobjus
+  variant hands ctypes its object via ``get_address()``.
 - Kivy lays out in pixels: ``Window.size == UIScreen.bounds * nativeScale``.
 
 Every observation is logged as ``ios-webview: ...`` so the Xcode console can
@@ -139,11 +140,11 @@ def load_webkit() -> None:
 def open_with_pyobjus(url: str, frame_points: tuple):
     """Objects through pyobjus, the frame through ctypes.
 
-    pyobjus 1.2.4 does not pass floating-point arguments reliably on arm64:
+    pyobjus 1.2.4 copies a struct argument into a ``malloc(0)`` buffer, so a
+    32-byte ``CGRect`` overruns it (kivy/pyobjus#90):
     ``initWithFrame_(NSRect(...))`` gave a 0x0 view on one launch and the
-    right frame on the next, and ``constraintEqualToAnchor_constant_`` received
-    0.0 for its constant. Object and string arguments are fine. So the view is
-    created with a zero frame and placed with ``setFrame:`` sent through
+    right frame on the next. Object and string arguments are fine. So the view
+    is created with a zero frame and placed with ``setFrame:`` sent through
     ``objc_msgSend``, using the pointer from ``get_address()``.
     """
     from pyobjus import autoclass, objc_str
@@ -326,9 +327,9 @@ def log_units() -> None:
     )
 
 
-def log_keyboard(height_points: float) -> None:
+def log_keyboard(height: float) -> None:
     log(
-        f"keyboard: kivy.mobile.get_keyboard_height()={height_points} pt, "
+        f"keyboard: kivy.mobile.get_keyboard_height()={height}, "
         f"Window.keyboard_height={Window.keyboard_height}, "
         f"scale={ui_scale()}, Window.height={Window.height}"
     )
@@ -411,12 +412,11 @@ class WebViewSpikeRoot(BoxLayout):
             from kivy.mobile import get_safe_area, subscribe_keyboard_height
 
             inset = get_safe_area()
-            scale = ui_scale()
             self.padding = [
-                dp(16) + inset["left"] * scale,
-                dp(16) + inset["top"] * scale,
-                dp(16) + inset["right"] * scale,
-                dp(16) + inset["bottom"] * scale,
+                dp(16) + inset["left"],
+                dp(16) + inset["top"],
+                dp(16) + inset["right"],
+                dp(16) + inset["bottom"],
             ]
             subscribe_keyboard_height(
                 lambda h: Clock.schedule_once(lambda dt: log_keyboard(h), 0)

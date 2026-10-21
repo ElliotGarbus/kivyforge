@@ -12,14 +12,12 @@ Why this example is generation 3
 ``kivy_generation = 2`` (hello-android, qr-maven, pyjnius-deviceinfo) cannot
 report a safe area at all. This one pins ``kivy_generation = 3``.
 
-Units, which differ per platform
---------------------------------
-``get_safe_area()`` returns **pixels** on Android — already Kivy's layout
-coordinate system there — but UIKit **points** on iOS, which have to be scaled
-by ``get_scale()`` to reach Kivy pixels. Scaling on Android too would inflate
-the padding by the display density (typically 2-3.5x). Kivy's own
-``kivy/mobile/__init__.py`` currently documents "layout points" for both,
-without the per-platform caveat.
+Units
+-----
+``get_safe_area()`` returns Kivy layout **pixels**, so the insets are used as
+padding unscaled. Multiplying by ``get_scale()`` would inflate the padding by
+the display density (typically 2-3.5x). On iOS this needs a Kivy build with
+kivy/kivy#9441; earlier Kivy 3 builds return UIKit points there.
 
 API level
 ---------
@@ -60,22 +58,12 @@ def _mobile():
 
 
 def safe_area_insets():
-    """Safe-area insets as Kivy pixels: ``[left, top, right, bottom]``.
-
-    Android already reports pixels; iOS reports UIKit points, so only iOS is
-    scaled. See the module docstring.
-    """
+    """Safe-area insets as Kivy pixels: ``[left, top, right, bottom]``."""
     m = _mobile()
     if m is None:
         return [0, 0, 0, 0]
     insets = m.get_safe_area()
-    scale = m.get_scale() if platform == "ios" else 1.0
-    return [
-        insets["left"] * scale,
-        insets["top"] * scale,
-        insets["right"] * scale,
-        insets["bottom"] * scale,
-    ]
+    return [insets["left"], insets["top"], insets["right"], insets["bottom"]]
 
 
 KV = """
