@@ -81,7 +81,7 @@ class TestFixExtraction:
 class TestReportingContextManager:
     def test_a_failure_emits_an_envelope_on_stdout(self, capsys):
         with pytest.raises(ToolchainError):
-            with reporting("status", json_out=True, no_color=True):
+            with reporting("status", json_out=True, no_color=True, verbosity=0):
                 raise ToolchainError("no pyproject.toml here")
 
         payload = json.loads(capsys.readouterr().out)
@@ -94,7 +94,7 @@ class TestReportingContextManager:
         exit code. The failure is reported in both registers, not moved."""
         original = ToolchainError("boom", exit_code=exit_codes.LOCK_DRIFT)
         with pytest.raises(ToolchainError) as caught:
-            with reporting("lock", json_out=True, no_color=True):
+            with reporting("lock", json_out=True, no_color=True, verbosity=0):
                 raise original
         assert caught.value is original
         assert caught.value.exit_code == exit_codes.LOCK_DRIFT
@@ -104,13 +104,15 @@ class TestReportingContextManager:
         """Resolving the target reads pyproject.toml, so it is itself one of the
         things that can fail -- which is why the key is nullable."""
         with pytest.raises(ToolchainError):
-            with reporting("status", json_out=True, no_color=True):
+            with reporting("status", json_out=True, no_color=True, verbosity=0):
                 raise ToolchainError("cannot even tell which platform")
         assert json.loads(capsys.readouterr().out)["platform"] is None
 
     def test_a_platform_learned_mid_run_reaches_the_envelope(self, capsys):
         with pytest.raises(ToolchainError):
-            with reporting("status", json_out=True, no_color=True) as report:
+            with reporting(
+                "status", json_out=True, no_color=True, verbosity=0
+            ) as report:
                 report.platform = "android"
                 raise ToolchainError("failed after resolving")
         assert json.loads(capsys.readouterr().out)["platform"] == "android"
@@ -118,12 +120,12 @@ class TestReportingContextManager:
     def test_nothing_is_written_to_stdout_without_json(self, capsys):
         """Human mode already had a perfectly good error path: click's."""
         with pytest.raises(ToolchainError):
-            with reporting("status", json_out=False, no_color=True):
+            with reporting("status", json_out=False, no_color=True, verbosity=0):
                 raise ToolchainError("boom")
         assert capsys.readouterr().out == ""
 
     def test_a_clean_run_is_left_entirely_alone(self, capsys):
-        with reporting("status", json_out=True, no_color=True) as report:
+        with reporting("status", json_out=True, no_color=True, verbosity=0) as report:
             report.emit(ok=True, data={"fine": True})
         assert json.loads(capsys.readouterr().out)["ok"] is True
 
@@ -132,7 +134,7 @@ class TestReportingContextManager:
         a bug, and a bug must keep its traceback rather than be dressed up as a
         clean diagnostic."""
         with pytest.raises(KeyError):
-            with reporting("status", json_out=True, no_color=True):
+            with reporting("status", json_out=True, no_color=True, verbosity=0):
                 raise KeyError("bug")
         assert capsys.readouterr().out == ""
 

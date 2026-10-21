@@ -83,7 +83,7 @@ class TestSink:
         assert seen == [("a", 1, 2, "bytes")]
 
     def test_reporting_routes_downloads_to_stderr(self, capsys):
-        with reporting("build", json_out=False, no_color=True):
+        with reporting("build", json_out=False, no_color=True, verbosity=0):
             report_transfer("[download] Kivy-2.3.1 (android_24_x86_64)", 9, 9)
         captured = capsys.readouterr()
         assert "[download] Kivy-2.3.1 (android_24_x86_64)  100% of 1 kB" in captured.err

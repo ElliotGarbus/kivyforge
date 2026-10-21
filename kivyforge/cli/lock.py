@@ -169,9 +169,12 @@ def lock(
     check: bool,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
 ) -> None:
     """Generate pylock.<platform>.toml from pyproject.toml."""
-    with reporting("lock", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "lock", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         backend, project_root = resolve_target(cli_platform, verb="lock", report=report)
         ops = _lock_ops(backend.name)
 

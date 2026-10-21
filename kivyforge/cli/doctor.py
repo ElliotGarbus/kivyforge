@@ -50,10 +50,13 @@ def doctor(
     offline: bool,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
 ) -> None:
     """Run environment and project health checks."""
     cwd = Path.cwd()
-    with reporting("doctor", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "doctor", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         backend = _resolve_doctor_backend(cli_platform, cwd)
         report.platform = backend.name
 

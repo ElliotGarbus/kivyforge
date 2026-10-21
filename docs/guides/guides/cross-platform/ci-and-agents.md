@@ -36,9 +36,11 @@ kivyforge capabilities --json
 
 The envelope's `data` lists:
 
-- `platforms`: each target's architectures, package formats, default format, and
-  which host operating systems can build it.
-- `verbs`: every verb, and whether it accepts `--json`.
+- `platforms`: each target's architectures, package formats, default format,
+  which host operating systems can build it, and, as `verbose`, whether it acts
+  on `-v`.
+- `verbs`: every verb, and whether it accepts `--json` and `-v` (`json`,
+  `verbose`). See [Verbose output](../../reference/cli.md#verbose-output).
 - `exit_codes` and `diagnostic_codes`: the full vocabularies.
 
 ## Get machine-readable output

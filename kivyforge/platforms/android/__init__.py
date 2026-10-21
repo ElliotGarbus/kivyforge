@@ -127,6 +127,8 @@ class AndroidPlatform(Platform):
     package_debug = True
     # Android spells its architectures as ABIs, and ``--abi`` takes these.
     archs = tuple(sorted(VALID_ANDROID_ABIS))
+    # -v / -vv reach Gradle (--stacktrace, --info) and print its command.
+    verbose = True
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
         # Windows, macOS, and Linux hosts can all build for Android: kivyforge

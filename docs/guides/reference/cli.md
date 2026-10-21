@@ -33,6 +33,25 @@ configured in `pyproject.toml`. `init` accepts `-p` more than once and, without
 it, also falls back to the project's only existing overlay. See
 [Choose a target platform](../concepts/choose-platform.md).
 
+## Verbose output
+
+Every verb accepts `-v` / `--verbose`, and `-vv` for more. For now only Android
+acts on it, in the verbs that run Gradle: `build --debug`, `package` and `run`.
+
+| Flag | `KIVYFORGE_VERBOSE` | Effect on Android |
+|---|---|---|
+| `-v` | `1` | Gradle runs with `--stacktrace`. Before each Gradle run, kivyforge prints the folder and the exact `gradlew` command so you can rerun it by hand, and, for a release task, the names of the signing variables it reads. If kivyforge installs a missing NDK or CMake first, it prints that `sdkmanager` command too. |
+| `-vv` | `2` | Everything `-v` does, and Gradle also runs with `--info`. The log becomes thousands of lines longer. |
+
+- `-vvv` and beyond count as `-vv`. There is no level that passes Gradle's
+  `--debug`; run Gradle yourself for that (see
+  [When Gradle fails](../troubleshooting/index.md#when-gradle-fails)).
+- The flag replaces the variable rather than adding to it:
+  `KIVYFORGE_VERBOSE=2 kivyforge build -p android --debug -v` runs at level 1.
+- The extra lines go to stderr, so `--json` output is unchanged.
+- Other platforms accept the flag and ignore it. `kivyforge capabilities` lists
+  the platforms that act on it.
+
 ## Commands
 
 ::: mkdocs-click

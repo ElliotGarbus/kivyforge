@@ -593,10 +593,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # verbose: the x86_64 leg builds at -v (--stacktrace, and the echoed
+          # gradlew command) so real Gradle rejects any flag kivyforge composes
+          # wrongly; arm64_v8a keeps the default level, the one users run
+          # (verbose-output-proposal.md §7, decision 5).
           - abi: arm64_v8a
             android_abi: arm64-v8a
+            verbose: ""
           - abi: x86_64
             android_abi: x86_64
+            verbose: "-v"
     env:
       # The example this gate builds; its pylock.android.toml is committed, so
       # the job needs no Gradle-at-lock-time and no resolver network beyond
@@ -690,7 +696,7 @@ jobs:
       run: kivyforge doctor -p android
     - name: Build the debug APK (assembleDebug)
       working-directory: ${{ env.APP_DIR }}
-      run: kivyforge build -p android --debug --abi "$ABI"
+      run: kivyforge build -p android --debug --abi "$ABI" ${{ matrix.verbose }}
     - name: Assert the debug APK is the artifact the build promised (T3)
       # Replaces three `unzip -l | grep` presence checks with the full T3 pass
       # (tests/artifact_checks.py): required entries, single-ABI ELF machine

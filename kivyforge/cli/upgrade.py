@@ -66,9 +66,12 @@ def upgrade(
     name: str | None,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
 ) -> None:
     """Re-fetch pinned runtime/native artifacts for the resolved platform's lock."""
-    with reporting("upgrade", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "upgrade", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         backend, project_root = resolve_target(
             cli_platform, verb="upgrade", report=report
         )

@@ -67,6 +67,11 @@ class Platform(ABC):
     #: it, so the rule and the matrix read the same tuple.
     host_machines: tuple[str, ...] = ()
 
+    #: Whether this backend passes the verb's ``-v`` level to the tools it runs
+    #: (``report.verbosity``). Every verb accepts ``-v``; ``capabilities``
+    #: publishes this so an agent knows where it does anything.
+    verbose: bool = False
+
     @property
     def default_package_format(self) -> str | None:
         return self.package_formats[0] if self.package_formats else None

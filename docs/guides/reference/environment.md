@@ -35,6 +35,7 @@ kivyforge at tools installed in non-default locations.
 |---|---|
 | `NO_COLOR` | Disables coloured output. Any value counts, including `0`. |
 | `FORCE_COLOR` | Forces coloured output, even when the output is not a terminal. `--no-color` and `NO_COLOR` both take precedence over it. |
+| `KIVYFORGE_VERBOSE` | `1` or `2`, the same as passing `-v` or `-vv` to every verb. A `-v` on the command line replaces it. Higher numbers count as `2` and an empty value means `0`; anything else, such as `abc` or `-1`, is a usage error. Only Android's Gradle acts on it for now. See [Verbose output](cli.md#verbose-output). |
 
 ## Signing
 
