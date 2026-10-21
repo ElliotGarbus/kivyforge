@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Locks: the desktop Python runtime lookup takes seconds, not half a minute
+
+- **Changed:** to pin the python-build-standalone runtime, `kivyforge lock`
+  for macOS, Linux and Windows now lists the release tags and reads each
+  release's small `SHA256SUMS`, eight at a time, instead of paging through
+  GitHub's full release records (about 15 MB a page). For CPython 3.13.14 on
+  Windows the lookup went from 10 to 47 seconds to 2 or 3, and it now makes
+  one GitHub API call instead of up to sixteen, so CI hits the rate limit far
+  less. The pinned URL and SHA-256 are the same as before; the old search
+  remains as a fallback.
+- **Migration:** none needed.
 ### iOS: safe-area insets and keyboard height are used as Kivy pixels
 
 - **Changed:** the mobile geometry and kivy-ios `ios` module guides, and the
