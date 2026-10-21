@@ -833,8 +833,28 @@ class KivyMeta:
 
     app_dir: str
     display_name: str | None = None
+    #: The module the app starts in: ``[tool.kivy].entry_point`` up to any
+    #: ``:``, else the one ``[project.gui-scripts]`` entry's module, else
+    #: ``main``. Always a module, so every check and path built from it holds
+    #: for both forms.
     entry_point: str = DEFAULT_ENTRY_POINT
     orientation: tuple[str, ...] = DEFAULT_ORIENTATION
+    #: The ``object.attr`` after the ``:`` (``pkg.mod:main`` -> ``main``), which
+    #: the generated launcher calls as an installed script wrapper would; or
+    #: ``None``, and ``entry_point`` itself runs as ``__main__`` (issue #68,
+    #: kivyforge/bundle/entry_launcher.py).
+    entry_function: str | None = None
+    #: Where the entry point was declared, for messages:
+    #: ``[tool.kivy].entry_point`` (also when defaulted) or
+    #: ``[project.gui-scripts] <name>``.
+    entry_origin: str = "[tool.kivy].entry_point"
+
+    @property
+    def entry_spec(self) -> str:
+        """The entry point as written: ``module`` or ``module:object``."""
+        if self.entry_function is None:
+            return self.entry_point
+        return f"{self.entry_point}:{self.entry_function}"
 
 
 @dataclass(frozen=True)

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Entry points: `module:function` and `[project.gui-scripts]`
+
+- **Added:** `[tool.kivy].entry_point` may name a function, such as
+  `"myapp.app:main"`, and kivyforge calls it the way an installed script calls
+  it: it imports `myapp.app` as part of its package, calls `main()` with no
+  arguments, and uses the return value as the exit status
+  ([#68](https://github.com/ElliotGarbus/kivyforge/issues/68)). Relative
+  imports inside the package now work, which they cannot when the module runs
+  as `__main__`. If `entry_point` is unset and `[project.gui-scripts]` has
+  exactly one entry, kivyforge uses it, so a package that already declares
+  its GUI script for `pip` and `uv run` needs no `entry_point`. If there are
+  several entries, kivyforge asks you to choose one with `entry_point`.
+  `[project.scripts]` is never used. This works on Android, iOS, macOS, Linux
+  and Windows: kivyforge generates a small launcher that each platform runs
+  as `__main__`, and `strip_source` release builds compile it to `.pyc` with
+  the rest of the app.
+- **Migration:** none needed for an app that sets `entry_point` or declares no
+  GUI scripts. `entry_point = "main"` and other module names still run as
+  `__main__`, exactly as before. A project that declares exactly one GUI
+  script and relied on the default `"main"` now starts that GUI script;
+  set `entry_point = "main"` to keep the old behavior.
+
 ### `-v` / `-vv`: Gradle's stack trace and detail, without leaving kivyforge
 
 - **Added:** every verb accepts `-v` / `--verbose`, and `-vv`, or

@@ -26,7 +26,7 @@ from kivyforge.build_outcome import (
     OutcomeBuilder,
     discard_note,
 )
-from kivyforge.bundle import app_metadata
+from kivyforge.bundle import app_metadata, entry_launcher
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
@@ -501,6 +501,7 @@ def android_build(
             canonical_abi=canonical,
             app_src=project_root / config.kivy.app_dir,
             entry_point=config.kivy.entry_point,
+            launcher_source=entry_launcher.launcher_source(config.kivy),
             service_entry_points={s.name: s.entry_point for s in android.services},
             finder_source=finder_source(),
             kivy_bootstrap_source=kivy_bootstrap_source(),
@@ -524,7 +525,7 @@ def android_build(
     bootstrap = render_bootstrap(
         sdl=android.kivy_generation,
         python_version=python_version,
-        entry_point=config.kivy.entry_point,
+        entry_point=entry_launcher.main_module(config.kivy),
         fullscreen=android.fullscreen,
         orientation_hint=sdl_orientation_hint(config.kivy.orientation),
     )

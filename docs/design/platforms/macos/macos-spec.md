@@ -248,8 +248,11 @@ canonical layout regardless of provider).
 The launcher resolves the bundle relative to itself (via `_NSGetExecutablePath`,
 so the `.app` stays relocatable), points `PYTHONHOME` at the bundled runtime and
 `PYTHONPATH` at `Resources/app` + `Resources/lib`, sets `PYTHONNOUSERSITE`, then
-`execv`s `Resources/python/bin/python3 Resources/app/<entry_point>.py` — the
-desktop analog of the iOS `main.m` bootstrap. It is itself ad-hoc-signed along
+`execv`s `Resources/python/bin/python3 -P -m <entry_point>` (by module, so a
+`strip_source` build's sourceless `.pyc` is found) — the desktop analog of the
+iOS `main.m` bootstrap. For a `module:function` entry point the module is
+`_kivyforge_main`, the launcher staged into `Resources/app` that calls the
+function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)). It is itself ad-hoc-signed along
 with the Mach-O binaries in the runtime + wheels.
 
 ### Native binaries that are not wheels (`[tool.kivy.macos.native.binaries]`)

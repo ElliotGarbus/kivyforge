@@ -35,7 +35,7 @@ import click
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
-from kivyforge.bundle import app_metadata
+from kivyforge.bundle import app_metadata, entry_launcher
 from kivyforge.bundle.pycompile import (
     PycompileError,
     byte_compile,
@@ -248,7 +248,7 @@ def build_onedir(
 
         write_bootstrap(
             bundle,
-            entry_point=config.kivy.entry_point,
+            entry_point=entry_launcher.main_module(config.kivy),
             app_id=config.windows_required.app_id,
         )
 
@@ -307,16 +307,18 @@ def _copy_app_sources(config: Config, project_root: Path, dest: Path) -> None:
             f"[tool.kivy].app_dir points to {config.kivy.app_dir!r}, which is not "
             f"a directory under {project_root}."
         )
-    entry_rel = f"{config.kivy.entry_point.replace('.', '/')}.py"
-    entry = src / entry_rel
-    if not entry.is_file():
+    missing = entry_launcher.missing_entry_module(src, config.kivy)
+    if missing is not None:
         raise WindowsBundleError(
-            f"entry point {entry_rel} not found in "
-            f"{config.kivy.app_dir}/ (set [tool.kivy].entry_point)."
+            entry_launcher.missing_entry_message(
+                config.kivy.app_dir, config.kivy, missing
+            )
         )
     shutil.copytree(src, dest, ignore=_IGNORE)
     # The app's own package metadata, in place of any development egg-info.
     app_metadata.install(dest, app_metadata.for_build(config))
+    # After the metadata, so top_level.txt does not list kivyforge's module.
+    entry_launcher.write_launcher(dest, config.kivy)
 
 
 # Re-exported for the verbs/status so they compute the same path.

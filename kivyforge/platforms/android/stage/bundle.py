@@ -40,6 +40,7 @@ from kivyforge.artifacts.verify import sha256_file
 from kivyforge.bundle import app_metadata as app_metadata_mod
 from kivyforge.bundle import pycompile
 from kivyforge.bundle.app_metadata import AppMetadata
+from kivyforge.bundle.entry_launcher import LAUNCHER_MODULE
 
 from .jnilibs import is_wheel_libs_dir
 
@@ -72,6 +73,7 @@ def assemble_bundle(
     selftest_source: str = "",
     android_package_sources: dict[str, str] | None = None,
     entry_point: str = "main",
+    launcher_source: str | None = None,
     service_entry_points: dict[str, str] | None = None,
     app_metadata: AppMetadata | None = None,
     byte_compile: tuple[str, ...] | None = None,
@@ -80,7 +82,10 @@ def assemble_bundle(
     """Assemble the bundle; returns the content stamp written to ``VERSION``.
 
     The app payload is copied once, after the per-ABI identity check, so it
-    and *app_metadata* are shared by every ABI.
+    and *app_metadata* are shared by every ABI. *entry_point* is the app's
+    module; *launcher_source*, for a ``module:function`` entry point, is the
+    launcher written beside it (kivyforge/bundle/entry_launcher.py), which
+    the activity then runs instead.
     """
     if bundle_dir.exists():
         shutil.rmtree(bundle_dir)
@@ -94,6 +99,7 @@ def assemble_bundle(
         app_src,
         bundle_dir / "app",
         entry_point=entry_point,
+        launcher_source=launcher_source,
         service_entry_points=service_entry_points or {},
         app_metadata=app_metadata,
     )
@@ -224,6 +230,7 @@ def _copy_app(
     dest: Path,
     *,
     entry_point: str = "main",
+    launcher_source: str | None = None,
     service_entry_points: dict[str, str],
     app_metadata: AppMetadata | None = None,
 ) -> None:
@@ -247,6 +254,10 @@ def _copy_app(
     shutil.copytree(src, dest, ignore=ignore)
     # The app's own package metadata, in place of any development egg-info.
     app_metadata_mod.install(dest, app_metadata)
+    # After the metadata, so top_level.txt does not list kivyforge's module;
+    # before byte-compiling, so strip_source treats it like the app's own.
+    if launcher_source is not None:
+        (dest / f"{LAUNCHER_MODULE}.py").write_text(launcher_source, encoding="utf-8")
 
 
 def _assert_abi_identity(

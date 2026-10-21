@@ -49,7 +49,10 @@ orientation = ["portrait"]
 ```
 
 `app_dir` is required and must be a subdirectory of the project, not the
-project root.
+project root. `entry_point` names either a module, which runs as `__main__`, or
+a `module:function`, which kivyforge calls. If you leave it unset and your
+project declares one `[project.gui-scripts]` entry, kivyforge uses that entry.
+See [How `entry_point` runs](../reference/pyproject/tool-kivy.md#how-entry_point-runs).
 
 ### `[tool.kivy.<platform>]`: per-target overlays
 

@@ -411,7 +411,9 @@ the binary). The bootstrap:
 - puts `<bundle>\app` on `sys.path`, sets the working directory to it, and runs
   `[tool.kivy].entry_point` as `__main__` (via `runpy.run_module`), so a standard
   `if __name__ == "__main__": App().run()` guard fires — matching the macOS/Linux
-  launchers, which exec the interpreter directly on the entry script.
+  launchers, which exec the interpreter directly on the entry script. For a
+  `module:function` entry point the module is `_kivyforge_main`, the launcher
+  staged into `app\` that calls the function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)).
 
 ### What the binary deps do *not* cover
 

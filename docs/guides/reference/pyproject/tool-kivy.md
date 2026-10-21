@@ -50,7 +50,7 @@ declares them only in `setup.cfg` or `setup.py` fails to build with
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `app_dir` | string | required | Directory that contains your Python source, relative to `pyproject.toml`. It must be a subdirectory such as `"src"`. The project root (`"."`), an empty string, an absolute path, and a path outside the project are rejected. |
-| `entry_point` | string | `"main"` | Module to run at startup, as a dotted Python name resolved inside `app_dir`. For example, `"main"` runs `src/main.py` and `"pkg.start"` runs `src/pkg/start.py`. |
+| `entry_point` | string | the one `[project.gui-scripts]` entry, else `"main"` | Where the app starts, resolved inside `app_dir`. A module name runs that module: `"main"` runs `src/main.py` and `"pkg.start"` runs `src/pkg/start.py`. A `module:function` name calls the function: `"pkg.app:main"` calls `main()` from `src/pkg/app.py`. See [How `entry_point` runs](#how-entry_point-runs). |
 | `display_name` | string | `[project].name` | The app name shown to users. Each platform maps it to its own field, for example `CFBundleDisplayName` on iOS and `android:label` on Android. |
 | `orientation` | list of string | `["portrait"]` | Allowed screen orientations. Valid values: `portrait`, `portrait-upside-down`, `landscape-left`, `landscape-right`. The list must not be empty. |
 
@@ -80,13 +80,60 @@ orientation = ["portrait"]
 
 ## How `entry_point` runs
 
-kivyforge adds `app_dir` to `sys.path` and runs `entry_point` as `__main__` on
-every platform, the same as `python -m`. As a result:
+kivyforge adds `app_dir` to `sys.path` on every platform. What it runs then
+depends on how `entry_point` is written.
+
+### A module: `entry_point = "main"`
+
+kivyforge runs the module as `__main__`, the same as `python -m`. As a result:
 
 - An `if __name__ == "__main__":` block in the module runs.
 - Calling `App().run()` at the top level of the module also works.
 - If `entry_point` names a package rather than a module, the package needs a
   `__main__.py`.
+
+This is the form `kivyforge init` writes, and the one a Buildozer-style app
+uses.
+
+### A function: `entry_point = "pkg.app:main"`
+
+kivyforge calls the function the way an installed script calls it: it imports
+`pkg.app`, calls `main()` with no arguments, and uses the return value as the
+exit status (`None` means 0). Use this form when your app is a package whose
+modules use relative imports, such as `from . import helper`. Those imports fail
+when a module inside a package runs as `__main__`, and work when the module is
+imported as part of its package.
+
+`pkg:main` also works and imports `pkg/__init__.py`. `"pkg.app:App.launch"`
+calls an attribute of an object in the module.
+
+### From `[project.gui-scripts]`
+
+If your project already declares a GUI script for `pip` and `uv`, you can leave
+`entry_point` unset:
+
+```toml
+[project.gui-scripts]
+myapp = "myapp.app:main"
+
+[tool.kivy]
+app_dir = "src"   # src/myapp/__init__.py, src/myapp/app.py, ...
+```
+
+When `entry_point` is unset, kivyforge picks the entry point like this:
+
+1. If `[project.gui-scripts]` has exactly one entry, kivyforge calls it, the
+   same as `entry_point = "myapp.app:main"`. The same app then starts the same
+   way under `uv run myapp` and in a kivyforge build.
+2. If it has more than one entry, kivyforge reports an error that names them.
+   Set `entry_point` to the one the app should start.
+3. If there are no GUI scripts, kivyforge uses `"main"`.
+
+kivyforge never reads `[project.scripts]`, because those are console scripts.
+A GUI script must name a function. If you want a module to run as `__main__`
+instead, set `entry_point` to the module name. If `[project].dynamic` lists
+`gui-scripts`, your build backend may add more entries, so kivyforge asks you
+to set `entry_point`.
 
 ## Icons and splash screens
 
