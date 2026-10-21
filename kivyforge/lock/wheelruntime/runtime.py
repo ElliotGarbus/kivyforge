@@ -16,6 +16,7 @@ GitHub-backed fetcher is validated at the phase stop.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -97,12 +98,19 @@ class PbsProvider:
         metadata_fetcher: MetadataFetcher | None = None,
         *,
         floor: str | None = None,
+        on_progress: Callable[[str], None] | None = None,
     ) -> None:
         self._triples = triples
+        self._on_progress = on_progress
         # The default GitHub-backed fetcher is created lazily so tests that
         # inject a fake never import the network layer.
         self._fetcher = metadata_fetcher
         self._floor = floor
+
+    @property
+    def floor(self) -> str | None:
+        """The OS floor this provider records for its runtime."""
+        return self._floor
 
     def resolve(
         self, version: str, archs: tuple[str, ...], *, offline: bool = False
@@ -116,7 +124,7 @@ class PbsProvider:
                 f"python-build-standalone has no build for arch(es) {unknown}; "
                 f"valid values are: {valid}."
             )
-        fetcher = self._fetcher or _default_fetcher()
+        fetcher = self._fetcher or _default_fetcher(self._on_progress)
         artifacts: list[RuntimeArtifact] = []
         for arch in archs:
             triple = self._triples[arch]
@@ -155,7 +163,9 @@ def pbs_asset_glob(version: str, target_triple: str) -> str:
     return f"cpython-{version}+*-{target_triple}-install_only.tar.gz"
 
 
-def _default_fetcher() -> MetadataFetcher:
+def _default_fetcher(
+    on_progress: Callable[[str], None] | None = None,
+) -> MetadataFetcher:
     from .pbs_github import GithubPbsMetadataFetcher
 
-    return GithubPbsMetadataFetcher()
+    return GithubPbsMetadataFetcher(on_progress=on_progress)

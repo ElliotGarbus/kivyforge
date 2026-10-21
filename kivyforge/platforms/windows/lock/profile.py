@@ -81,8 +81,8 @@ class WindowsProfile(PlatformLockProfile):
             return {arch}
         return set()
 
-    def runtime_provider(self, config: Config) -> RuntimeProvider:
-        return PythonBuildStandaloneProvider()
+    def runtime_provider(self, config: Config, **progress) -> RuntimeProvider:
+        return PythonBuildStandaloneProvider(**progress)
 
     def coverage_error(self, name: str, missing: list[str]) -> str:
         return (

@@ -88,8 +88,8 @@ class MacosProfile(PlatformLockProfile):
             return {arch}
         return set()
 
-    def runtime_provider(self, config: Config) -> RuntimeProvider:
-        return PythonBuildStandaloneProvider()
+    def runtime_provider(self, config: Config, **progress) -> RuntimeProvider:
+        return PythonBuildStandaloneProvider(**progress)
 
     def declared_floor(self, config: Config) -> str | None:
         return config.macos_required.minimum_system_version
