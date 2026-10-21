@@ -35,13 +35,28 @@ Traceback (most recent call last):
 pyobjus.ObjcException: Unable to find class b'WKWebView'
 ```
 
+**Corrected 2026-10-21.** This section first said `bundleWithPath_` returns
+nil on iOS. Probing NSBundle on the simulator showed it returns a bundle; what
+is missing is the binary. The fix below stands.
+
 `load_framework` is `NSBundle.bundleWithPath_(path).load()`.
-`INCLUDE.WebKit` is the macOS path `/System/Library/Frameworks/WebKit.framework`.
-On the simulator `bundleWithPath_` returns nil for it, and calling `load()` on
-nil does nothing and raises nothing. The ctypes variant worked only because
-it `dlopen`s the WebKit binary itself. `dlopen` goes through dyld, which
-resolves system frameworks on the simulator, and should on a device as well
-(not tested).
+`INCLUDE.WebKit` is the path `/System/Library/Frameworks/WebKit.framework`,
+which exists on iOS as well as macOS. On the simulator `bundleWithPath_`
+returns a bundle for it, but the bundle's `executablePath` is nil and `load()`
+returns NO: iOS keeps system framework binaries only in the dyld shared cache,
+not on disk, so NSBundle has no file to load. `load_framework` ignored the NO
+and returned normally. (macOS keeps them in the shared cache too, but there
+NSBundle reports an `executablePath` and `load()` succeeds.) The ctypes
+variant worked only because it `dlopen`s the WebKit binary itself. `dlopen`
+goes through dyld, which resolves the path from the shared cache on the
+simulator, and should on a device as well (not tested).
+
+Upstream fix:
+[kivy/pyobjus#158](https://github.com/kivy/pyobjus/pull/158). On iOS
+(`sys.platform == 'ios'`, Python 3.13+), `load_framework` opens the binary with
+`dlopen`; elsewhere it raises when NSBundle cannot load the framework, naming
+the `ctypes.CDLL` call to use. Verified on the same simulator: with the fix,
+`load_framework(INCLUDE.WebKit)` alone makes `WKWebView` available.
 
 **Fix:** `load_webkit()` = `ctypes.CDLL("/System/Library/Frameworks/WebKit.framework/WebKit")`,
 shared by both variants. The startup line `Got dlopen error on Foundation:

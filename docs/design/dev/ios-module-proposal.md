@@ -244,10 +244,12 @@ iPhone Air simulator (iOS 27.0, Xcode 27.0, pyobjus 1.2.4) on 2026-10-19;
 verbatim log. The recipe as first sketched, pure pyobjus, failed twice over:
 
 - **`pyobjus.dylib_manager.load_framework` is a silent no-op on iOS.** It
-  calls `NSBundle.bundleWithPath_` with the macOS framework path, gets nil,
-  and `load()` on nil raises nothing. `autoclass("WKWebView")` then fails
+  calls `NSBundle.bundleWithPath_(...).load()`. On iOS the bundle exists but
+  its binary lives only in the dyld shared cache, so `load()` returns NO, and
+  `load_framework` ignores that. `autoclass("WKWebView")` then fails
   with `Unable to find class b'WKWebView'`. Loading the framework binary
   with `ctypes.CDLL` (dyld) works on the simulator and should on a device.
+  Upstream fix: [kivy/pyobjus#158](https://github.com/kivy/pyobjus/pull/158).
 - **pyobjus 1.2.4 corrupts the heap passing a `CGRect` by value.**
   `initWithFrame_(NSRect(...))` produced a 0×0 view on one launch and the
   right frame on the next. pyobjus copies any struct passed by value into a
