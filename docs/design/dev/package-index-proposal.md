@@ -308,10 +308,24 @@ exactly as it does today, which experiment B10 confirms.
 
 - **A pip that lacks `PackageFinder.find_all_candidates`,
   `InstallationCandidate.link` or `Link.comes_from`**: the shim exits with a
-  distinct status, and the resolver raises `KF-PIP-UNSUPPORTED` (§6) naming the
-  pip version. It never resolves unfiltered: a silent fallback would bring
+  distinct status. It never resolves unfiltered: a silent fallback would bring
   back the wrong-source lock this exists to prevent. This is the marker
   shim's rule.
+
+  This is a kivyforge bug, not a user error. The user never chooses this pip:
+  kivyforge depends on `pip>=25.1` and runs its own interpreter's pip
+  (`sys.executable`). The only way the patch can break is a pip release newer
+  than this kivyforge, since the dependency has no upper bound. So the
+  failure gets no `KF-*` code of its own; it is the unclassified `KF-ERROR`
+  (exit 1), and the message says so plainly: "kivyforge X cannot apply its
+  source rules with pip Y; please report this. Until it is fixed, install
+  `pip<Y` in kivyforge's environment." The shim canary in the normal test
+  suite (§8) is what keeps users from seeing it: CI installs the newest pip
+  on every run, so a pip release that breaks the patch fails CI first.
+
+  An upper bound on pip (`pip>=25.1,<N`) would prevent the failure, but it
+  would also hold every user back from pip fixes until kivyforge releases,
+  and the marker shim has never had one. That is an open question (§11).
 - **A filtered-out package**, that is, a pinned package its index does not
   have, or a local name with no wheel for this variant: pip says "Could not
   find a version that satisfies the requirement" (experiments B8, B9). The
@@ -400,10 +414,9 @@ New codes in `kivyforge/report/diagnostics.py`:
 |---|---|---|---|
 | `KF-SOURCE-CONFLICT` | 1 | A local name is also pinned in `sources` (§3.1) | `distribution`, `index`, `find_links` |
 | `KF-LOCK-SOURCE-UNAVAILABLE` | 1 | A pinned or local package has no candidate on its only allowed source for a variant | `distribution`, `source` (index name or `find_links`), `variant` |
-| `KF-PIP-UNSUPPORTED` | 3 | The shim cannot apply its patch to this pip (§4.6); the fix is the machine's pip | `pip_version`, `missing` (the internal not found) |
 
-`KF-TOOLCHAIN-UNUSABLE` is not reused for the third: it means a tool that
-cannot be executed at all, and a code is never repurposed (AGENTS.md).
+A pip the shim cannot patch is a kivyforge bug and stays the unclassified
+`KF-ERROR` (§4.6).
 
 Example message for the second:
 
@@ -431,7 +444,7 @@ and line.
   (`android/01`, `ios/01`, macOS, Linux and Windows specs) link to that section
   and state that `find_links` is exclusive.
 - `docs/guides/reference/lockfile.md` documents `packages.index`.
-- `docs/guides/reference/codes.md` gains the three new codes, and `capabilities`
+- `docs/guides/reference/codes.md` gains the two new codes, and `capabilities`
   lists them (its code vocabulary comes from `diagnostics.py`).
 - Reply on #86 with kengoon's case written in the new config.
 
@@ -460,7 +473,8 @@ in `tmp_path`, as in the §1.2 harness, and no network.
 - No policy set: the shim patches nothing (pip output matches `-m pip`).
 - Neither marker variable set: refuses; `KIVYFORGE_HOST_MARKERS=1`: runs.
 - The patched symbol is missing (monkeypatched away): distinct exit status,
-  and the resolver maps it to `KF-PIP-UNSUPPORTED`.
+  and the resolver raises `KF-ERROR` with the "please report" message; it
+  never falls back to an unfiltered resolve.
 - `record` maps each surviving file URL to the right index name.
 
 **Resolvers and builders (`tests/lock/`, `tests/platforms/*/lock/`)**
@@ -491,8 +505,8 @@ first can ship alone if the second slips:
 1. **Shim and local-first.** The shim filter (§4) with only `find_links`
    rules; the desktop resolver moves to the shim; `packages.index` recorded
    (§5.4); the pin-dropping rule for `url`/`path` changes (§5.2);
-   `KF-LOCK-SOURCE-UNAVAILABLE` and `KF-PIP-UNSUPPORTED`; docs for
-   `find_links` and today's index order.
+   `KF-LOCK-SOURCE-UNAVAILABLE`; docs for `find_links` and today's index
+   order.
 2. **Named indexes and sources.** Config (§3.2–3.4), `LOCK_INPUTS` (§5.1),
    the pinned and explicit rules in the policy, `KF-SOURCE-CONFLICT`, the
    rest of the docs, and the reply on #86.
@@ -568,6 +582,11 @@ asks for it, so the default stays pip's best-match (§11).
   goes into the lock. Supporting them means credentials from the environment
   or keyring at lock time, and a credential-free URL in the lock. This waits
   until someone asks.
+- **An upper bound on pip.** kivyforge's `pip>=25.1` dependency is
+  unbounded, so a future pip can break both shim patches until kivyforge
+  releases a fix (§4.6). The CI canary catches it first; a bound would
+  prevent it but delay pip fixes for everyone. The marker shim has lived
+  without one so far.
 - **Desktop marker retargeting.** Moving the desktop resolver onto the shim
   makes the cross-host marker bug noted in
   [`lock-inputs-proposal.md`](lock-inputs-proposal.md) §2.3 a small step away
