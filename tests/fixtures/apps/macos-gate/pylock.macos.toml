@@ -32,7 +32,7 @@ hashes = { sha256 = "d8d9e57501961c5d45e5a2c5af0caef24e48f43a0cd88f607eb3b517198
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
 generated_at = "2026-10-19T03:28:36Z"
-lock_inputs_sha256 = "deb404709fd123acb26b046e972514d8895b2b8973d4938d7eb67bcbeaf3654f"
+lock_inputs_sha256 = "c157965cd6ed30fe91dd6d36c9e37187d4726d3ef651bb1a1ca48ab7d3264f6f"
 tool_kivyforge_schema_version = 1
 archs = ["arm64"]
 

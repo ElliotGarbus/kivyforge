@@ -844,3 +844,7 @@ Where the code differs from the text above, and why.
   to re-lock, so, as in #126, its one changed line was written from
   `lock_inputs_sha256()` and checked with `is_in_sync()`; it records no
   `index` until a Mac re-locks it, which §12.1's old-lock rule allows.
+  The three desktop gate fixtures (`tests/fixtures/apps/{linux,macos,windows}-gate`)
+  track their locks too and were updated the same way, since Linux and macOS
+  cannot be resolved from a Windows host; `lock -p windows --check` on the
+  Windows gate then passed against the real indexes.
