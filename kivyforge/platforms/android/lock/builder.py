@@ -36,8 +36,9 @@ from kivyforge.lock.prefer import preferred_pins, resolve_preferring
 from kivyforge.lock.sources import (
     SourceUnavailable,
     drop_moved_pins,
+    overlay_policy,
+    pinned_local_warnings,
     source_changes,
-    source_policy,
 )
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
@@ -179,7 +180,10 @@ def build_lockfile(
     # Never excludable: an app without it crashes at launch.
     excluded.discard(PYJNIUS)
 
-    policy = source_policy(find_links, android.extra_index_urls, platform="android")
+    policy = overlay_policy(android, find_links, platform="android")
+    if on_warning is not None:
+        for warning in pinned_local_warnings(policy, root):
+            on_warning(warning)
     prefer = tuple(prefer)
 
     def resolve(pins):

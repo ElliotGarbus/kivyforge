@@ -2,9 +2,8 @@
 
 > Status: **proposed 2026-10-21**, decisions taken with the maintainer the same
 > day and revised on 2026-10-22 after the reporter's feedback on
-> [#86](https://github.com/ElliotGarbus/kivyforge/issues/86) (§2). **Part 1
-> (local wheels, index order, `packages.index`) implemented 2026-10-22**, with
-> the choices recorded in §12. §1 describes the code as of `2aefa0e4`, with no
+> [#86](https://github.com/ElliotGarbus/kivyforge/issues/86) (§2).
+> **Implemented 2026-10-22**, both parts, with the choices recorded in §12. §1 describes the code as of `2aefa0e4`, with no
 > line numbers, because the files move.
 
 ## Summary
@@ -811,3 +810,37 @@ Where the code differs from the text above, and why.
 - **Verified against real indexes** on 2026-10-22: `hello-android`'s lock
   resolved through the shim with every package's index recognised (§7 of
   `test-matrix.md`).
+
+### 12.2 Part 2: named indexes and sources
+
+- **Config.** `PackageIndex` and the parsers are in `kivyforge/config/`.
+  `KivyMeta` keeps the indexes and shared pins as declared; each overlay gets
+  its effective `indexes` and `sources` (§3.2) from `_with_sources()` in the
+  loader, after every overlay is parsed. Pins are stored as sorted
+  `(package, index)` tuples, so the lock-inputs hash does not depend on table
+  order.
+- **`sources` is a leaf in the key allow-list** (`keys.py`), not a schema, so a
+  uv-only key such as `git` gets the loader's "kivyforge locks prebuilt wheels"
+  message rather than a generic "unknown key". `[[tool.kivy.index]]` entries are
+  checked by the allow-list as usual.
+- **The warning for an unused explicit index comes from the `lock` verb, not a
+  builder.** It reads every overlay's `sources`, and a builder may read only
+  its own lock inputs (`tests/lock/test_lock_inputs.py` enforces that), so it
+  is emitted before the build, alongside the builder's warnings.
+- **The pinned-local warning is a message only.** §6 gave it `context`
+  (`distribution`, `index`, `ignored`); the builders' `on_warning` callback
+  carries a string, as it does for every other lock warning, so the details
+  are in the message. Adding context to lock warnings is left for when a
+  consumer needs it.
+- **iOS `lock` now takes `on_warning`** and the verb records its warnings, as
+  it already did for the other platforms; before this it had none to report.
+- **Tracked example locks.** The new lock inputs change every
+  `lock_inputs_sha256`, so all four tracked gate locks were updated in this
+  change. The three Android ones (`hello-android`, `hello-sdl3`,
+  `android-services`) were re-locked from Windows with `lock -p android`,
+  keeping their pins: each diff is the hash, `generated_at`, and one `index`
+  line per package, Kivy from kivy-mobile-wheels and the rest from PyPI, with
+  no wheel, hash or version changed. `hello-kivy/pylock.ios.toml` needs a Mac
+  to re-lock, so, as in #126, its one changed line was written from
+  `lock_inputs_sha256()` and checked with `is_in_sync()`; it records no
+  `index` until a Mac re-locks it, which §12.1's old-lock rule allows.

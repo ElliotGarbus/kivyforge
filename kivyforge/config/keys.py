@@ -64,6 +64,9 @@ _OVERLAY_COMMON: dict[str, Spec] = {
     "extra_index_urls": None,
     "find_links": None,
     "exclude": None,
+    # A table of package = { index = "NAME" }; the loader checks each entry,
+    # so a uv-only key gets a message that says why, not "unknown key".
+    "sources": None,
 }
 
 _DESKTOP_COMMON: dict[str, Spec] = {
@@ -223,6 +226,8 @@ TOOL_KIVY: dict[str, Spec] = {
     "display_name": None,
     "entry_point": None,
     "orientation": None,
+    "index": ArrayOf({"name": None, "url": None, "explicit": None}),
+    "sources": None,
     "ios": IOS,
     "macos": MACOS,
     "linux": LINUX,

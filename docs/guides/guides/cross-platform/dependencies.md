@@ -149,9 +149,67 @@ If the directory has a wheel for a package on one ABI but not another, `lock`
 fails with `KF-LOCK-SOURCE-UNAVAILABLE` and names the missing ABI. It does not
 take that ABI's wheel from an index.
 
-To take the package from an index again, remove its wheels from the directory
-and re-lock. `lock --update` alone does not do it: `--update` picks newer
-versions within a package's source, and never changes the source.
+To take the package from an index again, pin it to that index, as the next
+section shows, or remove its wheels from the directory, and re-lock. A pin
+leaves your wheels where they are, so removing the pin switches back.
+`lock --update` alone does not switch: it picks newer versions within a
+package's source, and never changes the source.
+
+## Choose the index a package comes from
+
+When several indexes publish the same package, pin it to the one you want. A
+pinned package comes only from that index, and an index you mark `explicit`
+supplies only the packages pinned to it, so it cannot replace anything else.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release.
+
+1. Declare the index in `[tool.kivy]`, giving it a name:
+
+    ```toml
+    [[tool.kivy.index]]
+    name = "mobile-wheels"
+    url = "https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"
+    explicit = true
+    ```
+
+2. Pin the package to it, for every target in `[tool.kivy.sources]`, or for
+   one target in that target's own `sources` table:
+
+    ```toml
+    [tool.kivy.android.sources]
+    kivy = { index = "mobile-wheels" }
+    ```
+
+3. Re-lock the target:
+
+    ```bash
+    kivyforge lock -p android
+    ```
+
+`pypi` is a built-in index name, so `pyjnius = { index = "pypi" }` holds a
+package to PyPI without declaring anything.
+
+The lock records each package's index in its `index` field, so you can check
+where a package came from in `pylock.<platform>.toml`. If the pinned index has
+no wheel for one of your targets, `lock` fails with
+`KF-LOCK-SOURCE-UNAVAILABLE` instead of taking it from another index.
+
+For every key and rule, see the
+[`[tool.kivy]` reference](../../reference/pyproject/tool-kivy.md#package-indexes-and-sources).
+
+### Switch between your own wheel and an index
+
+A pin outranks `find_links`, so you can keep a patched wheel in your project
+and still choose, package by package, where to take it from:
+
+1. With the wheel in `find_links` and no pin, `lock` uses your wheel, even
+   after `--update`.
+2. To take the index's release instead, for example once it includes your
+   fix, pin the package to the index and re-lock. `lock` warns that it is
+   ignoring your wheel.
+3. To go back to your wheel, remove the pin and re-lock.
 
 ## Prune unused Kivy dependencies
 

@@ -22,6 +22,7 @@ The macOS overlay. For tasks, see [Build a macOS .app](../../guides/macos/build.
 | `extra_index_urls` | list of string | `[]` | Extra package indexes. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `exclude` | list of string | `[]` | Package names to drop from the resolve. |
+| `[sources]` | table | none | Which index a package comes from on this target, as `package = { index = "NAME" }`. An entry replaces the `[tool.kivy.sources]` entry for the same package. See [Package indexes and sources](tool-kivy.md#package-indexes-and-sources). |
 
 ## `[tool.kivy.macos.python]`
 

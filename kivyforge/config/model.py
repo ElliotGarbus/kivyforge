@@ -440,6 +440,16 @@ class SigningConfig:
 
 
 @dataclass(frozen=True)
+class PackageIndex:
+    """One ``[[tool.kivy.index]]`` entry (#86)."""
+
+    name: str
+    url: str
+    #: Serves only the packages pinned to it in ``sources``.
+    explicit: bool = False
+
+
+@dataclass(frozen=True)
 class IosConfig:
     """``[tool.kivy.ios]`` overlay."""
 
@@ -450,6 +460,12 @@ class IosConfig:
     simulator_archs: tuple[str, ...] = DEFAULT_SIMULATOR_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -501,6 +517,12 @@ class MacosConfig:
     archs: tuple[str, ...] = DEFAULT_MACOS_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -546,6 +568,12 @@ class WindowsConfig:
     archs: tuple[str, ...] = DEFAULT_WINDOWS_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -769,6 +797,12 @@ class AndroidConfig:
     abis: tuple[str, ...] = DEFAULT_ANDROID_ABIS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     base_theme: str = DEFAULT_ANDROID_BASE_THEME
     fullscreen: bool = False
@@ -819,6 +853,12 @@ class LinuxConfig:
     archs: tuple[str, ...] = DEFAULT_LINUX_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -848,6 +888,10 @@ class KivyMeta:
     #: ``[tool.kivy].entry_point`` (also when defaulted) or
     #: ``[project.gui-scripts] <name>``.
     entry_origin: str = "[tool.kivy].entry_point"
+    #: ``[[tool.kivy.index]]``, as declared (#86).
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``[tool.kivy.sources]``: ``(package, index name)``, canonical, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
 
     @property
     def entry_spec(self) -> str:

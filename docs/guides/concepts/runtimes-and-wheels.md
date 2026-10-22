@@ -75,26 +75,37 @@ extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 
 !!! note "Preview"
     This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier, pip
-    chose among all sources by version and wheel tag alone, and a wheel in
-    `find_links` lost to an index wheel of the same version.
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
+    there were no pins or named indexes, and pip chose among all sources by
+    version and wheel tag alone, so a wheel in `find_links` lost to an index
+    wheel of the same version.
 
 A package can be available from several places: PyPI, the indexes in
-`extra_index_urls`, and the local directories in `find_links`. When you run
-`kivyforge lock`, kivyforge decides which of them each package may come from,
-with these rules in order:
+`extra_index_urls` and `[[tool.kivy.index]]`, and the local directories in
+`find_links`. When you run `kivyforge lock`, kivyforge decides which of them
+each package may come from. The first rule that applies wins:
 
+1. **The package is pinned in `sources`.** It comes only from the index it is
+   pinned to. Any wheels for it in `find_links` are ignored, and `lock` warns
+   that it ignored them.
 1. **The package has a wheel in `find_links`.** It comes only from
    `find_links`, even when an index has a newer version or a better-matching
    wheel.
-1. **Otherwise**, it can come from any index. pip chooses the newest version
-   the specifier allows, then the wheel that best matches the target. If two
-   indexes still tie, kivyforge takes the one listed first: the
-   `extra_index_urls` in the order you list them, then PyPI.
+1. **Otherwise**, it can come from any index except an `explicit` one. pip
+   chooses the newest version the specifier allows, then the wheel that best
+   matches the target. If two indexes still tie, kivyforge takes the one
+   ranked first: the target's `extra_index_urls` in the order you list them,
+   then the `[[tool.kivy.index]]` entries in the order you declare them, then
+   PyPI.
+
+An index marked `explicit = true` serves only the packages pinned to it. To
+declare indexes and pins, see the
+[`[tool.kivy]` reference](../reference/pyproject/tool-kivy.md#package-indexes-and-sources).
 
 The source and the version are chosen separately. `lock --update` moves a
 package to a newer version within its source. It never moves a package from
-your `find_links` directory to an index, or back.
+your `find_links` directory to an index, or back. To switch a package's
+source, change the configuration: add or remove a pin, or a wheel.
 
 A local wheel applies to every architecture or ABI you lock. If `find_links`
 has a wheel for a package on one ABI but not another, `lock` fails with

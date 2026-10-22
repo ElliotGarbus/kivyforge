@@ -32,8 +32,9 @@ from ..prefer import preferred_pins, resolve_preferring
 from ..sources import (
     SourceUnavailable,
     drop_moved_pins,
+    overlay_policy,
+    pinned_local_warnings,
     source_changes,
-    source_policy,
 )
 from .model import PythonRuntime, WheelRuntimeLock
 from .native_binaries import NativeBinaryResolverError, resolve_native_binaries
@@ -136,7 +137,12 @@ def build_wheel_runtime_lock(
 
     requirements = list(config.project.dependencies)
     extra_index_urls = list(profile.extra_index_urls(config))
-    policy = source_policy(find_links, extra_index_urls, platform=profile.platform)
+    policy = overlay_policy(
+        profile.overlay(config), find_links, platform=profile.platform
+    )
+    if on_warning is not None:
+        for warning in pinned_local_warnings(policy, root):
+            on_warning(warning)
     prefer = tuple(prefer)
 
     def resolve(pins):

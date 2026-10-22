@@ -151,3 +151,77 @@ class TestMobileBuildersPassThePolicy:
         policy = resolver.calls[0][1]["sources"]
         assert policy.platform == "android"
         assert policy.local_names == frozenset({"pyjnius"})
+
+
+class TestPins:
+    def test_android_pin_reaches_the_policy_and_warns_about_hidden_wheels(
+        self, tmp_path
+    ):
+        from kivyforge.platforms.android.lock.builder import build_lockfile
+        from tests.platforms.android.lock.test_lock import (
+            PYPROJECT as ANDROID,
+        )
+        from tests.platforms.android.lock.test_lock import (
+            FakeProvider,
+            FakeResolver,
+            _config,
+            _pkg,
+        )
+
+        (tmp_path / "wheels").mkdir()
+        wheel = "pyjnius-1.7.0-cp314-cp314-android_24_x86_64.whl"
+        (tmp_path / "wheels" / wheel).write_bytes(b"")
+        text = (
+            ANDROID.replace(
+                'package = "org.example.lockapp"',
+                'package = "org.example.lockapp"\nfind_links = ["wheels"]',
+            )
+            + '\n[tool.kivy.android.sources]\npyjnius = { index = "pypi" }\n'
+        )
+        resolver = FakeResolver([_pkg()])
+        warnings: list[str] = []
+        build_lockfile(
+            _config(text),
+            project_root=tmp_path,
+            resolver=resolver,
+            python_provider=FakeProvider(),
+            on_warning=warnings.append,
+        )
+        policy = resolver.calls[0][1]["sources"]
+        assert dict(policy.pins) == {"pyjnius": "pypi"}
+        assert not policy.is_local("pyjnius")
+        (message,) = [w for w in warnings if "pinned" in w]
+        assert "pyjnius is pinned to index 'pypi'" in message
+        assert f"wheels/{wheel}" in message
+        message.encode("cp1252")
+
+    def test_an_unused_explicit_index_is_a_lock_warning(self, fake_linux, tmp_path):
+        text = (
+            PYPROJECT
+            + '\n[[tool.kivy.index]]\nname = "school"\n'
+            + 'url = "https://school.example/simple/"\nexplicit = true\n'
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _project(fs, text)
+            result = runner.invoke(lock, ["-p", "linux", "--json"])
+        assert result.exit_code == 0, result.output
+        assert diagnostics.LOCK_WARNING in result.stdout
+        assert "index 'school' is explicit" in result.stdout
+
+    def test_a_used_explicit_index_is_not_warned_about(self, fake_linux, tmp_path):
+        text = (
+            PYPROJECT
+            + '\n[[tool.kivy.index]]\nname = "school"\n'
+            + 'url = "https://school.example/simple/"\nexplicit = true\n'
+            + '\n[tool.kivy.linux.sources]\nkivy = { index = "school" }\n'
+        )
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _project(fs, text)
+            result = runner.invoke(lock, ["-p", "linux", "--json"])
+        assert result.exit_code == 0, result.output
+        assert "is explicit" not in result.stdout
+        policy = fake_linux.calls[0]["sources"]
+        assert policy.pinned_to("kivy").name == "school"
+        assert "https://school.example/simple/" in policy.extra_index_urls

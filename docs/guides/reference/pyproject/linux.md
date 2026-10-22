@@ -20,6 +20,7 @@ The Linux overlay in `pyproject.toml`. For the task, see
 | `archs` | list of strings | `["x86_64"]` | Target architectures: `x86_64`, `aarch64` (Raspberry Pi). `package` builds the first entry unless you pass `--arch`. |
 | `glibc_floor` | string | `"2.17"` (the runtime's floor) | Minimum glibc on the machines that run the app. Raise it to admit newer-manylinux wheels. `lock` rejects values below 2.17. |
 | `exclude` | list of strings | `[]` | Package names to prune from the dependency resolve. |
+| `[sources]` | table | none | Which index a package comes from on this target, as `package = { index = "NAME" }`. An entry replaces the `[tool.kivy.sources]` entry for the same package. See [Package indexes and sources](tool-kivy.md#package-indexes-and-sources). |
 | `extra_index_urls` | list of strings | `[]` | Extra package indexes to resolve wheels from. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `find_links` | list of strings | `[]` | Project-relative folders that hold local wheels. A package with a wheel here comes only from these folders. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 
