@@ -34,8 +34,8 @@ dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
 | `compile_sdk` | integer | value of `target_sdk` | API level the project compiles against. Must be at least `target_sdk`. |
 | `kivy_generation` | integer | `2` | `2` for Kivy 2.3.1 on SDL2, `3` for Kivy 3.0 on SDL3. Selects the SDL bootstrap only; it does not choose the Kivy version, which comes from `[project].dependencies`. `lock` and `doctor` warn if the two disagree. |
 | `abis` | list of string | `["arm64_v8a", "x86_64"]` | ABIs (application binary interfaces) to build. Only `arm64_v8a` and `x86_64` are accepted. |
-| `extra_index_urls` | list of string | `[]` | Extra package indexes to resolve wheels from, such as the mobile wheel index. |
-| `find_links` | list of string | `[]` | Local directories of wheels. |
+| `extra_index_urls` | list of string | `[]` | Extra package indexes to resolve wheels from, such as the mobile wheel index. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
+| `find_links` | list of string | `[]` | Local directories of wheels. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `exclude` | list of string | `[]` | Dependency names to prune from the resolve. |
 | `base_theme` | string | `"Theme.Material3.DayNight.NoActionBar"` | Parent theme of the generated app theme. |
 | `fullscreen` | bool | `false` | Hide the status bar and the navigation bar. A swipe from the edge shows them for a moment. Replaces buildozer's `fullscreen = 1`. |

@@ -47,6 +47,7 @@ class FakeLinuxResolver:
         find_links=None,
         offline=False,
         constraints=None,
+        sources=None,
     ):
         self.calls.append(
             {
@@ -59,6 +60,7 @@ class FakeLinuxResolver:
                 "find_links": list(find_links or []),
                 "offline": offline,
                 "constraints": dict(constraints or {}),
+                "sources": sources,
             }
         )
         if not requirements:

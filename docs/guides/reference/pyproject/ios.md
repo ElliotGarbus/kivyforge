@@ -22,8 +22,8 @@ converting it. For tasks, see [Configure your iOS app](../../guides/ios/configur
 | `build` | integer | `1` | Build number (`CFBundleVersion`). |
 | `deployment_target` | string | `"16.0"` | Minimum iOS version. Must be inside the range the installed Xcode accepts (15.0 and later for Xcode 27). |
 | `simulator_archs` | list of string | `["arm64"]` | Simulator architectures to pin. `"arm64"` is the only valid value. |
-| `extra_index_urls` | list of string | `[]` | Extra package indexes, such as the mobile wheel index. |
-| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. |
+| `extra_index_urls` | list of string | `[]` | Extra package indexes, such as the mobile wheel index. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
+| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `exclude` | list of string | `[]` | Package names to drop from the resolve. |
 
 ## `[tool.kivy.ios.python]`

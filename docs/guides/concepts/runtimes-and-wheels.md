@@ -6,6 +6,7 @@ sources:
   - docs/design/platforms/android/03-artifact-distribution-android.md
   - docs/design/platforms/ios/03-artifact-distribution-ios.md
   - docs/design/platforms/ios/07-recipe-triage.md
+  - docs/design/dev/package-index-proposal.md
 ---
 
 # Prebuilt runtimes and wheels
@@ -70,6 +71,40 @@ overlay, as the mobile examples do:
 extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 ```
 
+## Where packages come from
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier, pip
+    chose among all sources by version and wheel tag alone, and a wheel in
+    `find_links` lost to an index wheel of the same version.
+
+A package can be available from several places: PyPI, the indexes in
+`extra_index_urls`, and the local directories in `find_links`. When you run
+`kivyforge lock`, kivyforge decides which of them each package may come from,
+with these rules in order:
+
+1. **The package has a wheel in `find_links`.** It comes only from
+   `find_links`, even when an index has a newer version or a better-matching
+   wheel.
+1. **Otherwise**, it can come from any index. pip chooses the newest version
+   the specifier allows, then the wheel that best matches the target. If two
+   indexes still tie, kivyforge takes the one listed first: the
+   `extra_index_urls` in the order you list them, then PyPI.
+
+The source and the version are chosen separately. `lock --update` moves a
+package to a newer version within its source. It never moves a package from
+your `find_links` directory to an index, or back.
+
+A local wheel applies to every architecture or ABI you lock. If `find_links`
+has a wheel for a package on one ABI but not another, `lock` fails with
+`KF-LOCK-SOURCE-UNAVAILABLE` instead of taking the missing one from an index,
+so a lock never mixes your build of a package with someone else's.
+
+Each package in the lockfile records the index its wheels came from, in the
+standard `index` field. A package from `find_links` has a `path` instead. See
+the [lockfile format](../reference/lockfile.md#packages).
+
 ## Integrity
 
 Every artifact is pinned by SHA-256 in the lockfile and verified on download. A
@@ -80,7 +115,8 @@ clears it.
 
 ## What's next
 
-- [Manage dependencies and re-lock](../guides/cross-platform/dependencies.md).
+- [Manage dependencies and re-lock](../guides/cross-platform/dependencies.md),
+  including [using your own wheels](../guides/cross-platform/dependencies.md#use-your-own-wheels).
 - [Ship native binaries](../guides/cross-platform/native-binaries.md) that are not
   wheels.
 - [Lockfiles](lockfiles.md).

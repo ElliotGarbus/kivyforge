@@ -34,7 +34,11 @@ from pathlib import Path
 from typing import Protocol
 
 from kivyforge.lock import _pip_shim
-from kivyforge.lock._pip_shim import MARKER_ENV_VAR
+from kivyforge.lock._pip_shim import (
+    MARKER_ENV_VAR,
+    SOURCE_FILTER_UNAVAILABLE,
+    SOURCE_POLICY_ENV_VAR,
+)
 from kivyforge.lock.model import canonical_name
 from kivyforge.lock.pip_progress import (
     PROGRESS_ARGS,
@@ -50,6 +54,14 @@ from kivyforge.lock.resolver import (
     pip_version,
     unresolved_requirement,
     version_str,
+)
+from kivyforge.lock.sources import (
+    RECORD_KEY,
+    IndexTracker,
+    SourceFilterUnavailable,
+    SourcePolicy,
+    read_record,
+    source_policy,
 )
 from kivyforge.streaming import run_streaming
 
@@ -125,6 +137,7 @@ class Resolver(Protocol):
         offline: bool = False,
         constraints: Pins | None = None,
         simulator_archs: tuple[str, ...] | None = None,
+        sources: SourcePolicy | None = None,
     ) -> list[ResolvedPackage]:
         """Resolve requirements to per-slice iOS wheels (all slices pinned)."""
         ...
@@ -162,6 +175,7 @@ class PipResolver:
         offline: bool = False,
         constraints: Pins | None = None,
         simulator_archs: tuple[str, ...] | None = None,
+        sources: SourcePolicy | None = None,
     ) -> list[ResolvedPackage]:
         if not requirements:
             return []
@@ -172,6 +186,8 @@ class PipResolver:
         # name -> ResolvedPackage (merged across slices)
         merged: dict[str, ResolvedPackage] = {}
         seen_filenames: dict[str, set[str]] = {}
+        policy = sources or source_policy(find_links or [], extra_index_urls)
+        indexes = IndexTracker()
 
         for suffix, tag in zip(suffixes, tags):
             # Markers are evaluated for the *target* slice, not the macOS host
@@ -193,10 +209,14 @@ class PipResolver:
                 offline=offline,
                 constraints=constraints,
                 marker_environment=environment,
+                sources=policy,
             )
             for item in report.get("install", []):
                 self._absorb(item, merged, seen_filenames, environment)
+            indexes.add(report)
 
+        for pkg in merged.values():
+            pkg.source_index = indexes.index_of(pkg.name)
         return list(merged.values())
 
     def _require_modern_pip(self) -> None:
@@ -268,9 +288,12 @@ class PipResolver:
         offline: bool,
         constraints: Pins | None = None,
         marker_environment: dict[str, str],
+        sources: SourcePolicy | None = None,
     ) -> dict:
+        policy = sources or source_policy(find_links, extra_index_urls)
         with tempfile.TemporaryDirectory(prefix="kivy-lock-") as tmp:
             report_path = Path(tmp) / "report.json"
+            record_path = Path(tmp) / "sources.json"
             # Not "-m pip": the shim retargets marker evaluation at the iOS
             # slice first, then runs pip unchanged (see lock/_pip_shim.py).
             cmd = [
@@ -298,7 +321,7 @@ class PipResolver:
             ]
             for abi in abis:
                 cmd += ["--abi", abi]
-            for index in extra_index_urls:
+            for index in policy.extra_index_urls:
                 cmd += ["--extra-index-url", index]
             for link in find_links:
                 cmd += ["--find-links", link]
@@ -309,6 +332,7 @@ class PipResolver:
 
             env = dict(os.environ)
             env[MARKER_ENV_VAR] = json.dumps(marker_environment)
+            env[SOURCE_POLICY_ENV_VAR] = policy.environment(record_path)
             progress = PipProgress(
                 label or platform_tag, self._on_progress, self._on_transfer
             )
@@ -318,16 +342,21 @@ class PipResolver:
                 on_segment=progress,
                 on_quiet=progress.quiet if self._on_progress else None,
             )
+            if returncode == SOURCE_FILTER_UNAVAILABLE:
+                raise SourceFilterUnavailable(without_progress(transcript).strip())
             if returncode != 0:
                 output = without_progress(transcript)
                 culprit = unresolved_requirement(output)
+                fixed = culprit and policy.unavailable(culprit, platform_tag)
+                if fixed:
+                    raise fixed
                 what = (
                     f"no wheel for {culprit!r}"
                     if culprit
                     else "a dependency has no wheel for that slice upstream"
                 )
                 hint = ""
-                if not any("kivy-mobile-wheels" in u for u in extra_index_urls):
+                if not any("kivy-mobile-wheels" in u for u in policy.extra_index_urls):
                     hint = (
                         "  If it is kivy or pyobjus, add the first-party mobile "
                         "wheel index under [tool.kivy.ios]:\n"
@@ -342,9 +371,11 @@ class PipResolver:
             try:
                 # pip writes the report as UTF-8; never trust the locale codec
                 # (cp1252 on Windows chokes on non-ASCII package metadata).
-                return json.loads(report_path.read_text(encoding="utf-8"))
+                report = json.loads(report_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise ResolverError(f"could not read pip report: {exc}") from exc
+            report[RECORD_KEY] = read_record(record_path)
+            return report
 
 
 def get_resolver(backend: str = "pip", **kwargs) -> Resolver:

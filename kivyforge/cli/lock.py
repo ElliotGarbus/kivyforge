@@ -22,8 +22,8 @@ import click
 
 from ..config import ConfigError, load_config
 from ..lock.inputs import is_in_sync
-from ..lock.prefer import PinsConflict
 from ..lock.reader import LockError
+from ..lock.sources import ignore_unrecorded_indexes
 from ..platforms.ios.lock import (
     BuildError,
     build_lockfile,
@@ -33,6 +33,7 @@ from ..platforms.ios.lock import (
     semantic_equal,
 )
 from ..report import Diagnostic, Report, diagnostics, exit_codes
+from ..report.failures import ClassifiedError
 from ._common import ToolchainError, lockfile_path_for
 from ._output import output_options, reporting
 from ._platform import platform_option, resolve_target
@@ -289,6 +290,8 @@ def _run_check(
         prefer=existing.packages,
         prefer_runtime=getattr(existing, "python_runtime", None),
     )
+    # A lock from before #86 records no index; that alone is not drift.
+    candidate = ignore_unrecorded_indexes(existing, candidate)
     if ops.semantic_equal(existing, candidate):
         report.line(f"{out_path.name} is up to date.")
         report.emit(
@@ -349,7 +352,9 @@ def _build(
             offline=offline,
             **kwargs,
         )
-    except (ops.build_error, PinsConflict) as exc:
+    except (ops.build_error, ClassifiedError) as exc:
+        # ClassifiedError: a failure the lock layer classified itself
+        # (KF-LOCK-PINS-CONFLICT, KF-LOCK-SOURCE-UNAVAILABLE, ...).
         raise ToolchainError.wrap(exc) from exc
 
 

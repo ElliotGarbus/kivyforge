@@ -19,8 +19,8 @@ The macOS overlay. For tasks, see [Build a macOS .app](../../guides/macos/build.
 | `build` | integer | `1` | Build number. |
 | `minimum_system_version` | string | `"11.0"` | Minimum macOS version (`LSMinimumSystemVersion`). Must not be below the bundled runtime's floor. |
 | `archs` | list of string | `["arm64"]` | Build architectures. `"arm64"` is the only valid value; `"x86_64"` is rejected. `universal2` wheels are still accepted as dependencies. |
-| `extra_index_urls` | list of string | `[]` | Extra package indexes. |
-| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. |
+| `extra_index_urls` | list of string | `[]` | Extra package indexes. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
+| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `exclude` | list of string | `[]` | Package names to drop from the resolve. |
 
 ## `[tool.kivy.macos.python]`

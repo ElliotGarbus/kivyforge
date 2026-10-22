@@ -78,7 +78,7 @@ Proposed field set (finalized in implementation):
 | `minimum_system_version` | string | no | *(runtime floor)* | `LSMinimumSystemVersion`; must be ≥ the bundled runtime's floor. |
 | `archs` | list of string | no | `["arm64"]` | Target architecture the lock must cover. **`arm64` is the only allowed value**; `x86_64` is rejected with a migration message. Kept list-shaped for symmetry with the other platforms. Drives the required macOS wheel tags and the runtime pin. See ["Architectures"](#architectures-archs) below. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (macOS tags), same semantics as iOS. |
-| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
+| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. A package with any wheel here comes only from `find_links`, on every arch ([package-index-proposal §3](../../dev/package-index-proposal.md#3-behaviour-and-config)). |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
 
 Icons: `[tool.kivy.macos.icons].source` (1024×1024 PNG) is converted to a macOS

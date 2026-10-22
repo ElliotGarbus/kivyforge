@@ -25,6 +25,23 @@ def _build(toml, resolver, provider, **kw):
     return build_lockfile(cfg, resolver=resolver, python_provider=provider, **kw)
 
 
+class TestSourcePolicy:
+    def test_builder_passes_the_ios_policy(
+        self, minimal_pyproject, fake_resolver, fake_python_provider
+    ):
+        captured = {}
+        real = fake_resolver.resolve
+
+        def resolve(requirements, **kwargs):
+            captured.update(kwargs)
+            return real(requirements, **kwargs)
+
+        fake_resolver.resolve = resolve
+        _build(minimal_pyproject, fake_resolver, fake_python_provider)
+        assert captured["sources"].platform == "ios"
+        assert captured["sources"].rank[-1].name == "pypi"
+
+
 class TestBuild:
     def test_pins_both_slices_for_compiled(
         self, minimal_pyproject, fake_resolver, fake_python_provider

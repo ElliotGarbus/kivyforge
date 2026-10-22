@@ -6,6 +6,7 @@ sources:
   - kivyforge/cli/lock.py
   - kivyforge/lock/reader.py
   - kivyforge/platforms/android/lock/builder.py
+  - docs/design/dev/package-index-proposal.md
   - FAQ.md
 ---
 
@@ -110,8 +111,47 @@ only on targets that have a matching wheel: `macosx_*`, `manylinux_*`,
 fails for that target. See
 [Prebuilt runtimes and wheels](../../concepts/runtimes-and-wheels.md).
 
-To add an index or a local directory of wheels, use `extra_index_urls` or
-`find_links` in the target's overlay.
+To add an index, list it in the target overlay's `extra_index_urls`. When two
+indexes offer the same version of a package, the one listed first wins. See
+[Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from).
+
+## Use your own wheels
+
+When you build a wheel yourself, for example a patched Kivy, put it in a
+directory in your project and list that directory in `find_links`. A package
+with a wheel there comes only from there, even when an index publishes a newer
+version.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier, an
+    index wheel of the same or a newer version replaced your local wheel.
+
+1. Copy the wheels into a directory inside your project, such as `wheels/`.
+   Include one wheel for each architecture or ABI you lock.
+2. List the directory in the target's overlay:
+
+    ```toml
+    [tool.kivy.android]
+    find_links = ["wheels"]
+    ```
+
+3. Re-lock the target:
+
+    ```bash
+    kivyforge lock -p android
+    ```
+
+The lock records each local wheel with a project-relative `path`. Commit the
+wheels with the lock, because `build` installs from that path.
+
+If the directory has a wheel for a package on one ABI but not another, `lock`
+fails with `KF-LOCK-SOURCE-UNAVAILABLE` and names the missing ABI. It does not
+take that ABI's wheel from an index.
+
+To take the package from an index again, remove its wheels from the directory
+and re-lock. `lock --update` alone does not do it: `--update` picks newer
+versions within a package's source, and never changes the source.
 
 ## Prune unused Kivy dependencies
 

@@ -33,6 +33,12 @@ from kivyforge.lock.model import (
     canonical_name,
 )
 from kivyforge.lock.prefer import preferred_pins, resolve_preferring
+from kivyforge.lock.sources import (
+    SourceUnavailable,
+    drop_moved_pins,
+    source_changes,
+    source_policy,
+)
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
 
@@ -249,6 +255,9 @@ def build_lockfile(
     requirements = list(config.project.dependencies)
     check_kivy_requirements(requirements, python_version=python_version)
 
+    policy = source_policy(find_links, ios.extra_index_urls, platform="ios")
+    prefer = tuple(prefer)
+
     def resolve(pins):
         return resolver.resolve(
             requirements,
@@ -259,13 +268,14 @@ def build_lockfile(
             offline=offline,
             simulator_archs=tuple(ios.simulator_archs),
             constraints=pins,
+            sources=policy,
         )
 
     try:
         resolved = resolve_preferring(
             resolve,
-            preferred_pins(prefer, requirements),
-            errors=(ResolverError,),
+            drop_moved_pins(preferred_pins(prefer, requirements), prefer, policy),
+            errors=(ResolverError, SourceUnavailable),
             platform="ios",
         )
     except ResolverError as exc:
@@ -558,6 +568,7 @@ def diff_summary(old: Lockfile, new: Lockfile) -> list[str]:
                 f"  ~ {new_pkgs[name].name}: "
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
+    out.extend(source_changes(old.packages, new.packages))
     if old.python_xcframework.version != new.python_xcframework.version:
         out.append(
             f"  ~ Python.xcframework: {old.python_xcframework.version} -> "

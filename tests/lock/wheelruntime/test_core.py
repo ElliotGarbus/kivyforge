@@ -88,6 +88,7 @@ class FakeResolver:
         find_links=None,
         offline=False,
         constraints=None,
+        sources=None,
     ):
         wheels = [
             ResolvedWheel(

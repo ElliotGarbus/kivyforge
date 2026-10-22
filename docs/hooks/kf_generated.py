@@ -61,6 +61,14 @@ _DIAGNOSTIC = {
         "Run `kivyforge lock -p <platform> --update` to take the newest version "
         "of everything, or pin the package that has to move.",
     ),
+    "KF-LOCK-SOURCE-UNAVAILABLE": (
+        "error",
+        "A package that comes from one source only (it has a wheel in "
+        "`find_links`) has no wheel there for one of the targets being locked. "
+        "kivyforge does not fall back to another source.",
+        "Add the missing wheel to the `find_links` directory, or remove the "
+        "package's wheels to take it from an index.",
+    ),
     "KF-LOCK-MISSING": (
         "error",
         "No `pylock.<platform>.toml` exists for the target.",
