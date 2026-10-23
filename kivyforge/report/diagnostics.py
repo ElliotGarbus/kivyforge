@@ -99,6 +99,30 @@ BUILD_TOOL_FAILED = "KF-BUILD-TOOL-FAILED"
 #: A build tool reported success but the product is not where it should be.
 ARTIFACT_MISSING = "KF-ARTIFACT-MISSING"
 
+#: The product exists, but a file the user asked for (``include_files``) is
+#: missing from it or differs from its pin: a tool converted, stripped or
+#: dropped it. Exit 5, and the product is not reported. ``context`` names the
+#: ``path`` in the bundle, the ``source``, the ``artifact``, and the
+#: ``expected`` and ``actual`` SHA-256 (``actual`` is null for a missing file).
+ARTIFACT_CONTENT = "KF-ARTIFACT-CONTENT"
+
+#: An ``include_files`` file would replace something the generated build puts
+#: in the app (Android's Gradle files, iOS's ``Info.plist``, macOS's
+#: ``Resources/app/``), or (iOS) has a code-bundle name such as
+#: ``X.framework``. Exit 1. ``context`` names the ``path`` and the ``source``.
+INCLUDE_RESERVED = "KF-INCLUDE-RESERVED"
+
+#: iOS, macOS: an ``include_files`` file is native code, a Mach-O or a static
+#: archive, which belongs in the platform's native-code key instead. Exit 1.
+#: ``context`` names the ``path`` and the ``source``.
+INCLUDE_NATIVE_CODE = "KF-INCLUDE-NATIVE-CODE"
+
+#: iOS, macOS: an ``include_files`` path is a source format that only works
+#: compiled (``.xcstrings``, ``.storyboard``, ``.xib``, ``.xcassets``), which
+#: would ship verbatim and do nothing. Exit 1. ``context`` names the ``path``
+#: and the ``source``.
+INCLUDE_SOURCE_FORMAT = "KF-INCLUDE-SOURCE-FORMAT"
+
 #: A required tool is not installed: spawning it raised ``FileNotFoundError``,
 #: or a pre-flight found it absent (Android: no ``java``, or a JRE's missing
 #: ``javac``). ``context`` names the ``tool``.
@@ -235,8 +259,9 @@ class Diagnostic:
     message: str
     remediation: str = ""
     #: Free-form, code-specific context. Kept separate from the top-level
-    #: fields so adding context is never a schema change.
-    context: dict[str, str] = field(default_factory=dict)
+    #: fields so adding context is never a schema change. ``None`` is a value
+    #: that is known to be absent, emitted as JSON ``null``.
+    context: dict[str, str | None] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {

@@ -450,6 +450,18 @@ class PackageIndex:
 
 
 @dataclass(frozen=True)
+class IncludeFile:
+    """One ``[[tool.kivy.<platform>.include_files]]`` entry.
+
+    ``dest`` is relative to the platform's root (Android: the generated Gradle
+    project; iOS: the ``.app``; macOS: ``Contents/``) and already normalized.
+    """
+
+    dest: str
+    sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class IosConfig:
     """``[tool.kivy.ios]`` overlay."""
 
@@ -651,12 +663,8 @@ class AndroidGradleConfig:
     plugins: tuple[tuple[str, str], ...] = ()
 
 
-@dataclass(frozen=True)
-class AndroidIncludeFile:
-    """One ``[[tool.kivy.android.include_files]]`` entry."""
-
-    dest: str
-    sources: tuple[str, ...]
+#: The name Android's entries had before iOS and macOS shared them.
+AndroidIncludeFile = IncludeFile
 
 
 @dataclass(frozen=True)
@@ -813,7 +821,7 @@ class AndroidConfig:
     aars: tuple[AndroidArchiveDep, ...] = ()
     jars: tuple[AndroidArchiveDep, ...] = ()
     gradle: AndroidGradleConfig = field(default_factory=AndroidGradleConfig)
-    include_files: tuple[AndroidIncludeFile, ...] = ()
+    include_files: tuple[IncludeFile, ...] = ()
     src: AndroidSrcConfig = field(default_factory=AndroidSrcConfig)
     services: tuple[AndroidService, ...] = ()
     activities: tuple[AndroidActivity, ...] = ()

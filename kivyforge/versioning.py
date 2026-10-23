@@ -242,7 +242,10 @@ def check_apple_version(
     """
     if platform not in ("ios", "macos") or not exports or apple_conforms(version.value):
         return None
-    context = {"version": version.value, "export_method": export_method or ""}
+    context: dict[str, str | None] = {
+        "version": version.value,
+        "export_method": export_method or "",
+    }
     if platform == "ios" and export_method == "app-store":
         raise AppleVersionRejected(
             f"version {version.value!r} cannot be uploaded to App Store Connect, "

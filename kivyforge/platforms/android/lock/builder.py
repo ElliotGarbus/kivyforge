@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kivyforge import __version__
+from kivyforge.artifacts import include_files
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.find_links import (
@@ -341,54 +342,22 @@ def refresh_include_files(
 ) -> AndroidLockfile:
     """``lock`` with its ``include_files`` pins re-hashed from disk.
 
-    Returns ``lock`` itself when no pin changed. ``lock_inputs_sha256`` records
-    an include's paths, not the contents or a directory's files, so an edited
-    include leaves the lock in sync while the build refuses to stage it. The
-    pins depend on nothing that was resolved, so rewriting them alone is a
-    complete re-lock for that change.
+    Returns ``lock`` itself when no pin changed (``include_files.refresh``).
     """
-    pins = tuple(_hash_include_files(config.android_required, project_root.resolve()))
-    if pins == _normalized(lock).include_files:
-        return lock
-    return dataclasses.replace(
-        lock,
-        include_files=pins,
-        generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    )
+    try:
+        return include_files.refresh(
+            lock, config, project_root=project_root, platform="android", now=now
+        )
+    except include_files.IncludeFilesError as exc:
+        raise BuildError(str(exc)) from exc
 
 
 def _hash_include_files(android: AndroidConfig, root: Path) -> list[LockedIncludeFile]:
     """One pin per staged file; a directory source expands to its files."""
-    pins: list[LockedIncludeFile] = []
-    for entry in android.include_files:
-        for source in entry.sources:
-            local = (root / source).resolve()
-            if local.is_dir():
-                for child in sorted(local.rglob("*")):
-                    if child.is_file():
-                        rel = (Path(source) / child.relative_to(local)).as_posix()
-                        pins.append(
-                            LockedIncludeFile(
-                                source=rel,
-                                dest=entry.dest,
-                                sha256=sha256_file(child),
-                            )
-                        )
-            elif local.is_file():
-                pins.append(
-                    LockedIncludeFile(
-                        source=Path(source).as_posix(),
-                        dest=entry.dest,
-                        sha256=sha256_file(local),
-                    )
-                )
-            else:
-                raise BuildError(
-                    f"include_files source does not exist: {source} "
-                    f"(resolved to {local})"
-                )
-    pins.sort(key=lambda p: (p.dest, p.source))
-    return pins
+    try:
+        return include_files.hash_pins(android.include_files, root)
+    except include_files.IncludeFilesError as exc:
+        raise BuildError(str(exc)) from exc
 
 
 def _locked_wheel_from_resolved(w, *, project_root: Path) -> LockedWheel:
@@ -535,27 +504,7 @@ def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
     new_rt = {r.abi: r.version for r in new.python_android}
     if old_rt != new_rt:
         out.append(f"  ~ python.org Android runtime: {old_rt} -> {new_rt}")
-    out.extend(_include_changes(old.include_files, new.include_files))
-    return out
-
-
-def _include_changes(
-    old: Sequence[LockedIncludeFile], new: Sequence[LockedIncludeFile]
-) -> list[str]:
-    old_pins = {(p.dest, p.source): p.sha256 for p in old}
-    new_pins = {(p.dest, p.source): p.sha256 for p in new}
-    out: list[str] = []
-    for key in sorted(old_pins.keys() | new_pins.keys()):
-        dest, source = key
-        if key not in old_pins:
-            change = "added"
-        elif key not in new_pins:
-            change = "removed"
-        elif old_pins[key] != new_pins[key]:
-            change = "changed"
-        else:
-            continue
-        out.append(f"  ~ include_files: {source} -> {dest} ({change})")
+    out += include_files.pin_changes(old.include_files, new.include_files)
     return out
 
 

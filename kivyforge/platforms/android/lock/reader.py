@@ -11,6 +11,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from kivyforge.lock.pep751 import parse_include_file
 from kivyforge.lock.pep751 import parse_package as _parse_package
 from kivyforge.lock.reader import LockError
 
@@ -22,7 +23,6 @@ from .model import (
     GradlePins,
     GradleResolvedModule,
     LockedAndroidLib,
-    LockedIncludeFile,
     PythonAndroidRuntime,
 )
 
@@ -77,7 +77,7 @@ def _from_raw(raw: dict) -> AndroidLockfile:
     android_libs = tuple(_parse_lib(x) for x in _as_list(tool, "android_libs"))
     gradle = _parse_gradle(tool.get("gradle"))
     include_files = tuple(
-        _parse_include_file(f) for f in _as_list(tool, "include_files")
+        parse_include_file(f) for f in _as_list(tool, "include_files")
     )
 
     kivy_generation = tool.get("kivy_generation", 2)
@@ -152,12 +152,6 @@ def _parse_gradle(table: object) -> GradlePins:
         repositories=tuple(table.get("repositories", [])),
         platforms=tuple(table.get("platforms", [])),
         resolved=resolved,
-    )
-
-
-def _parse_include_file(entry: dict) -> LockedIncludeFile:
-    return LockedIncludeFile(
-        source=entry["source"], dest=entry["dest"], sha256=entry["sha256"]
     )
 
 

@@ -16,6 +16,11 @@
   instead of saying the lock is out of date and listing nothing, and
   `status -p android` reports the lock as out of date when an include file has
   drifted.
+- **Changed:** an include that would replace the generated manifest or a
+  Gradle file is now reported as `KF-INCLUDE-RESERVED` instead of `KF-ERROR`.
+  The exit status is still 1 and the message is unchanged.
+- **Migration:** a consumer that branched on `KF-ERROR` for the overwrite
+  refusal should branch on `KF-INCLUDE-RESERVED`. Nothing else is needed.
 
 ### Choose which index each package comes from
 
