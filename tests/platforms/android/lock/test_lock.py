@@ -500,6 +500,27 @@ class TestDiffSummary:
         old = _sample_lockfile()
         assert builder_mod.diff_summary(old, old) == []
 
+    def test_include_files_changes_are_named(self):
+        """``--check`` used to say "out of date:" and list nothing when only an
+        include had changed."""
+        pin = LockedIncludeFile(source="a.json", dest="app", sha256="1" * 64)
+        old = dataclasses.replace(
+            _sample_lockfile(),
+            include_files=(pin, dataclasses.replace(pin, source="gone.json")),
+        )
+        new = dataclasses.replace(
+            old,
+            include_files=(
+                dataclasses.replace(pin, sha256="2" * 64),
+                dataclasses.replace(pin, source="new.json"),
+            ),
+        )
+        assert builder_mod.diff_summary(old, new) == [
+            "  ~ include_files: a.json -> app (changed)",
+            "  ~ include_files: gone.json -> app (removed)",
+            "  ~ include_files: new.json -> app (added)",
+        ]
+
 
 class TestSemanticEqual:
     """A freshly-resolved lock lists packages/android_libs/gradle.resolved in

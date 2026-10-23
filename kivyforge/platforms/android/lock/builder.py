@@ -332,6 +332,31 @@ def _resolve_runtimes(
     return runtimes
 
 
+def refresh_include_files(
+    lock: AndroidLockfile,
+    config: Config,
+    *,
+    project_root: Path,
+    now: datetime | None = None,
+) -> AndroidLockfile:
+    """``lock`` with its ``include_files`` pins re-hashed from disk.
+
+    Returns ``lock`` itself when no pin changed. ``lock_inputs_sha256`` records
+    an include's paths, not the contents or a directory's files, so an edited
+    include leaves the lock in sync while the build refuses to stage it. The
+    pins depend on nothing that was resolved, so rewriting them alone is a
+    complete re-lock for that change.
+    """
+    pins = tuple(_hash_include_files(config.android_required, project_root.resolve()))
+    if pins == _normalized(lock).include_files:
+        return lock
+    return dataclasses.replace(
+        lock,
+        include_files=pins,
+        generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+
+
 def _hash_include_files(android: AndroidConfig, root: Path) -> list[LockedIncludeFile]:
     """One pin per staged file; a directory source expands to its files."""
     pins: list[LockedIncludeFile] = []
@@ -510,6 +535,27 @@ def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
     new_rt = {r.abi: r.version for r in new.python_android}
     if old_rt != new_rt:
         out.append(f"  ~ python.org Android runtime: {old_rt} -> {new_rt}")
+    out.extend(_include_changes(old.include_files, new.include_files))
+    return out
+
+
+def _include_changes(
+    old: Sequence[LockedIncludeFile], new: Sequence[LockedIncludeFile]
+) -> list[str]:
+    old_pins = {(p.dest, p.source): p.sha256 for p in old}
+    new_pins = {(p.dest, p.source): p.sha256 for p in new}
+    out: list[str] = []
+    for key in sorted(old_pins.keys() | new_pins.keys()):
+        dest, source = key
+        if key not in old_pins:
+            change = "added"
+        elif key not in new_pins:
+            change = "removed"
+        elif old_pins[key] != new_pins[key]:
+            change = "changed"
+        else:
+            continue
+        out.append(f"  ~ include_files: {source} -> {dest} ({change})")
     return out
 
 

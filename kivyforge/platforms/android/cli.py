@@ -1470,6 +1470,8 @@ def android_status(project_root: Path) -> StatusReport:
     from kivyforge.lock.model import canonical_name
     from kivyforge.lock.reader import LockError
 
+    from .lock.builder import refresh_include_files
+
     config, _ = _load_config_only(project_root)
     android = config.android_required
 
@@ -1486,6 +1488,8 @@ def android_status(project_root: Path) -> StatusReport:
             state = (
                 LockState.IN_SYNC
                 if is_in_sync(lock, config, "android")
+                and refresh_include_files(lock, config, project_root=project_root)
+                is lock
                 else LockState.OUT_OF_DATE
             )
         except LockError:

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Android: plain `lock` accepts an edited `include_files` file
+
+- **Fixed:** after you edited a file listed in
+  `[[tool.kivy.android.include_files]]`, or added or deleted a file in a
+  directory source, `build` told you to run `kivyforge lock -p android`, and
+  that command said the lock was already in sync and changed nothing
+  ([#176](https://github.com/ElliotGarbus/kivyforge/issues/176)). Only
+  `lock --update` got out, and it moved every package to its newest version.
+  Plain `lock` now re-hashes the include files and, if any changed, rewrites
+  just those hashes: nothing is re-resolved and no network is used.
+- **Fixed:** `lock --check` names each changed include file in its diff,
+  instead of saying the lock is out of date and listing nothing, and
+  `status -p android` reports the lock as out of date when an include file has
+  drifted.
+
 ### Choose which index each package comes from
 
 - **Added:** name an index once in `[[tool.kivy.index]]` (`name`, `url`, and
