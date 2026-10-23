@@ -200,9 +200,12 @@ jobs:
       # / 10.0.26100.0, loaded via vcvarsall — not "latest") holds code
       # generation steady on top of it. If this fails with "cl not found" / a
       # vcvars error the runner image dropped that exact pair; if it fails with a
-      # byte mismatch the C source or the compile/link flags changed without
-      # re-vendoring. Either way: Actions → Run workflow (`revendor_launcher`)
-      # to re-pin against the runner's current defaults.
+      # byte mismatch the C source, the compile/link flags or the pin changed
+      # without re-vendoring (TOOLSET.txt's `inputs:` hash no longer matches).
+      # Either way: Actions → Run workflow (`revendor_launcher`). A mismatch with
+      # unchanged inputs is the runner image's toolchain, not ours: it passes
+      # with a "Launcher toolchain drift" warning; re-vendor once the new image
+      # has fully rolled out (windows-spec.md, "Toolchain drift").
       run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
     - name: Exercise the launcher end-to-end (spawn/argv/exit-code/env)
       # These tests self-skip without MSVC, which on this job would be a green run
