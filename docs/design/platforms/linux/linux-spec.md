@@ -121,7 +121,7 @@ strip_source = "release"   # "release" | true | false — drop .py once byte-com
 | `glibc_floor` | string | no | *(runtime floor, 2.17)* | The Linux analog of macOS `minimum_system_version`. `None` means the runtime's own glibc floor (2.17) applies. Setting it *higher* (e.g. `"2.28"`) admits newer-manylinux-only wheels at the cost of raising the artifact's host floor. A value *below* the runtime floor is the same config-time error macOS raises via `floor_error`. |
 | `archs` | list of string | no | `["x86_64"]` | Target architecture set: `x86_64` (native) and/or `aarch64` (cross-only from an x86_64 Linux host; Raspberry Pi target). Unlike macOS there is **no fat binary** — each arch is a separate AppImage. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (manylinux tags), same semantics as iOS/macOS. |
-| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
+| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. A package with any wheel here comes only from `find_links`, on every arch ([package-index-proposal §3](../../dev/package-index-proposal.md#3-behaviour-and-config)). |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
 
 Icons: `[tool.kivy.linux.icons].source` (1024×1024 PNG) is resized into the

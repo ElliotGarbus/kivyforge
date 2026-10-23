@@ -29,6 +29,12 @@ from ..find_links import (
 from ..inputs import lock_inputs_sha256
 from ..model import LockedPackage, LockedWheel, PackageDep, canonical_name
 from ..prefer import preferred_pins, resolve_preferring
+from ..sources import (
+    SourceUnavailable,
+    drop_moved_pins,
+    source_changes,
+    source_policy,
+)
 from .model import PythonRuntime, WheelRuntimeLock
 from .native_binaries import NativeBinaryResolverError, resolve_native_binaries
 from .profile import PlatformLockProfile
@@ -130,6 +136,8 @@ def build_wheel_runtime_lock(
 
     requirements = list(config.project.dependencies)
     extra_index_urls = list(profile.extra_index_urls(config))
+    policy = source_policy(find_links, extra_index_urls, platform=profile.platform)
+    prefer = tuple(prefer)
 
     def resolve(pins):
         return resolver.resolve(
@@ -140,13 +148,14 @@ def build_wheel_runtime_lock(
             find_links=find_links,
             offline=offline,
             constraints=pins,
+            sources=policy,
         )
 
     try:
         resolved = resolve_preferring(
             resolve,
-            preferred_pins(prefer, requirements),
-            errors=(WheelResolverError,),
+            drop_moved_pins(preferred_pins(prefer, requirements), prefer, policy),
+            errors=(WheelResolverError, SourceUnavailable),
             platform=profile.platform,
         )
     except WheelResolverError as exc:
@@ -348,6 +357,7 @@ def diff_summary(old: WheelRuntimeLock, new: WheelRuntimeLock) -> list[str]:
                 f"  ~ {new_pkgs[name].name}: "
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
+    out.extend(source_changes(old.packages, new.packages))
     if old.python_runtime.version != new.python_runtime.version:
         out.append(
             f"  ~ python runtime: {old.python_runtime.version} -> "

@@ -16,6 +16,7 @@ import pytest
 
 import kivyforge.platforms.ios.lock.resolver as pip_resolver
 from kivyforge.lock.resolver import _dep_names
+from kivyforge.lock.sources import RECORD_KEY
 from kivyforge.platforms.ios.lock.markers import ios_marker_environment
 from kivyforge.platforms.ios.lock.resolver import (
     MIN_PIP_VERSION,
@@ -493,7 +494,7 @@ class TestPipResolverRunReport:
             offline=False,
             marker_environment=_TARGET_ENV,
         )
-        assert result == report_data
+        assert result == {**report_data, RECORD_KEY: {}}
 
     def test_nonzero_returncode_raises(self, monkeypatch):
         def fake_run(cmd, **kw):
@@ -687,6 +688,7 @@ class TestPipResolverResolve:
             offline,
             marker_environment,
             constraints=None,
+            sources=None,
         ):
             return {"install": next(call_iter)}
 
@@ -726,6 +728,7 @@ class TestPipResolverResolve:
             offline,
             marker_environment,
             constraints=None,
+            sources=None,
         ):
             return {"install": next(call_iter)}
 
@@ -774,6 +777,7 @@ class TestPipResolverResolve:
             offline,
             marker_environment,
             constraints=None,
+            sources=None,
         ):
             return {"install": next(call_iter, [])}
 

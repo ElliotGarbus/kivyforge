@@ -33,6 +33,12 @@ from kivyforge.lock.model import (
     canonical_name,
 )
 from kivyforge.lock.prefer import preferred_pins, resolve_preferring
+from kivyforge.lock.sources import (
+    SourceUnavailable,
+    drop_moved_pins,
+    source_changes,
+    source_policy,
+)
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
 
@@ -173,6 +179,9 @@ def build_lockfile(
     # Never excludable: an app without it crashes at launch.
     excluded.discard(PYJNIUS)
 
+    policy = source_policy(find_links, android.extra_index_urls, platform="android")
+    prefer = tuple(prefer)
+
     def resolve(pins):
         return resolver.resolve(
             requirements,
@@ -183,6 +192,7 @@ def build_lockfile(
             find_links=find_links,
             offline=offline,
             constraints=pins,
+            sources=policy,
         )
 
     try:
@@ -190,8 +200,8 @@ def build_lockfile(
         # kivyforge adds can release a locked pyjnius too.
         resolved = resolve_preferring(
             resolve,
-            preferred_pins(prefer, requirements),
-            errors=(ResolverError,),
+            drop_moved_pins(preferred_pins(prefer, requirements), prefer, policy),
+            errors=(ResolverError, SourceUnavailable),
             platform="android",
         )
     except ResolverError as exc:
@@ -491,6 +501,7 @@ def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
                 f"  ~ {new_pkgs[name].name}: "
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
+    out.extend(source_changes(old.packages, new.packages))
     old_rt = {r.abi: r.version for r in old.python_android}
     new_rt = {r.abi: r.version for r in new.python_android}
     if old_rt != new_rt:

@@ -21,8 +21,8 @@ The Windows overlay in `pyproject.toml`. For the task, see
 | `app_id` | string | Required | AppUserModelID. No spaces, at most 128 characters. `doctor` warns unless it uses the `CompanyName.ProductName` style, such as `Example.MyApp`. |
 | `archs` | list of strings | `["amd64"]` | Target architectures. Only `amd64` is accepted. |
 | `exclude` | list of strings | `[]` | Package names to prune from the dependency resolve. |
-| `extra_index_urls` | list of strings | `[]` | Extra package indexes to resolve wheels from. |
-| `find_links` | list of strings | `[]` | Project-relative folders that hold local wheels. |
+| `extra_index_urls` | list of strings | `[]` | Extra package indexes to resolve wheels from. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
+| `find_links` | list of strings | `[]` | Project-relative folders that hold local wheels. A package with a wheel here comes only from these folders. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 
 ## Sub-tables
 

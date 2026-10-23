@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kivyforge.lock import pip_progress
+from kivyforge.lock.sources import RECORD_KEY
 from kivyforge.platforms.android.lock import resolver as resolver_mod
 from kivyforge.platforms.android.lock.markers import android_marker_environment
 from kivyforge.platforms.android.lock.resolver import (
@@ -325,7 +326,7 @@ class TestPipResolverRunReport:
             offline=False,
             marker_environment=_TARGET_ENV,
         )
-        assert result == report_data
+        assert result == {**report_data, RECORD_KEY: {}}
 
     def test_nonzero_returncode_raises(self, monkeypatch):
         def fake_run(cmd, **kw):

@@ -40,6 +40,7 @@ class FakeResolver:
         offline=False,
         constraints=None,
         simulator_archs=None,
+        sources=None,
     ):
         self.calls.append(
             {

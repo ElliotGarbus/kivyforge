@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Your own wheels win, and the first-listed index wins a tie
+
+- **Changed:** a package with any wheel in a `find_links` directory now comes
+  only from `find_links`, on every architecture or ABI, even when an index has
+  a newer version or a better-matching wheel
+  ([#86](https://github.com/ElliotGarbus/kivyforge/issues/86)). pip ranks
+  candidates by version and wheel tag, never by source, so a patched wheel you
+  built yourself used to lose to an index wheel of the same version.
+  `lock --update` moves a local package to a newer version only when a newer
+  wheel is in the directory. If the directory has a wheel for some ABIs but
+  not others, `lock` fails with the new `KF-LOCK-SOURCE-UNAVAILABLE` instead
+  of filling the gap from an index.
+- **Changed:** when two indexes offer the same version of a package with
+  equally good wheels, the one listed first in `extra_index_urls` wins, and
+  PyPI ranks last. pip took the one listed last, which read as backwards. A
+  newer version or a better-matching wheel still wins whatever its index's
+  position.
+- **Added:** each package in `pylock.<platform>.toml` records the index its
+  wheels came from, in PEP 751's standard `index` key, so a package that
+  changes index shows up in the lock diff and in `lock --check`. The unused
+  `[packages.tool.kivyforge] source_index` key is no longer written.
+- **Changed:** desktop locks now run pip through the same shim as Android and
+  iOS, which applies these rules. Markers are still evaluated for the host,
+  as before.
+- **Migration:** none needed for most projects. Existing locks stay valid:
+  `lock --check` does not count a missing `index` as drift, and the next
+  re-lock adds it. A project whose `find_links` directory holds an older
+  version of a package that an index also ships gets the local one at its
+  next re-lock; remove the wheel to keep the index version. A project with two
+  or more `extra_index_urls` that publish the same version of a package now
+  gets it from the first listed.
+
 ### Entry points: `module:function` and `[project.gui-scripts]`
 
 - **Added:** `[tool.kivy].entry_point` may name a function, such as

@@ -58,6 +58,13 @@ LOCK_INCOMPLETE = "KF-LOCK-INCOMPLETE"
 #: and a plain re-lock would only fail the same way.
 LOCK_PINS_CONFLICT = "KF-LOCK-PINS-CONFLICT"
 
+#: A package whose source is fixed -- pinned to one index in ``sources``, or a
+#: local name, with wheels in ``find_links`` -- has no wheel there for one of the
+#: variants being locked. kivyforge never falls back to another source, so the
+#: fix is the wheelhouse or the pin. ``context`` names the ``distribution``, the
+#: ``source`` (an index name or ``find_links``) and the ``variant``.
+LOCK_SOURCE_UNAVAILABLE = "KF-LOCK-SOURCE-UNAVAILABLE"
+
 #: Resolution succeeded but made a judgement call worth surfacing (e.g. the
 #: macOS/Linux backends accepting a vendored plain ``linux_*`` wheel). Always
 #: WARNING: the lock written is usable, and the run is ``ok``.

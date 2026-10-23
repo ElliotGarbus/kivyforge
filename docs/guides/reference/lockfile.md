@@ -10,6 +10,7 @@ sources:
   - kivyforge/platforms/ios/lock/writer.py
   - kivyforge/platforms/android/lock/writer.py
   - kivyforge/cli/lock.py
+  - kivyforge/lock/sources.py
 ---
 
 # Lockfile format
@@ -49,12 +50,27 @@ The filename identifies the target. There is no platform field inside the file.
 ## `[[packages]]`
 
 One entry per resolved Python package, in the standard PEP 751 shape: `name`,
-`version`, optional `requires-python`, `marker`, and `dependencies`, and one or
-more `[[packages.wheels]]` entries. Each wheel has a `name`, a `url` (or a
-project-relative `path` for a local wheel), and `hashes = { sha256 = "..." }`.
-A compiled package can list several wheels, one per platform tag the target
-needs. See the [PEP 751 specification](https://peps.python.org/pep-0751/) for
-the field definitions.
+`version`, optional `requires-python`, `marker`, `dependencies`, and `index`,
+and one or more `[[packages.wheels]]` entries. Each wheel has a `name`, a `url`
+(or a project-relative `path` for a local wheel), and
+`hashes = { sha256 = "..." }`. A compiled package can list several wheels, one
+per platform tag the target needs. See the
+[PEP 751 specification](https://peps.python.org/pep-0751/) for the field
+definitions.
+
+`index` is the base URL of the index the package's wheels came from, such as
+`https://pypi.org/simple/`. A package from `find_links` has no `index`; its
+wheels have a `path`. A package whose wheels came from different indexes on
+different targets, or from a page that matches no configured index, also has
+none. `build` installs from each wheel's `url` or `path` and does not use
+`index`. See
+[Where packages come from](../concepts/runtimes-and-wheels.md#where-packages-come-from).
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. Locks written by 3.0.0.dev1 and
+    earlier have no `index`. They stay valid, and `lock --check` does not count
+    the missing `index` as drift. The next re-lock adds it.
 
 A package can also carry a `[packages.tool.kivyforge]` table, which other PEP 751
 tools ignore:
@@ -62,7 +78,6 @@ tools ignore:
 | Key | Description |
 |---|---|
 | `direct_requirement` | `true` if the package is listed in `[project].dependencies`, rather than pulled in by another package. |
-| `source_index` | The index the wheel was resolved from. |
 
 ## `[tool.kivyforge]`
 

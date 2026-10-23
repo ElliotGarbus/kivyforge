@@ -39,6 +39,7 @@ class FakeWindowsResolver:
         find_links=None,
         offline=False,
         constraints=None,
+        sources=None,
     ):
         self.calls.append(
             {

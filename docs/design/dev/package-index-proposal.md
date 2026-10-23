@@ -2,10 +2,10 @@
 
 > Status: **proposed 2026-10-21**, decisions taken with the maintainer the same
 > day and revised on 2026-10-22 after the reporter's feedback on
-> [#86](https://github.com/ElliotGarbus/kivyforge/issues/86) (§2). Nothing here
-> is implemented yet. Both parts are planned before the release (§9). §1
-> describes the code as of `2aefa0e4`, with no line numbers, because the files
-> move.
+> [#86](https://github.com/ElliotGarbus/kivyforge/issues/86) (§2). **Part 1
+> (local wheels, index order, `packages.index`) implemented 2026-10-22**, with
+> the choices recorded in §12. §1 describes the code as of `2aefa0e4`, with no
+> line numbers, because the files move.
 
 ## Summary
 
@@ -762,3 +762,52 @@ source. The adopted rule (§3.1) makes the switch an explicit pin instead.
   `sources` to `[tool.uv.sources]`. The pin-over-local rule maps to uv's
   sources taking precedence; an unpinned local name becomes a first-listed
   flat index. Nothing here blocks it.
+
+## 12. Implementation choices (2026-10-22)
+
+Where the code differs from the text above, and why.
+
+### 12.1 Part 1: local wheels, index order, `packages.index`
+
+- **Where it lives.** The rules are `SourcePolicy` in
+  `kivyforge/lock/sources.py`; the shim applies them (`_Policy` in
+  `kivyforge/lock/_pip_shim.py`). Each resolver's `resolve()` takes
+  `sources=`, and builds a default policy from its `extra_index_urls` and
+  `find_links` when called without one, so a direct caller still gets the
+  rules. The builders build it with `source_policy(..., platform=...)`.
+- **The policy is set on every resolve**, not only when there is something to
+  filter (§4.5). Recording `index` (§4.4) needs the shim on every resolve, and
+  ordering by rank is then a no-op where it does not matter. The only effect
+  on a project with no `find_links` and one extra index is the record.
+- **A candidate from no configured source is kept for an unpinned package,
+  ranked last**, rather than dropped (§4.3 said "fails closed"). An index
+  whose project pages redirect to another host would otherwise stop resolving
+  the day this shipped. Pinned and local packages still fail closed: their
+  only allowed source is matched exactly, by page URL or by file path.
+- **The page URL is read from `comes_from.url`, not `str(comes_from)`**: pip's
+  `__str__` redacts a password in the URL, which would make an index with
+  credentials in `extra_index_urls` (allowed today) match nothing.
+- **pip's culprit can carry a specifier** (`kivy==2.3.1` when a lock pin is in
+  force), so `SourcePolicy.unavailable()` takes the name from its start.
+  `SourceUnavailable` is in `resolve_preferring`'s `errors`, so a failure under
+  pins is retried without them before it is reported, like any other.
+- **`lock --check` does not count a missing `index` as drift.** §9 expected
+  every existing lock to fail `--check` once. That would have failed CI on
+  every project, including the four tracked on-device gate locks, for a field
+  `build` does not read. `ignore_unrecorded_indexes()` drops the candidate's
+  `index` for any package the existing lock records none for; a lock that
+  does record one is still compared strictly. The tracked locks were therefore
+  left unchanged: re-locking them would only add `index` lines, which their
+  lock policy says to report rather than commit. They pick it up at their next
+  real re-lock.
+- **`--check` lists a source move.** A package that keeps its version but
+  changes source (`index` or `path`) used to produce an empty diff under a
+  "stale" verdict; each `diff_summary` now adds a line for it
+  (`source_changes()`).
+- **The shim's "cannot patch pip" status is 97**, which pip never uses, and
+  the resolver raises `SourceFilterUnavailable`, a `ClassifiedError` left as
+  `KF-ERROR` (§4.6). The `lock` verb now passes any `ClassifiedError` from a
+  builder through `ToolchainError.wrap`, not just `KF-LOCK-PINS-CONFLICT`.
+- **Verified against real indexes** on 2026-10-22: `hello-android`'s lock
+  resolved through the shim with every package's index recognised (§7 of
+  `test-matrix.md`).

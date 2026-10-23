@@ -44,14 +44,14 @@ def emit_package(lines: list[str], pkg: LockedPackage) -> None:
     if pkg.dependencies:
         deps = ", ".join(_dep_inline(d) for d in pkg.dependencies)
         lines.append(f"dependencies = [{deps}]")
+    if pkg.source_index:
+        # PEP 751's own key: the index the package's files were found on (#86).
+        lines.append(f"index = {s(pkg.source_index)}")
 
-    if pkg.direct_requirement or pkg.source_index:
+    if pkg.direct_requirement:
         lines.append("")
         lines.append("[packages.tool.kivyforge]")
-        if pkg.direct_requirement:
-            lines.append("direct_requirement = true")
-        if pkg.source_index:
-            lines.append(f"source_index = {s(pkg.source_index)}")
+        lines.append("direct_requirement = true")
 
     for wheel in sorted(pkg.wheels, key=lambda w: w.name):
         lines.append("")
@@ -90,7 +90,9 @@ def parse_package(p: dict) -> LockedPackage:
         dependencies=deps,
         marker=p.get("marker"),
         direct_requirement=bool(tool.get("direct_requirement", False)),
-        source_index=tool.get("source_index"),
+        # ``[packages.tool.kivyforge] source_index`` was never written, but a
+        # hand-edited lock may carry it; PEP 751's ``index`` is what we write.
+        source_index=p.get("index") or tool.get("source_index"),
     )
 
 
