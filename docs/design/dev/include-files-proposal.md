@@ -1,9 +1,9 @@
 # Proposal — `include_files` beyond Android
 
-> Status: **implemented 2026-10-23** (hermetic tests only). The on-Mac
-> verification in section 8 has not been run yet; until it is logged in
-> test-matrix §7, nothing here has been exercised on a simulator, a device or
-> the notary service. Proposed 2026-10-22. Written for [#170](https://github.com/ElliotGarbus/kivyforge/issues/170).
+> Status: **implemented 2026-10-23**. Section 8's on-Mac steps 1-5 passed the
+> same day on Xcode 27 (simulator, an iPhone 18 Pro Max, and a notarized
+> macOS package; test-matrix §7); step 6, Xcode 26, has not been run.
+> Proposed 2026-10-22. Written for [#170](https://github.com/ElliotGarbus/kivyforge/issues/170).
 > Code claims were read from the source at `87d1475d`.
 > Spike results: [`include-files-spike-findings.md`](include-files-spike-findings.md)
 > (spikes 1 to 8, all done 2026-10-22: incremental pruning, iOS file

@@ -130,9 +130,11 @@ writes, such as `Info.plist`, is refused too: set Info.plist keys with
 `[tool.kivy.ios.info_plist]`.
 
 `kivyforge lock` records a hash for every file, so after adding, editing or
-removing one, run `kivyforge lock -p ios` again. That rewrites only the file
-hashes and resolves nothing. A file you remove from `sources` is removed from
-the generated project, and from the app, on the next build.
+removing one, run `kivyforge lock -p ios` again. When you only edited a file,
+or added or deleted one inside a listed directory, that rewrites the file
+hashes and resolves nothing. Changing `dest` or `sources` makes `lock`
+re-resolve, keeping the locked versions. A file you remove from `sources` is
+removed from the generated project, and from the app, on the next build.
 
 ## Verify
 

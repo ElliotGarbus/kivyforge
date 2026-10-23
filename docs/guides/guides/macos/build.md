@@ -95,8 +95,10 @@ under [`[tool.kivy.macos.native.binaries]`](../../reference/pyproject/macos.md#t
 instead.
 
 `kivyforge lock` records a hash for every file, so after adding, editing or
-removing one, run `kivyforge lock -p macos` again. That rewrites only the file
-hashes and resolves nothing.
+removing one, run `kivyforge lock -p macos` again. When you only edited a
+file, or added or deleted one inside a listed directory, that rewrites the
+file hashes and resolves nothing. Changing `dest` or `sources` makes `lock`
+re-resolve, keeping the locked versions.
 
 ## Package the .app
 
