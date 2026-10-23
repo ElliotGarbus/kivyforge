@@ -291,6 +291,11 @@
   an Android app declaring `>=3.14` built from a host with Python 3.13. pip
   refused with "requires a different Python". `requires-python` describes the
   bundled runtime, so the version lookup now ignores it.
+- **Changed:** when the version lookup fails, the `Fix:` line now says that
+  pip reads its own index settings (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`,
+  `pip.conf`), not `[[tool.uv.index]]` or `[[tool.kivy.index]]`. A backend on
+  a private index configured only for uv failed with pip's "No matching
+  distribution" and nothing pointing at the fix.
 - **Migration:** none needed.
 
 ### Windows: local wheels lock correctly, and an app finds its metadata once

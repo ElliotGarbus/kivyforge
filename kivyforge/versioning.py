@@ -142,7 +142,9 @@ def _from_backend(
             "  Fix: check the project builds (`pip wheel --no-deps .`): a "
             "setuptools-scm project needs a git checkout with tags (in CI, "
             "fetch-depth: 0), and pip needs to reach the package index to fetch "
-            f"the build backend. Or pass {FLAG_OVERRIDE} to skip the backend."
+            "the build backend. pip reads its own index settings (PIP_INDEX_URL, "
+            "PIP_EXTRA_INDEX_URL, pip.conf), not [[tool.uv.index]] or "
+            f"[[tool.kivy.index]]. Or pass {FLAG_OVERRIDE} to skip the backend."
         )
     else:
         fix = (

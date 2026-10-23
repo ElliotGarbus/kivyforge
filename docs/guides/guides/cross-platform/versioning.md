@@ -77,10 +77,13 @@ Only `build`, `package` and `run` look up the version. `lock`, `doctor`,
 `status` and `clean` never run pip, and a new commit doesn't make your lock
 out of date.
 
-### The first build needs the network
+### Builds need the network
 
-pip downloads your build backend the first time. Later builds use pip's cache.
-To build offline, either:
+pip asks the package index for your build backend on every build. It downloads
+the backend the first time and takes it from its cache after that, so later
+builds don't download it again, but they still need the index. PyPI lets pip
+reuse its answer for 10 minutes, so a build soon after another one can work
+offline; don't rely on it. To build offline, either:
 
 - Pass `--app-version` with the version you want.
 - Install the backend alongside kivyforge and pass `--no-build-isolation`:
@@ -97,8 +100,14 @@ To build offline, either:
     error. Use `--no-build-isolation` only when you know the environment has
     everything the backend needs.
 
-pip uses its own index settings (`pip.conf`, `PIP_INDEX_URL`), not uv's. If
-your backend comes from a private index, configure pip for it too.
+pip uses its own index settings (`pip.conf`, `PIP_INDEX_URL`,
+`PIP_EXTRA_INDEX_URL`), not `[[tool.uv.index]]` or `[[tool.kivy.index]]`. If
+your backend, or anything in `[build-system].requires`, comes from a private
+index, configure pip for it too:
+
+```bash
+PIP_EXTRA_INDEX_URL=https://pypi.example.com/simple/ kivyforge build -p android --debug
+```
 
 ### Fetch tags in CI
 

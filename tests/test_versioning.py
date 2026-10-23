@@ -168,6 +168,15 @@ class TestFailures:
             "isolated": "true",
         }
 
+    def test_isolated_fix_names_pips_own_index_settings(self):
+        # A backend on a private index configured only for uv: uv builds the
+        # project, pip finds no distribution, and the fix is pip's own config.
+        stderr = "ERROR: No matching distribution found for private-backend"
+        with pytest.raises(VersionUnresolved) as exc:
+            resolve(runner=FakePip(returncode=1, stderr=stderr))
+        assert "PIP_INDEX_URL" in str(exc.value)
+        assert "[[tool.uv.index]]" in str(exc.value)
+
     def test_missing_pip_is_an_environment_error(self):
         def missing(cmd, **kwargs):
             raise FileNotFoundError(cmd[0])
