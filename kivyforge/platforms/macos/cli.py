@@ -13,6 +13,7 @@ from pathlib import Path
 
 import click
 
+from kivyforge.artifacts import include_files
 from kivyforge.build_outcome import (
     ArtifactKind,
     BuildEvents,
@@ -35,6 +36,7 @@ from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from . import AppBundleError
 from .bundle import build_app_bundle
+from .includes import verify_bundle
 from .lock import MacosLockfile
 from .lock import load as load_macos_lock
 from .notarize import notarize_and_staple
@@ -74,6 +76,7 @@ def macos_build(
             sign=sign,
             no_cache=no_cache,
             release=release,
+            verify_lock=not no_verify_lock,
             echo=events.on_progress,
             note=events.note,
         )
@@ -236,10 +239,18 @@ def macos_package(
             extra_entitlements=config.macos_required.entitlements,
         )
         events.on_progress(f"  signed {count} Mach-O binaries + the bundle")
+        # Before the notary submission, so a bundle without its includes is
+        # never sent to Apple; and again on the stapled bundle being reported.
+        verify_bundle(config, project_root, app, artifact=rel.as_posix())
         if do_notarize:
             notarize_and_staple(app, profile=profile, echo=events.on_progress)
+            verify_bundle(config, project_root, app, artifact=rel.as_posix())
     except AppBundleError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        raise ToolchainError(
+            failures.os_failure(f"read {app.name} to check include_files", exc)
+        ) from exc
 
     trust = "notarized + stapled" if do_notarize else "signed (not notarized)"
     events.on_line(f"Packaged {rel} (Developer ID {trust}).")
@@ -276,7 +287,7 @@ def _lock_status(project_root: Path, config: Config) -> LockStatus:
         lock = load_macos_lock(path)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    in_sync = is_in_sync(lock, config, "macos")
+    in_sync = include_files.lock_current(lock, config, "macos", project_root)
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
 
 

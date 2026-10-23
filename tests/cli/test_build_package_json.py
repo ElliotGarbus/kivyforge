@@ -460,6 +460,64 @@ class TestFailure:
             ]
 
 
+class TestIncludeProductCheck:
+    """A product without its include_files fails and is not reported (§4.8)."""
+
+    @pytest.fixture
+    def include(self, desktop_project):
+        from kivyforge.config.model import IncludeFile
+
+        (desktop_project / "config").mkdir()
+        (desktop_project / "config" / "GoogleService-Info.plist").write_text("<p/>")
+        return (IncludeFile(".", ("config/GoogleService-Info.plist",)),)
+
+    def test_ios_simulator_app_missing_an_include(self, ios, include):
+        ios._load_config(None).ios.include_files = include
+        result, env = _run(build, ["-p", "ios", "--simulator"])
+        assert result.exit_code == exit_codes.BUILD_FAILURE
+        (diagnostic,) = env["diagnostics"]
+        assert diagnostic["code"] == diagnostics.ARTIFACT_CONTENT
+        assert diagnostic["context"]["path"] == "GoogleService-Info.plist"
+        assert diagnostic["context"]["actual"] is None
+        assert _artifacts(env) == [("demo-ios", "project")]
+
+    def test_ios_release_without_the_archived_app(self, ios, include):
+        ios._load_config(None).ios.include_files = include
+        result, env = _run(build, ["-p", "ios", "--release"])
+        assert result.exit_code == exit_codes.BUILD_FAILURE
+        assert _codes(env) == [diagnostics.ARTIFACT_MISSING]
+        assert "xcarchive" in env["diagnostics"][0]["message"]
+        assert _artifacts(env) == [("demo-ios", "project")]
+
+    def test_ios_simulator_app_holding_the_include(self, ios, include, monkeypatch):
+        from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
+
+        ios._load_config(None).ios.include_files = include
+
+        def xcodebuild(argv, *args, **kwargs):
+            done = fake_xcodebuild(argv, *args, **kwargs)
+            for app in Path("demo-ios").rglob("demo.app"):
+                shutil.copy2("config/GoogleService-Info.plist", app)
+            return done
+
+        monkeypatch.setattr(ios, "run_command", xcodebuild)
+        result, env = _run(build, ["-p", "ios", "--simulator"])
+        assert result.exit_code == 0, env
+        assert len(_artifacts(env)) == 2
+
+    def test_macos_signed_bundle_missing_an_include(self, macos, include):
+        macos._load_config(None).macos_required.include_files = include
+        result, env = _run(
+            package, ["-p", "macos", "--signing-identity", "Developer ID Application"]
+        )
+        assert result.exit_code == exit_codes.BUILD_FAILURE
+        assert _codes(env) == [diagnostics.ARTIFACT_CONTENT]
+        assert env["diagnostics"][0]["context"]["artifact"] == (
+            "build/macos/Demo App.app"
+        )
+        assert _artifacts(env) == []
+
+
 def _refuse_every_copy(monkeypatch, module):
     """Make copytree fail per file, as a read-only or too-deep target does.
 
@@ -511,6 +569,7 @@ class TestStagingWriteFailure:
             python_runtime=SimpleNamespace(version="3.14.5"),
             packages=(),
             native_binaries=(),
+            include_files=(),
         )
 
     @pytest.mark.parametrize("blocker", ["build_dir_is_a_file", "app_copy_fails"])
@@ -521,6 +580,7 @@ class TestStagingWriteFailure:
             app_slug="demo-app",
             display_name="Demo App",
             kivy=SimpleNamespace(app_dir="src", entry_point="main"),
+            macos_required=SimpleNamespace(include_files=()),
         )
         monkeypatch.setattr(macos, "_load_config", lambda root, version=None: config)
         monkeypatch.setattr(

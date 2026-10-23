@@ -68,6 +68,36 @@ its wheels, so it runs on a Mac that has no Python installed.
     foreground, so the app's output and tracebacks appear in your terminal. To
     iterate, edit your source and run the command again.
 
+## Add files to the app bundle
+
+Some SDKs read a file from the app bundle rather than from your Python code.
+Firebase, for example, looks for `GoogleService-Info.plist` in the bundle's
+`Resources` folder. Copy such files in with `include_files`:
+
+```toml
+[[tool.kivy.macos.include_files]]
+dest = "Resources"
+sources = ["config/GoogleService-Info.plist"]
+```
+
+`dest` is a folder inside the bundle's `Contents/`, and must start with
+`Resources` or `SharedSupport`: Apple's code signing rejects data files in the
+places it reserves for code. A file source lands in `dest` under its own name;
+a directory source copies its *contents*, with their subfolders.
+
+kivyforge copies the files before it signs the bundle, and drops the
+`com.apple.quarantine` attribute a browser download adds. It then checks the
+bundle holds each file as it was copied, and fails with `KF-ARTIFACT-CONTENT`
+otherwise; with a Developer ID, the check runs before the bundle goes to
+Apple's notary service. A file that would replace one the bundler writes, such
+as `Resources/app`, is refused, as is native code: declare a helper executable
+under [`[tool.kivy.macos.native.binaries]`](../../reference/pyproject/macos.md#toolkivymacosnativebinaries)
+instead.
+
+`kivyforge lock` records a hash for every file, so after adding, editing or
+removing one, run `kivyforge lock -p macos` again. That rewrites only the file
+hashes and resolves nothing.
+
 ## Package the .app
 
 ```bash

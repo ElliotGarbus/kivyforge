@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from kivyforge.lock.pep751 import arr as _arr
 from kivyforge.lock.pep751 import b as _b
+from kivyforge.lock.pep751 import emit_include_files
 from kivyforge.lock.pep751 import emit_package as _emit_package
 from kivyforge.lock.pep751 import s as _s
 
@@ -60,6 +61,8 @@ def dumps(lock: Lockfile) -> str:
     for sp in sorted(lock.swift_packages, key=lambda s: s.name):
         lines.append("")
         _emit_swift_package(lines, sp)
+
+    emit_include_files(lines, lock.include_files)
 
     return "\n".join(lines) + "\n"
 

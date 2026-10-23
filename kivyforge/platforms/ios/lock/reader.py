@@ -9,6 +9,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from kivyforge.lock.pep751 import parse_include_file
 from kivyforge.lock.pep751 import parse_package as _parse_package
 from kivyforge.lock.reader import LockError
 
@@ -79,6 +80,9 @@ def _from_raw(raw: dict) -> Lockfile:
     swift_packages = tuple(
         _parse_swift_package(s) for s in _as_list(tool, "swift_packages")
     )
+    include_files = tuple(
+        parse_include_file(f) for f in _as_list(tool, "include_files")
+    )
 
     return Lockfile(
         requires_python=raw.get("requires-python", ">=3.15"),
@@ -90,6 +94,7 @@ def _from_raw(raw: dict) -> Lockfile:
         tool_kivyforge_schema_version=tool.get("tool_kivyforge_schema_version", 1),
         xcframeworks=xcframeworks,
         swift_packages=swift_packages,
+        include_files=include_files,
         schema_version=schema_version,
         lock_version=lock_version,
         created_by=raw.get("created-by", "kivyforge"),

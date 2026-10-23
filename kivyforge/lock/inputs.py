@@ -42,6 +42,7 @@ LOCK_INPUTS: dict[str, tuple[str, ...]] = {
         "minimum_system_version",
         *_INDEXES,
         "binaries",
+        "include_files",
     ),
     "linux": _PROJECT
     + _overlay(
@@ -71,6 +72,7 @@ LOCK_INPUTS: dict[str, tuple[str, ...]] = {
         *_INDEXES,
         "xcframeworks",
         "swift_packages",
+        "include_files",
     ),
 }
 

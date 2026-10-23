@@ -76,6 +76,7 @@ class TestPackageForwards:
             macos_required=SimpleNamespace(
                 signing=SimpleNamespace(identity=None, notary_profile=None),
                 entitlements={},
+                include_files=(),
             )
         )
         seen = _capture_loads(monkeypatch, macos, "_load_config", config)

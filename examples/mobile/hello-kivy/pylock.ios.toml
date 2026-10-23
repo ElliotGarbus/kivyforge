@@ -53,7 +53,7 @@ hashes = { sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd54212
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
 generated_at = "2026-10-14T01:35:03Z"
-lock_inputs_sha256 = "2435b02593b5743f4e3b3567c6a887691256e430abc30a1fcbb7aa12e611dd51"
+lock_inputs_sha256 = "07eed9ea8100f32f06e17101ad8ad16abd5b68a95adf87192331c604c2e856a7"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]

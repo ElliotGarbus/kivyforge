@@ -10,10 +10,12 @@ from __future__ import annotations
 import os
 import plistlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import click
 
+from kivyforge.artifacts import include_files
 from kivyforge.artifacts.collect import CollectError, collect_artifacts
 from kivyforge.artifacts.download import DownloadError
 from kivyforge.artifacts.verify import HashMismatch
@@ -41,6 +43,7 @@ from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .entitlements import preflight_profile
+from .includes import verify_app, verify_ipa
 from .legacy_module import find_legacy_ios_imports
 from .lock import KivyUnsupported, check_kivy_supported, load
 from .materialize import materialize_project
@@ -246,6 +249,7 @@ def prepare_build(
             swift_packages=lock.swift_packages,
             xcframeworks=lock.xcframeworks,
             team_id=team_id,
+            include_pins=None if no_verify_lock else lock.include_files,
         )
     except (CollectError, WheelSelectionError) as exc:
         raise ToolchainError.wrap(exc) from exc
@@ -319,6 +323,7 @@ def _xcodebuild_step7(
             )
         )
         app = _require_product(product_app_path(derived_data, xb.scheme, target), xb)
+        _verify_includes(verify_app, config, xb, app)
         rel = app.relative_to(xb.project_root)
         events.on_line(f"Built {rel}")
         outcome.add(rel, ArtifactKind.APP)
@@ -351,6 +356,9 @@ def _xcodebuild_step7(
             allow_provisioning_updates=auto_signing,
         )
     )
+    if config.ios.include_files:
+        archived = xb.archive_path / "Products" / "Applications" / f"{xb.scheme}.app"
+        _verify_includes(verify_app, config, xb, _require_product(archived, xb))
 
     options = export_options_plist(
         method=export_method,
@@ -372,8 +380,26 @@ def _xcodebuild_step7(
         export_command(xb, options_path, allow_provisioning_updates=auto_signing)
     )
     ipa = _require_product(xb.ipa_path, xb)
+    _verify_includes(verify_ipa, config, xb, ipa)
     events.on_line(f"Exported {ipa.relative_to(xb.project_root)}")
     return ipa
+
+
+def _verify_includes(
+    check: Callable[[Config, Path, Path], None],
+    config: Config,
+    xb: XcodeBuild,
+    product: Path,
+) -> None:
+    """The product holds every include as staged, or the run fails (exit 5)."""
+    try:
+        check(config, xb.project_root, product)
+    except include_files.IncludeFilesError as exc:
+        raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        raise ToolchainError(
+            failures.os_failure(f"read {product.name} to check include_files", exc)
+        ) from exc
 
 
 def _require_product(path: Path, xb: XcodeBuild) -> Path:
@@ -556,6 +582,8 @@ def ios_run(
                 "  Run without --no-build, or open the project in Xcode and build "
                 "once to populate DerivedData."
             )
+        if not no_build:
+            _verify_includes(verify_app, config, xb, app)
 
         bundle_id = config.ios_required.bundle_id
         if target == "simulator":
@@ -756,5 +784,5 @@ def _lock_status(project_root: Path, config: Config) -> LockStatus:
         lock = load(lockfile)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    in_sync = is_in_sync(lock, config, "ios")
+    in_sync = include_files.lock_current(lock, config, "ios", project_root)
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)

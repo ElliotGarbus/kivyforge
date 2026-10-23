@@ -4,7 +4,7 @@ Given a project root with a validated config, generate the full ``<app>-ios/``
 project: staging tree + ``app/`` symlink, ``main.m`` / ``main_config.h``,
 ``<app>-Info.plist``, ``<app>.entitlements`` (if any), ``PrivacyInfo.xcprivacy``,
 ``Resources/Assets.xcassets`` (if icons/splash image), ``LaunchScreen.storyboard``
-(if splash), and the ``.xcodeproj``.
+(if splash), ``Include/`` (if ``include_files``), and the ``.xcodeproj``.
 
 This is the hermetic, no-network portion of ``kivyforge build`` — artifact
 collection (steps 2-5) populates ``Python.xcframework/``, ``Frameworks/``, and
@@ -16,10 +16,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from kivyforge.config.model import Config
+from kivyforge.lock.model import LockedIncludeFile
 
 from .assets import generate_asset_catalog, write_launch_screen
 from .entitlements import write_entitlements
 from .generator import XcodeProjectGenerator
+from .includes import stage_includes
 from .lock.model import LockedSwiftPackage, LockedXcframework
 from .plist import write_info_plist
 from .privacy import write_privacy_manifest
@@ -37,9 +39,13 @@ def materialize_project(
     swift_packages: tuple[LockedSwiftPackage, ...] = (),
     xcframeworks: tuple[LockedXcframework, ...] = (),
     team_id: str | None = None,
+    include_pins: tuple[LockedIncludeFile, ...] | None = None,
 ) -> StagingLayout:
+    """Generate ``<app>-ios/``; ``include_files`` are checked against
+    *include_pins* when given (``build`` without ``--no-verify-lock``)."""
     project_root = Path(project_root)
     layout = layout or create_staging(config, project_root)
+    stage_includes(config, project_root, layout, include_pins)
 
     write_sources(config, layout.root, python_version=python_version)
     write_info_plist(config, layout.root / f"{config.app_slug}-Info.plist")

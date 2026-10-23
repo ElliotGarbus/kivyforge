@@ -96,6 +96,7 @@ def build_macos_lockfile(
         resolver=resolver,
         runtime_provider=runtime_provider,
         native_binaries=config.macos.binaries if config.macos else (),
+        include_files=config.macos.include_files if config.macos else (),
         prefer=prefer,
         prefer_runtime=prefer_runtime,
         offline=offline,

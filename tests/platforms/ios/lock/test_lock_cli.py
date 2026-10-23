@@ -124,3 +124,47 @@ class TestLockCli:
             result = runner.invoke(lock, ["--check"])
             assert result.exit_code == 0, result.output
             assert "up to date" in result.output
+
+
+class TestIncludePins:
+    """Plain ``lock`` refreshes include pins without re-resolving (§4.3)."""
+
+    INCLUDE = (
+        '\n[[tool.kivy.ios.include_files]]\ndest = "."\n'
+        'sources = ["config/GoogleService-Info.plist"]\n'
+    )
+
+    @pytest.fixture
+    def project(self, runner, tmp_path, minimal_pyproject):
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            root = Path(fs)
+            (root / "src").mkdir()
+            (root / "config").mkdir()
+            (root / "config" / "GoogleService-Info.plist").write_text("<plist/>")
+            (root / "pyproject.toml").write_text(minimal_pyproject + self.INCLUDE)
+            yield root
+
+    def test_lock_records_a_pin(self, runner, project):
+        result = runner.invoke(lock, [])
+        assert result.exit_code == 0, result.output
+        text = (project / "pylock.ios.toml").read_text()
+        assert 'source = "config/GoogleService-Info.plist"' in text
+
+    def test_an_edit_rewrites_the_pins_and_resolves_nothing(
+        self, runner, project, patch_backends
+    ):
+        runner.invoke(lock, [])
+        resolved = len(patch_backends.calls)
+        (project / "config" / "GoogleService-Info.plist").write_text("<edited/>")
+
+        check = runner.invoke(lock, ["--check"])
+        assert check.exit_code == 4, check.output
+        assert "include_files: config/GoogleService-Info.plist -> . (changed)" in (
+            check.output
+        )
+
+        result = runner.invoke(lock, [])
+        assert result.exit_code == 0, result.output
+        assert "file hashes re-recorded" in result.output
+        assert len(patch_backends.calls) == resolved + 1  # the --check only
+        assert "already in sync" in runner.invoke(lock, []).output

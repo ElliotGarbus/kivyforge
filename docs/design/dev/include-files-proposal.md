@@ -1,7 +1,9 @@
 # Proposal — `include_files` beyond Android
 
-> Status: **proposed 2026-10-22**, for review. Nothing here is implemented.
-> Written for [#170](https://github.com/ElliotGarbus/kivyforge/issues/170).
+> Status: **implemented 2026-10-23** (hermetic tests only). The on-Mac
+> verification in section 8 has not been run yet; until it is logged in
+> test-matrix §7, nothing here has been exercised on a simulator, a device or
+> the notary service. Proposed 2026-10-22. Written for [#170](https://github.com/ElliotGarbus/kivyforge/issues/170).
 > Code claims were read from the source at `87d1475d`.
 > Spike results: [`include-files-spike-findings.md`](include-files-spike-findings.md)
 > (spikes 1 to 8, all done 2026-10-22: incremental pruning, iOS file

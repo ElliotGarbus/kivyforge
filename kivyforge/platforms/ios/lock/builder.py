@@ -15,6 +15,7 @@ from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from kivyforge import __version__
+from kivyforge.artifacts import include_files
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.config.model import Config, SwiftPackageDep, XcframeworkDep
 from kivyforge.lock.find_links import (
@@ -330,6 +331,11 @@ def build_lockfile(
         offline,
     )
 
+    try:
+        include_pins = include_files.hash_pins(config.ios.include_files, root)
+    except include_files.IncludeFilesError as exc:
+        raise BuildError(str(exc)) from exc
+
     return Lockfile(
         requires_python=config.project.requires_python or ">=3.15",
         packages=tuple(packages),
@@ -342,6 +348,7 @@ def build_lockfile(
         tool_kivyforge_schema_version=config.ios.schema_version,
         xcframeworks=tuple(xcframeworks),
         swift_packages=tuple(swift_packages),
+        include_files=tuple(include_pins),
     )
 
 
@@ -555,6 +562,7 @@ def _normalized(lock: Lockfile) -> Lockfile:
             sorted(lock.xcframeworks, key=lambda x: (x.name.lower(), x.version))
         ),
         swift_packages=tuple(sorted(lock.swift_packages, key=lambda s: s.name)),
+        include_files=tuple(sorted(lock.include_files, key=lambda p: p.key)),
     )
 
 
@@ -579,6 +587,7 @@ def diff_summary(old: Lockfile, new: Lockfile) -> list[str]:
             f"  ~ Python.xcframework: {old.python_xcframework.version} -> "
             f"{new.python_xcframework.version}"
         )
+    out += include_files.pin_changes(old.include_files, new.include_files)
     return out
 
 

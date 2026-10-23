@@ -32,6 +32,9 @@ In scope for the macOS backend:
 - A declared **native-binaries channel** (`[tool.kivy.macos.native.binaries]`)
   for non-wheel dylibs / helper executables
   (see ["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels-toolkivymacosnativebinaries)).
+- **`include_files`**: the user's data files copied verbatim into
+  `Contents/Resources/` or `Contents/SharedSupport/`
+  (see ["Data files (`include_files`)"](#data-files-include_files)).
 - **Ad-hoc** code signing (the mandatory Apple-Silicon floor).
 - **Full Developer ID signing + notarization + stapling** — see
   ["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple) below.
@@ -80,6 +83,7 @@ Proposed field set (finalized in implementation):
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (macOS tags), same semantics as iOS. |
 | `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. A package with any wheel here comes only from `find_links`, on every arch ([package-index-proposal §3](../../dev/package-index-proposal.md#3-behaviour-and-config)). |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
+| `include_files` | array of tables | no | `[]` | `[[tool.kivy.macos.include_files]]`: data files copied into the bundle. See ["Data files"](#data-files-include_files). |
 
 Icons: `[tool.kivy.macos.icons].source` (1024×1024 PNG) is converted to a macOS
 `.icns` asset. Splash screens are not a macOS concept and have no subtable.
@@ -219,7 +223,9 @@ MyApp.app/
 │       ├── bin/                   ← declared native binaries (native.binaries);
 │       │                            absent when the table is empty
 │       ├── lib/                   ← installed wheels (site-packages)
-│       └── python/                ← bundled CPython runtime + stdlib
+│       ├── python/                ← bundled CPython runtime + stdlib
+│       └── <include_files>        ← user data files under a Resources dest
+│   └── SharedSupport/             ← user data files under a SharedSupport dest
 ```
 
 The bundled runtime is the active provider's normalized, relocatable CPython tree
@@ -345,6 +351,38 @@ matches the `0xCAFEBABE` magic, which is also the Java class-file magic —
 its walks-only-runtime-and-wheels assumption predates sweeping `app_dir`
 content, so a `.class` file under `app_dir` would be misidentified and fail
 `codesign`. A known limitation; fix if anyone ever hits it.
+
+### Data files (`include_files`)
+
+```toml
+[[tool.kivy.macos.include_files]]
+dest = "Resources"                      # relative to Contents/
+sources = ["config/GoogleService-Info.plist"]
+```
+
+The semantics are Android's and iOS's
+([include-files-proposal](../../dev/include-files-proposal.md) §4.3, §4.5), with
+`Contents/` as the root. `dest` must start with `Resources` or `SharedSupport`,
+the places Apple documents for data; the loader refuses any other root, because
+`codesign` rejects a data file in a code location (`MacOS/`, `Frameworks/`, the
+top of `Contents/`) with an error that names the main executable, not the
+include. `lock` pins each file by SHA-256 in `[[tool.kivyforge.include_files]]`,
+the entries are a lock input, and plain `lock` rewrites the pins alone when
+only file contents changed.
+
+The checks run before assembly, so a bad include costs no runtime or wheel
+staging: a path the bundler writes (`Resources/app`, `Resources/lib`,
+`Resources/python`, `Resources/bin`, `Resources/<exe>.icns`;
+`KF-INCLUDE-RESERVED`), a Mach-O file or static archive
+(`KF-INCLUDE-NATIVE-CODE`, pointing at `native.binaries`), a path component
+Xcode would have to compile (`.xcstrings`, `.storyboard`, `.xib`, `.xcassets`;
+`KF-INCLUDE-SOURCE-FORMAT`), then drift from the pins (`KF-LOCK-DRIFT`) unless
+`--no-verify-lock`. The files are copied into the assembly tree after the icon
+and before byte-compiling and signing, without `com.apple.quarantine`
+(`shutil.copy2` keeps it, and App Store Connect refuses a bundle with it on any
+file). The assembled bundle is checked against the files before it is swapped
+in, and a Developer ID `package` checks it again after signing (before the
+notary submission) and after stapling (`KF-ARTIFACT-CONTENT`, exit 5).
 
 ## `build` / `run` / `package`
 

@@ -74,7 +74,6 @@ from .model import (
     AndroidFeature,
     AndroidGradleConfig,
     AndroidIconConfig,
-    AndroidIncludeFile,
     AndroidIntentFilter,
     AndroidManifestConfig,
     AndroidNotification,
@@ -93,6 +92,7 @@ from .model import (
     DynamicVersion,
     EntryPoint,
     IconConfig,
+    IncludeFile,
     IosConfig,
     KivyMeta,
     LinuxConfig,
@@ -1120,6 +1120,9 @@ def _parse_ios(
     python_build_settings = _parse_ios_python_build_settings(ios, finder)
     privacy_source = _parse_privacy(ios)
     entitlements = _parse_entitlements(ios)
+    include_files = _parse_include_files(
+        ios, platform="ios", root_name=".app", project_root=project_root
+    )
 
     return IosConfig(
         schema_version=schema_version,
@@ -1141,6 +1144,7 @@ def _parse_ios(
         info_plist=info_plist,
         build_settings=build_settings,
         python_build_settings=python_build_settings,
+        include_files=tuple(include_files),
     )
 
 
@@ -1246,6 +1250,13 @@ def _parse_macos(
     build_settings = _parse_desktop_build_settings(
         macos.get("build_settings"), "tool.kivy.macos.build_settings", finder
     )
+    include_files = _parse_include_files(
+        macos,
+        platform="macos",
+        root_name="bundle's Contents/",
+        project_root=project_root,
+        allowed_roots=MACOS_INCLUDE_ROOTS,
+    )
 
     return MacosConfig(
         schema_version=schema_version,
@@ -1262,6 +1273,7 @@ def _parse_macos(
         signing=signing,
         binaries=tuple(binaries),
         build_settings=build_settings,
+        include_files=tuple(include_files),
     )
 
 
@@ -1826,8 +1838,11 @@ def _parse_android(
     aars = _parse_android_archives(android, "aars", finder)
     jars = _parse_android_archives(android, "jars", finder)
     gradle = _parse_android_gradle(android, finder)
-    include_files = _parse_android_include_files(
-        android, finder, project_root=project_root
+    include_files = _parse_include_files(
+        android,
+        platform="android",
+        root_name="generated project",
+        project_root=project_root,
     )
     src = _parse_android_src(android, finder)
     services = _parse_android_services(android, finder)
@@ -2434,23 +2449,34 @@ def _parse_android_gradle_plugins(
     return tuple(out)
 
 
-def _parse_android_include_files(
-    android: dict, finder: _LineFinder, *, project_root: Path | None
-) -> list[AndroidIncludeFile]:
-    # Rule 18: dest inside the generated project, sources repo-relative and
-    # present; generated-file clobber protection is enforced at build time
-    # against the generator's own manifest of emitted files.
-    entries = android.get("include_files")
+#: Where a macOS include may go, under ``Contents/``: the two places Apple
+#: documents for data (include-files-proposal §4.5). Anything else is a code
+#: location, or a place ``codesign`` refuses data.
+MACOS_INCLUDE_ROOTS = ("Resources", "SharedSupport")
+
+
+def _parse_include_files(
+    table: dict,
+    *,
+    platform: str,
+    root_name: str,
+    project_root: Path | None,
+    allowed_roots: tuple[str, ...] = (),
+) -> list[IncludeFile]:
+    # Rule 18: dest inside the platform's root, sources repo-relative and
+    # present; reserved paths are refused at build time against the
+    # generator's own outputs.
+    entries = table.get("include_files")
     if entries is None:
         return []
     if not isinstance(entries, list):
         raise ConfigError(
-            "[[tool.kivy.android.include_files]] must be an array of tables",
-            key_path="tool.kivy.android.include_files",
+            f"[[tool.kivy.{platform}.include_files]] must be an array of tables",
+            key_path=f"tool.kivy.{platform}.include_files",
         )
-    out: list[AndroidIncludeFile] = []
+    out: list[IncludeFile] = []
     for i, entry in enumerate(entries):
-        key_path = f"tool.kivy.android.include_files[{i}]"
+        key_path = f"tool.kivy.{platform}.include_files[{i}]"
         if not isinstance(entry, dict):
             raise ConfigError(f"{key_path} must be a table", key_path=key_path)
         dest = entry.get("dest")
@@ -2461,8 +2487,17 @@ def _parse_android_include_files(
             )
         if _is_absolute_source(dest) or _posix_normpath(dest).startswith(".."):
             raise ConfigError(
-                f"{key_path}.dest must stay inside the generated project: {dest!r}",
+                f"{key_path}.dest must stay inside the {root_name}: {dest!r}",
                 key_path=f"{key_path}.dest",
+            )
+        if allowed_roots and _posix_normpath(dest).split("/")[0] not in allowed_roots:
+            raise ConfigError(
+                f"{key_path}.dest must start with "
+                f"{' or '.join(allowed_roots)}: {dest!r}",
+                key_path=f"{key_path}.dest",
+                hint="these are the places Apple documents for data in a bundle; "
+                "codesign refuses a data file in a code location such as MacOS/ "
+                "or Frameworks/.",
             )
         sources = entry.get("sources")
         if (
@@ -2485,7 +2520,7 @@ def _parse_android_include_files(
                     f"{key_path}.sources entry does not exist: {src!r}",
                     key_path=f"{key_path}.sources",
                 )
-        out.append(AndroidIncludeFile(dest=dest, sources=tuple(sources)))
+        out.append(IncludeFile(dest=dest, sources=tuple(sources)))
     return out
 
 

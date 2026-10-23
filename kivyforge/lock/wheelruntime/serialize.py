@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ..model import LOCK_VERSION
 from ..pep751 import arr as _arr
+from ..pep751 import emit_include_files, parse_include_file
 from ..pep751 import emit_package as _emit_package
 from ..pep751 import parse_package as _parse_package
 from ..pep751 import s as _s
@@ -80,6 +81,8 @@ def dumps(lock: WheelRuntimeLock) -> str:
             lines.append(f"path = {_s(nb.path)}")
         lines.append(f"sha256 = {_s(nb.sha256)}")
 
+    emit_include_files(lines, lock.include_files)
+
     return "\n".join(lines) + "\n"
 
 
@@ -116,6 +119,9 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
     schema_version = _check_tool_schema_version(tool)
     runtime = _parse_runtime(tool, name)
     native_binaries = _parse_native_binaries(tool, name)
+    include_files = tuple(
+        parse_include_file(f) for f in _as_list(tool, "include_files", name)
+    )
 
     packages = tuple(_parse_package(p) for p in _as_list(raw, "packages", name))
 
@@ -136,6 +142,7 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
         dependency_groups=tuple(raw.get("dependency-groups", [])),
         default_groups=tuple(raw.get("default-groups", [])),
         native_binaries=native_binaries,
+        include_files=include_files,
     )
 
 

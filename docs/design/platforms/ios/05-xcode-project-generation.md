@@ -33,6 +33,7 @@ Building an iOS app with kivyforge is a four-phase pipeline across two tools:
 │   ├── icon.png                   ← from [tool.kivy.ios.icons].source
 │   ├── splash.png                 ← from [tool.kivy.ios.splash].source
 │   └── Assets.xcassets/           ← generated asset catalog
+├── Include/                       ← [[tool.kivy.ios.include_files]], laid out as in the .app
 ├── main.m                         ← ObjC bootstrap: init Python, launch app
 ├── <app>-Info.plist
 ├── PrivacyInfo.xcprivacy          ← generated stub, or copy of [tool.kivy.ios.privacy_manifest].source
@@ -46,6 +47,7 @@ Building an iOS app with kivyforge is a four-phase pipeline across two tools:
 - **`pip-deps/`** holds installed iOS wheels (Kivy ecosystem wheels + user-declared deps). The "Build Python" Run Script phase processes this folder.
 - **`app/`** is a **symlink to the user's `app_dir`** (e.g. `../src` when `app_dir = "src"`). `app_dir` must be a subdirectory — the project root (`"."`) is rejected (see [common pyproject spec](../../common/01-pyproject-kivy-spec.md#app_dir--entry_point-interaction)), so the symlink always points at a folder that excludes `<app>-ios/` and the project's non-app files. The user's actual `.py` files are never copied into `<app>-ios/`; the symlink ensures Xcode's folder-reference machinery walks the real source folder on every build. See "Developer iteration workflow" below.
 - **`Resources/`** holds non-source assets that need to be in the Xcode "Copy Bundle Resources" phase but aren't Python code.
+- **`Include/`** holds the user's `include_files`, copied (not symlinked) and verified against the lock's pins, mirroring where they land in the `.app`. It is kivyforge's own and rebuilt on every build, so an include taken out of the table leaves nothing behind. Absent when there are no includes. See [include-files-proposal](../../dev/include-files-proposal.md) §4.4.
 
 ### Populating Frameworks/
 
@@ -229,6 +231,7 @@ The Xcode project file is generated programmatically using the `pbxproj` Python 
 - Apply `[tool.kivy.ios.entitlements]` to `<app>.entitlements` (regenerate the plist).
 - Apply `[tool.kivy.ios.signing]` to the build settings (`CODE_SIGN_STYLE`, `DEVELOPMENT_TEAM`, `PROVISIONING_PROFILE_SPECIFIER`).
 - Regenerate `PrivacyInfo.xcprivacy`: copy `[tool.kivy.ios.privacy_manifest].source` if set, otherwise write the minimal stub. Ensure the file is in the Copy Bundle Resources phase (added on first build, verified on subsequent builds).
+- Sync `Include/`: each *top-level* entry becomes a Copy Bundle Resources member, a file as a file reference and a directory as a folder reference, which Xcode copies whole. Each reference is created directly rather than through `add_file`, which picks the phase by extension (sending `.py`, `.c` and `.swift` to Sources, where they never reach the bundle, and raising on `.caf`), and gets `explicitFileType` `file` or `folder`, which stops Xcode compiling a `.storyboard`, converting a `.plist` to binary, or dropping a `.swift`. So every include reaches the bundle byte for byte, and `build` checks the product against the files it staged (`KF-ARTIFACT-CONTENT`). References to top-level entries that are no longer staged are removed.
 
 ### Toolchain-managed build settings
 
@@ -297,6 +300,7 @@ kivyforge build ───────────►   ┌───────�
 | `<app>.entitlements` | template + `[tool.kivy.ios.entitlements]` | Yes (regenerated) |
 | `PrivacyInfo.xcprivacy` | generated minimal stub, or copy of `[tool.kivy.ios.privacy_manifest].source` | Yes (regenerated) |
 | `Resources/Assets.xcassets/` | generated from `[tool.kivy.ios.icons]` + `[tool.kivy.ios.splash]` (omit either to skip that asset) | Yes |
+| `Include/` | copies of `[[tool.kivy.ios.include_files]]`, checked against the lock's pins | Yes (removed and restaged) |
 | `Python.xcframework/` | download | Yes (cache-hit-able) |
 | `Frameworks/*.xcframework` | downloads | Yes (cache-hit-able) |
 | `pip-deps/` | `pip install --target` | Yes (cache-hit-able) |

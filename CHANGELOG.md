@@ -79,6 +79,33 @@
   or more `extra_index_urls` that publish the same version of a package now
   gets it from the first listed.
 
+### `include_files` on iOS and macOS
+
+- **Added:** `[[tool.kivy.ios.include_files]]` and
+  `[[tool.kivy.macos.include_files]]` copy your own files into the app, with
+  the same `dest` and `sources` keys as Android
+  ([#170](https://github.com/ElliotGarbus/kivyforge/issues/170)). On iOS `dest`
+  is relative to the `.app` (`"."` is its root), which is where Firebase looks
+  for `GoogleService-Info.plist`. On macOS it is relative to `Contents/` and
+  must start with `Resources` or `SharedSupport`, the places Apple documents
+  for data; macOS also drops the `com.apple.quarantine` attribute a download
+  adds. Files are copied byte for byte, and `kivyforge lock` pins each one by
+  SHA-256. After building, kivyforge checks that the `.app`, the `.ipa` and a
+  signed macOS bundle (before it goes to the notary service) hold each file
+  as it was copied, and fails with the new `KF-ARTIFACT-CONTENT` (exit 5)
+  without reporting the product if one is missing or different. Three new
+  codes (exit 1) refuse an include before anything is built:
+  `KF-INCLUDE-RESERVED` for a path the build writes (`Info.plist`,
+  `Resources/app`, ...) or, on iOS, a code-bundle name such as `X.framework`;
+  `KF-INCLUDE-NATIVE-CODE` for a Mach-O file or static archive, which
+  belongs in the platform's native-code key; and `KF-INCLUDE-SOURCE-FORMAT`
+  for a format Xcode compiles (`.xcstrings`, `.storyboard`, `.xib`,
+  `.xcassets`). `doctor -p ios` and `-p macos` report include drift.
+- **Migration:** `include_files` is now a lock input on iOS and macOS, so
+  every existing `pylock.ios.toml` and `pylock.macos.toml` reads as stale once.
+  Run `kivyforge lock -p ios` and `kivyforge lock -p macos`; both keep the
+  pinned versions.
+
 ### Entry points: `module:function` and `[project.gui-scripts]`
 
 - **Added:** `[tool.kivy].entry_point` may name a function, such as

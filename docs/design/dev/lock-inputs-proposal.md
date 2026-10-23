@@ -26,11 +26,11 @@ the projection do not count.
 
 | Platform | Inputs beyond `project.dependencies` and `project.requires_python` |
 |---|---|
-| macOS | `schema_version`, `python_version`, `archs`, `minimum_system_version`, `extra_index_urls`, `find_links`, `exclude`, `binaries` |
+| macOS | `schema_version`, `python_version`, `archs`, `minimum_system_version`, `extra_index_urls`, `find_links`, `exclude`, `binaries`, `include_files` |
 | Linux | `schema_version`, `python_version`, `archs`, `glibc_floor`, `extra_index_urls`, `find_links`, `exclude`, `binaries` |
 | Windows | `schema_version`, `python_version`, `archs`, `extra_index_urls`, `find_links`, `exclude`, `binaries` |
 | Android | `schema_version`, `python`, `abis`, `min_sdk`, `kivy_generation`, `extra_index_urls`, `find_links`, `exclude`, `aars`, `jars`, `gradle`, `include_files` |
-| iOS | `schema_version`, `python_version`, `deployment_target`, `simulator_archs`, `extra_index_urls`, `find_links`, `exclude`, `xcframeworks`, `swift_packages` |
+| iOS | `schema_version`, `python_version`, `deployment_target`, `simulator_archs`, `extra_index_urls`, `find_links`, `exclude`, `xcframeworks`, `swift_packages`, `include_files` |
 
 Everything else (signing, display name, icons, splash, permissions, manifest,
 services, `entry_point`, `app_dir`, orientation, `[project].version`, other
@@ -45,14 +45,17 @@ every leaf attribute read, properties included, and fails if a recorded path
 is not covered by `LOCK_INPUTS[platform]`.
 
 Files a lock hashes by content (`include_files`, vendored wheels) are outside
-the projection, as they were outside the old hash. For Android's
-`include_files`, plain `lock` re-hashes them whenever the projection matches
-and rewrites only those pins if any changed: an edited, added or deleted file
-is accepted with no resolution, so the "re-run `kivyforge lock`" that `build`
-and `doctor` print converges
-([#176](https://github.com/ElliotGarbus/kivyforge/issues/176)). A vendored
-wheel replaced in place still needs `lock --update`, because its new content
-can change what resolves.
+the projection, as they were outside the old hash. For `include_files`
+(Android, iOS and macOS), plain `lock` re-hashes them whenever the projection
+matches and rewrites only those pins if any changed: an edited, added or
+deleted file is accepted with no resolution, so the "re-run `kivyforge lock`"
+that `build` and `doctor` print converges
+([#176](https://github.com/ElliotGarbus/kivyforge/issues/176);
+[include-files-proposal §4.3](include-files-proposal.md#43-semantics-shared-by-every-platform)).
+Changing an entry's `dest` or `sources` is a projection change, so `lock`
+re-resolves, keeping the locked versions. A vendored wheel replaced in place
+still needs `lock --update`, because its new content can change what
+resolves.
 
 ### 2.2 Keep existing pins
 

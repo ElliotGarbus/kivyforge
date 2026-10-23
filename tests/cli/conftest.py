@@ -101,6 +101,7 @@ def macos(desktop_project, monkeypatch):
         macos_required=SimpleNamespace(
             signing=SimpleNamespace(identity=None, notary_profile=None),
             entitlements={},
+            include_files=(),
         )
     )
 
@@ -131,6 +132,7 @@ def ios(desktop_project, monkeypatch):
             deployment_target="13.0",
             python_build_settings=None,
             signing=SimpleNamespace(auto_signing=True, upload_symbols=False),
+            include_files=(),
         ),
     )
     lock = SimpleNamespace(
@@ -138,6 +140,7 @@ def ios(desktop_project, monkeypatch):
         packages=(),
         swift_packages=(),
         xcframeworks=(),
+        include_files=(),
     )
 
     def fake_create_staging(config, project_root, *, echo, **kw):

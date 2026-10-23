@@ -492,6 +492,7 @@ class IosConfig:
     python_build_settings: DesktopBuildSettings = field(
         default_factory=DesktopBuildSettings
     )
+    include_files: tuple[IncludeFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -542,6 +543,7 @@ class MacosConfig:
     signing: MacosSigningConfig = field(default_factory=MacosSigningConfig)
     binaries: tuple[NativeBinaryDep, ...] = ()
     build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
+    include_files: tuple[IncludeFile, ...] = ()
 
 
 @dataclass(frozen=True)
