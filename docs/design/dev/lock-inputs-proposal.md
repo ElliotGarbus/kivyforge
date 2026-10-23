@@ -45,8 +45,14 @@ every leaf attribute read, properties included, and fails if a recorded path
 is not covered by `LOCK_INPUTS[platform]`.
 
 Files a lock hashes by content (`include_files`, vendored wheels) are outside
-the projection, as they were outside the old hash: editing one still needs
-`lock --update`.
+the projection, as they were outside the old hash. For Android's
+`include_files`, plain `lock` re-hashes them whenever the projection matches
+and rewrites only those pins if any changed: an edited, added or deleted file
+is accepted with no resolution, so the "re-run `kivyforge lock`" that `build`
+and `doctor` print converges
+([#176](https://github.com/ElliotGarbus/kivyforge/issues/176)). A vendored
+wheel replaced in place still needs `lock --update`, because its new content
+can change what resolves.
 
 ### 2.2 Keep existing pins
 

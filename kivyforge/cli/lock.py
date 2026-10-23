@@ -7,7 +7,9 @@ Each backend supplies its own build/serialize/compare callables; the drift check
 
 A lock that exists is re-resolved with its own versions as the preference, so
 an input change moves only what it has to (``kivyforge.lock.prefer``);
-``--update`` resolves every package to the newest version allowed.
+``--update`` resolves every package to the newest version allowed. A lock
+whose inputs have not changed still gets the hashes it takes from local files
+(Android's ``include_files``) re-recorded, which needs no resolution.
 """
 
 from __future__ import annotations
@@ -63,6 +65,10 @@ class _LockOps:
     #: the desktop wheel+runtime engine, whose runtime lookup is a slow
     #: GitHub API query.
     prefers_runtime: bool = False
+    #: ``(lock, config, *, project_root) -> lock``: re-records the pins a lock
+    #: takes from local file contents, which ``lock_inputs_sha256`` cannot see.
+    #: Returns the lock it was given when nothing changed.
+    refresh: Callable | None = None
 
 
 def _lock_ops(platform: str) -> _LockOps:
@@ -148,6 +154,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_android=True,
             emits_warnings=True,
             emits_progress=True,
+            refresh=android_builder.refresh_include_files,
         )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."
@@ -210,6 +217,25 @@ def lock(
             except LockError:
                 existing = None
             if existing is not None and is_in_sync(existing, config, backend.name):
+                refreshed = _refresh(ops, existing, config, project_root)
+                if refreshed is not existing:
+                    report.progress(f"{out_path.name}: local files changed:")
+                    for line in ops.diff_summary(existing, refreshed):
+                        report.progress(line)
+                    _atomic_write(out_path, ops.dumps(refreshed))
+                    report.line(
+                        f"Updated {out_path.name} (file hashes re-recorded; "
+                        "no package re-resolved)."
+                    )
+                    report.emit(
+                        ok=True,
+                        data={
+                            "action": "wrote",
+                            "in_sync": True,
+                            "packages": len(refreshed.packages),
+                        },
+                    )
+                    return
                 report.line(f"{out_path.name} is already in sync with pyproject.toml.")
                 report.line("  (use --update to force re-resolution)")
                 report.emit(
@@ -360,6 +386,15 @@ def _build(
     except (ops.build_error, ClassifiedError) as exc:
         # ClassifiedError: a failure the lock layer classified itself
         # (KF-LOCK-PINS-CONFLICT, KF-LOCK-SOURCE-UNAVAILABLE, ...).
+        raise ToolchainError.wrap(exc) from exc
+
+
+def _refresh(ops: _LockOps, existing, config, project_root: Path):
+    if ops.refresh is None:
+        return existing
+    try:
+        return ops.refresh(existing, config, project_root=project_root)
+    except (ops.build_error, ClassifiedError) as exc:
         raise ToolchainError.wrap(exc) from exc
 
 
