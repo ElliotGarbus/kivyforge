@@ -134,6 +134,13 @@ jobs:
     - name: Run pytest with coverage
       run: |
         pytest --cov=kivyforge --cov-report=term-missing --cov-report=xml
+    - name: pip and setuptools behave as the dynamic version lookup expects (live)
+      # docs/design/dev/dynamic-version-proposal.md rests on what
+      # `pip install --dry-run --report` does with setuptools-scm and hatch-vcs
+      # projects in real git repos. These tests fetch the backends from PyPI,
+      # so a pip or setuptools release that changes that behaviour fails here
+      # rather than in a user's build (#118). Opted in, a missing git fails.
+      run: pytest tests/test_pip_metadata_live.py -v --no-cov --pip-metadata-live
 
   windows_tests:
     name: Unit tests (Windows)
