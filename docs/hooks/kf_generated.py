@@ -129,6 +129,31 @@ _DIAGNOSTIC = {
         "A build tool reported success but the product is not where it should be.",
         "Read the build log; this usually points at a broken toolchain step.",
     ),
+    "KF-ARTIFACT-CONTENT": (
+        "error",
+        "The product was built, but a file from include_files is missing from "
+        "it or differs from the copy that was staged.",
+        "Read the build log for the step that converted or dropped the file, and "
+        "report it; kivyforge copies includes byte for byte.",
+    ),
+    "KF-INCLUDE-RESERVED": (
+        "error",
+        "An include_files entry would replace a file the generated build writes, "
+        "or (iOS) uses a code-bundle name such as X.framework.",
+        "Pick another dest, or set the value through the key the message names.",
+    ),
+    "KF-INCLUDE-NATIVE-CODE": (
+        "error",
+        "An include_files file is native code (a Mach-O or a static archive), "
+        "which would ship unsigned.",
+        "List it under the platform's native-code key, which signs it.",
+    ),
+    "KF-INCLUDE-SOURCE-FORMAT": (
+        "error",
+        "An include_files path is a format Xcode compiles (.xcstrings, "
+        ".storyboard, .xib, .xcassets), which would ship verbatim and do nothing.",
+        "Include the compiled form, or use the key the message names.",
+    ),
     "KF-TOOLCHAIN-MISSING": (
         "error",
         "A required tool is not installed.",

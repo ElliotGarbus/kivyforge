@@ -9,11 +9,13 @@ A lock that exists is re-resolved with its own versions as the preference, so
 an input change moves only what it has to (``kivyforge.lock.prefer``);
 ``--update`` resolves every package to the newest version allowed. A lock
 whose inputs have not changed still gets the hashes it takes from local files
-(Android's ``include_files``) re-recorded, which needs no resolution.
+(``include_files`` on Android, iOS and macOS) re-recorded, which needs no
+resolution.
 """
 
 from __future__ import annotations
 
+import functools
 import os
 import tempfile
 from collections.abc import Callable
@@ -22,6 +24,7 @@ from pathlib import Path
 
 import click
 
+from ..artifacts import include_files
 from ..config import ConfigError, load_config
 from ..lock.inputs import is_in_sync
 from ..lock.reader import LockError
@@ -86,6 +89,7 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=False,
             emits_warnings=True,
             emits_progress=True,
+            refresh=functools.partial(include_files.refresh, platform="ios"),
         )
     if platform == "macos":
         from ..platforms.macos import lock as macos_lock
@@ -102,6 +106,7 @@ def _lock_ops(platform: str) -> _LockOps:
             emits_warnings=True,
             emits_progress=True,
             prefers_runtime=True,
+            refresh=functools.partial(include_files.refresh, platform="macos"),
         )
     if platform == "linux":
         from ..platforms.linux import lock as linux_lock

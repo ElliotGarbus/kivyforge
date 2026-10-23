@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlparse
 
+from kivyforge.artifacts import include_files
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.config.model import DEFAULT_DEPLOYMENT_TARGET, Config
@@ -719,6 +720,7 @@ def run_ios_checks(
             "kivy-ios ios module",
             "App-level privacy manifest",
             "xcframework privacy manifests",
+            "include_files",
             C.BYTE_COMPILE_NAME,
         ):
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
@@ -749,8 +751,23 @@ def run_ios_checks(
         check_legacy_ios_module(config, project_root),
         check_app_privacy_manifest(config, project_root),
         check_xcframework_privacy_manifests(config, project_root),
+        check_include_files(config, project_root, lock),
     ]
     return results
+
+
+def check_include_files(
+    config: Config, project_root: Path, lock: Lockfile | None
+) -> CheckResult:
+    """Report include_files drift as a warning before the build refuses it."""
+    entries = config.ios_required.include_files
+    if entries and lock is None:
+        return CheckResult(
+            "include_files", Status.SKIP, "no pylock.ios.toml to compare against"
+        )
+    return include_files.doctor_check(
+        entries, lock.include_files if lock else (), project_root, platform="ios"
+    )
 
 
 def ios_doctor(

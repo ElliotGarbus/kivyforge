@@ -93,6 +93,49 @@ full key list, see the [iOS overlay reference](../../reference/pyproject/ios.md)
 :   Dependencies to drop from the resolve, such as packages Kivy declares but
     your app does not use.
 
+## Add files to the app bundle
+
+Some SDKs read a file from the app bundle rather than from your Python code.
+Firebase, for example, looks for `GoogleService-Info.plist` at the root of the
+`.app`. Copy such files in with `include_files`:
+
+```toml
+[[tool.kivy.ios.include_files]]
+dest = "."
+sources = ["config/GoogleService-Info.plist"]
+```
+
+`dest` is a folder inside the `.app`, and `"."` is its root. A file source lands
+in `dest` under its own name. A directory source copies its *contents*, with
+their subfolders, so a `Settings.bundle` folder or a set of
+`<lang>.lproj/InfoPlist.strings` translations keeps its layout:
+
+```toml
+[[tool.kivy.ios.include_files]]
+dest = "Settings.bundle"
+sources = ["ios/Settings.bundle"]
+
+[[tool.kivy.ios.include_files]]
+dest = "."
+sources = ["ios/localized"]   # holds en.lproj/, fr.lproj/, ...
+```
+
+kivyforge copies every file byte for byte, so Xcode does not convert a `.plist`
+to binary or compile anything. After the build, it checks that the `.app` (and,
+for `--release`, the `.ipa`) holds each file as it was copied, and fails with
+`KF-ARTIFACT-CONTENT` otherwise. Formats that only work compiled, such as a
+String Catalog (`.xcstrings`) or a storyboard, are refused; include the
+compiled `.strings` files instead. A file that would replace one the build
+writes, such as `Info.plist`, is refused too: set Info.plist keys with
+`[tool.kivy.ios.info_plist]`.
+
+`kivyforge lock` records a hash for every file, so after adding, editing or
+removing one, run `kivyforge lock -p ios` again. When you only edited a file,
+or added or deleted one inside a listed directory, that rewrites the file
+hashes and resolves nothing. Changing `dest` or `sources` makes `lock`
+re-resolve, keeping the locked versions. A file you remove from `sources` is
+removed from the generated project, and from the app, on the next build.
+
 ## Verify
 
 Lock the dependencies and generate the project for the iOS Simulator, which

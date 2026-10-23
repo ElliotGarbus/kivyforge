@@ -885,48 +885,13 @@ def _check_splash(config: Config, project_root: Path) -> CheckResult:
 
 def _check_include_files(config: Config, project_root: Path, lock) -> CheckResult:
     """Report include_files drift as a warning before the build refuses it."""
-    from kivyforge.artifacts.verify import sha256_file
+    from kivyforge.artifacts import include_files
 
-    entries = config.android_required.include_files
-    if not entries:
-        return CheckResult(
-            "include_files", Status.SKIP, "no [[tool.kivy.android.include_files]]"
-        )
-    pins = {(p.dest, p.source): p.sha256 for p in lock.include_files}
-    staged: set[tuple[str, str]] = set()
-    drifted: list[str] = []
-    for entry in entries:
-        for source in entry.sources:
-            local = project_root / source
-            children = (
-                [c for c in sorted(local.rglob("*")) if c.is_file()]
-                if local.is_dir()
-                else [local]
-            )
-            for child in children:
-                rel = (
-                    (Path(source) / child.relative_to(local)).as_posix()
-                    if local.is_dir()
-                    else source
-                )
-                staged.add((entry.dest, rel))
-                recorded = pins.get((entry.dest, rel))
-                if not child.is_file():
-                    drifted.append(f"{rel} (missing)")
-                elif recorded is None:
-                    drifted.append(f"{rel} (not in the lock)")
-                elif recorded != sha256_file(child):
-                    drifted.append(f"{rel} (changed)")
-    drifted += [f"{source} (deleted)" for _dest, source in sorted(pins.keys() - staged)]
-    if drifted:
-        return CheckResult(
-            "include_files",
-            Status.WARN,
-            "drift vs. the lock: " + ", ".join(drifted),
-            hint="run `kivyforge lock -p android`; the build refuses to stage drift.",
-        )
-    return CheckResult(
-        "include_files", Status.PASS, f"{len(staged)} file(s) match the lock"
+    return include_files.doctor_check(
+        config.android_required.include_files,
+        lock.include_files,
+        project_root,
+        platform="android",
     )
 
 

@@ -113,6 +113,7 @@ IOS: dict[str, Spec] = {
     "xcode": {"build_settings": OPEN},
     "privacy_manifest": {"source": None},
     "entitlements": OPEN,
+    "include_files": ArrayOf({"dest": None, "sources": None}),
 }
 
 MACOS: dict[str, Spec] = {
@@ -122,6 +123,7 @@ MACOS: dict[str, Spec] = {
     "minimum_system_version": None,
     "entitlements": OPEN,
     "signing": {"identity": None, "team_id": None, "notary_profile": None},
+    "include_files": ArrayOf({"dest": None, "sources": None}),
 }
 
 LINUX: dict[str, Spec] = {

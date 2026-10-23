@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..model import LOCK_VERSION, LockedPackage
+from ..model import LOCK_VERSION, LockedIncludeFile, LockedPackage
 
 # The wheel-runtime [tool.kivyforge] extension schema version.
 TOOL_SCHEMA_VERSION = 1
@@ -92,3 +92,4 @@ class WheelRuntimeLock:
     dependency_groups: tuple[str, ...] = ()
     default_groups: tuple[str, ...] = ()
     native_binaries: tuple[LockedNativeBinary, ...] = ()
+    include_files: tuple[LockedIncludeFile, ...] = ()

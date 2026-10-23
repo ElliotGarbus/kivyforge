@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from kivyforge.lock.model import LOCK_VERSION, LockedPackage
+from kivyforge.lock.model import LockedIncludeFile as LockedIncludeFile
 
 CREATED_BY = "kivyforge"
 TOOL_SCHEMA_VERSION = 1
@@ -82,15 +83,6 @@ class GradlePins:
     @property
     def declared(self) -> bool:
         return bool(self.dependencies)
-
-
-@dataclass(frozen=True)
-class LockedIncludeFile:
-    """One ``[[tool.kivyforge.include_files]]`` drift pin."""
-
-    source: str
-    dest: str
-    sha256: str
 
 
 @dataclass(frozen=True)

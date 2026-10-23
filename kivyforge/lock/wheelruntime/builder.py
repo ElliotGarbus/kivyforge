@@ -16,8 +16,9 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 from ... import __version__
+from ...artifacts.include_files import IncludeFilesError, hash_pins, pin_changes
 from ...artifacts.verify import sha256_file
-from ...config.model import Config, NativeBinaryDep
+from ...config.model import Config, IncludeFile, NativeBinaryDep
 from ..find_links import (
     FindLinksError,
     find_links_resolution_hint,
@@ -55,6 +56,7 @@ def build_wheel_runtime_lock(
     resolver: WheelResolver | None = None,
     runtime_provider: RuntimeProvider | None = None,
     native_binaries: tuple[NativeBinaryDep, ...] = (),
+    include_files: tuple[IncludeFile, ...] = (),
     prefer: Iterable[LockedPackage] = (),
     prefer_runtime: PythonRuntime | None = None,
     offline: bool = False,
@@ -193,6 +195,11 @@ def build_wheel_runtime_lock(
             )
         )
 
+    try:
+        include_pins = hash_pins(include_files, root)
+    except IncludeFilesError as exc:
+        raise WheelRuntimeBuildError(str(exc)) from exc
+
     return WheelRuntimeLock(
         platform=profile.platform,
         requires_python=config.project.requires_python or ">=3.15",
@@ -207,6 +214,7 @@ def build_wheel_runtime_lock(
         lock_inputs_sha256=lock_inputs_sha256(config, profile.platform),
         tool_kivyforge_schema_version=profile.schema_version(config),
         native_binaries=locked_native_binaries,
+        include_files=tuple(include_pins),
     )
 
 
@@ -346,6 +354,7 @@ def _normalized(lock: WheelRuntimeLock) -> WheelRuntimeLock:
             )
         ),
         native_binaries=tuple(sorted(lock.native_binaries, key=lambda b: b.name)),
+        include_files=tuple(sorted(lock.include_files, key=lambda p: p.key)),
     )
 
 
@@ -383,6 +392,7 @@ def diff_summary(old: WheelRuntimeLock, new: WheelRuntimeLock) -> list[str]:
         o, n = old_nb[name], new_nb[name]
         if o.version != n.version or o.sha256 != n.sha256:
             out.append(f"  ~ native binary {n.name}: {o.version} -> {n.version}")
+    out += pin_changes(old.include_files, new.include_files)
     return out
 
 

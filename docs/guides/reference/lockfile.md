@@ -101,6 +101,7 @@ The rest of the table depends on the target.
 | `[tool.kivyforge.python_runtime]` | The bundled CPython runtime: `provider`, `version`, and an optional OS `floor`. |
 | `[[tool.kivyforge.python_runtime.artifacts]]` | One runtime archive per architecture: `arch`, `url`, `sha256`, `archive_format`. |
 | `[[tool.kivyforge.native_binaries]]` | One entry per [native binary](../guides/cross-platform/native-binaries.md): `name`, `version`, `url` or `path`, `sha256`. |
+| `[[tool.kivyforge.include_files]]` | macOS only. One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
 
 ### iOS
 
@@ -110,6 +111,7 @@ The rest of the table depends on the target.
 | `[tool.kivyforge.python_xcframework]` | The `Python.xcframework` runtime: `version`, `url`, `sha256`. |
 | `[[tool.kivyforge.xcframeworks]]` | Standalone native xcframeworks: `name`, `version`, `url` or `path`, `sha256`, `slices`, `archive_format`, `link`, `embed`, and optional fields. |
 | `[[tool.kivyforge.swift_packages]]` | [Swift packages](../guides/ios/swift-packages.md): `name`, `url` or `path`, the requirement and resolved `revision` or `version`, `products`, `link`, `embed`. |
+| `[[tool.kivyforge.include_files]]` | One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
 
 ### Android
 
@@ -132,9 +134,15 @@ order, so re-locking changes only the lines whose pins changed.
 
 `lock_inputs_sha256` hashes the lock inputs: `[project].dependencies` and
 `requires-python`, plus the target's Python version, architectures, OS floor,
-indexes, `find_links`, `exclude`, and native libraries. When one of them
-changes, the lock is stale. Comments, key order, and every other field are
-not inputs.
+indexes, `find_links`, `exclude`, native libraries, and the `include_files`
+entries (Android, iOS, macOS). When one of them changes, the lock is stale.
+Comments, key order, and every other field are not inputs.
+
+An `include_files` file is also pinned by its content. After you edit a listed
+file, or add or delete one inside a listed directory, `build` refuses it as
+drift, and plain `kivyforge lock -p PLATFORM` rewrites only the
+`include_files` pins, without resolving anything. Changing an entry's `dest`
+or `sources` changes a lock input, so `lock` re-resolves as below.
 
 - `build` and `package` refuse a stale lock with `KF-LOCK-DRIFT` and exit code `4`.
   `--no-verify-lock` skips this check.

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import click
 
+from kivyforge.artifacts import include_files
 from kivyforge.artifacts.download import DownloadError, fetch_artifact
 from kivyforge.artifacts.verify import HashMismatch
 from kivyforge.build_outcome import (
@@ -1285,6 +1286,19 @@ _REQUIRED_VALUES = (
 )
 
 
+#: Files the generator writes that an include may not replace; the manifest and
+#: Gradle passthroughs exist for changing them.
+_GENERATED_FILES = frozenset(
+    {
+        "app/src/main/AndroidManifest.xml",
+        "app/build.gradle",
+        "build.gradle",
+        "settings.gradle",
+        "gradle.properties",
+    }
+)
+
+
 def _remove_previous_includes(dest: Path) -> None:
     """Delete the files the last build's ``include_files`` copied.
 
@@ -1293,17 +1307,7 @@ def _remove_previous_includes(dest: Path) -> None:
     before generation, so a generated file that an include had replaced is
     written fresh by this build.
     """
-    record = dest / _INCLUDE_RECORD
-    try:
-        lines = record.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return
-    for line in lines:
-        rel = Path(line)
-        if not line or rel.is_absolute() or ".." in rel.parts:
-            continue
-        (dest / rel).unlink(missing_ok=True)
-    record.unlink()
+    include_files.remove_recorded(dest, _INCLUDE_RECORD)
 
 
 def _copy_include_files(
@@ -1328,76 +1332,33 @@ def _copy_include_files(
     build's includes are gone by now (:func:`_remove_previous_includes`), so a
     file already at the destination is one this build generated.
     """
-    generated = {
-        "app/src/main/AndroidManifest.xml",
-        "app/build.gradle",
-        "build.gradle",
-        "settings.gradle",
-        "gradle.properties",
-    }
-    pins = {(p.dest, p.source): p.sha256 for p in lock.include_files}
-    staged: set[tuple[str, str]] = set()
-    copied: list[str] = []
+
+    def overwrites_generated(item: include_files.IncludeItem) -> str | None:
+        if item.path not in _GENERATED_FILES:
+            return None
+        return (
+            f"include_files entry would overwrite the generated {item.path}; use "
+            "the manifest/gradle passthroughs instead (android/01 §include_files)."
+        )
+
+    def replaced(rel: str) -> None:
+        events.on_progress(f"[include] {rel} replaces the file kivyforge generated")
+        events.note(
+            diagnostics.ANDROID_INCLUDE_OVERRIDE,
+            f"include_files replaced the generated {rel}.",
+            {"path": rel},
+        )
+
     try:
-        for entry in android.include_files:
-            target_dir = dest / entry.dest
-            for source in entry.sources:
-                src = project_root / source
-                targets = (
-                    [
-                        (
-                            child,
-                            target_dir / child.relative_to(src),
-                            (Path(source) / child.relative_to(src)).as_posix(),
-                        )
-                        for child in sorted(src.rglob("*"))
-                        if child.is_file()
-                    ]
-                    if src.is_dir()
-                    else [(src, target_dir / src.name, source)]
-                )
-                for file_src, file_dest, rel_source in targets:
-                    rel = file_dest.relative_to(dest).as_posix()
-                    if rel in generated:
-                        raise AndroidBuildError(
-                            f"include_files entry would overwrite the generated "
-                            f"{rel}; use the manifest/gradle passthroughs instead "
-                            f"(android/01 §include_files)."
-                        )
-                    if verify:
-                        _verify_include_file(file_src, rel_source, entry.dest, pins)
-                        staged.add((entry.dest, rel_source))
-                    if file_dest.is_file() and rel not in copied:
-                        events.on_progress(
-                            f"[include] {rel} replaces the file kivyforge generated"
-                        )
-                        events.note(
-                            diagnostics.ANDROID_INCLUDE_OVERRIDE,
-                            f"include_files replaced the generated {rel}.",
-                            {"path": rel},
-                        )
-                    file_dest.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(file_src, file_dest)
-                    copied.append(rel)
-    finally:
-        if copied:
-            (dest / _INCLUDE_RECORD).write_text(
-                "".join(f"{rel}\n" for rel in dict.fromkeys(copied)),
-                encoding="utf-8",
-                newline="\n",
-            )
-    if verify:
-        # A pin with nothing behind it: a file the lock recorded has since been
-        # deleted from a directory source, which the per-file loop cannot see.
-        missing = sorted(pins.keys() - staged)
-        if missing:
-            names = ", ".join(source for _dest, source in missing)
-            raise LockDrift(
-                f"include_files drift: the lock records {names}, which no longer "
-                "exists.\n"
-                "  Re-run `kivyforge lock -p android` to re-record what the "
-                "project actually ships."
-            )
+        items = include_files.expand(android.include_files, project_root)
+        include_files.refuse_reserved(items, overwrites_generated)
+        if verify:
+            include_files.verify_pins(items, lock.include_files, platform="android")
+    except include_files.IncludeFilesError as exc:
+        raise AndroidBuildError(str(exc), **reclassify(exc)) from exc
+    copied = include_files.copy_items(
+        items, dest, on_existing=replaced, record=_INCLUDE_RECORD
+    )
     _check_required_values(dest, copied)
 
 
@@ -1440,37 +1401,11 @@ def _check_required_values(dest: Path, copied: list[str]) -> None:
             )
 
 
-def _verify_include_file(
-    file_src: Path, rel_source: str, dest: str, pins: dict[tuple[str, str], str]
-) -> None:
-    from kivyforge.artifacts.verify import sha256_file
-
-    recorded = pins.get((dest, rel_source))
-    if recorded is None:
-        raise LockDrift(
-            f"include_files drift: {rel_source} would be staged into {dest} but "
-            "the lock records no hash for it.\n"
-            "  Re-run `kivyforge lock -p android` to record it."
-        )
-    actual = sha256_file(file_src)
-    if actual != recorded:
-        raise LockDrift(
-            f"include_files drift: {rel_source} has changed since the lock was "
-            "written.\n"
-            f"  locked:  {recorded}\n"
-            f"  on disk: {actual}\n"
-            "  Re-run `kivyforge lock -p android` to accept the new content."
-        )
-
-
 @user_facing
 def android_status(project_root: Path) -> StatusReport:
     """Read-only project snapshot (android/06 §status)."""
-    from kivyforge.lock.inputs import is_in_sync
     from kivyforge.lock.model import canonical_name
     from kivyforge.lock.reader import LockError
-
-    from .lock.builder import refresh_include_files
 
     config, _ = _load_config_only(project_root)
     android = config.android_required
@@ -1487,9 +1422,7 @@ def android_status(project_root: Path) -> StatusReport:
             kivy_ver = kivy.version if kivy else "—"
             state = (
                 LockState.IN_SYNC
-                if is_in_sync(lock, config, "android")
-                and refresh_include_files(lock, config, project_root=project_root)
-                is lock
+                if include_files.lock_current(lock, config, "android", project_root)
                 else LockState.OUT_OF_DATE
             )
         except LockError:

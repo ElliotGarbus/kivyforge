@@ -346,6 +346,44 @@ source = "privacy/PrivacyInfo.xcprivacy"
 
 **Native xcframework privacy manifests.** Each `.xcframework` in `Frameworks/` (whether wheel-embedded or user-declared via `[tool.kivy.ios.native.xcframeworks]`) must include its own `PrivacyInfo.xcprivacy` **inside the xcframework bundle** if it uses required-reason APIs. This is the responsibility of the framework or wheel author, not kivyforge. `kivyforge doctor` warns if any xcframework in `Frameworks/` is missing a `PrivacyInfo.xcprivacy` entirely (see [iOS CLI](04-cli-ios.md)).
 
+### `[[tool.kivy.ios.include_files]]`
+
+```toml
+[[tool.kivy.ios.include_files]]
+dest = "."                                  # relative to the .app root
+sources = ["config/GoogleService-Info.plist"]
+
+[[tool.kivy.ios.include_files]]
+dest = "Settings.bundle"
+sources = ["ios/Settings.bundle"]           # a directory: its contents land in dest
+```
+
+| Field     | Type            | Required | Description |
+| --------- | --------------- | -------- | ----------- |
+| `dest`    | string          | yes      | Directory inside the `.app`; `"."` is the bundle root. Must not escape it. |
+| `sources` | list of string  | yes      | Repo-relative files or directories, each of which must exist. A file lands in `dest` under its own name; a directory contributes its contents, subfolders kept. |
+
+The semantics are Android's, with the `.app` as the root (design:
+[include-files-proposal](../../dev/include-files-proposal.md) §4.3–4.4).
+`lock` pins each staged file by SHA-256 in `[[tool.kivyforge.include_files]]`,
+the entries are a lock input, and plain `lock` rewrites the pins alone when only
+file contents changed. `build` stages the files into `<app>-ios/Include/` and
+adds each top-level entry to Copy Bundle Resources with an explicit type, so
+every file reaches the bundle byte for byte
+([05 §Generated file inventory](05-xcode-project-generation.md)). It then
+checks the `.app`, the archived `.app` and the `.ipa` against the files it
+staged (`KF-ARTIFACT-CONTENT`, exit 5).
+
+Refused at build time, before anything is staged: a path the generated build
+owns (`Info.plist`, `PkgInfo`, `PrivacyInfo.xcprivacy`, `Assets.car`, the
+`AppIcon*.png` files, `LaunchScreen.storyboardc`, the executable, `Frameworks/`,
+`PlugIns/`, `AppClips/`, `Watch/`, `python/`, `app/`, `pip-deps/`,
+`_CodeSignature/`, `embedded.mobileprovision`) and a top-level name ending in
+`.framework`, `.xcframework`, `.appex` or `.app` (`KF-INCLUDE-RESERVED`);
+a Mach-O file or static archive (`KF-INCLUDE-NATIVE-CODE`, pointing at
+`native.xcframeworks`); a path component ending in `.xcstrings`,
+`.storyboard`, `.xib` or `.xcassets` (`KF-INCLUDE-SOURCE-FORMAT`).
+
 ### `[tool.kivy.ios.info_plist]`
 
 ```toml
@@ -480,5 +518,6 @@ auto_signing = true
 11. Sets `[tool.kivy.ios].deployment_target` lower than the minimum iOS version supported by the selected `Python.xcframework` (verified at lock time; the xcframework metadata declares its floor; e.g. Python 3.15 requires iOS 13.0+).
 12. Sets `[tool.kivy.ios].find_links` entries that are absolute paths, empty, or paths that escape the project directory.
 13. Sets `[tool.kivy.ios].simulator_archs` to a non-list, a list containing non-strings, an empty list, or any value other than `"arm64"` (notably `"x86_64"`, which is rejected with a migration message).
+14. Has a `[[tool.kivy.ios.include_files]]` entry whose `dest` is empty, absolute or escapes the `.app`, or whose `sources` is empty, escapes the project, or names a path that does not exist.
 
 Validation errors are printed with the offending line number (TOML parsers expose this) and a remediation hint.

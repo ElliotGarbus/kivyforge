@@ -120,6 +120,29 @@ managed by kivyforge and rejected here:
 |---|---|---|---|
 | `source` | string | none | Path to your own `PrivacyInfo.xcprivacy`. When unset, kivyforge generates a minimal manifest that declares no tracking, no collected data, and no required-reason APIs. |
 
+## `[[tool.kivy.ios.include_files]]`
+
+An array of tables. Each entry copies project files into the `.app`. See
+[Add files to the app bundle](../../guides/ios/configure.md#add-files-to-the-app-bundle).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `dest` | string | required | Destination directory, relative to the root of the `.app`. `"."` is the root itself. |
+| `sources` | list of string | required | Project-relative files or directories to copy. Each must exist. A file lands in `dest` under its own name; a directory's contents land in `dest` with their subfolders. |
+
+Files are copied byte for byte: Xcode does not compile, convert or strip them.
+`build` checks the built `.app` and `.ipa` against the lock, and fails with
+`KF-ARTIFACT-CONTENT` if a file is missing or different. These are refused:
+
+- a path the build writes, such as `Info.plist`, `Assets.car`, `Frameworks/`,
+  `python/` or `app/` (`KF-INCLUDE-RESERVED`);
+- a top-level name ending in `.framework`, `.xcframework`, `.appex` or `.app`,
+  which Xcode treats as code (`KF-INCLUDE-RESERVED`). `.bundle` is allowed;
+- native code, a Mach-O file or a static archive (`KF-INCLUDE-NATIVE-CODE`).
+  Declare it under `[tool.kivy.ios.native.xcframeworks]`;
+- a format Xcode compiles: `.xcstrings`, `.storyboard`, `.xib` or `.xcassets`
+  (`KF-INCLUDE-SOURCE-FORMAT`). Include the compiled form.
+
 ## `[tool.kivy.ios.native.xcframeworks]`
 
 Each entry is `NAME = { ... }` and declares a native `.xcframework` that does not

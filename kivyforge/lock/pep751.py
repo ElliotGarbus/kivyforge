@@ -9,7 +9,7 @@ source of truth for the PEP 751 layout and string escaping.
 
 from __future__ import annotations
 
-from .model import LockedPackage, LockedWheel, PackageDep
+from .model import LockedIncludeFile, LockedPackage, LockedWheel, PackageDep
 
 
 def s(value: str) -> str:
@@ -104,6 +104,22 @@ def parse_wheel(w: dict) -> LockedWheel:
         path=w.get("path"),
         upload_time=w.get("upload-time"),
         size=w.get("size"),
+    )
+
+
+def emit_include_files(lines: list[str], pins) -> None:
+    """``[[tool.kivyforge.include_files]]``, one table per pin, sorted."""
+    for pin in sorted(pins, key=lambda p: p.key):
+        lines.append("")
+        lines.append("[[tool.kivyforge.include_files]]")
+        lines.append(f"source = {s(pin.source)}")
+        lines.append(f"dest = {s(pin.dest)}")
+        lines.append(f"sha256 = {s(pin.sha256)}")
+
+
+def parse_include_file(entry: dict) -> LockedIncludeFile:
+    return LockedIncludeFile(
+        source=entry["source"], dest=entry["dest"], sha256=entry["sha256"]
     )
 
 
