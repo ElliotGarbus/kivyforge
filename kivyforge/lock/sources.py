@@ -151,7 +151,8 @@ class SourcePolicy:
                 ".find_links, so "
                 f"it comes only from there, and none of them fits {variant}.\n"
                 f"  Fix: add a {variant} wheel for it to the find_links directory, "
-                "or remove its wheels to take it from an index.",
+                "remove its wheels to take it from an index, or pin it to an "
+                "index in sources.",
                 context={
                     "distribution": package,
                     "source": FIND_LINKS,
@@ -334,3 +335,68 @@ def ignore_unrecorded_indexes[L](existing: L, candidate: L) -> L:
         for p in getattr(candidate, "packages", ())
     )
     return dataclasses.replace(candidate, packages=packages)
+
+
+def overlay_policy(
+    overlay: object, find_links: Sequence[str], *, platform: str
+) -> SourcePolicy:
+    """The rules for a platform overlay: its ``extra_index_urls``, and the
+    effective named ``indexes`` and ``sources`` the loader computed for it."""
+    return source_policy(
+        find_links,
+        tuple(getattr(overlay, "extra_index_urls", ()) or ()),
+        named=[(i.name, i.url, i.explicit) for i in getattr(overlay, "indexes", ())],
+        pins=dict(getattr(overlay, "sources", ())),
+        platform=platform,
+    )
+
+
+def pinned_local_warnings(policy: SourcePolicy, project_root: Path) -> list[str]:
+    """One warning per pinned package whose ``find_links`` wheels the pin hides.
+
+    The pin wins (rule 1), which is how you switch from your own build to an
+    index's without deleting it. Said out loud, so a pin left behind, or a
+    wheel you forgot, does not go unnoticed.
+    """
+    root = project_root.resolve()
+    out: list[str] = []
+    for package, index_name in sorted(policy.pins.items()):
+        if package not in policy.local_names:
+            continue
+        index = policy.index(index_name)
+        wheels = []
+        for wheel in local_wheels(policy.find_links, package):
+            try:
+                wheels.append(wheel.resolve().relative_to(root).as_posix())
+            except ValueError:
+                wheels.append(str(wheel))
+        listed = "".join(f"\n  {w}" for w in wheels)
+        out.append(
+            f"{package} is pinned to index {index.name!r} in sources, so its "
+            f"wheels in find_links are ignored:{listed}\n"
+            "  Remove the pin to use them again."
+        )
+    return out
+
+
+def unused_explicit_indexes(config: object) -> list[str]:
+    """A warning per explicit index that no target's ``sources`` pins to.
+
+    It would serve nothing, which is most likely a pin that was forgotten or
+    misspelt. Not an error: the target that uses it may not be configured yet.
+    """
+    kivy = getattr(config, "kivy", None)
+    explicit = [i for i in getattr(kivy, "indexes", ()) if i.explicit]
+    if not explicit:
+        return []
+    used = {name for _package, name in getattr(kivy, "sources", ())}
+    for platform in ("ios", "macos", "linux", "windows", "android"):
+        overlay = getattr(config, platform, None)
+        used |= {name for _package, name in getattr(overlay, "sources", ())}
+    return [
+        f"index {index.name!r} is explicit, but no sources table pins a package "
+        "to it, so nothing comes from it. Pin a package to it, or remove "
+        "`explicit = true`."
+        for index in explicit
+        if index.name not in used
+    ]

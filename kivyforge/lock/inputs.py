@@ -26,7 +26,7 @@ from ..config.model import Config
 SCHEME = 1
 
 _PROJECT = ("project.dependencies", "project.requires_python")
-_INDEXES = ("extra_index_urls", "find_links", "exclude")
+_INDEXES = ("extra_index_urls", "find_links", "exclude", "indexes", "sources")
 
 
 def _overlay(platform: str, *fields: str) -> tuple[str, ...]:

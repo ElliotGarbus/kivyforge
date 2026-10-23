@@ -7,11 +7,14 @@ best-effort source line located by scanning the raw text.
 
 from __future__ import annotations
 
+import dataclasses
+import difflib
 import keyword
 import posixpath
 import re
 import tomllib
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import urlparse
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
@@ -96,6 +99,7 @@ from .model import (
     MacosConfig,
     MacosSigningConfig,
     NativeBinaryDep,
+    PackageIndex,
     ProjectMeta,
     SigningConfig,
     SplashConfig,
@@ -231,6 +235,26 @@ def load_config_from_text(
     linux = _parse_linux(raw, finder, project, project_root=project_root)
     windows = _parse_windows(raw, finder, project, project_root=project_root)
     android = _parse_android(raw, finder, project, project_root=project_root)
+
+    overlays = raw["tool"]["kivy"]
+    if ios is not None:
+        ios = _with_sources(ios, overlays.get("ios"), finder, platform="ios", kivy=kivy)
+    if macos is not None:
+        macos = _with_sources(
+            macos, overlays.get("macos"), finder, platform="macos", kivy=kivy
+        )
+    if linux is not None:
+        linux = _with_sources(
+            linux, overlays.get("linux"), finder, platform="linux", kivy=kivy
+        )
+    if windows is not None:
+        windows = _with_sources(
+            windows, overlays.get("windows"), finder, platform="windows", kivy=kivy
+        )
+    if android is not None:
+        android = _with_sources(
+            android, overlays.get("android"), finder, platform="android", kivy=kivy
+        )
 
     if ios is None and require_ios:
         raise ConfigError(
@@ -647,6 +671,11 @@ def _parse_kivy(raw: dict, finder: _LineFinder, project: ProjectMeta) -> KivyMet
     orientation = kivy.get("orientation", ["portrait"])
     _validate_orientation(orientation, finder)
 
+    indexes = _parse_indexes(kivy, finder)
+    sources = _parse_sources(
+        kivy, finder, key_path="tool.kivy.sources", indexes=indexes
+    )
+
     return KivyMeta(
         app_dir=app_dir,
         display_name=kivy.get("display_name"),
@@ -654,7 +683,167 @@ def _parse_kivy(raw: dict, finder: _LineFinder, project: ProjectMeta) -> KivyMet
         orientation=tuple(orientation),
         entry_function=entry_function,
         entry_origin=entry_origin,
+        indexes=indexes,
+        sources=tuple(sorted(sources.items())),
     )
+
+
+#: Index names: letters, digits, ``.``, ``_`` and ``-`` (#86, as uv's).
+_INDEX_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _parse_indexes(kivy: dict, finder: _LineFinder) -> tuple[PackageIndex, ...]:
+    """``[[tool.kivy.index]]``: named package indexes (#86)."""
+    raw = kivy.get("index", [])
+    line = finder.line("[[tool.kivy.index]]") or finder.line("index")
+    if not isinstance(raw, list) or not all(isinstance(e, dict) for e in raw):
+        raise ConfigError(
+            "[[tool.kivy.index]] must be an array of tables, each with a name "
+            "and a url",
+            key_path="tool.kivy.index",
+            line=line,
+        )
+    out: list[PackageIndex] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(raw):
+        key_path = f"tool.kivy.index[{i}]"
+        name = entry.get("name")
+        if not isinstance(name, str) or not _INDEX_NAME_RE.match(name):
+            raise ConfigError(
+                f"[[tool.kivy.index]] entry {i + 1} needs a name made of "
+                "letters, digits, '.', '_' and '-'",
+                key_path=f"{key_path}.name",
+                line=line,
+            )
+        if name.lower() == "pypi":
+            raise ConfigError(
+                "'pypi' is a reserved index name: it always means "
+                "https://pypi.org/simple/, so you can pin a package to it "
+                "without declaring it",
+                key_path=f"{key_path}.name",
+                line=line,
+            )
+        if name in seen:
+            raise ConfigError(
+                f"two [[tool.kivy.index]] entries are named {name!r}",
+                key_path=f"{key_path}.name",
+                line=line,
+            )
+        seen.add(name)
+        url = entry.get("url")
+        if not isinstance(url, str):
+            raise ConfigError(
+                f"index {name!r} needs a url",
+                key_path=f"{key_path}.url",
+                line=line,
+            )
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ConfigError(
+                f"index {name!r} has url {url!r}; it must be an http:// or "
+                "https:// simple-index URL",
+                key_path=f"{key_path}.url",
+                line=line,
+            )
+        if parsed.username or parsed.password:
+            raise ConfigError(
+                f"index {name!r} has a username or password in its url. The url "
+                "is written into the lock file, so it cannot carry credentials",
+                key_path=f"{key_path}.url",
+                line=line,
+            )
+        explicit = entry.get("explicit", False)
+        if not isinstance(explicit, bool):
+            raise ConfigError(
+                f"index {name!r}: explicit must be true or false",
+                key_path=f"{key_path}.explicit",
+                line=line,
+            )
+        out.append(PackageIndex(name=name, url=url, explicit=explicit))
+    return tuple(out)
+
+
+def _parse_sources(
+    table: dict,
+    finder: _LineFinder,
+    *,
+    key_path: str,
+    indexes: tuple[PackageIndex, ...],
+) -> dict[str, str]:
+    """A ``sources`` table: package name to ``{ index = "<name>" }`` (#86)."""
+    raw = table.get("sources", {})
+    line = finder.table_line(*key_path.split(".")) or finder.line("sources")
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f'[{key_path}] must be a table of package = {{ index = "NAME" }}',
+            key_path=key_path,
+            line=line,
+        )
+    names = ["pypi", *(i.name for i in indexes)]
+    out: dict[str, str] = {}
+    for package, value in raw.items():
+        where = f"{key_path}.{package}"
+        if isinstance(value, dict):
+            unsupported = [k for k in value if k != "index"]
+            if unsupported:
+                raise ConfigError(
+                    f"[{key_path}] {package} uses {unsupported[0]!r}; kivyforge "
+                    'takes only { index = "NAME" }. It locks prebuilt wheels '
+                    "from indexes and find_links, never from git, a URL or a "
+                    "source path, and a platform's own sources table takes the "
+                    "place of uv's marker",
+                    key_path=where,
+                    line=line,
+                )
+            index = value.get("index")
+        else:
+            index = None
+        if not isinstance(index, str):
+            raise ConfigError(
+                f'[{key_path}] {package} must be {{ index = "NAME" }}',
+                key_path=where,
+                line=line,
+            )
+        if index not in names:
+            close = difflib.get_close_matches(index, names, n=1)
+            raise ConfigError(
+                f"[{key_path}] pins {package} to index {index!r}, which is not "
+                "declared in [[tool.kivy.index]] and is not 'pypi'",
+                key_path=where,
+                line=line,
+                hint=f"did you mean {close[0]!r}?" if close else None,
+            )
+        out[_canonical_name(package)] = index
+    return out
+
+
+def _with_sources(
+    overlay, table: object, finder: _LineFinder, *, platform: str, kivy: KivyMeta
+):
+    """``overlay`` with its effective ``indexes`` and ``sources`` (#86).
+
+    The shared pins overlaid name by name with the overlay's own; the
+    non-explicit named indexes, plus the explicit ones those pins name. Kept
+    precise because both are lock inputs: a pin for one platform must not stale
+    another platform's lock.
+    """
+    own = _parse_sources(
+        table if isinstance(table, dict) else {},
+        finder,
+        key_path=f"tool.kivy.{platform}.sources",
+        indexes=kivy.indexes,
+    )
+    pins = {**dict(kivy.sources), **own}
+    named = set(pins.values())
+    indexes = tuple(i for i in kivy.indexes if not i.explicit or i.name in named)
+    return dataclasses.replace(
+        overlay, indexes=indexes, sources=tuple(sorted(pins.items()))
+    )
+
+
+def _canonical_name(name: str) -> str:
+    """PEP 503 normalization, as the lock compares package names."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _validate_app_dir(app_dir: object, finder: _LineFinder) -> str:

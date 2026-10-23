@@ -36,8 +36,9 @@ from kivyforge.lock.prefer import preferred_pins, resolve_preferring
 from kivyforge.lock.sources import (
     SourceUnavailable,
     drop_moved_pins,
+    overlay_policy,
+    pinned_local_warnings,
     source_changes,
-    source_policy,
 )
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
@@ -202,6 +203,7 @@ def build_lockfile(
     prefer: Iterable[LockedPackage] = (),
     offline: bool = False,
     now: datetime | None = None,
+    on_warning: Callable[[str], None] | None = None,
     on_progress: Callable[[str], None] | None = None,
     on_transfer: Callable[[str, int, int, str], None] | None = None,
 ) -> Lockfile:
@@ -255,7 +257,10 @@ def build_lockfile(
     requirements = list(config.project.dependencies)
     check_kivy_requirements(requirements, python_version=python_version)
 
-    policy = source_policy(find_links, ios.extra_index_urls, platform="ios")
+    policy = overlay_policy(ios, find_links, platform="ios")
+    if on_warning is not None:
+        for warning in pinned_local_warnings(policy, root):
+            on_warning(warning)
     prefer = tuple(prefer)
 
     def resolve(pins):

@@ -23,7 +23,7 @@ import click
 from ..config import ConfigError, load_config
 from ..lock.inputs import is_in_sync
 from ..lock.reader import LockError
-from ..lock.sources import ignore_unrecorded_indexes
+from ..lock.sources import ignore_unrecorded_indexes, unused_explicit_indexes
 from ..platforms.ios.lock import (
     BuildError,
     build_lockfile,
@@ -78,6 +78,7 @@ def _lock_ops(platform: str) -> _LockOps:
             build_error=BuildError,
             require_ios=True,
             require_macos=False,
+            emits_warnings=True,
             emits_progress=True,
         )
     if platform == "macos":
@@ -339,6 +340,10 @@ def _build(
         # consumer could not see that (say) a vendored plain linux_* wheel had
         # been accepted -- a decision worth knowing about from a machine.
         kwargs["on_warning"] = lambda msg: _warn(report, msg)
+        # Config-wide, so not the builder's: it reads every overlay's sources,
+        # and the builder may only read its own lock inputs.
+        for message in unused_explicit_indexes(config):
+            _warn(report, message)
     if ops.emits_progress:
         # Locking downloads wheels (and, with Maven dependencies, Gradle's
         # graph). Silent, that looked like a hang on a slow connection (#84).

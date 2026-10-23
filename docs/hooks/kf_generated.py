@@ -63,11 +63,11 @@ _DIAGNOSTIC = {
     ),
     "KF-LOCK-SOURCE-UNAVAILABLE": (
         "error",
-        "A package that comes from one source only (it has a wheel in "
-        "`find_links`) has no wheel there for one of the targets being locked. "
-        "kivyforge does not fall back to another source.",
-        "Add the missing wheel to the `find_links` directory, or remove the "
-        "package's wheels to take it from an index.",
+        "A package that comes from one source only (a pin in `sources`, or a "
+        "wheel in `find_links`) has no wheel there for one of the targets being "
+        "locked. kivyforge does not fall back to another source.",
+        "Pin the package to an index that has the wheel, or add the missing "
+        "wheel to the `find_links` directory.",
     ),
     "KF-LOCK-MISSING": (
         "error",

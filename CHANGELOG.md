@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Choose which index each package comes from
+
+- **Added:** name an index once in `[[tool.kivy.index]]` (`name`, `url`, and
+  optional `explicit`) and pin packages to it in `[tool.kivy.sources]`, or in
+  a target's own `sources` table, as `kivy = { index = "mobile-wheels" }`
+  ([#86](https://github.com/ElliotGarbus/kivyforge/issues/86)). The syntax
+  matches uv's `[[tool.uv.index]]` and `[tool.uv.sources]`. A pinned package
+  comes only from its index, for every package that depends on it too. An
+  `explicit` index serves only the packages pinned to it, so it can't replace
+  anything else. `pypi` is a built-in name. A non-explicit named index is an
+  extra index for every target, ranked after the target's `extra_index_urls`
+  and before PyPI.
+- **Added:** a pin outranks `find_links`. To switch a package from your own
+  wheel to an index's release, pin it; to switch back, remove the pin. Your
+  wheel stays where it is, and `lock` warns (`KF-LOCK-WARNING`) that it is
+  ignoring it. `lock` also warns about an explicit index that no `sources`
+  table uses. A pinned package with no wheel for a target on its index fails
+  with `KF-LOCK-SOURCE-UNAVAILABLE`; kivyforge never falls back to another
+  index.
+- **Changed:** iOS `lock` now reports warnings, like the other targets.
+- **Migration:** run `kivyforge lock` once per platform. The new keys are lock
+  inputs, so every existing lock reads as stale until re-locked, as after
+  #126; the re-lock keeps every locked version. A project that sets none of
+  the new keys resolves exactly as before.
+
 ### Your own wheels win, and the first-listed index wins a tie
 
 - **Changed:** a package with any wheel in a `find_links` directory now comes
