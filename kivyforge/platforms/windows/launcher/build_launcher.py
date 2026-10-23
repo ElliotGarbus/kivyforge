@@ -62,10 +62,18 @@ MANIFEST = VENDOR_DIR / "SHA256SUMS"
 # The MSVC + Windows SDK pin that produced the vendored binary: build and CI
 # verify load them via ``vcvarsall <arch> <winsdk> -vcvars_ver=<tools>``.
 #
-# ``TOOLSET.txt`` format (one or two lines, ``#`` comments allowed)::
+# ``TOOLSET.txt`` format (``#`` comments allowed)::
 #
 #     14.51.36231          # full VCTOOLSVERSION (required)
 #     10.0.26100.0         # WindowsSDKVersion (optional but recorded by build)
+#     inputs: <sha256>     # what the binary was built from (recorded by build)
+#
+# ``inputs`` hashes ``launcher.c``, the compile/link flags below and the pin:
+# everything of ours that decides the bytes. ``verify`` uses it to tell a
+# missed re-vendor (inputs changed: fail) from a runner image whose toolchain
+# emits different bytes from unchanged inputs (warn, pass, re-vendor later).
+# GitHub services the SDK in place under the same version folder, so the
+# version pin alone cannot catch that; win25-vs2026/20261021 did it, 2026-10.
 #
 # This pin holds *code generation* steady — a different MSVC or SDK can inline
 # different CRT/SDK code and change the emitted instructions. It deliberately
@@ -96,6 +104,8 @@ class ToolsetPin:
 
     vc_tools: str
     winsdk: str | None = None
+    #: SHA-256 of the inputs the vendored binary was built from, if recorded.
+    inputs: str | None = None
 
     def label(self) -> str:
         return (
@@ -118,11 +128,16 @@ def pinned_toolset() -> ToolsetPin | None:
         for line in TOOLSET_FILE.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-    if not lines:
+    inputs = next(
+        (line.split(":", 1)[1].strip() for line in lines if line.startswith("inputs:")),
+        None,
+    )
+    versions = [line for line in lines if not line.startswith("inputs:")]
+    if not versions:
         return None
-    vc_tools = lines[0]
-    winsdk = lines[1] if len(lines) > 1 else None
-    return ToolsetPin(vc_tools, winsdk)
+    vc_tools = versions[0]
+    winsdk = versions[1] if len(versions) > 1 else None
+    return ToolsetPin(vc_tools, winsdk, inputs or None)
 
 
 def write_toolset_pin(pin: ToolsetPin) -> None:
@@ -134,7 +149,22 @@ def write_toolset_pin(pin: ToolsetPin) -> None:
     ]
     if pin.winsdk:
         lines.append(pin.winsdk)
+    if pin.inputs:
+        lines.append(f"inputs: {pin.inputs}")
     TOOLSET_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def launcher_inputs_sha256(pin: ToolsetPin) -> str:
+    """SHA-256 of what decides the launcher's bytes on a given toolchain.
+
+    ``launcher.c``, the compile/link flags and libraries, and the MSVC + SDK
+    pin. Line endings are normalized, so a CRLF checkout hashes the same.
+    """
+    h = hashlib.sha256()
+    h.update(SOURCE.read_bytes().replace(b"\r\n", b"\n"))
+    for part in (_CL_FLAGS, _LINK_FLAGS, _LINK_LIBS, [pin.vc_tools, pin.winsdk or ""]):
+        h.update(b"\0" + "\x1f".join(part).encode("utf-8"))
+    return h.hexdigest()
 
 
 def _vc_tools_version(env: dict[str, str]) -> str:
@@ -415,7 +445,10 @@ def do_build() -> int:
             "vcvars did not export VCTOOLSVERSION; cannot record a "
             "reproducible toolset pin in vendor/TOOLSET.txt."
         )
-    recorded = ToolsetPin(tools_version, sdk_version or None)
+    versions = ToolsetPin(tools_version, sdk_version or None)
+    recorded = ToolsetPin(
+        versions.vc_tools, versions.winsdk, launcher_inputs_sha256(versions)
+    )
     write_toolset_pin(recorded)
     compile_launcher(
         VENDORED_LAUNCHER,
@@ -455,6 +488,8 @@ def do_verify() -> int:
         )
         rebuilt = rebuilt_path.read_bytes()
     _reject_tool_version_stamp(rebuilt, "freshly compiled launcher")
+    if rebuilt != vendored and _toolchain_drift(pin, vendored, rebuilt, used):
+        return _check_manifest(vendored, used, drifted=True)
     if rebuilt != vendored:
         # A vendored binary that still carries the stamp predates
         # /EMITTOOLVERSIONINFO:NO and can never match a current rebuild — say so
@@ -466,11 +501,10 @@ def do_verify() -> int:
             "`revendor_launcher` CI workflow; this is expected on the commit "
             "that introduced the flag."
             if has_tool_version_stamp(vendored)
-            else "  Either the C source or the compile/link flags changed "
-            "without re-vendoring (run `build`), or this runner's "
-            "MSVC/Windows-SDK pair emits different code than the one that "
-            "produced the vendored binary — re-vendor via the "
-            "`revendor_launcher` CI workflow when the hosted image rolls."
+            else "  The C source, the compile/link flags or the toolset pin changed "
+            "since the binary was vendored (its recorded inputs no longer match), "
+            "or it predates recording them. Re-vendor: run `build` locally or the "
+            "`revendor_launcher` CI workflow."
         )
         raise LauncherBuildError(
             "the freshly compiled launcher does not byte-match the vendored "
@@ -480,6 +514,40 @@ def do_verify() -> int:
             f"  pinned: {pin.label() if pin else '(none)'}; "
             f"compiler used: {used.label()}\n" + cause
         )
+    return _check_manifest(vendored, used, drifted=False)
+
+
+def _toolchain_drift(
+    pin: ToolsetPin | None, vendored: bytes, rebuilt: bytes, used: ToolsetPin
+) -> bool:
+    """Whether a mismatch is this runner's toolchain, not a missed re-vendor.
+
+    True only when the vendored binary records the inputs it was built from
+    and they are unchanged: then nothing of ours moved, and the runner image
+    builds different bytes from the same source, flags and pin. That is warned
+    about, not failed, so an image rollout does not block every PR; the fix is
+    to re-vendor once the new image is the only one in use.
+    """
+    if pin is None or pin.inputs is None or has_tool_version_stamp(vendored):
+        return False
+    if pin.inputs != launcher_inputs_sha256(pin):
+        return False
+    message = (
+        "the launcher's inputs are unchanged, but this runner builds different "
+        f"bytes from them ({used.label()}; vendored "
+        f"sha256={hashlib.sha256(vendored).hexdigest()}, rebuilt "
+        f"sha256={hashlib.sha256(rebuilt).hexdigest()}). The runner image's "
+        "toolchain changed under the same version pin. Re-vendor via the "
+        "`revendor_launcher` workflow once the new image is fully rolled out."
+    )
+    # A GitHub Actions annotation (read from stdout), so the drift is visible on a
+    # green run.
+    print(f"::warning title=Launcher toolchain drift::{message}")
+    return True
+
+
+def _check_manifest(vendored: bytes, used: ToolsetPin, *, drifted: bool) -> int:
+    """The vendored binary matches its SHA256SUMS pin, whatever the runner."""
     manifest = _read_manifest()
     expected = manifest.get(LAUNCHER_NAME)
     actual = hashlib.sha256(vendored).hexdigest()
@@ -488,7 +556,15 @@ def do_verify() -> int:
             f"vendored launcher SHA-256 {actual} does not match the manifest "
             f"pin {expected}."
         )
-    print(f"verified {VENDORED_LAUNCHER} is reproducible ({actual}); {used.label()}")
+    if drifted:
+        print(
+            f"verified {VENDORED_LAUNCHER} matches its pin ({actual}) and its "
+            "recorded inputs; this runner's toolchain drifted (warning above)"
+        )
+    else:
+        print(
+            f"verified {VENDORED_LAUNCHER} is reproducible ({actual}); {used.label()}"
+        )
     return 0
 
 

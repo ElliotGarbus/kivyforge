@@ -554,6 +554,20 @@ runner images reporting the same `14.51.36231` were observed running `cl` builds
 machine code. `TOOLSET.txt` still pins MSVC + the Windows SDK, but for the other
 failure mode: a genuinely different toolchain can emit different *code*.
 
+**Toolchain drift is a warning, a missed re-vendor is a failure.** The version
+pin cannot catch everything either: the `win25-vs2026/20261021` runner image
+(October 2026) built different bytes from the same source, flags and
+`14.51.36231` / `10.0.26100.0` pin, most likely an SDK serviced in place, and
+the check failed on every PR that landed on it while the image rolled out. So
+`build` records, as an `inputs:` line in `TOOLSET.txt`, a hash of everything of
+ours that decides the bytes: `launcher.c` (line endings normalized), the
+compile/link flags and libraries, and the pin. On a byte mismatch, `verify`
+fails if those inputs changed (someone forgot to re-vendor) or were never
+recorded, and otherwise emits a `Launcher toolchain drift` GitHub warning and
+passes: nothing of ours moved, the runner's toolchain did. Re-vendor with
+`revendor_launcher` once the new image is the only one in use. The `SHA256SUMS`
+integrity check is strict either way.
+
 ## `init` / `build` / `run` / `package` / `status`
 
 - **`init`** — seeds the `[tool.kivy.windows]` overlay (and `[tool.kivy]` if
