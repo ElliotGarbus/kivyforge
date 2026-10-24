@@ -1948,6 +1948,17 @@ because SDL's `onRequestPermissionsResult` does not call `super`, so that needs
 a second change. See
 [`android-componentactivity-spike-findings.md`](android-componentactivity-spike-findings.md).
 
+*Related, 2026-10-23:* issue #85 asks for the other half of what an SDK that
+needs code in `onCreate` requires — an app-owned subclass of the launcher,
+p4a's `--activity-class-name`. [`android-activity-class-proposal.md`](android-activity-class-proposal.md)
+designs that as `[tool.kivy.android].activity_class`, declines a kivyforge
+lifecycle-hook interface because `Application.ActivityLifecycleCallbacks`
+registered from a `ContentProvider` already works in a kivyforge app, and
+records that `[tool.kivy.android.src]` has never compiled anything (the
+`srcDirs` path resolves against `app/`). Its spike is
+[`android-activity-class-spike-findings.md`](android-activity-class-spike-findings.md).
+The two changes are independent and combine.
+
 **The one cheap early move, and why it is worth doing out of order.** The spec
 names kivyforge as its intended first consumer and says the contract stays
 unfrozen until a real consumer builds to a device — and no consumer exists, so
