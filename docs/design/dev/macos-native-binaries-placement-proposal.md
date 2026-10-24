@@ -254,8 +254,14 @@ Apple's fix for the binary's kind: an `@rpath/` install name, plus
 
 ### 3.6 Other parts of the macOS backend
 
-- **Signing:** no change. `_machos_inside_out` walks the bundle by file magic,
-  so `Helpers/` and `Frameworks/` are swept like everything else, inside out.
+- **Signing:** `_machos_inside_out` walks the bundle by file magic, so
+  `Helpers/` and `Frameworks/` are swept like everything else, inside out.
+  One change, found by the first real `hello-native` build: `Helpers/roll` is
+  no deeper than `MacOS/<exe>`, and `codesign` refuses the main executable
+  while `Helpers/` or `Frameworks/` holds unsigned code ("code object is not
+  signed at all / In subcomponent"). `Resources/bin` never triggered this
+  because it is not a code location. `Contents/MacOS/` now signs after every
+  other Mach-O and before the bundle seal.
 - **`doctor`:** the arch check walks `Contents/Helpers/` and
   `Contents/Frameworks/` instead of `Resources/bin/`, and the not-code and
   collision checks cover vendored single-file sources.

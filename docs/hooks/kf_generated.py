@@ -148,6 +148,32 @@ _DIAGNOSTIC = {
         "which would ship unsigned.",
         "List it under the platform's native-code key, which signs it.",
     ),
+    "KF-MACOS-NATIVE-NOT-CODE": (
+        "error or warning",
+        "macOS: a `native.binaries` file is not a Mach-O. The channel places "
+        "native code only. An error for a single-file source; archive members "
+        "are skipped with a warning.",
+        "Put data under `include_files` and scripts under `app_dir`.",
+    ),
+    "KF-MACOS-NATIVE-UNSUPPORTED": (
+        "error",
+        "macOS: a `native.binaries` file is code the channel cannot place: a "
+        "Mach-O other than an executable or a dynamic library (a plug-in, an "
+        "object file), a universal file whose slices disagree, or a file "
+        "inside a bundle (`.framework`, `.app`) in an archive.",
+        "Ship the executable or `.dylib` itself; plug-ins and bundles are not "
+        "supported.",
+    ),
+    "KF-MACOS-NATIVE-LOAD-PATH": (
+        "error or warning",
+        "macOS: a native binary links a declared library by a path that does "
+        "not reach it in `Contents/Frameworks/`, in a process that loads it. A "
+        "warning when the link is weak, or when Python loads it by its install "
+        "name and the app can load the library first.",
+        "Relink with `install_name_tool`: link the library as `@rpath/<name>`, "
+        "and add an rpath of `@executable_path/../Frameworks` to a helper or "
+        "`@loader_path` to a library. The message gives the commands.",
+    ),
     "KF-INCLUDE-SOURCE-FORMAT": (
         "error",
         "An include_files path is a format Xcode compiles (.xcstrings, "
