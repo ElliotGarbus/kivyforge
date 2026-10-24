@@ -108,6 +108,7 @@ from .model import (
     WindowsConfig,
     WindowsSigningConfig,
     XcframeworkDep,
+    foreign_namespace_attr,
 )
 from .version import android_auto_version_code, normalized
 
@@ -2779,6 +2780,18 @@ def _parse_android_manifest(
                 hint="these are written from the schema (android/01 §managed "
                 "manifest keys); set the controlling field instead.",
             )
+        # The generated root declares xmlns:tools so the raw-XML fragments can
+        # carry merger directives; the attribute tables are not the place for
+        # them (a tools:node="remove" on the launcher would delete the app's
+        # entry point).
+        for attr in sorted(raw):
+            reason = foreign_namespace_attr(attr)
+            if reason is not None:
+                raise ConfigError(
+                    f"[tool.kivy.android.manifest].{key}: {reason}",
+                    key_path=f"tool.kivy.android.manifest.{key}",
+                    line=finder.line(key),
+                )
         return dict(raw)
 
     application = _attrs("application", MANAGED_ANDROID_APPLICATION_ATTRS)
@@ -2817,9 +2830,13 @@ def _parse_android_manifest(
         if fragment.strip():
             import xml.etree.ElementTree as ET
 
+            # The same two namespaces the generated <manifest> root declares,
+            # so a fragment is checked against exactly what it will be
+            # emitted into.
             wrapped = (
                 "<kivyforge xmlns:android="
-                '"http://schemas.android.com/apk/res/android">'
+                '"http://schemas.android.com/apk/res/android" '
+                'xmlns:tools="http://schemas.android.com/tools">'
                 f"{fragment}</kivyforge>"
             )
             try:
