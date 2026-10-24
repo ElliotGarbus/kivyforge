@@ -1,9 +1,9 @@
 # Proposal — `include_files` beyond Android
 
-> Status: **implemented 2026-10-23**. Section 8's on-Mac steps 1-5 passed the
+> Status: **implemented 2026-10-23**. Section 8's on-Mac checks passed the
 > same day on Xcode 27 (simulator, an iPhone 18 Pro Max, and a notarized
-> macOS package; test-matrix §7); step 6, Xcode 26, has not been run.
-> Proposed 2026-10-22. Written for [#170](https://github.com/ElliotGarbus/kivyforge/issues/170).
+> macOS package; test-matrix §7). The Xcode 26 check was dropped: no Xcode 26
+> host will be available. Proposed 2026-10-22. Written for [#170](https://github.com/ElliotGarbus/kivyforge/issues/170).
 > Code claims were read from the source at `87d1475d`.
 > Spike results: [`include-files-spike-findings.md`](include-files-spike-findings.md)
 > (spikes 1 to 8, all done 2026-10-22: incremental pruning, iOS file
@@ -664,14 +664,16 @@ Order of work:
    did this in a scratch bundle; this repeats it through
    `kivyforge package -p macos` with Developer ID and a notary profile
    ([hardware checklist](hardware-checklist.toml)).
-6. Steps 1, 3 and 4 on **Xcode 26**. Every spike ran on Xcode 27. Apple has
-   required Xcode 26 or later for App Store uploads since 2026-04-28
-   ([upcoming requirements](https://developer.apple.com/news/upcoming-requirements/)),
-   so 26 is the oldest Xcode a shipped app can come from. The behaviours to
-   confirm there are the stale-file pruning (spike 1) and `explicitFileType`
-   overriding the extension (spike 4); the product check (section 4.8)
-   fails the build if the second does not hold. kivyforge's documented minimum
-   (Xcode 15) is a separate, wider question.
+
+Steps 1, 3 and 4 were also to be repeated on Xcode 26, the oldest Xcode App
+Store uploads accept since 2026-04-28
+([upcoming requirements](https://developer.apple.com/news/upcoming-requirements/)).
+That check was **dropped on 2026-10-23**: no Xcode 26 host will be available.
+Stale-file pruning (spike 1) and `explicitFileType` overriding the extension
+(spike 4) are therefore verified on Xcode 27 only. If Xcode 26 ignores the
+explicit file type, the product check (section 4.8) fails the build with
+`KF-ARTIFACT-CONTENT` rather than shipping a converted or missing file; a
+stale file left by an incremental build is not caught.
 
 A real Firebase initialisation is not part of the gate: it needs the Firebase
 SDK through Swift packages and a Firebase project, and proves Firebase works,
