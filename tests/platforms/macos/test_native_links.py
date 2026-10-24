@@ -291,7 +291,7 @@ class TestWhichLinksCount:
             helper(
                 "tool",
                 "@rpath/libx.dylib",
-                rpaths=("relative/dir", str(FRAMEWORKS)),
+                rpaths=("relative/dir", FRAMEWORKS.as_posix()),
             ),
             lib("libx.dylib"),
         )
