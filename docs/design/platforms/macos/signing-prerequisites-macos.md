@@ -101,8 +101,9 @@ hosts reachable**. It also WARNs if kivyforge is running as root (a common
 
 - **Every Mach-O inside the `.app`** — the launcher stub, the bundled runtime's
   `python3`/`libpython`/`.dylib`s, every wheel `.so`, and any declared native
-  binaries under `Contents/Resources/bin/`. The deep sign walks the bundle by
-  file magic and signs **inside-out** (deepest first, the `.app` seal last).
+  binaries in `Contents/Helpers/` and `Contents/Frameworks/`. The deep sign
+  walks the bundle by file magic and signs **inside-out** (deepest first, the
+  `.app` seal last).
 - **With Hardened Runtime** (`--options runtime`) and a secure `--timestamp` on
   every signature — both are notarization requirements.
 - **The `.app` seal carries the merged entitlements** (the hardened Python

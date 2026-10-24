@@ -97,7 +97,6 @@ class TestPlacement:
             ("resources/LIB", "data/words.txt", "Resources/lib"),
             ("Resources", "myapp.icns", "Resources/myapp.icns"),
             ("Resources/python/lib", "data/words.txt", "Resources/python"),
-            ("Resources/bin", "data/words.txt", "Resources/bin"),
         ],
     )
     def test_a_path_the_bundler_writes_is_refused(self, root, dest, source, taken):
@@ -113,6 +112,14 @@ class TestPlacement:
             check_includes(config, root, None)
         assert info.value.code == diagnostics.INCLUDE_RESERVED
         assert info.value.exit_code == exit_codes.CONFIG_ERROR
+
+    def test_resources_bin_is_free_for_data(self, root):
+        # Native code lives in Contents/Helpers and Contents/Frameworks.
+        (root / "data" / "words.txt").touch()
+        config = _config(_include("Resources/bin", "data/words.txt"))
+        assert [i.path for i in check_includes(config, root, None)] == [
+            "Resources/bin/words.txt"
+        ]
 
     def test_native_code_is_pointed_at_native_binaries(self, root):
         (root / "helper").write_bytes(b"\xcf\xfa\xed\xfe" + b"\0" * 12)

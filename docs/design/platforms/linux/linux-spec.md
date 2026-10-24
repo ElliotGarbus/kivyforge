@@ -407,11 +407,12 @@ same-soname system library with a vendored copy — is precisely the safety
 property we want, so it is a feature, not a limitation.
 
 macOS cannot offer any of B/C: `DYLD_*` is stripped under SIP / Hardened
-Runtime, so the macOS spec documents by-path loads only. The **portable recipe**
-that works on every desktop OS is still `Path(sys.prefix).parent / "bin"`
-(`sys.prefix` is `usr/python`, so its parent is `usr/`, giving the `bin`
-directory; the same derivation holds on macOS and Windows) — Linux simply adds
-the by-name convenience on top. A vendor `.so` whose *sibling* dependencies are
+Runtime, so the macOS spec documents by-path loads only. The by-path recipe
+on Linux is `Path(sys.prefix).parent / "bin"` (`sys.prefix` is `usr/python`,
+so its parent is `usr/`, giving the `bin` directory; the same derivation holds
+on Windows). macOS keeps libraries in `Contents/Frameworks`, so there it is
+`Path(sys.prefix).parents[1] / "Frameworks"`. Linux simply adds the by-name
+convenience on top. A vendor `.so` whose *sibling* dependencies are
 not themselves declared (and lack `$ORIGIN` rpaths) still won't resolve them;
 declare the whole set, preload in order via `ctypes`, or ask the vendor for
 `$ORIGIN`-rpath'd builds.

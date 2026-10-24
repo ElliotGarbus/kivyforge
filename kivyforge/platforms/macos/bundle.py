@@ -8,7 +8,9 @@ ad-hoc sign. Produces the layout documented in macos-spec:
     <Name>.app/Contents/{Info.plist, MacOS/<exe>,
                          Resources/{app,lib,python,<exe>.icns}}
 
-plus whatever ``include_files`` puts under ``Resources/`` or ``SharedSupport/``.
+plus ``Helpers/`` and ``Frameworks/`` when ``native.binaries`` declares
+executables or libraries, and whatever ``include_files`` puts under
+``Resources/`` or ``SharedSupport/``.
 """
 
 from __future__ import annotations
@@ -190,10 +192,13 @@ def build_app_bundle(
             echo(f"Staging {len(lock.native_binaries)} native binaries ...")
             stage_native_binaries(
                 lock,
-                resources,
+                contents,
+                target_arch=target_arch,
                 project_root=project_root,
                 cache=cache,
                 no_cache=no_cache,
+                echo=echo,
+                note=note,
             )
 
         _copy_app_sources(config, project_root, resources / "app")

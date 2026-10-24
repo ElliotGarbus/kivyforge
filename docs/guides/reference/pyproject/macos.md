@@ -61,8 +61,9 @@ notarization always rejects it.
 
 Each entry is `NAME = { version = "...", source = "..." }` and declares a native
 binary that does not come from a wheel. `source` is an `http://` or `https://`
-URL, or a project-relative path. The binary is staged into
-`Contents/Resources/bin`. See
+URL, or a project-relative path. Executables are staged into
+`Contents/Helpers` and dynamic libraries into `Contents/Frameworks`; anything
+else is refused. See
 [Ship native binaries](../../guides/cross-platform/native-binaries.md).
 
 ## `[[tool.kivy.macos.include_files]]`
@@ -81,7 +82,7 @@ fail with `KF-ARTIFACT-CONTENT` if a file is missing or different. These are
 refused:
 
 - a path the bundler writes: `Resources/app`, `Resources/lib`,
-  `Resources/python`, `Resources/bin`, or the app icon (`KF-INCLUDE-RESERVED`);
+  `Resources/python`, or the app icon (`KF-INCLUDE-RESERVED`);
 - native code, a Mach-O file or a static archive (`KF-INCLUDE-NATIVE-CODE`).
   Declare it under `[tool.kivy.macos.native.binaries]`;
 - a format only Xcode compiles: `.xcstrings`, `.storyboard`, `.xib` or

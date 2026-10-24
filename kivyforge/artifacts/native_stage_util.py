@@ -194,6 +194,9 @@ def _extract_zip(
         with zipfile.ZipFile(archive) as zf:
             if reject_windows_names:
                 _reject_windows_unsafe_names(zf.namelist(), entry_name, bin_label)
+            if casefold:
+                files = [n for n in zf.namelist() if not n.endswith("/")]
+                _reject_case_clashes(files, entry_name, bin_label)
             _safe_extract(zf, staged)
         for src in sorted(staged.rglob("*")):
             if not src.is_file():
@@ -234,6 +237,9 @@ def _extract_tar(
             with tarfile.open(archive, "r:*") as tf:
                 if reject_windows_names:
                     _reject_windows_unsafe_names(tf.getnames(), entry_name, bin_label)
+                if casefold:
+                    files = [m.name for m in tf.getmembers() if m.isfile()]
+                    _reject_case_clashes(files, entry_name, bin_label)
                 tf.extractall(staged, filter="data")  # noqa: S202 — hardened filter
         except tarfile.FilterError as exc:
             raise NativeStageError(
@@ -288,6 +294,28 @@ def _claim(
             f"drop the duplicate, so no two entries write the same file."
         )
     claimed[key] = entry_name
+
+
+def _reject_case_clashes(names: Iterable[str], entry_name: str, bin_label: str) -> None:
+    """Refuse an archive whose member files differ only in case.
+
+    Runs before extraction: on a case-insensitive filesystem the second member
+    overwrites the first while extracting, so ``_claim`` afterwards would see
+    one file and never know there were two.
+    """
+    seen: dict[str, str] = {}
+    for name in names:
+        rel = name.replace("\\", "/").removeprefix("./")
+        key = rel.casefold()
+        prev = seen.get(key)
+        if prev is not None and prev != rel:
+            raise NativeStageError(
+                f"native binary {entry_name!r} holds {prev!r} and {rel!r}, whose "
+                "names differ only in case; on a case-insensitive filesystem one "
+                f"would overwrite the other in {bin_label}. Rename one of them in "
+                "the archive."
+            )
+        seen[key] = rel
 
 
 def _make_executable(path: Path) -> None:

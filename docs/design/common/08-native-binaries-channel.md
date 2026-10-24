@@ -63,12 +63,13 @@ pinning, no arch check, and manual path gymnastics.
 
 The one substantive per-platform difference is **how a staged library becomes
 loadable** — dictated by each OS's dynamic loader and security model. Helper
-*executables* are uniform (staged into `bin`, put on `PATH`, run by name); the
-divergence is entirely about shared libraries.
+*executables* are uniform (staged into one directory, put on `PATH`, run by
+name); the divergence is about shared libraries, and about where macOS lets
+code live in a bundle.
 
 | Platform | Stage dir | Library loading model | Arch check | Signing interaction |
 |----------|-----------|-----------------------|------------|---------------------|
-| **macOS** (shipped) | `Contents/Resources/bin` | **By path only** — `DYLD_*` is stripped under SIP / Hardened Runtime, so no by-name option exists. `PATH` prepend for helpers. | Mach-O universal2 slice coverage (`machotools`) | Deep-sign sweep already walks every Mach-O; notarization *requires* it |
+| **macOS** (shipped) | `Contents/Helpers` (executables), `Contents/Frameworks` (dylibs); other files refused | **By path only** — `DYLD_*` is stripped under SIP / Hardened Runtime, so no by-name option exists. `PATH` prepend for helpers. Links between declared binaries are checked per process at build time. | Mach-O header reader (`machotools`): file type, slices, load commands | Deep-sign sweep already walks every Mach-O; notarization *requires* it |
 | **Linux** (shipped) | `usr/bin` | **By name via `LD_LIBRARY_PATH` append** (helpers on `PATH`) — append keeps host libGL/libEGL resolution first while enabling soname + transitive `NEEDED` loads. See [linux-spec §"Library loading model"](../platforms/linux/linux-spec.md#library-loading-model). | ELF class + `e_machine` (a small hermetic reader) | None — Linux has no signing analog |
 | **Windows** (shipped) | `<bundle>\bin` | **By name via `os.add_dll_directory` + `PATH` prepend** in the generated bootstrap. | PE COFF machine type (`IMAGE_FILE_MACHINE_*`, a small hermetic reader) | v1 signs the launcher only; the onedir keeps every payload PE signable if ever needed (a full sweep is not planned) |
 

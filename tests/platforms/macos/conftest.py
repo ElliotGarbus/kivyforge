@@ -33,7 +33,7 @@ def faked(monkeypatch):
         calls["wheels"].append(arch)
         calls["order"].append("wheels")
 
-    def fake_native(lock, resources, **k):
+    def fake_native(lock, contents, **k):
         calls["native"].append(tuple(b.name for b in lock.native_binaries))
         calls["order"].append("native")
 

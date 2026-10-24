@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### macOS: native binaries go where Apple says code goes
+
+- **Changed (breaking):** `[tool.kivy.macos.native.binaries]` now places
+  executables in `Contents/Helpers/` and dynamic libraries in
+  `Contents/Frameworks/`, instead of everything in `Contents/Resources/bin/`
+  ([#174](https://github.com/ElliotGarbus/kivyforge/issues/174)). Apple
+  reserves `Resources/` for data, and notarization and Gatekeeper are only
+  documented for code in code locations. Each location is flat, so a file
+  from an archive keeps only its name, and names that differ only in case
+  count as the same name. The launcher puts `Contents/Helpers` on `PATH`, so
+  helpers still run by name.
+- **Changed (breaking):** the channel accepts native code only. A single-file
+  source that is not a Mach-O file fails the build with the new
+  `KF-MACOS-NATIVE-NOT-CODE`; ship data with `include_files` and scripts in
+  `app_dir`. Archive members that are not Mach-O, such as headers and
+  licences, are skipped with a warning under the same code. A plug-in
+  (`MH_BUNDLE`), any other Mach-O type, a universal file whose slices disagree
+  on type, and a binary inside a bundle in an archive (a `.framework`, for
+  instance) fail with the new `KF-MACOS-NATIVE-UNSUPPORTED`.
+- **Added:** the build checks, per process, that links between declared
+  binaries resolve in the new layout, and fails with the new
+  `KF-MACOS-NATIVE-LOAD-PATH` when one won't, naming the `install_name_tool`
+  commands that fix it. A weak link, and a link that works only if your Python
+  code loads the target library first, are warnings under the same code. A
+  binary with no slice for the target architecture now fails the build;
+  before, only `doctor` noticed.
+- **Changed:** signing now signs the main executable after all other code in
+  the bundle, since `codesign` treats `Helpers/` and `Frameworks/` as its
+  nested code.
+- **Fixed:** two archive members whose names differ only in case no longer
+  silently overwrite each other on a case-insensitive filesystem; the build
+  refuses the archive before extracting it. This applies to Windows too.
+- **Changed:** `doctor` checks the built app's `Contents/Helpers` and
+  `Contents/Frameworks` for the target architecture, reads the headers itself
+  instead of calling `lipo`, and checks that vendored single-file sources are
+  executables or dynamic libraries. `include_files` may now use
+  `Resources/bin`.
+- **Migration:** load libraries from
+  `Path(sys.prefix).parents[1] / "Frameworks"` instead of
+  `Path(sys.prefix).parent / "bin"`; helpers run by name need no change. A
+  helper built to find its library beside it (`@executable_path/libx.dylib`,
+  `@loader_path/libx.dylib`, or an `@executable_path` run path) now fails the
+  build: relink it to `@rpath/libx.dylib` with the run path
+  `@executable_path/../Frameworks`, and give a library your Python code loads
+  the run path `@loader_path`. Move any data out of the channel and into
+  `include_files`. No re-lock is needed.
+
 ### Android: plain `lock` accepts an edited `include_files` file
 
 - **Fixed:** after you edited a file listed in
