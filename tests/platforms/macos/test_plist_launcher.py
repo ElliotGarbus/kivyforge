@@ -82,9 +82,10 @@ class TestLauncherSource:
         assert "Resources/lib" in src
         assert "execv(py, child)" in src
 
-    def test_prepends_bin_to_path(self):
+    def test_prepends_helpers_to_path(self):
         src = render_launcher_source("main")
-        assert "Resources/bin" in src
+        assert '"%s/Helpers", contents' in src
+        assert "Resources/bin" not in src
         assert 'getenv("PATH")' in src
         assert 'setenv("PATH", newpath, 1)' in src
 
@@ -204,7 +205,7 @@ class TestLauncherCompile:
         assert macho_arches(path) == (host,)
         assert os.stat(path).st_mode & stat.S_IXUSR
 
-    def test_child_sees_bin_first_on_path(self, tmp_path):
+    def test_child_sees_helpers_first_on_path(self, tmp_path):
         import subprocess
 
         host = "arm64" if platform.machine() == "arm64" else "x86_64"
@@ -220,13 +221,13 @@ class TestLauncherCompile:
         py.chmod(0o755)
         (contents / "Resources" / "app").mkdir(parents=True)
         (contents / "Resources" / "app" / "main.py").write_text("")
-        (contents / "Resources" / "bin").mkdir(parents=True)
+        (contents / "Helpers").mkdir(parents=True)
 
         out = subprocess.run(
             [str(launcher)], capture_output=True, text=True, check=True
         ).stdout
         first = out.split(":", 1)[0]
-        assert first.endswith("/Resources/bin")
+        assert first.endswith("/Contents/Helpers")
 
     def test_child_is_invoked_with_dash_m_not_a_source_path(self, tmp_path):
         """End-to-end proof the launcher execs ``-P -m main``, not a ``.py`` path.

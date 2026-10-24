@@ -500,13 +500,14 @@ def render_macos_tables(
 
 # Commented native-binary stub. Left inert so a vanilla app needs no extra
 # artifacts; uncomment to stage a non-wheel dylib/helper (SHA-256-pinned by
-# `kivyforge lock`, staged into Contents/Resources/bin, and covered by the
-# signing sweep).
+# `kivyforge lock`, staged into Contents/Helpers or Contents/Frameworks, and
+# covered by the signing sweep).
 _MACOS_NATIVE_BINARIES_STUB = [
     "",
     "# Optional: non-wheel native binaries (macos-spec). Each is pinned by",
-    "# `kivyforge lock` and staged into the app's bin directory (on PATH at",
-    "# runtime; load dylibs by absolute path via Path(sys.prefix).parent / 'bin').",
+    "# `kivyforge lock`. Executables go to Contents/Helpers (on PATH at runtime);",
+    "# dylibs go to Contents/Frameworks, loaded by absolute path via",
+    "# Path(sys.prefix).parents[1] / 'Frameworks'.",
     "# [tool.kivy.macos.native.binaries]",
     '# ffmpeg = { version = "7.1", source = "https://example.com/ffmpeg-macos-universal2.zip" }',
     '# libgreet = { version = "0.1.0", source = "binaries/macos/libgreet.dylib" }',

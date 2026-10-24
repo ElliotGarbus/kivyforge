@@ -4,6 +4,8 @@ sources:
   - docs/design/common/08-native-binaries-channel.md
   - kivyforge/config/model.py
   - kivyforge/platforms/windows/native_stage.py
+  - kivyforge/platforms/macos/native_stage.py
+  - kivyforge/platforms/macos/native_links.py
   - examples/desktop/hello-native/pyproject.toml
   - examples/desktop/hello-native/src/main.py
 ---
@@ -71,19 +73,40 @@ This channel is for desktop targets only. On iOS, use xcframeworks or
     ```
 
 The build downloads or copies each binary, verifies its SHA-256, and stages it
-into the app's `bin` directory. It fails if two entries would write the same
-file. On Windows, it also fails if a binary was built for the wrong
-architecture.
+into the app. It fails if two entries would write the same file. On Windows
+and macOS, it also fails if a binary was built for the wrong architecture.
 
 | Target | Staged into | How your code finds it |
 |---|---|---|
 | Windows | `bin\` in the bundle | The generated bootstrap registers `bin\` with `os.add_dll_directory` and adds it to `PATH`, so executables run by name and DLLs load by name. |
-| macOS | `Contents/Resources/bin` | Executables run by name, because `bin` is added to `PATH`. Load libraries by absolute path: macOS strips `DYLD_*` variables, so loading by name is not possible. The signing step signs the staged binaries. |
+| macOS | Executables in `Contents/Helpers`, libraries in `Contents/Frameworks` | Executables run by name, because `Contents/Helpers` is added to `PATH`. Load libraries by absolute path: macOS strips `DYLD_*` variables, so loading by name is not possible. The signing step signs the staged binaries. |
 | Linux | `usr/bin` in the AppDir | The generated `AppRun` adds `usr/bin` to `PATH` and `LD_LIBRARY_PATH`, so executables run by name and libraries load by name. |
 
 kivyforge does not resolve a binary's own dependencies or fix its load paths.
 If a library needs other libraries, declare those too, so they are staged into
-the same `bin` directory.
+the app beside it.
+
+### macOS: code only, in Apple's layout
+
+On macOS, the build reads each file's Mach-O header and places it where Apple's
+bundle layout says code goes. Every location is flat: a file from an archive
+keeps only its name, and names that differ only in case count as the same name.
+
+- A single file that is not native code fails the build
+  (`KF-MACOS-NATIVE-NOT-CODE`). Ship data with
+  [`include_files`](../../reference/pyproject/macos.md) and scripts in
+  `app_dir`. Files in an archive that are not native code, such as headers or
+  licences, are skipped with a warning.
+- Plug-ins (`MH_BUNDLE`), object files, and binaries inside a bundle in an
+  archive, such as a `.framework`, fail the build
+  (`KF-MACOS-NATIVE-UNSUPPORTED`).
+- A link between declared binaries that would not resolve in the new layout
+  fails the build (`KF-MACOS-NATIVE-LOAD-PATH`). The message gives the
+  `install_name_tool` commands that fix it. The usual cause is a helper built
+  to find its library beside it. Apple's form works from `Contents/Helpers`:
+  link the library as `@rpath/<name>` and give the helper the run path
+  `@executable_path/../Frameworks`. A library your Python code loads should
+  find its own dependencies with the run path `@loader_path`.
 
 ## Use the binaries from Python
 
@@ -110,8 +133,9 @@ Load a shared library the way each target requires:
     import sys
     from pathlib import Path
 
-    bin_dir = Path(sys.prefix).parent / "bin"  # Contents/Resources/bin
-    lib = ctypes.CDLL(str(bin_dir / "libgreet.dylib"))
+    # sys.prefix is Contents/Resources/python.
+    frameworks = Path(sys.prefix).parents[1] / "Frameworks"
+    lib = ctypes.CDLL(str(frameworks / "libgreet.dylib"))
     ```
 
 === "Linux"
@@ -136,9 +160,10 @@ kivyforge doctor -p linux
 ```
 
 Its native-binaries check fails if a declared source file is missing or two
-entries would collide. On macOS and Linux, once the app is built, it also checks
-that every staged binary matches the target architecture. On Windows, the build
-itself checks the architecture.
+entries would collide. On macOS, it also fails if a declared single file is not
+an executable or a dynamic library. On macOS and Linux, once the app is built,
+it also checks that every staged binary matches the target architecture. On
+Windows and macOS, the build itself checks the architecture.
 
 ## What's next
 
