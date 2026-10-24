@@ -133,6 +133,31 @@ MANAGED_ANDROID_ACTIVITY_ATTRS = frozenset(
     }
 )
 
+
+def foreign_namespace_attr(key: str) -> str | None:
+    """Why a passthrough attribute *key* is refused, or ``None`` if it is fine.
+
+    The attribute tables (``manifest.application`` / ``manifest.activity``) set
+    attributes of the two elements kivyforge generates, and those elements take
+    ``android:`` attributes. A ``tools:`` key there is not an attribute of the
+    element but an instruction to the manifest merger about it -- and on the
+    launcher, ``tools:node="remove"`` would delete the app's entry point, while
+    ``tools:replace`` on ``<application>`` would override a managed attribute by
+    the back door. Those directives are legitimate on the *elements a user
+    authors* in the raw-XML fragments, which is the escape hatch for them.
+    """
+    prefix, sep, _ = key.partition(":")
+    if sep and prefix != "android":
+        return (
+            f"{key!r} is in the {prefix!r} namespace; the attribute tables set "
+            "android: attributes of the generated element. A manifest-merger "
+            "directive (tools:node, tools:replace, ...) belongs on an element "
+            "you author in extra_manifest_xml / extra_application_xml / "
+            "extra_activity_xml."
+        )
+    return None
+
+
 # gradle.properties keys kivyforge manages (android/01 gradle_properties).
 RESERVED_ANDROID_GRADLE_PROPERTIES = frozenset({"android.useAndroidX"})
 

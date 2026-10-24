@@ -156,13 +156,13 @@ Each entry becomes an `<intent-filter>` on the main activity.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `application` | table | `{}` | Attributes added to `<application>`. `android:label`, `android:icon`, `android:roundIcon`, `android:theme`, and `android:extractNativeLibs` are managed by kivyforge and rejected. |
-| `activity` | table | `{}` | Attributes added to the main `<activity>`. `android:name`, `android:label`, `android:screenOrientation`, and `android:theme` are rejected. |
+| `application` | table | `{}` | `android:` attributes added to `<application>`. `android:label`, `android:icon`, `android:roundIcon`, `android:theme`, and `android:extractNativeLibs` are managed by kivyforge and rejected, as is any key in another namespace such as `tools:`. |
+| `activity` | table | `{}` | `android:` attributes added to the main `<activity>`. `android:name`, `android:label`, `android:screenOrientation`, and `android:theme` are rejected, as is any `tools:` key. |
 | `placeholders` | table | `{}` | Manifest placeholders, string to string. |
-| `allow_exported` | list of string | `[]` | Fully qualified component names that the release manifest policy accepts as exported. |
-| `extra_manifest_xml` | string | `""` | XML inserted inside `<manifest>`. Must be well formed. |
-| `extra_application_xml` | string | `""` | XML inserted inside `<application>`. |
-| `extra_activity_xml` | string | `""` | XML inserted inside the main `<activity>`. |
+| `allow_exported` | list of string | `[]` | Fully qualified component names that the release manifest policy accepts as exported. To drop a library's component instead, declare it in `extra_application_xml` with `tools:node="remove"`. |
+| `extra_manifest_xml` | string | `""` | XML inserted inside `<manifest>`. Must be well formed. The `android:` and `tools:` prefixes are declared for you, so manifest-merger directives (`tools:node`, `tools:replace`) can be used as Android's documentation shows them. |
+| `extra_application_xml` | string | `""` | XML inserted inside `<application>`. Same rules. |
+| `extra_activity_xml` | string | `""` | XML inserted inside the main `<activity>`. Same rules. |
 
 ## `[tool.kivy.android.signing]`
 

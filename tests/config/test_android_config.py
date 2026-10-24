@@ -184,6 +184,14 @@ class TestRuleRejections:
                 "kivyforge-managed",
             ),
             (
+                "rule15-merger-directive-in-attribute-table",
+                [
+                    "[tool.kivy.android.manifest]",
+                    'activity = { "tools:node" = "remove" }',
+                ],
+                "'tools' namespace",
+            ),
+            (
                 "rule15-reserved-gradle-prop",
                 [
                     "[tool.kivy.android.gradle_properties]",
