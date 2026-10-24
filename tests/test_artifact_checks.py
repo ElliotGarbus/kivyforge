@@ -42,6 +42,7 @@ from kivyforge.platforms.android.generate.manifest import (
     ANDROID_NS,
     GENERATED_THEME,
     MAIN_ACTIVITY,
+    TOOLS_NS,
     ManifestError,
     generate_manifest,
 )
@@ -535,7 +536,8 @@ def _merged(
             "    </application>", _LIBRARY_COMPONENTS + "    </application>", 1
         )
     # AGP injects these four out of app/build.gradle's defaultConfig; the
-    # generated manifest carries none of them.
+    # generated manifest carries none of them. The merger also consumes the
+    # tools namespace: no tools: attribute, and no xmlns:tools, survives it.
     injected = (
         f'<manifest xmlns:android="{ANDROID_NS}"'
         f' package="{android.package}"'
@@ -544,7 +546,9 @@ def _merged(
         f'    <uses-sdk android:minSdkVersion="{android.min_sdk}"'
         f' android:targetSdkVersion="{android.target_sdk}" />'
     )
-    return generated.replace(f'<manifest xmlns:android="{ANDROID_NS}">', injected, 1)
+    root = f'<manifest xmlns:android="{ANDROID_NS}" xmlns:tools="{TOOLS_NS}">'
+    assert root in generated, "the simulated merge must start from the real root"
+    return generated.replace(root, injected, 1)
 
 
 def _mcheck(
@@ -934,16 +938,18 @@ class TestMergedManifestPassthrough:
         A bare (un-prefixed) key lands in the generated manifest verbatim and
         in no namespace, so Android ignores it and this check must too —
         looking for it under the ``android:`` namespace would report a fault
-        on every build. ``tools:`` never reaches here at all: the generator
-        emits no ``xmlns:tools``, so a ``tools:``-prefixed passthrough key
-        fails well-formedness at generation time, which is the right place.
+        on every build. ``tools:`` never reaches here at all: the attribute
+        tables refuse a ``tools:``-prefixed key at generation time (the
+        generated root does declare ``xmlns:tools``, for the raw-XML
+        fragments), and the merger strips every ``tools:`` attribute a
+        fragment carries before the merged manifest exists.
         """
         android = _android(
             manifest=AndroidManifestConfig(application={"largeHeap": True})
         )
         assert _mcheck(_merged(android), android) == []
 
-        with pytest.raises(ManifestError, match="not well-formed"):
+        with pytest.raises(ManifestError, match="'tools' namespace"):
             generate_manifest(
                 _android(
                     manifest=AndroidManifestConfig(

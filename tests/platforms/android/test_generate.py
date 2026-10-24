@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.config.model import ResolvedVersion
 from kivyforge.config.version import with_version
@@ -183,6 +185,54 @@ class TestManifest:
         app = tree.find("application")
         assert app is not None
         assert app.get(f"{NS}largeHeap") == "true"
+
+    def test_a_fragment_can_carry_a_manifest_merger_directive(self):
+        """The App Startup entry Android documents, pasted verbatim.
+
+        ``tools:node="merge"`` is how a library's ``InitializationProvider``
+        entry is combined with the app's; ``tools:node="remove"`` is the only
+        way to drop a component a dependency's manifest contributes. Both
+        need ``xmlns:tools`` declared on the root the fragment is emitted
+        into, which the generator does and the loader's well-formedness check
+        mirrors.
+        """
+        _, android = _android(
+            "[tool.kivy.android.manifest]\n"
+            "extra_application_xml = '''\n"
+            '<provider android:name="androidx.startup.InitializationProvider"\n'
+            '    android:authorities="${applicationId}.androidx-startup"\n'
+            '    android:exported="false"\n'
+            '    tools:node="merge">\n'
+            '  <meta-data android:name="org.example.Init" '
+            'android:value="androidx.startup" />\n'
+            "</provider>\n"
+            "'''\n"
+        )
+        text, tree = _manifest_tree(android)
+        assert 'xmlns:tools="http://schemas.android.com/tools"' in text
+        provider = tree.find("application/provider")
+        assert provider is not None
+        assert provider.get("{http://schemas.android.com/tools}node") == "merge"
+        assert provider.get(f"{NS}authorities") == "org.example.genapp.androidx-startup"
+
+    @pytest.mark.parametrize("table", ["application", "activity"])
+    def test_a_merger_directive_is_refused_in_the_attribute_tables(self, table):
+        """``xmlns:tools`` on the root must not turn the attribute tables into
+        a merger console: ``tools:node="remove"`` on the launcher would delete
+        the entry point. The loader is the user-facing refusal; the generator
+        refuses too, for a config built without it."""
+        with pytest.raises(ConfigError, match="'tools' namespace"):
+            _android(
+                "[tool.kivy.android.manifest]\n"
+                f'{table} = {{ "tools:node" = "remove" }}\n'
+            )
+        _, android = _android("")
+        attrs = {"tools:node": "remove"}
+        manifest = replace(android.manifest, **{table: attrs})
+        with pytest.raises(ManifestError, match="'tools' namespace"):
+            generate_manifest(
+                replace(android, manifest=manifest), orientation=("portrait",)
+            )
 
     def test_a_passthrough_value_is_escaped_exactly_once(self):
         """An ``&`` in a passthrough value must not ship as ``&amp;``.

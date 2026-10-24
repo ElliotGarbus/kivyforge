@@ -12,9 +12,20 @@ from __future__ import annotations
 
 from xml.sax.saxutils import quoteattr
 
-from kivyforge.config.model import AndroidConfig, AndroidService
+from kivyforge.config.model import (
+    AndroidConfig,
+    AndroidService,
+    foreign_namespace_attr,
+)
 
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
+# AGP's manifest merger reads its directives (``tools:node="merge|remove"``,
+# ``tools:replace``, ``tools:overrideLibrary``) from this namespace and emits
+# none of them, so declaring it on the root costs nothing in the APK and lets
+# a raw-XML fragment carry the merger instructions Android's own documentation
+# shows -- App Startup's ``<provider ... tools:node="merge">`` entry, or
+# ``tools:node="remove"`` for a library component the app does not want.
+TOOLS_NS = "http://schemas.android.com/tools"
 MAIN_ACTIVITY = "org.kivy.android.PythonActivity"
 GENERATED_THEME = "@style/Theme.Kivyforge"
 
@@ -185,7 +196,7 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
 
     lines: list[str] = []
     lines.append('<?xml version="1.0" encoding="utf-8"?>')
-    lines.append(f'<manifest xmlns:android="{ANDROID_NS}">')
+    lines.append(f'<manifest xmlns:android="{ANDROID_NS}" xmlns:tools="{TOOLS_NS}">')
 
     for permission in permissions:
         lines.append(f"    <uses-permission android:name={quoteattr(permission)} />")
@@ -221,6 +232,7 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
                 f"and cannot be set through [tool.kivy.android.manifest.application]. "
                 f"{RESERVED_APPLICATION_ATTRS[key]}"
             )
+        _refuse_foreign_namespace("application", key)
         app_attrs[key] = _attr_str(value)
     lines.append(f"    <application {_attrs(app_attrs)}>")
 
@@ -232,6 +244,7 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
         "android:theme": GENERATED_THEME,
     }
     for key, value in sorted(android.manifest.activity.items()):
+        _refuse_foreign_namespace("activity", key)
         activity_attrs[key] = _attr_str(value)
     lines.append(f"        <activity {_attrs(activity_attrs)}>")
     lines.append("            <intent-filter>")
@@ -287,6 +300,15 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
     text = "\n".join(lines) + "\n"
     _assert_well_formed(text)
     return text
+
+
+def _refuse_foreign_namespace(table: str, key: str) -> None:
+    """The loader already refuses these (rule 15); this is the belt for an
+    ``AndroidConfig`` built without it. Before ``xmlns:tools`` was declared on
+    the root, such a key failed well-formedness here by accident."""
+    reason = foreign_namespace_attr(key)
+    if reason is not None:
+        raise ManifestError(f"[tool.kivy.android.manifest].{table}: {reason}")
 
 
 def _substitute(fragment: str, android: AndroidConfig) -> str:

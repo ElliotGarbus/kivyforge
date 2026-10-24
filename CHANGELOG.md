@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Manifest-merger directives in Android raw-XML fragments
+
+- **Added:** the generated `AndroidManifest.xml` declares the `tools`
+  namespace, so a raw-XML fragment in `[tool.kivy.android.manifest]` can carry
+  manifest-merger directives as Android's documentation writes them — App
+  Startup's `<provider ... tools:node="merge">` entry, or
+  `tools:node="remove"` to drop a component a library's manifest contributes.
+  Previously such a fragment failed as "not well-formed XML".
+- **Changed:** the `application` / `activity` attribute tables reject a key
+  in any namespace other than `android:`, with a message saying where a
+  merger directive belongs. Before, such a key failed with the same
+  well-formedness error, so no configuration that loaded yesterday fails
+  today. A project that uses no `tools:` attribute produces a byte-identical
+  merged manifest: the merger consumes the namespace and emits nothing from
+  it.
 ### macOS: native binaries go where Apple says code goes
 
 - **Changed (breaking):** `[tool.kivy.macos.native.binaries]` now places
