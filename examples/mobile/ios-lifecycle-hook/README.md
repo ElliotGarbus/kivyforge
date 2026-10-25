@@ -68,10 +68,13 @@ sent to the token the app shows.
 
 ## What was verified
 
-On an iOS 27 Simulator: every row above except the notification tap and
-**Refresh task**. On an iPhone, with the spike this example was built from:
-the device token, a background push from Apple's console, BGTask launches,
-URLs, and a cold launch from a notification tap.
+On an iPhone with iOS 27, this example: the push token, a notification while
+in front, a notification tap with the app in the background and with the app
+killed (a cold launch), and **Refresh task**, whose handler ran when launched
+from the debugger. On an iOS 27 Simulator: every row except the notification
+tap and **Refresh task**. A background push from Apple's console was
+verified on the phone with the spike this example was built from, which
+installs the same delegate method.
 
 ## Limits
 
