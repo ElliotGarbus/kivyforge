@@ -1947,6 +1947,10 @@ registry, and Back was unchanged. Permission results do not reach the registry,
 because SDL's `onRequestPermissionsResult` does not call `super`, so that needs
 a second change. See
 [`android-componentactivity-spike-findings.md`](android-componentactivity-spike-findings.md).
+What a `main_activity` subclass can use from AndroidX without that change, and
+what needs it, is [issue #184](https://github.com/ElliotGarbus/kivyforge/issues/184),
+measured in [`android-androidx-subclass-spike-findings.md`](android-androidx-subclass-spike-findings.md).
+SDKs that need a `FragmentActivity` are covered by neither.
 
 *Related, 2026-10-23:* issue #85 asks for the other half of what an SDK that
 needs code in `onCreate` requires — an app-owned subclass of the launcher,

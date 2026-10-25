@@ -30,6 +30,16 @@
   subclass beside a `ContentProvider` that registers activity lifecycle
   callbacks (the route for a library), with a tracked lock as an on-device
   gate.
+- **Docs:** [Add Java libraries to your Android app](docs/guides/guides/android/java-libraries.md)
+  says what the subclass can use: it is a plain `Activity`, never an
+  `AppCompatActivity`, `FragmentActivity` or `ComponentActivity`. AndroidX
+  helpers that take a `Context` or `Activity` work, App Startup and
+  `ProcessLifecycleOwner` work once declared as dependencies, and
+  `registerForActivityResult`, `ViewModelProvider(this)` and SDKs such as
+  `BiometricPrompt` do not compile against it. It also shows App Startup's
+  manifest entry and how to choose permission request codes that don't
+  collide with `android.permissions`
+  ([#184](https://github.com/ElliotGarbus/kivyforge/issues/184)).
 
 ### Android: `[tool.kivy.android.src]` compiles your sources
 

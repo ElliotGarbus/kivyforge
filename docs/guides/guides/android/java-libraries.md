@@ -257,6 +257,69 @@ extra_application_xml = """
 In the provider's `onCreate`, register the callbacks and return. Android runs
 it on the main thread at launch, so it must not do slow work.
 
+**App Startup is the same route, the AndroidX way.** AndroidX's App Startup
+library runs `Initializer` classes from one shared provider before the first
+activity. Every kivyforge app contains it, but only at run time, so declare it
+to compile against it. The manifest entry is the one Android's App Startup
+documentation shows, unchanged:
+
+```toml
+[tool.kivy.android.gradle]
+dependencies = ["androidx.startup:startup-runtime:1.2.0"]
+
+[tool.kivy.android.manifest]
+extra_application_xml = """
+<provider android:name="androidx.startup.InitializationProvider"
+          android:authorities="${applicationId}.androidx-startup"
+          android:exported="false"
+          tools:node="merge">
+    <meta-data android:name="org.example.mylib.MyInitializer"
+               android:value="androidx.startup" />
+</provider>
+"""
+```
+
+## What your activity subclass can use
+
+Your subclass is a plain Android `Activity`. `PythonActivity` extends SDL's
+activity, which extends `android.app.Activity`, so your subclass can't also be
+an `AppCompatActivity`, a `FragmentActivity` or a `ComponentActivity`. That
+holds even though every kivyforge app is built with AndroidX and Material.
+
+AndroidX helpers that take a `Context` or an `Activity` work on it:
+
+- `ContextCompat` and `ActivityCompat`
+- `WindowCompat` and `WindowInsetsControllerCompat`
+- `NotificationCompat` and `NotificationManagerCompat`
+- App Startup, and `ProcessLifecycleOwner` for whether the app is in the
+  foreground. Declare `androidx.lifecycle:lifecycle-process` to use it; like
+  App Startup, it is in the app but not available to your code until you do.
+
+These need the activity to be a lifecycle owner, and don't compile against
+your subclass:
+
+- `registerForActivityResult`
+- `getLifecycle()` and lifecycle observers on the activity
+- `ViewModelProvider(this)`
+- `getOnBackPressedDispatcher()`
+- SDKs that need a `FragmentActivity` or an `AppCompatActivity`, such as
+  `BiometricPrompt`, or anything that shows a `DialogFragment`
+
+The build fails with `javac`'s error, which names the type that was needed,
+for example `MainActivity cannot be converted to FragmentActivity`. For
+activity results, call `startActivityForResult` and receive the result with
+`registerActivityResultListener` in Java, or with
+`android.activity.bind(on_activity_result=...)` in Python.
+
+**Use your own permission request codes.** `ActivityCompat.requestPermissions`
+works from the subclass, and the result reaches your
+`onRequestPermissionsResult` override; call `super` there so Python's requests
+still get theirs. `android.permissions` numbers its requests 2, 3, 4 and so
+on, and runs its callback for any result with one of those codes, so use codes
+well above that, such as 1000 and up. Make one request at a time: Android
+cancels a request made while another is in progress and reports it with empty
+results.
+
 ## Verify
 
 Build the app:
