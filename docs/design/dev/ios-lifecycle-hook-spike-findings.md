@@ -177,6 +177,14 @@ static void kf_wrap(Class cls, SEL sel, const char *types, id (^make)(IMP orig))
    methods: the device token on every launch, and a background push sent
    from Apple's console (§"Device pass").
 
+   **Correction, from the example:** the Simulator *does* deliver a device
+   token (80 bytes, against 32 on the phone) when
+   `registerForRemoteNotifications` is called after notification
+   authorization is granted, which the `ios-lifecycle-hook` example does.
+   The spike and the control app called it before authorization resolved.
+   The Simulator also refuses `submitTaskRequest:` ("BGTaskScheduler is not
+   available on this platform"), though registration succeeds there.
+
 9. **A background launch runs the whole Kivy app.** With the app
    terminated, the `content-available` push launched it in the background:
    `+load`, `didFinishLaunching` and `willConnect` ran, and Python called
@@ -256,9 +264,10 @@ Suggested follow-ups, roughly in order:
 1. **Put the device pass in `hardware-checklist.toml`** once the example
    exists, so it can be re-run: token, background push from the console,
    BGTask, warm and cold URL, and a cold launch from a notification tap.
-2. **A guide and an example** (`examples/mobile/ios-lifecycle-hook`): the
-   wrap helper, wrapping `willConnect` for launch context, and the pyobjus
-   read-back, with finding 1's class-name warning.
+2. ~~**A guide and an example**~~ — done 2026-10-25:
+   `examples/mobile/ios-lifecycle-hook` and
+   `docs/guides/guides/ios/lifecycle-hooks.md`. The hook queues events as
+   JSON and `lifecycle.py` dispatches them as Kivy events.
 3. **Report finding 4 upstream** (SDL, or Kivy if Kivy can drain it). Until
    then the guide's hook is the workaround for cold-start deep links.
 4. Only if users find the hook too hard to write: a small kivyforge-owned

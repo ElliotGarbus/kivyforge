@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### iOS: run code in the app lifecycle
+
+- **Added:** the `ios-lifecycle-hook` example and the guide
+  [Run code in the iOS app lifecycle](docs/guides/guides/ios/lifecycle-hooks.md),
+  the iOS answer to
+  [#85](https://github.com/ElliotGarbus/kivyforge/issues/85). A local
+  Objective-C package declared in `[tool.kivy.ios.native.swift_packages]`
+  runs before Python and adds the app-delegate methods SDL does not provide:
+  the push device token, background pushes, notification taps, background
+  tasks, and the URL that launched the app, which Kivy's `on_drop_file` never
+  receives. A Python module delivers them as Kivy events. kivyforge itself
+  is unchanged, so nothing needs migrating.
+
 ### Android: plain `lock` accepts an edited `include_files` file
 
 - **Fixed:** after you edited a file listed in

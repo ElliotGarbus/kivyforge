@@ -100,6 +100,7 @@ nav:
           - Run on the simulator or a device: guides/ios/run.md
           - Open the project in Xcode: guides/ios/xcode.md
           - Add a Swift package: guides/ios/swift-packages.md
+          - Run code in the app lifecycle: guides/ios/lifecycle-hooks.md
           - Call iOS APIs with pyobjus: guides/ios/pyobjus.md
           - Replace the kivy-ios ios module: guides/ios/ios-module.md
           - Sign the app: guides/ios/signing.md
