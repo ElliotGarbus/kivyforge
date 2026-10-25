@@ -1,6 +1,9 @@
-# Proposal — an app-owned main activity: `[tool.kivy.android].activity_class`
+# Proposal — an app-owned main activity: `[tool.kivy.android].main_activity`
 
-> Status: **proposal, revised after review; not implemented.** Written for
+> Status: **accepted design, 2026-10-24; not implemented.** All five
+> decisions in section 5 are closed. Implementation order: #182
+> (`xmlns:tools`) and the `src.java` fix (section 3.3), independently; then
+> the `main_activity` key. Written for
 > [issue #85](https://github.com/ElliotGarbus/kivyforge/issues/85). Code claims
 > were read from `25c0483d`. Every runtime claim was measured on an emulator;
 > the runs, verbatim output and two defects are in
@@ -30,7 +33,7 @@ generates the activity and offers no way to put code there. python-for-android
 and buildozer do (`--android-entrypoint`, `android.entrypoint`), and
 `kivyforge init` currently tells a buildozer user that key has no equivalent.
 
-The conclusion: **add one optional key, `[tool.kivy.android].activity_class`,
+The conclusion: **add one optional key, `[tool.kivy.android].main_activity`,
 naming an app-supplied subclass of `org.kivy.android.PythonActivity` that
 becomes the launcher activity; prove the class at compile time with a
 generated one-method Java file; make every place that names the launcher
@@ -193,7 +196,7 @@ the `UIApplicationDelegate`, which under SDL means a subclass of
 the discouraged third route.
 
 This proposal does not design the iOS key. It does keep the Android key
-platform-scoped (`[tool.kivy.android].activity_class`, not `[tool.kivy]`) so
+platform-scoped (`[tool.kivy.android].main_activity`, not `[tool.kivy]`) so
 an iOS sibling — `[tool.kivy.ios].app_delegate_class`, if ever asked for —
 is a parallel key, not a retrofit, and it documents the library-side route on
 both platforms as the same idea: the vendor's lifecycle broadcast, not a
@@ -226,7 +229,7 @@ So: do (1) now; decline (2); document how library code hooks in without it.
 
 ```toml
 [tool.kivy.android]
-activity_class = "org.example.myapp.MainActivity"   # default: the generated org.kivy.android.PythonActivity
+main_activity = "org.example.myapp.MainActivity"   # default: the generated org.kivy.android.PythonActivity
 
 [tool.kivy.android.src]
 java = ["android/java"]          # android/java/org/example/myapp/MainActivity.java
@@ -234,16 +237,21 @@ java = ["android/java"]          # android/java/org/example/myapp/MainActivity.j
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `activity_class` | string | no | `org.kivy.android.PythonActivity` | Fully qualified name of the app's launcher activity, a concrete public subclass of the generated `org.kivy.android.PythonActivity` with a public no-argument constructor. Written as the main `<activity android:name>`; `kivyforge run`, `run --smoke`, the release manifest policy and the T3 artifact checks follow it. The bundled `android` package keeps naming the base class and reaches the subclass through `mActivity`. |
+| `main_activity` | string | no | `org.kivy.android.PythonActivity` | Fully qualified name of the app's launcher activity, a concrete public subclass of the generated `org.kivy.android.PythonActivity` with a public no-argument constructor. Written as the main `<activity android:name>`; `kivyforge run`, `run --smoke`, the release manifest policy and the T3 artifact checks follow it. The bundled `android` package keeps naming the base class and reaches the subclass through `mActivity`. |
 
-Named `activity_class` after kivyforge's own habit of short noun keys
-(`base_theme`, `entry_point`). It is the counterpart of buildozer's
-`android.entrypoint`, not of `android.activity_class_name` (section 2.1);
-`init`'s key table says so (section 3.5). Not a lock input: like `src`, it is
+Named `main_activity` for the role it sets, in the words Android's own
+documentation uses for this activity ("the main activity", the one with
+`action.MAIN` + `category.LAUNCHER`; Android Studio's template calls the class
+`MainActivity`), and matching the name the repo already uses internally
+(`generate/manifest.py`'s `MAIN_ACTIVITY`, "the main `<activity>`" in the
+design docs) and the sibling list `[[tool.kivy.android.activities]]`. It is
+the counterpart of buildozer's `android.entrypoint`, not of
+`android.activity_class_name` (section 2.1); `init`'s key table says so
+(section 3.5). Not a lock input: like `src`, it is
 read on every build, and changing it never stales a lock
 (`kivyforge/lock/inputs.py`).
 
-**Loader rule 22** (android/01 §validation). `activity_class`, when present:
+**Loader rule 22** (android/01 §validation). `main_activity`, when present:
 
 - must be a string of two or more dot-separated Java identifiers. The
   `<activity>` element's documented shorthand `.MainActivity` (relative to
@@ -268,13 +276,13 @@ strong: `include_files` can stage Java under `app/src/main/java`, and an
 does not need to know where the class comes from, because the next check
 proves it exists wherever it came from.
 
-**Compile-time verifier.** When `activity_class` is set, generation emits one
+**Compile-time verifier.** When `main_activity` is set, generation emits one
 file next to the bootstrap, `app/src/main/java/org/kivy/android/KivyforgeLauncherCheck.java`
 (pruned by `_prune_stale` when the key is unset):
 
 ```java
 // Generated by kivyforge; do not edit. Compiles only if
-// [tool.kivy.android].activity_class names a concrete public subclass of
+// [tool.kivy.android].main_activity names a concrete public subclass of
 // PythonActivity with a public no-argument constructor.
 package org.kivy.android;
 
@@ -338,7 +346,7 @@ rewritten not to need a name, or is pinned to the base class on purpose.
 
 | Site | Today | Change |
 |---|---|---|
-| `generate/manifest.py` `MAIN_ACTIVITY` | constant string | `main_activity(android) -> str` returning `activity_class` or the default. `android:name` stays a **managed** activity attribute (`MANAGED_ANDROID_ACTIVITY_ATTRS`): the controlling field is now `activity_class`, and the rule-15 hint names it. The rest of the `<activity>` element — `configChanges`, `screenOrientation`, theme, intent filters — is unchanged. |
+| `generate/manifest.py` `MAIN_ACTIVITY` | constant string | `main_activity(android) -> str` returning the configured key or the default. `android:name` stays a **managed** activity attribute (`MANAGED_ANDROID_ACTIVITY_ATTRS`): the controlling field is now `main_activity`, and the rule-15 hint names it. The rest of the `<activity>` element — `configChanges`, `screenOrientation`, theme, intent filters — is unchanged. |
 | `generate/project.py` | — | emits `KivyforgeLauncherCheck.java` when the key is set (section 3.1). |
 | `platforms/android/cli.py` `run` | `adb_mod.launch(device, package, "org.kivy.android.PythonActivity")` | pass `main_activity(android)`. Spike: the old command fails with `Error type 3 ... does not exist`. |
 | `templates/androidtest/KivyforgeContractTest.java` | `new Intent(ctx, org.kivy.android.PythonActivity.class)` | `getLaunchIntentForPackage(ctx.getPackageName())` plus the `kivyforge_selftest` extra. No class name in the test at all, so it cannot drift again; plus the `isAssignableFrom` assertion. |
@@ -385,12 +393,39 @@ Two fixes are possible:
   Self-contained project; more machinery; and the user's sources would then
   be lock inputs, which `src` is not today.
 
-**Recommendation: (a)**, with the hermetic test changed to assert the relative
-path and a T3 check that the dex contains the classes the roots declare (by
-descriptor, as above). The failure mode this bug had — a green build with the
-classes missing — is why a build-time assertion is part of the fix and not a
-nice to have. Land it as its own PR with its own CHANGELOG line before the
-key, so a user who only wants `src.java` gets it fixed independently.
+**Decided 2026-10-24: (a), with two guardrails.** The failure mode this bug
+had — a green build with the classes missing — is why neither guardrail is
+optional. Gradle treats a missing `srcDir` as empty by design, so a typo in a
+root, or a root that was renamed, reproduces the original defect exactly even
+after the path is right.
+
+1. **The loader validates every configured root exists and is a directory.**
+   `_parse_android_src` already receives the project root (through
+   `_parse_android`) and already rejects a root that is absolute or escapes
+   the project; it gains: `<project_root>/<p>` must exist and be a directory,
+   failing as `ConfigError` with the line and a hint ("the path is relative
+   to the project root; Gradle would compile nothing from a missing one").
+   Rule 21 is the precedent — a splash image path is checked for existence at
+   load time for the same reason. `load_config_from_text` with no
+   `project_root` (the hermetic tests' path) skips the existence check, as
+   the other path checks do.
+2. **A T3 fixture with known marker classes, checked by dex descriptor.**
+   `tests/artifact_checks.py` gains a check that, for a project whose
+   `[tool.kivy.android.src]` declares the fixture roots, `classes*.dex`
+   contains `Lorg/kivyforge/t3/JavaMarker;` and `Lorg/kivyforge/t3/KotlinMarker;`
+   — one Java and one Kotlin class the fixture ships for this purpose, so the
+   Kotlin plugin path is proved too. The check does **not** try to enumerate
+   the classes a user's source tree declares: parsing Java or Kotlin text for
+   class names is brittle and is not what the check is for. The fixture's
+   markers prove the srcDirs wiring; the compile-time verifier (section 3.1)
+   proves the one user class that matters.
+
+The hermetic test's pinned literal changes to the relative form through
+`_groovy_str`. android/04 gets one sentence saying the generated project
+reaches outside its own directory for `src` roots, as it already does for the
+staged runtime via `PYTHON_PREFIX_DIR`. Land it as its own PR with its own
+CHANGELOG line before the key (decision 3), so a user who only wants
+`src.java` gets it fixed independently.
 
 ### 3.4 What the user is promised
 
@@ -454,7 +489,7 @@ For the guide, and so the implementation has a target:
   the compile check subsumes it and classifying one javac error specially
   would mean parsing Gradle output, which nothing else does.
 - `kivyforge init`'s buildozer table (`cli/init.py`): split the current entry.
-  `android.entrypoint` maps to `tool.kivy.android.activity_class` (same
+  `android.entrypoint` maps to `tool.kivy.android.main_activity` (same
   meaning: the launcher class). `android.activity_class_name` stays in the
   dropped list with a new explanation — kivyforge's bundled `android` package
   reaches your subclass through `PythonActivity.mActivity`, so its config
@@ -463,7 +498,7 @@ For the guide, and so the implementation has a target:
   `android.entrypoint` named. (`init` prints the table; it does not rewrite
   configuration, so "reconcile" is a sentence, not code.)
 - android/01: the field, rule 22, the managed-keys row for the main
-  `<activity android:name>` (source becomes `activity_class`).
+  `<activity android:name>` (source becomes `main_activity`).
   android/04: the tree listing (line 41, the launcher may be the app's class;
   `KivyforgeLauncherCheck.java`), the "main `<activity>` is the generated
   `PythonActivity`" sentence (line 265), the namespace-preservation paragraph
@@ -477,7 +512,7 @@ For the guide, and so the implementation has a target:
   the activity is created" (in `java-libraries.md`, or its own page) showing
   the subclass and the provider side by side; `migrate.md`'s key table.
 - `CHANGELOG.md` `[Unreleased]`: one entry for the `src.java` fix (bug; no
-  migration), one for `activity_class` (feature).
+  migration), one for `main_activity` (feature).
 
 ### 3.6 Verification
 
@@ -491,7 +526,7 @@ For the guide, and so the implementation has a target:
   `_groovy_str`.
 - T3 (`tests/artifact_checks.py`): merged manifest's `LAUNCHER` activity is
   the configured class; the dex contains its descriptor; the `src.java`
-  classes' descriptors are present even when `activity_class` is unset; the
+  classes' descriptors are present even when `main_activity` is unset; the
   verifier's negative cases as a Gradle-compile matrix (the second spike's
   script, made a test) on a kivyforge-generated project, including one Kotlin
   subclass.
@@ -542,17 +577,55 @@ For the guide, and so the implementation has a target:
   the verifier checks: the launcher is instantiated by reflection through its
   public no-argument constructor.
 
-## 5. Decisions to confirm
+## 5. Decisions
 
-Each has a recommendation; the work above assumes it.
+All closed 2026-10-24, worked through in order with the owner. Each entry
+keeps the alternatives and why they lost, so the reasoning survives the
+people who had it.
 
-1. **Key name:** `activity_class` (recommended; kivyforge style; mapped from
-   buildozer's `android.entrypoint` by `init`).
-2. **`src.java` fix:** relative srcDir (a, recommended) or stage-time copy (b).
-3. **Ship the `src.java` fix first, as its own PR** (recommended): it is a
-   defect on its own, and the key cannot be tested without it.
-4. **Gate example:** persistent on-device example (recommended, and now
-   required by section 3.6's reasoning) rather than a scratch-project T4 run.
+1. **Key name. Decided 2026-10-24: `main_activity`.** Three candidates were
+   weighed. `activity_class_name` is buildozer's spelling, but in buildozer
+   that key feeds p4a's `android.config` constants, which kivyforge keeps on
+   the base class; a same-named key that behaves differently would mislead
+   exactly the audience it is meant to help. `activity_class` (the first
+   draft's name) names the type of the value, which the string already
+   implies. `main_activity` names the role, in the noun Android's
+   documentation uses for the launcher, and is what the repo already calls
+   it internally (`MAIN_ACTIVITY`, `main_activity()`), beside the sibling
+   list `[[activities]]`. Mapped from buildozer's `android.entrypoint` by
+   `init`.
+2. **`src.java` fix. Decided 2026-10-24: (a), relative srcDir, with two
+   guardrails** — the loader checks every root exists and is a directory,
+   and a T3 fixture with one Java and one Kotlin marker class is checked by
+   dex descriptor (no enumeration of classes from source text). (b), a
+   stage-time copy with lock pins, was declined: it would make the user's
+   Java a lock input, which `src` has never been and `main.py` is not, and
+   it slows the edit-and-`gradlew` loop. Section 3.3.
+3. **Sequencing. Decided 2026-10-24: two PRs, the `src.java` fix first.**
+   It is a defect on its own, documented as working today, so a user who
+   only wants a helper class compiled gets it without waiting on a feature
+   review; its CHANGELOG entry is a bug entry with no migration, the key's a
+   feature entry; and the key's tests can then assume working `src` plumbing
+   rather than carry a workaround. The fix PR is also the first real build
+   of the Kotlin plugin path (decision 2's `KotlinMarker`), which is a
+   reason to take it alone. Order: #182 (`xmlns:tools`) and the `src.java`
+   fix, independent of each other; then the `main_activity` key, which
+   depends on both.
+4. **Gate example. Decided 2026-10-24: a persistent on-device example**,
+   `examples/mobile/android-activity-class`, with its lock tracked like the
+   four existing on-device gate examples, a `hardware-checklist.toml` item,
+   and a line in `examples/verify-android.ps1`. A scratch-project T4 run was
+   declined because nothing re-runs it: `run --smoke` never instantiates a
+   listener proxy, so the invariant that `ACTIVITY_CLASS_NAMESPACE` stays on
+   the base class (section 3.2) would be guarded by a comment alone. The
+   example's `main.py` exercises `android.activity.bind`/`unbind`,
+   `android.permissions.request_permissions` and
+   `android.darkmode.set_dark_mode_listener`; its Java is the subclass and
+   the provider side by side, which is also the guide's worked example. The
+   Pixel 8a pass is recorded through `scripts/hardware_pass.py` before the
+   feature counts as done; if the device is unavailable in the window, the
+   key may merge on the emulator pass with the device row left
+   known-unverified in `test-matrix.md` §7, stated up front.
 5. **How a `tools:` attribute reaches the generated manifest**, so the App
    Startup entry Android documents (section 2.3) can be written. Wider than
    this key, and the repo has a position: the generated `<manifest>` declares

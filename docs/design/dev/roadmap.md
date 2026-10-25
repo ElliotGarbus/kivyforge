@@ -1951,7 +1951,7 @@ a second change. See
 *Related, 2026-10-23:* issue #85 asks for the other half of what an SDK that
 needs code in `onCreate` requires — an app-owned subclass of the launcher,
 p4a's `--activity-class-name`. [`android-activity-class-proposal.md`](android-activity-class-proposal.md)
-designs that as `[tool.kivy.android].activity_class`, declines a kivyforge
+designs that as `[tool.kivy.android].main_activity`, declines a kivyforge
 lifecycle-hook interface because `Application.ActivityLifecycleCallbacks`
 registered from a `ContentProvider` already works in a kivyforge app, and
 records that `[tool.kivy.android.src]` has never compiled anything (the
