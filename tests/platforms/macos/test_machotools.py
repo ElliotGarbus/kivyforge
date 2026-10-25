@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from kivyforge.platforms.macos import AppBundleError, machotools
+from tests.platforms.macos import macho_fixtures as mf
 
 
 def _write_magic(path, magic: int) -> None:
@@ -92,6 +93,136 @@ class TestCpuTypeName:
 
     def test_unknown_type_is_labelled(self):
         assert machotools.cpu_type_name(0x99) == "cpu_type 0x99"
+
+
+class TestParseMacho:
+    def test_thin_helper_reads_type_deps_and_rpaths(self):
+        data = mf.helper(
+            deps=("@rpath/libx.dylib", ("/usr/lib/libSystem.B.dylib", "load")),
+            rpaths=("@executable_path/../Frameworks",),
+        )
+        (s,) = machotools.parse_macho(data).slices
+        assert s.arch == "arm64"
+        assert s.filetype == machotools.MH_EXECUTE
+        assert s.install_name is None
+        assert [d.name for d in s.dependencies] == [
+            "@rpath/libx.dylib",
+            "/usr/lib/libSystem.B.dylib",
+        ]
+        assert s.rpaths == ("@executable_path/../Frameworks",)
+
+    def test_dylib_install_name(self):
+        (s,) = machotools.parse_macho(mf.dylib("libx.dylib")).slices
+        assert s.filetype == machotools.MH_DYLIB
+        assert s.install_name == "@rpath/libx.dylib"
+
+    @pytest.mark.parametrize(
+        ("kind", "command", "weak"),
+        [
+            ("load", "LC_LOAD_DYLIB", False),
+            ("weak", "LC_LOAD_WEAK_DYLIB", True),
+            ("reexport", "LC_REEXPORT_DYLIB", False),
+            ("lazy", "LC_LAZY_LOAD_DYLIB", False),
+            ("upward", "LC_LOAD_UPWARD_DYLIB", False),
+        ],
+    )
+    def test_every_dependency_command(self, kind, command, weak):
+        (s,) = machotools.parse_macho(mf.helper(deps=(("libx.dylib", kind),))).slices
+        (dep,) = s.dependencies
+        assert (dep.name, dep.command, dep.weak) == ("libx.dylib", command, weak)
+
+    @pytest.mark.parametrize("little_endian", [True, False])
+    @pytest.mark.parametrize("wide", [True, False])
+    def test_thin_byte_orders_and_widths(self, little_endian, wide):
+        data = mf.thin(
+            machotools.MH_DYLIB,
+            deps=("@loader_path/liby.dylib",),
+            little_endian=little_endian,
+            wide=wide,
+        )
+        (s,) = machotools.parse_macho(data).slices
+        assert s.filetype == machotools.MH_DYLIB
+        assert s.dependencies[0].name == "@loader_path/liby.dylib"
+
+    @pytest.mark.parametrize("little_endian", [True, False])
+    @pytest.mark.parametrize("wide", [True, False])
+    def test_universal_both_widths_and_orders(self, little_endian, wide):
+        data = mf.fat(
+            mf.helper(cpu_type=machotools.CPU_TYPE_X86_64),
+            mf.helper(deps=("@rpath/libx.dylib",)),
+            wide=wide,
+            little_endian=little_endian,
+        )
+        parsed = machotools.parse_macho(data)
+        assert [s.arch for s in parsed.slices] == ["x86_64", "arm64"]
+        assert parsed.filetypes == {machotools.MH_EXECUTE}
+        arm = parsed.slice_for("arm64")
+        assert arm is not None
+        assert arm.dependencies[0].name == "@rpath/libx.dylib"
+        assert parsed.slice_for("ppc") is None
+
+    def test_universal_slices_can_disagree(self):
+        data = mf.fat(
+            mf.helper(cpu_type=machotools.CPU_TYPE_X86_64), mf.dylib("libx.dylib")
+        )
+        assert machotools.parse_macho(data).filetypes == {
+            machotools.MH_EXECUTE,
+            machotools.MH_DYLIB,
+        }
+
+    def test_slice_past_end_is_refused(self):
+        data = mf.fat(mf.helper())
+        with pytest.raises(machotools.MachoError, match="past the end"):
+            machotools.parse_macho(data[:-8])
+
+    def test_fat_header_past_end_is_refused(self):
+        data = struct.pack(">II", 0xCAFEBABE, 3) + b"\x00" * 20
+        with pytest.raises(machotools.MachoError, match="past the end"):
+            machotools.parse_macho(data)
+
+    def test_java_class_file_is_not_universal(self):
+        # 0xCAFEBABE then a class-file version (major 52), not a slice count.
+        data = struct.pack(">IHH", 0xCAFEBABE, 0, 52) + b"\x00" * 32
+        with pytest.raises(machotools.MachoError, match="universal slices"):
+            machotools.parse_macho(data)
+
+    def test_truncated_load_commands_are_refused(self):
+        data = mf.helper(deps=("@rpath/libx.dylib",))
+        with pytest.raises(machotools.MachoError, match="past the end"):
+            machotools.parse_macho(data[:-4])
+
+    def test_bad_command_size_is_refused(self):
+        data = bytearray(mf.helper(deps=("@rpath/libx.dylib",)))
+        struct.pack_into("<I", data, 32 + 4, 4)  # cmdsize < 8
+        with pytest.raises(machotools.MachoError, match="bad size"):
+            machotools.parse_macho(bytes(data))
+
+    def test_string_offset_out_of_range_is_refused(self):
+        data = bytearray(mf.helper(deps=("@rpath/libx.dylib",)))
+        struct.pack_into("<I", data, 32 + 8, 999)
+        with pytest.raises(machotools.MachoError, match="out of range"):
+            machotools.parse_macho(bytes(data))
+
+    def test_not_macho(self):
+        with pytest.raises(machotools.MachoError, match="not a Mach-O"):
+            machotools.parse_macho(b"#!/bin/sh\necho hi\n")
+        with pytest.raises(machotools.MachoError, match="too short"):
+            machotools.parse_macho(b"\xcf\xfa")
+
+    def test_read_macho_from_disk(self, tmp_path):
+        path = mf.write(tmp_path / "libx.dylib", mf.dylib("libx.dylib"))
+        assert machotools.read_macho(path).filetypes == {machotools.MH_DYLIB}
+        with pytest.raises(machotools.MachoError, match="could not read"):
+            machotools.read_macho(tmp_path / "absent")
+
+    def test_filetype_names(self):
+        assert machotools.filetype_name(machotools.MH_BUNDLE) == "MH_BUNDLE"
+        assert machotools.filetype_name(0x77) == "file type 0x77"
+
+    def test_fat64_magic_is_macho(self, tmp_path):
+        f = tmp_path / "u64"
+        _write_magic(f, 0xCAFEBABF)
+        assert machotools.is_macho(f)
 
 
 class TestToolWrappers:

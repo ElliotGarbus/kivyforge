@@ -40,6 +40,7 @@ dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
 | `[sources]` | table | none | Which index a package comes from on this target, as `package = { index = "NAME" }`. An entry replaces the `[tool.kivy.sources]` entry for the same package. See [Package indexes and sources](tool-kivy.md#package-indexes-and-sources). |
 | `base_theme` | string | `"Theme.Material3.DayNight.NoActionBar"` | Parent theme of the generated app theme. |
 | `fullscreen` | bool | `false` | Hide the status bar and the navigation bar. A swipe from the edge shows them for a moment. Replaces buildozer's `fullscreen = 1`. |
+| `main_activity` | string | `"org.kivy.android.PythonActivity"` | The launcher: your own public subclass of `org.kivy.android.PythonActivity`, fully qualified, from `[tool.kivy.android.src]`. Use it to run Java in the activity's `onCreate`. It may not be in `org.kivy.android`, `org.libsdl.app`, `org.jnius` or `org.renpy.android`. The build fails with javac's error if the class is missing, abstract, not a `PythonActivity`, or has no public no-argument constructor. Replaces buildozer's `android.entrypoint`. See [Java and Kotlin libraries](../../guides/android/java-libraries.md#run-java-when-the-activity-is-created). |
 | `gradle_properties` | table | `{}` | Extra `gradle.properties` entries. `android.useAndroidX` is reserved. |
 
 ## `[tool.kivy.android.python]`
@@ -104,8 +105,11 @@ LocalWidget = { version = "0.2.0", source = "libs/LocalWidget-0.2.0.aar" }
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `java` | list of string | `[]` | Project-relative Java source directories to compile into the app. |
-| `kotlin` | list of string | `[]` | Project-relative Kotlin source directories. A non-empty list enables the Kotlin Gradle plugin. |
+| `java` | list of string | `[]` | Project-relative Java source directories to compile into the app. Each must be an existing directory. |
+| `kotlin` | list of string | `[]` | Project-relative Kotlin source directories. Each must be an existing directory. A non-empty list enables the Kotlin Gradle plugin. |
+
+The directories are compiled in place, so an edit is picked up by the next
+build without any copy step.
 
 ## `[[tool.kivy.android.include_files]]`
 
@@ -156,13 +160,13 @@ Each entry becomes an `<intent-filter>` on the main activity.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `application` | table | `{}` | Attributes added to `<application>`. `android:label`, `android:icon`, `android:roundIcon`, `android:theme`, and `android:extractNativeLibs` are managed by kivyforge and rejected. |
-| `activity` | table | `{}` | Attributes added to the main `<activity>`. `android:name`, `android:label`, `android:screenOrientation`, and `android:theme` are rejected. |
+| `application` | table | `{}` | `android:` attributes added to `<application>`. `android:label`, `android:icon`, `android:roundIcon`, `android:theme`, and `android:extractNativeLibs` are managed by kivyforge and rejected, as is any key in another namespace such as `tools:`. |
+| `activity` | table | `{}` | `android:` attributes added to the main `<activity>`. `android:name`, `android:label`, `android:screenOrientation`, and `android:theme` are rejected, as is any `tools:` key. |
 | `placeholders` | table | `{}` | Manifest placeholders, string to string. |
-| `allow_exported` | list of string | `[]` | Fully qualified component names that the release manifest policy accepts as exported. |
-| `extra_manifest_xml` | string | `""` | XML inserted inside `<manifest>`. Must be well formed. |
-| `extra_application_xml` | string | `""` | XML inserted inside `<application>`. |
-| `extra_activity_xml` | string | `""` | XML inserted inside the main `<activity>`. |
+| `allow_exported` | list of string | `[]` | Fully qualified component names that the release manifest policy accepts as exported. To drop a library's component instead, declare it in `extra_application_xml` with `tools:node="remove"`. |
+| `extra_manifest_xml` | string | `""` | XML inserted inside `<manifest>`. Must be well formed. The `android:` and `tools:` prefixes are declared for you, so manifest-merger directives (`tools:node`, `tools:replace`) can be used as Android's documentation shows them. |
+| `extra_application_xml` | string | `""` | XML inserted inside `<application>`. Same rules. |
+| `extra_activity_xml` | string | `""` | XML inserted inside the main `<activity>`. Same rules. |
 
 ## `[tool.kivy.android.signing]`
 

@@ -28,7 +28,6 @@ def reserved_check(exe: str) -> Callable[[IncludeItem], str | None]:
         "Resources/app": "where the bundler puts app_dir",
         "Resources/lib": "where the bundler installs the locked packages",
         "Resources/python": "where the bundler puts the Python runtime",
-        "Resources/bin": ("where the bundler puts [tool.kivy.macos.native.binaries]"),
         f"Resources/{exe}.icns": ("the app icon; set it with [tool.kivy.macos.icons]"),
     }
     folded = {path.casefold(): (path, why) for path, why in owned.items()}

@@ -92,11 +92,28 @@ def pytest_addoption(parser):
         "exportKivyforgeReleaseManifest task makes) to check against config.",
     )
     group.addoption(
+        "--android-dex-class",
+        action="append",
+        default=[],
+        metavar="CLASS",
+        help="A class (binary name) the --android-apk's dex files must define. "
+        "Repeatable.",
+    )
+    group.addoption(
         "--android-project",
         default=None,
         help="Path to the project directory whose pyproject.toml the merged "
         "manifest must agree with. Required by --android-merged-manifest: "
-        "the check is a comparison, so it needs both sides.",
+        "the check is a comparison, so it needs both sides. With "
+        "--android-apk, its [tool.kivy.android].main_activity must also be "
+        "in the dex.",
+    )
+    group.addoption(
+        "--android-gradle-project",
+        default=None,
+        help="Path to a generated Gradle project (<slug>-android) that has "
+        "been built once, with [tool.kivy.android.src].kotlin set, to compile "
+        "the main_activity check against a matrix of candidate classes.",
     )
     group.addoption(
         "--macos-app",

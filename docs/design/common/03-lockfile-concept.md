@@ -116,8 +116,9 @@ exception: the **on-device gate examples**, whose locks stay committed.
 | `examples/mobile/hello-sdl3` | `pylock.android.toml` | SDL3 contract smoke test; Kivy 3.0 start on the emulator |
 | `examples/mobile/hello-kivy` | `pylock.ios.toml` | iOS simulator build/launch/render |
 | `examples/mobile/android-services` | `pylock.android.toml` | contract smoke test on an API 24 (min_sdk) emulator, with services |
+| `examples/mobile/android-activity-class` | `pylock.android.toml` | contract smoke test with the app's own `PythonActivity` subclass as the launcher (`main_activity`) |
 
-These four are exempt because their locks are **evidence, not just build input**.
+These five are exempt because their locks are **evidence, not just build input**.
 Each records the exact wheel hashes that passed a specific on-device run, so
 the validation result stays attached to the binaries it was obtained from. If
 the lock regenerates, the next run silently validates a different artifact —

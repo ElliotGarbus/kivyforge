@@ -93,6 +93,9 @@ kivyforge run -p android --smoke
 Add `--release` to test the byte-compiled, stripped release variant. kivyforge's
 own CI runs `run --smoke --release` on an x86_64 emulator.
 
+The test runs only on the device `run` chose, so a phone and an emulator can
+both be attached.
+
 ## Verify
 
 `run` prints the device it chose, launches the app, and then follows the app's

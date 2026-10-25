@@ -113,6 +113,19 @@ DEFAULT_ANDROID_KEY_PASSWORD_ENV = "KIVYFORGE_KEY_PASSWORD"
 # Default app theme parent (android/01 base_theme).
 DEFAULT_ANDROID_BASE_THEME = "Theme.Material3.DayNight.NoActionBar"
 
+# The generated launcher activity, and the class a [tool.kivy.android].
+# main_activity must extend (android/01 rule 22).
+ANDROID_BOOTSTRAP_ACTIVITY = "org.kivy.android.PythonActivity"
+
+# Java packages the generated bootstrap and its vendored glue occupy. R8 keeps
+# them whole (generate/project.py), and an app's own class may not live in one.
+ANDROID_BOOTSTRAP_NAMESPACES = (
+    "org.jnius",
+    "org.kivy.android",
+    "org.renpy.android",
+    "org.libsdl.app",
+)
+
 # Manifest attributes kivyforge manages (android/01 §managed keys): rejected in
 # the [tool.kivy.android.manifest] application/activity passthrough tables.
 MANAGED_ANDROID_APPLICATION_ATTRS = frozenset(
@@ -132,6 +145,31 @@ MANAGED_ANDROID_ACTIVITY_ATTRS = frozenset(
         "android:theme",
     }
 )
+
+
+def foreign_namespace_attr(key: str) -> str | None:
+    """Why a passthrough attribute *key* is refused, or ``None`` if it is fine.
+
+    The attribute tables (``manifest.application`` / ``manifest.activity``) set
+    attributes of the two elements kivyforge generates, and those elements take
+    ``android:`` attributes. A ``tools:`` key there is not an attribute of the
+    element but an instruction to the manifest merger about it -- and on the
+    launcher, ``tools:node="remove"`` would delete the app's entry point, while
+    ``tools:replace`` on ``<application>`` would override a managed attribute by
+    the back door. Those directives are legitimate on the *elements a user
+    authors* in the raw-XML fragments, which is the escape hatch for them.
+    """
+    prefix, sep, _ = key.partition(":")
+    if sep and prefix != "android":
+        return (
+            f"{key!r} is in the {prefix!r} namespace; the attribute tables set "
+            "android: attributes of the generated element. A manifest-merger "
+            "directive (tools:node, tools:replace, ...) belongs on an element "
+            "you author in extra_manifest_xml / extra_application_xml / "
+            "extra_activity_xml."
+        )
+    return None
+
 
 # gradle.properties keys kivyforge manages (android/01 gradle_properties).
 RESERVED_ANDROID_GRADLE_PROPERTIES = frozenset({"android.useAndroidX"})
@@ -816,6 +854,11 @@ class AndroidConfig:
     exclude: tuple[str, ...] = ()
     base_theme: str = DEFAULT_ANDROID_BASE_THEME
     fullscreen: bool = False
+    #: ``[tool.kivy.android].main_activity``: the app's own subclass of
+    #: :data:`ANDROID_BOOTSTRAP_ACTIVITY` that is the launcher, or ``None`` for
+    #: the generated class (also what the default spelled out normalises to).
+    #: Read it through ``generate.manifest.main_activity``.
+    main_activity: str | None = None
     python: AndroidPythonConfig | None = None
     permissions: AndroidPermissions = field(default_factory=AndroidPermissions)
     icons: AndroidIconConfig = field(default_factory=AndroidIconConfig)

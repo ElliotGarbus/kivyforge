@@ -73,12 +73,18 @@ class TestSigningPreflight:
         assert "enableV1Signing false" in block
 
 
-def _manifest(*, package="org.real.app", body="", app_attrs="", perms=""):
+BASE = "org.kivy.android.PythonActivity"
+SUBCLASS = "org.real.app.MainActivity"
+
+
+def _manifest(
+    *, package="org.real.app", body="", app_attrs="", perms="", launcher=BASE
+):
     return f"""<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     {perms}
     <application android:label="x"{app_attrs}>
-        <activity android:name="org.kivy.android.PythonActivity"
+        <activity android:name="{launcher}"
                   android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -92,24 +98,30 @@ def _manifest(*, package="org.real.app", body="", app_attrs="", perms=""):
 
 class TestManifestPolicy:
     def test_clean_manifest_passes(self):
-        infos = enforce_release_manifest(_manifest(), package="org.real.app")
+        infos = enforce_release_manifest(
+            _manifest(), package="org.real.app", launcher=BASE
+        )
         assert infos == []
 
     def test_placeholder_package_fails(self):
         with pytest.raises(ManifestPolicyError, match="placeholder"):
             enforce_release_manifest(
-                _manifest(package="org.example.app"), package="org.example.app"
+                _manifest(package="org.example.app"),
+                package="org.example.app",
+                launcher=BASE,
             )
 
     def test_debuggable_forced_fails(self):
         xml = _manifest(app_attrs=' android:debuggable="true"')
         with pytest.raises(ManifestPolicyError, match="debuggable"):
-            enforce_release_manifest(xml, package="org.real.app")
+            enforce_release_manifest(xml, package="org.real.app", launcher=BASE)
 
     def test_extra_exported_component_fails(self):
         body = '<service android:name="org.example.Leak" android:exported="true"/>'
         with pytest.raises(ManifestPolicyError, match="exported"):
-            enforce_release_manifest(_manifest(body=body), package="org.real.app")
+            enforce_release_manifest(
+                _manifest(body=body), package="org.real.app", launcher=BASE
+            )
 
     def test_intent_filter_without_exported_fails(self):
         body = (
@@ -119,7 +131,9 @@ class TestManifestPolicy:
             "</intent-filter></activity>"
         )
         with pytest.raises(ManifestPolicyError, match="explicit android:exported"):
-            enforce_release_manifest(_manifest(body=body), package="org.real.app")
+            enforce_release_manifest(
+                _manifest(body=body), package="org.real.app", launcher=BASE
+            )
 
     def test_two_launchers_fails(self):
         body = (
@@ -131,16 +145,45 @@ class TestManifestPolicy:
             "</intent-filter></activity>"
         )
         with pytest.raises(ManifestPolicyError, match="LAUNCHER"):
-            enforce_release_manifest(_manifest(body=body), package="org.real.app")
+            enforce_release_manifest(
+                _manifest(body=body), package="org.real.app", launcher=BASE
+            )
+
+    def test_a_configured_subclass_launcher_passes(self):
+        infos = enforce_release_manifest(
+            _manifest(launcher=SUBCLASS), package="org.real.app", launcher=SUBCLASS
+        )
+        assert infos == []
+
+    def test_the_launcher_must_be_the_configured_one(self):
+        """One LAUNCHER is not enough: a manifest overlay that kept the base
+        class as the launcher would start without the subclass's code."""
+        with pytest.raises(ManifestPolicyError, match=SUBCLASS):
+            enforce_release_manifest(
+                _manifest(launcher=BASE), package="org.real.app", launcher=SUBCLASS
+            )
+
+    def test_an_exported_base_activity_fails_once_a_subclass_launches(self):
+        """The base class was allowlisted because it was the launcher. Once a
+        subclass is, an exported base is a second entry point nobody asked for."""
+        body = f'<activity android:name="{BASE}" android:exported="true"/>'
+        with pytest.raises(ManifestPolicyError, match="exported"):
+            enforce_release_manifest(
+                _manifest(launcher=SUBCLASS, body=body),
+                package="org.real.app",
+                launcher=SUBCLASS,
+            )
 
     def test_cleartext_is_info_not_fail(self):
         xml = _manifest(app_attrs=' android:usesCleartextTraffic="true"')
-        infos = enforce_release_manifest(xml, package="org.real.app")
+        infos = enforce_release_manifest(xml, package="org.real.app", launcher=BASE)
         assert any("cleartext" in i.message for i in infos)
 
     def test_dangerous_permission_is_info(self):
         perms = '<uses-permission android:name="android.permission.CAMERA"/>'
-        infos = enforce_release_manifest(_manifest(perms=perms), package="org.real.app")
+        infos = enforce_release_manifest(
+            _manifest(perms=perms), package="org.real.app", launcher=BASE
+        )
         assert any("dangerous runtime permission" in i.message for i in infos)
 
     def test_profileinstaller_receiver_is_allowed_by_default(self):
@@ -155,7 +198,9 @@ class TestManifestPolicy:
             '<receiver android:name="androidx.profileinstaller.ProfileInstallReceiver" '
             'android:exported="true"/>'
         )
-        infos = enforce_release_manifest(_manifest(body=body), package="org.real.app")
+        infos = enforce_release_manifest(
+            _manifest(body=body), package="org.real.app", launcher=BASE
+        )
         assert infos == []
 
     def test_allow_exported_admits_a_named_component(self):
@@ -168,6 +213,7 @@ class TestManifestPolicy:
         infos = enforce_release_manifest(
             _manifest(body=body),
             package="org.real.app",
+            launcher=BASE,
             allow_exported=("com.vendor.sdk.Trampoline",),
         )
         assert infos == []
@@ -183,19 +229,22 @@ class TestManifestPolicy:
             enforce_release_manifest(
                 _manifest(body=body),
                 package="org.real.app",
+                launcher=BASE,
                 allow_exported=("com.vendor.sdk.Trampoline",),
             )
 
     def test_the_exported_failure_names_the_escape_hatch(self):
         body = '<service android:name="org.example.Leak" android:exported="true"/>'
         with pytest.raises(ManifestPolicyError, match="allow_exported"):
-            enforce_release_manifest(_manifest(body=body), package="org.real.app")
+            enforce_release_manifest(
+                _manifest(body=body), package="org.real.app", launcher=BASE
+            )
 
     def test_findings_include_all_severities(self):
         xml = _manifest(
             package="org.example.app",
             app_attrs=' android:usesCleartextTraffic="true"',
         )
-        findings = check_release_manifest(xml, package="org.example.app")
+        findings = check_release_manifest(xml, package="org.example.app", launcher=BASE)
         sev = {f.severity for f in findings}
         assert "FAIL" in sev and "INFO" in sev

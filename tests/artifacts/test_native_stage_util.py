@@ -220,6 +220,64 @@ class TestStageBinaries:
             )
 
 
+class TestCaseClashesBeforeExtraction:
+    """Names that differ only in case are refused before anything is written.
+
+    On a case-insensitive filesystem (the default on macOS and Windows) the
+    second member would overwrite the first during extraction, so the
+    post-extraction claim could never see both.
+    """
+
+    def _zip(self, tmp_path: Path, *names: str) -> LockedNativeBinary:
+        archive = tmp_path / "binaries" / "pack.zip"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(archive, "w") as zf:
+            for name in names:
+                zf.writestr(name, name.encode())
+        sha = _sha256(archive.read_bytes())
+        return LockedNativeBinary("pack", "1.0", sha, path="binaries/pack.zip")
+
+    def _tar(self, tmp_path: Path, *names: str) -> LockedNativeBinary:
+        archive = tmp_path / "binaries" / "pack.tar.gz"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(archive, "w:gz") as tf:
+            for name in names:
+                _add_tar_bytes(tf, name, name.encode())
+        sha = _sha256(archive.read_bytes())
+        return LockedNativeBinary("pack", "1.0", sha, path="binaries/pack.tar.gz")
+
+    @pytest.mark.parametrize("kind", ["_zip", "_tar"])
+    def test_refused_when_casefolding(self, tmp_path, kind):
+        entry = getattr(self, kind)(tmp_path, "lib/Tool", "lib/tool")
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        with pytest.raises(NativeStageError, match="differ only in case"):
+            stage_binaries(
+                (entry,),
+                parent,
+                project_root=tmp_path,
+                bin_label="bin",
+                casefold=True,
+            )
+        assert not (parent / "bin" / "lib").exists()
+
+    @pytest.mark.parametrize("kind", ["_zip", "_tar"])
+    def test_no_preflight_without_casefold(self, tmp_path, kind):
+        # Linux stages onto a case-sensitive AppDir, where both names are fine.
+        entry = getattr(self, kind)(tmp_path, "lib/Tool", "lib/tool")
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        stage_binaries((entry,), parent, project_root=tmp_path, bin_label="usr/bin")
+
+    def test_directories_differing_in_case_are_fine(self, tmp_path):
+        entry = self._zip(tmp_path, "Lib/a", "lib/b")
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        stage_binaries(
+            (entry,), parent, project_root=tmp_path, bin_label="bin", casefold=True
+        )
+
+
 class TestSafeExtractAndClaim:
     def test_safe_extract_rejects_absolute_and_parent_members(self, tmp_path):
         from kivyforge.artifacts.native_stage_util import _safe_extract

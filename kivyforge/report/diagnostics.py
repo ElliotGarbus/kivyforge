@@ -123,6 +123,28 @@ INCLUDE_NATIVE_CODE = "KF-INCLUDE-NATIVE-CODE"
 #: and the ``source``.
 INCLUDE_SOURCE_FORMAT = "KF-INCLUDE-SOURCE-FORMAT"
 
+#: macOS: a ``[tool.kivy.macos.native.binaries]`` file is not a Mach-O, and the
+#: channel places native code only. Exit 1 for a single-file source; a WARNING
+#: for archive members, which are skipped. ``context`` names the ``binary``
+#: (the config key) and the ``path`` (the source, or the members skipped).
+MACOS_NATIVE_NOT_CODE = "KF-MACOS-NATIVE-NOT-CODE"
+
+#: macOS: a ``[tool.kivy.macos.native.binaries]`` file is code the channel
+#: cannot place: a Mach-O other than an executable or a dynamic library
+#: (a plug-in, an object file, ...), a universal file whose slices disagree
+#: on that, or a file inside a bundle (``.framework``, ``.app``, ...) in an
+#: archive. Exit 1. ``context`` names the ``binary`` and the ``path``.
+MACOS_NATIVE_UNSUPPORTED = "KF-MACOS-NATIVE-UNSUPPORTED"
+
+#: macOS: a native binary links a library declared in
+#: ``[tool.kivy.macos.native.binaries]`` by a path that does not reach it in
+#: the bundle, in a process that loads it (a helper, or Python via ctypes).
+#: Exit 1. A WARNING when the link is weak, or when Python loads it and the
+#: link is the library's install name (it works if the app loads the library
+#: first). ``context`` names the ``binary``, the ``library``, the ``process``
+#: and the ``dependency`` as the load command spells it.
+MACOS_NATIVE_LOAD_PATH = "KF-MACOS-NATIVE-LOAD-PATH"
+
 #: A required tool is not installed: spawning it raised ``FileNotFoundError``,
 #: or a pre-flight found it absent (Android: no ``java``, or a JRE's missing
 #: ``javac``). ``context`` names the ``tool``.

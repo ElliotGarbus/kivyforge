@@ -15,6 +15,138 @@
   receives. A Python module delivers them as Kivy events. kivyforge itself
   is unchanged, so nothing needs migrating.
 
+### Android smoke test runs on one device
+
+- **Fixed:** `run -p android --smoke` runs the contract test only on the device
+  it resolved. Gradle's connected-test task runs on every attached device
+  unless `ANDROID_SERIAL` is set, and the probe is built for the resolved
+  device's ABI only, so `--smoke --device` with an emulator also running
+  failed on the emulator even when the phone passed. No migration is needed.
+
+### Android: your own activity class as the launcher (`main_activity`)
+
+- **Added:** `[tool.kivy.android].main_activity` names your own subclass of
+  `org.kivy.android.PythonActivity` as the app's launcher, so Java can run in
+  the activity's `onCreate` — where some SDKs must be set up — without
+  editing generated files. It is the counterpart of buildozer's
+  `android.entrypoint`, and `kivyforge init` now maps that key to it. The
+  manifest, `run`, the `--smoke` contract test and the release manifest
+  policy all follow the configured class. Python sees the subclass where it
+  always saw the activity (`android.mActivity`, `PythonActivity.mActivity`),
+  and the bundled `android` package works unchanged.
+- **Added:** with `main_activity` set, `kivyforge build` fails with javac's
+  error (`KF-BUILD-TOOL-FAILED`, exit 5) if the class is missing, abstract,
+  not a `PythonActivity`, or has no public no-argument constructor. A value
+  that is not a fully qualified top-level class name, or is inside a package
+  the bootstrap generates (`org.kivy.android`, `org.libsdl.app`, `org.jnius`,
+  `org.renpy.android`), fails the configuration check (exit 1).
+- **Changed:** the release manifest policy's exported baseline is the
+  configured launcher, not always `org.kivy.android.PythonActivity`, and the
+  single `LAUNCHER` activity must be that class. No migration for a project
+  without the key: its launcher is still `PythonActivity`.
+- **Changed:** the `--smoke` contract test starts the activity the manifest
+  marks `LAUNCHER` instead of naming `PythonActivity`, and asserts on the
+  device that the running activity is the configured launcher.
+- New example: `examples/mobile/android-activity-class`, a Java launcher
+  subclass beside a `ContentProvider` that registers activity lifecycle
+  callbacks (the route for a library), with a tracked lock as an on-device
+  gate.
+- **Docs:** [Add Java libraries to your Android app](docs/guides/guides/android/java-libraries.md)
+  says what the subclass can use: it is a plain `Activity`, never an
+  `AppCompatActivity`, `FragmentActivity` or `ComponentActivity`. AndroidX
+  helpers that take a `Context` or `Activity` work, App Startup and
+  `ProcessLifecycleOwner` work once declared as dependencies, and
+  `registerForActivityResult`, `ViewModelProvider(this)` and SDKs such as
+  `BiometricPrompt` do not compile against it. It also shows App Startup's
+  manifest entry and how to choose permission request codes that don't
+  collide with `android.permissions`
+  ([#184](https://github.com/ElliotGarbus/kivyforge/issues/184)).
+- **Docs:** the same guide's new section "Host an SDK that needs an AndroidX
+  activity" shows how to run SDKs that need a `ComponentActivity`,
+  `FragmentActivity` or `AppCompatActivity`, such as Stripe's PaymentSheet or
+  `BiometricPrompt`. They go in a second activity of your own, which Python
+  starts and reads the result from, with no `main_activity` and no bootstrap
+  change. It notes that PaymentSheet needs `compile_sdk = 36` and covers two
+  pyjnius traps: a Python `str` passed to `putExtra` arrives as a `char[]`,
+  and `setClassName` needs the package name.
+
+### Android: `[tool.kivy.android.src]` compiles your sources
+
+- **Fixed:** Java and Kotlin roots listed under `[tool.kivy.android.src]` are
+  compiled into the app. Before, the generated `app/build.gradle` named each
+  root as written, Gradle resolved it against the generated `app/` module
+  where no such directory exists, and the build succeeded with none of your
+  classes in the APK — so a class reached through pyjnius failed at runtime
+  with `ClassNotFoundException`. The roots are now written relative to the
+  module and compiled in place, so the next build picks up an edit without a
+  copy step.
+- **Changed:** each `src.java` / `src.kotlin` root must be an existing
+  directory; a missing one fails the configuration check (exit 1) instead of
+  building an app without the classes. No migration: a root that does not
+  exist never contributed anything.
+
+### Manifest-merger directives in Android raw-XML fragments
+
+- **Added:** the generated `AndroidManifest.xml` declares the `tools`
+  namespace, so a raw-XML fragment in `[tool.kivy.android.manifest]` can carry
+  manifest-merger directives as Android's documentation writes them — App
+  Startup's `<provider ... tools:node="merge">` entry, or
+  `tools:node="remove"` to drop a component a library's manifest contributes.
+  Previously such a fragment failed as "not well-formed XML".
+- **Changed:** the `application` / `activity` attribute tables reject a key
+  in any namespace other than `android:`, with a message saying where a
+  merger directive belongs. Before, such a key failed with the same
+  well-formedness error, so no configuration that loaded yesterday fails
+  today. A project that uses no `tools:` attribute produces a byte-identical
+  merged manifest: the merger consumes the namespace and emits nothing from
+  it.
+### macOS: native binaries go where Apple says code goes
+
+- **Changed (breaking):** `[tool.kivy.macos.native.binaries]` now places
+  executables in `Contents/Helpers/` and dynamic libraries in
+  `Contents/Frameworks/`, instead of everything in `Contents/Resources/bin/`
+  ([#174](https://github.com/ElliotGarbus/kivyforge/issues/174)). Apple
+  reserves `Resources/` for data, and notarization and Gatekeeper are only
+  documented for code in code locations. Each location is flat, so a file
+  from an archive keeps only its name, and names that differ only in case
+  count as the same name. The launcher puts `Contents/Helpers` on `PATH`, so
+  helpers still run by name.
+- **Changed (breaking):** the channel accepts native code only. A single-file
+  source that is not a Mach-O file fails the build with the new
+  `KF-MACOS-NATIVE-NOT-CODE`; ship data with `include_files` and scripts in
+  `app_dir`. Archive members that are not Mach-O, such as headers and
+  licences, are skipped with a warning under the same code. A plug-in
+  (`MH_BUNDLE`), any other Mach-O type, a universal file whose slices disagree
+  on type, and a binary inside a bundle in an archive (a `.framework`, for
+  instance) fail with the new `KF-MACOS-NATIVE-UNSUPPORTED`.
+- **Added:** the build checks, per process, that links between declared
+  binaries resolve in the new layout, and fails with the new
+  `KF-MACOS-NATIVE-LOAD-PATH` when one won't, naming the `install_name_tool`
+  commands that fix it. A weak link, and a link that works only if your Python
+  code loads the target library first, are warnings under the same code. A
+  binary with no slice for the target architecture now fails the build;
+  before, only `doctor` noticed.
+- **Changed:** signing now signs the main executable after all other code in
+  the bundle, since `codesign` treats `Helpers/` and `Frameworks/` as its
+  nested code.
+- **Fixed:** two archive members whose names differ only in case no longer
+  silently overwrite each other on a case-insensitive filesystem; the build
+  refuses the archive before extracting it. This applies to Windows too.
+- **Changed:** `doctor` checks the built app's `Contents/Helpers` and
+  `Contents/Frameworks` for the target architecture, reads the headers itself
+  instead of calling `lipo`, and checks that vendored single-file sources are
+  executables or dynamic libraries. `include_files` may now use
+  `Resources/bin`.
+- **Migration:** load libraries from
+  `Path(sys.prefix).parents[1] / "Frameworks"` instead of
+  `Path(sys.prefix).parent / "bin"`; helpers run by name need no change. A
+  helper built to find its library beside it (`@executable_path/libx.dylib`,
+  `@loader_path/libx.dylib`, or an `@executable_path` run path) now fails the
+  build: relink it to `@rpath/libx.dylib` with the run path
+  `@executable_path/../Frameworks`, and give a library your Python code loads
+  the run path `@loader_path`. Move any data out of the channel and into
+  `include_files`. No re-lock is needed.
+
 ### Android: plain `lock` accepts an edited `include_files` file
 
 - **Fixed:** after you edited a file listed in

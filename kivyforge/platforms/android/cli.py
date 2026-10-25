@@ -75,7 +75,12 @@ from .bootstrap.render import (
     selftest_source,
 )
 from .elf import ABI_MACHINES, ElfError, scan_packaged_libs
-from .generate.manifest import generate_manifest, sdl_orientation_hint
+from .generate.launcher import LAUNCHER_CHECK_NAME, render_launcher_check
+from .generate.manifest import (
+    generate_manifest,
+    main_activity,
+    sdl_orientation_hint,
+)
 from .generate.project import (
     ABI_TO_TRIPLET,
     ProjectGenError,
@@ -507,7 +512,7 @@ def android_build(
             finder_source=finder_source(),
             kivy_bootstrap_source=kivy_bootstrap_source(),
             ext_manifest_json=ext_manifest_json,
-            selftest_source=selftest_source(generated),
+            selftest_source=selftest_source(generated, launcher=main_activity(android)),
             android_package_sources=android_package_sources(android.kivy_generation),
             app_metadata=generated,
             byte_compile=compiler,
@@ -564,6 +569,20 @@ def android_build(
     if service_classes:
         events.on_progress(f"[generate] {len(service_classes)} service class(es)")
 
+    # 7c. With [tool.kivy.android].main_activity set, a file that compiles only
+    # if that class is a usable launcher; pruned once the key is gone, or it
+    # would keep demanding a class the app may have deleted.
+    launcher_check = render_launcher_check(android)
+    if launcher_check is not None:
+        out = app_main / launcher_check.relpath
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(launcher_check.content, encoding="utf-8", newline="\n")
+    _prune_stale(
+        app_main / "java" / "org" / "kivy" / "android",
+        LAUNCHER_CHECK_NAME,
+        keep={LAUNCHER_CHECK_NAME} if launcher_check is not None else set(),
+    )
+
     # The SDL glue and the wheel's libSDL<N>.so are a matched pair: SDLActivity
     # aborts onCreate silently when their versions disagree, and dies in its
     # static initializer when the generations disagree — so catch both here
@@ -617,6 +636,7 @@ def android_build(
             dest,
             config,
             android,
+            project_root=project_root,
             python_version=python_version,
             runtime_root=runtime_root,
             staged_libs=staged_libs,
@@ -803,6 +823,7 @@ def android_package(
         infos = enforce_release_manifest(
             manifest_xml,
             package=android.package,
+            launcher=main_activity(android),
             allow_exported=android.manifest.allow_exported,
         )
     except ManifestPolicyError as exc:
@@ -921,6 +942,7 @@ def _enforce_merged_manifest(
         infos = enforce_release_manifest(
             merged.read_text(encoding="utf-8"),
             package=android.package,
+            launcher=main_activity(android),
             allow_exported=android.manifest.allow_exported,
         )
     except ManifestPolicyError as exc:
@@ -1035,7 +1057,7 @@ def android_run(
     try:
         adb_mod.install_apk(device, apk)
         adb_mod.logcat_clear(device)
-        adb_mod.launch(device, android.package, "org.kivy.android.PythonActivity")
+        adb_mod.launch(device, android.package, main_activity(android))
         pid = _wait_for_pid(adb_mod, device, android.package)
         if pid is None:
             # Never seen running: it died at once or never started. Its own
@@ -1234,7 +1256,7 @@ def android_smoke(
 
     click.echo(f"[smoke] running the contract test on {device}...", err=True)
     try:
-        run_smoke(dest, release=release)
+        run_smoke(dest, device=device, release=release)
     except (adb_mod.AdbError, SmokeError) as exc:
         raise AndroidBuildError(str(exc)) from exc
     click.echo("Contract smoke test PASSED.")

@@ -42,8 +42,9 @@ version = "3.13.14"
 
 # Two non-wheel native binaries, referenced by repo-relative source (built by
 # ./build_native.sh into binaries/macos/). `kivyforge lock -p macos` SHA-256-pins
-# each; the build stages them into Contents/Resources/bin and the signing sweep
-# signs them. Signing is left at the ad-hoc default (no Team ID committed).
+# each; the build stages roll into Contents/Helpers and libgreet.dylib into
+# Contents/Frameworks, and the signing sweep signs them. Signing is left at the
+# ad-hoc default (no Team ID committed).
 [tool.kivy.macos.native.binaries]
 roll = { version = "0.1.0", source = "binaries/macos/roll" }
 libgreet = { version = "0.1.0", source = "binaries/macos/libgreet.dylib" }

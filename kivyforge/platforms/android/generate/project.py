@@ -7,11 +7,12 @@ lines, stable attribute order — so re-runs are byte-identical.
 
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 from pathlib import Path
 
-from kivyforge.config.model import AndroidConfig, Config
+from kivyforge.config.model import ANDROID_BOOTSTRAP_NAMESPACES, AndroidConfig, Config
 from kivyforge.config.version import android_version_code
 
 from .. import policy, toolchain
@@ -152,6 +153,7 @@ def write_app_build_gradle(
     config: Config,
     android: AndroidConfig,
     *,
+    project_root: Path,
     python_version: str,
     runtime_root: Path,
     staged_libs: list[str],
@@ -184,6 +186,11 @@ def write_app_build_gradle(
     python.org testbed's mechanism), so each ABI's launcher links its own
     libpython — a Gradle-side lookup cannot do this for plain ``gradlew``
     builds (``android.injected.build.abi`` is Studio-only).
+
+    ``project_root`` is where the ``[tool.kivy.android.src]`` roots are
+    declared relative to. Gradle resolves a ``srcDirs`` entry against the
+    module directory (``app/``) and treats a missing one as empty, so each root
+    is written relative to that directory and compiled in place.
     """
     version = config.version_required
     version_code = android_version_code(config)
@@ -213,8 +220,11 @@ def write_app_build_gradle(
         f"    id {_groovy_str(plugin_id)}" for plugin_id, _ in android.gradle.plugins
     ]
 
+    module_dir = dest / "app"
     src_dirs = "".join(
-        f"            java.srcDirs += '{_gradle_path(Path(p))}'\n"
+        "            java.srcDirs += "
+        + _groovy_str(Path(os.path.relpath(project_root / p, module_dir)).as_posix())
+        + "\n"
         for p in [*android.src.java, *android.src.kotlin]
     )
 
@@ -376,10 +386,10 @@ dependencies {{
     _write(
         dest / "app" / "proguard-rules.pro",
         "# kivyforge keep-rules: pyjnius reflects into these at runtime.\n"
-        "-keep class org.jnius.** {{ *; }}\n".replace("{{", "{").replace("}}", "}")
-        + "-keep class org.kivy.android.** { *; }\n"
-        "-keep class org.renpy.android.** { *; }\n"
-        "-keep class org.libsdl.app.** { *; }\n",
+        + "".join(
+            f"-keep class {namespace}.** {{ *; }}\n"
+            for namespace in ANDROID_BOOTSTRAP_NAMESPACES
+        ),
     )
 
 

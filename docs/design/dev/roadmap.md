@@ -1947,6 +1947,28 @@ registry, and Back was unchanged. Permission results do not reach the registry,
 because SDL's `onRequestPermissionsResult` does not call `super`, so that needs
 a second change. See
 [`android-componentactivity-spike-findings.md`](android-componentactivity-spike-findings.md).
+What a `main_activity` subclass can use from AndroidX without that change, and
+what needs it, is [issue #184](https://github.com/ElliotGarbus/kivyforge/issues/184),
+measured in [`android-androidx-subclass-spike-findings.md`](android-androidx-subclass-spike-findings.md).
+SDKs that need a `FragmentActivity` are covered by neither. They, and any SDK
+that needs a `ComponentActivity`, run today in a second activity of the app's
+own, started from Python. Spike D of that doc (2026-10-25) ran Stripe
+PaymentSheet that way with no bootstrap change, and the Java-libraries guide
+documents it. That serves an app's own SDK. It does not discharge this
+item's obligation, which is about the bootstrap activity itself.
+
+*Related, 2026-10-23:* issue #85 asks for the other half of what an SDK that
+needs code in `onCreate` requires — an app-owned subclass of the launcher,
+p4a's `--activity-class-name`. [`android-activity-class-proposal.md`](android-activity-class-proposal.md)
+designs that as `[tool.kivy.android].main_activity`, declines a kivyforge
+lifecycle-hook interface because `Application.ActivityLifecycleCallbacks`
+registered from a `ContentProvider` already works in a kivyforge app, and
+records that `[tool.kivy.android.src]` has never compiled anything (the
+`srcDirs` path resolves against `app/`). Its spike is
+[`android-activity-class-spike-findings.md`](android-activity-class-spike-findings.md).
+The two changes are independent and combine. *Implemented 2026-10-24:* the
+`src.java` fix, then `main_activity` with its compile-time check and the
+`android-activity-class` gate example (`test-matrix.md` §7).
 
 **The one cheap early move, and why it is worth doing out of order.** The spec
 names kivyforge as its intended first consumer and says the contract stays

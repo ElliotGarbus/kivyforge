@@ -1,8 +1,8 @@
 /* A tiny helper executable: print a single die roll (1..6) to stdout.
  *
- * Staged into the bundle's bin directory (macOS: Contents/Resources/bin; Linux:
- * usr/bin) and invoked by name from the Kivy app via subprocess — which only
- * works because the launcher prepends that bin directory to PATH. This is the
+ * Staged into the bundle (macOS: Contents/Helpers; Linux: usr/bin) and invoked
+ * by name from the Kivy app via subprocess — which only works because the
+ * launcher prepends that directory to PATH. This is the
  * "helper executable" consumption path of the
  * [tool.kivy.<platform>.native.binaries] channel. */
 #include <stdio.h>

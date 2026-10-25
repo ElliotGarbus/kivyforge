@@ -50,6 +50,7 @@ def generated_gradle(tmp_path) -> str:
         tmp_path,
         config,
         config.android_required,
+        project_root=tmp_path,
         python_version="3.14.6",
         runtime_root=tmp_path / "python-runtime",
         staged_libs=[],

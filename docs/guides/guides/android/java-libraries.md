@@ -8,7 +8,11 @@ sources:
   - docs/design/dev/test-matrix.md
   - kivyforge/config/loader.py
   - kivyforge/platforms/android/generate/project.py
+  - kivyforge/platforms/android/generate/launcher.py
+  - docs/design/dev/android-activity-class-proposal.md
+  - docs/design/dev/android-androidx-subclass-spike-findings.md
   - examples/mobile/qr-maven/pyproject.toml
+  - examples/mobile/android-activity-class/pyproject.toml
 ---
 
 # Add Java libraries to your Android app
@@ -170,14 +174,294 @@ source: after you replace the file, run `kivyforge lock -p android` again.
 
 ## Add your own Java or Kotlin source
 
-List your source directories under `[tool.kivy.android.src]`:
+List your source directories under `[tool.kivy.android.src]`, relative to
+the project root:
 
 ```toml
 [tool.kivy.android.src]
 java = ["android/java"]
 ```
 
+Lay the files out by package, as `javac` expects: a class
+`org.example.myapp.Bridge` lives at `android/java/org/example/myapp/Bridge.java`.
 A non-empty `kotlin` list also works, and enables the Kotlin Gradle plugin.
+
+Each directory must exist; a missing one fails the configuration check rather
+than building an app without your classes.
+
+## Run Java when the activity is created
+
+Some SDKs must be set up in the activity's `onCreate`, before your Python code
+runs. Android gives two ways to do that, and kivyforge supports both. The
+`android-activity-class` example project uses both.
+
+**If the code is yours, subclass the activity.** Write a public subclass of
+`org.kivy.android.PythonActivity` in your app's package, and make it the
+launcher with `main_activity`:
+
+```java
+// android/java/org/example/myapp/MainActivity.java
+package org.example.myapp;
+
+import android.os.Bundle;
+import org.kivy.android.PythonActivity;
+
+public class MainActivity extends PythonActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // The activity exists; Python is starting on its own thread.
+    }
+}
+```
+
+```toml
+[tool.kivy.android]
+main_activity = "org.example.myapp.MainActivity"
+
+[tool.kivy.android.src]
+java = ["android/java"]
+```
+
+Call `super.onCreate()`: it starts SDL and Python. A Kotlin subclass works the
+same way, from a `kotlin` source root. The class must not be in
+`org.kivy.android` or another package kivyforge generates.
+
+kivyforge checks the class when it builds. If the class is missing, abstract,
+not a `PythonActivity`, or has no public constructor without arguments, the
+build fails with `javac`'s error, which names the class and the problem.
+
+Python sees your subclass where it always sees the activity:
+`android.mActivity` and
+`autoclass("org.kivy.android.PythonActivity").mActivity` both return the running
+`MainActivity`. The bundled `android` package works unchanged. Don't change
+your `autoclass` calls to the subclass's name: the listener interfaces that
+`android.activity.bind` and `request_permissions` use belong to
+`PythonActivity`.
+
+**If the code is a library's, use a provider.** A library that needs every
+activity's lifecycle, but does not own the activity, registers
+`Application.ActivityLifecycleCallbacks` from a `ContentProvider`. Android
+creates providers before the first activity, so the callbacks see the
+launcher's `onCreate`. No `main_activity` is needed, and two libraries do not
+compete for it. Declare the provider with `extra_application_xml`:
+
+```toml
+[tool.kivy.android.manifest]
+extra_application_xml = """
+<provider android:name="org.example.mylib.LifecycleProvider"
+          android:authorities="${applicationId}.mylib-lifecycle"
+          android:exported="false" />
+"""
+```
+
+In the provider's `onCreate`, register the callbacks and return. Android runs
+it on the main thread at launch, so it must not do slow work.
+
+**App Startup is the same route, the AndroidX way.** AndroidX's App Startup
+library runs `Initializer` classes from one shared provider before the first
+activity. Every kivyforge app contains it, but only at run time, so declare it
+to compile against it. The manifest entry is the one Android's App Startup
+documentation shows, unchanged:
+
+```toml
+[tool.kivy.android.gradle]
+dependencies = ["androidx.startup:startup-runtime:1.2.0"]
+
+[tool.kivy.android.manifest]
+extra_application_xml = """
+<provider android:name="androidx.startup.InitializationProvider"
+          android:authorities="${applicationId}.androidx-startup"
+          android:exported="false"
+          tools:node="merge">
+    <meta-data android:name="org.example.mylib.MyInitializer"
+               android:value="androidx.startup" />
+</provider>
+"""
+```
+
+## What your activity subclass can use
+
+Your subclass is a plain Android `Activity`. `PythonActivity` extends SDL's
+activity, which extends `android.app.Activity`, so your subclass can't also be
+an `AppCompatActivity`, a `FragmentActivity` or a `ComponentActivity`. That
+holds even though every kivyforge app is built with AndroidX and Material.
+
+AndroidX helpers that take a `Context` or an `Activity` work on it:
+
+- `ContextCompat` and `ActivityCompat`
+- `WindowCompat` and `WindowInsetsControllerCompat`
+- `NotificationCompat` and `NotificationManagerCompat`
+- App Startup, and `ProcessLifecycleOwner` for whether the app is in the
+  foreground. Declare `androidx.lifecycle:lifecycle-process` to use it; like
+  App Startup, it is in the app but not available to your code until you do.
+
+These need the activity to be a lifecycle owner, and don't compile against
+your subclass:
+
+- `registerForActivityResult`
+- `getLifecycle()` and lifecycle observers on the activity
+- `ViewModelProvider(this)`
+- `getOnBackPressedDispatcher()`
+- SDKs that need a `FragmentActivity` or an `AppCompatActivity`, such as
+  `BiometricPrompt`, or anything that shows a `DialogFragment`
+
+The build fails with `javac`'s error, which names the type that was needed,
+for example `MainActivity cannot be converted to FragmentActivity`. All of
+these work in a second activity of your own; see
+[Host an SDK that needs an AndroidX activity](#host-an-sdk-that-needs-an-androidx-activity).
+For a plain activity result, you can also call `startActivityForResult` and
+receive the result with `registerActivityResultListener` in Java, or with
+`android.activity.bind(on_activity_result=...)` in Python.
+
+**Use your own permission request codes.** `ActivityCompat.requestPermissions`
+works from the subclass, and the result reaches your
+`onRequestPermissionsResult` override; call `super` there so Python's requests
+still get theirs. `android.permissions` numbers its requests 2, 3, 4 and so
+on, and runs its callback for any result with one of those codes, so use codes
+well above that, such as 1000 and up. Make one request at a time: Android
+cancels a request made while another is in progress and reports it with empty
+results.
+
+## Host an SDK that needs an AndroidX activity
+
+Some SDKs need their activity to be a `ComponentActivity`, a
+`FragmentActivity` or an `AppCompatActivity`: Stripe's PaymentSheet,
+`BiometricPrompt`, anything that shows a `DialogFragment` or calls
+`registerForActivityResult`. Your app's main activity can't be one of those,
+but a second activity of your own can. Kivy keeps running in the main
+activity underneath it. Python starts the second activity and reads its
+result. You don't need `main_activity` for this.
+
+In that activity, everything from the
+[list above](#what-your-activity-subclass-can-use) works:
+`registerForActivityResult` (permission requests included), lifecycle
+observers, `ViewModelProvider(this)` and `getOnBackPressedDispatcher()`.
+
+This example presents Stripe's PaymentSheet and returns the outcome to Python.
+
+1. Write the activity. Extend `ComponentActivity`, or `AppCompatActivity` if
+   the SDK asks for a `FragmentActivity` or an `AppCompatActivity`:
+
+    ```java
+    // android/java/org/example/myapp/PayActivity.java
+    package org.example.myapp;
+
+    import android.content.Intent;
+    import android.os.Bundle;
+    import androidx.activity.ComponentActivity;
+    import com.stripe.android.PaymentConfiguration;
+    import com.stripe.android.paymentsheet.PaymentSheet;
+    import com.stripe.android.paymentsheet.PaymentSheetResult;
+
+    public class PayActivity extends ComponentActivity {
+        private PaymentSheet paymentSheet;
+
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            Intent in = getIntent();
+            PaymentConfiguration.init(this, in.getStringExtra("publishableKey"));
+            paymentSheet = new PaymentSheet.Builder(this::onResult).build(this);
+            if (savedInstanceState == null) {
+                paymentSheet.presentWithPaymentIntent(
+                        in.getStringExtra("clientSecret"),
+                        new PaymentSheet.Configuration.Builder("My shop").build());
+            }
+        }
+
+        private void onResult(PaymentSheetResult result) {
+            String outcome = "failed";
+            if (result instanceof PaymentSheetResult.Completed) {
+                outcome = "completed";
+            } else if (result instanceof PaymentSheetResult.Canceled) {
+                outcome = "canceled";
+            }
+            setResult(RESULT_OK, new Intent().putExtra("outcome", outcome));
+            finish();
+        }
+    }
+    ```
+
+    Create the SDK's objects and call `registerForActivityResult` in `onCreate`
+    or in a field initializer. Android refuses to register them once the
+    activity has started.
+
+2. Declare the activity, its source directory and the SDK:
+
+    ```toml
+    [tool.kivy.android]
+    compile_sdk = 36
+
+    [tool.kivy.android.gradle]
+    dependencies = ["com.stripe:paymentsheet:23.25.0"]
+
+    [tool.kivy.android.src]
+    java = ["android/java"]
+
+    [tool.kivy.android.manifest]
+    extra_application_xml = """
+    <activity android:name="org.example.myapp.PayActivity"
+              android:exported="false" />
+    """
+    ```
+
+    `android:exported="false"` stops other apps from starting the activity.
+    It doesn't need a theme of its own: the app's theme is a Material 3 theme,
+    which `AppCompatActivity` also accepts. `ComponentActivity` itself comes
+    with every kivyforge app.
+
+    PaymentSheet needs `compile_sdk = 36`. Without it, the build fails at
+    `checkDebugAarMetadata` with `requires libraries and applications that
+    depend on it to compile against version 36 or later`. Other SDKs may need
+    the same; the error names the version.
+
+    Then lock:
+
+    ```bash
+    kivyforge lock -p android
+    ```
+
+3. Start the activity from Python and read its result:
+
+    ```python
+    from jnius import autoclass
+
+    import android
+    from android import activity
+
+    Intent = autoclass("android.content.Intent")
+    String = autoclass("java.lang.String")
+    PAY_REQUEST = 1001
+
+
+    def on_activity_result(request_code, result_code, data):
+        if request_code == PAY_REQUEST and data is not None:
+            print("payment:", data.getStringExtra("outcome"))
+
+
+    def pay(publishable_key, client_secret):
+        activity.bind(on_activity_result=on_activity_result)
+        intent = Intent()
+        intent.setClassName(
+            android.mActivity.getPackageName(), "org.example.myapp.PayActivity"
+        )
+        intent.putExtra("publishableKey", String(publishable_key))
+        intent.putExtra("clientSecret", String(client_secret))
+        android.mActivity.startActivityForResult(intent, PAY_REQUEST)
+    ```
+
+    Two pyjnius details matter here:
+
+    - **Wrap strings in `java.lang.String`** before `putExtra`. pyjnius passes
+      a Python `str` as a `char[]`, so `getStringExtra` in Java returns null.
+    - **Pass the package name to `setClassName`**, not the activity. pyjnius
+      picks the two-string form, and passing `android.mActivity` raises a
+      `TypeError`.
+
+    `on_activity_result` sees every activity result your app receives, so
+    check the request code. It runs on Android's UI thread, not Kivy's: use
+    `Clock.schedule_once` to update widgets from it.
 
 ## Verify
 
