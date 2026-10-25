@@ -94,6 +94,13 @@ recipes, the replacement is an Apple framework that you call through
     staged with `include_files`. See
     [Add Android resources](../android/configure.md#add-android-resources).
 
+    If `android.entrypoint` names your own subclass of
+    `org.kivy.android.PythonActivity`, set `main_activity` to it, and list its
+    source directory under `[tool.kivy.android.src]`. See
+    [Run Java when the activity is created](../android/java-libraries.md#run-java-when-the-activity-is-created).
+    `android.activity_class_name` needs no setting: the bundled `android`
+    package reaches your activity through `PythonActivity.mActivity`.
+
 5. Set `kivy_generation` to match your Kivy version: `2` for Kivy 2.3.1 on SDL2,
    or `3` for Kivy 3.0 on SDL3.
 

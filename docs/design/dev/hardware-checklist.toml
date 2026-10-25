@@ -56,6 +56,31 @@ record = ["Phone model and Android version.", "Host OS (the item runs from any h
 previous = "test-matrix section 7: 2026-09-27 (Pixel 8a, macOS host), 2026-09-13 (Pixel 8a, T5)"
 
 [[item]]
+id = "android-activity-class"
+title = "Android: the app's own PythonActivity subclass launches on a physical phone (`main_activity`)"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device)"
+tier = "T4 + T5"
+needs = [
+    "An arm64 Android phone with USB debugging on, authorized for this host (`adb devices` shows `device`).",
+    "The phone unlocked with the screen on and no notification shade open.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+]
+commands = [
+    "cd examples/mobile/android-activity-class",
+    "kivyforge lock -p android --check",
+    "kivyforge run -p android --device --smoke --release",
+    "kivyforge run -p android --device --no-follow",
+]
+pass = [
+    "`run --device --smoke --release` prints exactly `Contract smoke test PASSED.` on stdout and exits 0 (the contract test asserts the running activity is `org.kivyforge.activityclass.MainActivity`).",
+    "The `run --device --no-follow` log has `MainActivity.onCreate: before super` and `after super`, `LifecycleProvider: created org.kivyforge.activityclass.MainActivity`, and `activityclass: ALL_OK`.",
+    "The app's label reads `All checks passed`.",
+]
+record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
+
+[[item]]
 id = "android-fullscreen"
 title = "Android: `fullscreen = true` hides the system bars on a physical phone"
 status = "runnable"

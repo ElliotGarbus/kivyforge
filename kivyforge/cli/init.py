@@ -115,6 +115,11 @@ _BUILDOZER_MAP: tuple[tuple[str, tuple[str, ...], str], ...] = (
         ("tool.kivy.android.activities",),
         "the classes themselves come from src.java",
     ),
+    (
+        "android.entrypoint",
+        ("tool.kivy.android.main_activity",),
+        "your subclass of org.kivy.android.PythonActivity, from src.java",
+    ),
     ("android.add_jars", ("tool.kivy.android.native.jars",), ""),
     ("android.add_aars", ("tool.kivy.android.native.aars",), ""),
     ("android.gradle_dependencies", ("tool.kivy.android.gradle.dependencies",), ""),
@@ -178,9 +183,11 @@ _BUILDOZER_DROPPED: tuple[tuple[str, str], ...] = (
         "checks the host against those pins.",
     ),
     (
-        "android.entrypoint, android.activity_class_name",
-        "the launcher is generated; `[tool.kivy].entry_point` names the Python "
-        "module to import instead.",
+        "android.activity_class_name",
+        "nothing to set: the bundled `android` package reaches your activity "
+        "through PythonActivity.mActivity, so its config stays on the base "
+        "class. If it named a different class from android.entrypoint, the "
+        "launcher is the one android.entrypoint named.",
     ),
 )
 

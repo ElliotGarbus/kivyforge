@@ -1,4 +1,4 @@
-"""[tool.kivy.android] loader tests — android/01 validation rules 1-21."""
+"""[tool.kivy.android] loader tests — android/01 validation rules 1-22."""
 
 from __future__ import annotations
 
@@ -339,6 +339,87 @@ class TestRuleRejections:
                     'sources = ["config/a.json"]',
                 )
             )
+
+
+class TestMainActivity:
+    """Rule 22: [tool.kivy.android].main_activity names the launcher."""
+
+    def test_absent_is_none(self):
+        assert load_android(BASE).main_activity is None
+
+    def test_a_fully_qualified_subclass_loads(self):
+        a = load_android(with_lines('main_activity = "org.kivy.touchtracer.Main"'))
+        assert a.main_activity == "org.kivy.touchtracer.Main"
+
+    def test_a_class_outside_the_app_package_loads(self):
+        """A shared library's activity lives in its own package; only the
+        bootstrap's namespaces are reserved."""
+        a = load_android(with_lines('main_activity = "com.vendor.ui.HostActivity"'))
+        assert a.main_activity == "com.vendor.ui.HostActivity"
+
+    def test_the_default_spelled_out_normalises_to_none(self):
+        """Writing the default is not a customisation: no verifier, no change
+        to anything generated."""
+        a = load_android(
+            with_lines('main_activity = "org.kivy.android.PythonActivity"')
+        )
+        assert a.main_activity is None
+
+    @pytest.mark.parametrize(
+        ("value", "match"),
+        [
+            ('""', "fully qualified"),
+            ("3", "fully qualified"),
+            ('"MainActivity"', "fully qualified"),
+            ('"org.example.9Main"', "fully qualified"),
+            ('"org.example.Main Activity"', "fully qualified"),
+            ('"org.example."', "fully qualified"),
+            ('"org.example.Outer$Inner"', "nested class"),
+        ],
+    )
+    def test_a_name_that_is_not_a_java_class_is_rejected(self, value, match):
+        with pytest.raises(ConfigError, match=match) as excinfo:
+            load_android(with_lines(f"main_activity = {value}"))
+        assert excinfo.value.key_path == "tool.kivy.android.main_activity"
+
+    def test_the_manifest_shorthand_is_rejected_with_the_spelling(self):
+        """`.MainActivity` is legal in a hand-written manifest, where it is
+        resolved against the namespace; here it would be a typo kivyforge
+        guessed at."""
+        with pytest.raises(ConfigError) as excinfo:
+            load_android(with_lines('main_activity = ".MainActivity"'))
+        assert "org.kivy.touchtracer.MainActivity" in (excinfo.value.hint or "")
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "org.kivy.android.MainActivity",
+            "org.kivy.android.sub.MainActivity",
+            "org.libsdl.app.SDLActivity",
+            "org.jnius.NativeInvocationHandler",
+            "org.renpy.android.Hardware",
+        ],
+    )
+    def test_a_class_in_a_bootstrap_namespace_is_rejected(self, value):
+        """kivyforge generates those packages; a class of the app's there would
+        collide with, or be overwritten by, the bootstrap."""
+        with pytest.raises(ConfigError, match="bootstrap") as excinfo:
+            load_android(with_lines(f'main_activity = "{value}"'))
+        assert "org.kivy.touchtracer.MainActivity" in (excinfo.value.hint or "")
+
+    def test_a_namespace_prefix_that_is_not_a_segment_is_not_reserved(self):
+        a = load_android(with_lines('main_activity = "org.kivy.androidx.Main"'))
+        assert a.main_activity == "org.kivy.androidx.Main"
+
+    def test_the_activity_name_override_points_at_main_activity(self):
+        with pytest.raises(ConfigError, match="kivyforge-managed") as excinfo:
+            load_android(
+                with_lines(
+                    "[tool.kivy.android.manifest]",
+                    'activity = { "android:name" = "org.x.Main" }',
+                )
+            )
+        assert "[tool.kivy.android].main_activity" in (excinfo.value.hint or "")
 
 
 class TestVersionCode:

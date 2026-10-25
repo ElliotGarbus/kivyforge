@@ -460,6 +460,23 @@ class TestNoManifest:
         assert "currently: java" in out
         assert "not a kivyforge concept" not in out
 
+    def test_entrypoint_maps_to_main_activity(self, runner, tmp_path):
+        """buildozer's android.entrypoint is the launcher class, which is what
+        main_activity sets; activity_class_name is p4a's android.config, which
+        kivyforge keeps on the base class, so it stays dropped."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            (init_mod.Path(fs) / "buildozer.spec").write_text(
+                self.SPEC
+                + "android.entrypoint = org.example.MainActivity\n"
+                + "android.activity_class_name = org.example.MainActivity\n"
+            )
+            result = runner.invoke(init, [])
+        out = result.output
+        assert "[tool.kivy.android].main_activity" in out
+        assert "currently: org.example.MainActivity" in out
+        assert "android.activity_class_name" in out
+        assert "PythonActivity.mActivity" in out
+
     def test_unparseable_buildozer_spec_still_maps(self, runner, tmp_path):
         """This is already an error path — a spec kivyforge cannot read must not
         turn into a traceback."""

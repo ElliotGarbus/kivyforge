@@ -31,16 +31,18 @@ _NS = f"{{{ANDROID_NS}}}"
 # Exported components kivyforge itself ships in *every* generated project, not
 # something a user's pyproject.toml controls, so they are baked into the
 # allowlist rather than making every user rediscover and add them via
-# allow_exported:
-#   - org.kivy.android.PythonActivity: the app's own launcher.
+# allow_exported. The launcher is the other one, passed in because it is
+# whichever class [tool.kivy.android].main_activity names:
 #   - androidx.profileinstaller.ProfileInstallReceiver: pulled in transitively
 #     by the hardcoded `com.google.android.material` dependency (generate/
 #     project.py). It is exported by AndroidX's own design so ADB/Play/
 #     Macrobenchmark tooling can trigger baseline-profile installation, and is
 #     itself gated by the system-only android.permission.DUMP, so no
 #     third-party app can reach it.
+# The generated PythonActivity is deliberately *not* here: with a subclass as
+# the launcher, an exported PythonActivity would be a second entry point that
+# skips the subclass's onCreate.
 BOOTSTRAP_EXPORTED = {
-    "org.kivy.android.PythonActivity",
     "androidx.profileinstaller.ProfileInstallReceiver",
 }
 
@@ -95,11 +97,20 @@ _DANGEROUS = {
 
 
 def check_release_manifest(
-    manifest_xml: str, *, package: str, allow_exported: Iterable[str] = ()
+    manifest_xml: str,
+    *,
+    package: str,
+    launcher: str,
+    allow_exported: Iterable[str] = (),
 ) -> list[PolicyFinding]:
-    """Return all findings; the caller raises on any FAIL. INFO is advisory."""
+    """Return all findings; the caller raises on any FAIL. INFO is advisory.
+
+    *launcher* is the class the app launches through
+    (``generate.manifest.main_activity``): the one ``LAUNCHER`` activity must be
+    it, and it is the one activity exported without ``allow_exported``.
+    """
     findings: list[PolicyFinding] = []
-    allowed = BOOTSTRAP_EXPORTED | set(allow_exported)
+    allowed = BOOTSTRAP_EXPORTED | {launcher} | set(allow_exported)
     root = ET.fromstring(manifest_xml)
     app = root.find("application")
 
@@ -121,7 +132,7 @@ def check_release_manifest(
             )
         )
 
-    # 3. Exactly one LAUNCHER activity, and it is the bootstrap's.
+    # 3. Exactly one LAUNCHER activity, and it is the configured launcher.
     launchers = []
     for activity in root.iter("activity"):
         for category in activity.iter("category"):
@@ -133,6 +144,14 @@ def check_release_manifest(
                 "FAIL",
                 f"expected exactly one LAUNCHER activity, found {len(launchers)}: "
                 f"{launchers}.",
+            )
+        )
+    elif launchers[0] != launcher:
+        findings.append(
+            PolicyFinding(
+                "FAIL",
+                f"the LAUNCHER activity is {launchers[0]!r}, but the app's "
+                f"launcher is {launcher!r} ([tool.kivy.android].main_activity).",
             )
         )
 
@@ -202,11 +221,18 @@ def check_release_manifest(
 
 
 def enforce_release_manifest(
-    manifest_xml: str, *, package: str, allow_exported: Iterable[str] = ()
+    manifest_xml: str,
+    *,
+    package: str,
+    launcher: str,
+    allow_exported: Iterable[str] = (),
 ) -> list[PolicyFinding]:
     """Raise ``ManifestPolicyError`` on any FAIL; return the INFO findings."""
     findings = check_release_manifest(
-        manifest_xml, package=package, allow_exported=allow_exported
+        manifest_xml,
+        package=package,
+        launcher=launcher,
+        allow_exported=allow_exported,
     )
     fails = [f for f in findings if f.severity == "FAIL"]
     if fails:

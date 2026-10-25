@@ -104,7 +104,16 @@ def pytest_addoption(parser):
         default=None,
         help="Path to the project directory whose pyproject.toml the merged "
         "manifest must agree with. Required by --android-merged-manifest: "
-        "the check is a comparison, so it needs both sides.",
+        "the check is a comparison, so it needs both sides. With "
+        "--android-apk, its [tool.kivy.android].main_activity must also be "
+        "in the dex.",
+    )
+    group.addoption(
+        "--android-gradle-project",
+        default=None,
+        help="Path to a generated Gradle project (<slug>-android) that has "
+        "been built once, with [tool.kivy.android.src].kotlin set, to compile "
+        "the main_activity check against a matrix of candidate classes.",
     )
     group.addoption(
         "--macos-app",

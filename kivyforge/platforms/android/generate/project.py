@@ -12,7 +12,7 @@ import shutil
 import stat
 from pathlib import Path
 
-from kivyforge.config.model import AndroidConfig, Config
+from kivyforge.config.model import ANDROID_BOOTSTRAP_NAMESPACES, AndroidConfig, Config
 from kivyforge.config.version import android_version_code
 
 from .. import policy, toolchain
@@ -386,10 +386,10 @@ dependencies {{
     _write(
         dest / "app" / "proguard-rules.pro",
         "# kivyforge keep-rules: pyjnius reflects into these at runtime.\n"
-        "-keep class org.jnius.** {{ *; }}\n".replace("{{", "{").replace("}}", "}")
-        + "-keep class org.kivy.android.** { *; }\n"
-        "-keep class org.renpy.android.** { *; }\n"
-        "-keep class org.libsdl.app.** { *; }\n",
+        + "".join(
+            f"-keep class {namespace}.** {{ *; }}\n"
+            for namespace in ANDROID_BOOTSTRAP_NAMESPACES
+        ),
     )
 
 

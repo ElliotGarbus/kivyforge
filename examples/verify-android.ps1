@@ -22,7 +22,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$examples = @("hello-android", "pyjnius-deviceinfo", "qr-maven")
+$examples = @("hello-android", "pyjnius-deviceinfo", "qr-maven", "android-activity-class")
+# A line the app itself prints once its own checks pass, for the examples that
+# check something beyond reaching the main loop.
+$markers = @{ "android-activity-class" = "activityclass: ALL_OK" }
 $root = Join-Path $PSScriptRoot "mobile"
 $kivyforge = "kivyforge"
 
@@ -57,6 +60,13 @@ foreach ($ex in $examples) {
                 throw "run: the app never reached Kivy's main loop (last 40 log lines above)"
             }
             Write-Host "  app reached Kivy's main loop"
+            if ($markers.ContainsKey($ex)) {
+                if (-not ($log | Select-String -SimpleMatch $markers[$ex])) {
+                    $log | Select-Object -Last 40 | Write-Host
+                    throw "run: the app never printed '$($markers[$ex])' (last 40 log lines above)"
+                }
+                Write-Host "  app printed '$($markers[$ex])'"
+            }
             & $kivyforge run -p android --smoke --avd $Avd --abi x86_64
             if ($LASTEXITCODE -ne 0) { throw "smoke failed" }
         }

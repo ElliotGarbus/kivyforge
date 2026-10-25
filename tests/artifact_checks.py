@@ -59,9 +59,9 @@ from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64, machine_name
 from kivyforge.platforms.android.generate.manifest import (
     GENERATED_THEME,
-    MAIN_ACTIVITY,
     effective_features,
     effective_permissions,
+    main_activity,
     screen_orientation,
     service_class_name,
 )
@@ -903,14 +903,15 @@ def _manifest_application_problems(
 def _manifest_main_activity_problems(
     app: ET.Element, *, android: AndroidConfig, orientation: tuple[str, ...]
 ) -> list[str]:
+    launcher = main_activity(android)
     main = None
     for activity in app.iter("activity"):
-        if _android_attr(activity, "name") == MAIN_ACTIVITY:
+        if _android_attr(activity, "name") == launcher:
             main = activity
             break
     if main is None:
         return [
-            f"the merged manifest has no <activity android:name={MAIN_ACTIVITY!r}>, "
+            f"the merged manifest has no <activity android:name={launcher!r}>, "
             "so the app has no launcher"
         ]
 
@@ -926,23 +927,37 @@ def _manifest_main_activity_problems(
     }
     for key, value in android.manifest.activity.items():
         expected[key] = _expected_attr_value(value)
-    problems = _attr_problems(main, expected, where=f"<activity {MAIN_ACTIVITY}>")
+    problems = _attr_problems(main, expected, where=f"<activity {launcher}>")
 
     filters = list(main.iter("intent-filter"))
-    if not any(
-        _LAUNCHER_CATEGORY in {_android_attr(c, "name") for c in f.iter("category")}
-        for f in filters
-    ):
+    if not any(_is_launcher_filter(f) for f in filters):
         problems.append(
-            f"{MAIN_ACTIVITY} has no intent-filter carrying the "
+            f"{launcher} has no intent-filter carrying the "
             f"{_LAUNCHER_CATEGORY} category"
         )
-    problems += _intent_filter_problems(filters, android=android)
+    others = sorted(
+        str(_android_attr(a, "name"))
+        for a in app.iter("activity")
+        if a is not main
+        and any(_is_launcher_filter(f) for f in a.iter("intent-filter"))
+    )
+    if others:
+        problems.append(
+            f"{others} also carry the {_LAUNCHER_CATEGORY} category; the "
+            f"configured launcher is {launcher}"
+        )
+    problems += _intent_filter_problems(filters, android=android, launcher=launcher)
     return problems
 
 
+def _is_launcher_filter(filter_elem: ET.Element) -> bool:
+    return _LAUNCHER_CATEGORY in {
+        _android_attr(c, "name") for c in filter_elem.iter("category")
+    }
+
+
 def _intent_filter_problems(
-    filters: list[ET.Element], *, android: AndroidConfig
+    filters: list[ET.Element], *, android: AndroidConfig, launcher: str
 ) -> list[str]:
     """Each declared filter must be *contained in* some merged filter.
 
@@ -959,7 +974,7 @@ def _intent_filter_problems(
             for f in filters
         ):
             problems.append(
-                f"no intent-filter on {MAIN_ACTIVITY} carries the declared "
+                f"no intent-filter on {launcher} carries the declared "
                 f"action {declared.action!r} with categories "
                 f"{sorted(wanted_categories)} and data {wanted_data}"
             )

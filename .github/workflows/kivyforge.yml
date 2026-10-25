@@ -797,6 +797,18 @@ jobs:
           --android-apk "$(ls "$work"/hello-android-android/app/build/outputs/apk/debug/*.apk)" \
           --android-dex-class org.kivyforge.t3.JavaMarker \
           --android-dex-class org.kivyforge.t3.KotlinMarker
+    - name: Compile the main_activity check against valid and invalid launchers (T3)
+      # KivyforgeLauncherCheck.java is the whole of kivyforge's main_activity
+      # validation: it claims javac rejects every class Android could not
+      # launch, with a message naming it. This compiles the rendered check
+      # in the project above (which applies the Kotlin plugin) once per
+      # candidate: a Java and a Kotlin subclass that must compile, and one
+      # class per way a launcher can be wrong, each with its javac line.
+      # The test removes what it writes, so the project is left as built.
+      if: matrix.abi == 'x86_64'
+      run: |
+        pytest tests/platforms/android/test_launcher_check.py -q --no-cov \
+          --android-gradle-project "$RUNNER_TEMP/android-src-t3/hello-android-android"
     - name: Lint kivyforge's Java for calls above min_sdk (NewApi)
       # A check on kivyforge's own templates, not the user's release gate:
       # lintRelease runs a curated policy subset, and NewApi is not in it.
@@ -1155,6 +1167,10 @@ jobs:
   # crash on Android 7 shipped once because only fresh installs had been
   # run there. The contract test now unpacks twice to take the relaunch path,
   # and the services example adds a service process to the same app.
+  # android-activity-class on API 35 launches the app's own subclass of
+  # PythonActivity ([tool.kivy.android].main_activity): the contract test
+  # starts whatever the manifest marks LAUNCHER and asserts it is the
+  # configured class, through R8 and the release manifest policy.
   #
   # Cost: ~10 min each, in parallel; the slowest jobs here. If that becomes a
   # problem the natural move is a `schedule:` trigger rather than dropping
@@ -1170,6 +1186,8 @@ jobs:
             api: '35'
           - app: android-services
             api: '24'
+          - app: android-activity-class
+            api: '35'
     env:
       APP_DIR: examples/mobile/${{ matrix.app }}
       ABI: x86_64

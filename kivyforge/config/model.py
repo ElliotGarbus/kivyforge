@@ -113,6 +113,19 @@ DEFAULT_ANDROID_KEY_PASSWORD_ENV = "KIVYFORGE_KEY_PASSWORD"
 # Default app theme parent (android/01 base_theme).
 DEFAULT_ANDROID_BASE_THEME = "Theme.Material3.DayNight.NoActionBar"
 
+# The generated launcher activity, and the class a [tool.kivy.android].
+# main_activity must extend (android/01 rule 22).
+ANDROID_BOOTSTRAP_ACTIVITY = "org.kivy.android.PythonActivity"
+
+# Java packages the generated bootstrap and its vendored glue occupy. R8 keeps
+# them whole (generate/project.py), and an app's own class may not live in one.
+ANDROID_BOOTSTRAP_NAMESPACES = (
+    "org.jnius",
+    "org.kivy.android",
+    "org.renpy.android",
+    "org.libsdl.app",
+)
+
 # Manifest attributes kivyforge manages (android/01 §managed keys): rejected in
 # the [tool.kivy.android.manifest] application/activity passthrough tables.
 MANAGED_ANDROID_APPLICATION_ATTRS = frozenset(
@@ -841,6 +854,11 @@ class AndroidConfig:
     exclude: tuple[str, ...] = ()
     base_theme: str = DEFAULT_ANDROID_BASE_THEME
     fullscreen: bool = False
+    #: ``[tool.kivy.android].main_activity``: the app's own subclass of
+    #: :data:`ANDROID_BOOTSTRAP_ACTIVITY` that is the launcher, or ``None`` for
+    #: the generated class (also what the default spelled out normalises to).
+    #: Read it through ``generate.manifest.main_activity``.
+    main_activity: str | None = None
     python: AndroidPythonConfig | None = None
     permissions: AndroidPermissions = field(default_factory=AndroidPermissions)
     icons: AndroidIconConfig = field(default_factory=AndroidIconConfig)

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Android: your own activity class as the launcher (`main_activity`)
+
+- **Added:** `[tool.kivy.android].main_activity` names your own subclass of
+  `org.kivy.android.PythonActivity` as the app's launcher, so Java can run in
+  the activity's `onCreate` — where some SDKs must be set up — without
+  editing generated files. It is the counterpart of buildozer's
+  `android.entrypoint`, and `kivyforge init` now maps that key to it. The
+  manifest, `run`, the `--smoke` contract test and the release manifest
+  policy all follow the configured class. Python sees the subclass where it
+  always saw the activity (`android.mActivity`, `PythonActivity.mActivity`),
+  and the bundled `android` package works unchanged.
+- **Added:** with `main_activity` set, `kivyforge build` fails with javac's
+  error (`KF-BUILD-TOOL-FAILED`, exit 5) if the class is missing, abstract,
+  not a `PythonActivity`, or has no public no-argument constructor. A value
+  that is not a fully qualified top-level class name, or is inside a package
+  the bootstrap generates (`org.kivy.android`, `org.libsdl.app`, `org.jnius`,
+  `org.renpy.android`), fails the configuration check (exit 1).
+- **Changed:** the release manifest policy's exported baseline is the
+  configured launcher, not always `org.kivy.android.PythonActivity`, and the
+  single `LAUNCHER` activity must be that class. No migration for a project
+  without the key: its launcher is still `PythonActivity`.
+- **Changed:** the `--smoke` contract test starts the activity the manifest
+  marks `LAUNCHER` instead of naming `PythonActivity`, and asserts on the
+  device that the running activity is the configured launcher.
+- New example: `examples/mobile/android-activity-class`, a Java launcher
+  subclass beside a `ContentProvider` that registers activity lifecycle
+  callbacks (the route for a library), with a tracked lock as an on-device
+  gate.
+
 ### Android: `[tool.kivy.android.src]` compiles your sources
 
 - **Fixed:** Java and Kotlin roots listed under `[tool.kivy.android.src]` are
