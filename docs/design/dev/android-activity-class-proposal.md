@@ -21,7 +21,10 @@
 > whose §"Spike 2" covers the compile-time verifier added in this revision.
 > The `ComponentActivity` half of #85 is a separate spike,
 > [`android-componentactivity-spike-findings.md`](android-componentactivity-spike-findings.md),
-> and is not changed by this proposal.
+> and is not changed by this proposal. What AndroidX does and does not do on
+> the subclass ([issue #184](https://github.com/ElliotGarbus/kivyforge/issues/184))
+> was added to sections 3.4 and 4 after implementation, from
+> [`android-androidx-subclass-spike-findings.md`](android-androidx-subclass-spike-findings.md).
 >
 > Revision history: the first draft rendered `android.config` from the custom
 > class, checked the class by scanning source files, required
@@ -488,8 +491,42 @@ For the guide, and so the implementation has a target:
   (section 2.3), and the guide shows it next to the subclass. The App Startup
   form of the same route (`androidx.startup:startup-runtime:1.2.0` in
   `gradle.dependencies`, an `Initializer`, and the documented `<provider
-  ... tools:node="merge">` entry) is shown too once decision 5 settles how a
-  `tools:` attribute reaches the manifest.
+  ... tools:node="merge">` entry) is shown too; decision 5 made the entry
+  pasteable, and the #184 spike ran it.
+- It is a plain `Activity`, not an AndroidX one, whatever the classpath
+  holds. `SDLActivity extends android.app.Activity` in both SDL generations,
+  so a subclass of `PythonActivity` can never also be an `AppCompatActivity`,
+  `FragmentActivity` or `ComponentActivity`: Java has one superclass. The
+  project being AndroidX (`android.useAndroidX`, Material on the classpath,
+  a Material 3 theme) does not change that, and is why a user expects
+  otherwise. Measured in
+  [`android-androidx-subclass-spike-findings.md`](android-androidx-subclass-spike-findings.md)
+  (issue #184):
+  - *Works on the subclass today:* AndroidX helpers that take a `Context` or
+    an `Activity` — `ContextCompat`, `ActivityCompat`, `WindowCompat` /
+    `WindowInsetsControllerCompat`, `NotificationCompat` /
+    `NotificationManagerCompat` — and App Startup. `startup-runtime` and
+    `lifecycle-process` are in every APK but on the runtime classpath only,
+    so code that imports them must declare them in `gradle.dependencies`.
+    `ProcessLifecycleOwner` is then the lifecycle owner the app does have.
+  - *Needs the activity to be a `LifecycleOwner`:* `registerForActivityResult`,
+    `getLifecycle()` observers, `ViewModelProvider(this)`,
+    `getOnBackPressedDispatcher()`. Each fails at compile time ("cannot find
+    symbol", or "MainActivity cannot be converted to ViewModelStoreOwner").
+    These are what the `ComponentActivity` change would provide; see
+    [`android-componentactivity-spike-findings.md`](android-componentactivity-spike-findings.md),
+    including why `registerForActivityResult` would still have to be called
+    from the subclass's `onCreate`. Until then, `startActivityForResult` with
+    `registerActivityResultListener` (Java) or `android.activity.bind`
+    (Python) is the activity-result route, and anything that needs the
+    activity to be AndroidX runs in a second activity of the app's own
+    (§4, spike D).
+- A permission request from Java shares request codes with
+  `android.permissions`, which numbers its requests from 2 upward and never
+  forgets a code, so a Java request reusing one fires that Python callback
+  again (spike B). The guide says to pick codes Python will not reach and to
+  keep one request in flight, since Android cancels the second of two
+  concurrent requests with empty results.
 
 ### 3.5 Diagnostics, docs, changelog
 
@@ -572,6 +609,23 @@ For the guide, and so the implementation has a target:
 - **Making the bootstrap a `ComponentActivity`.** Tracked by its own spike;
   doing this key first costs nothing toward it, and an SDK that needs
   `registerForActivityResult` needs both.
+- **SDKs that need a `FragmentActivity` or an `AppCompatActivity`** —
+  `BiometricPrompt`, anything that shows a `DialogFragment`, anything that
+  takes an `AppCompatActivity`. Neither this key nor the `ComponentActivity`
+  change covers them: `ComponentActivity` sits below `FragmentActivity`, and
+  the `ComponentActivity` spike evaluated only that class. javac names the
+  missing type (`BiometricPrompt(FragmentActivity,...) is not applicable`).
+  They are served instead by a second activity of the app's own, which needs
+  no kivyforge change: declared through `extra_application_xml` and started
+  for a result from Python. The #184 spikes measured it on the emulator with
+  the stock launcher. An `AppCompatActivity` hosted a `DialogFragment` and
+  `BiometricPrompt` (the generated theme is already an AppCompat theme). A
+  `ComponentActivity` had working activity-result and permission registries,
+  a lifecycle, `ViewModelProvider` and the back dispatcher. Stripe
+  PaymentSheet 23.25.0 was built and presented from one, with its result
+  reaching Python (spike D). The guide documents this route ("Host an SDK
+  that needs an AndroidX activity"). Nothing here is for kivyforge to
+  generate: the activity is the app's code, as an SDK's own docs describe it.
 - **Parsing Gradle output to reclassify the verifier's javac error as exit 1.**
   Nothing else parses it; the message is already specific.
 - **`android:appComponentFactory`.** API 28's
