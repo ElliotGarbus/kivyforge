@@ -518,7 +518,9 @@ For the guide, and so the implementation has a target:
     including why `registerForActivityResult` would still have to be called
     from the subclass's `onCreate`. Until then, `startActivityForResult` with
     `registerActivityResultListener` (Java) or `android.activity.bind`
-    (Python) is the activity-result route.
+    (Python) is the activity-result route, and anything that needs the
+    activity to be AndroidX runs in a second activity of the app's own
+    (§4, spike D).
 - A permission request from Java shares request codes with
   `android.permissions`, which numbers its requests from 2 upward and never
   forgets a code, so a Java request reusing one fires that Python callback
@@ -613,12 +615,17 @@ For the guide, and so the implementation has a target:
   change covers them: `ComponentActivity` sits below `FragmentActivity`, and
   the `ComponentActivity` spike evaluated only that class. javac names the
   missing type (`BiometricPrompt(FragmentActivity,...) is not applicable`).
-  One route was observed in the #184 spike, not adopted: a second activity
-  of the app's own that extends `AppCompatActivity`, declared through
-  `extra_application_xml` and started for a result, hosted both a
-  `DialogFragment` and `BiometricPrompt` on the emulator and returned to
-  Python (the generated theme is already an AppCompat theme). Left open
-  until a user brings a concrete SDK that needs it.
+  They are served instead by a second activity of the app's own, which needs
+  no kivyforge change: declared through `extra_application_xml` and started
+  for a result from Python. The #184 spikes measured it on the emulator with
+  the stock launcher. An `AppCompatActivity` hosted a `DialogFragment` and
+  `BiometricPrompt` (the generated theme is already an AppCompat theme). A
+  `ComponentActivity` had working activity-result and permission registries,
+  a lifecycle, `ViewModelProvider` and the back dispatcher. Stripe
+  PaymentSheet 23.25.0 was built and presented from one, with its result
+  reaching Python (spike D). The guide documents this route ("Host an SDK
+  that needs an AndroidX activity"). Nothing here is for kivyforge to
+  generate: the activity is the app's code, as an SDK's own docs describe it.
 - **Parsing Gradle output to reclassify the verifier's javac error as exit 1.**
   Nothing else parses it; the message is already specific.
 - **`android:appComponentFactory`.** API 28's

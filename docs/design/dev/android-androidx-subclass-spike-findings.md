@@ -5,7 +5,10 @@ Throwaway spikes for
 the docs to say what AndroidX does and does not do on an app-owned subclass of
 `PythonActivity`. Run on a scratch copy of `examples/mobile/android-activity-class`
 outside the repo, with kivyforge at `4a2ec209` (branch `main-activity-85`).
-Nothing from the scratch project is committed. Date: 2026-10-24.
+Nothing from the scratch project is committed. Date: 2026-10-24. Spike D, a
+second activity extending `ComponentActivity` and a real SDK (Stripe
+PaymentSheet) hosted in one, was added 2026-10-25 on two new scratch projects
+with no `main_activity`, kivyforge at `b69e4a1c` (branch `androidx-limits-184`).
 
 **Summary.** The issue's lists hold, with two corrections. First, App Startup
 and `ProcessLifecycleOwner` are in every APK but **not on the compile
@@ -19,6 +22,16 @@ needs a `LifecycleOwner`, `FragmentActivity` or `AppCompatActivity` fails at
 compile time with a javac message naming the type it wanted. A second activity
 of the app's own that extends `AppCompatActivity` hosts a `DialogFragment` and
 a `BiometricPrompt` correctly and returns its result to Python.
+
+Spike D widens that last result from a route to the answer. A second activity
+extending `ComponentActivity`, started from the stock `PythonActivity`, has
+everything the subclass lacks — the activity-result registry, the
+**permission** registry (which the SDL-patched spike could not deliver), a
+lifecycle, `ViewModelProvider` and the back dispatcher — and Stripe's
+PaymentSheet, built and presented from one, returned its result to Python. No
+SDL change and no `main_activity` are involved, so the restriction "SDKs that
+need an AndroidX activity are not covered" was too strong: they are covered,
+in an activity of the app's own.
 
 No kivyforge defect was found.
 
@@ -200,7 +213,126 @@ and reads the result through `android.activity.bind(on_activity_result=...)`
 - Kivy kept running after the host finished.
 
 This is a route, not a recommendation: no real SDK, no physical device, and
-an enrolled-biometric success path were not tried.
+an enrolled-biometric success path were not tried. Spike D tries the first.
+
+## Spike D — a `ComponentActivity` of the app's own, and Stripe in one
+
+Two scratch projects, neither with `main_activity`: the launcher is the stock
+`org.kivy.android.PythonActivity`. Same host and AVD as above; kivyforge
+`b69e4a1c`, unmodified; Kivy 2.3.1 / SDL2, pyjnius 1.8.0, CPython 3.14.6,
+`target_sdk = 35`, `abis = ["x86_64"]`.
+
+### D1: what the activity can use
+
+`org.kivyforge.cahost`, `uses = ["INTERNET", "CAMERA"]`, one declared
+dependency `androidx.activity:activity:1.8.0` (the version Material already
+resolves), and two activities in `extra_application_xml`, both
+`android:exported="false"` with no theme of their own:
+
+- `HostActivity extends androidx.activity.ComponentActivity`. Two launchers
+  are registered in field initializers, as Android requires (before
+  `STARTED`): `StartActivityForResult` and `RequestPermission`. `onCreate`
+  logs the class chain, adds a `DefaultLifecycleObserver`, gets a
+  `ViewModel` through `new ViewModelProvider(this)`, adds an
+  `OnBackPressedDispatcher` callback, and launches `EchoActivity` for a
+  result. That result's callback launches the `CAMERA` request; its callback
+  says `ready-for-back`. The back callback returns everything logged as an
+  extra and finishes.
+- `EchoActivity extends Activity` returns the token it was given.
+
+`main.py` starts `HostActivity` with
+`startActivityForResult(intent, 4242)` and checks the returned events through
+`android.activity.bind(on_activity_result=...)`. Driven by a script:
+`adb install` *without* `-g`, so a real permission dialog appears; a
+`uiautomator dump` finds and taps "While using the app"; then `KEYCODE_BACK`.
+Log, PIDs removed:
+
+```
+14:53:07.458 I/python.stdout: cahost: launcher chain org.kivy.android.PythonActivity > org.libsdl.app.SDLActivity > android.app.Activity > android.view.ContextThemeWrapper > android.content.ContextWrapper > android.content.Context > java.lang.Object
+14:53:07.489 I/python.stdout: cahost: host started
+14:53:07.571 I/cahost  : HostActivity: chain=org.kivyforge.cahost.HostActivity > androidx.activity.ComponentActivity > androidx.core.app.ComponentActivity > android.app.Activity > ...
+14:53:07.689 I/cahost  : HostActivity: viewmodel-creates=1
+14:53:07.782 I/cahost  : HostActivity: lifecycle=RESUMED
+14:53:07.956 I/cahost  : HostActivity: echo=-1:t42
+14:53:14.683 I/cahost  : HostActivity: camera=true
+14:53:14.683 I/cahost  : HostActivity: ready-for-back
+14:53:15.860 I/cahost  : HostActivity: back-dispatcher
+14:53:15.882 I/python.stdout: cahost: host result code=-1 events=chain=...;viewmodel-creates=1;lifecycle=RESUMED;echo=-1:t42;lifecycle=RESUMED;camera=true;ready-for-back;lifecycle=RESUMED;back-dispatcher;
+14:53:16.076 I/python.stdout: cahost: ALL_OK
+14:53:18.065 I/python.stdout: cahost: kivy clock alive after host
+```
+
+- **The permission registry works here.** `camera=true` came through
+  `RequestPermission`'s callback after a tap on the real system dialog.
+  In the ComponentActivity spike that callback never fired, because the
+  activity in question was SDL's, whose `onRequestPermissionsResult` does not
+  call `super`. `HostActivity` has no SDL in its chain.
+- `ViewModelProvider`, the lifecycle observer, the activity-result registry
+  and the back dispatcher all ran, and Kivy kept running after the host
+  finished.
+
+### D2: Stripe PaymentSheet
+
+`org.kivyforge.stripehost`, `uses = ["INTERNET"]`, one dependency
+`com.stripe:paymentsheet:23.25.0`. `kivyforge lock` resolved it to 199 Maven
+artifacts in 30-odd seconds, raising `androidx.activity` to 1.12.4,
+`appcompat` to 1.7.1 and Material to 1.13.0 over the 1.11.0 the generated
+project asks for.
+
+**It needs `compile_sdk = 36`.** At the default (`target_sdk`, 35) the build
+fails at `:app:checkDebugAarMetadata` with exit 5, eight issues of this form:
+
+```
+1.  Dependency 'androidx.activity:activity-compose:1.12.4' requires libraries and applications that
+    depend on it to compile against version 36 or later of the
+    Android APIs.
+
+    :app is currently compiled against android-35.
+```
+
+With `compile_sdk = 36` (and the android-36 platform installed) it builds.
+`PayActivity extends ComponentActivity` calls `PaymentConfiguration.init` and
+`new PaymentSheet.Builder(this::onResult).build(this)` in `onCreate`, as
+Stripe requires, then `presentWithPaymentIntent` when
+`savedInstanceState == null`. `onResult` maps `Completed` / `Canceled` /
+`Failed` to an `outcome` extra and finishes. `main.py` passes a deliberately
+invalid publishable key and client secret, so the expected end is Stripe's
+own API refusing them:
+
+```
+15:00:59.388 I/ActivityTaskManager: START u0 {flg=0x10000000 cmp=org.kivyforge.stripehost/org.kivy.android.PythonActivity} ...
+15:01:04.316 I/python.stdout: stripehost: PayActivity started
+15:01:04.316 I/ActivityTaskManager: START u0 {cmp=org.kivyforge.stripehost/.PayActivity (has extras)} ...
+15:01:04.379 I/stripehost: PayActivity: extra publishableKey is java.lang.String
+15:01:04.739 I/stripehost: PayActivity: PaymentSheet built
+15:01:04.936 I/ActivityTaskManager: START u0 {cmp=org.kivyforge.stripehost/com.stripe.android.paymentsheet.PaymentSheetActivity (has extras)} ...
+15:01:04.937 I/stripehost: PayActivity: presented
+15:01:07.231 I/ActivityTaskManager: Displayed org.kivyforge.stripehost/com.stripe.android.paymentsheet.PaymentSheetActivity for user 0: +2s917ms
+15:01:07.457 I/stripehost: PayActivity: result failed com.stripe.android.core.exception.APIException: Invalid API Key provided: pk_test_**********pike
+15:01:07.563 I/python.stdout: stripehost: result code=-1 outcome=failed detail=com.stripe.android.core.exception.APIException: Invalid API Key provided: pk_test_**********pike
+15:01:09.891 I/python.stdout: stripehost: kivy clock alive
+```
+
+So the whole chain ran: `PythonActivity` started `PayActivity`, which started
+Stripe's `PaymentSheetActivity`; that was displayed and called Stripe's API,
+and the result came back through both activities to Python.
+
+### Two pyjnius traps on the way
+
+Both cost a run; both belong in the guide, because a Python developer
+starting a Java activity hits them first.
+
+- **`intent.setClassName(android.mActivity, "pkg.Cls")` raises.** pyjnius
+  picks the `(String, String)` overload and fails with `TypeError: Invalid
+  instance of 'org/kivy/android/PythonActivity' passed for a
+  'java/lang/String'`. `setClassName(android.mActivity.getPackageName(),
+  "pkg.Cls")` works.
+- **`intent.putExtra("key", "value")` with a Python `str` stores a
+  `char[]`.** The first Stripe run logged `extra publishableKey is [C`;
+  `getStringExtra` returned null and `PaymentConfiguration.init` threw a
+  `NullPointerException`. Wrapping the value in
+  `autoclass("java.lang.String")(...)` stores a `java.lang.String` (the log
+  above), and `getStringExtra` reads it.
 
 ## What this changes in the docs
 
@@ -213,13 +345,23 @@ an enrolled-biometric success path were not tried.
   is shown in the guide.
 - Proposal §4: `FragmentActivity`/`AppCompatActivity` SDKs stay out of scope;
   this spike's second-activity route is recorded there as observed.
+- *After spike D:* the guide gains "Host an SDK that needs an AndroidX
+  activity", with the Stripe activity as its example, the `compile_sdk = 36`
+  note and the two pyjnius traps. Proposal §4 records the route as measured
+  and documented rather than left open; the subclass's limits are unchanged.
 
 ## Not covered
 
 - SDL3 (`kivy_generation = 3`). `templates/sdl3/.../SDLActivity.java` also
   extends `android.app.Activity` and has the same permission handler, so the
-  class-chain and compile results carry over by construction; not run.
-- A physical device, a permission dialog answered by a person, and a real
-  third-party SDK of either kind.
+  class-chain and compile results carry over by construction; not run. For
+  spike D's second activity SDL is not in the class chain at all, so the
+  generation should not matter; also not run.
+- A physical device, and a permission dialog answered by a person rather than
+  a script.
+- A completed Stripe payment: that needs a real test-mode key and a client
+  secret from a backend. Spike D's sheet stopped at Stripe's key check.
+- The host activity across rotation or process death, and a denied
+  permission.
 - A newer `lifecycle-process` than the 2.6.1 Material already resolves; its
   effect on the rest of the lifecycle group was not measured.

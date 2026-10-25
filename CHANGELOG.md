@@ -40,6 +40,14 @@
   manifest entry and how to choose permission request codes that don't
   collide with `android.permissions`
   ([#184](https://github.com/ElliotGarbus/kivyforge/issues/184)).
+- **Docs:** the same guide's new section "Host an SDK that needs an AndroidX
+  activity" shows how to run SDKs that need a `ComponentActivity`,
+  `FragmentActivity` or `AppCompatActivity`, such as Stripe's PaymentSheet or
+  `BiometricPrompt`. They go in a second activity of your own, which Python
+  starts and reads the result from, with no `main_activity` and no bootstrap
+  change. It notes that PaymentSheet needs `compile_sdk = 36` and covers two
+  pyjnius traps: a Python `str` passed to `putExtra` arrives as a `char[]`,
+  and `setClassName` needs the package name.
 
 ### Android: `[tool.kivy.android.src]` compiles your sources
 

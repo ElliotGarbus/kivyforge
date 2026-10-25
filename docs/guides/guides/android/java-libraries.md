@@ -10,6 +10,7 @@ sources:
   - kivyforge/platforms/android/generate/project.py
   - kivyforge/platforms/android/generate/launcher.py
   - docs/design/dev/android-activity-class-proposal.md
+  - docs/design/dev/android-androidx-subclass-spike-findings.md
   - examples/mobile/qr-maven/pyproject.toml
   - examples/mobile/android-activity-class/pyproject.toml
 ---
@@ -306,9 +307,11 @@ your subclass:
   `BiometricPrompt`, or anything that shows a `DialogFragment`
 
 The build fails with `javac`'s error, which names the type that was needed,
-for example `MainActivity cannot be converted to FragmentActivity`. For
-activity results, call `startActivityForResult` and receive the result with
-`registerActivityResultListener` in Java, or with
+for example `MainActivity cannot be converted to FragmentActivity`. All of
+these work in a second activity of your own; see
+[Host an SDK that needs an AndroidX activity](#host-an-sdk-that-needs-an-androidx-activity).
+For a plain activity result, you can also call `startActivityForResult` and
+receive the result with `registerActivityResultListener` in Java, or with
 `android.activity.bind(on_activity_result=...)` in Python.
 
 **Use your own permission request codes.** `ActivityCompat.requestPermissions`
@@ -319,6 +322,146 @@ on, and runs its callback for any result with one of those codes, so use codes
 well above that, such as 1000 and up. Make one request at a time: Android
 cancels a request made while another is in progress and reports it with empty
 results.
+
+## Host an SDK that needs an AndroidX activity
+
+Some SDKs need their activity to be a `ComponentActivity`, a
+`FragmentActivity` or an `AppCompatActivity`: Stripe's PaymentSheet,
+`BiometricPrompt`, anything that shows a `DialogFragment` or calls
+`registerForActivityResult`. Your app's main activity can't be one of those,
+but a second activity of your own can. Kivy keeps running in the main
+activity underneath it. Python starts the second activity and reads its
+result. You don't need `main_activity` for this.
+
+In that activity, everything from the
+[list above](#what-your-activity-subclass-can-use) works:
+`registerForActivityResult` (permission requests included), lifecycle
+observers, `ViewModelProvider(this)` and `getOnBackPressedDispatcher()`.
+
+This example presents Stripe's PaymentSheet and returns the outcome to Python.
+
+1. Write the activity. Extend `ComponentActivity`, or `AppCompatActivity` if
+   the SDK asks for a `FragmentActivity` or an `AppCompatActivity`:
+
+    ```java
+    // android/java/org/example/myapp/PayActivity.java
+    package org.example.myapp;
+
+    import android.content.Intent;
+    import android.os.Bundle;
+    import androidx.activity.ComponentActivity;
+    import com.stripe.android.PaymentConfiguration;
+    import com.stripe.android.paymentsheet.PaymentSheet;
+    import com.stripe.android.paymentsheet.PaymentSheetResult;
+
+    public class PayActivity extends ComponentActivity {
+        private PaymentSheet paymentSheet;
+
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            Intent in = getIntent();
+            PaymentConfiguration.init(this, in.getStringExtra("publishableKey"));
+            paymentSheet = new PaymentSheet.Builder(this::onResult).build(this);
+            if (savedInstanceState == null) {
+                paymentSheet.presentWithPaymentIntent(
+                        in.getStringExtra("clientSecret"),
+                        new PaymentSheet.Configuration.Builder("My shop").build());
+            }
+        }
+
+        private void onResult(PaymentSheetResult result) {
+            String outcome = "failed";
+            if (result instanceof PaymentSheetResult.Completed) {
+                outcome = "completed";
+            } else if (result instanceof PaymentSheetResult.Canceled) {
+                outcome = "canceled";
+            }
+            setResult(RESULT_OK, new Intent().putExtra("outcome", outcome));
+            finish();
+        }
+    }
+    ```
+
+    Create the SDK's objects and call `registerForActivityResult` in `onCreate`
+    or in a field initializer. Android refuses to register them once the
+    activity has started.
+
+2. Declare the activity, its source directory and the SDK:
+
+    ```toml
+    [tool.kivy.android]
+    compile_sdk = 36
+
+    [tool.kivy.android.gradle]
+    dependencies = ["com.stripe:paymentsheet:23.25.0"]
+
+    [tool.kivy.android.src]
+    java = ["android/java"]
+
+    [tool.kivy.android.manifest]
+    extra_application_xml = """
+    <activity android:name="org.example.myapp.PayActivity"
+              android:exported="false" />
+    """
+    ```
+
+    `android:exported="false"` stops other apps from starting the activity.
+    It doesn't need a theme of its own: the app's theme is a Material 3 theme,
+    which `AppCompatActivity` also accepts. `ComponentActivity` itself comes
+    with every kivyforge app.
+
+    PaymentSheet needs `compile_sdk = 36`. Without it, the build fails at
+    `checkDebugAarMetadata` with `requires libraries and applications that
+    depend on it to compile against version 36 or later`. Other SDKs may need
+    the same; the error names the version.
+
+    Then lock:
+
+    ```bash
+    kivyforge lock -p android
+    ```
+
+3. Start the activity from Python and read its result:
+
+    ```python
+    from jnius import autoclass
+
+    import android
+    from android import activity
+
+    Intent = autoclass("android.content.Intent")
+    String = autoclass("java.lang.String")
+    PAY_REQUEST = 1001
+
+
+    def on_activity_result(request_code, result_code, data):
+        if request_code == PAY_REQUEST and data is not None:
+            print("payment:", data.getStringExtra("outcome"))
+
+
+    def pay(publishable_key, client_secret):
+        activity.bind(on_activity_result=on_activity_result)
+        intent = Intent()
+        intent.setClassName(
+            android.mActivity.getPackageName(), "org.example.myapp.PayActivity"
+        )
+        intent.putExtra("publishableKey", String(publishable_key))
+        intent.putExtra("clientSecret", String(client_secret))
+        android.mActivity.startActivityForResult(intent, PAY_REQUEST)
+    ```
+
+    Two pyjnius details matter here:
+
+    - **Wrap strings in `java.lang.String`** before `putExtra`. pyjnius passes
+      a Python `str` as a `char[]`, so `getStringExtra` in Java returns null.
+    - **Pass the package name to `setClassName`**, not the activity. pyjnius
+      picks the two-string form, and passing `android.mActivity` raises a
+      `TypeError`.
+
+    `on_activity_result` sees every activity result your app receives, so
+    check the request code. It runs on Android's UI thread, not Kivy's: use
+    `Clock.schedule_once` to update widgets from it.
 
 ## Verify
 
