@@ -26,7 +26,9 @@ Substitution points today:
 - ``PythonService.java`` ``SDL_LIB``: the generation's SDL library, which a
   service loads so pyjnius can reach the JavaVM through SDL on API 24-30.
 - ``_kivyforge_selftest.py`` ``EXPECTED_APP_METADATA``: the package metadata
-  kivyforge generated for the app, which the self-test looks up on the device.
+  kivyforge generated for the app, which the self-test looks up on the device;
+  ``EXPECTED_LAUNCHER``: the launcher class the manifest names, which the
+  self-test expects to be the running activity.
 
 The per-service subclasses named by the manifest are generated from config, not
 from a template; see ``generate/services.py``.
@@ -351,27 +353,36 @@ def kivy_bootstrap_source() -> str:
     return _read(TEMPLATES_DIR / "bootstrap_py/_kivy_bootstrap.py")
 
 
-def selftest_source(app_metadata: AppMetadata | None = None) -> str:
+def selftest_source(
+    app_metadata: AppMetadata | None = None, *, launcher: str | None = None
+) -> str:
     """The inert contract self-test, shipped in the asset bundle's bootstrap/.
 
     *app_metadata* is what this build generated for the app, which the
     self-test then expects ``importlib.metadata`` to find on the device;
-    ``None`` when it generated nothing.
+    ``None`` when it generated nothing. *launcher* is the class the manifest
+    launches, which the self-test expects to be the running activity.
     """
     source = _read(TEMPLATES_DIR / "bootstrap_py/_kivyforge_selftest.py")
-    if app_metadata is None:
-        return source
-    expected = {
-        "name": app_metadata.name,
-        "version": app_metadata.version,
-        "entry_points": sorted(
-            [e.group, e.name, e.value] for e in app_metadata.entry_points
-        ),
-    }
-    marker = "EXPECTED_APP_METADATA = None\n"
+    if app_metadata is not None:
+        expected = {
+            "name": app_metadata.name,
+            "version": app_metadata.version,
+            "entry_points": sorted(
+                [e.group, e.name, e.value] for e in app_metadata.entry_points
+            ),
+        }
+        source = _replace_marker(source, "EXPECTED_APP_METADATA", expected)
+    if launcher is not None:
+        source = _replace_marker(source, "EXPECTED_LAUNCHER", launcher)
+    return source
+
+
+def _replace_marker(source: str, name: str, value: object) -> str:
+    marker = f"{name} = None\n"
     if source.count(marker) != 1:
         raise RenderError(f"the self-test template lost its marker: {marker!r}")
-    return source.replace(marker, f"EXPECTED_APP_METADATA = {expected!r}\n")
+    return source.replace(marker, f"{name} = {value!r}\n")
 
 
 def androidtest_files() -> list[RenderedFile]:

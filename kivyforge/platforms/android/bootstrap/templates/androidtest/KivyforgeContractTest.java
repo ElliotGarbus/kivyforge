@@ -1,6 +1,7 @@
 package org.kivyforge.test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -21,7 +22,8 @@ import org.junit.runner.RunWith;
 /**
  * The kivyforge contract smoke test (android/06 --smoke).
  *
- * Launches PythonActivity, which runs the app in self-test mode (the
+ * Launches the app's LAUNCHER activity (PythonActivity or the app's subclass
+ * of it), which runs the app in self-test mode (the
  * KIVYFORGE_SELFTEST flag makes the bootstrap import a known stdlib + wheel
  * extension through the sys.meta_path finder, fire an invoke0 proxy
  * round-trip, and pull the Activity through Kivy's bootstrap contract), then
@@ -43,7 +45,17 @@ public class KivyforgeContractTest {
             fail("could not clear stale self-test result " + result);
         }
 
-        Intent intent = new Intent(ctx, org.kivy.android.PythonActivity.class);
+        // No class name here: the launcher is whichever class the manifest
+        // marks LAUNCHER, the generated PythonActivity or the app's
+        // [tool.kivy.android].main_activity.
+        Intent intent =
+            ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+        assertNotNull("the package declares no LAUNCHER activity", intent);
+        String launcher = intent.getComponent().getClassName();
+        assertTrue(
+            "launcher " + launcher + " does not extend org.kivy.android.PythonActivity",
+            org.kivy.android.PythonActivity.class.isAssignableFrom(
+                Class.forName(launcher)));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra("kivyforge_selftest", true);
         ctx.startActivity(intent);
@@ -80,6 +92,9 @@ public class KivyforgeContractTest {
             "the app's own package metadata is not what kivyforge wrote: "
                 + contents,
             contents.contains("APP_METADATA_OK"));
+        assertTrue(
+            "the running activity is not the configured launcher: " + contents,
+            contents.contains("LAUNCHER_OK"));
         assertTrue(
             "self-test reported a failure: " + contents,
             contents.contains("SELFTEST_ALL_OK"));

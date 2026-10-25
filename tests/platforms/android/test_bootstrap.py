@@ -311,6 +311,32 @@ class TestRender:
         exec(compile(selftest_source(None), "selftest", "exec"), namespace)
         assert namespace["EXPECTED_APP_METADATA"] is None
 
+    def test_selftest_expects_the_configured_launcher(self):
+        """The running activity is the one the manifest launched; checking its
+        class on the device catches a merge that kept the base launcher."""
+        source = selftest_source(launcher="org.example.app.MainActivity")
+        namespace: dict = {}
+        exec(compile(source, "_kivyforge_selftest.py", "exec"), namespace)
+        assert namespace["EXPECTED_LAUNCHER"] == "org.example.app.MainActivity"
+        assert "LAUNCHER_OK" in source
+        java = "\n".join(f.content for f in androidtest_files())
+        assert "LAUNCHER_OK" in java, "the marker must be asserted on-device"
+
+    def test_selftest_without_a_launcher_expects_none(self):
+        namespace: dict = {}
+        exec(compile(selftest_source(), "selftest", "exec"), namespace)
+        assert namespace["EXPECTED_LAUNCHER"] is None
+
+    def test_the_contract_test_launches_whatever_the_manifest_names(self):
+        """A fixed `new Intent(ctx, PythonActivity.class)` starts the base class
+        directly, skipping a configured subclass; the package's launch intent
+        is the one the launcher would fire. The base class is still named, as
+        the type the launched activity must be."""
+        (java,) = (f.content for f in androidtest_files())
+        assert "getLaunchIntentForPackage" in java
+        assert "new Intent(ctx," not in java
+        assert "isAssignableFrom" in java
+
     def test_androidtest_generated(self):
         files = {f.relpath: f.content for f in androidtest_files()}
         ((path, content),) = files.items()

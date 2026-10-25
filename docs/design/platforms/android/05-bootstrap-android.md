@@ -57,6 +57,22 @@ package, so that one name changes. Likewise the SDL Java glue keeps `org.libsdl.
 and the pyjnius glue keeps `org.jnius.NativeInvocationHandler` (the class name
 pyjnius resolves at proxy-creation time).
 
+**The launcher may be the app's own subclass.** `[tool.kivy.android].main_activity`
+names a class in the app's package that extends `org.kivy.android.PythonActivity`;
+it becomes the manifest's launcher, and the base class is not declared. Everything
+above still holds, because every Python-side lookup reads the base class's static
+`mActivity`, which is the running subclass instance: `autoclass('org.kivy.android.PythonActivity').mActivity`,
+`android.mActivity` and `_kivy_bootstrap.get_activity()` all return it. The bundled
+`android.config` therefore keeps `ACTIVITY_CLASS_NAME` and `ACTIVITY_CLASS_NAMESPACE`
+on the base class, and must: `ACTIVITY_CLASS_NAMESPACE` is the prefix of the nested
+interfaces `$NewIntentListener`, `$ActivityResultListener`, `$PermissionsCallback`
+and `$DarkModeListener`, whose binary names exist only under the base class, so a
+subclass value would break `android.activity.bind`,
+`android.permissions.request_permissions` and
+`android.darkmode.set_dark_mode_listener` at their first proxy
+([proposal](../../dev/android-activity-class-proposal.md) section 3.2). The bootstrap
+namespaces are reserved: `main_activity` may not name a class inside them.
+
 > **Not covered (recorded 2026-10-02).** Code that imports the python-for-android
 > `android` Python package (`android.permissions`, `android.activity`,
 > `android.config`, `from android import mActivity`) is a separate dependency, and

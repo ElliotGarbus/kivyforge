@@ -22,6 +22,8 @@ from packaging.version import InvalidVersion, Version
 from .errors import ConfigError
 from .keys import UnknownKey, find_unknown_keys, overlay_suggestion
 from .model import (
+    ANDROID_BOOTSTRAP_ACTIVITY,
+    ANDROID_BOOTSTRAP_NAMESPACES,
     ANDROID_MIN_SDK_FLOOR,
     ANDROID_RELEASE_ONLY,
     ANDROID_VERSION_CODE_CEILING,
@@ -1754,7 +1756,7 @@ def _parse_windows_signing(windows: dict, finder: _LineFinder) -> WindowsSigning
 
 
 # --------------------------------------------------------------------------- #
-# [tool.kivy.android]  (android/01, validation rules 1-21)
+# [tool.kivy.android]  (android/01, validation rules 1-22)
 # --------------------------------------------------------------------------- #
 
 _JAVA_IDENT_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
@@ -1824,6 +1826,7 @@ def _parse_android(
         field="fullscreen",
         finder=finder,
     )
+    main_activity = _parse_android_main_activity(android, finder)
 
     python = _parse_android_python(android, finder)
     _check_requires_python_generic(
@@ -1845,7 +1848,7 @@ def _parse_android(
         root_name="generated project",
         project_root=project_root,
     )
-    src = _parse_android_src(android, finder)
+    src = _parse_android_src(android, finder, project_root=project_root)
     services = _parse_android_services(android, finder)
     activities = _parse_android_activities(android, finder)
     intent_filters = _parse_android_intent_filters(android, finder)
@@ -1869,6 +1872,7 @@ def _parse_android(
         exclude=tuple(exclude),
         base_theme=base_theme,
         fullscreen=fullscreen,
+        main_activity=main_activity,
         python=python,
         permissions=permissions,
         icons=icons,
@@ -1907,6 +1911,56 @@ def _validate_android_package(package: object, finder: _LineFinder) -> str:
             '"org.example.myapp".',
         )
     return package
+
+
+def _parse_android_main_activity(android: dict, finder: _LineFinder) -> str | None:
+    # Rule 22: a fully qualified top-level class outside the bootstrap's
+    # packages; the default spelled out means the default.
+    raw = android.get("main_activity")
+    if raw is None or raw == ANDROID_BOOTSTRAP_ACTIVITY:
+        return None
+    key_path = "tool.kivy.android.main_activity"
+    line = finder.line("main_activity")
+    package = android.get("package") or "org.example.myapp"
+    segments = raw.split(".") if isinstance(raw, str) else []
+    if len(segments) < 2 or not all(_JAVA_IDENT_RE.match(s) for s in segments):
+        if isinstance(raw, str) and raw.startswith("."):
+            hint = (
+                "write the full class name: kivyforge writes the manifest, so "
+                "nothing resolves the leading-dot shorthand. e.g. "
+                f'main_activity = "{package}{raw}".'
+            )
+        else:
+            hint = f'e.g. main_activity = "{package}.MainActivity".'
+        raise ConfigError(
+            f"[tool.kivy.android].main_activity {raw!r} is not a fully qualified "
+            "Java class name",
+            key_path=key_path,
+            line=line,
+            hint=hint,
+        )
+    if "$" in raw:
+        # The manifest names a nested class Outer$Inner and Java source names
+        # it Outer.Inner, so the compile-time check could not name the class
+        # the manifest launches.
+        raise ConfigError(
+            f"[tool.kivy.android].main_activity {raw!r} names a nested class",
+            key_path=key_path,
+            line=line,
+            hint="the launcher must be a top-level class, e.g. "
+            f'main_activity = "{package}.MainActivity".',
+        )
+    for namespace in ANDROID_BOOTSTRAP_NAMESPACES:
+        if segments[: namespace.count(".") + 1] == namespace.split("."):
+            raise ConfigError(
+                f"[tool.kivy.android].main_activity {raw!r} is in {namespace}, "
+                "a package the generated bootstrap owns",
+                key_path=key_path,
+                line=line,
+                hint="put your subclass of org.kivy.android.PythonActivity in "
+                f'your app\'s own package, e.g. "{package}.MainActivity".',
+            )
+    return raw
 
 
 def _parse_android_build_counter(android: dict, finder: _LineFinder) -> int:
@@ -2525,7 +2579,9 @@ def _parse_include_files(
     return out
 
 
-def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
+def _parse_android_src(
+    android: dict, finder: _LineFinder, *, project_root: Path | None = None
+) -> AndroidSrcConfig:
     table = android.get("src")
     if table is None:
         return AndroidSrcConfig()
@@ -2550,6 +2606,18 @@ def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
                 finder=finder,
                 key=key,
             )
+            # Gradle treats a missing srcDir as empty, so a typo here would
+            # build green with the classes absent from the APK.
+            root = project_root / path if project_root is not None else None
+            if root is not None and not root.is_dir():
+                what = "is not a directory" if root.exists() else "does not exist"
+                raise ConfigError(
+                    f"[tool.kivy.android.src].{key} entry {path!r} {what}",
+                    key_path=f"tool.kivy.android.src.{key}",
+                    line=finder.line(key),
+                    hint="the path is relative to the project root; Gradle "
+                    "would compile nothing from a missing one.",
+                )
         return tuple(raw)
 
     return AndroidSrcConfig(java=_roots("java"), kotlin=_roots("kotlin"))
@@ -2773,12 +2841,20 @@ def _parse_android_manifest(
             )
         collisions = sorted(set(raw) & managed)
         if collisions:
+            hint = (
+                "these are written from the schema (android/01 §managed "
+                "manifest keys); set the controlling field instead."
+            )
+            if key == "activity" and "android:name" in collisions:
+                hint += (
+                    " The main <activity>'s android:name is "
+                    "[tool.kivy.android].main_activity."
+                )
             raise ConfigError(
                 f"[tool.kivy.android.manifest].{key} sets kivyforge-managed "
                 f"attribute(s): {collisions}",
                 key_path=f"tool.kivy.android.manifest.{key}",
-                hint="these are written from the schema (android/01 §managed "
-                "manifest keys); set the controlling field instead.",
+                hint=hint,
             )
         # The generated root declares xmlns:tools so the raw-XML fragments can
         # carry merger directives; the attribute tables are not the place for

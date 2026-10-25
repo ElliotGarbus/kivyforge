@@ -8,7 +8,10 @@ sources:
   - docs/design/dev/test-matrix.md
   - kivyforge/config/loader.py
   - kivyforge/platforms/android/generate/project.py
+  - kivyforge/platforms/android/generate/launcher.py
+  - docs/design/dev/android-activity-class-proposal.md
   - examples/mobile/qr-maven/pyproject.toml
+  - examples/mobile/android-activity-class/pyproject.toml
 ---
 
 # Add Java libraries to your Android app
@@ -170,14 +173,89 @@ source: after you replace the file, run `kivyforge lock -p android` again.
 
 ## Add your own Java or Kotlin source
 
-List your source directories under `[tool.kivy.android.src]`:
+List your source directories under `[tool.kivy.android.src]`, relative to
+the project root:
 
 ```toml
 [tool.kivy.android.src]
 java = ["android/java"]
 ```
 
+Lay the files out by package, as `javac` expects: a class
+`org.example.myapp.Bridge` lives at `android/java/org/example/myapp/Bridge.java`.
 A non-empty `kotlin` list also works, and enables the Kotlin Gradle plugin.
+
+Each directory must exist; a missing one fails the configuration check rather
+than building an app without your classes.
+
+## Run Java when the activity is created
+
+Some SDKs must be set up in the activity's `onCreate`, before your Python code
+runs. Android gives two ways to do that, and kivyforge supports both. The
+`android-activity-class` example project uses both.
+
+**If the code is yours, subclass the activity.** Write a public subclass of
+`org.kivy.android.PythonActivity` in your app's package, and make it the
+launcher with `main_activity`:
+
+```java
+// android/java/org/example/myapp/MainActivity.java
+package org.example.myapp;
+
+import android.os.Bundle;
+import org.kivy.android.PythonActivity;
+
+public class MainActivity extends PythonActivity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // The activity exists; Python is starting on its own thread.
+    }
+}
+```
+
+```toml
+[tool.kivy.android]
+main_activity = "org.example.myapp.MainActivity"
+
+[tool.kivy.android.src]
+java = ["android/java"]
+```
+
+Call `super.onCreate()`: it starts SDL and Python. A Kotlin subclass works the
+same way, from a `kotlin` source root. The class must not be in
+`org.kivy.android` or another package kivyforge generates.
+
+kivyforge checks the class when it builds. If the class is missing, abstract,
+not a `PythonActivity`, or has no public constructor without arguments, the
+build fails with `javac`'s error, which names the class and the problem.
+
+Python sees your subclass where it always sees the activity:
+`android.mActivity` and
+`autoclass("org.kivy.android.PythonActivity").mActivity` both return the running
+`MainActivity`. The bundled `android` package works unchanged. Don't change
+your `autoclass` calls to the subclass's name: the listener interfaces that
+`android.activity.bind` and `request_permissions` use belong to
+`PythonActivity`.
+
+**If the code is a library's, use a provider.** A library that needs every
+activity's lifecycle, but does not own the activity, registers
+`Application.ActivityLifecycleCallbacks` from a `ContentProvider`. Android
+creates providers before the first activity, so the callbacks see the
+launcher's `onCreate`. No `main_activity` is needed, and two libraries do not
+compete for it. Declare the provider with `extra_application_xml`:
+
+```toml
+[tool.kivy.android.manifest]
+extra_application_xml = """
+<provider android:name="org.example.mylib.LifecycleProvider"
+          android:authorities="${applicationId}.mylib-lifecycle"
+          android:exported="false" />
+"""
+```
+
+In the provider's `onCreate`, register the callbacks and return. Android runs
+it on the main thread at launch, so it must not do slow work.
 
 ## Verify
 

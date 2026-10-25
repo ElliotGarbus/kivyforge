@@ -168,6 +168,7 @@ abis = ["arm64_v8a", "x86_64"]
 | `find_links`     | list of string | no       | `[]`                       | Repo-relative directories of pre-built Android wheels consulted during `kivyforge lock` only (passed to pip as `--find-links`). Use when a dependency's Android wheels are vendored in the repo — **the canonical case is a locally cross-built `kivy` 2.3.1 wheel** (see "Local wheel directories" below). Entries must be repo-relative and must not escape the project directory. A package with any wheel here comes only from `find_links`, on every ABI ([package-index-proposal §3](../../dev/package-index-proposal.md#3-behaviour-and-config)). |
 | `exclude`        | list of string | no       | `[]`                       | Canonical package names to drop from the **resolved** dependency graph when writing `pylock.android.toml`. Same semantics as the iOS field — prune the transitive tail a dependency declares but your app never exercises on Android. A name that is also a direct `[project].dependencies` entry is silently ignored.   |
 | `base_theme`     | string         | no       | Material3 DayNight (NoActionBar) | Parent Android theme for the app: written as the `parent=` of the generated app `<style>` and used as the `<application>`/main-activity `android:theme` (and the splash's parent). Defaults to a `Theme.Material3.DayNight.NoActionBar`-family theme suited to a full-screen SDL surface. Set it to another Material/AppCompat base or a custom parent you supply via app resources / `include_files`. Validated as a non-empty string; a parent that doesn't resolve surfaces as a Gradle/AAPT error at build time. |
+| `main_activity`  | string         | no       | `org.kivy.android.PythonActivity` | The launcher activity's fully qualified class: your own concrete, public, top-level subclass of `org.kivy.android.PythonActivity`, with a public no-argument constructor, supplied through `[tool.kivy.android.src]` (or an `include_files` copy or an `.aar`). The analog of buildozer's `android.entrypoint`. It becomes the main `<activity android:name>`, the class `run` launches and the one the release policy expects as the only exported launcher; `kivyforge build` generates `KivyforgeLauncherCheck.java`, which compiles only if the class is a usable launcher ([gradle-project-generation](04-gradle-project-generation.md)). The bundled `android` package's `android.config` stays on the base class and reaches the subclass through `PythonActivity.mActivity` ([bootstrap-android](05-bootstrap-android.md)). Not a lock input. Rule 22. |
 | `fullscreen`     | bool           | no       | `false`                    | Run the app with the system bars hidden (SDL's immersive-sticky mode: status bar and navigation bar both hidden, an edge swipe reveals them briefly). The generated activity exports `P4A_IS_WINDOWED=False`, which Kivy 2.3.1 and 3.0 read on Android to create a fullscreen SDL window — Kivy ignores `graphics.fullscreen` there — and the app theme gains `android:windowFullscreen` to cover launch. The theme alone is not enough: `SDLActivity.onCreate` clears the fullscreen flag (verified on a Pixel 8a, 2026-10-03). Unlike buildozer, a missing key means `false`. |
 
 ### Auto-derived `version_code`
@@ -533,14 +534,19 @@ and dexed into the APK by the app's own Gradle.
 
 ```toml
 [tool.kivy.android.src]
-java = ["android/java"]        # repo-relative source roots merged into app/src/main/java
+java = ["android/java"]        # repo-relative source roots added to the module's source set
 kotlin = ["android/kotlin"]    # optional; enables the Kotlin Gradle plugin when non-empty
 ```
 
 | Field    | Type           | Required | Description                                                                                                                       |
 | -------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `java`   | list of string | no       | Repo-relative directories merged into the generated module's Java source set. Entries must not escape the project directory.      |
-| `kotlin` | list of string | no       | Repo-relative Kotlin source roots. A non-empty list makes `kivyforge build` apply the Kotlin Gradle plugin.                        |
+| `java`   | list of string | no       | Repo-relative directories added to the generated module's Java source set and compiled in place. Each must be an existing directory inside the project (rule 14). |
+| `kotlin` | list of string | no       | Repo-relative Kotlin source roots, with the same rule. A non-empty list makes `kivyforge build` apply the Kotlin Gradle plugin.     |
+
+The roots are compiled where they are, not copied: the generated `app/build.gradle`
+names each one relative to the `app/` module ([gradle-project-generation
+§`app/build.gradle`](04-gradle-project-generation.md#appbuildgradle--the-generated-module)).
+They are read on every build and are not lock inputs.
 
 > This is *user* Java/Kotlin only. The bootstrap's own Java (the `org.kivy.android.*`
 > Activity/service classes and `org.jnius.NativeInvocationHandler`) is generated
@@ -549,7 +555,8 @@ kotlin = ["android/kotlin"]    # optional; enables the Kotlin Gradle plugin when
 ### `[tool.kivy.android.services]` and `[tool.kivy.android.activities]`
 
 Declare additional manifest components. A Kivy app's main Activity is generated by
-the bootstrap; these tables add *extra* components.
+the bootstrap (or is your subclass of it, `main_activity`); these tables add
+*extra* components.
 
 ```toml
 [[tool.kivy.android.services]]
@@ -846,7 +853,7 @@ These are written automatically from the schema and cannot be set via
 | `android:label` (application + main activity) | `[tool.kivy].display_name` (falls back to `[project].name`) |
 | `android:icon` / `android:roundIcon` | `[tool.kivy.android.icons]` (or a default) |
 | `minSdkVersion` / `targetSdkVersion` / `compileSdkVersion` | `min_sdk` / `target_sdk` / `compile_sdk` |
-| main `<activity android:name>` | the generated `org.kivy.android.PythonActivity` (bootstrap) |
+| main `<activity android:name>` | `[tool.kivy.android].main_activity` (default: the generated `org.kivy.android.PythonActivity`) |
 | `android:screenOrientation` (main activity) | `[tool.kivy].orientation` |
 | `android:theme` (application + main activity) + the generated splash `<style>` | `[tool.kivy.android].base_theme` (or the default), `[tool.kivy.android.splash]` and `[tool.kivy.android].fullscreen` |
 | `android:extractNativeLibs` / `useLegacyPackaging` | toolchain (must extract native libs so Python can `dlopen` them; see [gradle-project-generation](04-gradle-project-generation.md)) |
@@ -930,7 +937,7 @@ key_alias = "upload"
 11. Lacks `[tool.kivy.android.python].version`, or specifies one for which no python.org Android embeddable package exists (verified at lock time), or one incompatible with `[project].requires-python`.
 12. Sets `find_links` entries that are absolute, empty, or escape the project directory.
 13. Declares a `[tool.kivy.android.gradle].dependencies` entry that is not a fully-versioned `group:artifact:version` coordinate (dynamic ranges are rejected for reproducibility). A versionless `group:artifact` entry is the one exception, and only when `platforms` is non-empty. A `platforms` entry must itself be fully versioned. A `plugins` entry must map a dotted plugin id (quoted, or TOML nests it) to an exact version string, and may not be `com.android.application` or `org.jetbrains.kotlin.android`.
-14. Declares a `native.aars`/`native.jars` `source` that is an absolute path or escapes the project directory.
+14. Declares a `native.aars`/`native.jars` `source` that is an absolute path or escapes the project directory; or a `[tool.kivy.android.src]` `java`/`kotlin` root that is absolute, escapes the project directory, or is not an existing directory (Gradle compiles nothing from a missing source root and reports success, so the loader is where it has to fail).
 15. Sets reserved keys under `[tool.kivy.android.manifest]`, `[tool.kivy.android.gradle_properties]`, or otherwise collides with a kivyforge-managed manifest attribute; sets a `manifest.application` / `manifest.activity` key in a namespace other than `android:` (a `tools:` merger directive belongs on an element authored in a raw-XML fragment); or sets `[tool.kivy.android.manifest].allow_exported` to anything other than a list of non-empty strings.
 16. Runs `kivyforge package` without a resolvable signing key (keystore/alias via `[tool.kivy.android.signing]` or CLI/env).
 17. Provides an `extra_manifest_xml` / `extra_application_xml` / `extra_activity_xml` fragment that is not well-formed XML (checked before manifest generation).
@@ -938,5 +945,6 @@ key_alias = "upload"
 19. Sets `[tool.kivy.android.build_settings]` `byte_compile` / `strip_source` / `strip_native_libs` to a value other than a bool or the string `"release"`; or sets `debug_symbols` to anything other than `"symbol_table"` / `"full"` / `"none"`. (A resolvable NDK is required for **every** Android build — it compiles the native launcher; `kivyforge doctor` reports it missing.)
 20. Sets `[tool.kivy.android].version_code` to anything other than a positive integer or the string `"auto"`; or, in `"auto"` mode, has a `[project].version` that is not a final `MAJOR.MINOR.PATCH` release (pre-release/dev/post/local/epoch or a 4th segment), a `MINOR`/`PATCH`/`build` component `> 99`, or a derived code exceeding `2,100,000,000`.
 21. Sets `[tool.kivy.android].base_theme` to a non-string or empty string; or sets a `[tool.kivy.android.splash]` field to the wrong type (`animation_duration` not a positive integer; `background`/`icon_background` not a `#rrggbb` hex color) or to an image/drawable path that is missing or escapes the project directory.
+22. Sets `[tool.kivy.android].main_activity` to a value that is not a fully qualified Java class name (≥ 2 dot-separated Java-identifier segments; the manifest's leading-dot shorthand is rejected, since nothing resolves it), names a nested class (`Outer$Inner`: the manifest and Java source spell it differently, so the compile-time check could not name it), or names a class in a package the bootstrap generates (`org.kivy.android`, `org.libsdl.app`, `org.jnius`, `org.renpy.android`, or below them). The default spelled out is the default. Whether the class exists and is a usable launcher is decided by javac at build time, not here.
 
 Validation errors are printed with the offending line number and a remediation hint.

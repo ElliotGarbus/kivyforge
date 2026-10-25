@@ -13,6 +13,7 @@ from __future__ import annotations
 from xml.sax.saxutils import quoteattr
 
 from kivyforge.config.model import (
+    ANDROID_BOOTSTRAP_ACTIVITY,
     AndroidConfig,
     AndroidService,
     foreign_namespace_attr,
@@ -26,7 +27,6 @@ ANDROID_NS = "http://schemas.android.com/apk/res/android"
 # shows -- App Startup's ``<provider ... tools:node="merge">`` entry, or
 # ``tools:node="remove"`` for a library component the app does not want.
 TOOLS_NS = "http://schemas.android.com/tools"
-MAIN_ACTIVITY = "org.kivy.android.PythonActivity"
 GENERATED_THEME = "@style/Theme.Kivyforge"
 
 # Every configuration change the activity handles itself. One it does not
@@ -142,6 +142,18 @@ def sdl_orientation_hint(orientation: tuple[str, ...]) -> str:
     return " ".join(_SDL_ORIENTATION_NAMES[o] for o in orientation)
 
 
+def main_activity(android: AndroidConfig) -> str:
+    """The launcher's class: ``[tool.kivy.android].main_activity``, or the
+    generated ``PythonActivity``.
+
+    Every place that names the launcher asks this, so a configured subclass
+    cannot be the manifest's launcher while ``run`` or the release policy
+    still names the base class. The bundled ``android`` package is the
+    deliberate exception: it keeps naming the base (android/05).
+    """
+    return android.main_activity or ANDROID_BOOTSTRAP_ACTIVITY
+
+
 def service_class_name(service: AndroidService) -> str:
     """The generated PythonService subclass FQCN (namespace preserved)."""
     return f"org.kivy.android.Service{service.name}"
@@ -237,7 +249,7 @@ def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -
     lines.append(f"    <application {_attrs(app_attrs)}>")
 
     activity_attrs: dict[str, str] = {
-        "android:name": MAIN_ACTIVITY,
+        "android:name": main_activity(android),
         "android:exported": "true",
         "android:configChanges": ACTIVITY_CONFIG_CHANGES,
         "android:screenOrientation": screen_orientation(orientation),

@@ -1,9 +1,19 @@
 # Proposal — an app-owned main activity: `[tool.kivy.android].main_activity`
 
-> Status: **accepted design, 2026-10-24; not implemented.** All five
+> Status: **accepted design, 2026-10-24; implemented.** All five
 > decisions in section 5 are closed. Implementation order: #182
 > (`xmlns:tools`) and the `src.java` fix (section 3.3), independently; then
-> the `main_activity` key. Written for
+> the `main_activity` key. #182 is merged; section 3.3 is implemented on
+> branch `android-src-java-fix`, and the key on `main-activity-85`, stacked
+> on it (`test-matrix.md` §7, 2026-10-24: emulator on both generations, the
+> verifier matrix, and a Pixel 8a). Two details differ from the text below.
+> Rule 22 also rejects a nested class (`Outer$Inner`): the manifest and Java
+> source spell it differently, so the verifier could not name the class the
+> manifest launches. And the androidTest template still names
+> `PythonActivity.class`, as the type the launched class must extend
+> (`isAssignableFrom`); what it no longer contains is the fixed
+> `new Intent(ctx, PythonActivity.class)`, so section 3.6's "no
+> `PythonActivity.class`" is met in intent, not literally. Written for
 > [issue #85](https://github.com/ElliotGarbus/kivyforge/issues/85). Code claims
 > were read from `25c0483d`. Every runtime claim was measured on an emulator;
 > the runs, verbatim output and two defects are in
