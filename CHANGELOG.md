@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Android: `[tool.kivy.android.src]` compiles your sources
+
+- **Fixed:** Java and Kotlin roots listed under `[tool.kivy.android.src]` are
+  compiled into the app. Before, the generated `app/build.gradle` named each
+  root as written, Gradle resolved it against the generated `app/` module
+  where no such directory exists, and the build succeeded with none of your
+  classes in the APK — so a class reached through pyjnius failed at runtime
+  with `ClassNotFoundException`. The roots are now written relative to the
+  module and compiled in place, so the next build picks up an edit without a
+  copy step.
+- **Changed:** each `src.java` / `src.kotlin` root must be an existing
+  directory; a missing one fails the configuration check (exit 1) instead of
+  building an app without the classes. No migration: a root that does not
+  exist never contributed anything.
+
 ### Manifest-merger directives in Android raw-XML fragments
 
 - **Added:** the generated `AndroidManifest.xml` declares the `tools`

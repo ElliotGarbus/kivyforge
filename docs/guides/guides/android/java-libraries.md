@@ -170,14 +170,20 @@ source: after you replace the file, run `kivyforge lock -p android` again.
 
 ## Add your own Java or Kotlin source
 
-List your source directories under `[tool.kivy.android.src]`:
+List your source directories under `[tool.kivy.android.src]`, relative to
+the project root:
 
 ```toml
 [tool.kivy.android.src]
 java = ["android/java"]
 ```
 
+Lay the files out by package, as `javac` expects: a class
+`org.example.myapp.Bridge` lives at `android/java/org/example/myapp/Bridge.java`.
 A non-empty `kotlin` list also works, and enables the Kotlin Gradle plugin.
+
+Each directory must exist; a missing one fails the configuration check rather
+than building an app without your classes.
 
 ## Verify
 

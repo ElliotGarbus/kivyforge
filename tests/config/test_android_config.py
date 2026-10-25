@@ -293,6 +293,43 @@ class TestRuleRejections:
                 )
             )
 
+    @pytest.mark.parametrize("key", ["java", "kotlin"])
+    def test_rule14_src_root_must_exist(self, tmp_path, key):
+        """Gradle compiles nothing from a missing srcDir and says nothing, so
+        the loader is the last place a typo can fail loudly."""
+        text = BASE + f'\n[tool.kivy.android.src]\n{key} = ["android/{key}"]\n'
+        with pytest.raises(ConfigError, match="does not exist") as excinfo:
+            load_config_from_text(
+                text, require_ios=False, require_android=True, project_root=tmp_path
+            )
+        assert excinfo.value.key_path == f"tool.kivy.android.src.{key}"
+        assert "relative to the project root" in (excinfo.value.hint or "")
+
+    def test_rule14_src_root_must_be_a_directory(self, tmp_path):
+        (tmp_path / "Main.java").write_text("class Main {}\n", encoding="utf-8")
+        text = BASE + '\n[tool.kivy.android.src]\njava = ["Main.java"]\n'
+        with pytest.raises(ConfigError, match="is not a directory"):
+            load_config_from_text(
+                text, require_ios=False, require_android=True, project_root=tmp_path
+            )
+
+    def test_rule14_existing_src_roots_load(self, tmp_path):
+        (tmp_path / "android" / "java").mkdir(parents=True)
+        (tmp_path / "android" / "kotlin").mkdir(parents=True)
+        text = (
+            BASE + "\n[tool.kivy.android.src]\n"
+            'java = ["android/java"]\nkotlin = ["android/kotlin"]\n'
+        )
+        android = load_config_from_text(
+            text, require_ios=False, require_android=True, project_root=tmp_path
+        ).android_required
+        assert android.src.java == ("android/java",)
+        assert android.src.kotlin == ("android/kotlin",)
+
+    def test_rule14_src_root_escape_rejected(self):
+        with pytest.raises(ConfigError, match="escapes"):
+            load_android(BASE + '\n[tool.kivy.android.src]\njava = ["../java"]\n')
+
     def test_rule18_include_files_escape_rejected(self):
         with pytest.raises(ConfigError, match="stay inside"):
             load_android(

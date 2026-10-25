@@ -552,6 +552,92 @@ def _pb_varint(data: bytes, pos: int) -> tuple[int, int]:
             raise ValueError("varint too long")
 
 
+# --------------------------------------------------------------------------- #
+# Compiled classes: which classes the package's dex files define
+# --------------------------------------------------------------------------- #
+#
+# A Gradle source root that does not exist compiles to nothing and the build
+# still succeeds, which is how `[tool.kivy.android.src]` shipped without ever
+# compiling a class. The only proof a class reached the app is the dex itself.
+
+_DEX_NAME = re.compile(r"^(?:dex/)?classes\d*\.dex$")
+_DEX_MAGIC = re.compile(rb"^dex\n\d{3}\x00$")
+_DEX_HEADER_SIZE = 0x70
+_DEX_CLASS_DEF_SIZE = 32
+
+
+def dex_descriptor(class_name: str) -> str:
+    """``org.example.Main`` as a dex type descriptor, ``Lorg/example/Main;``.
+
+    Takes the binary name, so a nested class is ``Outer$Inner``.
+    """
+    return "L" + class_name.replace(".", "/") + ";"
+
+
+def dex_defined_classes(dex: bytes) -> set[str]:
+    """The type descriptor of every class *dex* defines (its ``class_defs``).
+
+    Defined, not merely mentioned: the string table also holds every class the
+    code refers to, so a class that calls a missing one would otherwise count
+    the missing one as present. Raises ``ValueError`` on bytes that are not a
+    dex file this reader can walk.
+    """
+    if len(dex) < _DEX_HEADER_SIZE or not _DEX_MAGIC.match(dex[:8]):
+        raise ValueError("not a dex file (bad magic or truncated header)")
+    try:
+        string_ids_off = struct.unpack_from("<I", dex, 0x3C)[0]
+        type_ids_off = struct.unpack_from("<I", dex, 0x44)[0]
+        class_defs_size, class_defs_off = struct.unpack_from("<2I", dex, 0x60)
+        found: set[str] = set()
+        for i in range(class_defs_size):
+            class_idx = struct.unpack_from(
+                "<I", dex, class_defs_off + i * _DEX_CLASS_DEF_SIZE
+            )[0]
+            descriptor_idx = struct.unpack_from(
+                "<I", dex, type_ids_off + 4 * class_idx
+            )[0]
+            string_off = struct.unpack_from(
+                "<I", dex, string_ids_off + 4 * descriptor_idx
+            )[0]
+            _, start = _pb_varint(dex, string_off)  # uleb128 utf16_size
+            end = dex.index(b"\x00", start)
+            found.add(dex[start:end].decode("utf-8", "replace"))
+    except struct.error as exc:
+        raise ValueError(f"dex table runs past the end of the file: {exc}") from exc
+    return found
+
+
+def android_dex_problems(package: Path, *, classes: Sequence[str]) -> list[str]:
+    """Each of *classes* (binary names) that no dex file in *package* defines.
+
+    *package* is an APK or an App Bundle; a bundle keeps its dex files under
+    ``base/dex/``.
+    """
+    if not classes:
+        return ["no class given; the check needs to know what to look for"]
+    with zipfile.ZipFile(package) as zf:
+        view = _ZipView(zf, _module_prefix(zf))
+        dex_names = sorted(n for n in view.namelist() if _DEX_NAME.match(n))
+        if not dex_names:
+            return [f"{package.name} contains no classes*.dex; the app has no code"]
+        defined: set[str] = set()
+        problems = []
+        for name in dex_names:
+            with view.open(name) as fh:
+                data = fh.read()
+            try:
+                defined |= dex_defined_classes(data)
+            except ValueError as exc:
+                problems.append(f"{name} could not be read: {exc}")
+    for class_name in classes:
+        if dex_descriptor(class_name) not in defined:
+            problems.append(
+                f"{class_name} is not defined in any of {dex_names}; it was "
+                "never compiled into the app"
+            )
+    return problems
+
+
 def jarsigner_report_problems(returncode: int, output: str) -> list[str]:
     """What ``jarsigner -verify <bundle>`` said was wrong, from its exit and text.
 

@@ -7,6 +7,7 @@ lines, stable attribute order — so re-runs are byte-identical.
 
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 from pathlib import Path
@@ -152,6 +153,7 @@ def write_app_build_gradle(
     config: Config,
     android: AndroidConfig,
     *,
+    project_root: Path,
     python_version: str,
     runtime_root: Path,
     staged_libs: list[str],
@@ -184,6 +186,11 @@ def write_app_build_gradle(
     python.org testbed's mechanism), so each ABI's launcher links its own
     libpython — a Gradle-side lookup cannot do this for plain ``gradlew``
     builds (``android.injected.build.abi`` is Studio-only).
+
+    ``project_root`` is where the ``[tool.kivy.android.src]`` roots are
+    declared relative to. Gradle resolves a ``srcDirs`` entry against the
+    module directory (``app/``) and treats a missing one as empty, so each root
+    is written relative to that directory and compiled in place.
     """
     version = config.version_required
     version_code = android_version_code(config)
@@ -213,8 +220,11 @@ def write_app_build_gradle(
         f"    id {_groovy_str(plugin_id)}" for plugin_id, _ in android.gradle.plugins
     ]
 
+    module_dir = dest / "app"
     src_dirs = "".join(
-        f"            java.srcDirs += '{_gradle_path(Path(p))}'\n"
+        "            java.srcDirs += "
+        + _groovy_str(Path(os.path.relpath(project_root / p, module_dir)).as_posix())
+        + "\n"
         for p in [*android.src.java, *android.src.kotlin]
     )
 

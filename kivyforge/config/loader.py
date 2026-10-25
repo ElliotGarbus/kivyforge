@@ -1845,7 +1845,7 @@ def _parse_android(
         root_name="generated project",
         project_root=project_root,
     )
-    src = _parse_android_src(android, finder)
+    src = _parse_android_src(android, finder, project_root=project_root)
     services = _parse_android_services(android, finder)
     activities = _parse_android_activities(android, finder)
     intent_filters = _parse_android_intent_filters(android, finder)
@@ -2525,7 +2525,9 @@ def _parse_include_files(
     return out
 
 
-def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
+def _parse_android_src(
+    android: dict, finder: _LineFinder, *, project_root: Path | None = None
+) -> AndroidSrcConfig:
     table = android.get("src")
     if table is None:
         return AndroidSrcConfig()
@@ -2550,6 +2552,18 @@ def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
                 finder=finder,
                 key=key,
             )
+            # Gradle treats a missing srcDir as empty, so a typo here would
+            # build green with the classes absent from the APK.
+            root = project_root / path if project_root is not None else None
+            if root is not None and not root.is_dir():
+                what = "is not a directory" if root.exists() else "does not exist"
+                raise ConfigError(
+                    f"[tool.kivy.android.src].{key} entry {path!r} {what}",
+                    key_path=f"tool.kivy.android.src.{key}",
+                    line=finder.line(key),
+                    hint="the path is relative to the project root; Gradle "
+                    "would compile nothing from a missing one.",
+                )
         return tuple(raw)
 
     return AndroidSrcConfig(java=_roots("java"), kotlin=_roots("kotlin"))

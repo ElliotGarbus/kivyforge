@@ -57,9 +57,12 @@ from tests.artifact_checks import (
     ELFCLASS64,
     android_apk_problems,
     android_bundle_problems,
+    android_dex_problems,
     android_manifest_problems,
     apksigner_report_problems,
     bundle_uncompresses_native_libs,
+    dex_defined_classes,
+    dex_descriptor,
     ios_app_problems,
     ios_expected_plist,
     jarsigner_report_problems,
@@ -445,6 +448,123 @@ class TestAndroidBundles:
 
     def test_shipped_python_tags_reads_a_bundle(self, tmp_path):
         assert shipped_python_tags(_aab(tmp_path, _two_abi_entries())) == ["3.14"]
+
+
+def _dex(defined: list[str], referenced: tuple[str, ...] = ()) -> bytes:
+    """The smallest dex the reader can walk: header, string_ids, type_ids,
+    class_defs, then string data. Type *i* is string *i*; each defined class
+    gets a class_def, each referenced-only one gets a string and a type."""
+    strings = sorted({*defined, *referenced})
+    n = len(strings)
+    string_ids_off = 0x70
+    type_ids_off = string_ids_off + 4 * n
+    class_defs_off = type_ids_off + 4 * n
+    data_off = class_defs_off + 32 * len(defined)
+    data = b""
+    offsets = []
+    for s in strings:
+        offsets.append(data_off + len(data))
+        data += bytes([len(s)]) + s.encode() + b"\x00"  # uleb128 < 128
+    header = bytearray(0x70)
+    header[:8] = b"dex\n035\x00"
+    struct.pack_into("<2I", header, 0x38, n, string_ids_off)
+    struct.pack_into("<2I", header, 0x40, n, type_ids_off)
+    struct.pack_into("<2I", header, 0x60, len(defined), class_defs_off)
+    return (
+        bytes(header)
+        + b"".join(struct.pack("<I", o) for o in offsets)
+        + b"".join(struct.pack("<I", i) for i in range(n))
+        + b"".join(struct.pack("<I", strings.index(d)) + bytes(28) for d in defined)
+        + data
+    )
+
+
+_JAVA_MARKER = "org.kivyforge.t3.JavaMarker"
+_KOTLIN_MARKER = "org.kivyforge.t3.KotlinMarker"
+
+
+class TestDexClasses:
+    """Which classes the package's dex files define (`[tool.kivy.android.src]`)."""
+
+    def test_descriptor_spelling(self):
+        assert dex_descriptor("org.example.Main") == "Lorg/example/Main;"
+        assert dex_descriptor("org.example.Outer$Inner") == "Lorg/example/Outer$Inner;"
+
+    def test_defined_classes_are_read_from_class_defs(self):
+        dex = _dex(
+            ["Lorg/kivyforge/t3/JavaMarker;", "Lorg/kivy/android/PythonActivity;"]
+        )
+        assert dex_defined_classes(dex) == {
+            "Lorg/kivyforge/t3/JavaMarker;",
+            "Lorg/kivy/android/PythonActivity;",
+        }
+
+    def test_both_markers_in_an_apk_pass(self, tmp_path):
+        apk = _apk(
+            tmp_path,
+            {
+                "classes.dex": _dex([dex_descriptor(_JAVA_MARKER)]),
+                "classes2.dex": _dex([dex_descriptor(_KOTLIN_MARKER)]),
+            },
+        )
+        assert android_dex_problems(apk, classes=[_JAVA_MARKER, _KOTLIN_MARKER]) == []
+
+    def test_a_missing_class_is_reported(self, tmp_path):
+        apk = _apk(tmp_path, {"classes.dex": _dex([dex_descriptor(_JAVA_MARKER)])})
+        assert android_dex_problems(apk, classes=[_JAVA_MARKER, _KOTLIN_MARKER]) == [
+            f"{_KOTLIN_MARKER} is not defined in any of ['classes.dex']; it was "
+            "never compiled into the app"
+        ]
+
+    def test_a_class_only_referenced_does_not_count(self, tmp_path):
+        """The string table names every class the code calls; a launcher check
+        that references the user's class must not make that class present."""
+        dex = _dex(
+            ["Lorg/kivy/android/KivyforgeLauncherCheck;"],
+            referenced=(dex_descriptor(_JAVA_MARKER),),
+        )
+        apk = _apk(tmp_path, {"classes.dex": dex})
+        assert len(android_dex_problems(apk, classes=[_JAVA_MARKER])) == 1
+
+    def test_a_bundle_is_read_from_base_dex(self, tmp_path):
+        bundle = _apk(
+            tmp_path,
+            {
+                "BundleConfig.pb": REAL_BUNDLE_CONFIG,
+                "base/dex/classes.dex": _dex([dex_descriptor(_JAVA_MARKER)]),
+            },
+            name="app.aab",
+        )
+        assert android_dex_problems(bundle, classes=[_JAVA_MARKER]) == []
+
+    def test_a_package_without_dex_is_reported(self, tmp_path):
+        apk = _apk(tmp_path, {"AndroidManifest.xml": b""})
+        assert android_dex_problems(apk, classes=[_JAVA_MARKER]) == [
+            "app.apk contains no classes*.dex; the app has no code"
+        ]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [b"dex\n035\x00", b"not a dex at all" * 10],
+        ids=["truncated", "bad-magic"],
+    )
+    def test_an_unreadable_dex_is_reported_not_passed(self, tmp_path, payload):
+        apk = _apk(tmp_path, {"classes.dex": payload})
+        problems = android_dex_problems(apk, classes=[_JAVA_MARKER])
+        assert problems[0].startswith("classes.dex could not be read: not a dex file")
+        assert len(problems) == 2  # and the class is therefore not found
+
+    def test_a_table_offset_past_the_end_is_unreadable(self):
+        dex = bytearray(_dex([dex_descriptor(_JAVA_MARKER)]))
+        struct.pack_into("<I", dex, 0x64, len(dex) + 100)  # class_defs_off
+        with pytest.raises(ValueError, match="runs past the end"):
+            dex_defined_classes(bytes(dex))
+
+    def test_no_class_to_look_for_is_a_problem(self, tmp_path):
+        apk = _apk(tmp_path, {"classes.dex": _dex([])})
+        assert android_dex_problems(apk, classes=[]) == [
+            "no class given; the check needs to know what to look for"
+        ]
 
 
 class TestJarsignerReport:
