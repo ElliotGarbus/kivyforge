@@ -14,9 +14,10 @@ with an Objective-C `+load` runs before `main()`, can add or wrap methods on
 SDL's delegate class, and UIKit calls them. That held for a dynamic product
 and a static one. On the phone the added delegate method received a real
 APNs device token, BGTask handlers ran, and a notification tap that
-cold-launched the app reached the hook before Python started. Only
-background-push delivery is still unverified: it needs a push sent through
-APNs, which needs the team's APNs key.
+cold-launched the app reached the hook before Python started. A background
+push sent through Apple's Push Notifications Console reached a delegate
+method the hook added, and iOS launched a BGTask the hook had registered,
+with no debugger attached.
 
 ## Environment
 
@@ -172,9 +173,9 @@ static void kf_wrap(Class cls, SEL sel, const char *types, id (^make)(IMP orig))
    into its own `AppDelegate`, the same background modes, entitlement and
    payload. It received the same action, and its method did not run either.
    Neither app got `didRegisterForRemoteNotifications…` or
-   `didFailToRegister…`. On the phone the device token arrived through the
-   added method on every launch; background-push delivery is still
-   **unverified, not failed** (§"Device pass").
+   `didFailToRegister…`. On the phone both arrived through the added
+   methods: the device token on every launch, and a background push sent
+   from Apple's console (§"Device pass").
 
 9. **A background launch runs the whole Kivy app.** With the app
    terminated, the `content-available` push launched it in the background:
@@ -218,7 +219,8 @@ was written to the log but is not reproduced here.
 | Warm URL (`devicectl … launch --payload-url kfspike://warm/device` to the running app) | **Pass**: through the wrapped `openURLContexts` to Kivy's `on_drop_file` |
 | Cold URL (`--terminate-existing --payload-url kfspike://cold/device`) | **Finding 4 reproduced**: the URL was in `connectionOptions`, Python ran at +0.26 s, Kivy's `on_drop_file` never fired |
 | Cold launch from tapping a local notification, app killed first | **Pass**: `connectionOptions.notificationResponse` present in `willConnect` at +0.027 s, the hook's notification-center delegate got `didReceiveResponse` at +0.028 s, Python at +0.35 s. `launchOptions` empty again |
-| Background push to the added `didReceiveRemoteNotification:fetchCompletionHandler:` | **Not run**: needs a push sent through APNs with the team's key or certificate |
+| Background push to the added `didReceiveRemoteNotification:fetchCompletionHandler:` | **Pass**: sent from Apple's Push Notifications Console (icloud.developer.apple.com, Development environment, background push type) to the token the hook logged. The method ran with `userInfo` keys `aps`, 20 s after the app entered the background. The console's payload editor did not take the intended `kf` key, so the default payload was sent |
+| BGTask launched by iOS itself, no debugger | **Pass, by chance**: 33 ms before that push was delivered, iOS launched the app-refresh task registered in `+load` (`org.kivy.lifecycle-spike.load`, submitted at launch). Why iOS chose that moment was not investigated |
 
 Three more things the phone showed:
 
@@ -251,12 +253,9 @@ either linkage.
 
 Suggested follow-ups, roughly in order:
 
-1. **Background-push delivery on a device**, the one check left: send a
-   `content-available` push through APNs (the team's key, or the CloudKit
-   push console) to the token the hook logs, and confirm the added
-   `didReceiveRemoteNotification:fetchCompletionHandler:` runs. Once the
-   example exists, the whole device pass belongs in
-   `hardware-checklist.toml`.
+1. **Put the device pass in `hardware-checklist.toml`** once the example
+   exists, so it can be re-run: token, background push from the console,
+   BGTask, warm and cold URL, and a cold launch from a notification tap.
 2. **A guide and an example** (`examples/mobile/ios-lifecycle-hook`): the
    wrap helper, wrapping `willConnect` for launch context, and the pyobjus
    read-back, with finding 1's class-name warning.
@@ -268,9 +267,9 @@ Suggested follow-ups, roughly in order:
 
 ## Not tested
 
-Background-push delivery on a device (needs APNs credentials), universal
-links (need an associated domain), quick actions, a BGTask that iOS
-schedules on its own rather than one forced from the debugger,
+A background push that cold-launches a killed app on the device (the app
+was suspended, not killed), universal links (need an associated domain),
+quick actions, iOS scheduling a *late-registered* BGTask on its own,
 `-[UIApplication setDelegate:]` swizzling, a binary static package, a static
 product on the device, Release builds, and Python's own stdout in the
 unified log (the hook's `NSLog` lines and its file log were used
