@@ -1234,7 +1234,7 @@ def android_smoke(
 
     click.echo(f"[smoke] running the contract test on {device}...", err=True)
     try:
-        run_smoke(dest, release=release)
+        run_smoke(dest, device=device, release=release)
     except (adb_mod.AdbError, SmokeError) as exc:
         raise AndroidBuildError(str(exc)) from exc
     click.echo("Contract smoke test PASSED.")

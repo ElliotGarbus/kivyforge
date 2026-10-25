@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Android smoke test runs on one device
+
+- **Fixed:** `run -p android --smoke` runs the contract test only on the device
+  it resolved. Gradle's connected-test task runs on every attached device
+  unless `ANDROID_SERIAL` is set, and the probe is built for the resolved
+  device's ABI only, so `--smoke --device` with an emulator also running
+  failed on the emulator even when the phone passed. No migration is needed.
+
 ### Manifest-merger directives in Android raw-XML fragments
 
 - **Added:** the generated `AndroidManifest.xml` declares the `tools`

@@ -2162,14 +2162,18 @@ class TestAndroidSmoke:
     def test_the_version_reaches_the_build(self, build_env, monkeypatch):
         project, calls = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=_OVERRIDE)
         assert calls["write_app_build_gradle"][-1]["_version"] == _OVERRIDE
 
     def test_success(self, build_env, monkeypatch, capsys):
         project, calls = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None)
         assert "PASSED" in capsys.readouterr().out
 
@@ -2186,7 +2190,9 @@ class TestAndroidSmoke:
         project, _ = build_env
         _fake_device(monkeypatch)
         monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None, release=release)
         captured = capsys.readouterr()
         assert captured.out == "Contract smoke test PASSED.\n"
@@ -2200,7 +2206,7 @@ class TestAndroidSmoke:
         project, _ = build_env
         _fake_device(monkeypatch)
 
-        def boom(dest, *, release):
+        def boom(dest, *, device, release):
             raise smoke_mod.SmokeError("contract test failed")
 
         monkeypatch.setattr(smoke_mod, "run_smoke", boom)
@@ -2220,7 +2226,9 @@ class TestAndroidSmoke:
     def test_debug_smoke_leaves_the_test_variant_alone(self, build_env, monkeypatch):
         project, calls = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
         assert gradle_kwargs["test_build_type"] is None
@@ -2240,7 +2248,9 @@ class TestAndroidSmoke:
         project, calls = build_env
         _fake_device(monkeypatch)
         monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None, release=release)
         (bundle,) = calls["assemble_bundle"]
         assert bundle["byte_compile"] == compiled
@@ -2259,7 +2269,9 @@ class TestAndroidSmoke:
         monkeypatch.setattr(
             smoke_mod,
             "run_smoke",
-            lambda dest, *, release: seen.update(release=release),
+            lambda dest, *, device, release: seen.update(
+                release=release, device=device
+            ),
         )
         cli.android_smoke(project, version=None, release=True)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
@@ -2267,6 +2279,22 @@ class TestAndroidSmoke:
         assert gradle_kwargs["release_signing_config"] == "debug"
         assert seen["release"] is True
         assert "debug keystore" in capsys.readouterr().err
+
+    def test_the_test_runs_on_the_device_the_probe_was_built_for(
+        self, build_env, monkeypatch
+    ):
+        """The probe is built for the resolved device's ABI, so the test must
+        run there and only there, not on every attached device."""
+        project, _ = build_env
+        _fake_device(monkeypatch, serial="56051JEKB16396")
+        seen = {}
+        monkeypatch.setattr(
+            smoke_mod,
+            "run_smoke",
+            lambda dest, *, device, release: seen.update(device=device),
+        )
+        cli.android_smoke(project, version=None)
+        assert seen["device"] == "56051JEKB16396"
 
     def test_release_smoke_prefers_the_configured_release_identity(
         self, project, monkeypatch, tmp_path
@@ -2286,7 +2314,9 @@ class TestAndroidSmoke:
         _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
         monkeypatch.setattr(signing_mod, "_verify_alias", lambda *a, **kw: None)
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None, release=True)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
         assert gradle_kwargs["release_signing_config"] == "release"
