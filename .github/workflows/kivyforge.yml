@@ -775,6 +775,28 @@ jobs:
         apk="$APP_DIR/$(python -c 'import json, sys; [a] = json.load(open(sys.argv[1]))["data"]["artifacts"]; assert a["path"].startswith("dist/android/"), a; print(a["path"])' "$APP_DIR/package.json")"
         pytest tests/platforms/android/test_apk_signature.py -q --no-cov \
           --android-apk "$apk" --android-project "$APP_DIR"
+    - name: Build with [tool.kivy.android.src] roots and assert their classes are in the dex (T3)
+      # A source root Gradle cannot find compiles to nothing and the build
+      # still succeeds; that is how src.java shipped without ever compiling a
+      # class. So this builds a copy of the example with one Java and one
+      # Kotlin marker root (tests/fixtures/android-src) and reads the APK's
+      # dex for both classes, which proves the srcDirs wiring and the Kotlin
+      # plugin path together. A copy outside the checkout, so the example
+      # itself stays as committed; src is not a lock input, so the committed
+      # lock still verifies. Dex content is ABI-independent: one leg.
+      if: matrix.abi == 'x86_64'
+      run: |
+        work="$RUNNER_TEMP/android-src-t3"
+        mkdir -p "$work"
+        cp "$APP_DIR/pyproject.toml" "$APP_DIR/pylock.android.toml" "$work/"
+        cp -r "$APP_DIR/src" "$work/src"
+        cp -r tests/fixtures/android-src "$work/android-src"
+        printf '\n[tool.kivy.android.src]\njava = ["android-src/java"]\nkotlin = ["android-src/kotlin"]\n' >> "$work/pyproject.toml"
+        (cd "$work" && kivyforge build -p android --debug --abi "$ABI")
+        pytest tests/platforms/android/test_dex_classes.py -q --no-cov \
+          --android-apk "$(ls "$work"/hello-android-android/app/build/outputs/apk/debug/*.apk)" \
+          --android-dex-class org.kivyforge.t3.JavaMarker \
+          --android-dex-class org.kivyforge.t3.KotlinMarker
     - name: Lint kivyforge's Java for calls above min_sdk (NewApi)
       # A check on kivyforge's own templates, not the user's release gate:
       # lintRelease runs a curated policy subset, and NewApi is not in it.

@@ -104,8 +104,11 @@ LocalWidget = { version = "0.2.0", source = "libs/LocalWidget-0.2.0.aar" }
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `java` | list of string | `[]` | Project-relative Java source directories to compile into the app. |
-| `kotlin` | list of string | `[]` | Project-relative Kotlin source directories. A non-empty list enables the Kotlin Gradle plugin. |
+| `java` | list of string | `[]` | Project-relative Java source directories to compile into the app. Each must be an existing directory. |
+| `kotlin` | list of string | `[]` | Project-relative Kotlin source directories. Each must be an existing directory. A non-empty list enables the Kotlin Gradle plugin. |
+
+The directories are compiled in place, so an edit is picked up by the next
+build without any copy step.
 
 ## `[[tool.kivy.android.include_files]]`
 

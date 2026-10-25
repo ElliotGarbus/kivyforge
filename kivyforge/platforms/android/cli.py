@@ -617,6 +617,7 @@ def android_build(
             dest,
             config,
             android,
+            project_root=project_root,
             python_version=python_version,
             runtime_root=runtime_root,
             staged_libs=staged_libs,

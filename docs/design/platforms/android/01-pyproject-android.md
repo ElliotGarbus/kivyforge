@@ -533,14 +533,19 @@ and dexed into the APK by the app's own Gradle.
 
 ```toml
 [tool.kivy.android.src]
-java = ["android/java"]        # repo-relative source roots merged into app/src/main/java
+java = ["android/java"]        # repo-relative source roots added to the module's source set
 kotlin = ["android/kotlin"]    # optional; enables the Kotlin Gradle plugin when non-empty
 ```
 
 | Field    | Type           | Required | Description                                                                                                                       |
 | -------- | -------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `java`   | list of string | no       | Repo-relative directories merged into the generated module's Java source set. Entries must not escape the project directory.      |
-| `kotlin` | list of string | no       | Repo-relative Kotlin source roots. A non-empty list makes `kivyforge build` apply the Kotlin Gradle plugin.                        |
+| `java`   | list of string | no       | Repo-relative directories added to the generated module's Java source set and compiled in place. Each must be an existing directory inside the project (rule 14). |
+| `kotlin` | list of string | no       | Repo-relative Kotlin source roots, with the same rule. A non-empty list makes `kivyforge build` apply the Kotlin Gradle plugin.     |
+
+The roots are compiled where they are, not copied: the generated `app/build.gradle`
+names each one relative to the `app/` module ([gradle-project-generation
+§`app/build.gradle`](04-gradle-project-generation.md#appbuildgradle--the-generated-module)).
+They are read on every build and are not lock inputs.
 
 > This is *user* Java/Kotlin only. The bootstrap's own Java (the `org.kivy.android.*`
 > Activity/service classes and `org.jnius.NativeInvocationHandler`) is generated
@@ -930,7 +935,7 @@ key_alias = "upload"
 11. Lacks `[tool.kivy.android.python].version`, or specifies one for which no python.org Android embeddable package exists (verified at lock time), or one incompatible with `[project].requires-python`.
 12. Sets `find_links` entries that are absolute, empty, or escape the project directory.
 13. Declares a `[tool.kivy.android.gradle].dependencies` entry that is not a fully-versioned `group:artifact:version` coordinate (dynamic ranges are rejected for reproducibility). A versionless `group:artifact` entry is the one exception, and only when `platforms` is non-empty. A `platforms` entry must itself be fully versioned. A `plugins` entry must map a dotted plugin id (quoted, or TOML nests it) to an exact version string, and may not be `com.android.application` or `org.jetbrains.kotlin.android`.
-14. Declares a `native.aars`/`native.jars` `source` that is an absolute path or escapes the project directory.
+14. Declares a `native.aars`/`native.jars` `source` that is an absolute path or escapes the project directory; or a `[tool.kivy.android.src]` `java`/`kotlin` root that is absolute, escapes the project directory, or is not an existing directory (Gradle compiles nothing from a missing source root and reports success, so the loader is where it has to fail).
 15. Sets reserved keys under `[tool.kivy.android.manifest]`, `[tool.kivy.android.gradle_properties]`, or otherwise collides with a kivyforge-managed manifest attribute; sets a `manifest.application` / `manifest.activity` key in a namespace other than `android:` (a `tools:` merger directive belongs on an element authored in a raw-XML fragment); or sets `[tool.kivy.android.manifest].allow_exported` to anything other than a list of non-empty strings.
 16. Runs `kivyforge package` without a resolvable signing key (keystore/alias via `[tool.kivy.android.signing]` or CLI/env).
 17. Provides an `extra_manifest_xml` / `extra_application_xml` / `extra_activity_xml` fragment that is not well-formed XML (checked before manifest generation).

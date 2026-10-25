@@ -92,6 +92,14 @@ def pytest_addoption(parser):
         "exportKivyforgeReleaseManifest task makes) to check against config.",
     )
     group.addoption(
+        "--android-dex-class",
+        action="append",
+        default=[],
+        metavar="CLASS",
+        help="A class (binary name) the --android-apk's dex files must define. "
+        "Repeatable.",
+    )
+    group.addoption(
         "--android-project",
         default=None,
         help="Path to the project directory whose pyproject.toml the merged "
