@@ -1,0 +1,43 @@
+[project]
+name = "android-activity-class"
+version = "1.0.0"
+description = "A Java subclass of PythonActivity as the launcher, and a provider that watches it"
+requires-python = ">=3.14"
+dependencies = [
+    "kivy==2.3.1",
+    "pyjnius",
+]
+
+[tool.kivy]
+display_name = "Activity Class"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.android]
+schema_version = 1
+package = "org.kivyforge.activityclass"
+main_activity = "org.kivyforge.activityclass.MainActivity"
+min_sdk = 24
+target_sdk = 35
+kivy_generation = 2
+abis = ["arm64_v8a", "x86_64"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+
+exclude = ["kivy-garden", "docutils", "pygments"]
+
+[tool.kivy.android.python]
+version = "3.14.6"
+
+[tool.kivy.android.permissions]
+uses = ["INTERNET"]
+
+[tool.kivy.android.src]
+java = ["android/java"]
+
+[tool.kivy.android.manifest]
+extra_application_xml = """
+<provider android:name="org.kivyforge.activityclass.LifecycleProvider"
+          android:authorities="${applicationId}.lifecycle"
+          android:exported="false" />
+"""

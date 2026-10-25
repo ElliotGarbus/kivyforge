@@ -41,7 +41,6 @@ from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64
 from kivyforge.platforms.android.generate.manifest import (
     ANDROID_NS,
     GENERATED_THEME,
-    MAIN_ACTIVITY,
     TOOLS_NS,
     ManifestError,
     generate_manifest,
@@ -920,9 +919,38 @@ class TestMergedManifestComponents:
 class TestMergedManifestMainActivity:
     def test_a_missing_launcher_activity_is_reported(self):
         android = _android()
-        bad = _merged(android).replace(MAIN_ACTIVITY, "com.other.Activity")
+        bad = _merged(android).replace(
+            "org.kivy.android.PythonActivity", "com.other.Activity"
+        )
         problems = _mcheck(bad, android)
         assert any("no <activity" in p and "no launcher" in p for p in problems)
+
+    def test_a_configured_launcher_is_the_one_checked(self):
+        android = _android(main_activity="com.example.MainActivity")
+        merged = _merged(android)
+        assert 'android:name="com.example.MainActivity"' in merged
+        assert _mcheck(merged, android) == []
+
+    def test_a_merge_that_kept_the_base_launcher_is_reported(self):
+        """The build would succeed and launch the base class, skipping the
+        subclass's onCreate; only the merged manifest shows it."""
+        merged = _merged(_android())
+        android = _android(main_activity="com.example.MainActivity")
+        problems = _mcheck(merged, android)
+        assert any("com.example.MainActivity" in p for p in problems)
+
+    def test_a_second_launcher_activity_is_reported(self):
+        android = _android()
+        second = (
+            '<activity android:name="com.vendor.Splash" android:exported="true">'
+            "<intent-filter>"
+            '<action android:name="android.intent.action.MAIN"/>'
+            '<category android:name="android.intent.category.LAUNCHER"/>'
+            "</intent-filter></activity>"
+        )
+        bad = _merged(android).replace("</application>", second + "</application>")
+        problems = _mcheck(bad, android)
+        assert any("com.vendor.Splash" in p and "LAUNCHER" in p for p in problems)
 
     def test_an_orientation_the_merge_changed_is_reported(self):
         android = _android()

@@ -310,6 +310,45 @@ class TestManifest:
         assert "android.hardware.nfc" in implied_features(["android.permission.NFC"])
 
 
+class TestMainActivity:
+    """The manifest's launcher follows [tool.kivy.android].main_activity."""
+
+    @staticmethod
+    def _launchers(tree):
+        return [
+            a.get(NS + "name")
+            for a in tree.iter("activity")
+            if any(
+                c.get(NS + "name") == "android.intent.category.LAUNCHER"
+                for c in a.iter("category")
+            )
+        ]
+
+    def test_the_default_launcher_is_the_bootstrap_activity(self):
+        _, android = _android()
+        _, tree = _manifest_tree(android)
+        assert self._launchers(tree) == ["org.kivy.android.PythonActivity"]
+
+    def test_the_configured_class_is_the_launcher(self):
+        _, android = _android('main_activity = "org.example.genapp.MainActivity"')
+        text, tree = _manifest_tree(android)
+        assert self._launchers(tree) == ["org.example.genapp.MainActivity"]
+        # The base class is not declared beside it: an exported PythonActivity
+        # would be a second way in that skips the subclass's onCreate.
+        assert "org.kivy.android.PythonActivity" not in text
+
+    def test_only_the_name_changes(self):
+        """configChanges, orientation, theme and filters are the launcher's,
+        whichever class it is."""
+        _, default = _android()
+        _, custom = _android('main_activity = "org.example.genapp.MainActivity"')
+        default_text, _ = _manifest_tree(default)
+        custom_text, _ = _manifest_tree(custom)
+        assert custom_text == default_text.replace(
+            "org.kivy.android.PythonActivity", "org.example.genapp.MainActivity"
+        )
+
+
 class TestProjectFiles:
     def _lock(self, gradle=GradlePins()):
         return AndroidLockfile(
@@ -347,6 +386,29 @@ class TestProjectFiles:
         text = (tmp_path / "app" / "build.gradle").read_text()
         assert "versionName '4.5.6'" in text
         assert "versionCode 4050603" in text
+
+    def test_r8_keeps_every_bootstrap_namespace(self, tmp_path):
+        """pyjnius reflects into these by name, so R8 must keep them; they are
+        also the packages rule 22 forbids main_activity in, and one tuple
+        feeds both."""
+        config, android = _android()
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            project_root=tmp_path,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "python-runtime",
+            staged_libs=[],
+        )
+        rules = (tmp_path / "app" / "proguard-rules.pro").read_text()
+        assert rules == (
+            "# kivyforge keep-rules: pyjnius reflects into these at runtime.\n"
+            "-keep class org.jnius.** { *; }\n"
+            "-keep class org.kivy.android.** { *; }\n"
+            "-keep class org.renpy.android.** { *; }\n"
+            "-keep class org.libsdl.app.** { *; }\n"
+        )
 
     def test_app_build_gradle_content(self, tmp_path):
         config, android = _android(

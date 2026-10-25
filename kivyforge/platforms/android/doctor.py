@@ -978,7 +978,7 @@ def _check_manifest_policy(config: Config) -> CheckResult:
     This is the preflight's first pass only: the merged-manifest pass needs AGP,
     so `kivyforge package` remains the gate that sees library manifests.
     """
-    from .generate.manifest import generate_manifest
+    from .generate.manifest import generate_manifest, main_activity
     from .policy import check_release_manifest
 
     android = config.android_required
@@ -993,6 +993,7 @@ def _check_manifest_policy(config: Config) -> CheckResult:
     findings = check_release_manifest(
         manifest_xml,
         package=android.package,
+        launcher=main_activity(android),
         allow_exported=android.manifest.allow_exported,
     )
     fails = [f.message for f in findings if f.severity == "FAIL"]

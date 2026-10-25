@@ -1957,7 +1957,9 @@ registered from a `ContentProvider` already works in a kivyforge app, and
 records that `[tool.kivy.android.src]` has never compiled anything (the
 `srcDirs` path resolves against `app/`). Its spike is
 [`android-activity-class-spike-findings.md`](android-activity-class-spike-findings.md).
-The two changes are independent and combine.
+The two changes are independent and combine. *Implemented 2026-10-24:* the
+`src.java` fix, then `main_activity` with its compile-time check and the
+`android-activity-class` gate example (`test-matrix.md` §7).
 
 **The one cheap early move, and why it is worth doing out of order.** The spec
 names kivyforge as its intended first consumer and says the contract stays

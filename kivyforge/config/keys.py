@@ -151,6 +151,7 @@ ANDROID: dict[str, Spec] = {
     "abis": None,
     "base_theme": None,
     "fullscreen": None,
+    "main_activity": None,
     "python": {"version": None},
     "permissions": {
         "uses": None,

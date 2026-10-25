@@ -38,7 +38,8 @@ Building an Android app with kivyforge is a four-phase pipeline across two tools
 │   └── src/main/
 │       ├── AndroidManifest.xml     ← generated from [tool.kivy.android]
 │       ├── java/
-│       │   ├── org/kivy/android/   ← bootstrap: PythonActivity, PythonService, ...
+│       │   ├── org/kivy/android/   ← bootstrap: PythonActivity, PythonService, ...;
+│       │   │                         KivyforgeLauncherCheck.java when main_activity is set
 │       │   ├── org/libsdl/app/     ← SDL Java glue (SDL2 or SDL3 per `kivy_generation`)
 │       │   └── org/jnius/          ← NativeInvocationHandler.java (pyjnius matched pair)
 │       ├── jniLibs/
@@ -56,7 +57,8 @@ Building an Android app with kivyforge is a four-phase pipeline across two tools
 
 - **`app/src/main/jniLibs/<abi>/`** is the only place Android will extract and let a process `dlopen` a native library at runtime. Every `.so` — `libpython3.x.so`, the SDL family, wheel extension modules, and wheel-embedded `.libs/` payloads — must land here (see "Native libraries and the `.so` load model").
 - **`app/src/main/assets/_python_bundle/`** holds the pure-Python payload (stdlib, `pip-deps` site-packages, and the app's own code). Assets keep AGP's default **compression** — measured, not assumed (see below) — and are unpacked to app-private storage on first launch by the bootstrap: Python source cannot be imported directly from inside an APK/asset stream, so it is materialized to a real filesystem path.
-- **`java/org/kivy/android/` + `java/org/libsdl/app/`** hold the generated bootstrap. The `org.kivy.android.*` namespace is **preserved deliberately** so that `autoclass('org.kivy.android.PythonActivity')` and Plyer-style access keep working unmodified (see [bootstrap-android](05-bootstrap-android.md)).
+- **`java/org/kivy/android/` + `java/org/libsdl/app/`** hold the generated bootstrap. The `org.kivy.android.*` namespace is **preserved deliberately** so that `autoclass('org.kivy.android.PythonActivity')` and Plyer-style access keep working unmodified (see [bootstrap-android](05-bootstrap-android.md)). That holds when the launcher is the app's own subclass (`[tool.kivy.android].main_activity`): the subclass lives in the app's package, the bundled `android.config` keeps naming the base class, and `PythonActivity.mActivity` holds the subclass instance.
+- **`KivyforgeLauncherCheck.java`**, generated only when `main_activity` is set, is the whole of kivyforge's check of that class. Its one statement, `return new <main_activity>();`, typed `PythonActivity`, compiles exactly when the class exists, extends `PythonActivity`, is concrete and public and has a public no-argument constructor — what Android needs to instantiate a launcher — and javac's error names the class and the property it lacks (`KF-BUILD-TOOL-FAILED`, exit 5). It works wherever the class comes from (`src.java`, `src.kotlin`, `include_files`, an `.aar`). It is package-private and unreferenced, so R8 drops it from a minified release, and it is deleted once the key is removed.
 - **`app/src/main/cpp/`** holds kivyforge's native-launcher source (`main.c` + `CMakeLists.txt`). AGP's `externalNativeBuild` compiles it to `libmain.so` per ABI with the NDK (see "The native launcher (`libmain.so`)"); it is a build output, not a staged/downloaded library.
 - **The app's own code** is copied straight from `app_dir` into the bundle's `app/` subtree by the Stage step — there is no separate staging link. The bundle is rebuilt from scratch on every `build`, so there is nothing to keep in sync, and a link would only have added a Windows privilege/cross-volume failure mode for no gain. `app_dir` must be a subdirectory (the project root `"."` is rejected), so the copy never sweeps `pyproject.toml`/`.git`/build output into the app.
 - **`python-runtime/` and `pip-deps/`** are per-ABI *staging* areas that feed `jniLibs/` and the asset bundle; they are not packaged directly.
@@ -263,7 +265,7 @@ callers need, which is generally narrower than what a reflective caller needs.
 
 `AndroidManifest.xml` is generated from `[tool.kivy.android]`:
 
-- The main `<activity>` is the generated `org.kivy.android.PythonActivity`, marked `LAUNCHER`, with `android:screenOrientation` from `[tool.kivy].orientation`, any `[tool.kivy.android.intent_filters]`, and any `manifest.extra_activity_xml`.
+- The main `<activity>` is `[tool.kivy.android].main_activity`, or the generated `org.kivy.android.PythonActivity` when that is unset, marked `LAUNCHER`; only its `android:name` depends on the key, and with a subclass configured the base class is not declared at all. It carries `android:screenOrientation` from `[tool.kivy].orientation`, any `[tool.kivy.android.intent_filters]`, and any `manifest.extra_activity_xml`.
 - `<uses-permission>` from `[tool.kivy.android.permissions].uses` (bare names auto-prefixed with `android.permission.`); **nothing is force-added** — the only implicit permissions are the `FOREGROUND_SERVICE*` entries a declared foreground service requires.
 - `<uses-feature>` from `[tool.kivy.android.permissions].features`, **plus** the non-required implied features synthesized from hardware-implying permissions when `auto_features` is on (an explicit `features` entry overrides the synthesized one for the same feature). See [pyproject-android §"Implied hardware features"](01-pyproject-android.md#implied-hardware-features-auto_features).
 - Extra `<service>` / `<activity>` from `[tool.kivy.android.services]` / `.activities`. A `foreground` service emits `android:foregroundServiceType` and auto-adds `FOREGROUND_SERVICE` + the matching `FOREGROUND_SERVICE_<TYPE>` `<uses-permission>`; its `notification` config is compiled into the generated `PythonService` (see [bootstrap-android](05-bootstrap-android.md)).
@@ -377,7 +379,7 @@ Xcode project is likewise authoritative-by-regeneration.
 
 Consequences:
 
-- **Hand edits to generated files** (`app/build.gradle`, `AndroidManifest.xml`, the bootstrap Java, `res/values/styles.xml`, …) are **overwritten** on the next build. Customize through the sanctioned escape hatches instead — the manifest passthrough + raw XML, `gradle` repositories/dependencies, `native.aars`/`native.jars`, `src.java`/`src.kotlin`, `include_files`, `gradle_properties`, `proguard`, and `build_settings` — which cover the customization surface *without* forfeiting regeneration.
+- **Hand edits to generated files** (`app/build.gradle`, `AndroidManifest.xml`, the bootstrap Java, `res/values/styles.xml`, …) are **overwritten** on the next build. Customize through the sanctioned escape hatches instead — the manifest passthrough + raw XML, `gradle` repositories/dependencies, `native.aars`/`native.jars`, `src.java`/`src.kotlin`, `main_activity` (your own subclass of `PythonActivity`, for code in the activity's lifecycle), `include_files`, `gradle_properties`, `proguard`, and `build_settings` — which cover the customization surface *without* forfeiting regeneration.
 - **There is no supported "eject" verb.** If the escape hatches don't cover a need, that's a design gap to report, not something to patch in the generated tree. You can of course copy `<app>-android/` elsewhere and maintain it by hand as a plain Gradle project, but then you own it entirely: kivyforge no longer regenerates it, re-locks into it, or supports it, and the reproducible-from-source guarantee no longer holds. Keeping the project managed is strongly preferred.
 
 ## Final artifacts

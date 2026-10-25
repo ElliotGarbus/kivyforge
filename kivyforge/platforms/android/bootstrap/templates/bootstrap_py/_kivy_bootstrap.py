@@ -28,8 +28,10 @@ absent hook as the no-op it is, so there is nothing to stub out.
 
 from jnius import autoclass
 
-# kivyforge's own activity, fixed at build time (generate/manifest.py names the
-# same class as the launcher activity).  Kivy never sees this string.
+# kivyforge's own activity, fixed at build time.  Kivy never sees this string.
+# It stays the base class when [tool.kivy.android].main_activity names an app
+# subclass as the launcher: mActivity is the base's static, and holds the
+# subclass instance.
 _ACTIVITY_CLASS = "org.kivy.android.PythonActivity"
 
 _activity_class = None
