@@ -1,6 +1,7 @@
 # Findings — iOS app-lifecycle hooks through a Swift package
 
-> 2026-10-25, macOS host, iOS Simulator only. Follow-up to issue #85, which
+> 2026-10-25, macOS host; iOS Simulator, then an iPhone (§"Device pass").
+> Follow-up to issue #85, which
 > asked for a way to run code in Android's `PythonActivity.onCreate`. The
 > iOS counterpart is the `UIApplicationDelegate`, which in a kivyforge app
 > belongs to SDL3, not to kivyforge or the user. The question: can a Swift
@@ -8,11 +9,14 @@
 > code before Python starts and receive the delegate callbacks some SDKs
 > need, **with no kivyforge change**?
 
-**Short answer: yes, on the Simulator.** A source package with an
-Objective-C `+load` runs before `main()`, can add or wrap methods on SDL's
-delegate class, and UIKit calls them. That held for a dynamic product and a
-static one. Push-token delivery and background-push delivery could not be
-tested on the Simulator at all (finding 8), so those need a device pass.
+**Short answer: yes, on the Simulator and on a phone.** A source package
+with an Objective-C `+load` runs before `main()`, can add or wrap methods on
+SDL's delegate class, and UIKit calls them. That held for a dynamic product
+and a static one. On the phone the added delegate method received a real
+APNs device token, BGTask handlers ran, and a notification tap that
+cold-launched the app reached the hook before Python started. Only
+background-push delivery is still unverified: it needs a push sent through
+APNs, which needs the team's APNs key.
 
 ## Environment
 
@@ -20,6 +24,7 @@ tested on the Simulator at all (finding 8), so those need a device pass.
 |---|---|
 | Host | macOS 26.6.2, Xcode 27.0 (27A266a), iPhoneSimulator SDK 27.0 |
 | Simulator | iPhone Air, iOS 27.0 |
+| Device | iPhone 18 Pro Max (iPhone19,3), over USB; automatic signing with the owner's Apple Development identity, team `R5PKSQLUZY`, which registered App ID `org.kivy.lifecycle-spike` with Push Notifications |
 | kivyforge | branch `macos-native-binaries-placement` at `90aceda0`, `.venv` editable install |
 | App | scratch project (not in the repo): Kivy `3.0.0.dev202610051055`, pyobjus 1.2.4, CPython 3.15.0b4, all from kivy-mobile-wheels |
 | SDL | `SDL3.framework` current version 401.2.0, i.e. 3.4.2; behaviour read from a local SDL 3.4.2 source tree, `src/video/uikit/SDL_uikitappdelegate.m` |
@@ -142,9 +147,9 @@ static void kf_wrap(Class cls, SEL sel, const char *types, id (^make)(IMP orig))
    from Python via pyobjus. Apple documents that handlers must be
    registered before launch finishes, and that rule is the reason this
    spike exists. The iOS 27 Simulator did not enforce it, so **this spike
-   does not show a late registration to be safe**: that needs a device. A
-   task launch was not simulated (`_simulateLaunchForTaskWithIdentifier:`
-   needs a debugger attached).
+   does not show a late registration to be safe**. The phone did not
+   enforce it either, and a late-registered handler ran when launched from
+   the debugger (§"Device pass").
 
 7. **A `UNUserNotificationCenter` delegate set from the hook works.** After
    authorization (granted by tapping Allow in the system prompt), a
@@ -153,8 +158,9 @@ static void kf_wrap(Class cls, SEL sel, const char *types, id (^make)(IMP orig))
    showed. Apple requires this delegate to be set before launch finishes if
    the app is to receive the response for a notification tap that
    launched it, which is another before-Python requirement the hook meets.
-   A cold launch from a notification tap was attempted, but the tap missed
-   the banner, so `connectionOptions.notificationResponse` was not observed.
+   A cold launch from a notification tap was attempted on the Simulator, but
+   the tap missed the banner. On the phone it passed: the response reached
+   the hook's delegate before Python started (§"Device pass").
 
 8. **The Simulator does not deliver background pushes or device tokens to
    the app delegate, even in a plain UIKit app.** For an alert push with
@@ -166,8 +172,9 @@ static void kf_wrap(Class cls, SEL sel, const char *types, id (^make)(IMP orig))
    into its own `AppDelegate`, the same background modes, entitlement and
    payload. It received the same action, and its method did not run either.
    Neither app got `didRegisterForRemoteNotifications…` or
-   `didFailToRegister…`. Both push paths are **unverified, not failed**,
-   and need a device.
+   `didFailToRegister…`. On the phone the device token arrived through the
+   added method on every launch; background-push delivery is still
+   **unverified, not failed** (§"Device pass").
 
 9. **A background launch runs the whole Kivy app.** With the app
    terminated, the `content-available` push launched it in the background:
@@ -190,6 +197,48 @@ static void kf_wrap(Class cls, SEL sel, const char *types, id (^make)(IMP orig))
     `-ObjC` for a binary package shipping a static archive, and no Release
     or device build was made, so `-dead_strip` was not tested.
 
+## Device pass
+
+The same app, built with `kivyforge build -p ios --device --team-id
+R5PKSQLUZY` (dynamic product), installed with `devicectl device install
+app`. Two changes for the phone: the hook also appends every line to
+`Documents/hook.log`, read back with `devicectl device copy from
+--domain-type appDataContainer`, and launch environment variables
+(`devicectl device process launch --environment-variables`) make Python
+register the late BGTask or schedule a local notification. The device token
+was written to the log but is not reproduced here.
+
+| Check | Result on the phone |
+|---|---|
+| `+load`, hook install, added `didFinishLaunching` called | **Pass**, same order and timing as the Simulator: hooks at +0.005 s, `didFinishLaunching` at +0.025 s, Python at +0.26 to +3.2 s |
+| Device token to the added `didRegisterForRemoteNotifications…` | **Pass**: 32 bytes, on every launch, 0.02 to 3.3 s after launch |
+| BGTask registration from `+load`, `didFinishLaunching`, the notification observer | **Pass**, each `YES`, and each `submitTaskRequest:` `YES` |
+| BGTask registration from Python, 5 s and 385 s after launch | **Returned `YES`**, so iOS 27 does not enforce the rule on a device either |
+| BGTask *launch*, by `_simulateLaunchForTaskWithIdentifier:` from `lldb` attached to the device process | **Pass** for the `+load` task and for the task Python registered 385 s after launch: both handlers ran. A third request (`didfinish`) did not launch; one simulated launch per stop is the likely reason, not checked |
+| Warm URL (`devicectl … launch --payload-url kfspike://warm/device` to the running app) | **Pass**: through the wrapped `openURLContexts` to Kivy's `on_drop_file` |
+| Cold URL (`--terminate-existing --payload-url kfspike://cold/device`) | **Finding 4 reproduced**: the URL was in `connectionOptions`, Python ran at +0.26 s, Kivy's `on_drop_file` never fired |
+| Cold launch from tapping a local notification, app killed first | **Pass**: `connectionOptions.notificationResponse` present in `willConnect` at +0.027 s, the hook's notification-center delegate got `didReceiveResponse` at +0.028 s, Python at +0.35 s. `launchOptions` empty again |
+| Background push to the added `didReceiveRemoteNotification:fetchCompletionHandler:` | **Not run**: needs a push sent through APNs with the team's key or certificate |
+
+Three more things the phone showed:
+
+- **Kivy's clock stops while the app is in the background.** When the phone
+  locked 6 s after launch, a 5 s `Clock.schedule_once` in Python did not
+  fire until the app was brought back 380 s later. A BGTask handler written
+  in Python and driven by Kivy's clock would therefore not run in the task's
+  background window; the handler has to do its work natively, or call into
+  Python directly.
+- **SIGTERM does not stop the Kivy app.** `devicectl device process terminate`
+  without `--kill` reported the signal sent, yet the process was still in the
+  foreground 15 s later and received the local notification through
+  `willPresent`. The first notification-tap attempt was spoiled by this; the
+  retry used `--kill`. Not investigated further.
+- **A late-registered handler still ran when launched.** Apple documents
+  that registration must finish before launch ends. On iOS 27 neither
+  registration nor a debugger-forced launch enforced that. Whether iOS
+  *schedules* a late-registered task on its own was not observed, so the
+  guide should still say to register early, which the hook makes easy.
+
 ## What this means for issue #85 on iOS
 
 The need is real and larger than on Android. Push tokens, push delivery
@@ -202,9 +251,12 @@ either linkage.
 
 Suggested follow-ups, roughly in order:
 
-1. **A device pass** for findings 6–8: device token, background-push
-   delivery to an added delegate method, late BGTask registration, and a
-   real BGTask launch. It belongs in `hardware-checklist.toml`.
+1. **Background-push delivery on a device**, the one check left: send a
+   `content-available` push through APNs (the team's key, or the CloudKit
+   push console) to the token the hook logs, and confirm the added
+   `didReceiveRemoteNotification:fetchCompletionHandler:` runs. Once the
+   example exists, the whole device pass belongs in
+   `hardware-checklist.toml`.
 2. **A guide and an example** (`examples/mobile/ios-lifecycle-hook`): the
    wrap helper, wrapping `willConnect` for launch context, and the pyobjus
    read-back, with finding 1's class-name warning.
@@ -216,8 +268,10 @@ Suggested follow-ups, roughly in order:
 
 ## Not tested
 
-Universal links (need an associated domain), quick actions, a cold launch
-from a notification tap (finding 7), a real BGTask launch, `-[UIApplication
-setDelegate:]` swizzling, a binary static package, Release builds, devices,
-and Python's own stdout in the unified log (the hook's `NSLog` lines were
-used throughout).
+Background-push delivery on a device (needs APNs credentials), universal
+links (need an associated domain), quick actions, a BGTask that iOS
+schedules on its own rather than one forced from the debugger,
+`-[UIApplication setDelegate:]` swizzling, a binary static package, a static
+product on the device, Release builds, and Python's own stdout in the
+unified log (the hook's `NSLog` lines and its file log were used
+throughout).
