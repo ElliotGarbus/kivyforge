@@ -21,16 +21,19 @@ class SmokeError(Exception):
     pass
 
 
-def run_smoke(project_dir: Path, *, release: bool = False) -> None:
-    """Run the generated contract test; raise ``SmokeError`` on failure.
+def run_smoke(project_dir: Path, *, device: str, release: bool = False) -> None:
+    """Run the generated contract test on ``device``; raise ``SmokeError`` on
+    failure.
 
-    A device/emulator must already be attached (Gradle's connected-test task
-    selects it). ``release`` targets the release variant so the probe also
-    exercises byte-compilation, stripping, and R8 under a test signing config.
+    Gradle's connected-test task runs on every attached device unless
+    ``ANDROID_SERIAL`` names one, and the probe is built for ``device``'s ABI
+    only, so any other device fails it. ``release`` targets the release variant
+    so the probe also exercises byte-compilation, stripping, and R8 under a
+    test signing config.
     """
     task = "connectedReleaseAndroidTest" if release else "connectedDebugAndroidTest"
     try:
-        run_gradle(project_dir, [task])
+        run_gradle(project_dir, [task], env_overrides={"ANDROID_SERIAL": device})
     except GradleError as exc:
         raise SmokeError(
             f"the contract smoke test failed ({task}).\n"
