@@ -17,6 +17,7 @@ from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.collect import (
     CollectError,
     _compile_pip_deps,
+    _drop_wheel_data_files,
     collect_artifacts,
 )
 from kivyforge.artifacts.verify import sha256_file
@@ -39,6 +40,15 @@ def _make_python_tarball(root: Path) -> Path:
     with tarfile.open(archive, "w:gz") as tf:
         tf.add(src / "Python.xcframework", arcname="Python.xcframework")
     return archive
+
+
+def _make_wheel(path: Path, members: tuple[str, ...] = ()) -> Path:
+    """A real (if tiny) wheel: collect reads its member list after pip runs."""
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("pkg-1.0.dist-info/METADATA", "Name: pkg\n")
+        for member in members:
+            zf.writestr(member, "")
+    return path
 
 
 def _make_xcframework_zip(root: Path, name: str) -> Path:
@@ -76,7 +86,7 @@ def test_collect_installs_python_wheels_and_frameworks(tmp_path, layout, cache):
     art.mkdir()
     py_tar = _make_python_tarball(art)
     wheel = art / "kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-    wheel.write_bytes(b"fake wheel")
+    _make_wheel(wheel)
     native = _make_xcframework_zip(art, "SDL3")
 
     lock = Lockfile(
@@ -217,7 +227,7 @@ def test_collect_both_slices_installs_each_pip_deps(tmp_path, layout, cache):
     art.mkdir()
     py_tar = _make_python_tarball(art)
     wheel = art / "purepkg-1.0-py3-none-any.whl"
-    wheel.write_bytes(b"fake wheel")
+    _make_wheel(wheel)
 
     lock = Lockfile(
         requires_python=">=3.15",
@@ -322,6 +332,154 @@ def test_collect_no_packages_skips_pip(tmp_path, layout, cache):
         runner=boom,
     )
     assert (layout.python_xcframework / "Info.plist").is_file()
+
+
+class TestDropWheelDataFiles:
+    """A wheel's ``.data/data/`` tree never reaches an iOS pip-deps slice."""
+
+    def _install(self, slice_dir: Path, *rel: str) -> None:
+        for r in rel:
+            (slice_dir / r).parent.mkdir(parents=True, exist_ok=True)
+            (slice_dir / r).write_text("x")
+
+    def test_data_files_are_removed_and_empty_dirs_pruned(self, tmp_path):
+        """pyobjus's real shape: Python 2 examples and Obj-C test sources."""
+        slice_dir = tmp_path / "pip-deps-device"
+        self._install(
+            slice_dir,
+            "pyobjus/__init__.py",
+            "share/pyobjus-examples/properties.py",
+            "share/pyobjus-examples/ball-example/main.py",
+            "objc_classes/objc_classes/test/testlib.m",
+        )
+        wheel = _make_wheel(
+            tmp_path / "pyobjus-1.2.5-cp315-cp315-ios_13_0_arm64_iphoneos.whl",
+            (
+                "pyobjus/__init__.py",
+                "pyobjus-1.2.5.data/data/share/pyobjus-examples/properties.py",
+                "pyobjus-1.2.5.data/data/share/pyobjus-examples/ball-example/main.py",
+                "pyobjus-1.2.5.data/data/objc_classes/objc_classes/test/testlib.m",
+            ),
+        )
+        _drop_wheel_data_files(wheel, slice_dir)
+        assert sorted(
+            p.relative_to(slice_dir).as_posix() for p in slice_dir.rglob("*")
+        ) == ["pyobjus", "pyobjus/__init__.py"]
+
+    def test_a_data_file_inside_a_package_leaves_the_package(self, tmp_path):
+        slice_dir = tmp_path / "pip-deps-device"
+        self._install(slice_dir, "pkg/__init__.py", "pkg/extra.txt")
+        wheel = _make_wheel(
+            tmp_path / "pkg-1.0-py3-none-any.whl",
+            ("pkg/__init__.py", "pkg-1.0.data/data/pkg/extra.txt"),
+        )
+        _drop_wheel_data_files(wheel, slice_dir)
+        assert (slice_dir / "pkg/__init__.py").is_file()
+        assert not (slice_dir / "pkg/extra.txt").exists()
+
+    def test_a_data_file_at_the_prefix_root_is_removed(self, tmp_path):
+        slice_dir = tmp_path / "pip-deps-device"
+        self._install(slice_dir, "README.txt")
+        wheel = _make_wheel(
+            tmp_path / "pkg-1.0-py3-none-any.whl", ("pkg-1.0.data/data/README.txt",)
+        )
+        _drop_wheel_data_files(wheel, slice_dir)
+        assert slice_dir.is_dir()
+        assert not any(slice_dir.iterdir())
+
+    def test_purelib_and_platlib_are_not_data(self, tmp_path):
+        """Only the ``data`` scheme goes; the importable schemes stay."""
+        slice_dir = tmp_path / "pip-deps-device"
+        self._install(slice_dir, "pkg/__init__.py")
+        wheel = _make_wheel(
+            tmp_path / "pkg-1.0-py3-none-any.whl",
+            ("pkg-1.0.data/purelib/pkg/__init__.py",),
+        )
+        _drop_wheel_data_files(wheel, slice_dir)
+        assert (slice_dir / "pkg/__init__.py").is_file()
+
+    def test_a_path_outside_the_slice_is_never_touched(self, tmp_path):
+        slice_dir = tmp_path / "pip-deps-device"
+        slice_dir.mkdir()
+        outside = tmp_path / "keep.txt"
+        outside.write_text("x")
+        wheel = _make_wheel(
+            tmp_path / "pkg-1.0-py3-none-any.whl", ("pkg-1.0.data/data/../keep.txt",)
+        )
+        _drop_wheel_data_files(wheel, slice_dir)
+        assert outside.is_file()
+
+
+def test_collect_drops_wheel_data_files_from_the_slice(tmp_path, layout, cache):
+    """The wiring: what pip lays down from ``.data/data`` is gone after collect."""
+    art = tmp_path / "art"
+    art.mkdir()
+    py_tar = _make_python_tarball(art)
+    wheel = _make_wheel(
+        art / "pyobjus-1.2.5-cp315-cp315-ios_13_0_arm64_iphoneos.whl",
+        ("pyobjus-1.2.5.data/data/share/pyobjus-examples/properties.py",),
+    )
+    lock = Lockfile(
+        requires_python=">=3.15",
+        packages=(
+            LockedPackage(
+                name="pyobjus",
+                version="1.2.5",
+                wheels=(
+                    LockedWheel(
+                        name=wheel.name,
+                        sha256=sha256_file(wheel),
+                        path=str(wheel.relative_to(tmp_path)),
+                    ),
+                ),
+            ),
+        ),
+        python_xcframework=PythonXcframework(
+            version="3.15.0",
+            url="https://example/python.tar.gz",
+            sha256=sha256_file(py_tar),
+        ),
+        kivyforge_version="3.0.0.dev0",
+        generated_at="2026-01-01T00:00:00Z",
+        lock_inputs_sha256="d" * 64,
+        tool_kivyforge_schema_version=1,
+        xcframeworks=(),
+    )
+
+    class FakeDownloader:
+        def fetch_to(self, url, dest):
+            import shutil
+
+            shutil.copyfile(py_tar, dest)
+
+    def fake_runner(cmd, capture_output=True, text=True):
+        # What `pip install --target` does with the wheel above.
+        pkg = layout.pip_deps_device / "pyobjus"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        examples = layout.pip_deps_device / "share" / "pyobjus-examples"
+        examples.mkdir(parents=True)
+        (examples / "properties.py").write_text("print car.propInt\n")
+
+        class P:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return P()
+
+    collect_artifacts(
+        lock,
+        layout,
+        build_slices=[BuildSlice("device", "arm64", "13.0")],
+        project_root=tmp_path,
+        cache=cache,
+        downloader=FakeDownloader(),
+        runner=fake_runner,
+    )
+
+    assert (layout.pip_deps_device / "pyobjus" / "__init__.py").is_file()
+    assert not (layout.pip_deps_device / "share").exists()
 
 
 class TestCompilePipDeps:
@@ -430,7 +588,7 @@ class TestCollectArtifactsByteCompileWiring:
         art.mkdir()
         py_tar = _make_python_tarball(art)
         wheel = art / "purepkg-1.0-py3-none-any.whl"
-        wheel.write_bytes(b"fake wheel")
+        _make_wheel(wheel)
 
         lock = Lockfile(
             requires_python=">=3.15",
@@ -496,7 +654,7 @@ class TestCollectArtifactsByteCompileWiring:
         art.mkdir()
         py_tar = _make_python_tarball(art)
         wheel = art / "purepkg-1.0-py3-none-any.whl"
-        wheel.write_bytes(b"fake wheel")
+        _make_wheel(wheel)
 
         lock = Lockfile(
             requires_python=">=3.15",

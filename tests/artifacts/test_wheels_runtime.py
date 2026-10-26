@@ -146,6 +146,8 @@ class TestPipCommand:
         # An index that wants credentials must fail, not prompt: in CI a prompt
         # hangs the job until it times out, with nothing saying why.
         assert "--no-input" in cmd
+        # pip's own compile would use the host's CPython, not the target's.
+        assert "--no-compile" in cmd
         assert "--only-binary=:all:" in cmd
         assert "ios_13_0_arm64_iphoneos" in cmd
         assert cmd[-1] == "/tmp/kivy.whl"

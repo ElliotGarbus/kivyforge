@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### iOS: stripped release builds with wheels that ship data files
+
+- **Fixed:** `package -p ios` no longer fails on a wheel that installs data
+  files (setuptools `data_files`, the wheel's `.data/data/` tree). `pip
+  install --target` put them at the root of `pip-deps/`, and the release build
+  byte-compiled them with everything else, so one unimportable file stopped the
+  whole package. pyobjus is the case that hit it: its wheel ships Python 2
+  examples under `share/pyobjus-examples/`, so no app using pyobjus could
+  package with stripping on. That was hidden until CPython 3.15.0 final, because
+  before then iOS builds never byte-compiled.
+- **Changed:** iOS apps no longer ship a wheel's data files at all, which is
+  what macOS has always done. Nothing on iOS could find them: the app's
+  `sys.prefix` is not `pip-deps/`. If your app reads a file a dependency
+  installs this way, add it with `include_files` instead.
+- **Changed:** pip no longer byte-compiles `pip-deps/` during `build`. It used
+  the host's CPython, whose `.pyc` the app's CPython could never load; a
+  release build still compiles `pip-deps/` itself with a matching interpreter.
+
 ### iOS: run code in the app lifecycle
 
 - **Added:** the `ios-lifecycle-hook` example and the guide
