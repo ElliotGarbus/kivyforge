@@ -876,8 +876,31 @@ class TestRealAndroidProbe:
             ),
             # With `HVF = off` in advancedFeatures.ini: no description at all.
             ("accel:\n138\n\naccel\n", (138, "")),
+            # Windows 11 (26200), emulator 36.6.11.0: CRLF, raw bytes as printed.
+            (
+                "accel:\r\n0\r\nWHPX(10.0.26200) is installed and usable.\r\naccel\r\n",
+                (0, "WHPX(10.0.26200) is installed and usable."),
+            ),
+            # With `WindowsHypervisorPlatform = off`: the emulator falls back to
+            # AEHD's advice, which Hyper-V being on rules out.
+            (
+                "accel:\r\n15\r\nPlease disable Hyper-V before using the Android "
+                "Emulator.  Start a command prompt as Administrator, run "
+                "'bcdedit /set hypervisorlaunchtype off', reboot.\r\naccel\r\n",
+                (
+                    15,
+                    "Please disable Hyper-V before using the Android Emulator.  "
+                    "Start a command prompt as Administrator, run "
+                    "'bcdedit /set hypervisorlaunchtype off', reboot.",
+                ),
+            ),
         ],
-        ids=["accelerated", "feature-switched-off"],
+        ids=[
+            "accelerated",
+            "feature-switched-off",
+            "windows-accelerated",
+            "windows-whpx-switched-off",
+        ],
     )
     def test_parse_accel_check_reads_what_a_real_emulator_printed(
         self, stdout, expected
