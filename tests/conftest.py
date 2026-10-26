@@ -151,9 +151,13 @@ def pytest_addoption(parser):
         "--ios-project",
         default=None,
         help="Path to the project directory whose pyproject.toml the .app was "
-        "built from; supplies the Info.plist keys config decides. No "
-        "--ios-stripped option exists: iOS strip_source cannot be exercised "
-        "honestly yet (see tests/artifact_checks.py's iOS module note).",
+        "built from; supplies the Info.plist keys config decides.",
+    )
+    group.addoption(
+        "--ios-stripped",
+        action="store_true",
+        help="Assert app/ and pip-deps/ are bytecode-only (strip_source "
+        "applied, as `package -p ios` does).",
     )
     group.addoption(
         "--linux-appimage",

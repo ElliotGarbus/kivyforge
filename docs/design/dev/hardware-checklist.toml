@@ -279,24 +279,34 @@ previous = "test-matrix section 7: 2026-09-27 (PR #20 validation), 2026-09-14 (f
 [[item]]
 id = "ios-strip-source"
 title = "iOS: a byte-compiled, source-stripped release build runs on device"
-status = "blocked"
-blocked_on = "CPython 3.15.0 final and python.org's iOS Python.xcframework for it. Every iOS example pins 3.15.0b4, and `package -p ios` only byte-compiles with a final CPython (handoff-2026-09-25.md, task 3)."
+status = "runnable"
 hosts = ["macos"]
 target = "iOS device `arm64`"
 tier = "T3 + T5"
 needs = [
-    "A final CPython 3.15 on the Mac and its iOS xcframework on python.org.",
-    "An example re-pinned to it (`hello-kivy` tracks its lock: diff and report a changed lock, do not commit it).",
+    "A final CPython 3.15 on the Mac's PATH as `python3.15` (`uv python install 3.15.0` works); `package` byte-compiles with it.",
+    "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`, unlocked.",
+    "An Apple ID signed into Xcode whose team is passed with `--team-id`.",
+    "`hello-kivy` pinned to a final 3.15 (`[tool.kivy.ios.python].version`). It tracks its lock: diff and report a changed lock, do not commit it.",
 ]
+# `run -p ios --device` is not the launch step: it does a fresh dev build, whose
+# app/ is a symlink to src/ and whose payload is source. The stripped build is
+# only the .ipa, so the .ipa is what gets installed.
 commands = [
     "cd examples/mobile/hello-kivy",
-    "kivyforge package -p ios",
-    "kivyforge run -p ios --device",
+    "kivyforge package -p ios --team-id <your team> --export-method development",
+    "mkdir -p /tmp/kf-ipa && unzip -oq dist/ios/hello-kivy-0.1.0-development.ipa -d /tmp/kf-ipa",
+    "cd ../../.. && pytest tests/platforms/ios/test_app_artifact.py -v --no-cov --ios-app /tmp/kf-ipa/Payload/hello-kivy.app --ios-stripped --ios-project examples/mobile/hello-kivy",
+    "xcrun devicectl device install app --device <udid> examples/mobile/hello-kivy/dist/ios/hello-kivy-0.1.0-development.ipa",
+    "xcrun devicectl device process launch --terminate-existing --device <udid> org.kivy.hello-kivy",
+    "xcrun devicectl device copy from --device <udid> --domain-type appDataContainer --domain-identifier org.kivy.hello-kivy --source Documents/.kivy/logs/kivy_<yy-mm-dd>_<n>.txt --destination kivy.txt",
 ]
 pass = [
-    "`package` byte-compiles instead of printing `no final CPython 3.15 found`.",
-    "The app launches on the phone from the stripped build.",
+    "`package` prints `byte-compiling app sources with python3.15` and `byte-compiling pip-deps with python3.15`, not `no final CPython 3.15 found`.",
+    "The stripped T3 driver passes: no `.py` and no `__pycache__` in `app/` or `pip-deps/`, and every `.pyc` there carries the magic of the stdlib's own bytecode.",
+    "The app launches on the phone, and its Kivy log shows Kivy imported from `pip-deps/kivy/__init__.pyc` and `Base: Start application main loop`.",
 ]
+record = ["iPhone model and iOS version.", "CPython and Kivy versions from the Kivy log."]
 
 [[item]]
 id = "ios-device-app-metadata"

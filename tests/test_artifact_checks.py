@@ -64,6 +64,7 @@ from tests.artifact_checks import (
     dex_descriptor,
     ios_app_problems,
     ios_expected_plist,
+    ios_shipped_magics,
     jarsigner_report_problems,
     linux_appdir_problems,
     linux_appimage_file_problems,
@@ -78,6 +79,8 @@ from tests.artifact_checks import (
 MAGIC_314 = struct.pack("<H", 3627) + b"\r\n"
 MAGIC_314_ALPHA = struct.pack("<H", 3621) + b"\r\n"
 MAGIC_313 = struct.pack("<H", 3571) + b"\r\n"
+# CPython 3.15.0 final, read off a real iOS bundle's stdlib (2026-10-25).
+MAGIC_315 = struct.pack("<H", 3666) + b"\r\n"
 
 
 def _elf(machine: int, *, ei_class: int = ELFCLASS64) -> bytes:
@@ -1670,9 +1673,11 @@ class TestMacosRequiredEntries:
 #
 # The fixture is deliberately flat (no ``Contents/``) — see
 # ``artifact_checks.py``'s iOS module note and ios-t3-checks-findings.md's
-# Step 0 dump, which is what this shape is read off. No stripped/pyc-magic
-# variant exists here, for the same reason ``ios_app_problems`` takes no
-# ``stripped`` parameter: there is nothing honest to write a test against yet.
+# Step 0 dump, which is what this shape is read off. The stripped variant
+# mirrors the first real stripped ``.ipa`` (hello-kivy on CPython 3.15.0,
+# 2026-10-25): ``.pyc`` beside where the source was in ``app/`` and
+# ``pip-deps/``, and a stdlib that keeps its source *and* python.org's own
+# ``__pycache__``.
 
 
 def _ios_app(
@@ -1684,16 +1689,26 @@ def _ios_app(
     bundle_id: str = "org.example.test",
     version: str = "1.0",
     build: str = "1",
+    stripped: bool = True,
 ) -> Path:
     app = tmp_path / name
+    stdlib = app / "python" / "lib" / "python3.15"
     (app / "Frameworks" / "Python.framework").mkdir(parents=True)
-    (app / "python" / "lib" / "python3.15").mkdir(parents=True)
+    (stdlib / "__pycache__").mkdir(parents=True)
     (app / "app").mkdir(parents=True)
-    (app / "pip-deps").mkdir(parents=True)
+    (app / "pip-deps" / "kivy").mkdir(parents=True)
 
     (app / executable).write_bytes(_macho(arch))
     (app / "Frameworks" / "Python.framework" / "Python").write_bytes(_macho(arch))
-    (app / "app" / "main.py").write_text("x = 1\n")
+    if stripped:
+        (app / "app" / "main.pyc").write_bytes(MAGIC_315 + b"body")
+        (app / "pip-deps" / "kivy" / "__init__.pyc").write_bytes(MAGIC_315 + b"body")
+    else:
+        (app / "app" / "main.py").write_text("x = 1\n")
+        (app / "pip-deps" / "kivy" / "__init__.py").write_text("x = 1\n")
+    # The stdlib ships both, stripped or not; it is where the magic is read.
+    (stdlib / "os.py").write_text("x = 1\n")
+    (stdlib / "__pycache__" / "os.cpython-315.pyc").write_bytes(MAGIC_315 + b"body")
 
     plist = {
         "CFBundleIdentifier": bundle_id,
@@ -1707,13 +1722,42 @@ def _ios_app(
     return app
 
 
-def _check_ios(app: Path, *, arch: str = "arm64", expected_plist=None):
-    return ios_app_problems(app, arch=arch, expected_plist=expected_plist)
+def _check_ios(
+    app: Path,
+    *,
+    arch: str = "arm64",
+    stripped: bool = True,
+    magic: bytes = MAGIC_315,
+    expected_plist=None,
+):
+    return ios_app_problems(
+        app,
+        arch=arch,
+        stripped=stripped,
+        expected_magic=magic,
+        expected_plist=expected_plist,
+    )
 
 
 class TestIosCleanArtifacts:
-    def test_a_well_formed_app_has_no_problems(self, tmp_path):
+    def test_a_well_formed_stripped_app_has_no_problems(self, tmp_path):
         app = _ios_app(tmp_path)
+        assert _check_ios(app) == []
+
+    def test_an_unstripped_app_wants_source(self, tmp_path):
+        app = _ios_app(tmp_path, stripped=False)
+        assert _check_ios(app, stripped=False) == []
+
+    def test_stdlib_source_and_pycache_are_not_flagged_when_stripped(self, tmp_path):
+        app = _ios_app(tmp_path)
+        assert (app / "python/lib/python3.15/os.py").is_file()
+        assert _check_ios(app) == []
+
+    def test_a_project_with_no_third_party_deps_is_not_degraded(self, tmp_path):
+        """``pip-deps/`` always exists, so empty is a fact about the project."""
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "pip-deps")
+        (app / "pip-deps").mkdir()
         assert _check_ios(app) == []
 
     def test_x86_64_is_checked_against_its_own_arch(self, tmp_path):
@@ -1751,7 +1795,6 @@ class TestIosArch:
     def test_a_fwork_stub_is_not_mistaken_for_a_binary(self, tmp_path):
         """``.fwork`` stubs are plain text (a relative path), never Mach-O."""
         app = _ios_app(tmp_path)
-        (app / "pip-deps" / "kivy").mkdir(parents=True)
         (
             app / "pip-deps" / "kivy" / "_clock.cpython-315-iphonesimulator.fwork"
         ).write_text("Frameworks/kivy._clock.framework/kivy._clock\n")
@@ -1797,6 +1840,78 @@ class TestIosPlist:
     def test_keys_not_named_in_the_expectation_are_ignored(self, tmp_path):
         app = _ios_app(tmp_path, bundle_id="org.example.test")
         assert _check_ios(app, expected_plist={}) == []
+
+
+class TestIosStripped:
+    def test_leftover_source_in_pip_deps_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "pip-deps/kivy/app.py").write_text("x = 1\n")
+        problems = _check_ios(app)
+        assert any("1 .py file(s) remain under pip-deps" in p for p in problems)
+
+    def test_an_app_payload_with_no_bytecode_is_reported_as_degraded(self, tmp_path):
+        """What every iOS package did on a 3.15 pre-release: ship source."""
+        app = _ios_app(tmp_path)
+        (app / "app/main.pyc").unlink()
+        (app / "app/main.py").write_text("x = 1\n")
+        problems = _check_ios(app)
+        assert any("degraded to shipping source" in p for p in problems)
+
+    def test_pycache_defeats_sourceless_import(self, tmp_path):
+        app = _ios_app(tmp_path)
+        cache = app / "app/__pycache__"
+        cache.mkdir()
+        (cache / "main.cpython-315.pyc").write_bytes(MAGIC_315 + b"body")
+        problems = _check_ios(app)
+        assert any("__pycache__" in p and p.startswith("app ") for p in problems)
+
+    def test_an_unstripped_app_with_no_entry_point_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path, stripped=False)
+        (app / "app/main.py").unlink()
+        problems = _check_ios(app, stripped=False)
+        assert any("app has neither .py nor .pyc" in p for p in problems)
+
+
+class TestIosPycMagic:
+    def test_bytecode_from_the_wrong_interpreter_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "pip-deps/kivy/__init__.pyc").write_bytes(MAGIC_314 + b"body")
+        problems = _check_ios(app)
+        assert any("3627" in p and "3666" in p for p in problems)
+
+    def test_the_app_payload_is_checked_too(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "app/main.pyc").write_bytes(MAGIC_314 + b"body")
+        problems = _check_ios(app)
+        assert any("under app " in p and "3627" in p for p in problems)
+
+    def test_the_magic_check_is_skipped_when_unstripped(self, tmp_path):
+        app = _ios_app(tmp_path, stripped=False)
+        problems = _check_ios(app, stripped=False, magic=MAGIC_314)
+        assert problems == []
+
+
+class TestIosShippedMagics:
+    def test_the_magic_is_read_off_the_stdlib(self, tmp_path):
+        assert ios_shipped_magics(_ios_app(tmp_path)) == [MAGIC_315]
+
+    def test_a_payload_pyc_does_not_count(self, tmp_path):
+        """Only the runtime's own bytecode may decide what is expected."""
+        app = _ios_app(tmp_path)
+        (app / "app/main.pyc").write_bytes(MAGIC_314 + b"body")
+        assert ios_shipped_magics(app) == [MAGIC_315]
+
+    def test_a_stdlib_without_bytecode_yields_nothing(self, tmp_path):
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "python/lib/python3.15/__pycache__")
+        assert ios_shipped_magics(app) == []
+
+    def test_a_mixed_stdlib_yields_every_magic(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "python/lib/python3.15/__pycache__/re.cpython-315.pyc").write_bytes(
+            MAGIC_314 + b"body"
+        )
+        assert ios_shipped_magics(app) == [MAGIC_314, MAGIC_315]
 
     def test_the_expected_plist_comes_from_the_production_builder(self):
         """``ios_expected_plist`` must not grow its own copy of the key list.

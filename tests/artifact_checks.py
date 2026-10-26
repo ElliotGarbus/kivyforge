@@ -1447,8 +1447,25 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
     Scoped to ``Contents/Resources/{app,lib}`` only — see the module-level
     note on why the embedded stdlib is excluded by design, not by omission.
     """
+    return _bundle_payload_problems(
+        app,
+        scopes=_MACOS_STRIP_SCOPE,
+        entry_scope="Contents/Resources/app",
+        stripped=stripped,
+    )
+
+
+def _bundle_payload_problems(
+    app: Path, *, scopes: tuple[str, ...], entry_scope: str, stripped: bool
+) -> list[str]:
+    """Source-vs-bytecode for a directory bundle, shared by macOS and iOS.
+
+    *scopes* are the bundle-relative directories ``strip_source`` applies to;
+    *entry_scope* is the one holding the developer's own code, which must
+    carry *something* importable even when nothing was stripped.
+    """
     problems: list[str] = []
-    for scope in _MACOS_STRIP_SCOPE:
+    for scope in scopes:
         base = app / scope
         if not base.is_dir():
             continue
@@ -1463,7 +1480,10 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
                     f"strip_source was applied but {len(sources)} .py file(s) "
                     f"remain under {scope}, e.g. {rels}"
                 )
-            if not compiled:
+            # A dependency tree with no Python in it at all is a project with
+            # no third-party deps (iOS always creates pip-deps/), not a build
+            # that degraded. The developer's own tree has no such excuse.
+            if not compiled and (sources or scope == entry_scope):
                 problems.append(
                     f"strip_source was applied but {scope} contains no .pyc at "
                     "all — the build degraded to shipping source"
@@ -1475,7 +1495,7 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
                     f"{rels} — sourceless imports need .pyc in the legacy "
                     "location, not beside a source file that is no longer there"
                 )
-        elif scope == "Contents/Resources/app" and not sources and not compiled:
+        elif scope == entry_scope and not sources and not compiled:
             problems.append(
                 f"{scope} has neither .py nor .pyc — the app has no entry point"
             )
@@ -1488,8 +1508,17 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
     Mirrors Android's ``_pyc_magic_problems`` / roadmap item 1's bug, adapted
     to a directory tree: read straight from disk rather than a zip member.
     """
+    return _bundle_pyc_magic_problems(
+        app, scopes=_MACOS_STRIP_SCOPE, expected_magic=expected_magic
+    )
+
+
+def _bundle_pyc_magic_problems(
+    app: Path, *, scopes: tuple[str, ...], expected_magic: bytes
+) -> list[str]:
+    """The magic half of :func:`_bundle_payload_problems`, for the same scopes."""
     problems: list[str] = []
-    for scope in _MACOS_STRIP_SCOPE:
+    for scope in scopes:
         base = app / scope
         if not base.is_dir():
             continue
@@ -1518,19 +1547,22 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
 # with no T3 tier at all, and `ios_simulator` had built a real `.app` on every
 # push since the day before this was written without anything inspecting it.
 #
-# **Scope is narrower than the other four platforms', and deliberately so.**
-# iOS `strip_source` cannot be exercised honestly yet: every iOS example pins
-# a CPython 3.15 *pre-release* (`3.15.0b4`), `_compile_app_copy` /
-# `_compile_pip_deps` both degrade to shipping source with "no final CPython
-# 3.15 found" (confirmed against a real build the day this was written — see
-# ios-t3-checks-findings.md Step 0), and python.org publishes no iOS
-# `Python.xcframework` below `3.15.0b1` — so there is no "pin an
-# already-final minor" escape the way desktop has. Writing a stripped/`.pyc`-
-# magic check with nothing to run it against would be exactly the
-# never-exercised-code-path shape roadmap item 1 already cost this project
-# once; the parameter is omitted entirely rather than carried unused, and iOS
-# has no `*_STRIP_SCOPE` constant to show for it. Revisit if a final CPython
-# 3.15 iOS xcframework is ever published.
+# **Stripping was untestable until CPython 3.15.0 final.** Byte-compiling
+# needs a *final* interpreter of the shipped minor, python.org publishes no iOS
+# `Python.xcframework` below `3.15.0b1`, and every example pinned `3.15.0b4`,
+# so `package -p ios` always degraded to shipping source. This check was
+# therefore left out on purpose when the rest of the tier was written
+# (ios-t3-checks-findings.md). It was added on 2026-10-25, against the first
+# real stripped `.ipa` (`hello-kivy` on 3.15.0; test-matrix.md §7).
+#
+# **The expected magic comes from the shipped stdlib's own bytecode.** macOS
+# runs the bundle's interpreter to ask it. iOS cannot, because
+# `Python.xcframework` is a library with no executable. python.org's
+# xcframework does ship its stdlib pre-compiled, though, in
+# `python/lib/python3.X/**/__pycache__/`, written by the build that produced
+# the runtime. Reading the magic from there anchors it to the artifact rather
+# than to whichever host CPython wrote the payload (:func:`ios_shipped_magics`).
+# kivyforge never compiles that stdlib, so the two cannot share a mistake.
 #
 # **The bundle is flat — no `Contents/`.** Read off a real
 # `kivyforge build -p ios --simulator` of `examples/mobile/hello-kivy`
@@ -1555,6 +1587,25 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
 # binary already is.
 
 IOS_ARCH_MACHINES = {"arm64": CPU_TYPE_ARM64, "x86_64": CPU_TYPE_X86_64}
+
+# `app/` is the developer's code and `pip-deps/` the third-party wheels: the
+# two trees `package` byte-compiles (ios-source-stripping.md, "Payload
+# locations"). `python/lib` is the runtime's stdlib and is never stripped.
+_IOS_STRIP_SCOPE = ("app", "pip-deps")
+
+
+def ios_shipped_magics(app: Path) -> list[bytes]:
+    """The distinct ``.pyc`` magics in the bundle's own stdlib, sorted.
+
+    Exactly one is the expected answer. None means the runtime shipped no
+    bytecode to read it from, and more than one means the stdlib itself is
+    mixed. The driver fails on either rather than guessing.
+    """
+    found = {
+        pyc.read_bytes()[:4]
+        for pyc in (app / "python" / "lib").glob("python3.*/**/__pycache__/*.pyc")
+    }
+    return sorted(found)
 
 
 def ios_expected_plist(config: Config) -> dict[str, object]:
@@ -1581,6 +1632,8 @@ def ios_app_problems(
     app: Path,
     *,
     arch: str,
+    stripped: bool,
+    expected_magic: bytes,
     expected_plist: dict[str, object] | None = None,
 ) -> list[str]:
     """Every way *app* fails to be the artifact the build promised.
@@ -1589,12 +1642,14 @@ def ios_app_problems(
     on Apple Silicon and the only device arch; ``"x86_64"`` is still accepted
     the way ``macos_app_problems`` accepts it, for the same Intel-host-relic
     reasons — see ``xcode/commands.py::default_simulator_arch``).
-    ``expected_plist`` is config-derived via :func:`ios_expected_plist`;
-    omitted, only the plist's internal shape is checked.
+    ``stripped`` is whether ``strip_source`` applied (a ``package`` build),
+    and ``expected_magic`` the header every ``.pyc`` in ``app/`` and
+    ``pip-deps/`` must carry; see :func:`ios_shipped_magics` for where it
+    comes from. ``expected_plist`` is config-derived via
+    :func:`ios_expected_plist`; omitted, only the plist's internal shape is
+    checked.
 
-    No ``stripped``/``expected_magic`` parameters — see the module-level note
-    above on why that check cannot be written honestly yet. The code
-    signature is likewise not here: ``codesign`` is a real tool, so that
+    The code signature is not here: ``codesign`` is a real tool, so that
     verification stays in the driver
     (``tests/platforms/ios/test_app_artifact.py``), the same split as
     macOS's ``codesign_verify``.
@@ -1610,6 +1665,13 @@ def ios_app_problems(
 
     problems += _ios_plist_problems(app, expected_plist=expected_plist)
     problems += _ios_arch_problems(app, arch=arch)
+    problems += _bundle_payload_problems(
+        app, scopes=_IOS_STRIP_SCOPE, entry_scope="app", stripped=stripped
+    )
+    if stripped:
+        problems += _bundle_pyc_magic_problems(
+            app, scopes=_IOS_STRIP_SCOPE, expected_magic=expected_magic
+        )
     return problems
 
 
