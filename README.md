@@ -402,6 +402,10 @@ Kivy 3.0, Android on either generation (wheels from
 - [`keychain-spm`](examples/mobile/keychain-spm/) — declares a remote Swift Package
   (`KeychainAccess`), pins it with `kivyforge lock`, and calls it from Python
   through a local `@objc` shim package.
+- [`ios-lifecycle-hook`](examples/mobile/ios-lifecycle-hook/) — runs
+  Objective-C before Python to add the app-delegate methods SDL lacks (push
+  token, background pushes, notification taps, background tasks, launch URLs)
+  and delivers them to Python as Kivy events.
 
 *Android:*
 

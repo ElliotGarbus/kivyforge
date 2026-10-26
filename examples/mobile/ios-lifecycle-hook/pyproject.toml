@@ -1,0 +1,67 @@
+[project]
+name = "ios-lifecycle-hook"
+version = "0.1.0"
+requires-python = ">=3.15.0b4"
+dependencies = [
+    "kivy>=3.0.0.dev0,<4",
+    # pyobjus reads the hook's event queue. iOS wheels resolve from the
+    # kivy-mobile-wheels index (see [tool.kivy.ios].extra_index_urls below).
+    "pyobjus",
+]
+
+[tool.kivy]
+display_name = "Lifecycle Hook"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.ios]
+schema_version = 1
+bundle_id = "org.kivy.ios-lifecycle-hook"
+build = 1
+deployment_target = "16.0"
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+# Kivy's wheel declares deps that are not needed at runtime on iOS.
+# Remove an entry only if your app actually uses that feature.
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.ios.python]
+version = "3.15.0b4"
+
+# --- What the hook needs from the app -------------------------------------
+#
+#   * BGTaskSchedulerPermittedIdentifiers: the hook registers a handler for
+#     each identifier listed here, before launch ends, as iOS requires.
+#   * UIBackgroundModes: "fetch" for app-refresh tasks, "remote-notification"
+#     for background pushes.
+#   * CFBundleURLTypes: the kflifecycle:// scheme, so `url` events can be
+#     tried without a web domain.
+[tool.kivy.ios.info_plist]
+BGTaskSchedulerPermittedIdentifiers = ["org.kivy.ios-lifecycle-hook.refresh"]
+UIBackgroundModes = ["fetch", "remote-notification"]
+CFBundleURLTypes = [{ CFBundleURLName = "org.kivy.ios-lifecycle-hook", CFBundleURLSchemes = ["kflifecycle"] }]
+
+# Push needs this entitlement. "development" matches a Debug build signed for
+# development; an App Store or TestFlight build needs "production".
+[tool.kivy.ios.entitlements]
+aps-environment = "development"
+
+# The hook: a local Objective-C package whose +load runs before Python.
+[tool.kivy.ios.native.swift_packages]
+LifecycleHook = { path = "lifecycle-hook", products = ["LifecycleHook"] }
+
+[tool.kivy.ios.signing]
+team_id = ""
+identity = "Apple Development"
+provisioning_profile = ""
+auto_signing = true
+upload_symbols = true
