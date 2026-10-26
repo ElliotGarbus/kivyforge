@@ -51,6 +51,7 @@ class FakeResolver:
                 "find_links": list(find_links or []),
                 "offline": offline,
                 "simulator_archs": simulator_archs,
+                "sources": sources,
             }
         )
         if not requirements:

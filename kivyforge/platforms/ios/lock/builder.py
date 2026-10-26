@@ -258,7 +258,7 @@ def build_lockfile(
     requirements = list(config.project.dependencies)
     check_kivy_requirements(requirements, python_version=python_version)
 
-    policy = overlay_policy(ios, find_links, platform="ios")
+    policy = overlay_policy(ios, find_links, platform="ios", exclude=excluded)
     if on_warning is not None:
         for warning in pinned_local_warnings(policy, root):
             on_warning(warning)

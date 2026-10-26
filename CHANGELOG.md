@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### `exclude` stops pip from looking for the package
+
+- **Fixed:** a name in `exclude` is no longer resolved at all, on every
+  platform ([#190](https://github.com/ElliotGarbus/kivyforge/issues/190)).
+  `lock` used to let pip resolve the whole graph and drop excluded packages
+  afterwards, so an excluded dependency with no wheel for the target, such as
+  KivyMD's `pycairo` on iOS, still failed the lock. pip now never follows a
+  dependency on an excluded name, so it never downloads or builds it.
+- **Changed:** what only an excluded package needed leaves the lock with it.
+  Before, an excluded package's own dependencies were still locked and
+  installed. If your app imports one of them directly, add it to
+  `[project].dependencies`. Re-run `kivyforge lock` to apply this to an
+  existing lock; `lock --check` reports the packages it removes.
+
 ### iOS: stripped release builds with wheels that ship data files
 
 - **Fixed:** `package -p ios` no longer fails on a wheel that installs data

@@ -187,6 +187,44 @@ class TestSelect:
         assert policy.source(link) == "https://u:secret@corp/simple/"
 
 
+class TestExcludeFilter:
+    class _Req:
+        def __init__(self, project_name):
+            self.project_name = project_name
+
+    def test_drops_excluded_dependencies_only(self, monkeypatch):
+        from pip._internal.resolution.resolvelib.provider import PipProvider
+
+        reqs = [self._Req("kivy"), self._Req("pycairo"), self._Req("idna")]
+        monkeypatch.setattr(
+            PipProvider, "get_dependencies", lambda self, candidate: iter(reqs)
+        )
+        assert _pip_shim._install_exclude_filter(frozenset({"pycairo"})) == ""
+        kept = PipProvider.get_dependencies(object(), "candidate")  # type: ignore[arg-type]
+        assert [r.project_name for r in kept] == ["kivy", "idna"]
+
+    def test_missing_internal_exits_97(self, monkeypatch, capsys):
+        from pip._internal.index.package_finder import PackageFinder
+        from pip._internal.resolution.resolvelib.provider import PipProvider
+
+        # main() patches it first; this restores it after the test.
+        monkeypatch.setattr(
+            PackageFinder, "find_all_candidates", PackageFinder.find_all_candidates
+        )
+        monkeypatch.setenv(_pip_shim.HOST_MARKERS_ENV_VAR, "1")
+        monkeypatch.setenv(
+            _pip_shim.SOURCE_POLICY_ENV_VAR,
+            json.dumps({"kivyforge": "9.9", "exclude": ["pycairo"]}),
+        )
+        monkeypatch.delattr(PipProvider, "get_dependencies")
+        from pip._internal.cli import main as pip_main_mod
+
+        monkeypatch.setattr(pip_main_mod, "main", lambda argv: 0)
+        rc = _pip_shim.main(["install", "kivy"])
+        assert rc == _pip_shim.SOURCE_FILTER_UNAVAILABLE
+        assert "PipProvider.get_dependencies" in capsys.readouterr().err
+
+
 class TestFilterUnavailable:
     def test_missing_internal_exits_97_and_says_report_it(self, monkeypatch, capsys):
         from pip._internal.index import package_finder
@@ -211,12 +249,15 @@ class TestFilterUnavailable:
 # ---------------------------------------------------------------------------
 
 
-def _make_wheel(directory, name, version, tag="py3-none-any"):
+def _make_wheel(directory, name, version, tag="py3-none-any", requires=()):
     directory.mkdir(parents=True, exist_ok=True)
     dist_info = f"{name}-{version}.dist-info"
+    requires_dist = "".join(f"Requires-Dist: {r}\n" for r in requires)
     files = {
         f"{name}/__init__.py": "",
-        f"{dist_info}/METADATA": f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",
+        f"{dist_info}/METADATA": (
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n{requires_dist}"
+        ),
         f"{dist_info}/WHEEL": f"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: {tag}\n",
     }
     record = []
@@ -382,3 +423,60 @@ class TestRealPipCanary:
             },
         )
         assert rc not in (0, _pip_shim.SOURCE_FILTER_UNAVAILABLE)
+
+
+class TestRealPipExcludeCanary:
+    """An excluded dependency is never looked for, so one that has no wheel
+    for the target no longer fails the resolve (#190)."""
+
+    @staticmethod
+    def _installed(tmp_path, *, exclude):
+        built = tmp_path / "built"
+        index = _make_index(
+            tmp_path / "pypi",
+            [
+                _make_wheel(built, "app", "1.0", requires=["pycairo", "kept"]),
+                _make_wheel(built, "kept", "1.0"),
+                # "nowhere" has no wheel at all; "cairotail" is needed only by
+                # pycairo, so excluding pycairo drops it too.
+                _make_wheel(built, "pycairo", "1.0", requires=["cairotail", "nowhere"]),
+                _make_wheel(built, "cairotail", "1.0"),
+            ],
+        )
+        report = tmp_path / "report.json"
+        cmd = [
+            sys.executable,
+            _pip_shim.__file__,
+            "install",
+            "--no-input",
+            "--disable-pip-version-check",
+            "--no-cache-dir",
+            "--dry-run",
+            "--ignore-installed",
+            "--only-binary=:all:",
+            "--quiet",
+            "--report",
+            str(report),
+            "--index-url",
+            index,
+            "app",
+        ]
+        env = dict(os.environ)
+        env["PIP_CONFIG_FILE"] = os.devnull
+        env[_pip_shim.HOST_MARKERS_ENV_VAR] = "1"
+        env[_pip_shim.SOURCE_POLICY_ENV_VAR] = json.dumps(
+            {"rank": [["pypi", index]], "exclude": exclude}
+        )
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL
+        )
+        if proc.returncode != 0:
+            return None
+        install = json.loads(report.read_text(encoding="utf-8"))["install"]
+        return sorted(item["metadata"]["name"] for item in install)
+
+    def test_without_exclude_the_missing_dependency_fails(self, tmp_path):
+        assert self._installed(tmp_path, exclude=[]) is None
+
+    def test_excluded_dependency_is_never_looked_for(self, tmp_path):
+        assert self._installed(tmp_path, exclude=["pycairo"]) == ["app", "kept"]
