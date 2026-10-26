@@ -254,6 +254,42 @@ pass = [
 record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
 
 [[item]]
+id = "android-doctor-accel-windows"
+title = "Android: `doctor` reports the emulator's own acceleration verdict on Windows"
+status = "runnable"
+hosts = ["windows"]
+target = "Android emulator host check (`doctor -p android`, Emulator / virtualization)"
+tier = "doctor against the real host"
+needs = [
+    "The Android SDK with the emulator package, and at least one AVD (`emulator -list-avds` prints one). The commands assume the SDK in its default place, `%LOCALAPPDATA%\\Android\\Sdk`; use `$env:ANDROID_HOME` instead if it is set.",
+    "Windows Hypervisor Platform (WHPX) turned on, and AEHD not installed (`sc.exe query aehd` says the service does not exist). The override in the later commands switches off WHPX only, so with AEHD present the emulator would still be accelerated.",
+    "PowerShell. The override is set in the shell's environment and removed at the end; nothing on the machine changes, and no reboot is needed.",
+]
+commands = [
+    "cd examples/mobile/hello-android",
+    "$emu = \"$env:LOCALAPPDATA\\Android\\Sdk\\emulator\\emulator.exe\"",
+    "& $emu -accel-check; \"exit=$LASTEXITCODE\"",
+    "kivyforge doctor -p android --offline",
+    "New-Item -ItemType Directory -Force \"$env:TEMP\\kf-emu-home\" | Out-Null; Set-Content \"$env:TEMP\\kf-emu-home\\advancedFeatures.ini\" 'WindowsHypervisorPlatform = off'",
+    "$env:ANDROID_EMULATOR_HOME = \"$env:TEMP\\kf-emu-home\"; $env:ANDROID_AVD_HOME = \"$env:USERPROFILE\\.android\\avd\"",
+    "& $emu -accel-check; \"exit=$LASTEXITCODE\"",
+    "kivyforge doctor -p android --offline",
+    "Remove-Item Env:ANDROID_EMULATOR_HOME, Env:ANDROID_AVD_HOME",
+]
+pass = [
+    "Each `-accel-check` prints `accel:`, a status number, a description (which may be empty) and `accel` on stdout, and `exit=` shows that same number.",
+    "Without the override the status is 0, the description names WHPX, and doctor prints `[PASS] Emulator / virtualization: N AVD(s), accelerated`.",
+    "With the override, stderr says the feature `WindowsHypervisorPlatform` is overridden to `disabled`, the status is non-zero, and doctor prints `[WARN] Emulator / virtualization: AVDs present (N) but no hardware acceleration` (then the emulator's description after a colon, if it printed one) with a hint naming WHPX and AEHD.",
+    "Neither doctor run says `acceleration not verified`. That is what the probe reports when it gets no verdict (a timeout, a crash, no `accel:` frame on stdout), and here the emulator gave one.",
+]
+record = [
+    "Windows build, CPU vendor, and the emulator version (`& $emu -version`).",
+    "Both `-accel-check` outputs verbatim, and roughly how long the first one took (the probe gives up after 30 s).",
+    "If stderr has no override line, the feature name is wrong for this emulator version. That is a defect in this item, not in doctor: record what the emulator printed.",
+]
+previous = "test-matrix section 7: 2026-10-16, the same code path run on macOS against a real emulator, with HVF switched off the same way"
+
+[[item]]
 id = "ios-device"
 title = "iOS: build, sign, install and launch on a physical iPhone"
 status = "runnable"

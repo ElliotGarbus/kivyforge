@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Android: `doctor` checks emulator acceleration on Windows, and `/dev/kvm` access on Linux
+
+- **Fixed:** on Windows, `kivyforge doctor -p android` said the emulator was
+  accelerated without checking. It now asks the emulator itself
+  (`emulator -accel-check`, the same SDK emulator that lists your AVDs), so a
+  host without WHPX or AEHD gets a WARN that carries the emulator's own reason
+  and a hint naming both. If the emulator cannot answer (it times out, crashes
+  or will not start), the check passes as
+  `N AVD(s); acceleration not verified (<reason>)` rather than claiming
+  acceleration or warning about a problem nobody found.
+- **Fixed:** on Linux the check passed whenever `/dev/kvm` existed, even when
+  your user could not open it, which is the usual state on a hosted CI runner
+  and makes the emulator refuse to start. It now warns
+  "AVDs present (N) but this user cannot open /dev/kvm", with how to join the
+  `kvm` group or, on CI, the udev rule that opens the device.
+- **Migration:** none needed. A Windows host without acceleration, or a Linux
+  user without access to `/dev/kvm`, now gets a WARN where it got a PASS.
+  doctor's exit status does not change, since only a FAIL makes it non-zero.
+
 ### iOS: stripped release builds with wheels that ship data files
 
 - **Fixed:** `package -p ios` no longer fails on a wheel that installs data
@@ -548,8 +567,7 @@
   (`sysctl kern.hv_support`), so the check passes on a Mac that can run an
   accelerated emulator. When acceleration is missing, the hint now names your
   host's own hypervisor: KVM on Linux, Hypervisor.Framework on macOS, WHPX or
-  AEHD on Windows. It no longer suggests HAXM, which is discontinued. Windows
-  is otherwise unchanged: acceleration is still assumed there.
+  AEHD on Windows. It no longer suggests HAXM, which is discontinued.
 - **Migration:** none needed.
 
 ### Android and iOS: `package` puts its artifact in `dist/`
