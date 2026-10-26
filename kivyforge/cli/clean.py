@@ -49,9 +49,12 @@ def clean(
     project_only: bool,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
 ) -> None:
     """Remove generated artifacts in the project folder."""
-    with reporting("clean", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "clean", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         cwd = Path.cwd()
         pyproject = cwd / PYPROJECT_NAME
         if flush_cache_all and project_only:

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -56,6 +57,11 @@ def pip_install_command(
         # pip is the one tool here that can genuinely prompt: an index needing
         # auth asks for credentials, which in CI hangs until the job times out.
         "--no-input",
+        # pip would byte-compile what it installs with the *host* interpreter,
+        # whose .pyc the target's CPython cannot load. That includes a wheel's
+        # data files, whose __pycache__ then outlives them. A release build
+        # compiles pip-deps itself, with a matching interpreter.
+        "--no-compile",
         "--no-deps",
         "--only-binary=:all:",
         "--platform",
@@ -332,6 +338,42 @@ def _install_wheels(
         bin_dir = slice_pip_deps / "bin"
         if bin_dir.is_dir():
             shutil.rmtree(bin_dir)
+        for wheel_file in wheel_files:
+            _drop_wheel_data_files(Path(wheel_file), slice_pip_deps)
+
+
+def _drop_wheel_data_files(wheel: Path, slice_pip_deps: Path) -> None:
+    """Remove what *wheel* installed from its ``.data/data/`` tree.
+
+    That tree is a wheel's ``data_files``: paths relative to an install prefix
+    (``share/...``, examples, headers, test sources), which ``pip --target``
+    lays down at the root of the slice. Nothing on iOS can find them: the app's
+    ``sys.prefix`` is not ``pip-deps``. They are dead weight, and a release
+    build byte-compiles them, so one Python 2 example fails the whole package
+    (pyobjus ships 18). macOS never installs this tree (``wheels_stage._unpack``
+    keeps only ``purelib``/``platlib``); this brings iOS in line.
+
+    Only the files the wheel itself names are removed, never a whole
+    directory, so a data file beside a real package cannot take the package
+    with it. Directories left empty are pruned.
+    """
+    with zipfile.ZipFile(wheel) as zf:
+        names = zf.namelist()
+    root = slice_pip_deps.resolve()
+    emptied: set[Path] = set()
+    for name in names:
+        parts = name.split("/")
+        if len(parts) < 3 or not parts[0].endswith(".data") or parts[1] != "data":
+            continue
+        installed = (slice_pip_deps / Path(*parts[2:])).resolve()
+        if not installed.is_relative_to(root) or not installed.is_file():
+            continue
+        installed.unlink()
+        emptied.update(p for p in installed.parents if p.is_relative_to(root))
+    # Deepest first, so a parent is only tried once its children are gone.
+    for directory in sorted(emptied, key=lambda p: len(p.parts), reverse=True):
+        if directory != root and directory.is_dir() and not any(directory.iterdir()):
+            directory.rmdir()
 
 
 def _install_native_xcframeworks(

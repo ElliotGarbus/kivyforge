@@ -38,6 +38,8 @@ class FakeWindowsResolver:
         extra_index_urls,
         find_links=None,
         offline=False,
+        constraints=None,
+        sources=None,
     ):
         self.calls.append(
             {
@@ -49,6 +51,7 @@ class FakeWindowsResolver:
                 "extra_index_urls": list(extra_index_urls),
                 "find_links": list(find_links or []),
                 "offline": offline,
+                "constraints": dict(constraints or {}),
             }
         )
         if not requirements:
@@ -105,6 +108,10 @@ class FakeRuntimeProvider:
     def __init__(self, *, floor: str | None = None):
         self.calls: list[dict] = []
         self._floor = floor
+
+    @property
+    def floor(self):
+        return self._floor
 
     def resolve(self, version, archs, *, offline=False):
         self.calls.append(

@@ -32,6 +32,9 @@ In scope for the macOS backend:
 - A declared **native-binaries channel** (`[tool.kivy.macos.native.binaries]`)
   for non-wheel dylibs / helper executables
   (see ["Native binaries that are not wheels"](#native-binaries-that-are-not-wheels-toolkivymacosnativebinaries)).
+- **`include_files`**: the user's data files copied verbatim into
+  `Contents/Resources/` or `Contents/SharedSupport/`
+  (see ["Data files (`include_files`)"](#data-files-include_files)).
 - **Ad-hoc** code signing (the mandatory Apple-Silicon floor).
 - **Full Developer ID signing + notarization + stapling** — see
   ["Developer ID sign + notarize + staple"](#developer-id-sign--notarize--staple) below.
@@ -78,8 +81,9 @@ Proposed field set (finalized in implementation):
 | `minimum_system_version` | string | no | *(runtime floor)* | `LSMinimumSystemVersion`; must be ≥ the bundled runtime's floor. |
 | `archs` | list of string | no | `["arm64"]` | Target architecture the lock must cover. **`arm64` is the only allowed value**; `x86_64` is rejected with a migration message. Kept list-shaped for symmetry with the other platforms. Drives the required macOS wheel tags and the runtime pin. See ["Architectures"](#architectures-archs) below. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (macOS tags), same semantics as iOS. |
-| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
+| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. A package with any wheel here comes only from `find_links`, on every arch ([package-index-proposal §3](../../dev/package-index-proposal.md#3-behaviour-and-config)). |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
+| `include_files` | array of tables | no | `[]` | `[[tool.kivy.macos.include_files]]`: data files copied into the bundle. See ["Data files"](#data-files-include_files). |
 
 Icons: `[tool.kivy.macos.icons].source` (1024×1024 PNG) is converted to a macOS
 `.icns` asset. Splash screens are not a macOS concept and have no subtable.
@@ -219,7 +223,9 @@ MyApp.app/
 │       ├── bin/                   ← declared native binaries (native.binaries);
 │       │                            absent when the table is empty
 │       ├── lib/                   ← installed wheels (site-packages)
-│       └── python/                ← bundled CPython runtime + stdlib
+│       ├── python/                ← bundled CPython runtime + stdlib
+│       └── <include_files>        ← user data files under a Resources dest
+│   └── SharedSupport/             ← user data files under a SharedSupport dest
 ```
 
 The bundled runtime is the active provider's normalized, relocatable CPython tree
@@ -248,8 +254,11 @@ canonical layout regardless of provider).
 The launcher resolves the bundle relative to itself (via `_NSGetExecutablePath`,
 so the `.app` stays relocatable), points `PYTHONHOME` at the bundled runtime and
 `PYTHONPATH` at `Resources/app` + `Resources/lib`, sets `PYTHONNOUSERSITE`, then
-`execv`s `Resources/python/bin/python3 Resources/app/<entry_point>.py` — the
-desktop analog of the iOS `main.m` bootstrap. It is itself ad-hoc-signed along
+`execv`s `Resources/python/bin/python3 -P -m <entry_point>` (by module, so a
+`strip_source` build's sourceless `.pyc` is found) — the desktop analog of the
+iOS `main.m` bootstrap. For a `module:function` entry point the module is
+`_kivyforge_main`, the launcher staged into `Resources/app` that calls the
+function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)). It is itself ad-hoc-signed along
 with the Mach-O binaries in the runtime + wheels.
 
 ### Native binaries that are not wheels (`[tool.kivy.macos.native.binaries]`)
@@ -263,17 +272,23 @@ with the Mach-O binaries in the runtime + wheels.
 > lock-format rework. The pure staging mechanics were likewise extracted
 > (rule of three) into the shared `kivyforge/artifacts/native_stage_util.py`
 > (`stage_binaries()` + the security-sensitive `_safe_extract` /
-> `filter="data"` extractors); this module's `native_stage.py` is now a thin
-> wrapper (`bin_label="Contents/Resources/bin"`, translating `NativeStageError`
-> → `AppBundleError`). See
+> `filter="data"` extractors). This module's `native_stage.py` extracts each
+> entry through it into a temporary directory, then classifies, places and
+> link-checks what came out. See
 > [`examples/desktop/hello-native`](../../../../examples/desktop/hello-native)
 > for a runnable end-to-end example — now cross-platform (macOS loads the dylib
 > by path; Linux, its sibling channel, loads the `.so` by soname).
 >
+> **Placement** follows Apple's bundle layout since issue #174
+> ([macos-native-binaries-placement-proposal](../../dev/macos-native-binaries-placement-proposal.md)):
+> executables in `Contents/Helpers/`, dynamic libraries in
+> `Contents/Frameworks/`. Before that everything went to
+> `Contents/Resources/bin/`, a data location.
+>
 > **Delta from design:** single-file sources are staged under their *source*
 > basename (copied "as-is"), so a `.dylib` keeps its extension for by-path
 > `ctypes` loads — the config key names the lock entry, not the on-disk file.
-> Staged single files also get their exec bit set (harmless for a dylib, and it
+> Staged files also get their exec bit set (harmless for a dylib, and it
 > makes a downloaded helper runnable even when the source lost its mode).
 
 Some apps need native binaries that no wheel delivers: vendor SDK `.dylib`s
@@ -295,40 +310,63 @@ Semantics, per pipeline stage:
   `name`/`version`/`source`/`sha256` in a
   `[[tool.kivyforge.native_binaries]]` array in `pylock.macos.toml` — the
   same integrity discipline as wheels and the runtime.
-- **`build`** — fetches through the shared download/cache/verify machinery
-  and stages into **`Contents/Resources/bin/`** (single files copied under
-  their source basename with the exec bit set; `.zip` sources extracted
-  preserving structure, each file made executable). `bin/` is one flat
-  namespace, so staging rejects (a build error) any two entries that would
-  write the same path — two single files sharing a basename, two zips sharing
-  a member, or a single file colliding with a zip member — rather than letting
-  the later one silently overwrite the earlier. `doctor` catches the
-  statically-detectable subset (single-file basename clashes) before a build.
-- **launcher** — prepends `Resources/bin` to the child `PATH`, so helper
+- **`build`** — fetches through the shared download/cache/verify machinery,
+  extracts each entry (`.zip`, `.tar.gz` and `.tgz` sources are archives) and
+  reads every file's Mach-O header, thin or universal:
+  - `MH_EXECUTE` goes to **`Contents/Helpers/`** and `MH_DYLIB` to
+    **`Contents/Frameworks/`**, flat: an archive member keeps only its file
+    name. Every file gets the exec bit.
+  - A single-file source that is not a Mach-O fails the build
+    (`KF-MACOS-NATIVE-NOT-CODE`); data belongs in `include_files` and scripts
+    in `app_dir`. Archive members that are not Mach-O (headers, licences) are
+    skipped with a warning under the same code.
+  - Any other Mach-O type (a plug-in `MH_BUNDLE`, an object file), a universal
+    file whose slices disagree on type, and a Mach-O inside a bundle in an
+    archive (a `.framework`, `.app`, `.plugin`, or a directory holding an
+    `Info.plist`) fail with `KF-MACOS-NATIVE-UNSUPPORTED`.
+  - A file without a slice for the target arch fails the build.
+  - Each code location is one namespace, compared case-insensitively as APFS
+    does, so two entries that would land on the same name fail the build.
+    Names inside one archive are compared before extraction, since extracting
+    two names that differ only in case would silently keep one.
+- **link check** — kivyforge does not rewrite load commands, so before copying
+  it works out, per process, where dyld would look for each link between
+  declared binaries (`native_links.py`). A helper is its own process, so
+  `@executable_path` is `Contents/Helpers/`; a library the app loads with
+  `ctypes` runs in the interpreter's process, where it is
+  `Resources/python/bin/`. A link that will not resolve fails the build with
+  `KF-MACOS-NATIVE-LOAD-PATH` and the `install_name_tool` fix. A weak link,
+  and a link from a Python-loaded library that resolves only when the app has
+  loaded its target first, are warnings under the same code. Links to
+  libraries the channel did not declare, and to `/usr/lib/` or `/System/`, are
+  not judged.
+- **launcher** — prepends `Contents/Helpers` to the child `PATH`, so helper
   executables run by name (`subprocess.run(["ffmpeg", ...])`).
 - **`.dylib`s still load by absolute path.** macOS has no safe by-name
   registration analog to Windows' `os.add_dll_directory`:
   `DYLD_LIBRARY_PATH` is ignored by Hardened-Runtime processes (short of the
   `allow-dyld-environment-variables` entitlement, which invites notarization
-  trouble). The stable cross-platform recipe is
-  `Path(sys.prefix).parent / "bin"` — `sys.prefix` is the bundled runtime
-  (`Resources/python`), so its parent is `Resources/`; the same derivation
-  yields the `bin` directory on Windows and Linux too.
-- **`doctor`** — each declared source exists/is reachable, no two single-file
-  sources share a staged basename, and each staged Mach-O covers the assembled
-  arch (an Intel-only vendor dylib cannot load at all; FAIL names the file and
-  the missing arch).
+  trouble). The recipe is `Path(sys.prefix).parents[1] / "Frameworks"`:
+  `sys.prefix` is `Contents/Resources/python`, two levels below `Contents/`.
+- **`doctor`** — each declared source exists/is reachable; each vendored
+  single file is an executable or a dynamic library and no two land on the
+  same name in one location; and, once built, each Mach-O in `Helpers/` and
+  `Frameworks/` covers the assembled arch (an Intel-only vendor dylib cannot
+  load at all; FAIL names the file and the missing arch). Archive members and
+  URL sources are checked by the build.
 - **signing** — no new work: the deep sign already walks *every* Mach-O
-  under the `.app` by file magic, so `Resources/bin` is swept — ad-hoc, or
-  Developer ID with Hardened Runtime + timestamp — automatically. This is a
-  requirement, not a convenience: notarization rejects any unsigned Mach-O
-  anywhere in the bundle.
+  under the `.app` by file magic, inside out, so `Helpers/` and `Frameworks/`
+  are swept — ad-hoc, or Developer ID with Hardened Runtime + timestamp —
+  automatically. This is a requirement, not a convenience: notarization
+  rejects any unsigned Mach-O anywhere in the bundle.
 
-**The boundary:** kivyforge fetches, verifies, stages, and signs declared
-binaries. It does **not** resolve their dependencies or rewrite their
-`install_name`/`@rpath` load commands — a dylib that hard-codes absolute
-install paths is the vendor's problem to fix (the consume-prebuilt-artifacts
-principle).
+**The boundary:** kivyforge fetches, verifies, places, checks and signs
+declared binaries. It does **not** resolve their dependencies or rewrite their
+`install_name`/`@rpath` load commands. A binary built for a flat directory
+(a helper that expects its library beside it) is refused with the commands
+that fix it, rather than patched: changing load commands invalidates the
+vendor's signature, and the fix belongs where the binary is built (the
+consume-prebuilt-artifacts principle).
 
 **The escape hatch remains:** files dropped under `app_dir` are copied
 wholesale into `Resources/app/` (exec bits preserved; the launcher `chdir`s
@@ -337,11 +375,45 @@ entry, and no arch check. Two edges of the sweep, recorded rather than
 solved: (1) nested binaries are signed *without* the app's entitlements
 (those apply only to the bundle seal / main executable) — a helper that
 itself needs a hardened exception (e.g. its own W+X allocation) would need
-per-file entitlements, a revisit-on-demand item. (2) The Mach-O detector
-matches the `0xCAFEBABE` magic, which is also the Java class-file magic —
-its walks-only-runtime-and-wheels assumption predates sweeping `app_dir`
-content, so a `.class` file under `app_dir` would be misidentified and fail
-`codesign`. A known limitation; fix if anyone ever hits it.
+per-file entitlements, a revisit-on-demand item. (2) The signer's Mach-O
+detector matches the `0xCAFEBABE` magic, which is also the Java class-file
+magic — its walks-only-runtime-and-wheels assumption predates sweeping
+`app_dir` content, so a `.class` file under `app_dir` would be misidentified
+and fail `codesign`. The native channel's header reader tells the two apart by
+slice count; the signer does not yet. A known limitation; fix if anyone ever
+hits it.
+
+### Data files (`include_files`)
+
+```toml
+[[tool.kivy.macos.include_files]]
+dest = "Resources"                      # relative to Contents/
+sources = ["config/GoogleService-Info.plist"]
+```
+
+The semantics are Android's and iOS's
+([include-files-proposal](../../dev/include-files-proposal.md) §4.3, §4.5), with
+`Contents/` as the root. `dest` must start with `Resources` or `SharedSupport`,
+the places Apple documents for data; the loader refuses any other root, because
+`codesign` rejects a data file in a code location (`MacOS/`, `Frameworks/`, the
+top of `Contents/`) with an error that names the main executable, not the
+include. `lock` pins each file by SHA-256 in `[[tool.kivyforge.include_files]]`,
+the entries are a lock input, and plain `lock` rewrites the pins alone when
+only file contents changed.
+
+The checks run before assembly, so a bad include costs no runtime or wheel
+staging: a path the bundler writes (`Resources/app`, `Resources/lib`,
+`Resources/python`, `Resources/<exe>.icns`;
+`KF-INCLUDE-RESERVED`), a Mach-O file or static archive
+(`KF-INCLUDE-NATIVE-CODE`, pointing at `native.binaries`), a path component
+Xcode would have to compile (`.xcstrings`, `.storyboard`, `.xib`, `.xcassets`;
+`KF-INCLUDE-SOURCE-FORMAT`), then drift from the pins (`KF-LOCK-DRIFT`) unless
+`--no-verify-lock`. The files are copied into the assembly tree after the icon
+and before byte-compiling and signing, without `com.apple.quarantine`
+(`shutil.copy2` keeps it, and App Store Connect refuses a bundle with it on any
+file). The assembled bundle is checked against the files before it is swapped
+in, and a Developer ID `package` checks it again after signing (before the
+notary submission) and after stapling (`KF-ARTIFACT-CONTENT`, exit 5).
 
 ## `build` / `run` / `package`
 

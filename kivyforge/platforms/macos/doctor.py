@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
+from kivyforge.artifacts import include_files
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.config.model import Config
@@ -20,9 +21,21 @@ from kivyforge.doctor.probe import Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
+from kivyforge.report import diagnostics
 
 from .lock import MacosLockfile, load, wheel_arch
-from .machotools import is_macho, macho_arches
+from .machotools import (
+    MH_DYLIB,
+    MH_EXECUTE,
+    MachoError,
+    NotMachoError,
+    filetype_name,
+    is_macho,
+    read_macho,
+)
+
+_ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz")
+_LOCATIONS = {MH_EXECUTE: "Helpers", MH_DYLIB: "Frameworks"}
 
 
 def check_macos_host(probe: Probe) -> CheckResult:
@@ -268,15 +281,17 @@ def check_macos_notary_setup(probe: Probe, config: Config) -> CheckResult:
 
 
 def check_macos_native_binaries(config: Config, project_root: Path) -> CheckResult:
-    """Vendored native-binary sources exist and (once built) cover the archs.
+    """Vendored native-binary sources exist, are code, and (once built) cover the arch.
 
     SKIPs when no ``[tool.kivy.macos.native.binaries]`` are declared. Vendored
     (repo-relative) sources must be present on disk; URL sources are re-checked
-    for reachability by ``check_macos_hosts_reachable``. No two single-file
-    (non-zip) sources may share a staged basename (they would overwrite each
-    other in ``bin/``; zip-member collisions are caught at build time). When the
-    bundle has been built, each Mach-O staged under ``Resources/bin`` must carry
-    the target arch.
+    for reachability by ``check_macos_hosts_reachable``, and everything else
+    about them is left to the build. A vendored single file must be an
+    executable or a dynamic library, and no two may land on the same name in
+    ``Contents/Helpers/`` or ``Contents/Frameworks/`` (compared
+    case-insensitively, as APFS does); archive members need extraction and are
+    checked at build time. When the bundle has been built, each Mach-O staged
+    in those two locations must carry the target arch.
     """
     declared = config.macos_required.binaries
     if not declared:
@@ -298,45 +313,71 @@ def check_macos_native_binaries(config: Config, project_root: Path) -> CheckResu
             "`kivyforge lock -p macos`.",
         )
 
-    # Statically-detectable staging collisions: two single-file (non-zip)
-    # sources whose basenames match land on the same bin/<name> and the second
-    # silently clobbers the first. Zip-member collisions need extraction and are
-    # caught (loudly) at build time.
-    staged: dict[str, str] = {}
+    staged: dict[tuple[str, str], str] = {}
     for dep in declared:
-        if dep.source.lower().endswith(".zip"):
+        if dep.source.startswith(
+            ("http://", "https://")
+        ) or dep.source.lower().endswith(_ARCHIVE_SUFFIXES):
             continue
         base = dep.source.rsplit("/", 1)[-1] or dep.name
-        prev = staged.get(base)
+        try:
+            filetypes = read_macho(root / dep.source).filetypes
+        except NotMachoError:
+            return CheckResult(
+                "Native binaries",
+                Status.FAIL,
+                f"{dep.name!r} ({dep.source}) is not a Mach-O file",
+                hint="[tool.kivy.macos.native.binaries] places native code only; "
+                "list data under [[tool.kivy.macos.include_files]] and put "
+                "scripts in app_dir.",
+                code=diagnostics.MACOS_NATIVE_NOT_CODE,
+            )
+        except MachoError as exc:
+            filetypes, why = frozenset(), f"its Mach-O header cannot be read ({exc})"
+        else:
+            why = f"it is a {' and '.join(sorted(map(filetype_name, filetypes)))}"
+        location = (
+            _LOCATIONS.get(next(iter(filetypes))) if len(filetypes) == 1 else None
+        )
+        if location is None:
+            return CheckResult(
+                "Native binaries",
+                Status.FAIL,
+                f"{dep.name!r} ({dep.source}): {why}",
+                hint="native binaries must be executables (placed in "
+                "Contents/Helpers/) or dynamic libraries (Contents/Frameworks/); "
+                "plug-ins and bundles are not supported.",
+                code=diagnostics.MACOS_NATIVE_UNSUPPORTED,
+            )
+        prev = staged.get((location, base.casefold()))
         if prev is not None:
             return CheckResult(
                 "Native binaries",
                 Status.FAIL,
-                f"{prev!r} and {dep.name!r} both stage bin/{base}",
-                hint="two native binaries would overwrite each other in "
-                "Contents/Resources/bin; rename one artifact/source so each "
-                "stages to a unique name.",
+                f"{prev!r} and {dep.name!r} would both be Contents/{location}/{base}",
+                hint=f"Contents/{location}/ is flat, and names that differ only in "
+                "case are the same file on macOS; rename one artifact/source.",
             )
-        staged[base] = dep.name
+        staged[(location, base.casefold())] = dep.name
 
     target = config.macos_required.archs[0]
-    bin_dir = (
-        root
-        / "build"
-        / "macos"
-        / f"{config.display_name}.app"
-        / "Contents"
-        / "Resources"
-        / "bin"
-    )
-    if bin_dir.is_dir():
+    contents = root / "build" / "macos" / f"{config.display_name}.app" / "Contents"
+    code_dirs = [contents / d for d in _LOCATIONS.values() if (contents / d).is_dir()]
+    if code_dirs:
         problems: list[str] = []
         machos = 0
-        for p in sorted(bin_dir.rglob("*")):
-            if not is_macho(p):
+        for p in sorted(p for d in code_dirs for p in d.rglob("*")):
+            if not p.is_file() or not is_macho(p):
+                continue
+            try:
+                arches = {s.arch for s in read_macho(p).slices}
+            except NotMachoError:
+                continue
+            except MachoError as exc:
+                problems.append(f"{p.name} unreadable ({exc})")
                 continue
             machos += 1
-            if target not in set(macho_arches(p)):
+            if target not in arches:
                 problems.append(f"{p.name} missing {target}")
         if problems:
             return CheckResult(
@@ -430,6 +471,7 @@ def run_macos_checks(
             "Signing identity type",
             "Notary setup",
             "Required hosts reachable",
+            "include_files",
             C.BYTE_COMPILE_NAME,
         ):
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
@@ -455,8 +497,23 @@ def run_macos_checks(
         check_macos_signing_identity_type(config),
         check_macos_notary_setup(probe, config),
         check_macos_hosts_reachable(probe, lock),
+        check_macos_include_files(config, project_root, lock),
     ]
     return results
+
+
+def check_macos_include_files(
+    config: Config, project_root: Path, lock: MacosLockfile | None
+) -> CheckResult:
+    """Report include_files drift as a warning before the build refuses it."""
+    entries = config.macos_required.include_files
+    if entries and lock is None:
+        return CheckResult(
+            "include_files", Status.SKIP, "no pylock.macos.toml to compare against"
+        )
+    return include_files.doctor_check(
+        entries, lock.include_files if lock else (), project_root, platform="macos"
+    )
 
 
 def macos_doctor(

@@ -42,24 +42,17 @@ def safe_area_insets():
     Geometry comes from Kivy core's ``kivy.mobile`` (shipped in the Kivy iOS
     wheel); kivyforge no longer vendors an ``ios`` shim. Returns zeros off-iOS,
     or when ``kivy.mobile`` is unavailable, so the app is unchanged on desktop
-    and degrades gracefully. ``get_safe_area()`` reports UIKit points; the
-    window's pixel space uses the device scale, so points are converted with
-    ``get_scale()`` (points -> Kivy window pixels).
+    and degrades gracefully. ``get_safe_area()`` reports Kivy window pixels
+    (with kivy/kivy#9441; earlier Kivy 3 builds return UIKit points).
     """
     if platform != "ios":
         return [0, 0, 0, 0]
     try:
-        from kivy.mobile import get_safe_area, get_scale
+        from kivy.mobile import get_safe_area
     except ImportError:
         return [0, 0, 0, 0]
-    insets = get_safe_area()  # UIKit points
-    scale = get_scale()  # -> Kivy window pixels
-    return [
-        insets["left"] * scale,
-        insets["top"] * scale,
-        insets["right"] * scale,
-        insets["bottom"] * scale,
-    ]
+    insets = get_safe_area()
+    return [insets["left"], insets["top"], insets["right"], insets["bottom"]]
 
 
 KV = """

@@ -511,11 +511,12 @@ class TestRunModes:
     def test_environment_mode_skips_project(self, fake_probe):
         results = run_checks(fake_probe, kivyforge_version="3.0.0", config=None)
         skipped = [r for r in results if r.status is Status.SKIP]
-        assert len(skipped) == 13
+        assert len(skipped) == 15
         # Every project check must be represented, not silently dropped.
         names = {r.name for r in skipped}
         assert "Entitlements vs. profile" in names
         assert "Team ID" in names
+        assert "include_files" in names
         assert CC.BYTE_COMPILE_NAME in names
 
     def test_project_mode_runs_all(self, fake_probe, config, tmp_path):
@@ -533,6 +534,7 @@ class TestRunModes:
         assert "find_links directories" in names
         assert "App icon" in names
         assert "App-level privacy manifest" in names
+        assert "include_files" in names
 
     def test_find_links_missing_fail(self, tmp_path):
         from kivyforge.config import load_config_from_text
@@ -617,7 +619,7 @@ def _lock_with_python_url(url: str) -> Lockfile:
         ),
         kivyforge_version="3.0.0",
         generated_at="t",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
     )
 
@@ -629,7 +631,7 @@ def _lock_with_swift_url(url: str) -> Lockfile:
         python_xcframework=PythonXcframework(version="3.15.0", url="", sha256="c" * 64),
         kivyforge_version="3.0.0",
         generated_at="t",
-        pyproject_sha256="d" * 64,
+        lock_inputs_sha256="d" * 64,
         tool_kivyforge_schema_version=1,
         swift_packages=(
             LockedSwiftPackage(

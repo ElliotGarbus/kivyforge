@@ -12,14 +12,24 @@ platform-neutral pip helpers are shared from ``kivyforge.lock.resolver``.
 from __future__ import annotations
 
 import json
-import subprocess
+import os
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from ...streaming import run_streaming
+from .. import _pip_shim
+from .._pip_shim import (
+    HOST_MARKERS_ENV_VAR,
+    SOURCE_FILTER_UNAVAILABLE,
+    SOURCE_POLICY_ENV_VAR,
+)
 from ..model import canonical_name
+from ..pip_progress import PROGRESS_ARGS, PipProgress, without_progress
+from ..prefer import Pins, constraint_args
 from ..resolver import (
     MIN_PIP_VERSION,
     _dep_names,
@@ -29,6 +39,18 @@ from ..resolver import (
     unresolved_requirement,
     version_str,
 )
+from ..sources import (
+    RECORD_KEY,
+    IndexTracker,
+    SourceFilterUnavailable,
+    SourcePolicy,
+    read_record,
+    source_policy,
+)
+
+# Run by path, not ``-m``: the shim imports nothing from kivyforge, so it also
+# works when resolving with an interpreter that only has pip installed.
+_SHIM = Path(_pip_shim.__file__)
 
 
 class WheelResolverError(Exception):
@@ -86,6 +108,8 @@ class WheelResolver(Protocol):
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
+        sources: SourcePolicy | None = None,
     ) -> list[ResolvedPackage]:
         """Resolve requirements to wheels covering every requested variant."""
         ...
@@ -94,8 +118,16 @@ class WheelResolver(Protocol):
 class PipWheelResolver:
     """Default backend: stock pip cross-resolution via ``pip install --report``."""
 
-    def __init__(self, python_executable: str | None = None) -> None:
+    def __init__(
+        self,
+        python_executable: str | None = None,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+        on_transfer: Callable[[str, int, int, str], None] | None = None,
+    ) -> None:
         self._python = python_executable or sys.executable
+        self._on_progress = on_progress
+        self._on_transfer = on_transfer
 
     def resolve(
         self,
@@ -106,6 +138,8 @@ class PipWheelResolver:
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
+        sources: SourcePolicy | None = None,
     ) -> list[ResolvedPackage]:
         if not requirements:
             return []
@@ -113,20 +147,30 @@ class PipWheelResolver:
         abis = abi_tags(python_version)
         merged: dict[str, ResolvedPackage] = {}
         seen_filenames: dict[str, set[str]] = {}
+        policy = sources or source_policy(find_links or [], extra_index_urls)
+        indexes = IndexTracker()
 
         for variant in variants:
+            if self._on_progress is not None:
+                self._on_progress(f"[lock] {variant.arch}: resolving wheels")
             report = self._run_report(
                 requirements,
+                label=variant.arch,
                 python_version=python_version,
                 platform_tags=variant.request_tags,
                 abis=abis,
                 extra_index_urls=extra_index_urls,
                 find_links=find_links or [],
                 offline=offline,
+                constraints=constraints,
+                sources=policy,
             )
             for item in report.get("install", []):
                 self._absorb(item, merged, seen_filenames)
+            indexes.add(report)
 
+        for pkg in merged.values():
+            pkg.source_index = indexes.index_of(pkg.name)
         return list(merged.values())
 
     def _require_modern_pip(self) -> None:
@@ -178,19 +222,25 @@ class PipWheelResolver:
         self,
         requirements: list[str],
         *,
+        label: str = "",
         python_version: str,
         platform_tags: tuple[str, ...],
         abis: tuple[str, ...],
         extra_index_urls: list[str],
         find_links: list[str],
         offline: bool,
+        constraints: Pins | None = None,
+        sources: SourcePolicy | None = None,
     ) -> dict:
+        policy = sources or source_policy(find_links, extra_index_urls)
         with tempfile.TemporaryDirectory(prefix="kivy-wheel-lock-") as tmp:
             report_path = Path(tmp) / "report.json"
+            record_path = Path(tmp) / "sources.json"
+            # Not "-m pip": the shim applies the source rules (#86). Markers
+            # stay the host's, as they always were for a desktop lock.
             cmd = [
                 self._python,
-                "-m",
-                "pip",
+                str(_SHIM),
                 "install",
                 "--no-input",
                 "--dry-run",
@@ -204,6 +254,9 @@ class PipWheelResolver:
                 str(Path(tmp) / "target"),
                 "--report",
                 str(report_path),
+                # Machine-readable byte counts even when not on a terminal,
+                # which is the only way to show download progress (#88).
+                *PROGRESS_ARGS,
             ]
             # pip accepts --platform multiple times; a wheel matching ANY of the
             # tags is eligible while a single consistent version set is resolved.
@@ -211,26 +264,40 @@ class PipWheelResolver:
                 cmd += ["--platform", tag]
             for abi in abis:
                 cmd += ["--abi", abi]
-            for index in extra_index_urls:
+            for index in policy.extra_index_urls:
                 cmd += ["--extra-index-url", index]
             for link in find_links:
                 cmd += ["--find-links", link]
             if offline:
                 cmd += ["--no-index"]
+            cmd += constraint_args(Path(tmp), constraints or {})
             cmd += list(requirements)
 
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                stdin=subprocess.DEVNULL,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
+            env = dict(os.environ)
+            env[HOST_MARKERS_ENV_VAR] = "1"
+            env[SOURCE_POLICY_ENV_VAR] = policy.environment(record_path)
+            progress = PipProgress(
+                label or platform_tags[0], self._on_progress, self._on_transfer
             )
-            if proc.returncode != 0:
+            # Streamed, so a slow resolve shows its downloads instead of
+            # looking like a hang; run_streaming decodes pip's UTF-8.
+            returncode, transcript = run_streaming(
+                cmd,
+                env=env,
+                on_segment=progress,
+                on_quiet=progress.quiet if self._on_progress else None,
+            )
+            if returncode == SOURCE_FILTER_UNAVAILABLE:
+                raise SourceFilterUnavailable(without_progress(transcript).strip())
+            if returncode != 0:
                 tags = ", ".join(platform_tags)
-                output = proc.stderr or proc.stdout
+                output = without_progress(transcript)
                 culprit = unresolved_requirement(output)
+                fixed = culprit and policy.unavailable(
+                    culprit, label or platform_tags[0]
+                )
+                if fixed:
+                    raise fixed
                 what = (
                     f"no wheel for {culprit!r}"
                     if culprit
@@ -242,9 +309,11 @@ class PipWheelResolver:
                     f"  pip said:\n{_indent(output)}"
                 )
             try:
-                return json.loads(report_path.read_text(encoding="utf-8"))
+                report = json.loads(report_path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:
                 raise WheelResolverError(f"could not read pip report: {exc}") from exc
+            report[RECORD_KEY] = read_record(record_path)
+            return report
 
 
 def get_wheel_resolver(backend: str = "pip", **kwargs) -> WheelResolver:

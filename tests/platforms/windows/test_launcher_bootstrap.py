@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
+
 import pytest
 
 from kivyforge.platforms.windows import WindowsBundleError
@@ -43,6 +48,31 @@ class TestRenderBootstrap:
         # Run the entry as __main__ so `if __name__ == "__main__": App().run()`
         # fires (importing it as a module would not start the app).
         assert 'runpy.run_module(_ENTRY, run_name="__main__"' in src
+
+    def test_app_is_on_sys_path_once_and_first(self, tmp_path):
+        # The native launcher puts app on PYTHONPATH; the bootstrap must not
+        # add it again, or importlib.metadata finds the app twice.
+        bundle = tmp_path / "bundle"
+        app = bundle / "app"
+        app.mkdir(parents=True)
+        report = tmp_path / "sys_path.json"
+        (app / "main.py").write_text(
+            "import json, sys\n"
+            f"open({str(report)!r}, 'w').write(json.dumps(sys.path))\n",
+            encoding="utf-8",
+        )
+        boot = write_bootstrap(bundle, entry_point="main", app_id="A.B")
+        env = {**os.environ, "PYTHONPATH": str(app), "PYTHONNOUSERSITE": "1"}
+        subprocess.run(
+            [sys.executable, str(boot)],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            check=True,
+            timeout=60,
+        )
+        seen = [os.path.normcase(p) for p in json.loads(report.read_text())]
+        assert seen.count(os.path.normcase(str(app))) == 1
+        assert seen[0] == os.path.normcase(str(app))
 
     def test_registers_native_bin(self):
         src = render_bootstrap(entry_point="main", app_id="A.B")

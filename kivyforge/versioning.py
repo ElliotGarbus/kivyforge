@@ -118,6 +118,9 @@ def pip_command(project_root: Path, *, isolated: bool) -> list[str]:
         # Under `uv run` the project is usually installed, often editable and
         # often stale, in this very interpreter; the tree is what is built.
         "--ignore-installed",
+        # requires-python describes the bundled runtime (3.14 for Android), not
+        # the interpreter kivyforge runs on, which only reads the metadata.
+        "--ignore-requires-python",
         "--no-deps",
         "--quiet",
         "--disable-pip-version-check",
@@ -139,7 +142,9 @@ def _from_backend(
             "  Fix: check the project builds (`pip wheel --no-deps .`): a "
             "setuptools-scm project needs a git checkout with tags (in CI, "
             "fetch-depth: 0), and pip needs to reach the package index to fetch "
-            f"the build backend. Or pass {FLAG_OVERRIDE} to skip the backend."
+            "the build backend. pip reads its own index settings (PIP_INDEX_URL, "
+            "PIP_EXTRA_INDEX_URL, pip.conf), not [[tool.uv.index]] or "
+            f"[[tool.kivy.index]]. Or pass {FLAG_OVERRIDE} to skip the backend."
         )
     else:
         fix = (
@@ -150,12 +155,16 @@ def _from_backend(
         )
     try:
         # The child inherits this environment on purpose: PIP_INDEX_URL and
-        # SETUPTOOLS_SCM_PRETEND_VERSION only work because it does.
+        # SETUPTOOLS_SCM_PRETEND_VERSION only work because it does. pip writes
+        # UTF-8 to a pipe whatever the locale, so decoding with the locale's
+        # cp1252 would garble every non-ASCII character it quotes.
         proc = runner(
             pip_command(project_root, isolated=isolated),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except OSError as exc:
         raise VersionUnresolved(
@@ -233,7 +242,10 @@ def check_apple_version(
     """
     if platform not in ("ios", "macos") or not exports or apple_conforms(version.value):
         return None
-    context = {"version": version.value, "export_method": export_method or ""}
+    context: dict[str, str | None] = {
+        "version": version.value,
+        "export_method": export_method or "",
+    }
     if platform == "ios" and export_method == "app-store":
         raise AppleVersionRejected(
             f"version {version.value!r} cannot be uploaded to App Store Connect, "

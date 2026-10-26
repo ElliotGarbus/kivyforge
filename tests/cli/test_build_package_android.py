@@ -1,7 +1,7 @@
 """``kivyforge build`` / ``package`` — the Android option surface (android/06).
 
 The documented Android verbs (``build --debug [-f apk|aab] [--abi]`` and
-``package --keystore/--key-alias/--abi``) are reachable only if the shared verbs
+``package --keystore/--key-alias/--abi/--debug``) are reachable only if the shared verbs
 declare those options and hand them to the backend; these tests pin that wiring
 with the backend resolution mocked.
 """
@@ -23,6 +23,7 @@ class _FakeBackend:
 
     def __init__(self, name: str = "android"):
         self.name = name
+        self.package_debug = name == "android"
         self.build_calls: list[dict] = []
         self.package_calls: list[dict] = []
 
@@ -45,9 +46,13 @@ def _patch(monkeypatch, module, backend, project_root):
     (project_root / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "1.0.0"\n', encoding="utf-8"
     )
-    monkeypatch.setattr(
-        module, "resolve_target", lambda cli_platform, verb: (backend, project_root)
-    )
+
+    def resolve_target(cli_platform, verb, report=None):
+        if report is not None:
+            report.platform = backend.name
+        return backend, project_root
+
+    monkeypatch.setattr(module, "resolve_target", resolve_target)
 
 
 class TestAndroidBuildOptions:
@@ -125,6 +130,30 @@ class TestAndroidPackageOptions:
         assert call["keystore"] == "release.keystore"
         assert call["key_alias"] == "upload"
         assert call["abi"] == "arm64_v8a"
+        assert call["debug"] is False
+
+    def test_debug_and_format_reach_the_backend(self, runner, tmp_path, monkeypatch):
+        import kivyforge.cli.package as package_mod
+
+        backend = _FakeBackend()
+        _patch(monkeypatch, package_mod, backend, tmp_path)
+        result = runner.invoke(package_cmd, ["-p", "android", "--debug", "-f", "aab"])
+        assert result.exit_code == 0, result.output
+        (call,) = backend.package_calls
+        assert call["debug"] is True
+        assert call["fmt"] == "aab"
+
+    def test_debug_rejected_where_the_backend_has_no_debug_package(
+        self, runner, tmp_path, monkeypatch
+    ):
+        import kivyforge.cli.package as package_mod
+
+        backend = _FakeBackend("ios")
+        _patch(monkeypatch, package_mod, backend, tmp_path)
+        result = runner.invoke(package_cmd, ["--debug"])
+        assert result.exit_code != 0
+        assert "--debug is not valid for ios" in result.output
+        assert not backend.package_calls
 
     @pytest.mark.parametrize(
         "flag",

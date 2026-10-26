@@ -2,8 +2,9 @@
 
 Produces a self-contained AppDir and, by default, an AppImage (linux-spec).
 Linux is the host default on Linux, so a Linux box with ``[tool.kivy.linux]``
-configured resolves to this backend without ``-p``. It requires a Linux host:
-the bundled python-build-standalone runtime is a gnu/glibc ELF build.
+configured resolves to this backend without ``-p``. It requires an x86_64 Linux
+host: the bundled python-build-standalone runtime is a gnu/glibc ELF build, and
+aarch64 is cross-built from x86_64 rather than built on the Pi.
 """
 
 from __future__ import annotations
@@ -37,6 +38,20 @@ class LinuxPlatform(Platform):
     package_formats = ("appimage", "folder")
 
     archs = tuple(sorted(VALID_LINUX_ARCHS))
+    # aarch64 (Raspberry Pi 4/5) is a target only, cross-built from x86_64.
+    # This is a testing constraint, not a technical one: an aarch64 build host
+    # is not in the test matrix, so it is refused rather than shipped
+    # unexercised. Widen this tuple if there is demand and a host to test on.
+    host_machines = ("x86_64",)
+
+    def host_machine_error(self, machine: str) -> str:
+        return (
+            "building for Linux requires an x86_64 Linux host; "
+            f"this host is {machine!r}.\n"
+            '  A Raspberry Pi is a target, not a build host: add "aarch64" to '
+            "[tool.kivy.linux].archs on an x86_64 Linux box, then copy the "
+            "aarch64 AppImage to the Pi."
+        )
 
     def check_host_capability(self, *, host_system: str | None = None) -> None:
         host = host_system if host_system is not None else _platform.system()
@@ -114,6 +129,7 @@ class LinuxPlatform(Platform):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
+        debug: bool = False,
     ) -> BuildOutcome:
         from .cli import linux_package
 

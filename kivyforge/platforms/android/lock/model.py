@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from kivyforge.lock.model import LOCK_VERSION, LockedPackage
+from kivyforge.lock.model import LockedIncludeFile as LockedIncludeFile
 
 CREATED_BY = "kivyforge"
 TOOL_SCHEMA_VERSION = 1
@@ -85,22 +86,13 @@ class GradlePins:
 
 
 @dataclass(frozen=True)
-class LockedIncludeFile:
-    """One ``[[tool.kivyforge.include_files]]`` drift pin."""
-
-    source: str
-    dest: str
-    sha256: str
-
-
-@dataclass(frozen=True)
 class AndroidLockfile:
     requires_python: str
     packages: tuple[LockedPackage, ...]
     python_android: tuple[PythonAndroidRuntime, ...]
     kivyforge_version: str
     generated_at: str
-    pyproject_sha256: str
+    lock_inputs_sha256: str
     tool_kivy_android_schema_version: int
     kivy_generation: int
     android_libs: tuple[LockedAndroidLib, ...] = ()

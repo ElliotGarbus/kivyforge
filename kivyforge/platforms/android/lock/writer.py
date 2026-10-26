@@ -9,6 +9,7 @@ Maven modules by coordinate) so re-lock diffs show only real changes.
 from __future__ import annotations
 
 from kivyforge.lock.pep751 import arr as _arr
+from kivyforge.lock.pep751 import emit_include_files
 from kivyforge.lock.pep751 import emit_package as _emit_package
 from kivyforge.lock.pep751 import s as _s
 
@@ -41,7 +42,7 @@ def dumps(lock: AndroidLockfile) -> str:
     lines.append(f"schema_version = {lock.schema_version}")
     lines.append(f"kivyforge_version = {_s(lock.kivyforge_version)}")
     lines.append(f"generated_at = {_s(lock.generated_at)}")
-    lines.append(f"pyproject_sha256 = {_s(lock.pyproject_sha256)}")
+    lines.append(f"lock_inputs_sha256 = {_s(lock.lock_inputs_sha256)}")
     lines.append(
         f"tool_kivy_android_schema_version = {lock.tool_kivy_android_schema_version}"
     )
@@ -69,13 +70,7 @@ def dumps(lock: AndroidLockfile) -> str:
             lines.append("")
             _emit_resolved_module(lines, module)
 
-    # --- [[tool.kivyforge.include_files]] ---
-    for pin in sorted(lock.include_files, key=lambda p: (p.dest, p.source)):
-        lines.append("")
-        lines.append("[[tool.kivyforge.include_files]]")
-        lines.append(f"source = {_s(pin.source)}")
-        lines.append(f"dest = {_s(pin.dest)}")
-        lines.append(f"sha256 = {_s(pin.sha256)}")
+    emit_include_files(lines, lock.include_files)
 
     return "\n".join(lines) + "\n"
 

@@ -17,27 +17,41 @@ class TestRunSmoke:
         # run_smoke imports run_gradle from .gradlew at module load; patch there.
         import kivyforge.platforms.android.smoke as smoke_mod
 
-        monkeypatch.setattr(smoke_mod, "run_gradle", lambda d, t: calls.append((d, t)))
-        run_smoke(tmp_path)
+        monkeypatch.setattr(
+            smoke_mod, "run_gradle", lambda d, t, **k: calls.append((d, t))
+        )
+        run_smoke(tmp_path, device="emulator-5554")
         assert calls == [(tmp_path, ["connectedDebugAndroidTest"])]
 
     def test_release_task(self, monkeypatch, tmp_path):
         calls = []
         import kivyforge.platforms.android.smoke as smoke_mod
 
-        monkeypatch.setattr(smoke_mod, "run_gradle", lambda d, t: calls.append(t))
-        run_smoke(tmp_path, release=True)
+        monkeypatch.setattr(smoke_mod, "run_gradle", lambda d, t, **k: calls.append(t))
+        run_smoke(tmp_path, device="emulator-5554", release=True)
         assert calls == [["connectedReleaseAndroidTest"]]
+
+    def test_only_the_chosen_device_runs_the_test(self, monkeypatch, tmp_path):
+        """Gradle's connected test runs on every attached device unless
+        ANDROID_SERIAL names one; the probe is built for the chosen device's
+        ABI, so a second attached device (an emulator beside a phone) failed
+        the run."""
+        seen = {}
+        import kivyforge.platforms.android.smoke as smoke_mod
+
+        monkeypatch.setattr(smoke_mod, "run_gradle", lambda d, t, **k: seen.update(k))
+        run_smoke(tmp_path, device="56051JEKB16396")
+        assert seen["env_overrides"] == {"ANDROID_SERIAL": "56051JEKB16396"}
 
     def test_failure_wrapped(self, monkeypatch, tmp_path):
         import kivyforge.platforms.android.smoke as smoke_mod
 
-        def _boom(d, t):
+        def _boom(d, t, **k):
             raise gradlew_mod.GradleError("gradle said no")
 
         monkeypatch.setattr(smoke_mod, "run_gradle", _boom)
         with pytest.raises(SmokeError, match="load-bearing runtime mechanism"):
-            run_smoke(tmp_path)
+            run_smoke(tmp_path, device="emulator-5554")
 
 
 class TestRunCliRouting:

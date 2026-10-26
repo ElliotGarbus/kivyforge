@@ -1,9 +1,10 @@
 """Shared output options for every verb (roadmap item 3).
 
-``--json`` and ``--no-color`` belong to all verbs, so they are one decorator
-rather than nine copies. They sit on the *verbs* rather than the top-level group
-on purpose: a group option has to precede the subcommand (``kivyforge --no-color
-doctor``), and everyone types ``kivyforge doctor --no-color``.
+``--json``, ``--no-color`` and ``-v`` belong to all verbs, so they are one
+decorator rather than nine copies. They sit on the *verbs* rather than the
+top-level group on purpose: a group option has to precede the subcommand
+(``kivyforge --no-color doctor``), and everyone types ``kivyforge doctor
+--no-color``.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from .. import __version__
 from ..build_outcome import Artifact, BuildEvents
 from ..report import Diagnostic, Report, diagnostics
 from ..report.transfers import transfers_to
+from ..report.verbosity import MAX_VERBOSITY, verbosity_to
 from ._common import ToolchainError
 
 
@@ -26,6 +28,7 @@ def reporting(
     *,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
     platform: str | None = None,
 ) -> Iterator[Report]:
     """Yield a :class:`~kivyforge.report.Report`, and emit one on failure too.
@@ -50,6 +53,9 @@ def reporting(
     Not caught here: ``click.UsageError`` (a bad flag), which click raises while
     parsing, before any command body runs. Nothing inside a verb can see it, and
     it exits ``2`` -- see :mod:`kivyforge.report.exit_codes`.
+
+    *verbosity* is the verb's ``-v`` count. It is required, not defaulted, so a
+    verb cannot forget to pass it on and quietly run its tools at level 0.
     """
     report = Report(
         command=command,
@@ -61,7 +67,7 @@ def reporting(
     try:
         # Downloads anywhere below (the shared artifact downloader) draw
         # through this report, without each call site carrying a callback.
-        with transfers_to(report.transfer):
+        with transfers_to(report.transfer), verbosity_to(verbosity):
             yield report
     except ToolchainError as exc:
         report.close_transfers()
@@ -113,8 +119,32 @@ def report_events(report: Report) -> BuildEvents:
     )
 
 
+def _clamp_verbosity(_ctx: click.Context, _param: click.Parameter, value: int) -> int:
+    return min(value, MAX_VERBOSITY)
+
+
+def verbosity_option[F: Callable[..., object]](fn: F) -> F:
+    """Add ``-v`` / ``--verbose``, counted and passed as ``verbosity`` (0-2).
+
+    The flag replaces ``KIVYFORGE_VERBOSE`` rather than adding to it -- click's
+    usual precedence -- which is what lets one command turn a CI-wide setting
+    down. A bad variable (``abc``, ``-1``) is a usage error, like a bad flag.
+    """
+    return click.option(
+        "-v",
+        "--verbose",
+        "verbosity",
+        count=True,
+        envvar="KIVYFORGE_VERBOSE",
+        callback=_clamp_verbosity,
+        help="More detail from the tools kivyforge runs; -vv for more. "
+        "Currently affects Android's Gradle only. Also KIVYFORGE_VERBOSE=1|2.",
+    )(fn)
+
+
 def output_options[F: Callable[..., object]](fn: F) -> F:
-    """Add ``--json`` and ``--no-color``, passed as ``json_out`` / ``no_color``.
+    """Add ``--json``, ``--no-color`` and ``-v``, passed as ``json_out``,
+    ``no_color`` and ``verbosity``.
 
     ``--json`` is named ``json_out`` in Python because ``json`` would shadow the
     stdlib module inside the verb, which is exactly the sort of thing that works
@@ -131,4 +161,4 @@ def output_options[F: Callable[..., object]](fn: F) -> F:
         is_flag=True,
         help="Disable coloured output. NO_COLOR is honoured too.",
     )(fn)
-    return fn
+    return verbosity_option(fn)

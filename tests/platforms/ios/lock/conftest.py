@@ -16,11 +16,18 @@ from kivyforge.platforms.ios.lock.spm import ResolvedSwiftPackage
 
 
 class FakeResolver:
-    """Deterministic resolver: kivy (compiled, 3 slices) + a pure-Python dep."""
+    """Deterministic resolver: kivy (compiled, 3 slices) + a pure-Python dep.
 
-    def __init__(self, *, drop_slice: str | None = None) -> None:
+    ``kivy_version`` is what the fake index serves, so a test can stand in for
+    an index that resolves ``kivy`` to 2.x.
+    """
+
+    def __init__(
+        self, *, drop_slice: str | None = None, kivy_version: str = "3.0.0"
+    ) -> None:
         self.calls: list[dict] = []
         self._drop_slice = drop_slice
+        self._kivy_version = kivy_version
 
     def resolve(
         self,
@@ -31,7 +38,9 @@ class FakeResolver:
         extra_index_urls,
         find_links=None,
         offline=False,
+        constraints=None,
         simulator_archs=None,
+        sources=None,
     ):
         self.calls.append(
             {
@@ -52,7 +61,7 @@ class FakeResolver:
         for tag in tags:
             if tag == self._drop_slice:
                 continue
-            fname = f"kivy-3.0.0-{abi}-{abi}-{tag}.whl"
+            fname = f"kivy-{self._kivy_version}-{abi}-{abi}-{tag}.whl"
             kivy_wheels.append(
                 ResolvedWheel(
                     filename=fname,
@@ -62,7 +71,7 @@ class FakeResolver:
             )
         kivy = ResolvedPackage(
             name="kivy",
-            version="3.0.0",
+            version=self._kivy_version,
             wheels=kivy_wheels,
             requires_python=">=3.10",
             dependencies=["more-itertools"],

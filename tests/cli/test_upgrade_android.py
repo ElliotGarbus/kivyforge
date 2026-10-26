@@ -15,7 +15,6 @@ from click.testing import CliRunner
 from kivyforge.artifacts.download import DownloadError
 from kivyforge.cli import upgrade as upgrade_mod
 from kivyforge.cli.upgrade import upgrade
-from kivyforge.lock import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
@@ -27,6 +26,7 @@ from kivyforge.platforms.android.lock.model import (
     PythonAndroidRuntime,
 )
 from kivyforge.platforms.android.lock.writer import dumps as dumps_android
+from tests.lock_hash import inputs_sha
 
 ANDROID_PYPROJECT = (
     textwrap.dedent(
@@ -85,7 +85,7 @@ def _android_lock(
         python_android=runtimes,
         kivyforge_version="0",
         generated_at="t",
-        pyproject_sha256=compute_pyproject_sha256(pyproject_text),
+        lock_inputs_sha256=inputs_sha(pyproject_text, "android"),
         tool_kivy_android_schema_version=1,
         kivy_generation=2,
         android_libs=libs,
@@ -304,7 +304,7 @@ class TestUpgradeUnsupportedPlatform:
         monkeypatch.setattr(
             upgrade_mod,
             "resolve_target",
-            lambda cli_platform, verb: (_FakeBackend(), tmp_path),
+            lambda cli_platform, verb, report=None: (_FakeBackend(), tmp_path),
         )
         result = runner.invoke(upgrade, [])
         assert result.exit_code != 0
@@ -392,7 +392,7 @@ def _windows_runtime_lock(text: str) -> WheelRuntimeLock:
         archs=("x86_64",),
         kivyforge_version="3.0.0.dev0",
         generated_at="t",
-        pyproject_sha256=compute_pyproject_sha256(text),
+        lock_inputs_sha256=inputs_sha(text, "windows"),
         tool_kivyforge_schema_version=1,
     )
 

@@ -49,12 +49,12 @@ class ToolchainError(click.ClickException):
         code: str = diagnostics.UNSPECIFIED,
         exit_code: int | None = None,
         remediation: str | None = None,
-        context: Mapping[str, str] | None = None,
+        context: Mapping[str, str | None] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.remediation = _extract_fix(message) if remediation is None else remediation
-        self.context: dict[str, str] = dict(context or {})
+        self.context: dict[str, str | None] = dict(context or {})
         if exit_code is not None:
             # click's stubs declare exit_code a ClassVar, but click reads it from
             # the instance, and a per-raise exit status is the point here.

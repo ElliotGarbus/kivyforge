@@ -98,6 +98,10 @@ PREVIOUS_BUILD_PYTHON_SCRIPTS = (_BUILD_PYTHON_SCRIPT_V1,)
 #: producers of one path is an Xcode error. The script's edits there (the
 #: app's metadata) are still signed, because every run also rewrites
 #: ``Frameworks/``.
+#: The asset catalog's app icon set; ``actool`` names the icon PNGs it writes
+#: into the bundle after it (``AppIcon60x60@2x.png``).
+APP_ICON_NAME = "AppIcon"
+
 BUILD_PYTHON_OUTPUTS = tuple(
     f"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/{folder}"
     for folder in ("python", "pip-deps", "Frameworks")
@@ -159,7 +163,7 @@ def managed_settings(
         # Designate the AppIcon set in Assets.xcassets as the app icon. Without
         # this the catalog still compiles, but Xcode assigns no icon — the
         # generated AppIcon.appiconset is silently ignored.
-        settings["ASSETCATALOG_COMPILER_APPICON_NAME"] = "AppIcon"
+        settings["ASSETCATALOG_COMPILER_APPICON_NAME"] = APP_ICON_NAME
 
     if ios.entitlements:
         settings["CODE_SIGN_ENTITLEMENTS"] = f"{config.app_slug}.entitlements"

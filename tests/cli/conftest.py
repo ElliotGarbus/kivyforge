@@ -57,7 +57,6 @@ def windows(desktop_project, monkeypatch):
         (bundle / "My App.exe").write_bytes(b"MZ")
         return bundle
 
-    monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
     monkeypatch.setattr(
         cli, "_load_and_verify", lambda root, nv, version=None: (config, lock)
     )
@@ -86,7 +85,6 @@ def linux(desktop_project, monkeypatch):
         output.write_bytes(b"ELF")
         return output
 
-    monkeypatch.setattr(cli, "_require_linux_host", lambda: None)
     monkeypatch.setattr(
         cli, "_load_and_verify", lambda root, nv, version=None: (config, lock)
     )
@@ -103,6 +101,7 @@ def macos(desktop_project, monkeypatch):
         macos_required=SimpleNamespace(
             signing=SimpleNamespace(identity=None, notary_profile=None),
             entitlements={},
+            include_files=(),
         )
     )
 
@@ -111,10 +110,9 @@ def macos(desktop_project, monkeypatch):
         app.mkdir(parents=True, exist_ok=True)
         return app
 
-    monkeypatch.setattr(cli, "_require_macos_host", lambda: None)
     monkeypatch.setattr(cli, "_load_config", lambda root, version=None: config)
     monkeypatch.setattr(cli, "_load_lock", lambda root: object())
-    monkeypatch.setattr(cli, "is_in_sync", lambda lock, text: True)
+    monkeypatch.setattr(cli, "is_in_sync", lambda *_: True)
     monkeypatch.setattr(cli, "build_app_bundle", fake_build_app_bundle)
     monkeypatch.setattr(cli, "sign_bundle_developer_id", lambda app, i, **kw: 12)
     monkeypatch.setattr(cli, "notarize_and_staple", lambda app, **kw: None)
@@ -127,18 +125,22 @@ def ios(desktop_project, monkeypatch):
 
     config = SimpleNamespace(
         app_slug="demo",
+        kivy=SimpleNamespace(app_dir="src"),
         # package -p ios names its copy in dist/ios from this.
         version_required=ResolvedVersion("1.0.0", source="static"),
         ios=SimpleNamespace(
             deployment_target="13.0",
             python_build_settings=None,
             signing=SimpleNamespace(auto_signing=True, upload_symbols=False),
+            include_files=(),
         ),
     )
     lock = SimpleNamespace(
         python_xcframework=SimpleNamespace(version="3.14.0"),
+        packages=(),
         swift_packages=(),
         xcframeworks=(),
+        include_files=(),
     )
 
     def fake_create_staging(config, project_root, *, echo, **kw):
@@ -147,11 +149,10 @@ def ios(desktop_project, monkeypatch):
     def fake_collect_artifacts(lock, layout, *, echo, **kw):
         echo("[collect] Python.xcframework")
 
-    monkeypatch.setattr(cli, "_require_macos_host", lambda: None)
     monkeypatch.setattr(cli, "_load_config", lambda pyproject: config)
     monkeypatch.setattr(cli, "with_version", lambda config, version: config)
     monkeypatch.setattr(cli, "_load_lock", lambda root: lock)
-    monkeypatch.setattr(cli, "is_in_sync", lambda lock, text: True)
+    monkeypatch.setattr(cli, "is_in_sync", lambda *_: True)
     monkeypatch.setattr(cli, "preflight_signing", lambda *a, **k: "TEAM123456")
     monkeypatch.setattr(cli, "preflight_profile", lambda *a: None)
     monkeypatch.setattr(cli, "create_staging", fake_create_staging)

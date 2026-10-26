@@ -223,8 +223,8 @@ class LinuxProfile(PlatformLockProfile):
         # emit the mandated no-glibc-promise warning (linux-spec coverage rule).
         return linux_wheel_coverage(wheel, archs)
 
-    def runtime_provider(self, config: Config) -> RuntimeProvider:
-        return PythonBuildStandaloneProvider()
+    def runtime_provider(self, config: Config, **progress) -> RuntimeProvider:
+        return PythonBuildStandaloneProvider(**progress)
 
     def declared_floor(self, config: Config) -> str | None:
         return config.linux_required.glibc_floor

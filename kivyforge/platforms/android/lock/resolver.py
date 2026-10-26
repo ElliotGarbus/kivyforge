@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Callable
@@ -32,8 +31,18 @@ from pathlib import Path
 from typing import Protocol
 
 from kivyforge.lock import _pip_shim
-from kivyforge.lock._pip_shim import MARKER_ENV_VAR
+from kivyforge.lock._pip_shim import (
+    MARKER_ENV_VAR,
+    SOURCE_FILTER_UNAVAILABLE,
+    SOURCE_POLICY_ENV_VAR,
+)
 from kivyforge.lock.model import canonical_name
+from kivyforge.lock.pip_progress import (
+    PROGRESS_ARGS,
+    PipProgress,
+    without_progress,
+)
+from kivyforge.lock.prefer import Pins, constraint_args
 from kivyforge.lock.resolver import (
     MIN_PIP_VERSION,
     abi_tags,
@@ -43,8 +52,16 @@ from kivyforge.lock.resolver import (
     unresolved_requirement,
     version_str,
 )
+from kivyforge.lock.sources import (
+    RECORD_KEY,
+    IndexTracker,
+    SourceFilterUnavailable,
+    SourcePolicy,
+    read_record,
+    source_policy,
+)
+from kivyforge.streaming import run_streaming
 
-from ..streaming import elapsed, run_streaming
 from .markers import android_marker_environment
 
 # Run by path, not ``-m``: the shim imports nothing from kivyforge, so it also
@@ -95,6 +112,8 @@ class Resolver(Protocol):
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
+        sources: SourcePolicy | None = None,
     ) -> list[ResolvedPackage]:
         """Resolve requirements to per-ABI Android wheels (all ABIs pinned)."""
         ...
@@ -129,6 +148,8 @@ class PipResolver:
         extra_index_urls: list[str],
         find_links: list[str] | None = None,
         offline: bool = False,
+        constraints: Pins | None = None,
+        sources: SourcePolicy | None = None,
     ) -> list[ResolvedPackage]:
         if not requirements:
             return []
@@ -136,6 +157,8 @@ class PipResolver:
         cp_abis = abi_tags(python_version)
         merged: dict[str, ResolvedPackage] = {}
         seen_filenames: dict[str, set[str]] = {}
+        policy = sources or source_policy(find_links or [], extra_index_urls)
+        indexes = IndexTracker()
 
         for abi in abis:
             # Markers are evaluated for the *target*, per ABI: platform_machine
@@ -154,11 +177,16 @@ class PipResolver:
                 extra_index_urls=extra_index_urls,
                 find_links=find_links or [],
                 offline=offline,
+                constraints=constraints,
                 marker_environment=environment,
+                sources=policy,
             )
             for item in report.get("install", []):
                 self._absorb(item, merged, seen_filenames, environment)
+            indexes.add(report)
 
+        for pkg in merged.values():
+            pkg.source_index = indexes.index_of(pkg.name)
         return list(merged.values())
 
     def _require_modern_pip(self) -> None:
@@ -229,10 +257,14 @@ class PipResolver:
         extra_index_urls: list[str],
         find_links: list[str],
         offline: bool,
+        constraints: Pins | None = None,
         marker_environment: dict[str, str],
+        sources: SourcePolicy | None = None,
     ) -> dict:
+        policy = sources or source_policy(find_links, extra_index_urls)
         with tempfile.TemporaryDirectory(prefix="kivy-lock-") as tmp:
             report_path = Path(tmp) / "report.json"
+            record_path = Path(tmp) / "sources.json"
             # Not "-m pip": the shim retargets marker evaluation at the Android
             # environment first, then runs pip unchanged (see _pip_shim.py).
             cmd = [
@@ -255,22 +287,23 @@ class PipResolver:
                 str(report_path),
                 # Machine-readable byte counts even when not on a terminal,
                 # which is the only way to show download progress (#84).
-                "--progress-bar",
-                "raw",
+                *PROGRESS_ARGS,
             ]
             for abi in abis:
                 cmd += ["--abi", abi]
-            for index in extra_index_urls:
+            for index in policy.extra_index_urls:
                 cmd += ["--extra-index-url", index]
             for link in find_links:
                 cmd += ["--find-links", link]
             if offline:
                 cmd += ["--no-index"]
+            cmd += constraint_args(Path(tmp), constraints or {})
             cmd += list(requirements)
 
             env = dict(os.environ)
             env[MARKER_ENV_VAR] = json.dumps(marker_environment)
-            progress = _PipProgress(
+            env[SOURCE_POLICY_ENV_VAR] = policy.environment(record_path)
+            progress = PipProgress(
                 label or platform_tag, self._on_progress, self._on_transfer
             )
             returncode, transcript = run_streaming(
@@ -279,16 +312,21 @@ class PipResolver:
                 on_segment=progress,
                 on_quiet=progress.quiet if self._on_progress else None,
             )
+            if returncode == SOURCE_FILTER_UNAVAILABLE:
+                raise SourceFilterUnavailable(without_progress(transcript).strip())
             if returncode != 0:
-                output = _without_progress(transcript)
+                output = without_progress(transcript)
                 culprit = unresolved_requirement(output)
+                fixed = culprit and policy.unavailable(culprit, platform_tag)
+                if fixed:
+                    raise fixed
                 what = (
                     f"no {platform_tag} wheel for {culprit!r}"
                     if culprit
                     else "a dependency has no android_* wheel for that ABI"
                 )
                 hints = []
-                if not any("kivy-mobile-wheels" in u for u in extra_index_urls):
+                if not any("kivy-mobile-wheels" in u for u in policy.extra_index_urls):
                     hints.append(
                         "  - If it is kivy or pyjnius, add the first-party mobile "
                         "wheel index under [tool.kivy.android]:\n"
@@ -308,66 +346,11 @@ class PipResolver:
             try:
                 # pip writes the report as UTF-8; never trust the locale codec
                 # (cp1252 on Windows chokes on non-ASCII package metadata).
-                return json.loads(report_path.read_text(encoding="utf-8"))
+                report = json.loads(report_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
                 raise ResolverError(f"could not read pip report: {exc}") from exc
-
-
-_DOWNLOADING = re.compile(r"^\s*Downloading (\S+)(?: \(([^)]+)\))?")
-_PROGRESS = re.compile(r"^Progress (\d+) of (\d+)$")
-
-
-class _PipProgress:
-    """Turn ``pip --progress-bar raw`` output into transfer events."""
-
-    def __init__(
-        self,
-        label: str,
-        on_progress: Callable[[str], None] | None,
-        on_transfer: Callable[[str, int, int, str], None] | None,
-    ) -> None:
-        self._label = label
-        self._on_progress = on_progress
-        self._on_transfer = on_transfer
-        self._current = ""
-
-    def __call__(self, segment: str) -> bool:
-        line = segment.strip()
-        downloading = _DOWNLOADING.match(line)
-        if downloading:
-            self._current = f"[lock] {self._label}: {_short_name(downloading.group(1))}"
-            return False
-        progress = _PROGRESS.match(line)
-        if progress and self._current and self._on_transfer is not None:
-            done, total = int(progress.group(1)), int(progress.group(2))
-            self._on_transfer(self._current, done, total, "bytes")
-            return True
-        return False
-
-    def quiet(self, seconds: float) -> None:
-        if self._on_progress is not None:
-            self._on_progress(
-                f"[lock] {self._label}: still resolving ({elapsed(seconds)})"
-            )
-
-
-def _short_name(url: str) -> str:
-    """``.../Kivy-2.3.1-cp314-cp314-android_24_arm64_v8a.whl`` -> ``Kivy-2.3.1``.
-
-    The ABI is already in the label, and the full filename does not fit beside
-    a bar in a narrow terminal.
-    """
-    filename = url.rsplit("/", 1)[-1]
-    if filename.endswith(".whl"):
-        return "-".join(filename.split("-")[:2])
-    return filename
-
-
-def _without_progress(transcript: str) -> str:
-    """pip's output for an error message, minus the raw byte-count lines."""
-    return "\n".join(
-        line for line in transcript.splitlines() if not _PROGRESS.match(line.strip())
-    )
+            report[RECORD_KEY] = read_record(record_path)
+            return report
 
 
 def get_resolver(backend: str = "pip", **kwargs) -> Resolver:

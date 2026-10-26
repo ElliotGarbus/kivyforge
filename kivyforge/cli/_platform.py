@@ -17,6 +17,7 @@ from click.core import ParameterSource
 
 from ..config import read_pyproject_text
 from ..platforms import (
+    HostCapabilityError,
     Platform,
     PlatformResolutionError,
     available_platform_names,
@@ -24,6 +25,7 @@ from ..platforms import (
 from ..platforms import (
     resolve_target as _resolve_target,
 )
+from ..report import Report, failures
 from ._common import ToolchainError, find_pyproject
 
 platform_option = click.option(
@@ -92,15 +94,32 @@ def reject_unread(
     )
 
 
+def require_host(backend: Platform) -> None:
+    """The one host gate: refuse a target this host cannot build.
+
+    Every verb that acts on a target reaches it through :func:`resolve_target`,
+    so the rule lives here rather than in each backend. ``init`` (writes config
+    for any platform) and ``doctor`` (whose job is to explain the host) resolve
+    their own targets and are deliberately not gated.
+    """
+    try:
+        backend.check_host()
+    except HostCapabilityError as exc:
+        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
+
+
 def resolve_target(
-    cli_platform: str | None, *, verb: str = "build"
+    cli_platform: str | None, *, verb: str = "build", report: Report | None = None
 ) -> tuple[Platform, Path]:
-    """Resolve the target platform and return it with the project root.
+    """Resolve the target platform, gate it on this host, and return it with
+    the project root.
 
     Looks for ``pyproject.toml`` in the CWD (like every verb), determines the
     configured overlays, and runs the resolution chain. ``verb`` names the
     calling CLI command so an unresolved-platform error's example command is
     accurate (e.g. ``kivyforge lock --platform ios``, not always ``build``).
+    ``report``, when given, has its platform set before the host gate runs, so
+    a ``KF-HOST-INCAPABLE`` envelope still names the target it refused.
     """
     pyproject = find_pyproject()
     try:
@@ -112,4 +131,7 @@ def resolve_target(
         )
     except PlatformResolutionError as exc:
         raise ToolchainError(str(exc)) from exc
+    if report is not None:
+        report.platform = backend.name
+    require_host(backend)
     return backend, pyproject.parent

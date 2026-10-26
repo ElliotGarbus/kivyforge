@@ -7,6 +7,10 @@ ad-hoc sign. Produces the layout documented in macos-spec:
 
     <Name>.app/Contents/{Info.plist, MacOS/<exe>,
                          Resources/{app,lib,python,<exe>.icns}}
+
+plus ``Helpers/`` and ``Frameworks/`` when ``native.binaries`` declares
+executables or libraries, and whatever ``include_files`` puts under
+``Resources/`` or ``SharedSupport/``.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import click
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
-from kivyforge.bundle import app_metadata
+from kivyforge.bundle import app_metadata, entry_launcher
 from kivyforge.bundle.pycompile import (
     PycompileError,
     byte_compile,
@@ -34,6 +38,7 @@ from kivyforge.report.failures import reclassify
 
 from . import AppBundleError
 from .icns import generate_icns
+from .includes import check_includes, stage_includes, verify_bundle
 from .launcher import build_launcher
 from .lock import MacosLockfile
 from .native_stage import stage_native_binaries
@@ -131,15 +136,22 @@ def build_app_bundle(
     no_cache: bool = False,
     cache: ArtifactCache | None = None,
     release: bool = False,
+    verify_lock: bool = True,
     echo=click.echo,
     note=discard_note,
 ) -> Path:
-    """Build the ``.app`` and return its path."""
+    """Build the ``.app`` and return its path.
+
+    With *verify_lock*, ``include_files`` must match the lock's pins.
+    """
     target_arch = resolve_assembly_arch(lock.archs, arch)
     cache = cache or ArtifactCache()
     staging_dir = staging_dir or (project_root / "build" / "macos")
     exe = config.app_slug
     app = staging_dir / f"{config.display_name}.app"
+    includes = check_includes(
+        config, project_root, lock.include_files if verify_lock else None
+    )
 
     # Assemble into a temp .app and swap it in only on success, so a failure
     # mid-assembly (e.g. a transient runtime/wheel fetch error, or a signing
@@ -180,18 +192,24 @@ def build_app_bundle(
             echo(f"Staging {len(lock.native_binaries)} native binaries ...")
             stage_native_binaries(
                 lock,
-                resources,
+                contents,
+                target_arch=target_arch,
                 project_root=project_root,
                 cache=cache,
                 no_cache=no_cache,
+                echo=echo,
+                note=note,
             )
 
         _copy_app_sources(config, project_root, resources / "app")
         icon_file = _stage_icon(config, project_root, resources, exe)
+        if includes:
+            echo(f"Staging {len(includes)} include_files ...")
+            stage_includes(includes, contents)
 
         build_launcher(
             contents / "MacOS" / exe,
-            entry_point=config.kivy.entry_point,
+            entry_point=entry_launcher.main_module(config.kivy),
             arch=target_arch,
         )
 
@@ -247,12 +265,22 @@ def build_app_bundle(
             echo("Ad-hoc signing the bundle ...")
             count = sign_bundle_adhoc(work)
             echo(f"  signed {count} Mach-O binaries + the bundle")
+        # Before the swap, so a bundle without its includes never replaces
+        # the last good one.
+        verify_bundle(config, project_root, work, artifact=_rel(app, project_root))
     except BaseException:
         shutil.rmtree(work, ignore_errors=True)
         raise
 
     swap_in(work, app)
     return app
+
+
+def _rel(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _copy_app_sources(config: Config, project_root: Path, dest: Path) -> None:
@@ -262,15 +290,18 @@ def _copy_app_sources(config: Config, project_root: Path, dest: Path) -> None:
             f"[tool.kivy].app_dir points to {config.kivy.app_dir!r}, which is not "
             f"a directory under {project_root}."
         )
-    entry = src / f"{config.kivy.entry_point}.py"
-    if not entry.is_file():
+    missing = entry_launcher.missing_entry_module(src, config.kivy)
+    if missing is not None:
         raise AppBundleError(
-            f"entry point {config.kivy.entry_point}.py not found in "
-            f"{config.kivy.app_dir}/ (set [tool.kivy].entry_point)."
+            entry_launcher.missing_entry_message(
+                config.kivy.app_dir, config.kivy, missing
+            )
         )
     shutil.copytree(src, dest, ignore=_IGNORE)
     # The app's own package metadata, in place of any development egg-info.
     app_metadata.install(dest, app_metadata.for_build(config))
+    # After the metadata, so top_level.txt does not list kivyforge's module.
+    entry_launcher.write_launcher(dest, config.kivy)
 
 
 def _stage_icon(

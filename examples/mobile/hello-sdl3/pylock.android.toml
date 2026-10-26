@@ -9,6 +9,7 @@ default-groups = []
 name = "certifi"
 version = "2026.7.22"
 requires-python = ">=3.7"
+index = "https://pypi.org/simple/"
 
 [[packages.wheels]]
 name = "certifi-2026.7.22-py3-none-any.whl"
@@ -19,6 +20,7 @@ hashes = { sha256 = "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c9929284
 name = "charset-normalizer"
 version = "3.5.2"
 requires-python = ">=3.7"
+index = "https://pypi.org/simple/"
 
 [[packages.wheels]]
 name = "charset_normalizer-3.5.2-cp314-cp314-android_24_arm64_v8a.whl"
@@ -33,6 +35,7 @@ hashes = { sha256 = "bbbfc8e28816f19d7c0f1816664980c0a9875d01b27cdf8eedddb639d9e
 [[packages]]
 name = "filetype"
 version = "1.2.0"
+index = "https://pypi.org/simple/"
 
 [[packages.wheels]]
 name = "filetype-1.2.0-py2.py3-none-any.whl"
@@ -43,6 +46,7 @@ hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1
 name = "idna"
 version = "3.20"
 requires-python = ">=3.9"
+index = "https://pypi.org/simple/"
 
 [[packages.wheels]]
 name = "idna-3.20-py3-none-any.whl"
@@ -54,6 +58,7 @@ name = "Kivy"
 version = "3.0.0.dev202607301604"
 requires-python = ">=3.11"
 dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }]
+index = "https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"
 
 [packages.tool.kivyforge]
 direct_requirement = true
@@ -71,6 +76,7 @@ hashes = { sha256 = "ff392aa4c5d311beb3280e36b9bfec3ebbc99e33c898c8c69c3c29e0584
 [[packages]]
 name = "pyjnius"
 version = "1.8.0"
+index = "https://pypi.org/simple/"
 
 [packages.tool.kivyforge]
 direct_requirement = true
@@ -90,6 +96,7 @@ name = "requests"
 version = "2.34.2"
 requires-python = ">=3.10"
 dependencies = [{ name = "charset_normalizer" }, { name = "idna" }, { name = "urllib3" }, { name = "certifi" }]
+index = "https://pypi.org/simple/"
 
 [[packages.wheels]]
 name = "requests-2.34.2-py3-none-any.whl"
@@ -100,6 +107,7 @@ hashes = { sha256 = "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e
 name = "urllib3"
 version = "2.8.0"
 requires-python = ">=3.10"
+index = "https://pypi.org/simple/"
 
 [[packages.wheels]]
 name = "urllib3-2.8.0-py3-none-any.whl"
@@ -109,8 +117,8 @@ hashes = { sha256 = "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
-generated_at = "2026-10-02T21:40:59Z"
-pyproject_sha256 = "952266f361a02ebeb17c8a614721de4a5798e6b19f8642f7f713d9da26e034ff"
+generated_at = "2026-10-22T23:04:42Z"
+lock_inputs_sha256 = "e53d852241790f5e492c7f03809827b3b3d55516e1a9f96342a450d8c360a5e5"
 tool_kivy_android_schema_version = 1
 kivy_generation = 3
 

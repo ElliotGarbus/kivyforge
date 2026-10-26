@@ -72,7 +72,13 @@ def sign_bundle_developer_id(
 
 
 def _machos_inside_out(app: Path) -> list[Path]:
-    """Every Mach-O under *app*, deepest paths first (containers sign last)."""
+    """Every Mach-O under *app*, deepest paths first (containers sign last).
+
+    ``Contents/MacOS/`` comes after everything else: codesign treats
+    ``Helpers/`` and ``Frameworks/`` as the main executable's nested code and
+    refuses to sign it while they are unsigned, and they are no deeper.
+    """
+    main = app / "Contents" / "MacOS"
     machos = [p for p in app.rglob("*") if is_macho(p)]
-    machos.sort(key=lambda p: len(p.parts), reverse=True)
+    machos.sort(key=lambda p: (p.parent == main, -len(p.parts)))
     return machos

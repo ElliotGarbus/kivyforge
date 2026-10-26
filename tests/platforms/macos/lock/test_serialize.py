@@ -17,7 +17,6 @@ def _build(text, tmp_path, **kw):
     )
     return build_macos_lockfile(
         cfg,
-        text,
         project_root=tmp_path,
         resolver=FakeMacosResolver(**kw),
         runtime_provider=FakeRuntimeProvider(floor="11.0"),

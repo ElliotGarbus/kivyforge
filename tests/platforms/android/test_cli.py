@@ -19,12 +19,11 @@ from pathlib import Path
 import pytest
 
 from kivyforge.build_outcome import ArtifactKind, BuildEvents
-from kivyforge.cli._common import ToolchainError
+from kivyforge.cli._common import ECHO_EVENTS, ToolchainError
 from kivyforge.config import load_config
 from kivyforge.config.model import ResolvedVersion
 from kivyforge.config.version import with_version
 from kivyforge.lock.model import LockedPackage, LockedWheel
-from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.platforms.android import AndroidBuildError, cli
 from kivyforge.platforms.android import adb as adb_mod
 from kivyforge.platforms.android import policy as policy_mod
@@ -52,6 +51,7 @@ from kivyforge.platforms.android.stage.runtime import RuntimeStageError
 from kivyforge.platforms.android.stage.wheels import WheelStageError
 from kivyforge.report import diagnostics, exit_codes
 from kivyforge.status import LockState
+from tests.lock_hash import inputs_sha
 
 PYPROJECT = """\
 [project]
@@ -156,7 +156,7 @@ def _write_lock(
         ),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(compute_pyproject_sha256(text) if in_sync else "0" * 64),
+        lock_inputs_sha256=(inputs_sha(text, "android") if in_sync else "0" * 64),
         tool_kivy_android_schema_version=1,
         kivy_generation=kivy_generation,
         include_files=tuple(include_files),
@@ -285,7 +285,9 @@ def _patch_collaborators(monkeypatch, *, downloads: Path, calls: dict):
         "androidtest_files": fake_androidtest_files,
         "finder_source": lambda: "",
         "kivy_bootstrap_source": lambda: "",
-        "selftest_source": lambda app_metadata=None: "",
+        "selftest_source": lambda app_metadata=None, *, launcher=None: (
+            calls.setdefault("selftest_launcher", []).append(launcher) or ""
+        ),
         "generate_manifest": fake_generate_manifest,
         "write_settings_gradle": lambda dest, android: None,
         "write_root_build_gradle": lambda dest, android: None,
@@ -505,6 +507,95 @@ class TestGeneratedServices:
         cli.android_build(project)
         assert not stale.exists()
         assert not probe.exists()
+
+
+_WITH_LAUNCHER = PYPROJECT.replace(
+    'abis = ["arm64_v8a"]',
+    'abis = ["arm64_v8a"]\nmain_activity = "org.example.demoapp.MainActivity"',
+)
+
+
+def _launcher_check(dest: Path) -> Path:
+    return (
+        dest
+        / "app"
+        / "src"
+        / "main"
+        / "java"
+        / "org"
+        / "kivy"
+        / "android"
+        / "KivyforgeLauncherCheck.java"
+    )
+
+
+class TestMainActivity:
+    """[tool.kivy.android].main_activity: the compile-time check and the launch."""
+
+    def _configure(self, project: Path) -> None:
+        (project / "pyproject.toml").write_text(_WITH_LAUNCHER, encoding="utf-8")
+        _write_lock(project)
+
+    def test_the_default_launcher_generates_no_check(self, build_env):
+        project, _ = build_env
+        (dest,) = _built_paths(cli.android_build(project), project)
+        assert not _launcher_check(dest).exists()
+
+    def test_a_configured_launcher_generates_the_check(self, build_env):
+        project, _ = build_env
+        self._configure(project)
+        (dest,) = _built_paths(cli.android_build(project), project)
+        source = _launcher_check(dest).read_text(encoding="utf-8")
+        assert "return new org.example.demoapp.MainActivity();" in source
+        assert "static PythonActivity launcher()" in source
+
+    def test_removing_the_key_removes_the_check(self, build_env):
+        """A check left behind would keep demanding a class the app may have
+        deleted, failing a build whose config no longer names it."""
+        project, _ = build_env
+        self._configure(project)
+        (dest,) = _built_paths(cli.android_build(project), project)
+        assert _launcher_check(dest).is_file()
+        (project / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+        _write_lock(project)
+        cli.android_build(project)
+        assert not _launcher_check(dest).exists()
+
+    def test_the_selftest_expects_the_configured_launcher(self, build_env):
+        project, calls = build_env
+        self._configure(project)
+        cli.android_build(project)
+        assert calls["selftest_launcher"][-1] == "org.example.demoapp.MainActivity"
+
+    def test_run_launches_the_configured_class(self, build_env, monkeypatch):
+        """`am start -n` names a component: the old fixed base class is not
+        exported once a subclass launches, and starting it would skip the
+        subclass's onCreate."""
+        project, _ = build_env
+        self._configure(project)
+        launched = []
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(
+            adb_mod, "launch", lambda dev, pkg, act: launched.append((pkg, act))
+        )
+        _fake_app(monkeypatch, log=[])
+        cli.android_run(project, version=None)
+        assert launched == [("org.example.demoapp", "org.example.demoapp.MainActivity")]
+
+    def test_run_launches_the_base_class_by_default(self, build_env, monkeypatch):
+        project, _ = build_env
+        launched = []
+        _fake_device(monkeypatch)
+        monkeypatch.setattr(adb_mod, "install_apk", lambda dev, apk: None)
+        monkeypatch.setattr(adb_mod, "logcat_clear", lambda dev: None)
+        monkeypatch.setattr(
+            adb_mod, "launch", lambda dev, pkg, act: launched.append(act)
+        )
+        _fake_app(monkeypatch, log=[])
+        cli.android_run(project, version=None)
+        assert launched == ["org.kivy.android.PythonActivity"]
 
 
 class TestGenerationSwitch:
@@ -1366,6 +1457,26 @@ class TestDistOutputName:
             project / "dist" / "android" / name
         )
 
+    @pytest.mark.parametrize(
+        ("abis", "abi", "fmt", "name"),
+        [
+            ('["arm64_v8a"]', None, "apk", "demoapp-1.0.0-debug.apk"),
+            ('["arm64_v8a"]', None, "aab", "demoapp-1.0.0-debug.aab"),
+            # -debug comes after the ABI.
+            (
+                '["arm64_v8a", "x86_64"]',
+                "x86_64",
+                "apk",
+                "demoapp-1.0.0-x86_64-debug.apk",
+            ),
+        ],
+    )
+    def test_debug_name(self, project, abis, abi, fmt, name):
+        config = self._config(project, abis)
+        assert cli._dist_output(project, config, abi, fmt, debug=True) == (
+            project / "dist" / "android" / name
+        )
+
     def test_local_version_segment_is_filename_safe(self, project):
         version = ResolvedVersion("0.1.dev3+g1a2b3c", source="override")
         config = self._config(project, '["arm64_v8a"]', version)
@@ -1527,6 +1638,74 @@ class TestAndroidPackage:
         monkeypatch.setattr(cli, "run_gradle", boom)
         with pytest.raises(ToolchainError, match="release build failed"):
             cli.android_package(project)
+
+
+class TestAndroidDebugPackage:
+    """``package --debug``: build --debug's artifact, copied into dist/ (5.2)."""
+
+    def _no_release_checks(self, monkeypatch):
+        # The fixture configures no signing, so resolve_signing would refuse;
+        # the release policy must not run either.
+        def refuse(*a, **kw):
+            raise AssertionError("release-only step ran for a debug package")
+
+        monkeypatch.setattr(signing_mod, "resolve_signing", refuse)
+        monkeypatch.setattr(policy_mod, "enforce_release_manifest", refuse)
+
+    @pytest.mark.parametrize(
+        ("fmt", "task", "kind", "gradle_out"),
+        [
+            ("apk", "assembleDebug", ArtifactKind.APK, "apk/debug/app-debug.apk"),
+            ("aab", "bundleDebug", ArtifactKind.AAB, "bundle/debug/app-debug.aab"),
+        ],
+    )
+    def test_copies_the_debug_artifact_into_dist(
+        self, build_env, monkeypatch, fmt, task, kind, gradle_out
+    ):
+        project, calls = build_env
+        self._no_release_checks(monkeypatch)
+        outcome = cli.android_package(project, fmt=fmt, debug=True)
+        published = Path("dist", "android", f"demoapp-1.0.0-debug.{fmt}")
+        assert [(a.path, a.kind) for a in outcome.artifacts] == [(published, kind)]
+        assert calls["run_gradle"] == [(task,)]
+        in_tree = project / "demoapp-android/app/build/outputs" / gradle_out
+        assert in_tree.read_bytes() == (project / published).read_bytes()
+
+    @pytest.mark.parametrize(
+        "signing", [{"keystore": "release.keystore"}, {"key_alias": "upload"}]
+    )
+    def test_release_signing_options_are_refused(self, build_env, signing):
+        project, calls = build_env
+        with pytest.raises(ToolchainError, match="cannot be used with --debug"):
+            cli.android_package(project, debug=True, **signing)
+        assert not calls["run_gradle"]
+
+    def test_the_platform_passes_debug_through(self, build_env, monkeypatch):
+        from kivyforge.platforms.android import AndroidPlatform
+
+        seen = {}
+
+        def fake_package(project_root, **kwargs):
+            seen.update(kwargs)
+
+        monkeypatch.setattr(cli, "android_package", fake_package)
+        project, _ = build_env
+        AndroidPlatform().package(
+            project,
+            events=ECHO_EVENTS,
+            version=_OVERRIDE,
+            fmt="apk",
+            arch=None,
+            team_id=None,
+            signing_identity=None,
+            export_method="app-store",
+            notarize=None,
+            notary_profile=None,
+            no_verify_lock=False,
+            no_cache=False,
+            debug=True,
+        )
+        assert seen["debug"] is True
 
 
 _CLEAN_MANIFEST = (
@@ -2074,14 +2253,18 @@ class TestAndroidSmoke:
     def test_the_version_reaches_the_build(self, build_env, monkeypatch):
         project, calls = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=_OVERRIDE)
         assert calls["write_app_build_gradle"][-1]["_version"] == _OVERRIDE
 
     def test_success(self, build_env, monkeypatch, capsys):
         project, calls = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None)
         assert "PASSED" in capsys.readouterr().out
 
@@ -2098,7 +2281,9 @@ class TestAndroidSmoke:
         project, _ = build_env
         _fake_device(monkeypatch)
         monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None, release=release)
         captured = capsys.readouterr()
         assert captured.out == "Contract smoke test PASSED.\n"
@@ -2112,7 +2297,7 @@ class TestAndroidSmoke:
         project, _ = build_env
         _fake_device(monkeypatch)
 
-        def boom(dest, *, release):
+        def boom(dest, *, device, release):
             raise smoke_mod.SmokeError("contract test failed")
 
         monkeypatch.setattr(smoke_mod, "run_smoke", boom)
@@ -2132,7 +2317,9 @@ class TestAndroidSmoke:
     def test_debug_smoke_leaves_the_test_variant_alone(self, build_env, monkeypatch):
         project, calls = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
         assert gradle_kwargs["test_build_type"] is None
@@ -2152,7 +2339,9 @@ class TestAndroidSmoke:
         project, calls = build_env
         _fake_device(monkeypatch)
         monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None, release=release)
         (bundle,) = calls["assemble_bundle"]
         assert bundle["byte_compile"] == compiled
@@ -2171,7 +2360,9 @@ class TestAndroidSmoke:
         monkeypatch.setattr(
             smoke_mod,
             "run_smoke",
-            lambda dest, *, release: seen.update(release=release),
+            lambda dest, *, device, release: seen.update(
+                release=release, device=device
+            ),
         )
         cli.android_smoke(project, version=None, release=True)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
@@ -2179,6 +2370,22 @@ class TestAndroidSmoke:
         assert gradle_kwargs["release_signing_config"] == "debug"
         assert seen["release"] is True
         assert "debug keystore" in capsys.readouterr().err
+
+    def test_the_test_runs_on_the_device_the_probe_was_built_for(
+        self, build_env, monkeypatch
+    ):
+        """The probe is built for the resolved device's ABI, so the test must
+        run there and only there, not on every attached device."""
+        project, _ = build_env
+        _fake_device(monkeypatch, serial="56051JEKB16396")
+        seen = {}
+        monkeypatch.setattr(
+            smoke_mod,
+            "run_smoke",
+            lambda dest, *, device, release: seen.update(device=device),
+        )
+        cli.android_smoke(project, version=None)
+        assert seen["device"] == "56051JEKB16396"
 
     def test_release_smoke_prefers_the_configured_release_identity(
         self, project, monkeypatch, tmp_path
@@ -2198,7 +2405,9 @@ class TestAndroidSmoke:
         _patch_collaborators(monkeypatch, downloads=tmp_path / "dl", calls=calls)
         monkeypatch.setattr(signing_mod, "_verify_alias", lambda *a, **kw: None)
         _fake_device(monkeypatch)
-        monkeypatch.setattr(smoke_mod, "run_smoke", lambda dest, *, release: None)
+        monkeypatch.setattr(
+            smoke_mod, "run_smoke", lambda dest, *, device, release: None
+        )
         cli.android_smoke(project, version=None, release=True)
         gradle_kwargs = calls["write_app_build_gradle"][-1]
         assert gradle_kwargs["release_signing_config"] == "release"

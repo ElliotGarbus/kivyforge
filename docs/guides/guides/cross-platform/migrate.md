@@ -94,6 +94,13 @@ recipes, the replacement is an Apple framework that you call through
     staged with `include_files`. See
     [Add Android resources](../android/configure.md#add-android-resources).
 
+    If `android.entrypoint` names your own subclass of
+    `org.kivy.android.PythonActivity`, set `main_activity` to it, and list its
+    source directory under `[tool.kivy.android.src]`. See
+    [Run Java when the activity is created](../android/java-libraries.md#run-java-when-the-activity-is-created).
+    `android.activity_class_name` needs no setting: the bundled `android`
+    package reaches your activity through `PythonActivity.mActivity`.
+
 5. Set `kivy_generation` to match your Kivy version: `2` for Kivy 2.3.1 on SDL2,
    or `3` for Kivy 3.0 on SDL3.
 
@@ -119,7 +126,14 @@ Only 64-bit ABIs are supported: `arm64_v8a` and `x86_64`. The 32-bit
 You need a Mac to build for iOS.
 
 1. Create a `pyproject.toml` with a `[project]` table, listing your dependencies.
-   iOS builds use Kivy 3.0.
+   Kivy 3 is required on iOS: a `kivy` requirement that admits only 2.x, such
+   as `kivy<3`, fails `kivyforge lock -p ios` with `KF-IOS-KIVY-UNSUPPORTED`;
+   kivy-ios serves Kivy 2.x.
+
+    The kivy-ios `ios` module is not provided either. If your app imports it,
+    `kivyforge build -p ios` warns with `KF-IOS-LEGACY-IOS-MODULE`. Kivy 3 and
+    the standard library replace each function. See
+    [Replace the kivy-ios ios module](../ios/ios-module.md).
 
 2. Seed the kivyforge tables:
 

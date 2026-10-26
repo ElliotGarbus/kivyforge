@@ -7,11 +7,14 @@ best-effort source line located by scanning the raw text.
 
 from __future__ import annotations
 
+import dataclasses
+import difflib
 import keyword
 import posixpath
 import re
 import tomllib
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import urlparse
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
@@ -19,6 +22,8 @@ from packaging.version import InvalidVersion, Version
 from .errors import ConfigError
 from .keys import UnknownKey, find_unknown_keys, overlay_suggestion
 from .model import (
+    ANDROID_BOOTSTRAP_ACTIVITY,
+    ANDROID_BOOTSTRAP_NAMESPACES,
     ANDROID_MIN_SDK_FLOOR,
     ANDROID_RELEASE_ONLY,
     ANDROID_VERSION_CODE_CEILING,
@@ -32,6 +37,7 @@ from .model import (
     DEFAULT_BUILD_BACKEND,
     DEFAULT_DEPLOYMENT_TARGET,
     DEFAULT_DESKTOP_CATEGORIES,
+    DEFAULT_ENTRY_POINT,
     DEFAULT_LINUX_ARCHS,
     DEFAULT_MACOS_ARCHS,
     DEFAULT_SIMULATOR_ARCHS,
@@ -70,7 +76,6 @@ from .model import (
     AndroidFeature,
     AndroidGradleConfig,
     AndroidIconConfig,
-    AndroidIncludeFile,
     AndroidIntentFilter,
     AndroidManifestConfig,
     AndroidNotification,
@@ -89,12 +94,14 @@ from .model import (
     DynamicVersion,
     EntryPoint,
     IconConfig,
+    IncludeFile,
     IosConfig,
     KivyMeta,
     LinuxConfig,
     MacosConfig,
     MacosSigningConfig,
     NativeBinaryDep,
+    PackageIndex,
     ProjectMeta,
     SigningConfig,
     SplashConfig,
@@ -103,6 +110,7 @@ from .model import (
     WindowsConfig,
     WindowsSigningConfig,
     XcframeworkDep,
+    foreign_namespace_attr,
 )
 from .version import android_auto_version_code, normalized
 
@@ -134,9 +142,7 @@ def read_pyproject_text(path: str | Path) -> str:
     """``pyproject.toml`` as text, without a leading byte-order mark.
 
     tomllib rejects a BOM, and some editors and PowerShell's ``-Encoding utf8``
-    write one. Every reader goes through here because the lock's
-    ``pyproject_sha256`` hashes this text: a site that kept the BOM would see a
-    freshly locked file as drifted.
+    write one, so every reader goes through here.
     """
     return Path(path).read_text(encoding="utf-8-sig")
 
@@ -226,12 +232,32 @@ def load_config_from_text(
     finder = _LineFinder(text)
     project = _parse_project(raw, finder)
     _reject_unknown_keys(raw, finder)
-    kivy = _parse_kivy(raw, finder)
+    kivy = _parse_kivy(raw, finder, project)
     ios = _parse_ios(raw, finder, project, project_root=project_root)
     macos = _parse_macos(raw, finder, project, project_root=project_root)
     linux = _parse_linux(raw, finder, project, project_root=project_root)
     windows = _parse_windows(raw, finder, project, project_root=project_root)
     android = _parse_android(raw, finder, project, project_root=project_root)
+
+    overlays = raw["tool"]["kivy"]
+    if ios is not None:
+        ios = _with_sources(ios, overlays.get("ios"), finder, platform="ios", kivy=kivy)
+    if macos is not None:
+        macos = _with_sources(
+            macos, overlays.get("macos"), finder, platform="macos", kivy=kivy
+        )
+    if linux is not None:
+        linux = _with_sources(
+            linux, overlays.get("linux"), finder, platform="linux", kivy=kivy
+        )
+    if windows is not None:
+        windows = _with_sources(
+            windows, overlays.get("windows"), finder, platform="windows", kivy=kivy
+        )
+    if android is not None:
+        android = _with_sources(
+            android, overlays.get("android"), finder, platform="android", kivy=kivy
+        )
 
     if ios is None and require_ios:
         raise ConfigError(
@@ -625,7 +651,7 @@ def _parse_project_version(
 # --------------------------------------------------------------------------- #
 # [tool.kivy]
 # --------------------------------------------------------------------------- #
-def _parse_kivy(raw: dict, finder: _LineFinder) -> KivyMeta:
+def _parse_kivy(raw: dict, finder: _LineFinder, project: ProjectMeta) -> KivyMeta:
     tool = raw.get("tool", {})
     kivy = tool.get("kivy") if isinstance(tool, dict) else None
     if not isinstance(kivy, dict):
@@ -637,18 +663,190 @@ def _parse_kivy(raw: dict, finder: _LineFinder) -> KivyMeta:
 
     app_dir = _validate_app_dir(kivy.get("app_dir"), finder)
 
-    entry_point = kivy.get("entry_point", "main")
-    _validate_entry_point(entry_point, finder)
+    if "entry_point" in kivy:
+        entry_point, entry_function = _validate_entry_point(kivy["entry_point"], finder)
+        entry_origin = "[tool.kivy].entry_point"
+    else:
+        entry_point, entry_function, entry_origin = _gui_script_entry_point(
+            project, finder
+        )
 
     orientation = kivy.get("orientation", ["portrait"])
     _validate_orientation(orientation, finder)
+
+    indexes = _parse_indexes(kivy, finder)
+    sources = _parse_sources(
+        kivy, finder, key_path="tool.kivy.sources", indexes=indexes
+    )
 
     return KivyMeta(
         app_dir=app_dir,
         display_name=kivy.get("display_name"),
         entry_point=entry_point,
         orientation=tuple(orientation),
+        entry_function=entry_function,
+        entry_origin=entry_origin,
+        indexes=indexes,
+        sources=tuple(sorted(sources.items())),
     )
+
+
+#: Index names: letters, digits, ``.``, ``_`` and ``-`` (#86, as uv's).
+_INDEX_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _parse_indexes(kivy: dict, finder: _LineFinder) -> tuple[PackageIndex, ...]:
+    """``[[tool.kivy.index]]``: named package indexes (#86)."""
+    raw = kivy.get("index", [])
+    line = finder.line("[[tool.kivy.index]]") or finder.line("index")
+    if not isinstance(raw, list) or not all(isinstance(e, dict) for e in raw):
+        raise ConfigError(
+            "[[tool.kivy.index]] must be an array of tables, each with a name "
+            "and a url",
+            key_path="tool.kivy.index",
+            line=line,
+        )
+    out: list[PackageIndex] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(raw):
+        key_path = f"tool.kivy.index[{i}]"
+        name = entry.get("name")
+        if not isinstance(name, str) or not _INDEX_NAME_RE.match(name):
+            raise ConfigError(
+                f"[[tool.kivy.index]] entry {i + 1} needs a name made of "
+                "letters, digits, '.', '_' and '-'",
+                key_path=f"{key_path}.name",
+                line=line,
+            )
+        if name.lower() == "pypi":
+            raise ConfigError(
+                "'pypi' is a reserved index name: it always means "
+                "https://pypi.org/simple/, so you can pin a package to it "
+                "without declaring it",
+                key_path=f"{key_path}.name",
+                line=line,
+            )
+        if name in seen:
+            raise ConfigError(
+                f"two [[tool.kivy.index]] entries are named {name!r}",
+                key_path=f"{key_path}.name",
+                line=line,
+            )
+        seen.add(name)
+        url = entry.get("url")
+        if not isinstance(url, str):
+            raise ConfigError(
+                f"index {name!r} needs a url",
+                key_path=f"{key_path}.url",
+                line=line,
+            )
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ConfigError(
+                f"index {name!r} has url {url!r}; it must be an http:// or "
+                "https:// simple-index URL",
+                key_path=f"{key_path}.url",
+                line=line,
+            )
+        if parsed.username or parsed.password:
+            raise ConfigError(
+                f"index {name!r} has a username or password in its url. The url "
+                "is written into the lock file, so it cannot carry credentials",
+                key_path=f"{key_path}.url",
+                line=line,
+            )
+        explicit = entry.get("explicit", False)
+        if not isinstance(explicit, bool):
+            raise ConfigError(
+                f"index {name!r}: explicit must be true or false",
+                key_path=f"{key_path}.explicit",
+                line=line,
+            )
+        out.append(PackageIndex(name=name, url=url, explicit=explicit))
+    return tuple(out)
+
+
+def _parse_sources(
+    table: dict,
+    finder: _LineFinder,
+    *,
+    key_path: str,
+    indexes: tuple[PackageIndex, ...],
+) -> dict[str, str]:
+    """A ``sources`` table: package name to ``{ index = "<name>" }`` (#86)."""
+    raw = table.get("sources", {})
+    line = finder.table_line(*key_path.split(".")) or finder.line("sources")
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f'[{key_path}] must be a table of package = {{ index = "NAME" }}',
+            key_path=key_path,
+            line=line,
+        )
+    names = ["pypi", *(i.name for i in indexes)]
+    out: dict[str, str] = {}
+    for package, value in raw.items():
+        where = f"{key_path}.{package}"
+        if isinstance(value, dict):
+            unsupported = [k for k in value if k != "index"]
+            if unsupported:
+                raise ConfigError(
+                    f"[{key_path}] {package} uses {unsupported[0]!r}; kivyforge "
+                    'takes only { index = "NAME" }. It locks prebuilt wheels '
+                    "from indexes and find_links, never from git, a URL or a "
+                    "source path, and a platform's own sources table takes the "
+                    "place of uv's marker",
+                    key_path=where,
+                    line=line,
+                )
+            index = value.get("index")
+        else:
+            index = None
+        if not isinstance(index, str):
+            raise ConfigError(
+                f'[{key_path}] {package} must be {{ index = "NAME" }}',
+                key_path=where,
+                line=line,
+            )
+        if index not in names:
+            close = difflib.get_close_matches(index, names, n=1)
+            raise ConfigError(
+                f"[{key_path}] pins {package} to index {index!r}, which is not "
+                "declared in [[tool.kivy.index]] and is not 'pypi'",
+                key_path=where,
+                line=line,
+                hint=f"did you mean {close[0]!r}?" if close else None,
+            )
+        out[_canonical_name(package)] = index
+    return out
+
+
+def _with_sources(
+    overlay, table: object, finder: _LineFinder, *, platform: str, kivy: KivyMeta
+):
+    """``overlay`` with its effective ``indexes`` and ``sources`` (#86).
+
+    The shared pins overlaid name by name with the overlay's own; the
+    non-explicit named indexes, plus the explicit ones those pins name. Kept
+    precise because both are lock inputs: a pin for one platform must not stale
+    another platform's lock.
+    """
+    own = _parse_sources(
+        table if isinstance(table, dict) else {},
+        finder,
+        key_path=f"tool.kivy.{platform}.sources",
+        indexes=kivy.indexes,
+    )
+    pins = {**dict(kivy.sources), **own}
+    named = set(pins.values())
+    indexes = tuple(i for i in kivy.indexes if not i.explicit or i.name in named)
+    return dataclasses.replace(
+        overlay, indexes=indexes, sources=tuple(sorted(pins.items()))
+    )
+
+
+def _canonical_name(name: str) -> str:
+    """PEP 503 normalization, as the lock compares package names."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _validate_app_dir(app_dir: object, finder: _LineFinder) -> str:
@@ -689,22 +887,109 @@ def _validate_app_dir(app_dir: object, finder: _LineFinder) -> str:
     return app_dir
 
 
-def _validate_entry_point(entry_point: object, finder: _LineFinder) -> None:
-    # Rule 5: entry_point must be a valid (dotted) Python identifier.
+def _validate_entry_point(
+    entry_point: object, finder: _LineFinder
+) -> tuple[str, str | None]:
+    """Rule 5: a (dotted) module, optionally ``:object.attr`` -- (module, object).
+
+    Without the ``:`` the module runs as ``__main__``, as it always has; with
+    it, the object is called as an installed script calls it (issue #68).
+    """
     if not isinstance(entry_point, str) or entry_point == "":
         raise ConfigError(
             "[tool.kivy].entry_point must be a non-empty string",
             key_path="tool.kivy.entry_point",
             line=finder.line("entry_point"),
         )
-    parts = entry_point.split(".")
-    if not all(p.isidentifier() and not keyword.iskeyword(p) for p in parts):
+    module, _, function = entry_point.partition(":")
+    if not _is_dotted_identifier(module) or (
+        ":" in entry_point and not _is_dotted_identifier(function)
+    ):
         raise ConfigError(
-            f"entry_point {entry_point!r} is not a valid dotted Python identifier",
+            f"entry_point {entry_point!r} is not a valid dotted Python identifier, "
+            "optionally followed by :function",
             key_path="tool.kivy.entry_point",
             line=finder.line("entry_point"),
-            hint='e.g. "main" for src/main.py, or "pkg.start" for src/pkg/start.py.',
+            hint='e.g. "main" to run src/main.py as __main__, or "pkg.app:main" '
+            "to call main() from src/pkg/app.py.",
         )
+    return module, (function if ":" in entry_point else None)
+
+
+def _is_dotted_identifier(text: str) -> bool:
+    return all(p.isidentifier() and not keyword.iskeyword(p) for p in text.split("."))
+
+
+#: An object reference's optional extras, which a script ignores (the
+#: entry-points spec: consumers "may then ignore them").
+_EXTRAS = re.compile(r"\s*\[[^\]]*\]\s*$")
+
+
+def script_entry_point(value: str) -> str:
+    """A script's object reference as ``entry_point`` takes it.
+
+    The spec lets a reference carry extras and spaces around the colon
+    (``"pkg.app : main [gui]"``); ``entry_point`` takes neither. Used for the
+    suggestion in a config error and by ``kivyforge init``.
+    """
+    return "".join(_EXTRAS.sub("", value).split())
+
+
+def _gui_script_entry_point(
+    project: ProjectMeta, finder: _LineFinder
+) -> tuple[str, str | None, str]:
+    """With no ``entry_point``: the only ``[project.gui-scripts]`` entry.
+
+    ``[project.scripts]`` is a console script, which no kivyforge app is, so it
+    is never read. Without gui-scripts the default ``main`` holds, as before.
+    """
+    gui_scripts = [e for e in project.entry_points if e.group == "gui_scripts"]
+    line = finder.table_line("project", "gui-scripts") or finder.line("gui-scripts")
+    example = script_entry_point(gui_scripts[0].value) if gui_scripts else ""
+    hint = (
+        "set [tool.kivy].entry_point to the one kivyforge should start, e.g. "
+        f'entry_point = "{example}"'
+    )
+    if gui_scripts and "gui-scripts" in project.dynamic:
+        raise ConfigError(
+            "[project].dynamic lists gui-scripts, so the build backend may add "
+            "entries kivyforge cannot see, and [tool.kivy].entry_point is not set",
+            key_path="tool.kivy.entry_point",
+            line=line,
+            hint=hint + ".",
+        )
+    if not gui_scripts:
+        return DEFAULT_ENTRY_POINT, None, "[tool.kivy].entry_point"
+    if len(gui_scripts) > 1:
+        names = ", ".join(e.name for e in gui_scripts)
+        raise ConfigError(
+            f"[project.gui-scripts] has {len(gui_scripts)} entries ({names}) and "
+            "[tool.kivy].entry_point is not set",
+            key_path="tool.kivy.entry_point",
+            line=line,
+            hint=hint + "; an app starts one entry point.",
+        )
+    entry = gui_scripts[0]
+    origin = f"[project.gui-scripts] {entry.name}"
+    reference = _EXTRAS.sub("", entry.value)
+    module, colon, function = (p.strip() for p in reference.partition(":"))
+    if not colon:
+        raise ConfigError(
+            f"{origin} = {entry.value!r} names a module, not a function",
+            key_path="project.gui-scripts",
+            line=finder.key_line(entry.name, after=line) or line,
+            hint="a script names the function it calls (module:function, the "
+            "entry-points spec). To run the module as __main__ instead, set "
+            f'[tool.kivy].entry_point = "{module}".',
+        )
+    if not _is_dotted_identifier(module) or not _is_dotted_identifier(function):
+        raise ConfigError(
+            f"{origin} = {entry.value!r} is not a valid module:function reference",
+            key_path="project.gui-scripts",
+            line=finder.key_line(entry.name, after=line) or line,
+            hint='e.g. "pkg.app:main" to call main() from pkg/app.py.',
+        )
+    return module, function, origin
 
 
 def _validate_orientation(orientation: object, finder: _LineFinder) -> None:
@@ -838,6 +1123,9 @@ def _parse_ios(
     python_build_settings = _parse_ios_python_build_settings(ios, finder)
     privacy_source = _parse_privacy(ios)
     entitlements = _parse_entitlements(ios)
+    include_files = _parse_include_files(
+        ios, platform="ios", root_name=".app", project_root=project_root
+    )
 
     return IosConfig(
         schema_version=schema_version,
@@ -859,6 +1147,7 @@ def _parse_ios(
         info_plist=info_plist,
         build_settings=build_settings,
         python_build_settings=python_build_settings,
+        include_files=tuple(include_files),
     )
 
 
@@ -964,6 +1253,13 @@ def _parse_macos(
     build_settings = _parse_desktop_build_settings(
         macos.get("build_settings"), "tool.kivy.macos.build_settings", finder
     )
+    include_files = _parse_include_files(
+        macos,
+        platform="macos",
+        root_name="bundle's Contents/",
+        project_root=project_root,
+        allowed_roots=MACOS_INCLUDE_ROOTS,
+    )
 
     return MacosConfig(
         schema_version=schema_version,
@@ -980,6 +1276,7 @@ def _parse_macos(
         signing=signing,
         binaries=tuple(binaries),
         build_settings=build_settings,
+        include_files=tuple(include_files),
     )
 
 
@@ -1459,7 +1756,7 @@ def _parse_windows_signing(windows: dict, finder: _LineFinder) -> WindowsSigning
 
 
 # --------------------------------------------------------------------------- #
-# [tool.kivy.android]  (android/01, validation rules 1-21)
+# [tool.kivy.android]  (android/01, validation rules 1-22)
 # --------------------------------------------------------------------------- #
 
 _JAVA_IDENT_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
@@ -1529,6 +1826,7 @@ def _parse_android(
         field="fullscreen",
         finder=finder,
     )
+    main_activity = _parse_android_main_activity(android, finder)
 
     python = _parse_android_python(android, finder)
     _check_requires_python_generic(
@@ -1544,10 +1842,13 @@ def _parse_android(
     aars = _parse_android_archives(android, "aars", finder)
     jars = _parse_android_archives(android, "jars", finder)
     gradle = _parse_android_gradle(android, finder)
-    include_files = _parse_android_include_files(
-        android, finder, project_root=project_root
+    include_files = _parse_include_files(
+        android,
+        platform="android",
+        root_name="generated project",
+        project_root=project_root,
     )
-    src = _parse_android_src(android, finder)
+    src = _parse_android_src(android, finder, project_root=project_root)
     services = _parse_android_services(android, finder)
     activities = _parse_android_activities(android, finder)
     intent_filters = _parse_android_intent_filters(android, finder)
@@ -1571,6 +1872,7 @@ def _parse_android(
         exclude=tuple(exclude),
         base_theme=base_theme,
         fullscreen=fullscreen,
+        main_activity=main_activity,
         python=python,
         permissions=permissions,
         icons=icons,
@@ -1609,6 +1911,56 @@ def _validate_android_package(package: object, finder: _LineFinder) -> str:
             '"org.example.myapp".',
         )
     return package
+
+
+def _parse_android_main_activity(android: dict, finder: _LineFinder) -> str | None:
+    # Rule 22: a fully qualified top-level class outside the bootstrap's
+    # packages; the default spelled out means the default.
+    raw = android.get("main_activity")
+    if raw is None or raw == ANDROID_BOOTSTRAP_ACTIVITY:
+        return None
+    key_path = "tool.kivy.android.main_activity"
+    line = finder.line("main_activity")
+    package = android.get("package") or "org.example.myapp"
+    segments = raw.split(".") if isinstance(raw, str) else []
+    if len(segments) < 2 or not all(_JAVA_IDENT_RE.match(s) for s in segments):
+        if isinstance(raw, str) and raw.startswith("."):
+            hint = (
+                "write the full class name: kivyforge writes the manifest, so "
+                "nothing resolves the leading-dot shorthand. e.g. "
+                f'main_activity = "{package}{raw}".'
+            )
+        else:
+            hint = f'e.g. main_activity = "{package}.MainActivity".'
+        raise ConfigError(
+            f"[tool.kivy.android].main_activity {raw!r} is not a fully qualified "
+            "Java class name",
+            key_path=key_path,
+            line=line,
+            hint=hint,
+        )
+    if "$" in raw:
+        # The manifest names a nested class Outer$Inner and Java source names
+        # it Outer.Inner, so the compile-time check could not name the class
+        # the manifest launches.
+        raise ConfigError(
+            f"[tool.kivy.android].main_activity {raw!r} names a nested class",
+            key_path=key_path,
+            line=line,
+            hint="the launcher must be a top-level class, e.g. "
+            f'main_activity = "{package}.MainActivity".',
+        )
+    for namespace in ANDROID_BOOTSTRAP_NAMESPACES:
+        if segments[: namespace.count(".") + 1] == namespace.split("."):
+            raise ConfigError(
+                f"[tool.kivy.android].main_activity {raw!r} is in {namespace}, "
+                "a package the generated bootstrap owns",
+                key_path=key_path,
+                line=line,
+                hint="put your subclass of org.kivy.android.PythonActivity in "
+                f'your app\'s own package, e.g. "{package}.MainActivity".',
+            )
+    return raw
 
 
 def _parse_android_build_counter(android: dict, finder: _LineFinder) -> int:
@@ -2152,23 +2504,34 @@ def _parse_android_gradle_plugins(
     return tuple(out)
 
 
-def _parse_android_include_files(
-    android: dict, finder: _LineFinder, *, project_root: Path | None
-) -> list[AndroidIncludeFile]:
-    # Rule 18: dest inside the generated project, sources repo-relative and
-    # present; generated-file clobber protection is enforced at build time
-    # against the generator's own manifest of emitted files.
-    entries = android.get("include_files")
+#: Where a macOS include may go, under ``Contents/``: the two places Apple
+#: documents for data (include-files-proposal §4.5). Anything else is a code
+#: location, or a place ``codesign`` refuses data.
+MACOS_INCLUDE_ROOTS = ("Resources", "SharedSupport")
+
+
+def _parse_include_files(
+    table: dict,
+    *,
+    platform: str,
+    root_name: str,
+    project_root: Path | None,
+    allowed_roots: tuple[str, ...] = (),
+) -> list[IncludeFile]:
+    # Rule 18: dest inside the platform's root, sources repo-relative and
+    # present; reserved paths are refused at build time against the
+    # generator's own outputs.
+    entries = table.get("include_files")
     if entries is None:
         return []
     if not isinstance(entries, list):
         raise ConfigError(
-            "[[tool.kivy.android.include_files]] must be an array of tables",
-            key_path="tool.kivy.android.include_files",
+            f"[[tool.kivy.{platform}.include_files]] must be an array of tables",
+            key_path=f"tool.kivy.{platform}.include_files",
         )
-    out: list[AndroidIncludeFile] = []
+    out: list[IncludeFile] = []
     for i, entry in enumerate(entries):
-        key_path = f"tool.kivy.android.include_files[{i}]"
+        key_path = f"tool.kivy.{platform}.include_files[{i}]"
         if not isinstance(entry, dict):
             raise ConfigError(f"{key_path} must be a table", key_path=key_path)
         dest = entry.get("dest")
@@ -2179,8 +2542,17 @@ def _parse_android_include_files(
             )
         if _is_absolute_source(dest) or _posix_normpath(dest).startswith(".."):
             raise ConfigError(
-                f"{key_path}.dest must stay inside the generated project: {dest!r}",
+                f"{key_path}.dest must stay inside the {root_name}: {dest!r}",
                 key_path=f"{key_path}.dest",
+            )
+        if allowed_roots and _posix_normpath(dest).split("/")[0] not in allowed_roots:
+            raise ConfigError(
+                f"{key_path}.dest must start with "
+                f"{' or '.join(allowed_roots)}: {dest!r}",
+                key_path=f"{key_path}.dest",
+                hint="these are the places Apple documents for data in a bundle; "
+                "codesign refuses a data file in a code location such as MacOS/ "
+                "or Frameworks/.",
             )
         sources = entry.get("sources")
         if (
@@ -2203,11 +2575,13 @@ def _parse_android_include_files(
                     f"{key_path}.sources entry does not exist: {src!r}",
                     key_path=f"{key_path}.sources",
                 )
-        out.append(AndroidIncludeFile(dest=dest, sources=tuple(sources)))
+        out.append(IncludeFile(dest=dest, sources=tuple(sources)))
     return out
 
 
-def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
+def _parse_android_src(
+    android: dict, finder: _LineFinder, *, project_root: Path | None = None
+) -> AndroidSrcConfig:
     table = android.get("src")
     if table is None:
         return AndroidSrcConfig()
@@ -2232,6 +2606,18 @@ def _parse_android_src(android: dict, finder: _LineFinder) -> AndroidSrcConfig:
                 finder=finder,
                 key=key,
             )
+            # Gradle treats a missing srcDir as empty, so a typo here would
+            # build green with the classes absent from the APK.
+            root = project_root / path if project_root is not None else None
+            if root is not None and not root.is_dir():
+                what = "is not a directory" if root.exists() else "does not exist"
+                raise ConfigError(
+                    f"[tool.kivy.android.src].{key} entry {path!r} {what}",
+                    key_path=f"tool.kivy.android.src.{key}",
+                    line=finder.line(key),
+                    hint="the path is relative to the project root; Gradle "
+                    "would compile nothing from a missing one.",
+                )
         return tuple(raw)
 
     return AndroidSrcConfig(java=_roots("java"), kotlin=_roots("kotlin"))
@@ -2455,13 +2841,33 @@ def _parse_android_manifest(
             )
         collisions = sorted(set(raw) & managed)
         if collisions:
+            hint = (
+                "these are written from the schema (android/01 §managed "
+                "manifest keys); set the controlling field instead."
+            )
+            if key == "activity" and "android:name" in collisions:
+                hint += (
+                    " The main <activity>'s android:name is "
+                    "[tool.kivy.android].main_activity."
+                )
             raise ConfigError(
                 f"[tool.kivy.android.manifest].{key} sets kivyforge-managed "
                 f"attribute(s): {collisions}",
                 key_path=f"tool.kivy.android.manifest.{key}",
-                hint="these are written from the schema (android/01 §managed "
-                "manifest keys); set the controlling field instead.",
+                hint=hint,
             )
+        # The generated root declares xmlns:tools so the raw-XML fragments can
+        # carry merger directives; the attribute tables are not the place for
+        # them (a tools:node="remove" on the launcher would delete the app's
+        # entry point).
+        for attr in sorted(raw):
+            reason = foreign_namespace_attr(attr)
+            if reason is not None:
+                raise ConfigError(
+                    f"[tool.kivy.android.manifest].{key}: {reason}",
+                    key_path=f"tool.kivy.android.manifest.{key}",
+                    line=finder.line(key),
+                )
         return dict(raw)
 
     application = _attrs("application", MANAGED_ANDROID_APPLICATION_ATTRS)
@@ -2500,9 +2906,13 @@ def _parse_android_manifest(
         if fragment.strip():
             import xml.etree.ElementTree as ET
 
+            # The same two namespaces the generated <manifest> root declares,
+            # so a fragment is checked against exactly what it will be
+            # emitted into.
             wrapped = (
                 "<kivyforge xmlns:android="
-                '"http://schemas.android.com/apk/res/android">'
+                '"http://schemas.android.com/apk/res/android" '
+                'xmlns:tools="http://schemas.android.com/tools">'
                 f"{fragment}</kivyforge>"
             )
             try:

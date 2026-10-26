@@ -35,14 +35,14 @@ class ClassifiedError(Exception):
         *,
         code: str | None = None,
         exit_code: int | None = None,
-        context: Mapping[str, str] | None = None,
+        context: Mapping[str, str | None] | None = None,
     ) -> None:
         super().__init__(message)
         if code is not None:
             self.code = code
         if exit_code is not None:
             self.exit_code = exit_code
-        self.context: dict[str, str] = dict(context or {})
+        self.context: dict[str, str | None] = dict(context or {})
 
 
 class Classification(TypedDict, total=False):
@@ -50,7 +50,7 @@ class Classification(TypedDict, total=False):
 
     code: str
     exit_code: int
-    context: dict[str, str]
+    context: dict[str, str | None]
 
 
 def reclassify(exc: ClassifiedError) -> Classification:

@@ -37,9 +37,13 @@ def _invoke(monkeypatch, tmp_path, module, platform: str, args: list[str]):
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "1.0.0"\n', encoding="utf-8"
     )
-    monkeypatch.setattr(
-        module, "resolve_target", lambda cli_platform, verb: (backend, tmp_path)
-    )
+
+    def resolve_target(cli_platform, verb, report=None):
+        if report is not None:
+            report.platform = backend.name
+        return backend, tmp_path
+
+    monkeypatch.setattr(module, "resolve_target", resolve_target)
     result = CliRunner().invoke(getattr(module, module.__name__.rsplit(".")[-1]), args)
     return backend, result
 

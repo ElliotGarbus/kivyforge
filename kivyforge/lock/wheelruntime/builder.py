@@ -9,14 +9,16 @@ platform-specific inputs come from the ``PlatformLockProfile``.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from ... import __version__
+from ...artifacts.include_files import IncludeFilesError, hash_pins, pin_changes
 from ...artifacts.verify import sha256_file
-from ...config.model import Config, NativeBinaryDep
+from ...config.model import Config, IncludeFile, NativeBinaryDep
 from ..find_links import (
     FindLinksError,
     find_links_resolution_hint,
@@ -25,9 +27,17 @@ from ..find_links import (
     validate_find_links,
     wheel_path_from_project_root,
 )
+from ..inputs import lock_inputs_sha256
 from ..model import LockedPackage, LockedWheel, PackageDep, canonical_name
-from ..reader import compute_pyproject_sha256
-from .model import WheelRuntimeLock
+from ..prefer import preferred_pins, resolve_preferring
+from ..sources import (
+    SourceUnavailable,
+    drop_moved_pins,
+    overlay_policy,
+    pinned_local_warnings,
+    source_changes,
+)
+from .model import PythonRuntime, WheelRuntimeLock
 from .native_binaries import NativeBinaryResolverError, resolve_native_binaries
 from .profile import PlatformLockProfile
 from .resolver import WheelResolver, WheelResolverError
@@ -41,21 +51,39 @@ class WheelRuntimeBuildError(Exception):
 def build_wheel_runtime_lock(
     profile: PlatformLockProfile,
     config: Config,
-    pyproject_text: str,
     *,
     project_root: Path | None = None,
     resolver: WheelResolver | None = None,
     runtime_provider: RuntimeProvider | None = None,
     native_binaries: tuple[NativeBinaryDep, ...] = (),
+    include_files: tuple[IncludeFile, ...] = (),
+    prefer: Iterable[LockedPackage] = (),
+    prefer_runtime: PythonRuntime | None = None,
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    on_transfer: Callable[[str, int, int, str], None] | None = None,
 ) -> WheelRuntimeLock:
+    """Lock ``config`` for ``profile.platform``.
+
+    ``prefer`` is the existing lock's packages: their versions are kept unless
+    the inputs force a move (``kivyforge.lock.prefer``). ``prefer_runtime`` is
+    its runtime, kept while the version, archs and provider floor still
+    match, which skips the GitHub lookup. Empty resolves to the
+    newest version each specifier allows (``lock --update``).
+    """
     if profile.overlay(config) is None:
         raise WheelRuntimeBuildError(profile.missing_overlay_error())
 
-    resolver = resolver or profile.wheel_resolver()
-    runtime_provider = runtime_provider or profile.runtime_provider(config)
+    # Progress is wired into the default resolver only; an injected one
+    # (tests) keeps its own signature.
+    resolver = resolver or profile.wheel_resolver(
+        on_progress=on_progress, on_transfer=on_transfer
+    )
+    runtime_provider = runtime_provider or profile.runtime_provider(
+        config, on_progress=on_progress
+    )
     root = (project_root or Path.cwd()).resolve()
 
     python_version = profile.python_version(config)
@@ -69,10 +97,25 @@ def build_wheel_runtime_lock(
         raise WheelRuntimeBuildError(str(exc)) from exc
     find_links = resolve_find_links(root, find_links_entries)
 
-    try:
-        runtime = runtime_provider.resolve(python_version, archs, offline=offline)
-    except RuntimeProviderError as exc:
-        raise WheelRuntimeBuildError(str(exc)) from exc
+    runtime = _locked_runtime(prefer_runtime, runtime_provider, python_version, archs)
+    if runtime is not None:
+        if on_progress is not None:
+            on_progress(
+                f"[lock] CPython {python_version}: keeping the locked "
+                "python-build-standalone build"
+            )
+    else:
+        if on_progress is not None:
+            # A GitHub API lookup, not a download: quick for a version in
+            # the newest release, tens of seconds for an older one (#88).
+            on_progress(
+                f"[lock] CPython {python_version}: finding the "
+                "python-build-standalone build"
+            )
+        try:
+            runtime = runtime_provider.resolve(python_version, archs, offline=offline)
+        except RuntimeProviderError as exc:
+            raise WheelRuntimeBuildError(str(exc)) from exc
 
     try:
         locked_native_binaries = resolve_native_binaries(
@@ -94,14 +137,34 @@ def build_wheel_runtime_lock(
     direct = {canonical_name(_req_name(d)) for d in config.project.dependencies}
     excluded = {canonical_name(e) for e in profile.exclude(config)} - direct
 
-    try:
-        resolved = resolver.resolve(
-            list(config.project.dependencies),
+    requirements = list(config.project.dependencies)
+    extra_index_urls = list(profile.extra_index_urls(config))
+    policy = overlay_policy(
+        profile.overlay(config), find_links, platform=profile.platform
+    )
+    if on_warning is not None:
+        for warning in pinned_local_warnings(policy, root):
+            on_warning(warning)
+    prefer = tuple(prefer)
+
+    def resolve(pins):
+        return resolver.resolve(
+            requirements,
             python_version=python_version,
             variants=variants,
-            extra_index_urls=list(profile.extra_index_urls(config)),
+            extra_index_urls=extra_index_urls,
             find_links=find_links,
             offline=offline,
+            constraints=pins,
+            sources=policy,
+        )
+
+    try:
+        resolved = resolve_preferring(
+            resolve,
+            drop_moved_pins(preferred_pins(prefer, requirements), prefer, policy),
+            errors=(WheelResolverError, SourceUnavailable),
+            platform=profile.platform,
         )
     except WheelResolverError as exc:
         hint = find_links_resolution_hint(
@@ -132,6 +195,11 @@ def build_wheel_runtime_lock(
             )
         )
 
+    try:
+        include_pins = hash_pins(include_files, root)
+    except IncludeFilesError as exc:
+        raise WheelRuntimeBuildError(str(exc)) from exc
+
     return WheelRuntimeLock(
         platform=profile.platform,
         requires_python=config.project.requires_python or ">=3.15",
@@ -143,10 +211,38 @@ def build_wheel_runtime_lock(
         archs=archs,
         kivyforge_version=__version__,
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        pyproject_sha256=compute_pyproject_sha256(pyproject_text),
+        lock_inputs_sha256=lock_inputs_sha256(config, profile.platform),
         tool_kivyforge_schema_version=profile.schema_version(config),
         native_binaries=locked_native_binaries,
+        include_files=tuple(include_pins),
     )
+
+
+def _locked_runtime(
+    locked: PythonRuntime | None,
+    provider: RuntimeProvider,
+    version: str,
+    archs: tuple[str, ...],
+) -> PythonRuntime | None:
+    """The existing lock's runtime, if a fresh lookup would ask for the same.
+
+    A re-lock keeps its packages (#126); this keeps its runtime the same way,
+    which skips a python-build-standalone lookup that pages through GitHub
+    releases. Kept only while the CPython version, the provider, the
+    provider's floor (Linux's glibc floor is a kivyforge constant that moves
+    with PBS) and an artifact for every requested arch all still match;
+    `lock --update` always looks up again.
+    """
+    if locked is None or locked.version != version:
+        return None
+    if locked.provider != getattr(provider, "name", None):
+        return None
+    if locked.floor != getattr(provider, "floor", object()):
+        return None
+    by_arch = {artifact.arch: artifact for artifact in locked.artifacts}
+    if any(arch not in by_arch for arch in archs):
+        return None
+    return dataclasses.replace(locked, artifacts=tuple(by_arch[arch] for arch in archs))
 
 
 def _locked_wheel_from_resolved(
@@ -176,7 +272,11 @@ def _normalize_wheel_source(
     if url.startswith(("http://", "https://")):
         return url, None
     if url.startswith("file:"):
-        local = Path(unquote(urlparse(url).path))
+        # url2pathname turns a file URL path into a native path on every host
+        # ("/C:/x" -> "C:\x" on Windows). unquote+Path kept the leading slash,
+        # which resolve() made drive-relative, and the lock recorded the wheel
+        # as "Users/..." with no drive.
+        local = Path(url2pathname(urlparse(url).path))
     else:
         local = Path(url)
     resolved = local.resolve()
@@ -254,6 +354,7 @@ def _normalized(lock: WheelRuntimeLock) -> WheelRuntimeLock:
             )
         ),
         native_binaries=tuple(sorted(lock.native_binaries, key=lambda b: b.name)),
+        include_files=tuple(sorted(lock.include_files, key=lambda p: p.key)),
     )
 
 
@@ -271,6 +372,7 @@ def diff_summary(old: WheelRuntimeLock, new: WheelRuntimeLock) -> list[str]:
                 f"  ~ {new_pkgs[name].name}: "
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
+    out.extend(source_changes(old.packages, new.packages))
     if old.python_runtime.version != new.python_runtime.version:
         out.append(
             f"  ~ python runtime: {old.python_runtime.version} -> "
@@ -290,6 +392,7 @@ def diff_summary(old: WheelRuntimeLock, new: WheelRuntimeLock) -> list[str]:
         o, n = old_nb[name], new_nb[name]
         if o.version != n.version or o.sha256 != n.sha256:
             out.append(f"  ~ native binary {n.name}: {o.version} -> {n.version}")
+    out += pin_changes(old.include_files, new.include_files)
     return out
 
 

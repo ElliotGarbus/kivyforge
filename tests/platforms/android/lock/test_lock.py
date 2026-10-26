@@ -96,7 +96,6 @@ def _config(text=PYPROJECT):
 def _build(config_text=PYPROJECT, packages=None, min_api=24, **kwargs):
     return build_lockfile(
         _config(config_text),
-        config_text,
         project_root=Path.cwd(),
         resolver=FakeResolver(packages if packages is not None else [_pkg()]),
         python_provider=FakeProvider(min_api=min_api),
@@ -173,7 +172,6 @@ class TestBuilder:
         with pytest.raises(BuildError) as excinfo:
             build_lockfile(
                 _config(text),
-                text,
                 project_root=tmp_path,  # no wheelhouse/ here
                 resolver=FakeResolver([_pkg()]),
                 python_provider=FakeProvider(),
@@ -257,7 +255,6 @@ class TestBuilder:
         )
         lock = build_lockfile(
             config,
-            text,
             project_root=tmp_path,
             resolver=FakeResolver([_pkg()]),
             python_provider=FakeProvider(),
@@ -274,7 +271,7 @@ class TestBuilderErrorPaths:
         text = "[project]\nname = 'x'\nversion = '1'\n[tool.kivy]\napp_dir = 'src'\n"
         config = load_config_from_text(text, require_ios=False, require_android=False)
         with pytest.raises(BuildError, match=r"no \[tool\.kivy\.android\] table"):
-            build_lockfile(config, text, project_root=Path.cwd())
+            build_lockfile(config, project_root=Path.cwd())
 
     def test_resolver_error_without_find_links_wrapped_plainly(self):
         class ErrorResolver:
@@ -284,7 +281,6 @@ class TestBuilderErrorPaths:
         with pytest.raises(BuildError, match="boom"):
             build_lockfile(
                 _config(),
-                PYPROJECT,
                 project_root=Path.cwd(),
                 resolver=ErrorResolver(),
                 python_provider=FakeProvider(),
@@ -306,7 +302,6 @@ class TestBuilderErrorPaths:
         with pytest.raises(BuildError, match="find_links check"):
             build_lockfile(
                 _config(text),
-                text,
                 project_root=tmp_path,
                 resolver=ErrorResolver(),
                 python_provider=FakeProvider(),
@@ -340,7 +335,6 @@ class TestBuilderErrorPaths:
         with pytest.raises(BuildError, match="network down"):
             build_lockfile(
                 _config(),
-                PYPROJECT,
                 project_root=Path.cwd(),
                 resolver=FakeResolver([_pkg()]),
                 python_provider=ErrorProvider(),
@@ -367,7 +361,6 @@ class TestIncludeFilesEdgeCases:
         )
         lock = build_lockfile(
             config,
-            text,
             project_root=tmp_path,
             resolver=FakeResolver([_pkg()]),
             python_provider=FakeProvider(),
@@ -404,7 +397,6 @@ class TestWheelSourceNormalization:
         )
         lock = build_lockfile(
             _config(text),
-            text,
             project_root=tmp_path,
             resolver=FakeResolver([pkg]),
             python_provider=FakeProvider(),
@@ -427,7 +419,6 @@ class TestWheelSourceNormalization:
         with pytest.raises(BuildError, match="could not determine SHA-256") as excinfo:
             build_lockfile(
                 _config(text),
-                text,
                 project_root=tmp_path,
                 resolver=FakeResolver([pkg]),
                 python_provider=FakeProvider(),
@@ -453,7 +444,6 @@ class TestWheelSourceNormalization:
             with pytest.raises(BuildError, match="outside the allowed"):
                 build_lockfile(
                     _config(text),
-                    text,
                     project_root=tmp_path,
                     resolver=FakeResolver([pkg]),
                     python_provider=FakeProvider(),
@@ -509,6 +499,27 @@ class TestDiffSummary:
     def test_no_changes_is_empty(self):
         old = _sample_lockfile()
         assert builder_mod.diff_summary(old, old) == []
+
+    def test_include_files_changes_are_named(self):
+        """``--check`` used to say "out of date:" and list nothing when only an
+        include had changed."""
+        pin = LockedIncludeFile(source="a.json", dest="app", sha256="1" * 64)
+        old = dataclasses.replace(
+            _sample_lockfile(),
+            include_files=(pin, dataclasses.replace(pin, source="gone.json")),
+        )
+        new = dataclasses.replace(
+            old,
+            include_files=(
+                dataclasses.replace(pin, sha256="2" * 64),
+                dataclasses.replace(pin, source="new.json"),
+            ),
+        )
+        assert builder_mod.diff_summary(old, new) == [
+            "  ~ include_files: a.json -> app (changed)",
+            "  ~ include_files: gone.json -> app (removed)",
+            "  ~ include_files: new.json -> app (added)",
+        ]
 
 
 class TestSemanticEqual:
@@ -624,7 +635,7 @@ def _sample_lockfile() -> AndroidLockfile:
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="2026-07-24T00:00:00Z",
-        pyproject_sha256="e" * 64,
+        lock_inputs_sha256="e" * 64,
         tool_kivy_android_schema_version=1,
         kivy_generation=2,
         android_libs=(
@@ -789,7 +800,6 @@ class TestImplicitPyjnius:
         resolver = FakeResolver([_pkg()])
         build_lockfile(
             _config(text),
-            text,
             project_root=Path.cwd(),
             resolver=resolver,
             python_provider=FakeProvider(),
@@ -825,7 +835,6 @@ class TestImplicitPyjnius:
         )
         lock = build_lockfile(
             _config(text),
-            text,
             project_root=Path.cwd(),
             resolver=FakeResolver([_pkg()]),
             python_provider=FakeProvider(),
@@ -842,7 +851,6 @@ class TestDeclaredMeansDeclaredForAndroid:
         resolver, lines = FakeResolver([_pkg()]), []
         build_lockfile(
             _config(text),
-            text,
             project_root=Path.cwd(),
             resolver=resolver,
             python_provider=FakeProvider(),

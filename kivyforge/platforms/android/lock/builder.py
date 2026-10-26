@@ -9,12 +9,13 @@ pins (skipped without declared coordinates), ``include_files`` hashes.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kivyforge import __version__
+from kivyforge.artifacts import include_files
 from kivyforge.artifacts.verify import sha256_file
 from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.lock.find_links import (
@@ -25,13 +26,21 @@ from kivyforge.lock.find_links import (
     validate_find_links,
     wheel_path_from_project_root,
 )
+from kivyforge.lock.inputs import lock_inputs_sha256
 from kivyforge.lock.model import (
     LockedPackage,
     LockedWheel,
     PackageDep,
     canonical_name,
 )
-from kivyforge.lock.reader import compute_pyproject_sha256
+from kivyforge.lock.prefer import preferred_pins, resolve_preferring
+from kivyforge.lock.sources import (
+    SourceUnavailable,
+    drop_moved_pins,
+    overlay_policy,
+    pinned_local_warnings,
+    source_changes,
+)
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
 
@@ -100,13 +109,13 @@ def _reject_android_distribution(packages: list[LockedPackage]) -> None:
 
 def build_lockfile(
     config: Config,
-    pyproject_text: str,
     *,
     project_root: Path | None = None,
     resolver: Resolver | None = None,
     python_provider: PythonAndroidProvider | None = None,
     maven_resolver: GradleMavenResolver | None = None,
     lib_downloader: Downloader | None = None,
+    prefer: Iterable[LockedPackage] = (),
     offline: bool = False,
     now: datetime | None = None,
     on_warning: Callable[[str], None] | None = None,
@@ -172,8 +181,14 @@ def build_lockfile(
     # Never excludable: an app without it crashes at launch.
     excluded.discard(PYJNIUS)
 
-    try:
-        resolved = resolver.resolve(
+    policy = overlay_policy(android, find_links, platform="android")
+    if on_warning is not None:
+        for warning in pinned_local_warnings(policy, root):
+            on_warning(warning)
+    prefer = tuple(prefer)
+
+    def resolve(pins):
+        return resolver.resolve(
             requirements,
             python_version=python_version,
             min_sdk=android.min_sdk,
@@ -181,6 +196,18 @@ def build_lockfile(
             extra_index_urls=list(android.extra_index_urls),
             find_links=find_links,
             offline=offline,
+            constraints=pins,
+            sources=policy,
+        )
+
+    try:
+        # Against `requirements`, not the project's list: the pyjnius range
+        # kivyforge adds can release a locked pyjnius too.
+        resolved = resolve_preferring(
+            resolve,
+            drop_moved_pins(preferred_pins(prefer, requirements), prefer, policy),
+            errors=(ResolverError, SourceUnavailable),
+            platform="android",
         )
     except ResolverError as exc:
         hint = find_links_resolution_hint(
@@ -243,7 +270,7 @@ def build_lockfile(
         python_android=tuple(runtimes),
         kivyforge_version=__version__,
         generated_at=(now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        pyproject_sha256=compute_pyproject_sha256(pyproject_text),
+        lock_inputs_sha256=lock_inputs_sha256(config, "android"),
         tool_kivy_android_schema_version=android.schema_version,
         kivy_generation=android.kivy_generation,
         android_libs=tuple(android_libs),
@@ -306,38 +333,31 @@ def _resolve_runtimes(
     return runtimes
 
 
+def refresh_include_files(
+    lock: AndroidLockfile,
+    config: Config,
+    *,
+    project_root: Path,
+    now: datetime | None = None,
+) -> AndroidLockfile:
+    """``lock`` with its ``include_files`` pins re-hashed from disk.
+
+    Returns ``lock`` itself when no pin changed (``include_files.refresh``).
+    """
+    try:
+        return include_files.refresh(
+            lock, config, project_root=project_root, platform="android", now=now
+        )
+    except include_files.IncludeFilesError as exc:
+        raise BuildError(str(exc)) from exc
+
+
 def _hash_include_files(android: AndroidConfig, root: Path) -> list[LockedIncludeFile]:
     """One pin per staged file; a directory source expands to its files."""
-    pins: list[LockedIncludeFile] = []
-    for entry in android.include_files:
-        for source in entry.sources:
-            local = (root / source).resolve()
-            if local.is_dir():
-                for child in sorted(local.rglob("*")):
-                    if child.is_file():
-                        rel = (Path(source) / child.relative_to(local)).as_posix()
-                        pins.append(
-                            LockedIncludeFile(
-                                source=rel,
-                                dest=entry.dest,
-                                sha256=sha256_file(child),
-                            )
-                        )
-            elif local.is_file():
-                pins.append(
-                    LockedIncludeFile(
-                        source=Path(source).as_posix(),
-                        dest=entry.dest,
-                        sha256=sha256_file(local),
-                    )
-                )
-            else:
-                raise BuildError(
-                    f"include_files source does not exist: {source} "
-                    f"(resolved to {local})"
-                )
-    pins.sort(key=lambda p: (p.dest, p.source))
-    return pins
+    try:
+        return include_files.hash_pins(android.include_files, root)
+    except include_files.IncludeFilesError as exc:
+        raise BuildError(str(exc)) from exc
 
 
 def _locked_wheel_from_resolved(w, *, project_root: Path) -> LockedWheel:
@@ -479,10 +499,12 @@ def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
                 f"  ~ {new_pkgs[name].name}: "
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
+    out.extend(source_changes(old.packages, new.packages))
     old_rt = {r.abi: r.version for r in old.python_android}
     new_rt = {r.abi: r.version for r in new.python_android}
     if old_rt != new_rt:
         out.append(f"  ~ python.org Android runtime: {old_rt} -> {new_rt}")
+    out += include_files.pin_changes(old.include_files, new.include_files)
     return out
 
 

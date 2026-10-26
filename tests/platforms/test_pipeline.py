@@ -23,12 +23,12 @@ from click.testing import CliRunner
 
 from kivyforge.cli.build import build
 from kivyforge.cli.package import package
-from kivyforge.lock.reader import compute_pyproject_sha256
 from kivyforge.lock.wheelruntime.model import (
     PythonRuntime,
     RuntimeArtifact,
     WheelRuntimeLock,
 )
+from tests.lock_hash import inputs_sha
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ def _macos_project(root: Path) -> None:
         archs=("arm64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=compute_pyproject_sha256(_MACOS_PYPROJECT),
+        lock_inputs_sha256=inputs_sha(_MACOS_PYPROJECT, "macos"),
         tool_kivyforge_schema_version=1,
     )
     from kivyforge.platforms.macos.lock import dumps
@@ -92,7 +92,6 @@ def _macos_project(root: Path) -> None:
 def macos_leaves(monkeypatch):
     """Fake only the network/host-tool leaves; the bundler orchestration is real."""
     from kivyforge.platforms.macos import bundle as macos_bundle
-    from kivyforge.platforms.macos import cli as macos_cli
 
     def fake_runtime(runtime, arch, home, **k):
         (home / "bin").mkdir(parents=True)
@@ -110,7 +109,6 @@ def macos_leaves(monkeypatch):
     monkeypatch.setattr(macos_bundle, "stage_wheels", fake_wheels)
     monkeypatch.setattr(macos_bundle, "build_launcher", fake_launcher)
     monkeypatch.setattr(macos_bundle, "sign_bundle_adhoc", lambda app: 1)
-    monkeypatch.setattr(macos_cli, "_require_macos_host", lambda: None)
 
 
 class TestMacosPipeline:
@@ -170,7 +168,7 @@ def _linux_project(root: Path) -> None:
         archs=("x86_64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=compute_pyproject_sha256(_LINUX_PYPROJECT),
+        lock_inputs_sha256=inputs_sha(_LINUX_PYPROJECT, "linux"),
         tool_kivyforge_schema_version=1,
     )
     from kivyforge.platforms.linux.lock import dumps
@@ -201,7 +199,6 @@ def linux_leaves(monkeypatch):
     monkeypatch.setattr(linux_bundle, "stage_wheels", fake_wheels)
     monkeypatch.setattr(linux_bundle, "stage_icons", lambda *a, **k: None)
     monkeypatch.setattr(linux_cli, "build_appimage", fake_appimage)
-    monkeypatch.setattr(linux_cli, "_require_linux_host", lambda: None)
 
 
 class TestLinuxPipeline:
@@ -262,7 +259,7 @@ def _windows_project(root: Path) -> None:
         archs=("amd64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=compute_pyproject_sha256(_WINDOWS_PYPROJECT),
+        lock_inputs_sha256=inputs_sha(_WINDOWS_PYPROJECT, "windows"),
         tool_kivyforge_schema_version=1,
     )
     from kivyforge.platforms.windows.lock import dumps
@@ -274,7 +271,6 @@ def _windows_project(root: Path) -> None:
 def windows_leaves(monkeypatch, tmp_path):
     """Fake network staging + rcedit; launcher copy + bootstrap + dist copy real."""
     from kivyforge.platforms.windows import bundle as win_bundle
-    from kivyforge.platforms.windows import cli as win_cli
     from kivyforge.platforms.windows import launcher as win_launcher
 
     def fake_runtime(runtime, arch, home, **k):
@@ -292,7 +288,6 @@ def windows_leaves(monkeypatch, tmp_path):
     monkeypatch.setattr(win_bundle, "stage_wheels", fake_wheels)
     monkeypatch.setattr(win_launcher, "vendored_launcher", lambda: vendored)
     monkeypatch.setattr(win_launcher, "patch_resources", lambda exe, patch, **k: None)
-    monkeypatch.setattr(win_cli, "_require_windows_host", lambda: None)
 
 
 class TestWindowsPipeline:

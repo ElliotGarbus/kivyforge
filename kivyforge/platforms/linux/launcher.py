@@ -97,16 +97,6 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$HERE/usr/bin"
 """
 
 
-def entry_point_rel_path(entry_point: str) -> str:
-    """Map a (possibly dotted) ``entry_point`` to its ``/``-joined module path.
-
-    ``"main"`` -> ``"main"``; ``"pkg.start"`` -> ``"pkg/start"`` (i.e.
-    ``usr/app/pkg/start.py``), matching the ``app_dir``/``entry_point`` layout
-    contract in the shared pyproject spec.
-    """
-    return "/".join(entry_point.split("."))
-
-
 def render_apprun(
     *, entry_point: str, app_id: str, has_native_binaries: bool = False
 ) -> str:

@@ -15,15 +15,16 @@ declared per platform in [`pyproject.toml`](pyproject.toml):
 
 Both prove a different half of the channel:
 
-- `roll` resolves only because the launcher prepends the staged `bin` directory
-  to `PATH` — identical on both platforms.
+- `roll` resolves only because the launcher prepends its directory to `PATH`
+  (`Contents/Helpers` on macOS, `usr/bin` on Linux) — identical on both
+  platforms.
 - The library shows the **deliberate platform asymmetry**:
   - **Linux** loads `libgreet.so` **by name** (`ctypes.CDLL("libgreet.so")`),
     resolved via the `LD_LIBRARY_PATH` append `AppRun` adds (Option B). This is
     also what lets a multi-`.so` SDK resolve its inter-lib `NEEDED` deps.
   - **macOS** loads `libgreet.dylib` **by absolute path**, since `DYLD_*` is
-    stripped under SIP/Hardened Runtime, using the portable recipe
-    `Path(sys.prefix).parent / "bin"`.
+    stripped under SIP/Hardened Runtime, from
+    `Path(sys.prefix).parents[1] / "Frameworks"`.
 
 ## Run it (macOS)
 
@@ -31,8 +32,8 @@ Both prove a different half of the channel:
 ./build_native.sh              # compile roll + libgreet.dylib (universal2) into binaries/macos/
 kivyforge lock -p macos        # SHA-256-pins the two binaries into pylock.macos.toml
 kivyforge doctor -p macos      # verifies the sources exist (and, once built, arch coverage)
-kivyforge run -p macos         # builds the .app (staging + signing bin/) and launches it
-kivyforge package -p macos     # the finished .app; the signing sweep signs bin/ contents
+kivyforge run -p macos         # builds the .app (staging + signing the binaries) and launches it
+kivyforge package -p macos     # the finished .app; the signing sweep signs Helpers/ and Frameworks/
 ```
 
 ## Run it (Linux)
@@ -61,13 +62,15 @@ any machine. It detects the host and writes `binaries/macos/` or
 `kivyforge build`/`run`/`package`:
 
 1. fetches each pinned binary (here: verifies the vendored file's SHA-256),
-2. stages it into the bundle's `bin` directory (`Contents/Resources/bin` on
-   macOS, `usr/bin` on Linux); single files get their exec bit set, and `.zip`
-   (both) or `.tar.gz`/`.tgz` (Linux) sources are extracted with a traversal
-   guard,
-3. the launcher exposes that `bin/`: **PATH-prepend** for helpers on both
-   platforms, plus a **`LD_LIBRARY_PATH`-append** on Linux so declared libraries
-   load by soname without shadowing the host's or the wheels' own `.so`s, and
+2. stages it into the bundle: on macOS, by Mach-O type, executables into
+   `Contents/Helpers` and dylibs into `Contents/Frameworks` (anything else is
+   refused, and links between them are checked); on Linux, into `usr/bin`.
+   Staged files get their exec bit set, and `.zip`, `.tar.gz` and `.tgz`
+   sources are extracted with a traversal guard,
+3. the launcher exposes the helpers: **PATH-prepend** on both platforms, plus a
+   **`LD_LIBRARY_PATH`-append** on Linux so declared libraries load by soname
+   without shadowing the host's or the wheels' own `.so`s, and
 4. on macOS the ad-hoc/Developer ID signing sweep signs every Mach-O under the
-   bundle — including `bin/` — so the app stays notarizable (Linux has no
-   code-signing analog, so staged binaries just carry their exec bit).
+   bundle — including `Helpers/` and `Frameworks/` — so the app stays
+   notarizable (Linux has no code-signing analog, so staged binaries just carry
+   their exec bit).

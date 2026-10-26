@@ -7,6 +7,8 @@ resolution + injectable metadata fetcher.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from kivyforge.lock.wheelruntime.runtime import (
     MetadataFetcher,
     PbsProvider,
@@ -44,8 +46,11 @@ class PythonBuildStandaloneProvider(PbsProvider):
         metadata_fetcher: MetadataFetcher | None = None,
         *,
         floor: str | None = None,
+        on_progress: Callable[[str], None] | None = None,
     ) -> None:
-        super().__init__(DARWIN_TRIPLES, metadata_fetcher, floor=floor)
+        super().__init__(
+            DARWIN_TRIPLES, metadata_fetcher, floor=floor, on_progress=on_progress
+        )
 
 
 def get_runtime_provider(

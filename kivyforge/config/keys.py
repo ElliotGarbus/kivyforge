@@ -64,6 +64,9 @@ _OVERLAY_COMMON: dict[str, Spec] = {
     "extra_index_urls": None,
     "find_links": None,
     "exclude": None,
+    # A table of package = { index = "NAME" }; the loader checks each entry,
+    # so a uv-only key gets a message that says why, not "unknown key".
+    "sources": None,
 }
 
 _DESKTOP_COMMON: dict[str, Spec] = {
@@ -110,6 +113,7 @@ IOS: dict[str, Spec] = {
     "xcode": {"build_settings": OPEN},
     "privacy_manifest": {"source": None},
     "entitlements": OPEN,
+    "include_files": ArrayOf({"dest": None, "sources": None}),
 }
 
 MACOS: dict[str, Spec] = {
@@ -119,6 +123,7 @@ MACOS: dict[str, Spec] = {
     "minimum_system_version": None,
     "entitlements": OPEN,
     "signing": {"identity": None, "team_id": None, "notary_profile": None},
+    "include_files": ArrayOf({"dest": None, "sources": None}),
 }
 
 LINUX: dict[str, Spec] = {
@@ -146,6 +151,7 @@ ANDROID: dict[str, Spec] = {
     "abis": None,
     "base_theme": None,
     "fullscreen": None,
+    "main_activity": None,
     "python": {"version": None},
     "permissions": {
         "uses": None,
@@ -223,6 +229,8 @@ TOOL_KIVY: dict[str, Spec] = {
     "display_name": None,
     "entry_point": None,
     "orientation": None,
+    "index": ArrayOf({"name": None, "url": None, "explicit": None}),
+    "sources": None,
     "ios": IOS,
     "macos": MACOS,
     "linux": LINUX,

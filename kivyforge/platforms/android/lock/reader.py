@@ -1,9 +1,9 @@
 """Parse ``pylock.android.toml`` back into an ``AndroidLockfile`` (android/02).
 
-The neutral drift helpers (``LockError``, ``compute_pyproject_sha256``,
-``is_in_sync``) live in ``kivyforge.lock.reader``; this module adds the Android
-``pylock.android.toml`` parsing on top. The reader fails *cleanly* on corrupt,
-hand-edited, or future-schema files — never a raw ``KeyError``.
+``LockError`` lives in ``kivyforge.lock.reader`` and the drift check in
+``kivyforge.lock.inputs``; this module adds the Android ``pylock.android.toml``
+parsing. The reader fails *cleanly* on corrupt, hand-edited, or future-schema
+files — never a raw ``KeyError``.
 """
 
 from __future__ import annotations
@@ -11,12 +11,9 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from kivyforge.lock.pep751 import parse_include_file
 from kivyforge.lock.pep751 import parse_package as _parse_package
-from kivyforge.lock.reader import (
-    LockError,
-    compute_pyproject_sha256,
-    is_in_sync,
-)
+from kivyforge.lock.reader import LockError
 
 from .model import (
     LOCK_VERSION,
@@ -26,14 +23,11 @@ from .model import (
     GradlePins,
     GradleResolvedModule,
     LockedAndroidLib,
-    LockedIncludeFile,
     PythonAndroidRuntime,
 )
 
 __all__ = [
     "LockError",
-    "compute_pyproject_sha256",
-    "is_in_sync",
     "load",
     "loads",
 ]
@@ -83,7 +77,7 @@ def _from_raw(raw: dict) -> AndroidLockfile:
     android_libs = tuple(_parse_lib(x) for x in _as_list(tool, "android_libs"))
     gradle = _parse_gradle(tool.get("gradle"))
     include_files = tuple(
-        _parse_include_file(f) for f in _as_list(tool, "include_files")
+        parse_include_file(f) for f in _as_list(tool, "include_files")
     )
 
     kivy_generation = tool.get("kivy_generation", 2)
@@ -99,7 +93,7 @@ def _from_raw(raw: dict) -> AndroidLockfile:
         python_android=runtimes,
         kivyforge_version=tool.get("kivyforge_version", ""),
         generated_at=tool.get("generated_at", ""),
-        pyproject_sha256=tool.get("pyproject_sha256", ""),
+        lock_inputs_sha256=tool.get("lock_inputs_sha256", ""),
         tool_kivy_android_schema_version=tool.get(
             "tool_kivy_android_schema_version", 1
         ),
@@ -158,12 +152,6 @@ def _parse_gradle(table: object) -> GradlePins:
         repositories=tuple(table.get("repositories", [])),
         platforms=tuple(table.get("platforms", [])),
         resolved=resolved,
-    )
-
-
-def _parse_include_file(entry: dict) -> LockedIncludeFile:
-    return LockedIncludeFile(
-        source=entry["source"], dest=entry["dest"], sha256=entry["sha256"]
     )
 
 

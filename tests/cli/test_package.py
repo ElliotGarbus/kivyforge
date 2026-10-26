@@ -15,9 +15,9 @@ from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
-    compute_pyproject_sha256,
     dumps,
 )
+from tests.lock_hash import inputs_sha
 from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
 
 PYPROJECT = (
@@ -58,7 +58,7 @@ def _write_project(fs: str) -> Path:
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=compute_pyproject_sha256(PYPROJECT),
+        lock_inputs_sha256=inputs_sha(PYPROJECT, "ios"),
         tool_kivyforge_schema_version=1,
     )
     (root / "pylock.ios.toml").write_text(dumps(lock))

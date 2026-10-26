@@ -52,6 +52,19 @@ LOCK_UNREADABLE = "KF-LOCK-UNREADABLE"
 #: move -- but the same remedy: re-lock.
 LOCK_INCOMPLETE = "KF-LOCK-INCOMPLETE"
 
+#: ``lock`` re-resolved with the existing lock's versions as preferences, and
+#: pip could not keep them with the changed inputs, though it can resolve
+#: without them. Not drift: ``lock --update`` (newest of everything) is the fix,
+#: and a plain re-lock would only fail the same way.
+LOCK_PINS_CONFLICT = "KF-LOCK-PINS-CONFLICT"
+
+#: A package whose source is fixed -- pinned to one index in ``sources``, or a
+#: local name, with wheels in ``find_links`` -- has no wheel there for one of the
+#: variants being locked. kivyforge never falls back to another source, so the
+#: fix is the wheelhouse or the pin. ``context`` names the ``distribution``, the
+#: ``source`` (an index name or ``find_links``) and the ``variant``.
+LOCK_SOURCE_UNAVAILABLE = "KF-LOCK-SOURCE-UNAVAILABLE"
+
 #: Resolution succeeded but made a judgement call worth surfacing (e.g. the
 #: macOS/Linux backends accepting a vendored plain ``linux_*`` wheel). Always
 #: WARNING: the lock written is usable, and the run is ``ok``.
@@ -86,6 +99,52 @@ BUILD_TOOL_FAILED = "KF-BUILD-TOOL-FAILED"
 #: A build tool reported success but the product is not where it should be.
 ARTIFACT_MISSING = "KF-ARTIFACT-MISSING"
 
+#: The product exists, but a file the user asked for (``include_files``) is
+#: missing from it or differs from its pin: a tool converted, stripped or
+#: dropped it. Exit 5, and the product is not reported. ``context`` names the
+#: ``path`` in the bundle, the ``source``, the ``artifact``, and the
+#: ``expected`` and ``actual`` SHA-256 (``actual`` is null for a missing file).
+ARTIFACT_CONTENT = "KF-ARTIFACT-CONTENT"
+
+#: An ``include_files`` file would replace something the generated build puts
+#: in the app (Android's Gradle files, iOS's ``Info.plist``, macOS's
+#: ``Resources/app/``), or (iOS) has a code-bundle name such as
+#: ``X.framework``. Exit 1. ``context`` names the ``path`` and the ``source``.
+INCLUDE_RESERVED = "KF-INCLUDE-RESERVED"
+
+#: iOS, macOS: an ``include_files`` file is native code, a Mach-O or a static
+#: archive, which belongs in the platform's native-code key instead. Exit 1.
+#: ``context`` names the ``path`` and the ``source``.
+INCLUDE_NATIVE_CODE = "KF-INCLUDE-NATIVE-CODE"
+
+#: iOS, macOS: an ``include_files`` path is a source format that only works
+#: compiled (``.xcstrings``, ``.storyboard``, ``.xib``, ``.xcassets``), which
+#: would ship verbatim and do nothing. Exit 1. ``context`` names the ``path``
+#: and the ``source``.
+INCLUDE_SOURCE_FORMAT = "KF-INCLUDE-SOURCE-FORMAT"
+
+#: macOS: a ``[tool.kivy.macos.native.binaries]`` file is not a Mach-O, and the
+#: channel places native code only. Exit 1 for a single-file source; a WARNING
+#: for archive members, which are skipped. ``context`` names the ``binary``
+#: (the config key) and the ``path`` (the source, or the members skipped).
+MACOS_NATIVE_NOT_CODE = "KF-MACOS-NATIVE-NOT-CODE"
+
+#: macOS: a ``[tool.kivy.macos.native.binaries]`` file is code the channel
+#: cannot place: a Mach-O other than an executable or a dynamic library
+#: (a plug-in, an object file, ...), a universal file whose slices disagree
+#: on that, or a file inside a bundle (``.framework``, ``.app``, ...) in an
+#: archive. Exit 1. ``context`` names the ``binary`` and the ``path``.
+MACOS_NATIVE_UNSUPPORTED = "KF-MACOS-NATIVE-UNSUPPORTED"
+
+#: macOS: a native binary links a library declared in
+#: ``[tool.kivy.macos.native.binaries]`` by a path that does not reach it in
+#: the bundle, in a process that loads it (a helper, or Python via ctypes).
+#: Exit 1. A WARNING when the link is weak, or when Python loads it and the
+#: link is the library's install name (it works if the app loads the library
+#: first). ``context`` names the ``binary``, the ``library``, the ``process``
+#: and the ``dependency`` as the load command spells it.
+MACOS_NATIVE_LOAD_PATH = "KF-MACOS-NATIVE-LOAD-PATH"
+
 #: A required tool is not installed: spawning it raised ``FileNotFoundError``,
 #: or a pre-flight found it absent (Android: no ``java``, or a JRE's missing
 #: ``javac``). ``context`` names the ``tool``.
@@ -106,6 +165,22 @@ IDE_NOT_FOUND = "KF-IDE-NOT-FOUND"
 
 #: This host cannot build this target at all (e.g. iOS from Windows).
 HOST_INCAPABLE = "KF-HOST-INCAPABLE"
+
+#: iOS: the project would run Kivy 2.x there. kivyforge builds Kivy 3 only on
+#: iOS; the mobile wheel index serves no Kivy 2.x iOS wheel, and kivy-ios is
+#: the tool that serves Kivy 2.x. ``lock`` catches a ``kivy`` requirement that
+#: admits no 3.x release before resolving, and a resolved ``kivy`` below
+#: ``3.0.0.dev0`` after; ``build`` applies the second check to the lock it
+#: reads. Exit 1. ``context`` names the ``requirement`` or the ``version``.
+IOS_KIVY_UNSUPPORTED = "KF-IOS-KIVY-UNSUPPORTED"
+
+#: iOS: a ``.py`` file under ``app_dir`` imports the kivy-ios ``ios`` module,
+#: which kivyforge does not provide (Kivy 3 and the standard library replace
+#: it). WARNING: the import may be guarded, so the build goes on and the run is
+#: ``ok``. Quiet when ``app_dir`` has its own ``ios.py`` or ``ios/``.
+#: ``build`` and ``doctor`` report it. ``context`` names the first ``file``, its
+#: ``line``, and how many ``files`` import it.
+IOS_LEGACY_IOS_MODULE = "KF-IOS-LEGACY-IOS-MODULE"
 
 #: Android: a dependency provides a top-level ``android`` module, which would
 #: be shadowed by the ``android`` package kivyforge bundles. ``lock`` catches a
@@ -206,8 +281,9 @@ class Diagnostic:
     message: str
     remediation: str = ""
     #: Free-form, code-specific context. Kept separate from the top-level
-    #: fields so adding context is never a schema change.
-    context: dict[str, str] = field(default_factory=dict)
+    #: fields so adding context is never a schema change. ``None`` is a value
+    #: that is known to be absent, emitted as JSON ``null``.
+    context: dict[str, str | None] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {

@@ -10,6 +10,7 @@ sources:
   - kivyforge/platforms/ios/lock/writer.py
   - kivyforge/platforms/android/lock/writer.py
   - kivyforge/cli/lock.py
+  - kivyforge/lock/sources.py
 ---
 
 # Lockfile format
@@ -49,12 +50,27 @@ The filename identifies the target. There is no platform field inside the file.
 ## `[[packages]]`
 
 One entry per resolved Python package, in the standard PEP 751 shape: `name`,
-`version`, optional `requires-python`, `marker`, and `dependencies`, and one or
-more `[[packages.wheels]]` entries. Each wheel has a `name`, a `url` (or a
-project-relative `path` for a local wheel), and `hashes = { sha256 = "..." }`.
-A compiled package can list several wheels, one per platform tag the target
-needs. See the [PEP 751 specification](https://peps.python.org/pep-0751/) for
-the field definitions.
+`version`, optional `requires-python`, `marker`, `dependencies`, and `index`,
+and one or more `[[packages.wheels]]` entries. Each wheel has a `name`, a `url`
+(or a project-relative `path` for a local wheel), and
+`hashes = { sha256 = "..." }`. A compiled package can list several wheels, one
+per platform tag the target needs. See the
+[PEP 751 specification](https://peps.python.org/pep-0751/) for the field
+definitions.
+
+`index` is the base URL of the index the package's wheels came from, such as
+`https://pypi.org/simple/`. A package from `find_links` has no `index`; its
+wheels have a `path`. A package whose wheels came from different indexes on
+different targets, or from a page that matches no configured index, also has
+none. `build` installs from each wheel's `url` or `path` and does not use
+`index`. See
+[Where packages come from](../concepts/runtimes-and-wheels.md#where-packages-come-from).
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. Locks written by 3.0.0.dev1 and
+    earlier have no `index`. They stay valid, and `lock --check` does not count
+    the missing `index` as drift. The next re-lock adds it.
 
 A package can also carry a `[packages.tool.kivyforge]` table, which other PEP 751
 tools ignore:
@@ -62,7 +78,6 @@ tools ignore:
 | Key | Description |
 |---|---|
 | `direct_requirement` | `true` if the package is listed in `[project].dependencies`, rather than pulled in by another package. |
-| `source_index` | The index the wheel was resolved from. |
 
 ## `[tool.kivyforge]`
 
@@ -73,7 +88,7 @@ Every lock has these keys:
 | `schema_version` | Version of the `[tool.kivyforge]` table layout. |
 | `kivyforge_version` | The kivyforge version that wrote the lock. |
 | `generated_at` | When the lock was written. |
-| `pyproject_sha256` | SHA-256 of the whole `pyproject.toml` the lock was resolved from. Used for drift detection. |
+| `lock_inputs_sha256` | SHA-256 of the lock inputs: the parsed `pyproject.toml` values the lock was resolved from. Used for drift detection. |
 
 The rest of the table depends on the target.
 
@@ -86,6 +101,7 @@ The rest of the table depends on the target.
 | `[tool.kivyforge.python_runtime]` | The bundled CPython runtime: `provider`, `version`, and an optional OS `floor`. |
 | `[[tool.kivyforge.python_runtime.artifacts]]` | One runtime archive per architecture: `arch`, `url`, `sha256`, `archive_format`. |
 | `[[tool.kivyforge.native_binaries]]` | One entry per [native binary](../guides/cross-platform/native-binaries.md): `name`, `version`, `url` or `path`, `sha256`. |
+| `[[tool.kivyforge.include_files]]` | macOS only. One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
 
 ### iOS
 
@@ -95,6 +111,7 @@ The rest of the table depends on the target.
 | `[tool.kivyforge.python_xcframework]` | The `Python.xcframework` runtime: `version`, `url`, `sha256`. |
 | `[[tool.kivyforge.xcframeworks]]` | Standalone native xcframeworks: `name`, `version`, `url` or `path`, `sha256`, `slices`, `archive_format`, `link`, `embed`, and optional fields. |
 | `[[tool.kivyforge.swift_packages]]` | [Swift packages](../guides/ios/swift-packages.md): `name`, `url` or `path`, the requirement and resolved `revision` or `version`, `products`, `link`, `embed`. |
+| `[[tool.kivyforge.include_files]]` | One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
 
 ### Android
 
@@ -115,17 +132,29 @@ order, so re-locking changes only the lines whose pins changed.
 
 ## Drift
 
-Because `pyproject_sha256` hashes the whole `pyproject.toml`, any edit to the
-file, including a comment, makes the lock stale:
+`lock_inputs_sha256` hashes the lock inputs: `[project].dependencies` and
+`requires-python`, plus the target's Python version, architectures, OS floor,
+indexes, `find_links`, `exclude`, native libraries, and the `include_files`
+entries (Android, iOS, macOS). When one of them changes, the lock is stale.
+Comments, key order, and every other field are not inputs.
+
+An `include_files` file is also pinned by its content. After you edit a listed
+file, or add or delete one inside a listed directory, `build` refuses it as
+drift, and plain `kivyforge lock -p PLATFORM` rewrites only the
+`include_files` pins, without resolving anything. Changing an entry's `dest`
+or `sources` changes a lock input, so `lock` re-resolves as below.
 
 - `build` and `package` refuse a stale lock with `KF-LOCK-DRIFT` and exit code `4`.
   `--no-verify-lock` skips this check.
-- `lock --check` re-resolves, compares the result with the committed lock
-  (ignoring `generated_at`), and exits `4` if they differ. It writes nothing.
+- `lock --check` re-resolves, keeping the locked versions, compares the result
+  with the committed lock (ignoring `generated_at`), and exits `4` if they
+  differ. It writes nothing.
 
 To fix a stale lock, run `kivyforge lock -p PLATFORM`, replacing `PLATFORM` with
-the target. That command resolves again and takes the newest version each
-specifier allows. See
+the target. That command keeps the locked versions and moves only what the
+change requires. If it cannot, it fails with `KF-LOCK-PINS-CONFLICT`, and
+`kivyforge lock -p PLATFORM --update` takes the newest version each specifier
+allows. See
 [Pin a package version](../guides/cross-platform/dependencies.md#pin-a-package-version).
 
 ## What's next

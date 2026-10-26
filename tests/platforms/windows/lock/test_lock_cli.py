@@ -24,10 +24,9 @@ def patch_windows_build(monkeypatch):
 
     real_build = windows_lock.build_windows_lockfile
 
-    def fake_build(config, text, *, project_root=None, offline=False, **_kw):
+    def fake_build(config, *, project_root=None, offline=False, **_kw):
         return real_build(
             config,
-            text,
             project_root=project_root,
             resolver=FakeWindowsResolver(),
             runtime_provider=FakeRuntimeProvider(),
@@ -67,7 +66,23 @@ class TestWindowsLockCli:
             pp = Path(fs) / "pyproject.toml"
             pp.write_text(windows_pyproject + "\n")
             runner.invoke(lock, ["-p", "windows"])
-            pp.write_text(windows_pyproject + "\n# changed\n")
+            pp.write_text(
+                windows_pyproject.replace(
+                    "[tool.kivy.windows]\n",
+                    '[tool.kivy.windows]\nexclude = ["unused-dist"]\n',
+                )
+            )
             result = runner.invoke(lock, ["-p", "windows", "--check"])
             assert result.exit_code != 0
             assert "out of date" in result.output or "stale" in result.output
+
+    def test_a_comment_is_not_drift(self, runner, tmp_path, windows_pyproject):
+        """Only lock inputs count (#126): a comment leaves the lock alone."""
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            pp = Path(fs) / "pyproject.toml"
+            pp.write_text(windows_pyproject + "\n")
+            runner.invoke(lock, ["-p", "windows"])
+            pp.write_text(windows_pyproject + "\n# changed\n")
+            result = runner.invoke(lock, ["-p", "windows", "--check"])
+            assert result.exit_code == 0, result.output
+            assert "up to date" in result.output

@@ -92,11 +92,28 @@ def pytest_addoption(parser):
         "exportKivyforgeReleaseManifest task makes) to check against config.",
     )
     group.addoption(
+        "--android-dex-class",
+        action="append",
+        default=[],
+        metavar="CLASS",
+        help="A class (binary name) the --android-apk's dex files must define. "
+        "Repeatable.",
+    )
+    group.addoption(
         "--android-project",
         default=None,
         help="Path to the project directory whose pyproject.toml the merged "
         "manifest must agree with. Required by --android-merged-manifest: "
-        "the check is a comparison, so it needs both sides.",
+        "the check is a comparison, so it needs both sides. With "
+        "--android-apk, its [tool.kivy.android].main_activity must also be "
+        "in the dex.",
+    )
+    group.addoption(
+        "--android-gradle-project",
+        default=None,
+        help="Path to a generated Gradle project (<slug>-android) that has "
+        "been built once, with [tool.kivy.android.src].kotlin set, to compile "
+        "the main_activity check against a matrix of candidate classes.",
     )
     group.addoption(
         "--macos-app",
@@ -134,9 +151,13 @@ def pytest_addoption(parser):
         "--ios-project",
         default=None,
         help="Path to the project directory whose pyproject.toml the .app was "
-        "built from; supplies the Info.plist keys config decides. No "
-        "--ios-stripped option exists: iOS strip_source cannot be exercised "
-        "honestly yet (see tests/artifact_checks.py's iOS module note).",
+        "built from; supplies the Info.plist keys config decides.",
+    )
+    group.addoption(
+        "--ios-stripped",
+        action="store_true",
+        help="Assert app/ and pip-deps/ are bytecode-only (strip_source "
+        "applied, as `package -p ios` does).",
     )
     group.addoption(
         "--linux-appimage",
@@ -231,8 +252,8 @@ def pytest_addoption(parser):
         default=None,
         metavar="PLATFORMS",
         help="Build and launch the metaprobe fixture app on these platforms "
-        "(comma-separated: macos, ios-sim, android-emu). Needs their "
-        "toolchains and the network, and takes minutes per platform.",
+        "(comma-separated: macos, windows, linux, ios-sim, android-emu, ios-device). "
+        "Needs their toolchains and the network, and takes minutes per platform.",
     )
     resolver.addoption(
         "--resolver-prerelease-minor",
@@ -313,19 +334,23 @@ def _default_target_platform(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _allow_ios_verbs_off_macos(monkeypatch):
-    """Neutralize the iOS macOS-host gate for the suite.
+def _default_verbosity(monkeypatch):
+    """A developer's own ``KIVYFORGE_VERBOSE`` must not change what verbs run."""
+    monkeypatch.delenv("KIVYFORGE_VERBOSE", raising=False)
 
-    The whole iOS workflow — ``lock`` included, because resolving Swift
-    packages shells out to ``swift package resolve`` — is macOS-only, but the
-    tests must still run on Linux and Windows CI. Same approach the macOS and
-    Linux suites use: no-op the module-level ``_require_*`` helper.
+
+@pytest.fixture(autouse=True)
+def _allow_any_host(monkeypatch):
+    """Neutralize the host gate for the suite.
+
+    Every target verb refuses a host that cannot build its target (iOS and
+    macOS off macOS, Windows off Windows, Linux off x86_64 Linux), but the
+    tests must still run on every CI host. There is one gate,
+    ``kivyforge.cli._platform.require_host``, so there is one seam.
 
     The gate's own behaviour is covered directly in
-    ``tests/platforms/test_host_gating.py``, which calls the real helpers.
+    ``tests/platforms/test_host_gating.py``, which calls the real function.
     """
-    from kivyforge.cli import lock as lock_cli
-    from kivyforge.platforms.ios import cli as ios_cli
+    from kivyforge.cli import _platform
 
-    monkeypatch.setattr(ios_cli, "_require_macos_host", lambda: None)
-    monkeypatch.setattr(lock_cli, "_require_host_toolchain", lambda backend: None)
+    monkeypatch.setattr(_platform, "require_host", lambda backend: None)

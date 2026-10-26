@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from kivyforge.bundle import entry_launcher
 from kivyforge.config.model import Config
 
 _TEMPLATES = Path(__file__).parent / "templates"
@@ -56,11 +57,32 @@ def render_main_config_h(config: Config, *, python_version: str | None = None) -
     )
     major_minor = ".".join(version.split(".")[:2])
     template = (_TEMPLATES / "main_config.h.in").read_text(encoding="utf-8")
+    launcher = entry_launcher.launcher_source(config.kivy) or ""
     return (
         template.replace("@APP_DIR@", "app")
         .replace("@ENTRY_POINT@", config.kivy.entry_point)
+        .replace("@ENTRY_LAUNCHER@", c_string_body(launcher))
         .replace("@PYTHON_MAJOR_MINOR@", major_minor)
     )
+
+
+def c_string_body(text: str) -> str:
+    """*text* as the inside of a C string literal, ASCII only.
+
+    Every byte outside printable ASCII is a three-digit octal escape: a hex
+    escape would run on into a following hex digit, and octal stops at three.
+    Identifiers may be non-ASCII, so the launcher can carry UTF-8.
+    """
+    out = []
+    for byte in text.encode("utf-8"):
+        char = chr(byte)
+        if char in '"\\':
+            out.append("\\" + char)
+        elif 0x20 <= byte < 0x7F:
+            out.append(char)
+        else:
+            out.append(f"\\{byte:03o}")
+    return "".join(out)
 
 
 def render_native_modules_h(modules: Sequence[NativeModule] = ()) -> str:

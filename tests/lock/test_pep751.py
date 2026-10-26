@@ -144,7 +144,28 @@ class TestEmitPackage:
         p = self._emit(pkg)
         tool = p["tool"]["kivyforge"]
         assert tool["direct_requirement"] is True
-        assert tool["source_index"] == "https://pypi.org/simple"
+        # PEP 751's own key, not the tool table (#86).
+        assert "source_index" not in tool
+        assert p["index"] == "https://pypi.org/simple"
+
+    def test_index_without_tool_table(self):
+        p = self._emit(
+            LockedPackage(
+                name="foo", version="1.0", wheels=(), source_index="https://x/simple/"
+            )
+        )
+        assert p["index"] == "https://x/simple/"
+        assert "tool" not in p
+
+    def test_no_index_for_a_find_links_package(self):
+        pkg = LockedPackage(
+            name="foo",
+            version="1.0",
+            wheels=(
+                LockedWheel(name="foo.whl", sha256="a" * 64, path="wheels/foo.whl"),
+            ),
+        )
+        assert "index" not in self._emit(pkg)
 
     def test_no_tool_table_when_defaults(self):
         p = self._emit(LockedPackage(name="foo", version="1.0", wheels=()))
@@ -226,6 +247,17 @@ class TestParse:
         assert pkg.direct_requirement is True
         assert pkg.source_index == "idx"
         assert pkg.wheels[0].name == "f.whl"
+
+    def test_parse_package_index_wins_over_tool_source_index(self):
+        pkg = parse_package(
+            {
+                "name": "foo",
+                "version": "1.0",
+                "index": "https://pypi.org/simple/",
+                "tool": {"kivyforge": {"source_index": "old"}},
+            }
+        )
+        assert pkg.source_index == "https://pypi.org/simple/"
 
     def test_parse_package_minimal_defaults(self):
         pkg = parse_package({"name": "foo", "version": "1.0"})

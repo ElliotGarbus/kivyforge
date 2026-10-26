@@ -6,6 +6,7 @@ sources:
   - kivyforge/cli/lock.py
   - kivyforge/lock/reader.py
   - kivyforge/platforms/android/lock/builder.py
+  - docs/design/dev/package-index-proposal.md
   - FAQ.md
 ---
 
@@ -20,8 +21,9 @@ keep the lock in sync with `pyproject.toml`.
 
 - A project with an overlay for each target you build. See
   [Project configuration](../../concepts/configuration.md).
-- A host that can lock the target. `lock` runs on any host for every target
-  except iOS, which needs macOS. See
+- A host that can build the target. `lock` follows the same host rules as
+  `build`: lock iOS and macOS on a Mac, Windows on Windows, and Linux on x86_64
+  Linux. Android locks on any of them. See
   [Which host builds which target](../../get-started/hosts.md).
 - For an Android project that declares Maven dependencies in
   `[tool.kivy.android.gradle]`, a JDK. `lock` runs Gradle to resolve them.
@@ -50,10 +52,10 @@ platform.
 
 ## Pin a package version
 
-The version written into the lock is the newest one your specifier allows.
-`kivyforge lock` resolves `[project].dependencies` from scratch when the lock
-is stale, and when you pass `--update`. While the lock is in sync, `lock`
-leaves those versions where they are.
+The first lock takes the newest version your specifier allows. After that,
+`kivyforge lock` keeps the versions already locked: when a lock input
+changes, only the packages that change requires move. `--update` resolves
+everything to the newest version allowed.
 
 To hold a package on one version, require that version exactly:
 
@@ -66,7 +68,7 @@ dependencies = [
 ```
 
 A range such as `kivy>=2.3.1` or `pillow>=10` moves to the newest match the
-next time you re-lock. A Kivy 3 development snapshot is a pre-release, so the
+next time you pass `--update`. A Kivy 3 development snapshot is a pre-release, so the
 specifier has to name one. See the `kivy_generation` setting in
 [Configure your Android app](../android/configure.md). A range such as
 `kivy>=3.0.0.dev0,<4` still moves to the newest snapshot. Pin the snapshot
@@ -109,8 +111,105 @@ only on targets that have a matching wheel: `macosx_*`, `manylinux_*`,
 fails for that target. See
 [Prebuilt runtimes and wheels](../../concepts/runtimes-and-wheels.md).
 
-To add an index or a local directory of wheels, use `extra_index_urls` or
-`find_links` in the target's overlay.
+To add an index, list it in the target overlay's `extra_index_urls`. When two
+indexes offer the same version of a package, the one listed first wins. See
+[Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from).
+
+## Use your own wheels
+
+When you build a wheel yourself, for example a patched Kivy, put it in a
+directory in your project and list that directory in `find_links`. A package
+with a wheel there comes only from there, even when an index publishes a newer
+version.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier, an
+    index wheel of the same or a newer version replaced your local wheel.
+
+1. Copy the wheels into a directory inside your project, such as `wheels/`.
+   Include one wheel for each architecture or ABI you lock.
+2. List the directory in the target's overlay:
+
+    ```toml
+    [tool.kivy.android]
+    find_links = ["wheels"]
+    ```
+
+3. Re-lock the target:
+
+    ```bash
+    kivyforge lock -p android
+    ```
+
+The lock records each local wheel with a project-relative `path`. Commit the
+wheels with the lock, because `build` installs from that path.
+
+If the directory has a wheel for a package on one ABI but not another, `lock`
+fails with `KF-LOCK-SOURCE-UNAVAILABLE` and names the missing ABI. It does not
+take that ABI's wheel from an index.
+
+To take the package from an index again, pin it to that index, as the next
+section shows, or remove its wheels from the directory, and re-lock. A pin
+leaves your wheels where they are, so removing the pin switches back.
+`lock --update` alone does not switch: it picks newer versions within a
+package's source, and never changes the source.
+
+## Choose the index a package comes from
+
+When several indexes publish the same package, pin it to the one you want. A
+pinned package comes only from that index, and an index you mark `explicit`
+supplies only the packages pinned to it, so it cannot replace anything else.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release.
+
+1. Declare the index in `[tool.kivy]`, giving it a name:
+
+    ```toml
+    [[tool.kivy.index]]
+    name = "mobile-wheels"
+    url = "https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"
+    explicit = true
+    ```
+
+2. Pin the package to it, for every target in `[tool.kivy.sources]`, or for
+   one target in that target's own `sources` table:
+
+    ```toml
+    [tool.kivy.android.sources]
+    kivy = { index = "mobile-wheels" }
+    ```
+
+3. Re-lock the target:
+
+    ```bash
+    kivyforge lock -p android
+    ```
+
+`pypi` is a built-in index name, so `pyjnius = { index = "pypi" }` holds a
+package to PyPI without declaring anything.
+
+The lock records each package's index in its `index` field, so you can check
+where a package came from in `pylock.<platform>.toml`. If the pinned index has
+no wheel for one of your targets, `lock` fails with
+`KF-LOCK-SOURCE-UNAVAILABLE` instead of taking it from another index.
+
+For every key and rule, see the
+[`[tool.kivy]` reference](../../reference/pyproject/tool-kivy.md#package-indexes-and-sources).
+
+### Switch between your own wheel and an index
+
+A pin outranks `find_links`, so you can keep a patched wheel in your project
+and still choose, package by package, where to take it from:
+
+1. With the wheel in `find_links` and no pin, `lock` uses your wheel, even
+   after `--update`.
+2. To take the index's release instead, for example once it includes your
+   fix, pin the package to the index and re-lock. `lock` warns that it is
+   ignoring your wheel.
+3. To go back to your wheel, remove the pin and re-lock.
 
 ## Prune unused Kivy dependencies
 
@@ -124,11 +223,12 @@ exclude = ["kivy-garden", "docutils", "pygments"]
 
 ## Keep the lock in sync
 
-The lock records a hash of the whole `pyproject.toml`, so any edit to the file
-makes the lock stale, including edits outside `[project].dependencies`. After you
-edit `pyproject.toml`, re-lock the targets you build. That re-lock resolves
-again. [Pin a package version](#pin-a-package-version) so the packages you care
-about stay put.
+The lock records a hash of its lock inputs: `[project].dependencies`,
+`requires-python`, and the target's Python version, architectures, indexes,
+`find_links`, `exclude`, and native libraries. When you change one of them,
+re-lock the targets you build. The re-lock keeps the versions already locked
+and moves only what the change requires. Editing anything else, such as
+signing, icons, or another platform's settings, leaves the lock in sync.
 
 If the lock is in sync, `lock` leaves it unchanged. To resolve again anyway and
 take the newest version each specifier allows, pass `--update`:
@@ -163,12 +263,11 @@ Check that the lock matches `pyproject.toml`:
 kivyforge lock -p linux --check
 ```
 
-The command exits `0` and prints that the lock is up to date. If the lock is
-stale, or a specifier allows a newer release than the lock records, it lists
-what changed, exits `4` with `KF-LOCK-DRIFT`, and writes nothing. `build`,
-`run`, and `package` fail the same way when the `pyproject.toml` hash no
-longer matches the lock. A lock whose hash still matches is accepted, even
-when `--check` would now resolve something newer. See
+The command exits `0` and prints that the lock is up to date. It resolves
+while keeping the locked versions, so a newer upstream release alone does not
+fail it. If a lock input changed, it lists what would change, exits `4` with
+`KF-LOCK-DRIFT`, and writes nothing. `build`, `run`, and `package` fail the
+same way when the lock inputs' hash no longer matches the lock. See
 [Pin a package version](#pin-a-package-version) and
 [Drive kivyforge from CI or an agent](ci-and-agents.md).
 

@@ -23,19 +23,38 @@ def _bundle(tmp_path) -> Path:
     return app
 
 
-def test_native_binaries_in_bin_are_signed(tmp_path, monkeypatch):
-    # A user-supplied Mach-O staged under Resources/bin must be covered by the
+def test_native_binaries_are_signed(tmp_path, monkeypatch):
+    # User-supplied Mach-O in Helpers/ and Frameworks/ must be covered by the
     # inside-out sweep so the notarized bundle has no unsigned nested binary.
     app = _bundle(tmp_path)
-    _macho(app / "Contents" / "Resources" / "bin" / "libgreet.dylib")
+    _macho(app / "Contents" / "Helpers" / "roll")
+    _macho(app / "Contents" / "Frameworks" / "libgreet.dylib")
 
     order = []
     monkeypatch.setattr(signing, "codesign_adhoc", lambda p: order.append(p))
 
     count = signing.sign_bundle_adhoc(app)
 
-    assert count == 4  # python3 + _c.so + libgreet.dylib + the bundle
-    assert app / "Contents" / "Resources" / "bin" / "libgreet.dylib" in order
+    assert count == 5  # python3 + _c.so + roll + libgreet.dylib + the bundle
+    assert app / "Contents" / "Helpers" / "roll" in order
+    assert app / "Contents" / "Frameworks" / "libgreet.dylib" in order
+    assert order[-1] == app
+
+
+def test_main_executable_signs_after_code_at_its_depth(tmp_path, monkeypatch):
+    # codesign refuses the main executable while Helpers/ or Frameworks/ hold
+    # unsigned code ("code object is not signed at all / In subcomponent").
+    app = _bundle(tmp_path)
+    main = app / "Contents" / "MacOS" / "App"
+    _macho(main)
+    _macho(app / "Contents" / "Helpers" / "roll")
+    _macho(app / "Contents" / "Frameworks" / "libgreet.dylib")
+
+    order = []
+    monkeypatch.setattr(signing, "codesign_adhoc", lambda p: order.append(p))
+    signing.sign_bundle_adhoc(app)
+
+    assert order[-2:] == [main, app]
 
 
 def test_signs_deepest_first_then_bundle(tmp_path, monkeypatch):

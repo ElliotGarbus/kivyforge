@@ -165,6 +165,7 @@ class TestVerbForwarding:
             "abi": "arm64_v8a",
             "keystore": "release.keystore",
             "key_alias": "upload",
+            "debug": False,
             "no_verify_lock": False,
             "no_cache": False,
         }

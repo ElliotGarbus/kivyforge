@@ -18,7 +18,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .streaming import elapsed, run_streaming
+from kivyforge.report.verbosity import command_line, current_verbosity
+from kivyforge.streaming import elapsed, run_streaming
+
 from .toolchain import CMAKE_VERSION, NDK_VERSION
 
 _BAT = ".bat" if os.name == "nt" else ""
@@ -92,9 +94,14 @@ def _install(
     def on_quiet(seconds: float) -> None:
         on_progress(f"{label}: still installing ({elapsed(seconds)})")
 
+    cmd = [str(tool), f"--sdk_root={sdk}", package.package_id]
+    # -v prints the command; -vv adds nothing here, since the output is already
+    # a progress bar and its transcript explains a failed install.
+    if current_verbosity():
+        on_progress(f"{label}: {command_line(cmd)}")
     try:
         returncode, transcript = run_streaming(
-            [str(tool), f"--sdk_root={sdk}", package.package_id],
+            cmd,
             on_segment=on_segment,
             on_quiet=on_quiet,
         )

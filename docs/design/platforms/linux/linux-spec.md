@@ -121,7 +121,7 @@ strip_source = "release"   # "release" | true | false — drop .py once byte-com
 | `glibc_floor` | string | no | *(runtime floor, 2.17)* | The Linux analog of macOS `minimum_system_version`. `None` means the runtime's own glibc floor (2.17) applies. Setting it *higher* (e.g. `"2.28"`) admits newer-manylinux-only wheels at the cost of raising the artifact's host floor. A value *below* the runtime floor is the same config-time error macOS raises via `floor_error`. |
 | `archs` | list of string | no | `["x86_64"]` | Target architecture set: `x86_64` (native) and/or `aarch64` (cross-only from an x86_64 Linux host; Raspberry Pi target). Unlike macOS there is **no fat binary** — each arch is a separate AppImage. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (manylinux tags), same semantics as iOS/macOS. |
-| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
+| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. A package with any wheel here comes only from `find_links`, on every arch ([package-index-proposal §3](../../dev/package-index-proposal.md#3-behaviour-and-config)). |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
 
 Icons: `[tool.kivy.linux.icons].source` (1024×1024 PNG) is resized into the
@@ -302,7 +302,11 @@ compiled Mach-O stub on macOS. It resolves its own directory via
 and `exec`s `"$HERE/usr/python/bin/python3" "$HERE/usr/app/<entry_point>.py"
 "$@"`. A dotted `entry_point` (e.g. `pkg.start`, per the shared
 [`app_dir`/`entry_point` contract](../../common/01-pyproject-kivy-spec.md#app_dir--entry_point-interaction))
-maps to the nested source path `usr/app/pkg/start.py`. The base launcher sets
+maps to the nested source path `usr/app/pkg/start.py`. (Since the strip_source
+fix the exec is `python3 -P -m <entry_point>`, which finds a sourceless `.pyc`
+too.) For a `module:function` entry point the module is `_kivyforge_main`, the
+launcher staged into `usr/app` that calls the function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)).
+The base launcher sets
 **no `LD_LIBRARY_PATH`**: PBS rpaths are `$ORIGIN`-relative and manylinux wheels
 vendor their native libs (auditwheel), so the environment stays clean for the
 host's own libGL. The one exception is the declared native-binaries channel,
@@ -403,11 +407,12 @@ same-soname system library with a vendored copy — is precisely the safety
 property we want, so it is a feature, not a limitation.
 
 macOS cannot offer any of B/C: `DYLD_*` is stripped under SIP / Hardened
-Runtime, so the macOS spec documents by-path loads only. The **portable recipe**
-that works on every desktop OS is still `Path(sys.prefix).parent / "bin"`
-(`sys.prefix` is `usr/python`, so its parent is `usr/`, giving the `bin`
-directory; the same derivation holds on macOS and Windows) — Linux simply adds
-the by-name convenience on top. A vendor `.so` whose *sibling* dependencies are
+Runtime, so the macOS spec documents by-path loads only. The by-path recipe
+on Linux is `Path(sys.prefix).parent / "bin"` (`sys.prefix` is `usr/python`,
+so its parent is `usr/`, giving the `bin` directory; the same derivation holds
+on Windows). macOS keeps libraries in `Contents/Frameworks`, so there it is
+`Path(sys.prefix).parents[1] / "Frameworks"`. Linux simply adds the by-name
+convenience on top. A vendor `.so` whose *sibling* dependencies are
 not themselves declared (and lack `$ORIGIN` rpaths) still won't resolve them;
 declare the whole set, preload in order via `ctypes`, or ask the vendor for
 `$ORIGIN`-rpath'd builds.

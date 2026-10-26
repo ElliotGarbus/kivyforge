@@ -21,6 +21,543 @@
   user without access to `/dev/kvm`, now gets a WARN where it got a PASS.
   doctor's exit status does not change, since only a FAIL makes it non-zero.
 
+### iOS: stripped release builds with wheels that ship data files
+
+- **Fixed:** `package -p ios` no longer fails on a wheel that installs data
+  files (setuptools `data_files`, the wheel's `.data/data/` tree). `pip
+  install --target` put them at the root of `pip-deps/`, and the release build
+  byte-compiled them with everything else, so one unimportable file stopped the
+  whole package. pyobjus is the case that hit it: its wheel ships Python 2
+  examples under `share/pyobjus-examples/`, so no app using pyobjus could
+  package with stripping on. That was hidden until CPython 3.15.0 final, because
+  before then iOS builds never byte-compiled.
+- **Changed:** iOS apps no longer ship a wheel's data files at all, which is
+  what macOS has always done. Nothing on iOS could find them: the app's
+  `sys.prefix` is not `pip-deps/`. If your app reads a file a dependency
+  installs this way, add it with `include_files` instead.
+- **Changed:** pip no longer byte-compiles `pip-deps/` during `build`. It used
+  the host's CPython, whose `.pyc` the app's CPython could never load; a
+  release build still compiles `pip-deps/` itself with a matching interpreter.
+
+### iOS: run code in the app lifecycle
+
+- **Added:** the `ios-lifecycle-hook` example and the guide
+  [Run code in the iOS app lifecycle](docs/guides/guides/ios/lifecycle-hooks.md),
+  the iOS answer to
+  [#85](https://github.com/ElliotGarbus/kivyforge/issues/85). A local
+  Objective-C package declared in `[tool.kivy.ios.native.swift_packages]`
+  runs before Python and adds the app-delegate methods SDL does not provide:
+  the push device token, background pushes, notification taps, background
+  tasks, and the URL that launched the app, which Kivy's `on_drop_file` never
+  receives. A Python module delivers them as Kivy events. kivyforge itself
+  is unchanged, so nothing needs migrating.
+
+### Android smoke test runs on one device
+
+- **Fixed:** `run -p android --smoke` runs the contract test only on the device
+  it resolved. Gradle's connected-test task runs on every attached device
+  unless `ANDROID_SERIAL` is set, and the probe is built for the resolved
+  device's ABI only, so `--smoke --device` with an emulator also running
+  failed on the emulator even when the phone passed. No migration is needed.
+
+### Android: your own activity class as the launcher (`main_activity`)
+
+- **Added:** `[tool.kivy.android].main_activity` names your own subclass of
+  `org.kivy.android.PythonActivity` as the app's launcher, so Java can run in
+  the activity's `onCreate` — where some SDKs must be set up — without
+  editing generated files. It is the counterpart of buildozer's
+  `android.entrypoint`, and `kivyforge init` now maps that key to it. The
+  manifest, `run`, the `--smoke` contract test and the release manifest
+  policy all follow the configured class. Python sees the subclass where it
+  always saw the activity (`android.mActivity`, `PythonActivity.mActivity`),
+  and the bundled `android` package works unchanged.
+- **Added:** with `main_activity` set, `kivyforge build` fails with javac's
+  error (`KF-BUILD-TOOL-FAILED`, exit 5) if the class is missing, abstract,
+  not a `PythonActivity`, or has no public no-argument constructor. A value
+  that is not a fully qualified top-level class name, or is inside a package
+  the bootstrap generates (`org.kivy.android`, `org.libsdl.app`, `org.jnius`,
+  `org.renpy.android`), fails the configuration check (exit 1).
+- **Changed:** the release manifest policy's exported baseline is the
+  configured launcher, not always `org.kivy.android.PythonActivity`, and the
+  single `LAUNCHER` activity must be that class. No migration for a project
+  without the key: its launcher is still `PythonActivity`.
+- **Changed:** the `--smoke` contract test starts the activity the manifest
+  marks `LAUNCHER` instead of naming `PythonActivity`, and asserts on the
+  device that the running activity is the configured launcher.
+- New example: `examples/mobile/android-activity-class`, a Java launcher
+  subclass beside a `ContentProvider` that registers activity lifecycle
+  callbacks (the route for a library), with a tracked lock as an on-device
+  gate.
+- **Docs:** [Add Java libraries to your Android app](docs/guides/guides/android/java-libraries.md)
+  says what the subclass can use: it is a plain `Activity`, never an
+  `AppCompatActivity`, `FragmentActivity` or `ComponentActivity`. AndroidX
+  helpers that take a `Context` or `Activity` work, App Startup and
+  `ProcessLifecycleOwner` work once declared as dependencies, and
+  `registerForActivityResult`, `ViewModelProvider(this)` and SDKs such as
+  `BiometricPrompt` do not compile against it. It also shows App Startup's
+  manifest entry and how to choose permission request codes that don't
+  collide with `android.permissions`
+  ([#184](https://github.com/ElliotGarbus/kivyforge/issues/184)).
+- **Docs:** the same guide's new section "Host an SDK that needs an AndroidX
+  activity" shows how to run SDKs that need a `ComponentActivity`,
+  `FragmentActivity` or `AppCompatActivity`, such as Stripe's PaymentSheet or
+  `BiometricPrompt`. They go in a second activity of your own, which Python
+  starts and reads the result from, with no `main_activity` and no bootstrap
+  change. It notes that PaymentSheet needs `compile_sdk = 36` and covers two
+  pyjnius traps: a Python `str` passed to `putExtra` arrives as a `char[]`,
+  and `setClassName` needs the package name.
+
+### Android: `[tool.kivy.android.src]` compiles your sources
+
+- **Fixed:** Java and Kotlin roots listed under `[tool.kivy.android.src]` are
+  compiled into the app. Before, the generated `app/build.gradle` named each
+  root as written, Gradle resolved it against the generated `app/` module
+  where no such directory exists, and the build succeeded with none of your
+  classes in the APK — so a class reached through pyjnius failed at runtime
+  with `ClassNotFoundException`. The roots are now written relative to the
+  module and compiled in place, so the next build picks up an edit without a
+  copy step.
+- **Changed:** each `src.java` / `src.kotlin` root must be an existing
+  directory; a missing one fails the configuration check (exit 1) instead of
+  building an app without the classes. No migration: a root that does not
+  exist never contributed anything.
+
+### Manifest-merger directives in Android raw-XML fragments
+
+- **Added:** the generated `AndroidManifest.xml` declares the `tools`
+  namespace, so a raw-XML fragment in `[tool.kivy.android.manifest]` can carry
+  manifest-merger directives as Android's documentation writes them — App
+  Startup's `<provider ... tools:node="merge">` entry, or
+  `tools:node="remove"` to drop a component a library's manifest contributes.
+  Previously such a fragment failed as "not well-formed XML".
+- **Changed:** the `application` / `activity` attribute tables reject a key
+  in any namespace other than `android:`, with a message saying where a
+  merger directive belongs. Before, such a key failed with the same
+  well-formedness error, so no configuration that loaded yesterday fails
+  today. A project that uses no `tools:` attribute produces a byte-identical
+  merged manifest: the merger consumes the namespace and emits nothing from
+  it.
+### macOS: native binaries go where Apple says code goes
+
+- **Changed (breaking):** `[tool.kivy.macos.native.binaries]` now places
+  executables in `Contents/Helpers/` and dynamic libraries in
+  `Contents/Frameworks/`, instead of everything in `Contents/Resources/bin/`
+  ([#174](https://github.com/ElliotGarbus/kivyforge/issues/174)). Apple
+  reserves `Resources/` for data, and notarization and Gatekeeper are only
+  documented for code in code locations. Each location is flat, so a file
+  from an archive keeps only its name, and names that differ only in case
+  count as the same name. The launcher puts `Contents/Helpers` on `PATH`, so
+  helpers still run by name.
+- **Changed (breaking):** the channel accepts native code only. A single-file
+  source that is not a Mach-O file fails the build with the new
+  `KF-MACOS-NATIVE-NOT-CODE`; ship data with `include_files` and scripts in
+  `app_dir`. Archive members that are not Mach-O, such as headers and
+  licences, are skipped with a warning under the same code. A plug-in
+  (`MH_BUNDLE`), any other Mach-O type, a universal file whose slices disagree
+  on type, and a binary inside a bundle in an archive (a `.framework`, for
+  instance) fail with the new `KF-MACOS-NATIVE-UNSUPPORTED`.
+- **Added:** the build checks, per process, that links between declared
+  binaries resolve in the new layout, and fails with the new
+  `KF-MACOS-NATIVE-LOAD-PATH` when one won't, naming the `install_name_tool`
+  commands that fix it. A weak link, and a link that works only if your Python
+  code loads the target library first, are warnings under the same code. A
+  binary with no slice for the target architecture now fails the build;
+  before, only `doctor` noticed.
+- **Changed:** signing now signs the main executable after all other code in
+  the bundle, since `codesign` treats `Helpers/` and `Frameworks/` as its
+  nested code.
+- **Fixed:** two archive members whose names differ only in case no longer
+  silently overwrite each other on a case-insensitive filesystem; the build
+  refuses the archive before extracting it. This applies to Windows too.
+- **Changed:** `doctor` checks the built app's `Contents/Helpers` and
+  `Contents/Frameworks` for the target architecture, reads the headers itself
+  instead of calling `lipo`, and checks that vendored single-file sources are
+  executables or dynamic libraries. `include_files` may now use
+  `Resources/bin`.
+- **Migration:** load libraries from
+  `Path(sys.prefix).parents[1] / "Frameworks"` instead of
+  `Path(sys.prefix).parent / "bin"`; helpers run by name need no change. A
+  helper built to find its library beside it (`@executable_path/libx.dylib`,
+  `@loader_path/libx.dylib`, or an `@executable_path` run path) now fails the
+  build: relink it to `@rpath/libx.dylib` with the run path
+  `@executable_path/../Frameworks`, and give a library your Python code loads
+  the run path `@loader_path`. Move any data out of the channel and into
+  `include_files`. No re-lock is needed.
+
+### Android: plain `lock` accepts an edited `include_files` file
+
+- **Fixed:** after you edited a file listed in
+  `[[tool.kivy.android.include_files]]`, or added or deleted a file in a
+  directory source, `build` told you to run `kivyforge lock -p android`, and
+  that command said the lock was already in sync and changed nothing
+  ([#176](https://github.com/ElliotGarbus/kivyforge/issues/176)). Only
+  `lock --update` got out, and it moved every package to its newest version.
+  Plain `lock` now re-hashes the include files and, if any changed, rewrites
+  just those hashes: nothing is re-resolved and no network is used.
+- **Fixed:** `lock --check` names each changed include file in its diff,
+  instead of saying the lock is out of date and listing nothing, and
+  `status -p android` reports the lock as out of date when an include file has
+  drifted.
+- **Changed:** an include that would replace the generated manifest or a
+  Gradle file is now reported as `KF-INCLUDE-RESERVED` instead of `KF-ERROR`.
+  The exit status is still 1 and the message is unchanged.
+- **Migration:** a consumer that branched on `KF-ERROR` for the overwrite
+  refusal should branch on `KF-INCLUDE-RESERVED`. Nothing else is needed.
+
+### Choose which index each package comes from
+
+- **Added:** name an index once in `[[tool.kivy.index]]` (`name`, `url`, and
+  optional `explicit`) and pin packages to it in `[tool.kivy.sources]`, or in
+  a target's own `sources` table, as `kivy = { index = "mobile-wheels" }`
+  ([#86](https://github.com/ElliotGarbus/kivyforge/issues/86)). The syntax
+  matches uv's `[[tool.uv.index]]` and `[tool.uv.sources]`. A pinned package
+  comes only from its index, for every package that depends on it too. An
+  `explicit` index serves only the packages pinned to it, so it can't replace
+  anything else. `pypi` is a built-in name. A non-explicit named index is an
+  extra index for every target, ranked after the target's `extra_index_urls`
+  and before PyPI.
+- **Added:** a pin outranks `find_links`. To switch a package from your own
+  wheel to an index's release, pin it; to switch back, remove the pin. Your
+  wheel stays where it is, and `lock` warns (`KF-LOCK-WARNING`) that it is
+  ignoring it. `lock` also warns about an explicit index that no `sources`
+  table uses. A pinned package with no wheel for a target on its index fails
+  with `KF-LOCK-SOURCE-UNAVAILABLE`; kivyforge never falls back to another
+  index.
+- **Changed:** iOS `lock` now reports warnings, like the other targets.
+- **Migration:** run `kivyforge lock` once per platform. The new keys are lock
+  inputs, so every existing lock reads as stale until re-locked, as after
+  #126; the re-lock keeps every locked version. A project that sets none of
+  the new keys resolves exactly as before.
+
+### Your own wheels win, and the first-listed index wins a tie
+
+- **Changed:** a package with any wheel in a `find_links` directory now comes
+  only from `find_links`, on every architecture or ABI, even when an index has
+  a newer version or a better-matching wheel
+  ([#86](https://github.com/ElliotGarbus/kivyforge/issues/86)). pip ranks
+  candidates by version and wheel tag, never by source, so a patched wheel you
+  built yourself used to lose to an index wheel of the same version.
+  `lock --update` moves a local package to a newer version only when a newer
+  wheel is in the directory. If the directory has a wheel for some ABIs but
+  not others, `lock` fails with the new `KF-LOCK-SOURCE-UNAVAILABLE` instead
+  of filling the gap from an index.
+- **Changed:** when two indexes offer the same version of a package with
+  equally good wheels, the one listed first in `extra_index_urls` wins, and
+  PyPI ranks last. pip took the one listed last, which read as backwards. A
+  newer version or a better-matching wheel still wins whatever its index's
+  position.
+- **Added:** each package in `pylock.<platform>.toml` records the index its
+  wheels came from, in PEP 751's standard `index` key, so a package that
+  changes index shows up in the lock diff and in `lock --check`. The unused
+  `[packages.tool.kivyforge] source_index` key is no longer written.
+- **Changed:** desktop locks now run pip through the same shim as Android and
+  iOS, which applies these rules. Markers are still evaluated for the host,
+  as before.
+- **Migration:** none needed for most projects. Existing locks stay valid:
+  `lock --check` does not count a missing `index` as drift, and the next
+  re-lock adds it. A project whose `find_links` directory holds an older
+  version of a package that an index also ships gets the local one at its
+  next re-lock; remove the wheel to keep the index version. A project with two
+  or more `extra_index_urls` that publish the same version of a package now
+  gets it from the first listed.
+
+### `include_files` on iOS and macOS
+
+- **Added:** `[[tool.kivy.ios.include_files]]` and
+  `[[tool.kivy.macos.include_files]]` copy your own files into the app, with
+  the same `dest` and `sources` keys as Android
+  ([#170](https://github.com/ElliotGarbus/kivyforge/issues/170)). On iOS `dest`
+  is relative to the `.app` (`"."` is its root), which is where Firebase looks
+  for `GoogleService-Info.plist`. On macOS it is relative to `Contents/` and
+  must start with `Resources` or `SharedSupport`, the places Apple documents
+  for data; macOS also drops the `com.apple.quarantine` attribute a download
+  adds. Files are copied byte for byte, and `kivyforge lock` pins each one by
+  SHA-256. After building, kivyforge checks that the `.app`, the `.ipa` and a
+  signed macOS bundle (before it goes to the notary service) hold each file
+  as it was copied, and fails with the new `KF-ARTIFACT-CONTENT` (exit 5)
+  without reporting the product if one is missing or different. Three new
+  codes (exit 1) refuse an include before anything is built:
+  `KF-INCLUDE-RESERVED` for a path the build writes (`Info.plist`,
+  `Resources/app`, ...) or, on iOS, a code-bundle name such as `X.framework`;
+  `KF-INCLUDE-NATIVE-CODE` for a Mach-O file or static archive, which
+  belongs in the platform's native-code key; and `KF-INCLUDE-SOURCE-FORMAT`
+  for a format Xcode compiles (`.xcstrings`, `.storyboard`, `.xib`,
+  `.xcassets`). `doctor -p ios` and `-p macos` report include drift.
+- **Migration:** `include_files` is now a lock input on iOS and macOS, so
+  every existing `pylock.ios.toml` and `pylock.macos.toml` reads as stale once.
+  Run `kivyforge lock -p ios` and `kivyforge lock -p macos`; both keep the
+  pinned versions.
+
+### Entry points: `module:function` and `[project.gui-scripts]`
+
+- **Added:** `[tool.kivy].entry_point` may name a function, such as
+  `"myapp.app:main"`, and kivyforge calls it the way an installed script calls
+  it: it imports `myapp.app` as part of its package, calls `main()` with no
+  arguments, and uses the return value as the exit status
+  ([#68](https://github.com/ElliotGarbus/kivyforge/issues/68)). Relative
+  imports inside the package now work, which they cannot when the module runs
+  as `__main__`. If `entry_point` is unset and `[project.gui-scripts]` has
+  exactly one entry, kivyforge uses it, so a package that already declares
+  its GUI script for `pip` and `uv run` needs no `entry_point`. If there are
+  several entries, kivyforge asks you to choose one with `entry_point`.
+  `[project.scripts]` is never used. This works on Android, iOS, macOS, Linux
+  and Windows: kivyforge generates a small launcher that each platform runs
+  as `__main__`, and `strip_source` release builds compile it to `.pyc` with
+  the rest of the app.
+- **Changed:** `kivyforge init` no longer writes `entry_point = "main"` for a
+  project that declares GUI scripts. That line would override the GUI
+  script. With one GUI script, `init` writes no `entry_point` and adds a
+  comment naming the script. With several, it sets `entry_point` to the
+  first and lists the others. A project without GUI scripts gets the same
+  line as before. `init --force` still leaves `[tool.kivy]` alone.
+- **Migration:** none needed for an app that sets `entry_point` or declares no
+  GUI scripts. `entry_point = "main"` and other module names still run as
+  `__main__`, exactly as before. A project that declares exactly one GUI
+  script and relied on the default `"main"` now starts that GUI script;
+  set `entry_point = "main"` to keep the old behavior.
+
+### `-v` / `-vv`: Gradle's stack trace and detail, without leaving kivyforge
+
+- **Added:** every verb accepts `-v` / `--verbose`, and `-vv`, or
+  `KIVYFORGE_VERBOSE=1|2` ([#64](https://github.com/ElliotGarbus/kivyforge/issues/64)).
+  On Android, `-v` adds `--stacktrace` to every Gradle run and prints the
+  folder and exact `gradlew` command first, so you can rerun it by hand; `-vv`
+  also adds `--info`. When Gradle fails, kivyforge's message now says to rerun
+  with `-v` (or, at `-v`, repeats the command) instead of leaving you with
+  Gradle's "Run with --stacktrace", which you could not pass. Other platforms
+  accept the flag and ignore it for now. The extra lines go to stderr, so
+  `--json` output is unchanged. `kivyforge capabilities` reports which verbs
+  accept it and which platforms act on it (`verbose` in each `verbs` and
+  `platforms` entry).
+- **Migration:** none needed; without the flag, Gradle runs exactly as before.
+
+### Locks: the desktop Python runtime lookup takes seconds, not half a minute
+
+- **Changed:** to pin the python-build-standalone runtime, `kivyforge lock`
+  for macOS, Linux and Windows now lists the release tags and reads each
+  release's small `SHA256SUMS`, eight at a time, instead of paging through
+  GitHub's full release records (about 15 MB a page). For CPython 3.13.14 on
+  Windows the lookup went from 10 to 47 seconds to 2 or 3, and it now makes
+  one GitHub API call instead of up to sixteen, so CI hits the rate limit far
+  less. The pinned URL and SHA-256 are the same as before; the old search
+  remains as a fallback.
+- **Migration:** none needed.
+### iOS: safe-area insets and keyboard height are used as Kivy pixels
+
+- **Changed:** the mobile geometry and kivy-ios `ios` module guides, and the
+  examples that pad by the safe area (`android-safe-area`, `ios-webview`,
+  `keychain-spm`, `mobile-geometry`, `pyjnius-deviceinfo`, `pyobjus-ball`,
+  `pyobjus-deviceinfo`, `qr-maven`, `svg-explorer`), no longer multiply
+  `kivy.mobile.get_safe_area()` or `get_keyboard_height()` by `get_scale()`
+  on iOS. [kivy/kivy#9441](https://github.com/kivy/kivy/pull/9441) makes the
+  iOS backend return Kivy layout pixels, as Android already did, which also
+  fixes `Window.keyboard_height`, `Window.safe_area` and `softinput_mode` on
+  iOS. `mobile-geometry` now labels these values `px`.
+- **Migration:** this needs a Kivy build that includes kivy/kivy#9441. On an
+  earlier Kivy 3 build, these examples' iOS insets and keyboard heights are a
+  third of the right size on current iPhones. If your own app multiplies these
+  values by `get_scale()` on iOS, remove the multiplication when you move to
+  the fixed Kivy, or they are scaled twice.
+
+### Locks: a desktop re-lock keeps its Python runtime
+
+- **Changed:** on macOS, Linux and Windows, `kivyforge lock` and
+  `lock --check` keep the python-build-standalone runtime already in the lock
+  while its CPython version, architectures and floor are unchanged, the way
+  they keep package pins. That skips the GitHub lookup for the runtime, which
+  took 20 to 30 seconds on Windows: a re-lock of `dice-roller` after an
+  input edit went from about 25 seconds to 6, and `lock --check` makes no
+  GitHub API call at all, so it no longer counts against CI's rate limit.
+  `lock --update`, a new Python version, or a new architecture looks the
+  runtime up again.
+- **Migration:** none needed. A newer python-build-standalone build of the
+  same CPython version is picked up by `lock --update`.
+
+### Locks: desktop `lock` shows the Python runtime lookup
+
+- **Fixed:** `kivyforge lock -p macos`, `-p linux` and `-p windows` showed
+  nothing while finding the python-build-standalone build of the pinned
+  CPython, a GitHub API lookup that pages back through releases for a version
+  not in the newest one. On Windows, CPython 3.13.14 took 28 seconds before
+  the first line. `lock` now announces the lookup and each page it checks:
+  `[lock] CPython 3.13.14: finding the python-build-standalone build`, then
+  `checking older releases (page N)`.
+- **Migration:** none needed.
+
+### Locks: iOS and desktop `lock` show their progress
+
+- **Added:** `kivyforge lock -p ios`, `-p macos`, `-p linux` and `-p windows`
+  now report each step on stderr, as `lock -p android` has since #87
+  ([#88](https://github.com/ElliotGarbus/kivyforge/issues/88)): a line per
+  slice or arch as pip resolves, a byte bar for each wheel pip downloads, a bar
+  for the python.org iOS framework download, the packages
+  `swift package resolve` fetches, and a "still resolving" line after 30
+  seconds with nothing new to show. In a log or a pipe, each bar becomes a few
+  lines. Before, these steps ran silently, so a slow lock looked like a hang.
+- **Migration:** none needed. stdout, and the `--json` envelope, are unchanged.
+
+### iOS: a guide to replacing the kivy-ios `ios` module, and a warning
+
+- **Added:** the guide
+  [Replace the kivy-ios ios module](docs/guides/guides/ios/ios-module.md).
+  kivyforge does not provide the module
+  ([#109](https://github.com/ElliotGarbus/kivyforge/issues/109)): Kivy 3 and
+  the standard library replace every function, on every platform. The guide
+  maps each old name to its replacement, explains which values are UIKit
+  points and which are Kivy pixels, and gives a web view recipe. It is
+  linked from the migration and mobile geometry guides.
+- **Added:** `kivyforge build -p ios` and `kivyforge doctor -p ios` warn with
+  `KF-IOS-LEGACY-IOS-MODULE` when a `.py` file under `app_dir` imports `ios`,
+  naming the file and line and pointing at the guide. The build goes on, and
+  under `--json` the warning is in `diagnostics` on an `ok: true` run. It is
+  quiet when `app_dir` has its own `ios.py` or `ios/`. Dependencies aren't
+  scanned.
+- **Docs:** [Call iOS APIs with pyobjus](docs/guides/guides/ios/pyobjus.md) now
+  says plyer's iOS facades need `pyobjus`, that `pyobjus`'s `load_framework`
+  does nothing on iOS, and that a `CGRect` argument should go through ctypes,
+  because pyobjus corrupts the heap passing one by value
+  ([kivy/pyobjus#90](https://github.com/kivy/pyobjus/issues/90)).
+### iOS: `run --simulator` shows the simulator with Xcode 27
+
+- **Fixed:** with Xcode 27, `run -p ios --simulator` launched the app on a
+  simulator with no window. Xcode 27 replaced Simulator.app with Device Hub,
+  and kivyforge opened the window with `open -a Simulator`, which now fails,
+  and ignored the failure. kivyforge now opens the simulator's screen in
+  Device Hub (`devices://device/open?id=<UDID>`). With Xcode 26 and earlier it
+  opens the selected Xcode's own Simulator.app.
+- **Changed:** the window is opened on every `run --simulator`, not only when
+  kivyforge boots the simulator. A simulator that was already booted with no
+  window now gets one.
+- **Added:** if no window can be opened, `run` warns on stderr and still runs
+  the app.
+- **Migration:** none needed.
+
+### iOS: Kivy 2.x is refused with a clear error
+
+- **Added:** `kivyforge lock -p ios` fails with `KF-IOS-KIVY-UNSUPPORTED` (exit
+  `1`) when the `kivy` requirement admits no Kivy 3 release, such as `kivy<3`
+  or `kivy==2.3.1`, and when the resolved `kivy` is below `3.0.0.dev0`.
+  `kivyforge build -p ios` applies the second check to the lock it reads, so a
+  lock written by hand or by an older kivyforge gets the same error
+  ([#109](https://github.com/ElliotGarbus/kivyforge/issues/109)). Before, a
+  2.x requirement failed inside pip's resolver with pip's wording, and
+  nothing said that Kivy 2.x is unsupported on iOS. kivyforge builds Kivy 3
+  only there; kivy-ios serves Kivy 2.x.
+- **Migration:** none for a project already on Kivy 3. A project that pins
+  Kivy 2.x now gets this error instead of pip's: require Kivy 3 (for example
+  `kivy>=3.0,<4`) and run `kivyforge lock -p ios`.
+
+### Hosts: every target verb refuses a host that cannot build the target
+
+- **Changed:** `lock`, `build`, `run`, `package`, `open`, `status` and `upgrade`
+  now all apply the host table from `kivyforge capabilities`, and fail with
+  `KF-HOST-INCAPABLE` (exit `3`) on the wrong host. iOS and macOS build on
+  macOS, Windows on Windows, Linux on Linux, and Android on any of them. Before,
+  only `build`, `run` and `package` checked the host, plus `lock` and `open`
+  for iOS. `lock -p macos` on Windows resolved a lock, and `status` and
+  `upgrade` worked for any target. The JSON envelope still names the refused
+  target in `platform`.
+- **Changed:** Linux targets build only on an x86_64 Linux host. A Raspberry
+  Pi is a target, not a build host: add `"aarch64"` to `[tool.kivy.linux].archs`
+  on an x86_64 Linux machine and copy the AppImage to the Pi. kivyforge refuses
+  aarch64 hosts because none is in the test matrix. `capabilities --json`
+  publishes the rule as `host_machines` on each platform (an empty list means
+  any CPU).
+- **Unchanged:** `init` still writes configuration for any target on any host,
+  so one `pyproject.toml` can describe every platform. `doctor` still runs on
+  the wrong host and reports why the host cannot build the target.
+- **Migration:** run each target's `lock`, `status` and `upgrade` on a host that
+  can build that target, as CI already does.
+
+### Locks: re-lock only when a lock input changes, and keep existing pins
+
+- **Changed:** a lock goes stale only when something it was resolved from
+  changes ([#126](https://github.com/ElliotGarbus/kivyforge/issues/126)): the
+  dependencies and `requires-python`, plus that platform's Python version,
+  architectures, OS floor, package indexes, `find_links`, `exclude` and native
+  libraries. Comments, key order, signing, icons, the display name, the version
+  and every other platform's overlay no longer stale it. Editing iOS signing
+  leaves `pylock.android.toml` in sync. The lock records this as
+  `lock_inputs_sha256`, replacing `pyproject_sha256`.
+- **Changed:** `kivyforge lock` keeps the versions already in the lock. After
+  an input change it moves only what the change requires; a dependency whose new
+  specifier excludes its locked version moves, and the rest stay. If the locked
+  versions cannot be kept, it fails with the new `KF-LOCK-PINS-CONFLICT` (exit
+  `1`) and names the conflict. `kivyforge lock --update` still takes the newest
+  version each specifier allows.
+- **Changed:** `kivyforge lock --check` resolves the same way, so a new upstream
+  release no longer fails CI while `pyproject.toml` is unchanged.
+- **Migration:** run `kivyforge lock -p <platform>` once for each platform you
+  lock. Every existing lock reads as out of date, because it records the old
+  whole-file hash. The re-lock keeps the versions already pinned.
+
+### Android: emulator and adb failures say why
+
+- **Fixed:** when `run -p android` or `run --smoke` booted an AVD and the
+  emulator could not start, kivyforge waited five minutes and then reported
+  only that the emulator "did not finish booting (serial: never appeared)".
+  The emulator's output now goes to a log (`<temp>/kivyforge/emulator-<avd>.log`).
+  If the emulator exits before its device is ready, the run fails at once and
+  shows the last lines of that log, for example a missing `libpulse.so.0` in
+  WSL. Every boot failure, including the timeout, names the log's path.
+- **Added:** on Windows, `doctor -p android` warns when the adb server port
+  (5037) is held by a process other than `adb.exe`, names that process, and
+  says how to fix it. The usual cause is `wslrelay.exe`: an adb server running
+  inside WSL, which Windows adb then reaches and which cannot see Windows
+  emulators or USB devices. Before, doctor said only "no device or emulator
+  attached".
+- **Migration:** none needed.
+
+### Dynamic version: a quoted pip error keeps its non-ASCII characters on Windows
+
+- **Fixed:** when a dynamic `[project].version` could not be resolved
+  (`KF-VERSION-UNRESOLVED`), the pip lines kivyforge quotes were decoded with
+  the locale's encoding. On a cp1252 Windows host, every non-ASCII character in
+  them came out garbled (`café` as `cafÃ©`). They are now decoded as UTF-8,
+  which is what pip writes to a pipe.
+- **Fixed:** a dynamic version could not be resolved when the interpreter
+  running kivyforge was older than `[project].requires-python`, for example
+  an Android app declaring `>=3.14` built from a host with Python 3.13. pip
+  refused with "requires a different Python". `requires-python` describes the
+  bundled runtime, so the version lookup now ignores it.
+- **Changed:** when the version lookup fails, the `Fix:` line now says that
+  pip reads its own index settings (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`,
+  `pip.conf`), not `[[tool.uv.index]]` or `[[tool.kivy.index]]`. A backend on
+  a private index configured only for uv failed with pip's "No matching
+  distribution" and nothing pointing at the fix.
+- **Migration:** none needed.
+
+### Windows: local wheels lock correctly, and an app finds its metadata once
+
+- **Fixed:** on a Windows host, `kivyforge lock` for macOS, Linux or Windows
+  recorded a wheel from `find_links` as an absolute path with its drive letter
+  missing (`Users/you/project/wheels/...`), so the next `build` failed with
+  "vendored artifact not found". It now records the path relative to the
+  project (`wheels/...`), as iOS and Android already did.
+- **Fixed:** a Windows app had its `app` folder on `sys.path` twice, so
+  `importlib.metadata.distributions()` returned the app's own distribution
+  twice. It is now on `sys.path` once, still first.
+- **Migration:** on Windows, run `kivyforge lock -p <platform>` again if the
+  project uses `find_links`, to rewrite a lock with the drive-less path. The
+  launcher change takes effect on the next `build`.
+
+### Android: `package --debug` puts a debug build in `dist/`
+
+- **Added:** `kivyforge package -p android --debug` packages a debug build
+  ([#112](https://github.com/ElliotGarbus/kivyforge/issues/112)). It builds
+  what `build -p android --debug` builds, needs no keystore, and copies it
+  into `dist/android/` with a `-debug` suffix:
+  - `dist/android/myapp-1.2.0-debug.apk`, signed with the Android SDK's debug
+    key;
+  - `dist/android/myapp-1.2.0-debug.aab` with `-f aab`, unsigned, as Gradle
+    builds a debug AAB.
+
+  The release-only checks, Lint and the manifest policy, are skipped.
+  `--keystore` and `--key-alias` cannot be combined with `--debug`, and
+  `--debug` is rejected for other platforms. `capabilities --json` reports a
+  new `package_debug` key for each platform.
+- **Migration:** none needed. A plain `package` is unchanged.
+
 ### Android: `doctor` no longer warns about acceleration on every Mac
 
 - **Fixed:** `kivyforge doctor -p android` warned "AVDs present (N) but no

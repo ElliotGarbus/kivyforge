@@ -93,6 +93,9 @@ kivyforge run -p android --smoke
 Add `--release` to test the byte-compiled, stripped release variant. kivyforge's
 own CI runs `run --smoke --release` on an x86_64 emulator.
 
+The test runs only on the device `run` chose, so a phone and an emulator can
+both be attached.
+
 ## Verify
 
 `run` prints the device it chose, launches the app, and then follows the app's
@@ -108,6 +111,94 @@ For a script, add `--no-follow`: `run` then prints the app's log once, about 25
 seconds after launch, and returns.
 
 A passing smoke test ends with `Contract smoke test PASSED.`
+
+## Filter the app's log
+
+The followed log includes everything the app's process writes, including
+Android's own messages, which can bury your output. kivyforge does not filter
+it, but standard tools can. Two facts make that easy:
+
+- Python's output has its own logcat tags: `print()` and Kivy's log go to
+  `python.stdout` and `python.stderr`. Java's `System.out.println` goes to
+  `System.out`, and `Log.d("MyTag", ...)` uses the tag you pass.
+- `run` writes the app's log to stdout and its own `[run]` messages to stderr,
+  so a filter on stdout keeps kivyforge's messages.
+
+### Filter as `run` follows the log
+
+=== "PowerShell"
+    ```powershell
+    # Python only
+    kivyforge run -p android | Select-String ' [VDIWEF] python\.std'
+
+    # Java only; add your own Log tags to the pattern
+    kivyforge run -p android | Select-String ' [VDIWEF] System\.(out|err)'
+
+    # Python and Java
+    kivyforge run -p android | Select-String ' [VDIWEF] (python\.std|System\.(out|err))'
+
+    # Everything except one noisy tag
+    kivyforge run -p android | Select-String -NotMatch BLASTBufferQueue
+    ```
+
+=== "bash"
+    ```bash
+    # Python only
+    kivyforge run -p android | grep -E ' [VDIWEF] python\.std'
+
+    # Java only; add your own Log tags to the pattern
+    kivyforge run -p android | grep -E ' [VDIWEF] System\.(out|err)'
+
+    # Python and Java
+    kivyforge run -p android | grep -E ' [VDIWEF] (python\.std|System\.(out|err))'
+
+    # Everything except one noisy tag
+    kivyforge run -p android | grep -v BLASTBufferQueue
+    ```
+
+### Use logcat's own filters
+
+logcat filters by tag and level on the device. Launch with `--no-follow`, then
+read the log with `adb`. Replace `PACKAGE` with your
+`[tool.kivy.android].package`:
+
+=== "PowerShell"
+    ```powershell
+    kivyforge run -p android --no-follow
+    adb logcat --pid=$(adb shell pidof -s PACKAGE) python.stdout:V python.stderr:V System.out:V "*:S"
+    ```
+
+=== "bash"
+    ```bash
+    kivyforge run -p android --no-follow
+    adb logcat --pid=$(adb shell pidof -s PACKAGE) python.stdout:V python.stderr:V System.out:V '*:S'
+    ```
+
+`*:S` silences every tag you don't list, so list only the tags you want. Leave
+it out to see everything. This command stops when the app's process ends; run it
+again after a restart.
+
+### Use Android Studio's Logcat window
+
+Launch with `kivyforge run -p android --no-follow`, open **View > Tool Windows >
+Logcat** in Android Studio, and type a query into its search field:
+
+| To see | Query |
+|---|---|
+| Python only | `package:PACKAGE tag:python` |
+| Java only | `package:PACKAGE tag:System.out` |
+| Python and Java | `package:PACKAGE tag:python tag:System.out` |
+| Everything except one noisy tag | `package:PACKAGE -tag:BLASTBufferQueue` |
+| Crashes only | `package:PACKAGE is:crash` |
+
+`tag:` matches tags that contain the text, so `tag:python` matches both Python
+tags. Several `tag:` terms match any of them, and a leading `-` excludes. Add
+`tag:MyTag` for your own Java tags, or `level:WARN` to hide anything less
+severe. If you open the generated project with `kivyforge open -p android`,
+`package:mine` replaces `package:PACKAGE`. Logcat keeps following across app
+restarts. See Android's [Logcat
+documentation](https://developer.android.com/studio/debug/logcat) for the full
+query syntax.
 
 ## What's next
 

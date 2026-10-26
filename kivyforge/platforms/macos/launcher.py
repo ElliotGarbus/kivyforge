@@ -78,12 +78,12 @@ int main(int argc, char *argv[]) {{
     strncpy(b, macos, sizeof(b)); b[sizeof(b) - 1] = 0;
     char *contents = dirname(b);                  /* .../Contents */
 
-    char home[PATH_MAX], app[PATH_MAX], lib[PATH_MAX], bin[PATH_MAX];
+    char home[PATH_MAX], app[PATH_MAX], lib[PATH_MAX], helpers[PATH_MAX];
     char py[PATH_MAX], pypath[2 * PATH_MAX];
     snprintf(home, sizeof(home), "%s/Resources/python", contents);
     snprintf(app, sizeof(app), "%s/Resources/app", contents);
     snprintf(lib, sizeof(lib), "%s/Resources/lib", contents);
-    snprintf(bin, sizeof(bin), "%s/Resources/bin", contents);
+    snprintf(helpers, sizeof(helpers), "%s/Helpers", contents);
     snprintf(py, sizeof(py), "%s/bin/python3", home);
     snprintf(pypath, sizeof(pypath), "%s:%s", app, lib);
 
@@ -99,14 +99,14 @@ int main(int argc, char *argv[]) {{
        write bytecode caches into a bundle that is signed once, at build
        time, and never rewritten after. */
     setenv("PYTHONDONTWRITEBYTECODE", "1", 1);
-    /* Prepend Resources/bin so user-declared native helper executables resolve by
+    /* Prepend Helpers so user-declared native helper executables resolve by
        name (subprocess/PATH lookups). Harmless when the directory is absent. */
     const char *old_path = getenv("PATH");
     char newpath[3 * PATH_MAX];
     if (old_path != NULL && old_path[0] != 0) {{
-        snprintf(newpath, sizeof(newpath), "%s:%s", bin, old_path);
+        snprintf(newpath, sizeof(newpath), "%s:%s", helpers, old_path);
     }} else {{
-        snprintf(newpath, sizeof(newpath), "%s", bin);
+        snprintf(newpath, sizeof(newpath), "%s", helpers);
     }}
     setenv("PATH", newpath, 1);
     chdir(app);

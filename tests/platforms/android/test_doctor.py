@@ -67,6 +67,7 @@ class FakeProbe:
             "java_banner", 'openjdk version "17.0.20" 2026-08-18'
         )
         self._javac = kw.get("javac", True)
+        self._port_owner = kw.get("port_owner")
         self.java_run = None
         self.javac_probed = None
 
@@ -114,6 +115,9 @@ class FakeProbe:
 
     def tcp_reachable(self, host, port):
         return self._reachable
+
+    def adb_port_owner(self):
+        return self._port_owner
 
     def latest_kivyforge_version(self):
         return self._latest
@@ -911,6 +915,139 @@ class TestRealAndroidProbe:
         assert RealAndroidProbe().tcp_reachable("127.0.0.1", 1) is False
 
 
+# What `netstat -ano` printed on the 2026-10-18 Windows pass, trimmed: WSL's
+# relay owned the adb port, so Windows adb reached the server inside WSL.
+_NETSTAT_WSLRELAY = """
+Active Connections
+
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1180
+  TCP    127.0.0.1:5037         0.0.0.0:0              LISTENING       23116
+  TCP    127.0.0.1:5037         127.0.0.1:52011        ESTABLISHED     23116
+  TCP    127.0.0.1:52011        127.0.0.1:5037         ESTABLISHED     4412
+  UDP    0.0.0.0:5037           *:*                                    999
+"""
+_TASKLIST_WSLRELAY = '"wslrelay.exe","23116","Console","1","9,412 K"\n'
+
+
+class TestAdbPortOwner:
+    """doctor said only "no device" while wslrelay.exe held port 5037."""
+
+    def _doctor_adb(self, tmp_path, **kw):
+        probe = FakeProbe(
+            which={"java": "/j", "adb": "/sdk/adb.exe"},
+            sdk=tmp_path,
+            ndk=["27"],
+            build_tools=["35.0.0"],
+            **kw,
+        )
+        results = android_doctor(
+            tmp_path, kivyforge_version="0", offline=True, probe=probe
+        )
+        return _by_name(results)["adb"]
+
+    def test_wslrelay_owner_warns_with_the_wsl_fix(self, tmp_path):
+        result = self._doctor_adb(
+            tmp_path, devices=[], port_owner=(23116, "wslrelay.exe")
+        )
+        assert result.status is Status.WARN
+        assert "held by wslrelay.exe (PID 23116)" in result.detail
+        assert "no device or emulator attached" in result.detail
+        assert result.hint is not None
+        assert "inside WSL" in result.hint
+        assert "adb kill-server" in result.hint
+
+    def test_other_owner_warns_even_with_devices(self, tmp_path):
+        """A foreign server can still list devices; the port is still wrong."""
+        result = self._doctor_adb(
+            tmp_path, devices=["emulator-5554"], port_owner=(77, "proxy.exe")
+        )
+        assert result.status is Status.WARN
+        assert "emulator-5554" in result.detail
+        assert "held by proxy.exe (PID 77)" in result.detail
+        assert result.hint is not None
+        assert "Stop proxy.exe (PID 77)" in result.hint
+
+    def test_adb_owner_is_not_a_conflict(self, tmp_path):
+        result = self._doctor_adb(tmp_path, port_owner=(4242, "ADB.EXE"))
+        assert result.status is Status.PASS
+
+    def test_messages_encode_in_cp1252(self, tmp_path):
+        result = self._doctor_adb(tmp_path, port_owner=(1, "wslrelay.exe"))
+        f"{result.detail} {result.hint}".encode("cp1252")
+
+    def test_real_probe_reads_netstat_then_tasklist(self, monkeypatch):
+        calls = []
+
+        def runner(cmd):
+            calls.append(cmd)
+            return _NETSTAT_WSLRELAY if cmd[0] == "netstat" else _TASKLIST_WSLRELAY
+
+        monkeypatch.setattr(doctor_mod.sys, "platform", "win32")
+        owner = RealAndroidProbe(runner=runner).adb_port_owner()
+        assert owner == (23116, "wslrelay.exe")
+        assert calls == [
+            ["netstat", "-ano"],
+            ["tasklist", "/FI", "PID eq 23116", "/FO", "CSV", "/NH"],
+        ]
+
+    def test_real_probe_is_windows_only(self, monkeypatch):
+        def runner(cmd):
+            raise AssertionError(f"ran {cmd}")
+
+        monkeypatch.setattr(doctor_mod.sys, "platform", "linux")
+        assert RealAndroidProbe(runner=runner).adb_port_owner() is None
+
+    def test_real_probe_none_when_nobody_listens(self, monkeypatch):
+        monkeypatch.setattr(doctor_mod.sys, "platform", "win32")
+        netstat = "  TCP    0.0.0.0:135    0.0.0.0:0    LISTENING    1180\n"
+        probe = RealAndroidProbe(runner=lambda cmd: netstat)
+        assert probe.adb_port_owner() is None
+
+    def test_real_probe_none_when_netstat_fails(self, monkeypatch):
+        monkeypatch.setattr(doctor_mod.sys, "platform", "win32")
+        assert RealAndroidProbe(runner=lambda cmd: None).adb_port_owner() is None
+
+    def test_real_probe_unknown_image_still_reports_the_pid(self, monkeypatch):
+        monkeypatch.setattr(doctor_mod.sys, "platform", "win32")
+
+        def runner(cmd):
+            return _NETSTAT_WSLRELAY if cmd[0] == "netstat" else None
+
+        owner = RealAndroidProbe(runner=runner).adb_port_owner()
+        assert owner == (23116, "an unidentified process")
+
+    def test_listener_found_by_foreign_address_not_state_text(self):
+        """The State column is localized; the zero foreign address is not."""
+        netstat = (
+            "  TCP    127.0.0.1:5037    0.0.0.0:0    ABHÖREN    31\n"
+            "  TCP    [::1]:5038        [::]:0       ABHÖREN    32\n"
+        )
+        assert doctor_mod.listener_pid(netstat, 5037) == 31
+        assert doctor_mod.listener_pid(netstat, 5038) == 32
+        assert doctor_mod.listener_pid(netstat, 15037) is None
+
+    def test_tasklist_without_a_match(self):
+        info = "INFO: No tasks are running which match the specified criteria.\n"
+        assert doctor_mod.tasklist_image(info, 5) is None
+
+    def test_default_runner_returns_stdout_or_none(self, monkeypatch):
+        def fake_run(cmd, **kwargs):
+            assert kwargs["stdin"] is subprocess.DEVNULL
+            code = 0 if cmd[0] == "ok" else 1
+            return subprocess.CompletedProcess(cmd, code, stdout="out", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert doctor_mod._run_command(["ok"]) == "out"
+        assert doctor_mod._run_command(["bad"]) is None
+
+        def boom(cmd, **kwargs):
+            raise OSError("not found")
+
+        monkeypatch.setattr(subprocess, "run", boom)
+        assert doctor_mod._run_command(["netstat"]) is None
+
+
 class TestProjectChecks:
     def _project(self, tmp_path, *, compile_sdk=35):
         (tmp_path / "src").mkdir(exist_ok=True)
@@ -1113,7 +1250,7 @@ def _doctor_lock(*, packages=(), vendored=False, include_files=()):
         include_files=tuple(include_files),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="0" * 64,
+        lock_inputs_sha256="0" * 64,
         tool_kivy_android_schema_version=1,
         kivy_generation=2,
     )

@@ -57,6 +57,22 @@ package, so that one name changes. Likewise the SDL Java glue keeps `org.libsdl.
 and the pyjnius glue keeps `org.jnius.NativeInvocationHandler` (the class name
 pyjnius resolves at proxy-creation time).
 
+**The launcher may be the app's own subclass.** `[tool.kivy.android].main_activity`
+names a class in the app's package that extends `org.kivy.android.PythonActivity`;
+it becomes the manifest's launcher, and the base class is not declared. Everything
+above still holds, because every Python-side lookup reads the base class's static
+`mActivity`, which is the running subclass instance: `autoclass('org.kivy.android.PythonActivity').mActivity`,
+`android.mActivity` and `_kivy_bootstrap.get_activity()` all return it. The bundled
+`android.config` therefore keeps `ACTIVITY_CLASS_NAME` and `ACTIVITY_CLASS_NAMESPACE`
+on the base class, and must: `ACTIVITY_CLASS_NAMESPACE` is the prefix of the nested
+interfaces `$NewIntentListener`, `$ActivityResultListener`, `$PermissionsCallback`
+and `$DarkModeListener`, whose binary names exist only under the base class, so a
+subclass value would break `android.activity.bind`,
+`android.permissions.request_permissions` and
+`android.darkmode.set_dark_mode_listener` at their first proxy
+([proposal](../../dev/android-activity-class-proposal.md) section 3.2). The bootstrap
+namespaces are reserved: `main_activity` may not name a class inside them.
+
 > **Not covered (recorded 2026-10-02).** Code that imports the python-for-android
 > `android` Python package (`android.permissions`, `android.activity`,
 > `android.config`, `from android import mActivity`) is a separate dependency, and
@@ -83,7 +99,7 @@ flowchart TD
 3. **The native launcher (`libmain.so`) unpacks the Python asset bundle** (`assets/_python_bundle/`) to app-private storage on first run (and after an update, keyed by a version stamp), since Python source must live on a real filesystem path. `libmain.so` is kivyforge's own C shim, compiled from the emitted `cpp/` sources by the NDK during the Gradle build (see [gradle-project-generation §"The native launcher"](04-gradle-project-generation.md#the-native-launcher-libmainso)).
 4. **It sets the environment** the runtime and pyjnius expect (below), then initializes CPython via `Py_InitializeFromConfig` with **`site_import` deferred** — so no `lib-dynload` extension is loaded before the finder is in place (core start-up needs only the modules built into `libpython`).
 5. **It installs the extension-module finder** on `sys.meta_path` from the bundle's manifest, then runs `import site` and registers `pip-deps` as a site directory (`site.addsitedir()`, not bare `PYTHONPATH`) so `.pth` files work — the same asymmetry the iOS bootstrap documents. See "Extension-module finder" below.
-6. **It runs the entry-point module as `__main__`** (`runpy.run_module(entry_point, run_name="__main__", alter_sys=True)`, matching every other platform since 2026-09-21 — was `PyImport_ImportModule(entry_point)` before; see the [common spec's entry_point callout](../../common/01-pyproject-kivy-spec.md) for the unified contract). Kivy's `App().run()` drives the SDL surface `SDLActivity` created.
+6. **It runs the entry-point module as `__main__`** (`runpy.run_module(entry_point, run_name="__main__", alter_sys=True)`, matching every other platform since 2026-09-21 — was `PyImport_ImportModule(entry_point)` before; see the [common spec's entry_point callout](../../common/01-pyproject-kivy-spec.md) for the unified contract). Kivy's `App().run()` drives the SDL surface `SDLActivity` created. For a `module:function` entry point (issue #68), `ENTRY_POINT` is `_kivyforge_main`, the launcher staged into the bundle's `app/` beside the app's code, which imports the module and calls the function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)).
 
 ## The environment contract
 

@@ -14,9 +14,9 @@ from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.ios.lock import (
     Lockfile,
     PythonXcframework,
-    compute_pyproject_sha256,
     dumps,
 )
+from tests.lock_hash import STALE, inputs_sha
 from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
 
 # These orchestrate an iOS build, which stages the symlinked <app>-ios/app tree;
@@ -54,7 +54,7 @@ def _write_project(fs: str, *, in_sync: bool = True) -> Path:
     (root / "pyproject.toml").write_text(PYPROJECT)
     (root / "src").mkdir()
     (root / "src" / "main.py").write_text("print('hi')\n")
-    sha = compute_pyproject_sha256(PYPROJECT if in_sync else PYPROJECT + "# drift\n")
+    sha = inputs_sha(PYPROJECT, "ios") if in_sync else STALE
     lock = Lockfile(
         requires_python=">=3.15",
         packages=(),
@@ -63,7 +63,7 @@ def _write_project(fs: str, *, in_sync: bool = True) -> Path:
         ),
         kivyforge_version="3.0.0.dev0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=sha,
+        lock_inputs_sha256=sha,
         tool_kivyforge_schema_version=1,
     )
     (root / "pylock.ios.toml").write_text(dumps(lock))

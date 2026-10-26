@@ -113,6 +113,19 @@ DEFAULT_ANDROID_KEY_PASSWORD_ENV = "KIVYFORGE_KEY_PASSWORD"
 # Default app theme parent (android/01 base_theme).
 DEFAULT_ANDROID_BASE_THEME = "Theme.Material3.DayNight.NoActionBar"
 
+# The generated launcher activity, and the class a [tool.kivy.android].
+# main_activity must extend (android/01 rule 22).
+ANDROID_BOOTSTRAP_ACTIVITY = "org.kivy.android.PythonActivity"
+
+# Java packages the generated bootstrap and its vendored glue occupy. R8 keeps
+# them whole (generate/project.py), and an app's own class may not live in one.
+ANDROID_BOOTSTRAP_NAMESPACES = (
+    "org.jnius",
+    "org.kivy.android",
+    "org.renpy.android",
+    "org.libsdl.app",
+)
+
 # Manifest attributes kivyforge manages (android/01 §managed keys): rejected in
 # the [tool.kivy.android.manifest] application/activity passthrough tables.
 MANAGED_ANDROID_APPLICATION_ATTRS = frozenset(
@@ -132,6 +145,31 @@ MANAGED_ANDROID_ACTIVITY_ATTRS = frozenset(
         "android:theme",
     }
 )
+
+
+def foreign_namespace_attr(key: str) -> str | None:
+    """Why a passthrough attribute *key* is refused, or ``None`` if it is fine.
+
+    The attribute tables (``manifest.application`` / ``manifest.activity``) set
+    attributes of the two elements kivyforge generates, and those elements take
+    ``android:`` attributes. A ``tools:`` key there is not an attribute of the
+    element but an instruction to the manifest merger about it -- and on the
+    launcher, ``tools:node="remove"`` would delete the app's entry point, while
+    ``tools:replace`` on ``<application>`` would override a managed attribute by
+    the back door. Those directives are legitimate on the *elements a user
+    authors* in the raw-XML fragments, which is the escape hatch for them.
+    """
+    prefix, sep, _ = key.partition(":")
+    if sep and prefix != "android":
+        return (
+            f"{key!r} is in the {prefix!r} namespace; the attribute tables set "
+            "android: attributes of the generated element. A manifest-merger "
+            "directive (tools:node, tools:replace, ...) belongs on an element "
+            "you author in extra_manifest_xml / extra_application_xml / "
+            "extra_activity_xml."
+        )
+    return None
+
 
 # gradle.properties keys kivyforge manages (android/01 gradle_properties).
 RESERVED_ANDROID_GRADLE_PROPERTIES = frozenset({"android.useAndroidX"})
@@ -440,6 +478,28 @@ class SigningConfig:
 
 
 @dataclass(frozen=True)
+class PackageIndex:
+    """One ``[[tool.kivy.index]]`` entry (#86)."""
+
+    name: str
+    url: str
+    #: Serves only the packages pinned to it in ``sources``.
+    explicit: bool = False
+
+
+@dataclass(frozen=True)
+class IncludeFile:
+    """One ``[[tool.kivy.<platform>.include_files]]`` entry.
+
+    ``dest`` is relative to the platform's root (Android: the generated Gradle
+    project; iOS: the ``.app``; macOS: ``Contents/``) and already normalized.
+    """
+
+    dest: str
+    sources: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class IosConfig:
     """``[tool.kivy.ios]`` overlay."""
 
@@ -450,6 +510,12 @@ class IosConfig:
     simulator_archs: tuple[str, ...] = DEFAULT_SIMULATOR_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -464,6 +530,7 @@ class IosConfig:
     python_build_settings: DesktopBuildSettings = field(
         default_factory=DesktopBuildSettings
     )
+    include_files: tuple[IncludeFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -501,6 +568,12 @@ class MacosConfig:
     archs: tuple[str, ...] = DEFAULT_MACOS_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -508,6 +581,7 @@ class MacosConfig:
     signing: MacosSigningConfig = field(default_factory=MacosSigningConfig)
     binaries: tuple[NativeBinaryDep, ...] = ()
     build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
+    include_files: tuple[IncludeFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -546,6 +620,12 @@ class WindowsConfig:
     archs: tuple[str, ...] = DEFAULT_WINDOWS_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -623,12 +703,8 @@ class AndroidGradleConfig:
     plugins: tuple[tuple[str, str], ...] = ()
 
 
-@dataclass(frozen=True)
-class AndroidIncludeFile:
-    """One ``[[tool.kivy.android.include_files]]`` entry."""
-
-    dest: str
-    sources: tuple[str, ...]
+#: The name Android's entries had before iOS and macOS shared them.
+AndroidIncludeFile = IncludeFile
 
 
 @dataclass(frozen=True)
@@ -769,9 +845,20 @@ class AndroidConfig:
     abis: tuple[str, ...] = DEFAULT_ANDROID_ABIS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     base_theme: str = DEFAULT_ANDROID_BASE_THEME
     fullscreen: bool = False
+    #: ``[tool.kivy.android].main_activity``: the app's own subclass of
+    #: :data:`ANDROID_BOOTSTRAP_ACTIVITY` that is the launcher, or ``None`` for
+    #: the generated class (also what the default spelled out normalises to).
+    #: Read it through ``generate.manifest.main_activity``.
+    main_activity: str | None = None
     python: AndroidPythonConfig | None = None
     permissions: AndroidPermissions = field(default_factory=AndroidPermissions)
     icons: AndroidIconConfig = field(default_factory=AndroidIconConfig)
@@ -779,7 +866,7 @@ class AndroidConfig:
     aars: tuple[AndroidArchiveDep, ...] = ()
     jars: tuple[AndroidArchiveDep, ...] = ()
     gradle: AndroidGradleConfig = field(default_factory=AndroidGradleConfig)
-    include_files: tuple[AndroidIncludeFile, ...] = ()
+    include_files: tuple[IncludeFile, ...] = ()
     src: AndroidSrcConfig = field(default_factory=AndroidSrcConfig)
     services: tuple[AndroidService, ...] = ()
     activities: tuple[AndroidActivity, ...] = ()
@@ -819,6 +906,12 @@ class LinuxConfig:
     archs: tuple[str, ...] = DEFAULT_LINUX_ARCHS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
+    #: The named indexes this target may use (#86): every non-explicit
+    #: ``[[tool.kivy.index]]``, plus the explicit ones its ``sources`` name.
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``(package, index name)`` pins: ``[tool.kivy.sources]`` overlaid with
+    #: this overlay's own ``sources``, by canonical package name, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
     exclude: tuple[str, ...] = ()
     python_version: str | None = None
     icons: IconConfig = field(default_factory=IconConfig)
@@ -833,8 +926,32 @@ class KivyMeta:
 
     app_dir: str
     display_name: str | None = None
+    #: The module the app starts in: ``[tool.kivy].entry_point`` up to any
+    #: ``:``, else the one ``[project.gui-scripts]`` entry's module, else
+    #: ``main``. Always a module, so every check and path built from it holds
+    #: for both forms.
     entry_point: str = DEFAULT_ENTRY_POINT
     orientation: tuple[str, ...] = DEFAULT_ORIENTATION
+    #: The ``object.attr`` after the ``:`` (``pkg.mod:main`` -> ``main``), which
+    #: the generated launcher calls as an installed script wrapper would; or
+    #: ``None``, and ``entry_point`` itself runs as ``__main__`` (issue #68,
+    #: kivyforge/bundle/entry_launcher.py).
+    entry_function: str | None = None
+    #: Where the entry point was declared, for messages:
+    #: ``[tool.kivy].entry_point`` (also when defaulted) or
+    #: ``[project.gui-scripts] <name>``.
+    entry_origin: str = "[tool.kivy].entry_point"
+    #: ``[[tool.kivy.index]]``, as declared (#86).
+    indexes: tuple[PackageIndex, ...] = ()
+    #: ``[tool.kivy.sources]``: ``(package, index name)``, canonical, sorted.
+    sources: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def entry_spec(self) -> str:
+        """The entry point as written: ``module`` or ``module:object``."""
+        if self.entry_function is None:
+            return self.entry_point
+        return f"{self.entry_point}:{self.entry_function}"
 
 
 @dataclass(frozen=True)

@@ -31,8 +31,8 @@ hashes = { sha256 = "d8d9e57501961c5d45e5a2c5af0caef24e48f43a0cd88f607eb3b517198
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
-generated_at = "2026-10-13T13:14:03Z"
-pyproject_sha256 = "4df87c0f29c7da0cc93baa2623c42a0635e1feb863efefdbb13462f4d796087e"
+generated_at = "2026-10-19T03:28:36Z"
+lock_inputs_sha256 = "326d12724cd615017b335c40ca38f9916266e77e917411aa2ccac80ec638a945"
 tool_kivyforge_schema_version = 1
 archs = ["arm64"]
 

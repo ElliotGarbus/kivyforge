@@ -107,19 +107,23 @@ def build(
     no_build_isolation: bool,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
 ) -> None:
     """Download artifacts, generate the platform project, and optionally build it.
 
     A bare build only generates the project on iOS and Android: add --simulator,
     --device or --release (iOS) or --debug (Android) to build it as well.
     """
-    with reporting("build", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "build", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         # Before anything can fail, so every envelope carries the key.
         report.record(artifacts=[])
         # Resolve the target platform before any work so an unresolved target
         # fails fast with an actionable message (common design doc 02).
-        backend, project_root = resolve_target(cli_platform, verb="build")
-        report.platform = backend.name
+        backend, project_root = resolve_target(
+            cli_platform, verb="build", report=report
+        )
         reject_android_only(
             backend, {"--debug": debug, "-f/--format": fmt, "--abi": abi}
         )

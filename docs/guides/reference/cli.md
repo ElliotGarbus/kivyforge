@@ -33,6 +33,25 @@ configured in `pyproject.toml`. `init` accepts `-p` more than once and, without
 it, also falls back to the project's only existing overlay. See
 [Choose a target platform](../concepts/choose-platform.md).
 
+## Verbose output
+
+Every verb accepts `-v` / `--verbose`, and `-vv` for more. For now only Android
+acts on it, in the verbs that run Gradle: `build --debug`, `package` and `run`.
+
+| Flag | `KIVYFORGE_VERBOSE` | Effect on Android |
+|---|---|---|
+| `-v` | `1` | Gradle runs with `--stacktrace`. Before each Gradle run, kivyforge prints the folder and the exact `gradlew` command so you can rerun it by hand, and, for a release task, the names of the signing variables it reads. If kivyforge installs a missing NDK or CMake first, it prints that `sdkmanager` command too. |
+| `-vv` | `2` | Everything `-v` does, and Gradle also runs with `--info`. The log becomes thousands of lines longer. |
+
+- `-vvv` and beyond count as `-vv`. There is no level that passes Gradle's
+  `--debug`; run Gradle yourself for that (see
+  [When Gradle fails](../troubleshooting/index.md#when-gradle-fails)).
+- The flag replaces the variable rather than adding to it:
+  `KIVYFORGE_VERBOSE=2 kivyforge build -p android --debug -v` runs at level 1.
+- The extra lines go to stderr, so `--json` output is unchanged.
+- Other platforms accept the flag and ignore it. `kivyforge capabilities` lists
+  the platforms that act on it.
+
 ## Commands
 
 ::: mkdocs-click
@@ -51,7 +70,7 @@ with `--signing-identity (ios/macos only) is not valid for windows.`
 
 | Target | Flags | Guide |
 |---|---|---|
-| Android | `build`: `--debug`, `-f apk\|aab`, `--abi`. `run`: `--emulator`, `--device`, `--avd`, `--serial`, `--smoke`, `--abi`. `package`: `--keystore`, `--key-alias`, `--abi`. | [Run on a device or emulator](../guides/android/run.md), [Sign and publish to Google Play](../guides/android/signing.md) |
+| Android | `build`: `--debug`, `-f apk\|aab`, `--abi`. `run`: `--emulator`, `--device`, `--avd`, `--serial`, `--smoke`, `--abi`. `package`: `--keystore`, `--key-alias`, `--abi`, `--debug`. | [Run on a device or emulator](../guides/android/run.md), [Sign and publish to Google Play](../guides/android/signing.md) |
 | iOS | `build`: `--simulator`, `--device`, `--release`, `--arch`, `--team-id`, `--signing-identity`, `--export-method`. `run`: `--simulator`, `--device`, `--destination`, `--list-devices`. `package`: `--team-id`, `--signing-identity`, `--export-method`. | [Run on the simulator or a device](../guides/ios/run.md), [Sign the app](../guides/ios/signing.md) |
 | macOS | `build` and `package`: `--arch`. `package`: `--signing-identity`, `--notarize` / `--no-notarize`, `--notary-profile`. | [Sign, notarize, and staple](../guides/macos/signing.md) |
 | Linux | `build` and `package`: `--arch x86_64\|aarch64` (default: the first entry in `archs`). `package`: `-f appimage\|folder`. | [Build an AppImage or folder](../guides/linux/build.md) |

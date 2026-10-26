@@ -17,10 +17,10 @@ import pytest
 from click.testing import CliRunner
 
 from kivyforge.bundle.pycompile import PycompileError
+from kivyforge.cli import _platform
 from kivyforge.cli._common import ToolchainError
 from kivyforge.cli.build import build
 from kivyforge.cli.package import package
-from kivyforge.platforms.ios import cli as ios_cli
 from kivyforge.platforms.linux import AppDirError
 from kivyforge.report import diagnostics, exit_codes
 from kivyforge.report.failures import (
@@ -32,7 +32,7 @@ from kivyforge.report.failures import (
 )
 
 # Bound at import, before the suite-wide autouse fixture replaces it.
-_REAL_IOS_GATE = ios_cli._require_macos_host
+_REAL_GATE = _platform.require_host
 
 
 def _fail(command, args):
@@ -290,8 +290,13 @@ class TestLock:
         from kivyforge.platforms.android import cli
 
         pyproject = Path("pyproject.toml")
+        # A lock input changes; a comment alone would not be drift (#126).
         pyproject.write_text(
-            pyproject.read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8"
+            pyproject.read_text(encoding="utf-8").replace(
+                "[tool.kivy.android]\n",
+                '[tool.kivy.android]\nexclude = ["unused-dist"]\n',
+            ),
+            encoding="utf-8",
         )
         with pytest.raises(ToolchainError) as info:
             cli.android_build(Path.cwd())
@@ -312,29 +317,22 @@ class TestLock:
 
 
 class TestHostIncapable:
-    @pytest.mark.parametrize(
-        ("backend", "gate"),
-        [
-            ("windows", "_require_windows_host"),
-            ("linux", "_require_linux_host"),
-            ("macos", "_require_macos_host"),
-            ("ios", "_require_macos_host"),
-        ],
-    )
-    def test_gate(self, backend, gate, monkeypatch):
-        import importlib
-
+    @pytest.mark.parametrize("command", [build, package])
+    @pytest.mark.parametrize("backend", ["windows", "linux", "macos", "ios"])
+    def test_gate(self, command, backend, monkeypatch, tmp_path):
         from kivyforge.platforms import HostCapabilityError, get_platform
 
-        cli = importlib.import_module(f"kivyforge.platforms.{backend}.cli")
-        # The suite neutralizes the iOS gate (tests/conftest.py); use the real one.
-        require = _REAL_IOS_GATE if backend == "ios" else getattr(cli, gate)
+        monkeypatch.setattr(_platform, "require_host", _REAL_GATE)
 
         def incapable(**kw):
             raise HostCapabilityError("wrong host")
 
         monkeypatch.setattr(get_platform(backend), "check_host_capability", incapable)
-        with pytest.raises(ToolchainError) as info:
-            require()
-        assert info.value.code == diagnostics.HOST_INCAPABLE
-        assert info.value.exit_code == exit_codes.ENVIRONMENT_ERROR
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = 'x'\nversion = '1'\n", encoding="utf-8"
+        )
+        exit_code, diagnostic, envelope = _fail(command, ["-p", backend])
+        assert diagnostic["code"] == diagnostics.HOST_INCAPABLE
+        assert exit_code == exit_codes.ENVIRONMENT_ERROR
+        assert envelope["platform"] == backend

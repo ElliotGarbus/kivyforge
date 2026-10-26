@@ -27,7 +27,7 @@ themselves needs a Linux/macOS host, but that is an out-of-band, upstream step;
 | `init` | Seed `[tool.kivy]` + `[tool.kivy.android]` into `pyproject.toml`. |
 | `lock` | Resolve `[project].dependencies` (per ABI), the python.org runtime, `.aar`/`.jar`, and Gradle/Maven deps; write `pylock.android.toml`. `--check` for CI pre-flight. |
 | `build` | Download artifacts, stage `jniLibs/` + the Python bundle, and (re)generate the `<app>-android/` Gradle project. Without `--debug`, stops here — ready to open in Android Studio or assemble. |
-| `build --debug [-f apk\|aab]` | Same as `build`, then `assembleDebug` (`.apk`) / `bundleDebug` (`.aab`, niche), debug-keystore signed — the fast dev-loop build. |
+| `build --debug [-f apk\|aab]` | Same as `build`, then `assembleDebug` (`.apk`, debug-keystore signed) / `bundleDebug` (`.aab`, niche, **unsigned**: AGP does not sign debuggable bundles, per [`FinalizeBundleTask`](https://android.googlesource.com/platform/tools/base/+/refs/heads/studio-main/build-system/gradle-core/src/main/java/com/android/build/gradle/internal/tasks/FinalizeBundleTask.kt); `bundletool` debug-signs the APKs it derives) — the fast dev-loop build. |
 | `run [--emulator\|--device]` | Build (unless `--no-build`), install via `adb`, launch on an emulator or connected device. |
 | `package -f apk\|aab` | Produce the **signed release** distributable: `assembleRelease` (`.apk`) / `bundleRelease` (`.aab`), copied to `dist/android/<app>-<version>[-<abi>].{apk,aab}`. Runs the release signing pre-flight first. |
 | `open` | Open `<app>-android/` in Android Studio. |
@@ -106,7 +106,7 @@ Flags:
 - `--debug` (optional; **no default**). Without it, `build` stops after generating the project (ready for Android Studio or a manual `gradlew`). With it, `build` invokes Gradle after staging: `assembleDebug` (debug-keystore signed) — the fast dev-loop build. **Signed release artifacts are produced by [`kivyforge package`](#kivyforge-package), not `build`.**
 - `-f apk|aab` / `--format apk|aab` (default `apk`; only meaningful with `--debug`). `-f apk` → `assembleDebug` (`.apk`). `-f aab` → `bundleDebug` (`.aab`, niche — only to test bundle delivery via `bundletool`).
 - `--abi arm64_v8a|x86_64` (restrict this build to one ABI; default: all `[tool.kivy.android].abis`). Handy for a fast emulator loop with the host-architecture ABI: `--abi x86_64` on an x86_64 host, `--abi arm64_v8a` on an arm64 host (Apple Silicon).
-- `--no-verify-lock` (skip the `pyproject_sha256` drift check; CI only).
+- `--no-verify-lock` (skip the `lock_inputs_sha256` drift check; CI only).
 - `--no-cache` (force re-download of every artifact).
 
 `build` always performs the staging + generation steps 1–7; step 8 only runs with `--debug`.
@@ -144,8 +144,9 @@ Flags:
 - `-f apk|aab` / `--format apk|aab` (default `apk`). `-f apk` → `assembleRelease` (`.apk`, sideload / store-independent). `-f aab` → `bundleRelease` (`.aab`, Play upload).
 - `--abi`, `--no-verify-lock`, `--no-cache` (as in `build`).
 - `--keystore PATH` / `--key-alias NAME` (override `[tool.kivy.android.signing]`; passwords via `KIVYFORGE_KEYSTORE_PASSWORD` / `KIVYFORGE_KEY_PASSWORD`). Useful for CI where signing config isn't committed.
+- `--debug` (2026-10-17, [dist-artifacts-proposal §5.2](../../dev/dist-artifacts-proposal.md#52-a-debug-package--p-android)). Packages what `build --debug -f apk|aab` builds instead of the release: the debug payload, `assembleDebug` / `bundleDebug`. The APK is signed with the SDK's debug keystore; AGP leaves the debug `.aab` unsigned (verified 2026-10-17, AGP 8.10), and `bundletool` signs the APKs it derives from it. The signing pre-flight, both manifest-policy passes and `lintRelease` are skipped; the native-library alignment check still runs. The artifact is copied to `dist/android/<app>-<version>[-<abi>]-debug.{apk,aab}` as below. `--keystore` / `--key-alias` with `--debug` is an error, and `--debug` on any other platform's `package` is rejected.
 
-`package` performs the same staging + generation steps 1–7 as `build`, then:
+`package` (without `--debug`) performs the same staging + generation steps 1–7 as `build`, then:
 
 - **Signing pre-flight (fail fast).** Resolve the effective keystore + alias (precedence: `--keystore`/`--key-alias` → `[tool.kivy.android.signing]`) and confirm the passwords are present in the configured env vars. If unresolved, exit non-zero **before** invoking Gradle:
 
@@ -158,7 +159,7 @@ Flags:
       • export KIVYFORGE_KEYSTORE_PASSWORD=...   (and KIVYFORGE_KEY_PASSWORD if different)
   ```
 
-- **Manifest policy preflight (fail fast), in two passes.** kivyforge's own checks are: exactly one `LAUNCHER` activity and no conflicting deep-link `<data>` (scheme/host); every intent-filtered component sets `android:exported` explicitly and only the baseline components (`PythonActivity`; `androidx.profileinstaller.ProfileInstallReceiver`, which the hardcoded Material Components dependency always pulls in and AndroidX exports by design, gated by the system-only `DUMP` permission; plus anything in `[tool.kivy.android.manifest].allow_exported`) are exported; `android:debuggable` is not forced `true` in a release (a manifest-passthrough override that would ship a debuggable release); and the `applicationId` is **not** the `org.example.*` init placeholder. Cleartext traffic and dangerous runtime permissions are reported (INFO) as reminders.
+- **Manifest policy preflight (fail fast), in two passes.** kivyforge's own checks are: exactly one `LAUNCHER` activity, and it is the configured launcher (`[tool.kivy.android].main_activity`, default `org.kivy.android.PythonActivity`), and no conflicting deep-link `<data>` (scheme/host); every intent-filtered component sets `android:exported` explicitly and only the baseline components (the configured launcher — once a subclass launches, an exported base `PythonActivity` is a FAIL, a second way in that skips the subclass's `onCreate`; `androidx.profileinstaller.ProfileInstallReceiver`, which the hardcoded Material Components dependency always pulls in and AndroidX exports by design, gated by the system-only `DUMP` permission; plus anything in `[tool.kivy.android.manifest].allow_exported`) are exported; `android:debuggable` is not forced `true` in a release (a manifest-passthrough override that would ship a debuggable release); and the `applicationId` is **not** the `org.example.*` init placeholder. Cleartext traffic and dangerous runtime permissions are reported (INFO) as reminders.
   - **Pass 1 — the generated manifest, before any Gradle work.** An own goal (the placeholder `applicationId`, a passthrough that forces `debuggable`) costs nothing to find, so it is found first.
   - **Pass 2 — Lint plus the *merged* manifest.** `gradlew lintRelease exportKivyforgeReleaseManifest` runs the **curated `lintRelease` subset** — `AllowBackup`, `Exported{Activity,Service,Receiver,ContentProvider,PreferenceActivity}`, `IntentFilterExportedReceiver`, `InsecureBaseConfiguration` — and exports AGP's merged release manifest (via the public Artifacts API, since the intermediates layout is not a contract) to `app/build/kivyforge/AndroidManifest-merged-release.xml`; the same kivyforge checks then run over *that*, which is what actually ships, `.aar`/Maven library manifests included. The generated `lint {}` block uses `checkOnly` + `fatal` for exactly that subset, so those findings break the build while a future Lint's new checks stay advisory.
   
@@ -188,7 +189,7 @@ the release variant instead:
 
 1. Resolve the target **first** — because `--abi`'s default comes from it. `--emulator` boots the AVD if one is not already running (`emulator -avd <name>`) and waits for `sys.boot_completed`, so the emulator warms up while Gradle works; `--device` takes the attached device.
 2. `build --debug --abi <the target's ABI>`, unless `--no-build`. With `--release`: stage the release payload (as `package` does) and run Gradle's `assembleRelease` directly — `run --release` does **not** run `package`'s manifest-policy/lint gates, since those belong to the distribution path, not the dev loop. Signing falls back to the debug keystore when release signing isn't configured (same reasoning as `--smoke --release`: a dev-loop verb must not require release secrets to run).
-3. `adb install -r`, then launch via `adb shell am start -n <package>/org.kivy.android.PythonActivity`.
+3. `adb install -r`, then launch via `adb shell am start -n <package>/<launcher>`, where `<launcher>` is `[tool.kivy.android].main_activity` or `org.kivy.android.PythonActivity`.
 4. Show the app's log: `run` waits up to 10 s for the app's process (`adb shell pidof`) and filters the log to it with `adb logcat --pid` (API 24, the floor), so other apps stay out and the app's own `AndroidRuntime` crash report stays in. By default it **follows the log live** until the process exits or the user presses Ctrl-C, which stops the log and leaves the app running — the pidcat/Briefcase experience. `--no-follow` keeps the scripted form: one `adb logcat -d --pid` snapshot ~25 s after launch, then `run` returns. If no process appears, `run` prints the unfiltered log since launch and fails, since a startup crash leaves no pid to filter by.
    *History:* until issue #73 the default was that snapshot, filtered by tag text (`kivyforge`, `python.std`, `SDL`). It lost everything after the 25 s, showed nothing for a slow first start, let other processes' lines through, and dropped the app's crash report.
 
@@ -202,7 +203,7 @@ app-specific — you write no test code) that validates the load-bearing runtime
 contract on a real emulator/device, via the platform's own instrumented-test path
 (`gradlew connected<Variant>AndroidTest`):
 
-1. **Launch** — `PythonActivity` starts and the bootstrap initializes CPython with no crash in the SDL → `libpython` → `libmain` load order; the app signals *ready*.
+1. **Launch** — the test fires the package's launch intent (`getLaunchIntentForPackage`, so whichever class the manifest marks `LAUNCHER`), asserts that class extends `PythonActivity`, and the bootstrap initializes CPython with no crash in the SDL → `libpython` → `libmain` load order; the app signals *ready*. On the device, the self-test checks the running activity is the configured launcher (`main_activity`, or `PythonActivity`) and writes `LAUNCHER_OK`, which the test asserts.
 2. **Extension-module import** — a known stdlib `lib-dynload` module **and** a wheel extension import successfully through the `sys.meta_path` finder, proving the flattened-`.so` + manifest mechanism works on-device (see [bootstrap-android §"Extension-module finder"](05-bootstrap-android.md#extension-module-finder)).
 3. **pyjnius proxy round-trip** — a `PythonJavaClass`/`@java_method` proxy (`Runnable`/`Comparator`) invoked from Java fires `invoke0`, proving the `NativeInvocationHandler` glue + SDL-loaded `JNIEnv` contract (see [bootstrap-android §"Contract smoke-test hook"](05-bootstrap-android.md#contract-smoke-test-hook)).
 
@@ -212,6 +213,14 @@ a test-instrumentation signing config, so the gate catches a finder break from
 stripping or a missing R8 keep-rule — not just a debug build. The probe is
 generated by kivyforge, so a kivyforge regression and a project regression are
 caught by identical assertions.
+
+The target is resolved the same way as for a plain `run`, and the probe is
+built for that target's ABI only. The connected-test task runs on **every**
+attached device unless `ANDROID_SERIAL` names one, so kivyforge sets it to the
+resolved serial. *History:* until 2026-10-24 it did not, and `--smoke
+--device` on a Pixel 8a with an x86_64 emulator also running failed on the
+emulator, which the probe had not been built for, so a passing phone run
+reported failure.
 
 > **Required release gate (CI).** Because it needs a device/emulator, the smoke
 > test is deliberately **not** part of the headless `package` path. Instead it is
@@ -296,7 +305,7 @@ Build:
 | Python | `[tool.kivy.android.python].version` |
 | Kivy/SDL | resolved `kivy` version from the lock (`—` if absent, `?` with no lock) + `[tool.kivy.android].kivy_generation` |
 | ABIs | `[tool.kivy.android].abis` |
-| Lock | `pyproject_sha256` compare — `in sync` / `out of date` / `missing` / `unreadable` |
+| Lock | `lock_inputs_sha256` compare — `in sync` / `out of date` / `missing` / `unreadable` |
 | Build | presence + mtime of all three artifacts under `app/build/outputs/` — debug `.apk`, release `.apk`, release `.aab` — as `built YYYY-MM-DD HH:MM` or `not built` |
 
 ### `kivyforge doctor`
@@ -357,7 +366,7 @@ exit code is non-zero only on FAIL.
 | Required hosts reachable | project | TCP connect to every host the lock will fetch from: the runtime and wheel URLs, hosted `.aar`/`.jar` URLs, and — when Maven coordinates are declared — Gradle's own repositories (its defaults plus any the project adds). Derived from `pylock.android.toml`; `path` entries skipped, so a fully vendored lock SKIPs. |
 | App-local native binaries | project | Scan `app_dir` for `.so`/`.pyd`/`.dylib`/`.dll`; **FAIL** naming each one and its ELF machine. `app_dir` is staged into the *asset* bundle every ABI shares, so a library there fits one ABI at most — native code belongs in an Android wheel, which kivyforge stages per ABI into `jniLibs/`. |
 | include_files | project + lock | With a lock present, WARN on drift vs. the locked SHA-256 — a file changed, added, or deleted since `kivyforge lock` — which `kivyforge build` refuses to stage. (The path rules themselves are loader-validated; see **Android config**.) |
-| Manifest policy (release) | project | `package`'s preflight, first pass only: kivyforge's own checks over the manifest it *would* generate — exported components explicit and limited to the baseline set (`PythonActivity` + `ProfileInstallReceiver`, plus `manifest.allow_exported`), single `LAUNCHER`, no deep-link conflicts, `debuggable` not forced on, `allowBackup`/cleartext posture, and a non-placeholder (`org.example.*`) `applicationId`. **FAIL** here is what `package` will block on. The merged-manifest pass and the curated `lintRelease` subset need AGP, so `package` stays the gate that sees library manifests. |
+| Manifest policy (release) | project | `package`'s preflight, first pass only: kivyforge's own checks over the manifest it *would* generate — exported components explicit and limited to the baseline set (the configured launcher + `ProfileInstallReceiver`, plus `manifest.allow_exported`), a single `LAUNCHER` that is the configured launcher, no deep-link conflicts, `debuggable` not forced on, `allowBackup`/cleartext posture, and a non-placeholder (`org.example.*`) `applicationId`. **FAIL** here is what `package` will block on. The merged-manifest pass and the curated `lintRelease` subset need AGP, so `package` stays the gate that sees library manifests. |
 | Implied features | project | Advisory (always PASS): names the `android:required="false"` `<uses-feature>` set `auto_features` will synthesize from `permissions.uses`, minus any declared explicitly, so Play device-filtering is visible before upload. SKIP when `auto_features` is off. |
 
 ## Version and upgrade policy

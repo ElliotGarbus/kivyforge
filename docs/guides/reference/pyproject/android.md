@@ -16,8 +16,10 @@ The Android overlay of `pyproject.toml`. For a task-oriented walkthrough, see
 
 kivyforge validates the value of every key it reads and fails with a message
 that names the key. It ignores keys it does not recognize, so check the spelling
-of a key that seems to have no effect. Any edit to `pyproject.toml` makes the lock
-stale; run `kivyforge lock -p android` afterward.
+of a key that seems to have no effect. A change to a lock input (the
+dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
+`exclude`, or native libraries) makes the lock stale; run
+`kivyforge lock -p android` afterward.
 
 ## `[tool.kivy.android]`
 
@@ -32,11 +34,13 @@ stale; run `kivyforge lock -p android` afterward.
 | `compile_sdk` | integer | value of `target_sdk` | API level the project compiles against. Must be at least `target_sdk`. |
 | `kivy_generation` | integer | `2` | `2` for Kivy 2.3.1 on SDL2, `3` for Kivy 3.0 on SDL3. Selects the SDL bootstrap only; it does not choose the Kivy version, which comes from `[project].dependencies`. `lock` and `doctor` warn if the two disagree. |
 | `abis` | list of string | `["arm64_v8a", "x86_64"]` | ABIs (application binary interfaces) to build. Only `arm64_v8a` and `x86_64` are accepted. |
-| `extra_index_urls` | list of string | `[]` | Extra package indexes to resolve wheels from, such as the mobile wheel index. |
-| `find_links` | list of string | `[]` | Local directories of wheels. |
+| `extra_index_urls` | list of string | `[]` | Extra package indexes to resolve wheels from, such as the mobile wheel index. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
+| `find_links` | list of string | `[]` | Local directories of wheels. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `exclude` | list of string | `[]` | Dependency names to prune from the resolve. |
+| `[sources]` | table | none | Which index a package comes from on this target, as `package = { index = "NAME" }`. An entry replaces the `[tool.kivy.sources]` entry for the same package. See [Package indexes and sources](tool-kivy.md#package-indexes-and-sources). |
 | `base_theme` | string | `"Theme.Material3.DayNight.NoActionBar"` | Parent theme of the generated app theme. |
 | `fullscreen` | bool | `false` | Hide the status bar and the navigation bar. A swipe from the edge shows them for a moment. Replaces buildozer's `fullscreen = 1`. |
+| `main_activity` | string | `"org.kivy.android.PythonActivity"` | The launcher: your own public subclass of `org.kivy.android.PythonActivity`, fully qualified, from `[tool.kivy.android.src]`. Use it to run Java in the activity's `onCreate`. It may not be in `org.kivy.android`, `org.libsdl.app`, `org.jnius` or `org.renpy.android`. The build fails with javac's error if the class is missing, abstract, not a `PythonActivity`, or has no public no-argument constructor. Replaces buildozer's `android.entrypoint`. See [Java and Kotlin libraries](../../guides/android/java-libraries.md#run-java-when-the-activity-is-created). |
 | `gradle_properties` | table | `{}` | Extra `gradle.properties` entries. `android.useAndroidX` is reserved. |
 
 ## `[tool.kivy.android.python]`
@@ -101,8 +105,11 @@ LocalWidget = { version = "0.2.0", source = "libs/LocalWidget-0.2.0.aar" }
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `java` | list of string | `[]` | Project-relative Java source directories to compile into the app. |
-| `kotlin` | list of string | `[]` | Project-relative Kotlin source directories. A non-empty list enables the Kotlin Gradle plugin. |
+| `java` | list of string | `[]` | Project-relative Java source directories to compile into the app. Each must be an existing directory. |
+| `kotlin` | list of string | `[]` | Project-relative Kotlin source directories. Each must be an existing directory. A non-empty list enables the Kotlin Gradle plugin. |
+
+The directories are compiled in place, so an edit is picked up by the next
+build without any copy step.
 
 ## `[[tool.kivy.android.include_files]]`
 
@@ -153,13 +160,13 @@ Each entry becomes an `<intent-filter>` on the main activity.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `application` | table | `{}` | Attributes added to `<application>`. `android:label`, `android:icon`, `android:roundIcon`, `android:theme`, and `android:extractNativeLibs` are managed by kivyforge and rejected. |
-| `activity` | table | `{}` | Attributes added to the main `<activity>`. `android:name`, `android:label`, `android:screenOrientation`, and `android:theme` are rejected. |
+| `application` | table | `{}` | `android:` attributes added to `<application>`. `android:label`, `android:icon`, `android:roundIcon`, `android:theme`, and `android:extractNativeLibs` are managed by kivyforge and rejected, as is any key in another namespace such as `tools:`. |
+| `activity` | table | `{}` | `android:` attributes added to the main `<activity>`. `android:name`, `android:label`, `android:screenOrientation`, and `android:theme` are rejected, as is any `tools:` key. |
 | `placeholders` | table | `{}` | Manifest placeholders, string to string. |
-| `allow_exported` | list of string | `[]` | Fully qualified component names that the release manifest policy accepts as exported. |
-| `extra_manifest_xml` | string | `""` | XML inserted inside `<manifest>`. Must be well formed. |
-| `extra_application_xml` | string | `""` | XML inserted inside `<application>`. |
-| `extra_activity_xml` | string | `""` | XML inserted inside the main `<activity>`. |
+| `allow_exported` | list of string | `[]` | Fully qualified component names that the release manifest policy accepts as exported. To drop a library's component instead, declare it in `extra_application_xml` with `tools:node="remove"`. |
+| `extra_manifest_xml` | string | `""` | XML inserted inside `<manifest>`. Must be well formed. The `android:` and `tools:` prefixes are declared for you, so manifest-merger directives (`tools:node`, `tools:replace`) can be used as Android's documentation shows them. |
+| `extra_application_xml` | string | `""` | XML inserted inside `<application>`. Same rules. |
+| `extra_activity_xml` | string | `""` | XML inserted inside the main `<activity>`. Same rules. |
 
 ## `[tool.kivy.android.signing]`
 

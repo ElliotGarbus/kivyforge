@@ -65,7 +65,6 @@ class TestBuild:
         monkeypatch.setattr(
             cli, "_load_and_verify", lambda root, nv, version=None: ("cfg", "lock")
         )
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         outcome = cli.windows_build(
             project, arch=None, no_verify_lock=True, no_cache=False
         )
@@ -77,12 +76,10 @@ class TestBuild:
 
 class TestRun:
     def test_no_build_requires_existing_bundle(self, project, monkeypatch):
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         with pytest.raises(ToolchainError, match="no built bundle"):
             cli.windows_run(project, arch=None, no_build=True)
 
     def test_launches_built_exe(self, project, monkeypatch):
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         bundle = project / "build" / "windows" / "My App"
         bundle.mkdir(parents=True)
         (bundle / "My App.exe").write_bytes(b"MZ")
@@ -101,7 +98,6 @@ class TestRun:
         assert launched["cmd"][0].endswith("My App.exe")
 
     def test_nonzero_exit_raises(self, project, monkeypatch):
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         bundle = project / "build" / "windows" / "My App"
         bundle.mkdir(parents=True)
         (bundle / "My App.exe").write_bytes(b"MZ")
@@ -115,7 +111,6 @@ class TestRun:
 
     def test_builds_then_launches(self, project, monkeypatch):
         # Default (no --no-build): run builds first, then launches the result.
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         bundle = project / "build" / "windows" / "My App"
         bundle.mkdir(parents=True)
         (bundle / "My App.exe").write_bytes(b"MZ")
@@ -155,7 +150,6 @@ class TestRun:
         class _Proc:
             returncode = 0
 
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         monkeypatch.setattr(
             cli, "_load_and_verify", lambda root, nv, version=None: ("cfg", "lock")
         )
@@ -183,7 +177,6 @@ class TestRun:
         class _Proc:
             returncode = 0
 
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         monkeypatch.setattr(
             cli, "_load_and_verify", lambda root, nv, version=None: ("cfg", "lock")
         )
@@ -196,7 +189,6 @@ class TestRun:
         assert "Launching My App" in captured.err
 
     def test_release_with_no_build_rejected(self, project, monkeypatch):
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         with pytest.raises(ToolchainError, match="--release applies to the build"):
             cli.windows_run(project, arch=None, no_build=True, release=True)
 
@@ -206,7 +198,6 @@ class TestPackage:
         archs = ("amd64",)
 
     def _package(self, project, built, monkeypatch):
-        monkeypatch.setattr(cli, "_require_windows_host", lambda: None)
         monkeypatch.setattr(
             cli,
             "_load_and_verify",
@@ -355,13 +346,13 @@ def _config(project):
 
 
 def _write_windows_lock(project, *, in_sync=True):
-    from kivyforge.lock.reader import compute_pyproject_sha256
     from kivyforge.lock.wheelruntime.model import (
         PythonRuntime,
         RuntimeArtifact,
         WheelRuntimeLock,
     )
     from kivyforge.platforms.windows.lock import dumps
+    from tests.lock_hash import inputs_sha
 
     text = (project / "pyproject.toml").read_text(encoding="utf-8")
     lock = WheelRuntimeLock(
@@ -378,7 +369,7 @@ def _write_windows_lock(project, *, in_sync=True):
         archs=("amd64",),
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256=(compute_pyproject_sha256(text) if in_sync else "0" * 64),
+        lock_inputs_sha256=(inputs_sha(text, "windows") if in_sync else "0" * 64),
         tool_kivyforge_schema_version=1,
     )
     (project / "pylock.windows.toml").write_text(dumps(lock), encoding="utf-8")
@@ -394,35 +385,36 @@ class TestLockState:
 
     def test_in_sync(self, project):
         _write_windows_lock(project, in_sync=True)
-        assert cli._lock_status(project).state is LockState.IN_SYNC
+        assert (
+            cli._lock_status(project, cli._load_config(project)).state
+            is LockState.IN_SYNC
+        )
 
     def test_out_of_date(self, project):
         _write_windows_lock(project, in_sync=False)
-        assert cli._lock_status(project).state is LockState.OUT_OF_DATE
+        assert (
+            cli._lock_status(project, cli._load_config(project)).state
+            is LockState.OUT_OF_DATE
+        )
 
     def test_unreadable(self, project):
         (project / "pylock.windows.toml").write_text("{{ not toml", encoding="utf-8")
-        assert cli._lock_status(project).state is LockState.UNREADABLE
+        assert (
+            cli._lock_status(project, cli._load_config(project)).state
+            is LockState.UNREADABLE
+        )
 
     def test_remediation_names_the_windows_target(self, project):
         """The relock command is now a field, so it cannot be misread out of the
         middle of a sentence."""
-        assert cli._lock_status(project).relock_command == "kivyforge lock -p windows"
+        assert (
+            cli._lock_status(project, cli._load_config(project)).relock_command
+            == "kivyforge lock -p windows"
+        )
 
 
 class TestHostAndLoaderErrors:
     """The thin translation wrappers turn domain errors into ToolchainError."""
-
-    def test_require_host_translates_capability_error(self, monkeypatch):
-        from kivyforge.platforms import HostCapabilityError
-
-        class _Plat:
-            def check_host_capability(self):
-                raise HostCapabilityError("Windows onedir builds need a Windows host")
-
-        monkeypatch.setattr(cli, "get_platform", lambda name: _Plat())
-        with pytest.raises(ToolchainError, match="need a Windows host"):
-            cli._require_windows_host()
 
     def test_load_config_translates_config_error(self, tmp_path):
         # A pyproject with no [tool.kivy.windows] table fails require_windows.

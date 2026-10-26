@@ -59,9 +59,9 @@ from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64, machine_name
 from kivyforge.platforms.android.generate.manifest import (
     GENERATED_THEME,
-    MAIN_ACTIVITY,
     effective_features,
     effective_permissions,
+    main_activity,
     screen_orientation,
     service_class_name,
 )
@@ -552,6 +552,92 @@ def _pb_varint(data: bytes, pos: int) -> tuple[int, int]:
             raise ValueError("varint too long")
 
 
+# --------------------------------------------------------------------------- #
+# Compiled classes: which classes the package's dex files define
+# --------------------------------------------------------------------------- #
+#
+# A Gradle source root that does not exist compiles to nothing and the build
+# still succeeds, which is how `[tool.kivy.android.src]` shipped without ever
+# compiling a class. The only proof a class reached the app is the dex itself.
+
+_DEX_NAME = re.compile(r"^(?:dex/)?classes\d*\.dex$")
+_DEX_MAGIC = re.compile(rb"^dex\n\d{3}\x00$")
+_DEX_HEADER_SIZE = 0x70
+_DEX_CLASS_DEF_SIZE = 32
+
+
+def dex_descriptor(class_name: str) -> str:
+    """``org.example.Main`` as a dex type descriptor, ``Lorg/example/Main;``.
+
+    Takes the binary name, so a nested class is ``Outer$Inner``.
+    """
+    return "L" + class_name.replace(".", "/") + ";"
+
+
+def dex_defined_classes(dex: bytes) -> set[str]:
+    """The type descriptor of every class *dex* defines (its ``class_defs``).
+
+    Defined, not merely mentioned: the string table also holds every class the
+    code refers to, so a class that calls a missing one would otherwise count
+    the missing one as present. Raises ``ValueError`` on bytes that are not a
+    dex file this reader can walk.
+    """
+    if len(dex) < _DEX_HEADER_SIZE or not _DEX_MAGIC.match(dex[:8]):
+        raise ValueError("not a dex file (bad magic or truncated header)")
+    try:
+        string_ids_off = struct.unpack_from("<I", dex, 0x3C)[0]
+        type_ids_off = struct.unpack_from("<I", dex, 0x44)[0]
+        class_defs_size, class_defs_off = struct.unpack_from("<2I", dex, 0x60)
+        found: set[str] = set()
+        for i in range(class_defs_size):
+            class_idx = struct.unpack_from(
+                "<I", dex, class_defs_off + i * _DEX_CLASS_DEF_SIZE
+            )[0]
+            descriptor_idx = struct.unpack_from(
+                "<I", dex, type_ids_off + 4 * class_idx
+            )[0]
+            string_off = struct.unpack_from(
+                "<I", dex, string_ids_off + 4 * descriptor_idx
+            )[0]
+            _, start = _pb_varint(dex, string_off)  # uleb128 utf16_size
+            end = dex.index(b"\x00", start)
+            found.add(dex[start:end].decode("utf-8", "replace"))
+    except struct.error as exc:
+        raise ValueError(f"dex table runs past the end of the file: {exc}") from exc
+    return found
+
+
+def android_dex_problems(package: Path, *, classes: Sequence[str]) -> list[str]:
+    """Each of *classes* (binary names) that no dex file in *package* defines.
+
+    *package* is an APK or an App Bundle; a bundle keeps its dex files under
+    ``base/dex/``.
+    """
+    if not classes:
+        return ["no class given; the check needs to know what to look for"]
+    with zipfile.ZipFile(package) as zf:
+        view = _ZipView(zf, _module_prefix(zf))
+        dex_names = sorted(n for n in view.namelist() if _DEX_NAME.match(n))
+        if not dex_names:
+            return [f"{package.name} contains no classes*.dex; the app has no code"]
+        defined: set[str] = set()
+        problems = []
+        for name in dex_names:
+            with view.open(name) as fh:
+                data = fh.read()
+            try:
+                defined |= dex_defined_classes(data)
+            except ValueError as exc:
+                problems.append(f"{name} could not be read: {exc}")
+    for class_name in classes:
+        if dex_descriptor(class_name) not in defined:
+            problems.append(
+                f"{class_name} is not defined in any of {dex_names}; it was "
+                "never compiled into the app"
+            )
+    return problems
+
+
 def jarsigner_report_problems(returncode: int, output: str) -> list[str]:
     """What ``jarsigner -verify <bundle>`` said was wrong, from its exit and text.
 
@@ -817,14 +903,15 @@ def _manifest_application_problems(
 def _manifest_main_activity_problems(
     app: ET.Element, *, android: AndroidConfig, orientation: tuple[str, ...]
 ) -> list[str]:
+    launcher = main_activity(android)
     main = None
     for activity in app.iter("activity"):
-        if _android_attr(activity, "name") == MAIN_ACTIVITY:
+        if _android_attr(activity, "name") == launcher:
             main = activity
             break
     if main is None:
         return [
-            f"the merged manifest has no <activity android:name={MAIN_ACTIVITY!r}>, "
+            f"the merged manifest has no <activity android:name={launcher!r}>, "
             "so the app has no launcher"
         ]
 
@@ -840,23 +927,37 @@ def _manifest_main_activity_problems(
     }
     for key, value in android.manifest.activity.items():
         expected[key] = _expected_attr_value(value)
-    problems = _attr_problems(main, expected, where=f"<activity {MAIN_ACTIVITY}>")
+    problems = _attr_problems(main, expected, where=f"<activity {launcher}>")
 
     filters = list(main.iter("intent-filter"))
-    if not any(
-        _LAUNCHER_CATEGORY in {_android_attr(c, "name") for c in f.iter("category")}
-        for f in filters
-    ):
+    if not any(_is_launcher_filter(f) for f in filters):
         problems.append(
-            f"{MAIN_ACTIVITY} has no intent-filter carrying the "
+            f"{launcher} has no intent-filter carrying the "
             f"{_LAUNCHER_CATEGORY} category"
         )
-    problems += _intent_filter_problems(filters, android=android)
+    others = sorted(
+        str(_android_attr(a, "name"))
+        for a in app.iter("activity")
+        if a is not main
+        and any(_is_launcher_filter(f) for f in a.iter("intent-filter"))
+    )
+    if others:
+        problems.append(
+            f"{others} also carry the {_LAUNCHER_CATEGORY} category; the "
+            f"configured launcher is {launcher}"
+        )
+    problems += _intent_filter_problems(filters, android=android, launcher=launcher)
     return problems
 
 
+def _is_launcher_filter(filter_elem: ET.Element) -> bool:
+    return _LAUNCHER_CATEGORY in {
+        _android_attr(c, "name") for c in filter_elem.iter("category")
+    }
+
+
 def _intent_filter_problems(
-    filters: list[ET.Element], *, android: AndroidConfig
+    filters: list[ET.Element], *, android: AndroidConfig, launcher: str
 ) -> list[str]:
     """Each declared filter must be *contained in* some merged filter.
 
@@ -873,7 +974,7 @@ def _intent_filter_problems(
             for f in filters
         ):
             problems.append(
-                f"no intent-filter on {MAIN_ACTIVITY} carries the declared "
+                f"no intent-filter on {launcher} carries the declared "
                 f"action {declared.action!r} with categories "
                 f"{sorted(wanted_categories)} and data {wanted_data}"
             )
@@ -1346,8 +1447,25 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
     Scoped to ``Contents/Resources/{app,lib}`` only — see the module-level
     note on why the embedded stdlib is excluded by design, not by omission.
     """
+    return _bundle_payload_problems(
+        app,
+        scopes=_MACOS_STRIP_SCOPE,
+        entry_scope="Contents/Resources/app",
+        stripped=stripped,
+    )
+
+
+def _bundle_payload_problems(
+    app: Path, *, scopes: tuple[str, ...], entry_scope: str, stripped: bool
+) -> list[str]:
+    """Source-vs-bytecode for a directory bundle, shared by macOS and iOS.
+
+    *scopes* are the bundle-relative directories ``strip_source`` applies to;
+    *entry_scope* is the one holding the developer's own code, which must
+    carry *something* importable even when nothing was stripped.
+    """
     problems: list[str] = []
-    for scope in _MACOS_STRIP_SCOPE:
+    for scope in scopes:
         base = app / scope
         if not base.is_dir():
             continue
@@ -1362,7 +1480,10 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
                     f"strip_source was applied but {len(sources)} .py file(s) "
                     f"remain under {scope}, e.g. {rels}"
                 )
-            if not compiled:
+            # A dependency tree with no Python in it at all is a project with
+            # no third-party deps (iOS always creates pip-deps/), not a build
+            # that degraded. The developer's own tree has no such excuse.
+            if not compiled and (sources or scope == entry_scope):
                 problems.append(
                     f"strip_source was applied but {scope} contains no .pyc at "
                     "all — the build degraded to shipping source"
@@ -1374,7 +1495,7 @@ def _macos_payload_problems(app: Path, *, stripped: bool) -> list[str]:
                     f"{rels} — sourceless imports need .pyc in the legacy "
                     "location, not beside a source file that is no longer there"
                 )
-        elif scope == "Contents/Resources/app" and not sources and not compiled:
+        elif scope == entry_scope and not sources and not compiled:
             problems.append(
                 f"{scope} has neither .py nor .pyc — the app has no entry point"
             )
@@ -1387,8 +1508,17 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
     Mirrors Android's ``_pyc_magic_problems`` / roadmap item 1's bug, adapted
     to a directory tree: read straight from disk rather than a zip member.
     """
+    return _bundle_pyc_magic_problems(
+        app, scopes=_MACOS_STRIP_SCOPE, expected_magic=expected_magic
+    )
+
+
+def _bundle_pyc_magic_problems(
+    app: Path, *, scopes: tuple[str, ...], expected_magic: bytes
+) -> list[str]:
+    """The magic half of :func:`_bundle_payload_problems`, for the same scopes."""
     problems: list[str] = []
-    for scope in _MACOS_STRIP_SCOPE:
+    for scope in scopes:
         base = app / scope
         if not base.is_dir():
             continue
@@ -1417,19 +1547,22 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
 # with no T3 tier at all, and `ios_simulator` had built a real `.app` on every
 # push since the day before this was written without anything inspecting it.
 #
-# **Scope is narrower than the other four platforms', and deliberately so.**
-# iOS `strip_source` cannot be exercised honestly yet: every iOS example pins
-# a CPython 3.15 *pre-release* (`3.15.0b4`), `_compile_app_copy` /
-# `_compile_pip_deps` both degrade to shipping source with "no final CPython
-# 3.15 found" (confirmed against a real build the day this was written — see
-# ios-t3-checks-findings.md Step 0), and python.org publishes no iOS
-# `Python.xcframework` below `3.15.0b1` — so there is no "pin an
-# already-final minor" escape the way desktop has. Writing a stripped/`.pyc`-
-# magic check with nothing to run it against would be exactly the
-# never-exercised-code-path shape roadmap item 1 already cost this project
-# once; the parameter is omitted entirely rather than carried unused, and iOS
-# has no `*_STRIP_SCOPE` constant to show for it. Revisit if a final CPython
-# 3.15 iOS xcframework is ever published.
+# **Stripping was untestable until CPython 3.15.0 final.** Byte-compiling
+# needs a *final* interpreter of the shipped minor, python.org publishes no iOS
+# `Python.xcframework` below `3.15.0b1`, and every example pinned `3.15.0b4`,
+# so `package -p ios` always degraded to shipping source. This check was
+# therefore left out on purpose when the rest of the tier was written
+# (ios-t3-checks-findings.md). It was added on 2026-10-25, against the first
+# real stripped `.ipa` (`hello-kivy` on 3.15.0; test-matrix.md §7).
+#
+# **The expected magic comes from the shipped stdlib's own bytecode.** macOS
+# runs the bundle's interpreter to ask it. iOS cannot, because
+# `Python.xcframework` is a library with no executable. python.org's
+# xcframework does ship its stdlib pre-compiled, though, in
+# `python/lib/python3.X/**/__pycache__/`, written by the build that produced
+# the runtime. Reading the magic from there anchors it to the artifact rather
+# than to whichever host CPython wrote the payload (:func:`ios_shipped_magics`).
+# kivyforge never compiles that stdlib, so the two cannot share a mistake.
 #
 # **The bundle is flat — no `Contents/`.** Read off a real
 # `kivyforge build -p ios --simulator` of `examples/mobile/hello-kivy`
@@ -1454,6 +1587,25 @@ def _macos_pyc_magic_problems(app: Path, *, expected_magic: bytes) -> list[str]:
 # binary already is.
 
 IOS_ARCH_MACHINES = {"arm64": CPU_TYPE_ARM64, "x86_64": CPU_TYPE_X86_64}
+
+# `app/` is the developer's code and `pip-deps/` the third-party wheels: the
+# two trees `package` byte-compiles (ios-source-stripping.md, "Payload
+# locations"). `python/lib` is the runtime's stdlib and is never stripped.
+_IOS_STRIP_SCOPE = ("app", "pip-deps")
+
+
+def ios_shipped_magics(app: Path) -> list[bytes]:
+    """The distinct ``.pyc`` magics in the bundle's own stdlib, sorted.
+
+    Exactly one is the expected answer. None means the runtime shipped no
+    bytecode to read it from, and more than one means the stdlib itself is
+    mixed. The driver fails on either rather than guessing.
+    """
+    found = {
+        pyc.read_bytes()[:4]
+        for pyc in (app / "python" / "lib").glob("python3.*/**/__pycache__/*.pyc")
+    }
+    return sorted(found)
 
 
 def ios_expected_plist(config: Config) -> dict[str, object]:
@@ -1480,6 +1632,8 @@ def ios_app_problems(
     app: Path,
     *,
     arch: str,
+    stripped: bool,
+    expected_magic: bytes,
     expected_plist: dict[str, object] | None = None,
 ) -> list[str]:
     """Every way *app* fails to be the artifact the build promised.
@@ -1488,12 +1642,14 @@ def ios_app_problems(
     on Apple Silicon and the only device arch; ``"x86_64"`` is still accepted
     the way ``macos_app_problems`` accepts it, for the same Intel-host-relic
     reasons — see ``xcode/commands.py::default_simulator_arch``).
-    ``expected_plist`` is config-derived via :func:`ios_expected_plist`;
-    omitted, only the plist's internal shape is checked.
+    ``stripped`` is whether ``strip_source`` applied (a ``package`` build),
+    and ``expected_magic`` the header every ``.pyc`` in ``app/`` and
+    ``pip-deps/`` must carry; see :func:`ios_shipped_magics` for where it
+    comes from. ``expected_plist`` is config-derived via
+    :func:`ios_expected_plist`; omitted, only the plist's internal shape is
+    checked.
 
-    No ``stripped``/``expected_magic`` parameters — see the module-level note
-    above on why that check cannot be written honestly yet. The code
-    signature is likewise not here: ``codesign`` is a real tool, so that
+    The code signature is not here: ``codesign`` is a real tool, so that
     verification stays in the driver
     (``tests/platforms/ios/test_app_artifact.py``), the same split as
     macOS's ``codesign_verify``.
@@ -1509,6 +1665,13 @@ def ios_app_problems(
 
     problems += _ios_plist_problems(app, expected_plist=expected_plist)
     problems += _ios_arch_problems(app, arch=arch)
+    problems += _bundle_payload_problems(
+        app, scopes=_IOS_STRIP_SCOPE, entry_scope="app", stripped=stripped
+    )
+    if stripped:
+        problems += _bundle_pyc_magic_problems(
+            app, scopes=_IOS_STRIP_SCOPE, expected_magic=expected_magic
+        )
     return problems
 
 

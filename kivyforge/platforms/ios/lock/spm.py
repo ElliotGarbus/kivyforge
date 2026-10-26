@@ -13,13 +13,14 @@ inject a fake and stay hermetic (no ``swift`` toolchain, no network). Local
 from __future__ import annotations
 
 import json
-import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from kivyforge.config.model import SwiftPackageDep
+from kivyforge.streaming import elapsed, run_streaming
 
 
 class SpmResolverError(Exception):
@@ -56,8 +57,14 @@ class XcodeSpmResolver:
     matched back to their declaration by normalized Git URL.
     """
 
-    def __init__(self, swift_executable: str = "swift") -> None:
+    def __init__(
+        self,
+        swift_executable: str = "swift",
+        *,
+        on_progress: Callable[[str], None] | None = None,
+    ) -> None:
         self._swift = swift_executable
+        self._on_progress = on_progress
 
     def resolve(
         self,
@@ -80,9 +87,16 @@ class XcodeSpmResolver:
             if offline:
                 # Resolve from SPM's cache only; fail if it is incomplete.
                 cmd.append("--disable-automatic-resolution")
+            if self._on_progress is not None:
+                names = ", ".join(p.name for p in remote)
+                self._on_progress(f"[lock] swift: resolving {names}")
             try:
-                proc = subprocess.run(
-                    cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL
+                # Streamed: SPM clones each package, which can take minutes
+                # with nothing else to show (#88).
+                returncode, transcript = run_streaming(
+                    cmd,
+                    on_segment=self._segment,
+                    on_quiet=self._quiet if self._on_progress else None,
                 )
             except FileNotFoundError as exc:
                 raise SpmResolverError(
@@ -91,10 +105,10 @@ class XcodeSpmResolver:
                     "  Install Xcode and run `xcode-select --switch`, or remove the "
                     "[tool.kivy.ios.native.swift_packages] entries."
                 ) from exc
-            if proc.returncode != 0:
+            if returncode != 0:
                 raise SpmResolverError(
                     "swift could not resolve the declared Swift packages.\n"
-                    f"  swift said:\n{_indent(proc.stderr or proc.stdout)}"
+                    f"  swift said:\n{_indent(transcript)}"
                 )
             resolved_path = tmpdir / "Package.resolved"
             try:
@@ -120,6 +134,18 @@ class XcodeSpmResolver:
                 )
             )
         return out
+
+    def _segment(self, segment: str) -> bool:
+        """Show the packages SPM fetches; the rest is too chatty."""
+        line = segment.strip()
+        if self._on_progress is None or not line.startswith("Fetching "):
+            return False
+        self._on_progress(f"[lock] swift: {line}")
+        return True
+
+    def _quiet(self, seconds: float) -> None:
+        if self._on_progress is not None:
+            self._on_progress(f"[lock] swift: still resolving ({elapsed(seconds)})")
 
 
 def get_spm_resolver(backend: str = "xcode", **kwargs) -> SpmResolver:

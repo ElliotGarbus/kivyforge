@@ -40,25 +40,18 @@ def safe_area_insets():
     fallback, so this example is unchanged when run on a desktop for a quick
     smoke-test.
 
-    The two platforms report different units: iOS gives UIKit **points**,
-    so they are scaled to Kivy window pixels; Android already gives
-    **pixels**, which is Kivy's layout coordinate system there, so scaling
-    again would inflate the padding by the display density.
+    Both platforms report Kivy layout pixels, so the insets are used
+    unscaled. On iOS that needs a Kivy build with kivy/kivy#9441; earlier
+    Kivy 3 builds return UIKit points there.
     """
     if platform not in ("ios", "android"):
         return [0, 0, 0, 0]
     try:
-        from kivy.mobile import get_safe_area, get_scale
+        from kivy.mobile import get_safe_area
     except ImportError:
         return [0, 0, 0, 0]
     insets = get_safe_area()
-    scale = get_scale() if platform == "ios" else 1.0
-    return [
-        insets["left"] * scale,
-        insets["top"] * scale,
-        insets["right"] * scale,
-        insets["bottom"] * scale,
-    ]
+    return [insets["left"], insets["top"], insets["right"], insets["bottom"]]
 
 
 def _objc_str(value) -> str | None:

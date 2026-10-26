@@ -64,6 +64,19 @@ class LockedPackage:
         return (canonical_name(self.name), self.version)
 
 
+@dataclass(frozen=True)
+class LockedIncludeFile:
+    """One ``[[tool.kivyforge.include_files]]`` drift pin: one staged file."""
+
+    source: str
+    dest: str
+    sha256: str
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.dest, self.source)
+
+
 def canonical_name(name: str) -> str:
     """PEP 503 normalization for package-name comparison."""
     return re.sub(r"[-_.]+", "-", name).lower()

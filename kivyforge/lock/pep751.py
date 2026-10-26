@@ -9,7 +9,7 @@ source of truth for the PEP 751 layout and string escaping.
 
 from __future__ import annotations
 
-from .model import LockedPackage, LockedWheel, PackageDep
+from .model import LockedIncludeFile, LockedPackage, LockedWheel, PackageDep
 
 
 def s(value: str) -> str:
@@ -44,14 +44,14 @@ def emit_package(lines: list[str], pkg: LockedPackage) -> None:
     if pkg.dependencies:
         deps = ", ".join(_dep_inline(d) for d in pkg.dependencies)
         lines.append(f"dependencies = [{deps}]")
+    if pkg.source_index:
+        # PEP 751's own key: the index the package's files were found on (#86).
+        lines.append(f"index = {s(pkg.source_index)}")
 
-    if pkg.direct_requirement or pkg.source_index:
+    if pkg.direct_requirement:
         lines.append("")
         lines.append("[packages.tool.kivyforge]")
-        if pkg.direct_requirement:
-            lines.append("direct_requirement = true")
-        if pkg.source_index:
-            lines.append(f"source_index = {s(pkg.source_index)}")
+        lines.append("direct_requirement = true")
 
     for wheel in sorted(pkg.wheels, key=lambda w: w.name):
         lines.append("")
@@ -90,7 +90,9 @@ def parse_package(p: dict) -> LockedPackage:
         dependencies=deps,
         marker=p.get("marker"),
         direct_requirement=bool(tool.get("direct_requirement", False)),
-        source_index=tool.get("source_index"),
+        # ``[packages.tool.kivyforge] source_index`` was never written, but a
+        # hand-edited lock may carry it; PEP 751's ``index`` is what we write.
+        source_index=p.get("index") or tool.get("source_index"),
     )
 
 
@@ -102,6 +104,22 @@ def parse_wheel(w: dict) -> LockedWheel:
         path=w.get("path"),
         upload_time=w.get("upload-time"),
         size=w.get("size"),
+    )
+
+
+def emit_include_files(lines: list[str], pins) -> None:
+    """``[[tool.kivyforge.include_files]]``, one table per pin, sorted."""
+    for pin in sorted(pins, key=lambda p: p.key):
+        lines.append("")
+        lines.append("[[tool.kivyforge.include_files]]")
+        lines.append(f"source = {s(pin.source)}")
+        lines.append(f"dest = {s(pin.dest)}")
+        lines.append(f"sha256 = {s(pin.sha256)}")
+
+
+def parse_include_file(entry: dict) -> LockedIncludeFile:
+    return LockedIncludeFile(
+        source=entry["source"], dest=entry["dest"], sha256=entry["sha256"]
     )
 
 

@@ -134,6 +134,13 @@ jobs:
     - name: Run pytest with coverage
       run: |
         pytest --cov=kivyforge --cov-report=term-missing --cov-report=xml
+    - name: pip and setuptools behave as the dynamic version lookup expects (live)
+      # docs/design/dev/dynamic-version-proposal.md rests on what
+      # `pip install --dry-run --report` does with setuptools-scm and hatch-vcs
+      # projects in real git repos. These tests fetch the backends from PyPI,
+      # so a pip or setuptools release that changes that behaviour fails here
+      # rather than in a user's build (#118). Opted in, a missing git fails.
+      run: pytest tests/test_pip_metadata_live.py -v --no-cov --pip-metadata-live
 
   windows_tests:
     name: Unit tests (Windows)
@@ -200,9 +207,12 @@ jobs:
       # / 10.0.26100.0, loaded via vcvarsall — not "latest") holds code
       # generation steady on top of it. If this fails with "cl not found" / a
       # vcvars error the runner image dropped that exact pair; if it fails with a
-      # byte mismatch the C source or the compile/link flags changed without
-      # re-vendoring. Either way: Actions → Run workflow (`revendor_launcher`)
-      # to re-pin against the runner's current defaults.
+      # byte mismatch the C source, the compile/link flags or the pin changed
+      # without re-vendoring (TOOLSET.txt's `inputs:` hash no longer matches).
+      # Either way: Actions → Run workflow (`revendor_launcher`). A mismatch with
+      # unchanged inputs is the runner image's toolchain, not ours: it passes
+      # with a "Launcher toolchain drift" warning; re-vendor once the new image
+      # has fully rolled out (windows-spec.md, "Toolchain drift").
       run: python -m kivyforge.platforms.windows.launcher.build_launcher verify
     - name: Exercise the launcher end-to-end (spawn/argv/exit-code/env)
       # These tests self-skip without MSVC, which on this job would be a green run
@@ -593,10 +603,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # verbose: the x86_64 leg builds at -v (--stacktrace, and the echoed
+          # gradlew command) so real Gradle rejects any flag kivyforge composes
+          # wrongly; arm64_v8a keeps the default level, the one users run
+          # (verbose-output-proposal.md §7, decision 5).
           - abi: arm64_v8a
             android_abi: arm64-v8a
+            verbose: ""
           - abi: x86_64
             android_abi: x86_64
+            verbose: "-v"
     env:
       # The example this gate builds; its pylock.android.toml is committed, so
       # the job needs no Gradle-at-lock-time and no resolver network beyond
@@ -690,7 +706,7 @@ jobs:
       run: kivyforge doctor -p android
     - name: Build the debug APK (assembleDebug)
       working-directory: ${{ env.APP_DIR }}
-      run: kivyforge build -p android --debug --abi "$ABI"
+      run: kivyforge build -p android --debug --abi "$ABI" ${{ matrix.verbose }}
     - name: Assert the debug APK is the artifact the build promised (T3)
       # Replaces three `unzip -l | grep` presence checks with the full T3 pass
       # (tests/artifact_checks.py): required entries, single-ABI ELF machine
@@ -759,6 +775,40 @@ jobs:
         apk="$APP_DIR/$(python -c 'import json, sys; [a] = json.load(open(sys.argv[1]))["data"]["artifacts"]; assert a["path"].startswith("dist/android/"), a; print(a["path"])' "$APP_DIR/package.json")"
         pytest tests/platforms/android/test_apk_signature.py -q --no-cov \
           --android-apk "$apk" --android-project "$APP_DIR"
+    - name: Build with [tool.kivy.android.src] roots and assert their classes are in the dex (T3)
+      # A source root Gradle cannot find compiles to nothing and the build
+      # still succeeds; that is how src.java shipped without ever compiling a
+      # class. So this builds a copy of the example with one Java and one
+      # Kotlin marker root (tests/fixtures/android-src) and reads the APK's
+      # dex for both classes, which proves the srcDirs wiring and the Kotlin
+      # plugin path together. A copy outside the checkout, so the example
+      # itself stays as committed; src is not a lock input, so the committed
+      # lock still verifies. Dex content is ABI-independent: one leg.
+      if: matrix.abi == 'x86_64'
+      run: |
+        work="$RUNNER_TEMP/android-src-t3"
+        mkdir -p "$work"
+        cp "$APP_DIR/pyproject.toml" "$APP_DIR/pylock.android.toml" "$work/"
+        cp -r "$APP_DIR/src" "$work/src"
+        cp -r tests/fixtures/android-src "$work/android-src"
+        printf '\n[tool.kivy.android.src]\njava = ["android-src/java"]\nkotlin = ["android-src/kotlin"]\n' >> "$work/pyproject.toml"
+        (cd "$work" && kivyforge build -p android --debug --abi "$ABI")
+        pytest tests/platforms/android/test_dex_classes.py -q --no-cov \
+          --android-apk "$(ls "$work"/hello-android-android/app/build/outputs/apk/debug/*.apk)" \
+          --android-dex-class org.kivyforge.t3.JavaMarker \
+          --android-dex-class org.kivyforge.t3.KotlinMarker
+    - name: Compile the main_activity check against valid and invalid launchers (T3)
+      # KivyforgeLauncherCheck.java is the whole of kivyforge's main_activity
+      # validation: it claims javac rejects every class Android could not
+      # launch, with a message naming it. This compiles the rendered check
+      # in the project above (which applies the Kotlin plugin) once per
+      # candidate: a Java and a Kotlin subclass that must compile, and one
+      # class per way a launcher can be wrong, each with its javac line.
+      # The test removes what it writes, so the project is left as built.
+      if: matrix.abi == 'x86_64'
+      run: |
+        pytest tests/platforms/android/test_launcher_check.py -q --no-cov \
+          --android-gradle-project "$RUNNER_TEMP/android-src-t3/hello-android-android"
     - name: Lint kivyforge's Java for calls above min_sdk (NewApi)
       # A check on kivyforge's own templates, not the user's release gate:
       # lintRelease runs a curated policy subset, and NewApi is not in it.
@@ -1117,6 +1167,10 @@ jobs:
   # crash on Android 7 shipped once because only fresh installs had been
   # run there. The contract test now unpacks twice to take the relaunch path,
   # and the services example adds a service process to the same app.
+  # android-activity-class on API 35 launches the app's own subclass of
+  # PythonActivity ([tool.kivy.android].main_activity): the contract test
+  # starts whatever the manifest marks LAUNCHER and asserts it is the
+  # configured class, through R8 and the release manifest policy.
   #
   # Cost: ~10 min each, in parallel; the slowest jobs here. If that becomes a
   # problem the natural move is a `schedule:` trigger rather than dropping
@@ -1132,6 +1186,8 @@ jobs:
             api: '35'
           - app: android-services
             api: '24'
+          - app: android-activity-class
+            api: '35'
     env:
       APP_DIR: examples/mobile/${{ matrix.app }}
       ABI: x86_64

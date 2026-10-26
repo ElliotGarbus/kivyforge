@@ -211,8 +211,8 @@ uses = ["INTERNET", "CAMERA"]
 
 ## Verify
 
-Any change to `pyproject.toml` makes the lock stale, so re-lock, then build a
-debug APK (Android Package):
+A change to the dependencies, ABIs, `min_sdk`, or native libraries makes the
+lock stale, so re-lock, then build a debug APK (Android Package):
 
 ```bash
 kivyforge lock -p android

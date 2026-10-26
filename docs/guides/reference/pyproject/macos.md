@@ -19,9 +19,10 @@ The macOS overlay. For tasks, see [Build a macOS .app](../../guides/macos/build.
 | `build` | integer | `1` | Build number. |
 | `minimum_system_version` | string | `"11.0"` | Minimum macOS version (`LSMinimumSystemVersion`). Must not be below the bundled runtime's floor. |
 | `archs` | list of string | `["arm64"]` | Build architectures. `"arm64"` is the only valid value; `"x86_64"` is rejected. `universal2` wheels are still accepted as dependencies. |
-| `extra_index_urls` | list of string | `[]` | Extra package indexes. |
-| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. |
+| `extra_index_urls` | list of string | `[]` | Extra package indexes. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
+| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `exclude` | list of string | `[]` | Package names to drop from the resolve. |
+| `[sources]` | table | none | Which index a package comes from on this target, as `package = { index = "NAME" }`. An entry replaces the `[tool.kivy.sources]` entry for the same package. See [Package indexes and sources](tool-kivy.md#package-indexes-and-sources). |
 
 ## `[tool.kivy.macos.python]`
 
@@ -60,9 +61,32 @@ notarization always rejects it.
 
 Each entry is `NAME = { version = "...", source = "..." }` and declares a native
 binary that does not come from a wheel. `source` is an `http://` or `https://`
-URL, or a project-relative path. The binary is staged into
-`Contents/Resources/bin`. See
+URL, or a project-relative path. Executables are staged into
+`Contents/Helpers` and dynamic libraries into `Contents/Frameworks`; anything
+else is refused. See
 [Ship native binaries](../../guides/cross-platform/native-binaries.md).
+
+## `[[tool.kivy.macos.include_files]]`
+
+An array of tables. Each entry copies project files into the `.app`. See
+[Add files to the app bundle](../../guides/macos/build.md#add-files-to-the-app-bundle).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `dest` | string | required | Destination directory, relative to the bundle's `Contents/`. Must start with `Resources` or `SharedSupport`, the places Apple documents for data in a bundle. |
+| `sources` | list of string | required | Project-relative files or directories to copy. Each must exist. A file lands in `dest` under its own name; a directory's contents land in `dest` with their subfolders. |
+
+Files are copied before signing, without the `com.apple.quarantine` attribute a
+download adds. `build` and `package` check the bundle against the lock, and
+fail with `KF-ARTIFACT-CONTENT` if a file is missing or different. These are
+refused:
+
+- a path the bundler writes: `Resources/app`, `Resources/lib`,
+  `Resources/python`, or the app icon (`KF-INCLUDE-RESERVED`);
+- native code, a Mach-O file or a static archive (`KF-INCLUDE-NATIVE-CODE`).
+  Declare it under `[tool.kivy.macos.native.binaries]`;
+- a format only Xcode compiles: `.xcstrings`, `.storyboard`, `.xib` or
+  `.xcassets` (`KF-INCLUDE-SOURCE-FORMAT`).
 
 ## `[tool.kivy.macos.build_settings]`
 

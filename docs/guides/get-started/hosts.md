@@ -12,7 +12,7 @@ Not every operating system can build every target. Check this before you pick a
 target.
 
 The table below is generated from kivyforge's own host checks, the same ones
-`kivyforge build` and `kivyforge package` enforce. To read it on your machine,
+every verb that acts on a target enforces. To read it on your machine,
 run `kivyforge capabilities`, or `kivyforge capabilities --json` for a
 machine-readable version.
 
@@ -23,8 +23,12 @@ machine-readable version.
 ## How to read this
 
 - **Yes** means the host can build that target.
-- **No** means it cannot. `build` and `package` fail fast with
-  `KF-HOST-INCAPABLE` (exit code 3) instead of producing something broken.
+- **No** means it cannot. `lock`, `build`, `run`, `package`, `open`, `status`
+  and `upgrade` all fail fast with `KF-HOST-INCAPABLE` (exit code 3) instead of
+  producing something broken.
+- `init` is not gated: it writes the configuration for any target, so one
+  `pyproject.toml` can describe every platform. `doctor` is not gated either:
+  on the wrong host it runs and reports why the host cannot build the target.
 
 The key constraints:
 
@@ -34,7 +38,10 @@ The key constraints:
   (Apple Silicon).
 - **Android builds run on any desktop host** (Windows, macOS, or Linux) that has
   a JDK, the Android SDK, and the Android NDK installed.
-- **Windows apps build on Windows**, and **Linux apps build on Linux.**
+- **Windows apps build on Windows**, and **Linux apps build on x86_64 Linux.**
+  A Raspberry Pi is a target only: add `"aarch64"` to `[tool.kivy.linux].archs`
+  on an x86_64 Linux machine and copy the AppImage to the Pi. kivyforge refuses
+  to build on an aarch64 Linux host because that host is not tested.
 
 A **Yes** says the operating system can build the target. Whether the toolchain
 is installed is a separate question: `kivyforge doctor -p PLATFORM` answers it.

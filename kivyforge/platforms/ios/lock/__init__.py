@@ -3,21 +3,29 @@
 The iOS public lock surface: resolve dependencies + native artifacts into a
 ``Lockfile``, serialize/parse ``pylock.ios.toml``, and compare locks. The
 platform-neutral pieces (the ``[[packages]]`` model, PEP 751 helpers, the
-drift check, and the neutral pip helpers) live in ``kivyforge.lock``.
+drift check in ``kivyforge.lock.inputs``, and the neutral pip helpers) live in
+``kivyforge.lock``.
 """
 
 from __future__ import annotations
 
 from kivyforge.lock.model import LockedPackage, LockedWheel
 
-from .builder import BuildError, build_lockfile, diff_summary, semantic_equal
+from .builder import (
+    BuildError,
+    KivyUnsupported,
+    build_lockfile,
+    check_kivy_supported,
+    diff_summary,
+    semantic_equal,
+)
 from .model import (
     LockedSwiftPackage,
     LockedXcframework,
     Lockfile,
     PythonXcframework,
 )
-from .reader import LockError, compute_pyproject_sha256, is_in_sync, load, loads
+from .reader import LockError, load, loads
 from .resolver import (
     PipResolver,
     ResolvedPackage,
@@ -39,7 +47,9 @@ from .xcframework import XcframeworkResolverError, resolve_xcframeworks
 
 __all__ = [
     "BuildError",
+    "KivyUnsupported",
     "build_lockfile",
+    "check_kivy_supported",
     "diff_summary",
     "semantic_equal",
     "Lockfile",
@@ -49,8 +59,6 @@ __all__ = [
     "LockedXcframework",
     "PythonXcframework",
     "LockError",
-    "compute_pyproject_sha256",
-    "is_in_sync",
     "load",
     "loads",
     "dumps",

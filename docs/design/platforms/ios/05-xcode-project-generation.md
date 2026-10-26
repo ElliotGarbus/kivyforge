@@ -33,6 +33,7 @@ Building an iOS app with kivyforge is a four-phase pipeline across two tools:
 │   ├── icon.png                   ← from [tool.kivy.ios.icons].source
 │   ├── splash.png                 ← from [tool.kivy.ios.splash].source
 │   └── Assets.xcassets/           ← generated asset catalog
+├── Include/                       ← [[tool.kivy.ios.include_files]], laid out as in the .app
 ├── main.m                         ← ObjC bootstrap: init Python, launch app
 ├── <app>-Info.plist
 ├── PrivacyInfo.xcprivacy          ← generated stub, or copy of [tool.kivy.ios.privacy_manifest].source
@@ -46,6 +47,7 @@ Building an iOS app with kivyforge is a four-phase pipeline across two tools:
 - **`pip-deps/`** holds installed iOS wheels (Kivy ecosystem wheels + user-declared deps). The "Build Python" Run Script phase processes this folder.
 - **`app/`** is a **symlink to the user's `app_dir`** (e.g. `../src` when `app_dir = "src"`). `app_dir` must be a subdirectory — the project root (`"."`) is rejected (see [common pyproject spec](../../common/01-pyproject-kivy-spec.md#app_dir--entry_point-interaction)), so the symlink always points at a folder that excludes `<app>-ios/` and the project's non-app files. The user's actual `.py` files are never copied into `<app>-ios/`; the symlink ensures Xcode's folder-reference machinery walks the real source folder on every build. See "Developer iteration workflow" below.
 - **`Resources/`** holds non-source assets that need to be in the Xcode "Copy Bundle Resources" phase but aren't Python code.
+- **`Include/`** holds the user's `include_files`, copied (not symlinked) and verified against the lock's pins, mirroring where they land in the `.app`. It is kivyforge's own and rebuilt on every build, so an include taken out of the table leaves nothing behind. Absent when there are no includes. See [include-files-proposal](../../dev/include-files-proposal.md) §4.4.
 
 ### Populating Frameworks/
 
@@ -199,7 +201,7 @@ The `main.m` template, aligned with the [Python 3.15 iOS docs](https://docs.pyth
    - `use_system_logger = 1` (default in 3.13+)
 4. Initializes Python via `Py_InitializeFromConfig`.
 5. **Registers `pip-deps/` as a site directory** via `site.addsitedir(<resource_path>/pip-deps)` *after* Python init. Per python.org's docs: "If any of the folders that contain third-party packages will contain `.pth` files, you should add that folder as a *site directory* (using `site.addsitedir()`), rather than adding to PYTHONPATH or sys.path directly." Pip-installed wheels frequently include `.pth` files (namespace packages, editable installs), so `pip-deps/` goes through `addsitedir` rather than `PYTHONPATH`. The user-code `app/` folder typically has no `.pth` files and goes on `PYTHONPATH` directly. This pairs with passing `pip-deps` to `install_python` above — both registrations are required for packages in `pip-deps/` to be importable (see the "two registrations" note in the Build Python section).
-6. Runs the entry module as `__main__` via `runpy.run_module(ENTRY_POINT, run_name="__main__", alter_sys=True)`, matching every other platform since 2026-09-21 (was `PyImport_ImportModule(ENTRY_POINT)` before) — see the [common spec's entry_point callout](../../common/01-pyproject-kivy-spec.md) for the unified contract.
+6. Runs the entry module as `__main__` via `runpy.run_module(ENTRY_POINT, run_name="__main__", alter_sys=True)`, matching every other platform since 2026-09-21 (was `PyImport_ImportModule(ENTRY_POINT)` before) — see the [common spec's entry_point callout](../../common/01-pyproject-kivy-spec.md) for the unified contract. For a `module:function` entry point (issue #68), `main_config.h` also defines `ENTRY_LAUNCHER`, the launcher source that imports the module and calls the function, and the bootstrap runs that with `PyRun_SimpleString` (as `__main__`) instead. It is compiled in rather than staged as a file because a debug build's `app/` is the user's own source tree ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)).
 7. Drops into the iOS run loop (UIApplicationMain) — Kivy's iOS hooks take over.
 
 ### Why `app/` is on PYTHONPATH but `pip-deps/` is a site directory
@@ -229,6 +231,7 @@ The Xcode project file is generated programmatically using the `pbxproj` Python 
 - Apply `[tool.kivy.ios.entitlements]` to `<app>.entitlements` (regenerate the plist).
 - Apply `[tool.kivy.ios.signing]` to the build settings (`CODE_SIGN_STYLE`, `DEVELOPMENT_TEAM`, `PROVISIONING_PROFILE_SPECIFIER`).
 - Regenerate `PrivacyInfo.xcprivacy`: copy `[tool.kivy.ios.privacy_manifest].source` if set, otherwise write the minimal stub. Ensure the file is in the Copy Bundle Resources phase (added on first build, verified on subsequent builds).
+- Sync `Include/`: each *top-level* entry becomes a Copy Bundle Resources member, a file as a file reference and a directory as a folder reference, which Xcode copies whole. Each reference is created directly rather than through `add_file`, which picks the phase by extension (sending `.py`, `.c` and `.swift` to Sources, where they never reach the bundle, and raising on `.caf`), and gets `explicitFileType` `file` or `folder`, which stops Xcode compiling a `.storyboard`, converting a `.plist` to binary, or dropping a `.swift`. So every include reaches the bundle byte for byte, and `build` checks the product against the files it staged (`KF-ARTIFACT-CONTENT`). References to top-level entries that are no longer staged are removed.
 
 ### Toolchain-managed build settings
 
@@ -297,6 +300,7 @@ kivyforge build ───────────►   ┌───────�
 | `<app>.entitlements` | template + `[tool.kivy.ios.entitlements]` | Yes (regenerated) |
 | `PrivacyInfo.xcprivacy` | generated minimal stub, or copy of `[tool.kivy.ios.privacy_manifest].source` | Yes (regenerated) |
 | `Resources/Assets.xcassets/` | generated from `[tool.kivy.ios.icons]` + `[tool.kivy.ios.splash]` (omit either to skip that asset) | Yes |
+| `Include/` | copies of `[[tool.kivy.ios.include_files]]`, checked against the lock's pins | Yes (removed and restaged) |
 | `Python.xcframework/` | download | Yes (cache-hit-able) |
 | `Frameworks/*.xcframework` | downloads | Yes (cache-hit-able) |
 | `pip-deps/` | `pip install --target` | Yes (cache-hit-able) |

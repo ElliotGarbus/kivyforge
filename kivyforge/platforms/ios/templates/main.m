@@ -11,5 +11,6 @@
 #include "main_config.h"
 
 int main(int argc, char *argv[]) {
-    return kivyforge_main(argc, argv, ENTRY_POINT, APP_DIR, PYTHON_MAJOR_MINOR);
+    return kivyforge_main(
+        argc, argv, ENTRY_POINT, ENTRY_LAUNCHER, APP_DIR, PYTHON_MAJOR_MINOR);
 }

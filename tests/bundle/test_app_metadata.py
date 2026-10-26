@@ -462,6 +462,7 @@ def test_metadata_version_matches_every_artifact(tmp_path, version):
         tmp_path,
         config,
         config.android_required,
+        project_root=tmp_path,
         python_version="3.14.6",
         runtime_root=tmp_path / "runtime",
         staged_libs=[],

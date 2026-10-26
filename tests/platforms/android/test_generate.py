@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.config.model import ResolvedVersion
 from kivyforge.config.version import with_version
@@ -184,6 +186,54 @@ class TestManifest:
         assert app is not None
         assert app.get(f"{NS}largeHeap") == "true"
 
+    def test_a_fragment_can_carry_a_manifest_merger_directive(self):
+        """The App Startup entry Android documents, pasted verbatim.
+
+        ``tools:node="merge"`` is how a library's ``InitializationProvider``
+        entry is combined with the app's; ``tools:node="remove"`` is the only
+        way to drop a component a dependency's manifest contributes. Both
+        need ``xmlns:tools`` declared on the root the fragment is emitted
+        into, which the generator does and the loader's well-formedness check
+        mirrors.
+        """
+        _, android = _android(
+            "[tool.kivy.android.manifest]\n"
+            "extra_application_xml = '''\n"
+            '<provider android:name="androidx.startup.InitializationProvider"\n'
+            '    android:authorities="${applicationId}.androidx-startup"\n'
+            '    android:exported="false"\n'
+            '    tools:node="merge">\n'
+            '  <meta-data android:name="org.example.Init" '
+            'android:value="androidx.startup" />\n'
+            "</provider>\n"
+            "'''\n"
+        )
+        text, tree = _manifest_tree(android)
+        assert 'xmlns:tools="http://schemas.android.com/tools"' in text
+        provider = tree.find("application/provider")
+        assert provider is not None
+        assert provider.get("{http://schemas.android.com/tools}node") == "merge"
+        assert provider.get(f"{NS}authorities") == "org.example.genapp.androidx-startup"
+
+    @pytest.mark.parametrize("table", ["application", "activity"])
+    def test_a_merger_directive_is_refused_in_the_attribute_tables(self, table):
+        """``xmlns:tools`` on the root must not turn the attribute tables into
+        a merger console: ``tools:node="remove"`` on the launcher would delete
+        the entry point. The loader is the user-facing refusal; the generator
+        refuses too, for a config built without it."""
+        with pytest.raises(ConfigError, match="'tools' namespace"):
+            _android(
+                "[tool.kivy.android.manifest]\n"
+                f'{table} = {{ "tools:node" = "remove" }}\n'
+            )
+        _, android = _android("")
+        attrs = {"tools:node": "remove"}
+        manifest = replace(android.manifest, **{table: attrs})
+        with pytest.raises(ManifestError, match="'tools' namespace"):
+            generate_manifest(
+                replace(android, manifest=manifest), orientation=("portrait",)
+            )
+
     def test_a_passthrough_value_is_escaped_exactly_once(self):
         """An ``&`` in a passthrough value must not ship as ``&amp;``.
 
@@ -260,6 +310,45 @@ class TestManifest:
         assert "android.hardware.nfc" in implied_features(["android.permission.NFC"])
 
 
+class TestMainActivity:
+    """The manifest's launcher follows [tool.kivy.android].main_activity."""
+
+    @staticmethod
+    def _launchers(tree):
+        return [
+            a.get(NS + "name")
+            for a in tree.iter("activity")
+            if any(
+                c.get(NS + "name") == "android.intent.category.LAUNCHER"
+                for c in a.iter("category")
+            )
+        ]
+
+    def test_the_default_launcher_is_the_bootstrap_activity(self):
+        _, android = _android()
+        _, tree = _manifest_tree(android)
+        assert self._launchers(tree) == ["org.kivy.android.PythonActivity"]
+
+    def test_the_configured_class_is_the_launcher(self):
+        _, android = _android('main_activity = "org.example.genapp.MainActivity"')
+        text, tree = _manifest_tree(android)
+        assert self._launchers(tree) == ["org.example.genapp.MainActivity"]
+        # The base class is not declared beside it: an exported PythonActivity
+        # would be a second way in that skips the subclass's onCreate.
+        assert "org.kivy.android.PythonActivity" not in text
+
+    def test_only_the_name_changes(self):
+        """configChanges, orientation, theme and filters are the launcher's,
+        whichever class it is."""
+        _, default = _android()
+        _, custom = _android('main_activity = "org.example.genapp.MainActivity"')
+        default_text, _ = _manifest_tree(default)
+        custom_text, _ = _manifest_tree(custom)
+        assert custom_text == default_text.replace(
+            "org.kivy.android.PythonActivity", "org.example.genapp.MainActivity"
+        )
+
+
 class TestProjectFiles:
     def _lock(self, gradle=GradlePins()):
         return AndroidLockfile(
@@ -276,7 +365,7 @@ class TestProjectFiles:
             ),
             kivyforge_version="0",
             generated_at="t",
-            pyproject_sha256="b" * 64,
+            lock_inputs_sha256="b" * 64,
             tool_kivy_android_schema_version=1,
             kivy_generation=2,
             gradle=gradle,
@@ -289,6 +378,7 @@ class TestProjectFiles:
             tmp_path,
             built,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "python-runtime",
             staged_libs=[],
@@ -296,6 +386,29 @@ class TestProjectFiles:
         text = (tmp_path / "app" / "build.gradle").read_text()
         assert "versionName '4.5.6'" in text
         assert "versionCode 4050603" in text
+
+    def test_r8_keeps_every_bootstrap_namespace(self, tmp_path):
+        """pyjnius reflects into these by name, so R8 must keep them; they are
+        also the packages rule 22 forbids main_activity in, and one tuple
+        feeds both."""
+        config, android = _android()
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            project_root=tmp_path,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "python-runtime",
+            staged_libs=[],
+        )
+        rules = (tmp_path / "app" / "proguard-rules.pro").read_text()
+        assert rules == (
+            "# kivyforge keep-rules: pyjnius reflects into these at runtime.\n"
+            "-keep class org.jnius.** { *; }\n"
+            "-keep class org.kivy.android.** { *; }\n"
+            "-keep class org.renpy.android.** { *; }\n"
+            "-keep class org.libsdl.app.** { *; }\n"
+        )
 
     def test_app_build_gradle_content(self, tmp_path):
         config, android = _android(
@@ -306,6 +419,7 @@ class TestProjectFiles:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "python-runtime",
             staged_libs=["Sdk-3.1.0.aar"],
@@ -334,6 +448,7 @@ class TestProjectFiles:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -356,6 +471,7 @@ class TestProjectFiles:
                 tmp_path / out,
                 config,
                 android,
+                project_root=tmp_path,
                 python_version="3.14.6",
                 runtime_root=tmp_path / "rt",
                 staged_libs=[],
@@ -529,6 +645,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -548,14 +665,53 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
         )
         text = (tmp_path / "app" / "build.gradle").read_text()
         assert "id 'org.jetbrains.kotlin.android'" in text
-        assert "java.srcDirs += 'extra/java'" in text
-        assert "java.srcDirs += 'extra/kotlin'" in text
+        # Relative to the app/ module, which is what Gradle resolves against.
+        assert "java.srcDirs += '../extra/java'" in text
+        assert "java.srcDirs += '../extra/kotlin'" in text
+
+    def test_source_roots_resolve_from_the_generated_module(self, tmp_path):
+        """The bug this pins: the root was written as declared, Gradle resolved
+        it against ``<slug>-android/app/``, and the missing directory compiled
+        to nothing with the build reporting success."""
+        config, android = _android("[tool.kivy.android.src]\njava = ['android/java']\n")
+        dest = tmp_path / "genapp-android"
+        write_app_build_gradle(
+            dest,
+            config,
+            android,
+            project_root=tmp_path,
+            python_version="3.14.6",
+            runtime_root=dest / "rt",
+            staged_libs=[],
+        )
+        text = (dest / "app" / "build.gradle").read_text()
+        assert "java.srcDirs += '../../android/java'" in text
+        line = next(x for x in text.splitlines() if "java.srcDirs" in x)
+        written = line.split("+= ")[1].strip("'")
+        assert (dest / "app" / written).resolve() == (
+            tmp_path / "android" / "java"
+        ).resolve()
+
+    def test_source_root_is_quoted_as_a_groovy_string(self, tmp_path):
+        config, android = _android('[tool.kivy.android.src]\njava = ["it\'s java"]\n')
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            project_root=tmp_path,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "rt",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert "java.srcDirs += '../it\\'s java'" in text
 
     def test_splash_adds_no_dependency(self, tmp_path):
         """The splash is theme attributes and generated drawables, so it must
@@ -567,6 +723,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -585,6 +742,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -601,6 +759,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -627,6 +786,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -647,6 +807,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -663,6 +824,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -676,6 +838,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -741,6 +904,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -758,6 +922,7 @@ class TestWriteAppBuildGradleVariants:
                 tmp_path / level,
                 config,
                 android,
+                project_root=tmp_path,
                 python_version="3.14.6",
                 runtime_root=tmp_path / "rt",
                 staged_libs=[],
@@ -771,6 +936,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -789,6 +955,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],
@@ -807,6 +974,7 @@ class TestWriteAppBuildGradleVariants:
             tmp_path,
             config,
             android,
+            project_root=tmp_path,
             python_version="3.14.6",
             runtime_root=tmp_path / "rt",
             staged_libs=[],

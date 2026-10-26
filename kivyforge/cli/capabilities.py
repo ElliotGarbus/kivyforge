@@ -17,11 +17,13 @@ _COLUMN = 10
 
 @click.command()
 @output_options
-def capabilities(json_out: bool, no_color: bool) -> None:
+def capabilities(json_out: bool, no_color: bool, verbosity: int) -> None:
     """List platforms, archs, package formats, and which hosts build what."""
     # No project context on purpose: this is introspection of the tool, and an
     # agent asks it *before* it has a project to point at.
-    with reporting("capabilities", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "capabilities", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         found = collect()
         for line in render(found):
             report.line(line)
@@ -33,20 +35,25 @@ def render(found: Capabilities) -> list[str]:
     lines = ["Platforms"]
     for platform in found.platforms:
         hosts = ", ".join(host_label(h) for h in platform.buildable_on) or "none"
+        if platform.host_machines:
+            hosts += f" ({' or '.join(platform.host_machines)} only)"
         default = " (host default)" if platform.host_default_for else ""
         lines.append(f"  {platform.name}")
         lines.append(f"    {'archs:':<{_COLUMN}}{', '.join(platform.archs) or '-'}")
-        lines.append(
-            f"    {'formats:':<{_COLUMN}}{', '.join(platform.package_formats) or '-'}"
-        )
+        formats = ", ".join(platform.package_formats) or "-"
+        if platform.package_debug:
+            formats += " (also with --debug)"
+        lines.append(f"    {'formats:':<{_COLUMN}}{formats}")
         lines.append(f"    {'hosts:':<{_COLUMN}}{hosts}{default}")
 
-    json_verbs = [name for name, supported in found.verbs.items() if supported]
-    human_only = [name for name, supported in found.verbs.items() if not supported]
+    json_verbs = [name for name, verb in found.verbs.items() if verb.json]
+    human_only = [name for name, verb in found.verbs.items() if not verb.json]
     lines.append("")
     lines.append(f"Verbs with --json: {', '.join(json_verbs)}")
     if human_only:
         lines.append(f"Human-only verbs:  {', '.join(human_only)}")
+    verbose = [platform.name for platform in found.platforms if platform.verbose]
+    lines.append(f"Verbose (-v) acts on: {', '.join(verbose) or 'none'}")
 
     lines.append("")
     lines.append("Exit codes")

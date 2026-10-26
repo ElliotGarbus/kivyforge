@@ -23,6 +23,9 @@
  * @param argc          Forwarded from main().
  * @param argv          Forwarded from main().
  * @param entry_module  Python module to run (e.g. "myapp.main").
+ * @param entry_launcher Python source run as __main__ in place of
+ *                      @p entry_module when non-empty: the launcher that
+ *                      calls a module:function entry point.
  * @param app_dir       Bundle-relative name of the app directory ("app").
  * @param python_ver    Python major.minor version string (e.g. "3.15").
  * @return              Exit status.
@@ -31,6 +34,7 @@ int kivyforge_main(
     int         argc,
     char       *argv[],
     const char *entry_module,
+    const char *entry_launcher,
     const char *app_dir,
     const char *python_ver
 );

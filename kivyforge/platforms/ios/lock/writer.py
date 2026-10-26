@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from kivyforge.lock.pep751 import arr as _arr
 from kivyforge.lock.pep751 import b as _b
+from kivyforge.lock.pep751 import emit_include_files
 from kivyforge.lock.pep751 import emit_package as _emit_package
 from kivyforge.lock.pep751 import s as _s
 
@@ -41,7 +42,7 @@ def dumps(lock: Lockfile) -> str:
     lines.append(f"schema_version = {lock.schema_version}")
     lines.append(f"kivyforge_version = {_s(lock.kivyforge_version)}")
     lines.append(f"generated_at = {_s(lock.generated_at)}")
-    lines.append(f"pyproject_sha256 = {_s(lock.pyproject_sha256)}")
+    lines.append(f"lock_inputs_sha256 = {_s(lock.lock_inputs_sha256)}")
     lines.append(
         f"tool_kivyforge_schema_version = {lock.tool_kivyforge_schema_version}"
     )
@@ -60,6 +61,8 @@ def dumps(lock: Lockfile) -> str:
     for sp in sorted(lock.swift_packages, key=lambda s: s.name):
         lines.append("")
         _emit_swift_package(lines, sp)
+
+    emit_include_files(lines, lock.include_files)
 
     return "\n".join(lines) + "\n"
 

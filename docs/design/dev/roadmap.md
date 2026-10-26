@@ -54,9 +54,9 @@ known-unverified list.
   simulator path is now a CI job (`ios_simulator`, 2026-09-23) rather than
   first-party-only, and that same job gained a T3 pass the same day
   (`ios_app_problems` — required entries, Mach-O arch, `Info.plist` vs.
-  config; test-matrix.md §5.1). What is still unproven is `strip_source`
-  (blocked on a final CPython 3.15, not on Mac access — see above); no
-  checker covers it because there is nothing honest to run one against.
+  config; test-matrix.md §5.1). `strip_source` waited on a final CPython
+  3.15; it was proven on a device on 2026-10-25, with a T3 check for it
+  (test-matrix §7).
 - **Item 4 is done (2026-09-17), on a Pi 5 only.** Cross-build T2+T3 on WSL2,
   then the same AppImage launched on a Raspberry Pi 5 Model B Rev 1.1
   (Debian 13 / labwc, Broadcom V3D). HDMI: Dice Roller rendered. A Pi 4
@@ -353,8 +353,9 @@ known-unverified list.
   - **The macOS runtimes were scanned directly for case collisions** (#30),
     replacing the "inferred from CI" note in test-matrix §5.6, and
     `requires_device` was dropped from `AGENTS.md`.
-  - **Still waiting:** iOS `strip_source`, which needs CPython 3.15.0 final
-    (due 2026-10-01; handoff task 3).
+  - ~~**Still waiting:** iOS `strip_source`, which needs CPython 3.15.0 final
+    (due 2026-10-01; handoff task 3).~~ **Done 2026-10-25** on an iPhone
+    (test-matrix §7).
   - ~~**Noted, not fixed:** `run --smoke` prints progress to stdout, which
     `AGENTS.md` rules out (android-macos-host findings, "Observations").~~
     **Fixed 2026-09-28** for `run --smoke` and for plain `run` on every
@@ -535,8 +536,9 @@ on purpose.
 
 **Implementation.** Follow `svg-explorer`'s `safe_area_insets()` helper: it
 imports `kivy.mobile` defensively (degrades to zeros when absent, so the
-example still runs on desktop), and converts UIKit points to Kivy pixels via
-`get_scale()`. Duplicate that small helper per example rather than factoring
+example still runs on desktop), and uses the insets unscaled, since
+`kivy.mobile` reports Kivy pixels (on iOS since kivy/kivy#9441; the helpers
+multiplied by `get_scale()` until 2026-10-20). Duplicate that small helper per example rather than factoring
 it into a shared module — examples must stay individually copy-pasteable, and
 a shared import would make each one non-self-contained.
 
@@ -756,6 +758,10 @@ official iOS `XCframework` artifact only exists from `3.15.0b1` onward
 `PythonOrgProvider`), so there is no older final minor to pin to — the wait is
 unconditional. As of 2026-09-23 the latest upstream tag is still `v3.15.0rc2`.
 See [`macos-ios-validation-findings.md`](macos-ios-validation-findings.md) §4.
+
+**Validated 2026-10-25.** With CPython 3.15.0 final, `hello-kivy` re-pinned to
+it byte-compiles, its `.ipa` passes the new stripped T3 check, and it runs on
+an iPhone from that `.ipa` (test-matrix §7).
 
 The one thing that mattered most in that attempt did pass: `<app>-ios/app` was
 materialised as a **real directory copy, not a symlink**, and the working tree
@@ -1731,9 +1737,11 @@ What is left against this condition is narrower than the condition sounds:
   Mach-O arch sweep, and `Info.plist` vs. config, wired into `ios_simulator`
   the same day it was written (`ios-t3-checks-prompt.md`,
   `ios-t3-checks-findings.md`). Every platform now has T0–T3 in CI.
-  **Narrower than the other four's, deliberately:** no stripped/`.pyc`-magic
+  ~~**Narrower than the other four's, deliberately:** no stripped/`.pyc`-magic
   check — iOS `strip_source` still cannot be exercised honestly (every
-  example pins a CPython 3.15 pre-release; see below).
+  example pins a CPython 3.15 pre-release; see below).~~ The check landed on
+  2026-10-25 (`--ios-stripped`), against the first stripped `.ipa`. It runs
+  locally only, since CI cannot sign a device build.
   *(An earlier version of this bullet said the iOS job was "waiting on
   published wheels". Those wheels shipped 2026-07-27; the bullet had simply
   not been revisited, and repeating it kept a non-blocker looking like a
@@ -1946,6 +1954,28 @@ registry, and Back was unchanged. Permission results do not reach the registry,
 because SDL's `onRequestPermissionsResult` does not call `super`, so that needs
 a second change. See
 [`android-componentactivity-spike-findings.md`](android-componentactivity-spike-findings.md).
+What a `main_activity` subclass can use from AndroidX without that change, and
+what needs it, is [issue #184](https://github.com/ElliotGarbus/kivyforge/issues/184),
+measured in [`android-androidx-subclass-spike-findings.md`](android-androidx-subclass-spike-findings.md).
+SDKs that need a `FragmentActivity` are covered by neither. They, and any SDK
+that needs a `ComponentActivity`, run today in a second activity of the app's
+own, started from Python. Spike D of that doc (2026-10-25) ran Stripe
+PaymentSheet that way with no bootstrap change, and the Java-libraries guide
+documents it. That serves an app's own SDK. It does not discharge this
+item's obligation, which is about the bootstrap activity itself.
+
+*Related, 2026-10-23:* issue #85 asks for the other half of what an SDK that
+needs code in `onCreate` requires — an app-owned subclass of the launcher,
+p4a's `--activity-class-name`. [`android-activity-class-proposal.md`](android-activity-class-proposal.md)
+designs that as `[tool.kivy.android].main_activity`, declines a kivyforge
+lifecycle-hook interface because `Application.ActivityLifecycleCallbacks`
+registered from a `ContentProvider` already works in a kivyforge app, and
+records that `[tool.kivy.android.src]` has never compiled anything (the
+`srcDirs` path resolves against `app/`). Its spike is
+[`android-activity-class-spike-findings.md`](android-activity-class-spike-findings.md).
+The two changes are independent and combine. *Implemented 2026-10-24:* the
+`src.java` fix, then `main_activity` with its compile-time check and the
+`android-activity-class` gate example (`test-matrix.md` §7).
 
 **The one cheap early move, and why it is worth doing out of order.** The spec
 names kivyforge as its intended first consumer and says the contract stays
@@ -2121,8 +2151,10 @@ Once 3.15 is final, every platform can use it.
 - [ ] Check that Kivy, pyjnius and pyobjus have wheels for `cp315` on every
       target, including the kivy-mobile-wheels index (today it carries `cp314`
       for Android and `cp315` for iOS).
-- [ ] Re-run the iOS `strip_source` validation that waited on a final 3.15
-      (see `test-matrix.md`'s known-unverified list).
+- [x] Re-run the iOS `strip_source` validation that waited on a final 3.15
+      (see `test-matrix.md`'s known-unverified list). **Done 2026-10-25:**
+      `hello-kivy` byte-compiled and ran on an iPhone, and T3 gained the
+      stripped and `.pyc`-magic checks (test-matrix §7).
 - [ ] Update `requires-python` in the examples and the install docs.
 
 **Done when** a freshly initialised project on each platform locks and builds

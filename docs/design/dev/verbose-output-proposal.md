@@ -1,9 +1,10 @@
 # Proposal — `-v` / `-vv` and `KIVYFORGE_VERBOSE`
 
-> Status: **proposed 2026-10-05, not implemented.** Written in response to
+> Status: **implemented 2026-10-20** (issue #64), as specified below, with the
+> implementation choices recorded in §8. Proposed 2026-10-05 in response to
 > [issue #64](https://github.com/ElliotGarbus/kivyforge/issues/64) ("Allow passing
-> extra flags to `gradle`?"). Every code claim was read out of the source on
-> 2026-10-05; line numbers are deliberately omitted because the files move.
+> extra flags to `gradle`?"). §1 describes the code as it was on 2026-10-05,
+> before the change; line numbers are deliberately omitted because the files move.
 
 ## Summary
 
@@ -447,3 +448,47 @@ Decided 2026-10-05:
    used in CI.
 
 No open questions remain.
+
+## 8. Implementation choices (2026-10-20)
+
+Where the design above left a detail open, the implementation took the simplest
+option consistent with it:
+
+1. **The level lives in `kivyforge/report/verbosity.py`**, beside
+   `transfers.py`: `verbosity_to()`, `current_verbosity()`, and
+   `command_line()`, the quoting §3.3 asks for, so a later adopter (§3.7) reuses
+   all three. `verbosity_to()` clamps as well as the option callback, so a
+   backend test that sets `verbosity_to(7)` sees 2.
+2. **`reporting()`'s `verbosity` is a required keyword**, not defaulted to 0.
+   A verb that forgets to pass it is a type error pyright reports, on top of the
+   per-verb CLI test §3.5 asks for (`tests/cli/test_verbose.py`).
+3. **`android_run` and `run_smoke` still pass no `events`.** §5 step 3 had them
+   start passing them so their echoed lines take the same route as the others.
+   `run_gradle` now resolves a missing `events` to `PROGRESS_ONLY_EVENTS` once,
+   at the top, and uses it for the echoed lines as well as for `sdkmanager`, so
+   those lines already reach stderr, the same place `android_run`'s own
+   `click.echo(..., err=True)` lines go. Nothing to change in the callers.
+4. **Windows quoting is `list2cmdline` plus PowerShell.** `list2cmdline` quotes
+   only for spaces, but PowerShell also splits on `;` and `,`, and sdkmanager's
+   package ids are `ndk;27.2.12479018`. On Windows, an argument made only of
+   letters, digits and `_ . : \ / = + @ -` is left bare and anything else is
+   double-quoted, with `list2cmdline`'s backslash rules. That form works in
+   both PowerShell and `cmd.exe`. Elsewhere it is `shlex.join`.
+5. **The release-signing note (§3.3) reads the generated `app/build.gradle`.**
+   For a task whose name contains `Release`, the names inside
+   `System.getenv('...')` in that file are listed. That covers both
+   `KIVYFORGE_*` defaults and a project's own variable names, and says nothing
+   for `run --release` with the debug-keystore fallback, which reads none.
+6. **The failure hint at `-v` reads:** `To rerun it by hand:`, then the folder
+   line and the command line, indented, without the `[gradle]` prefix. At level
+   0 it is §3.4's sentence as written.
+7. **`capabilities`' `verbs` became `{name: VerbCapability(json, verbose)}`**
+   in Python; the JSON is the additive `verbose` key of §3.6. The `capabilities`
+   payload is documented in `guides/cross-platform/ci-and-agents.md`, not
+   `reference/json-output.md` (which covers only the envelope), so the two new
+   keys are described there.
+8. **The test suite clears `KIVYFORGE_VERBOSE`** (an autouse fixture in
+   `tests/conftest.py`), so a developer who exports it for their own builds
+   does not change what the tests see.
+9. **CI** follows decision 5 through a `verbose` matrix value: `"-v"` on the
+   x86_64 leg, empty on arm64_v8a.

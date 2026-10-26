@@ -29,7 +29,7 @@ kivyforge drives the install itself from the pinned per-wheel URLs and hashes ra
 
 The exact contents are platform-specific, but the pattern is consistent. `[tool.kivyforge]` typically holds:
 
-- **Scalar provenance / integrity fields** — `schema_version` (of the extension table), `kivyforge_version`, `generated_at`, and `pyproject_sha256` (the SHA-256 of the source `pyproject.toml`, used for **drift detection**: `kivyforge build` recomputes it and refuses a lock that no longer matches, unless `--no-verify-lock`).
+- **Scalar provenance / integrity fields** — `schema_version` (of the extension table), `kivyforge_version`, `generated_at`, and `lock_inputs_sha256`, used for **drift detection**. It is the SHA-256 of the parsed values the lock was resolved from (its *lock inputs*): `[project].dependencies` and `requires-python`, plus the target overlay's Python version, architectures, OS floor, indexes, `find_links`, `exclude` and native-artifact declarations. `kivyforge build` recomputes it and refuses a lock that no longer matches, unless `--no-verify-lock`. Comments, key order and every other field (signing, icons, display name, another platform's overlay) are read at build time and never stale a lock. The per-platform input list is `LOCK_INPUTS` in `kivyforge/lock/inputs.py`; see [lock-inputs-proposal](../dev/lock-inputs-proposal.md).
 - **The platform runtime pin** — e.g. the iOS `[tool.kivyforge.python_xcframework]` (version + URL + SHA-256). Other platforms pin their own runtime equivalent.
 - **Native artifact pins** — repeatable sub-arrays for platform-native dependencies (e.g. iOS `[[tool.kivyforge.xcframeworks]]`, `[[tool.kivyforge.swift_packages]]`).
 - **Per-package tool metadata** — via PEP 751's per-package `[packages.tool.kivyforge]` (e.g. `direct_requirement`, `source_index`), invisible to other PEP 751 consumers.
@@ -53,6 +53,14 @@ A lock carries several version numbers that evolve on different cadences:
 3. Resolves `[project].dependencies` for the target's platform tags (host-independent), pinning every wheel by `url`/`path` + `hashes`. Compiled packages may pin multiple platform-tagged wheels; a package missing a required tag, or resolving to inconsistent versions across tags, is a **fail-fast** at lock time (see the iOS spec for the canonical treatment).
 4. Pins any native artifacts declared in the overlay.
 5. Writes `pylock.<platform>.toml` atomically, with deterministic ordering so diffs show only real changes.
+
+When a lock already exists, step 3 prefers its versions: each locked package is
+passed to pip as a `name==version` constraint, so a changed input moves only what
+it has to. A direct requirement whose new specifier excludes its locked version
+loses that pin first. If pip cannot keep the rest, `lock` fails with
+`KF-LOCK-PINS-CONFLICT` and points at `lock --update`, which resolves every
+package to the newest version allowed. `lock --check` resolves its candidate the
+same way, so a new upstream release alone does not fail it.
 
 Every artifact download is verified against its pinned SHA-256 before use; a mismatch aborts the build.
 
@@ -90,11 +98,11 @@ from the same lock a developer resolved locally.
 
 Within **this repo's own `examples/` tree**, the calculus is different: an example's
 lock is a generated artifact, not something anyone reads or hand-verifies, and
-`pyproject_sha256` hashes the *whole* `pyproject.toml` — so any overlay edit
-(signing config, bundle ID, icon path, deployment target) forces a regen and
-changes `generated_at`/`pyproject_sha256` even when zero pinned packages
-changed. That's diff noise with no corresponding content change, multiplied across
-every example whenever a maintainer touches an overlay field. Worse, a lock
+an edit to a lock input (a dependency, the deployment target, an index) forces a
+regen and changes `generated_at`/`lock_inputs_sha256` even when zero pinned
+packages changed. (Before #126 any edit did, signing and icons included.) That's
+diff noise with no corresponding content change, multiplied across every example.
+Worse, a lock
 checked in purely for "reference" value can go silently stale (a pinned pre-release
 wheel or python.org xcframework build getting superseded at its URL) without
 anyone noticing until `kivyforge build` re-verifies a hash.
@@ -108,8 +116,9 @@ exception: the **on-device gate examples**, whose locks stay committed.
 | `examples/mobile/hello-sdl3` | `pylock.android.toml` | SDL3 contract smoke test; Kivy 3.0 start on the emulator |
 | `examples/mobile/hello-kivy` | `pylock.ios.toml` | iOS simulator build/launch/render |
 | `examples/mobile/android-services` | `pylock.android.toml` | contract smoke test on an API 24 (min_sdk) emulator, with services |
+| `examples/mobile/android-activity-class` | `pylock.android.toml` | contract smoke test with the app's own `PythonActivity` subclass as the launcher (`main_activity`) |
 
-These four are exempt because their locks are **evidence, not just build input**.
+These five are exempt because their locks are **evidence, not just build input**.
 Each records the exact wheel hashes that passed a specific on-device run, so
 the validation result stays attached to the binaries it was obtained from. If
 the lock regenerates, the next run silently validates a different artifact —

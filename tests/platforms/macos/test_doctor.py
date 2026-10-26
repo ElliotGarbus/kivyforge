@@ -13,8 +13,11 @@ from kivyforge.lock.wheelruntime.model import (
     WheelRuntimeLock,
 )
 from kivyforge.platforms.macos import doctor as M
+from kivyforge.platforms.macos import machotools
 from kivyforge.platforms.macos.doctor import run_macos_checks
+from kivyforge.report import diagnostics
 from tests.doctor.probe_fakes import FakeProbe
+from tests.platforms.macos import macho_fixtures as mf
 
 
 def _macos_config(extra: str = "", archs="['arm64']"):
@@ -60,7 +63,7 @@ def _lock(*, packages=(), archs=("arm64",), floor=None):
         archs=archs,
         kivyforge_version="3.0.0",
         generated_at="t",
-        pyproject_sha256="0" * 64,
+        lock_inputs_sha256="0" * 64,
         tool_kivyforge_schema_version=1,
     )
 
@@ -180,12 +183,34 @@ class TestNativeBinaries:
         assert "binaries/macos/roll" in r.detail
 
     def test_pass_sources_present_no_build(self, tmp_path):
-        src = tmp_path / "binaries" / "macos" / "roll"
-        src.parent.mkdir(parents=True)
-        src.write_bytes(b"helper")
+        mf.write(tmp_path / "binaries" / "macos" / "roll", mf.helper())
         r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
         assert r.status is Status.PASS
         assert "sources present" in r.detail
+
+    def test_fail_when_vendored_source_is_not_code(self, tmp_path):
+        mf.write(tmp_path / "binaries" / "macos" / "roll", b"#!/bin/sh\n")
+        r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
+        assert r.status is Status.FAIL
+        assert r.code == diagnostics.MACOS_NATIVE_NOT_CODE
+        assert "not a Mach-O" in r.detail
+        assert "include_files" in r.hint
+
+    def test_fail_when_vendored_source_is_a_plugin(self, tmp_path):
+        mf.write(
+            tmp_path / "binaries" / "macos" / "roll", mf.thin(machotools.MH_BUNDLE)
+        )
+        r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
+        assert r.status is Status.FAIL
+        assert r.code == diagnostics.MACOS_NATIVE_UNSUPPORTED
+        assert "MH_BUNDLE" in r.detail
+
+    def test_fail_when_vendored_header_is_damaged(self, tmp_path):
+        mf.write(tmp_path / "binaries" / "macos" / "roll", mf.helper()[:20])
+        r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
+        assert r.status is Status.FAIL
+        assert r.code == diagnostics.MACOS_NATIVE_UNSUPPORTED
+        assert "cannot be read" in r.detail
 
     def test_url_source_skips_local_check(self, tmp_path):
         cfg = _macos_config(
@@ -195,52 +220,81 @@ class TestNativeBinaries:
         r = M.check_macos_native_binaries(cfg, tmp_path)
         assert r.status is Status.PASS
 
-    def _built_bin(self, tmp_path):
-        bin_dir = (
-            tmp_path
-            / "build"
-            / "macos"
-            / "myapp.app"
-            / "Contents"
-            / "Resources"
-            / "bin"
+    def _built(self, tmp_path, *, cpu_type=machotools.CPU_TYPE_ARM64):
+        contents = tmp_path / "build" / "macos" / "myapp.app" / "Contents"
+        mf.write(tmp_path / "binaries" / "macos" / "roll", mf.helper())
+        mf.write(contents / "Helpers" / "roll", mf.helper(cpu_type=cpu_type))
+        mf.write(
+            contents / "Frameworks" / "libx.dylib",
+            mf.dylib("libx.dylib", cpu_type=cpu_type),
         )
-        bin_dir.mkdir(parents=True)
-        (tmp_path / "binaries" / "macos").mkdir(parents=True)
-        (tmp_path / "binaries" / "macos" / "roll").write_bytes(b"helper")
-        (bin_dir / "roll").write_bytes(b"macho")
-        return bin_dir
+        # Resources/ is not where native code goes, so it is not swept.
+        mf.write(contents / "Resources" / "bin" / "old", mf.helper(cpu_type=0x7))
+        return contents
 
-    def test_pass_when_built_covers_archs(self, tmp_path, monkeypatch):
-        self._built_bin(tmp_path)
-        monkeypatch.setattr(M, "is_macho", lambda p: p.name == "roll")
-        monkeypatch.setattr(M, "macho_arches", lambda p: ("arm64",))
+    def test_pass_when_built_covers_archs(self, tmp_path):
+        self._built(tmp_path)
         r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
         assert r.status is Status.PASS
-        assert "cover" in r.detail
+        assert r.detail == "2 Mach-O cover arm64"
 
-    def test_fail_when_built_missing_arch(self, tmp_path, monkeypatch):
+    def test_fail_when_built_missing_arch(self, tmp_path):
         # An Intel-only helper cannot load in an arm64 app.
-        self._built_bin(tmp_path)
-        monkeypatch.setattr(M, "is_macho", lambda p: p.name == "roll")
-        monkeypatch.setattr(M, "macho_arches", lambda p: ("x86_64",))
+        self._built(tmp_path, cpu_type=machotools.CPU_TYPE_X86_64)
         r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
         assert r.status is Status.FAIL
+        assert "libx.dylib missing arm64" in r.detail
         assert "roll missing arm64" in r.detail
 
-    def test_fail_on_single_file_basename_collision(self, tmp_path):
-        for rel in ("binaries/a/tool", "binaries/b/tool"):
-            p = tmp_path / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(b"x")
-        cfg = _macos_config(
+    def test_fail_when_built_binary_is_damaged(self, tmp_path):
+        contents = self._built(tmp_path)
+        mf.write(contents / "Helpers" / "broken", mf.helper()[:20])
+        # Same magic as a universal Mach-O, but a Java class file: not code.
+        mf.write(
+            contents / "Frameworks" / "A.class",
+            bytes.fromhex("cafebabe00000041") + b"\x00" * 16,
+        )
+        r = M.check_macos_native_binaries(_macos_config(_NB), tmp_path)
+        assert r.status is Status.FAIL
+        assert r.detail.startswith("broken unreadable")
+        assert "A.class" not in r.detail
+
+    def _two(self, tmp_path, a: tuple[str, bytes], b: tuple[str, bytes]):
+        for rel, data in (a, b):
+            mf.write(tmp_path / rel, data)
+        return _macos_config(
             "[tool.kivy.macos.native.binaries]\n"
-            'A = { version = "1.0", source = "binaries/a/tool" }\n'
-            'B = { version = "1.0", source = "binaries/b/tool" }\n'
+            f'A = {{ version = "1.0", source = "{a[0]}" }}\n'
+            f'B = {{ version = "1.0", source = "{b[0]}" }}\n'
+        )
+
+    def test_fail_on_single_file_basename_collision(self, tmp_path):
+        cfg = self._two(
+            tmp_path, ("binaries/a/tool", mf.helper()), ("binaries/b/tool", mf.helper())
         )
         r = M.check_macos_native_binaries(cfg, tmp_path)
         assert r.status is Status.FAIL
-        assert "bin/tool" in r.detail
+        assert "Contents/Helpers/tool" in r.detail
+
+    def test_fail_on_names_differing_only_in_case(self, tmp_path):
+        cfg = self._two(
+            tmp_path,
+            ("binaries/a/libZ.dylib", mf.dylib("libZ.dylib")),
+            ("binaries/b/libz.dylib", mf.dylib("libz.dylib")),
+        )
+        r = M.check_macos_native_binaries(cfg, tmp_path)
+        assert r.status is Status.FAIL
+        assert "Contents/Frameworks/libz.dylib" in r.detail
+        assert "differ only in case" in r.hint
+
+    def test_same_name_in_different_locations_is_fine(self, tmp_path):
+        cfg = self._two(
+            tmp_path,
+            ("binaries/a/greet", mf.helper()),
+            ("binaries/b/greet", mf.dylib("greet")),
+        )
+        r = M.check_macos_native_binaries(cfg, tmp_path)
+        assert r.status is Status.PASS
 
     def test_zip_sources_do_not_false_positive(self, tmp_path):
         for rel in ("binaries/a.zip", "binaries/b.zip"):
@@ -268,7 +322,7 @@ class TestNativeBinaryHosts:
             archs=lock.archs,
             kivyforge_version=lock.kivyforge_version,
             generated_at=lock.generated_at,
-            pyproject_sha256=lock.pyproject_sha256,
+            lock_inputs_sha256=lock.lock_inputs_sha256,
             tool_kivyforge_schema_version=lock.tool_kivyforge_schema_version,
             native_binaries=(
                 LockedNativeBinary(

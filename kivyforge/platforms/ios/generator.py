@@ -4,7 +4,7 @@ Bootstraps from the internal skeleton on first run, then performs the spec's
 idempotent "every build" sync: managed build settings (per-config), the Build
 Python run script (ordered between Copy Bundle Resources and Frameworks),
 ``main.m`` in Sources, Python.xcframework + Frameworks/* embed & sign, the app/
-folder reference, and signing/user settings.
+folder reference, the ``include_files`` references, and signing/user settings.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from .buildsettings import (
     signing_settings,
     user_build_settings,
 )
+from .includes import INCLUDE_DIR, sync_include_references
 from .lock.model import LockedSwiftPackage, LockedXcframework
 from .skeleton import skeleton_pbxproj
 from .staging import StagingError, StagingLayout
@@ -82,6 +83,7 @@ class XcodeProjectGenerator:
         self._sync_bundle_folders(project)
         self._sync_pip_deps_browse_reference(project)
         self._sync_resources(project)
+        sync_include_references(project, self.app_name, self.layout.root / INCLUDE_DIR)
         self._sync_embedded_frameworks(project)
         self._sync_swift_packages(project)
         project.save()

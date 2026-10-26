@@ -45,7 +45,7 @@ def _lock(archs=("x86_64",)):
         archs=archs,
         kivyforge_version="3.0.0",
         generated_at="2026-01-01T00:00:00Z",
-        pyproject_sha256="0" * 64,
+        lock_inputs_sha256="0" * 64,
         tool_kivyforge_schema_version=1,
     )
 

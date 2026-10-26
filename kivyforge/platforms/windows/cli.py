@@ -27,14 +27,14 @@ from kivyforge.cli._common import (
     ToolchainError,
     lockfile_path_for,
 )
-from kivyforge.config import ConfigError, load_config, read_pyproject_text
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import Config, ResolvedVersion
 from kivyforge.config.version import with_version
-from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.lock.inputs import is_in_sync
+from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
-from .. import HostCapabilityError, get_platform
 from . import WindowsBundleError
 from .bundle import (
     build_onedir,
@@ -91,7 +91,6 @@ def windows_build(
 ) -> BuildOutcome:
     """Assemble the Windows onedir bundle."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock, version)
     bundle = _assemble(
         config,
@@ -124,7 +123,6 @@ def windows_package(
     copied tree is the portable, run-from-folder distributable.
     """
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_windows_host()
     config, lock = _load_and_verify(project_root, no_verify_lock, version)
     target_arch = _resolve_arch(lock, arch)
     bundle = _assemble(
@@ -230,7 +228,6 @@ def windows_run(
             "the existing build."
         )
     if no_build:
-        _require_windows_host()
         config = _load_config(project_root)
         bundle = onedir_path(config, project_root)
         if not bundle.exists():
@@ -271,7 +268,7 @@ def windows_status(project_root: Path) -> StatusReport:
         app_name=config.display_name,
         app_id=windows.app_id,
         python_version=windows.python_version or "(unset)",
-        lock=_lock_status(project_root),
+        lock=_lock_status(project_root, config),
         artifacts=(BuildArtifact.probe(onedir_path(config, project_root)),),
     )
 
@@ -384,8 +381,7 @@ def _load_and_verify(
 ) -> tuple[Config, WindowsLockfile]:
     config = with_version(_load_config(project_root), version)
     lock = _load_lock(project_root)
-    pyproject = project_root / "pyproject.toml"
-    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
+    if not no_verify_lock and not is_in_sync(lock, config, "windows"):
         raise ToolchainError(
             f"{lockfile_path_for('windows').name} is out of date with "
             "pyproject.toml.\n"
@@ -396,7 +392,7 @@ def _load_and_verify(
     return config, lock
 
 
-def _lock_status(project_root: Path) -> LockStatus:
+def _lock_status(project_root: Path, config: Config) -> LockStatus:
     relock = "kivyforge lock -p windows"
     path = lockfile_path_for("windows", project_root)
     if not path.is_file():
@@ -405,16 +401,8 @@ def _lock_status(project_root: Path) -> LockStatus:
         lock = load_windows_lock(path)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    pyproject = project_root / "pyproject.toml"
-    in_sync = is_in_sync(lock, read_pyproject_text(pyproject))
+    in_sync = is_in_sync(lock, config, "windows")
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
-
-
-def _require_windows_host() -> None:
-    try:
-        get_platform("windows").check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path):

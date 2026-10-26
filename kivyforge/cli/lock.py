@@ -3,11 +3,19 @@
 The verb resolves the target platform (``-p`` / ``KIVYFORGE_PLATFORM`` / host)
 and dispatches to that backend's lock engine, writing ``pylock.<platform>.toml``.
 Each backend supplies its own build/serialize/compare callables; the drift check
-(``pyproject_sha256``) and atomic write are shared.
+(``lock_inputs_sha256``, ``kivyforge.lock.inputs``) and atomic write are shared.
+
+A lock that exists is re-resolved with its own versions as the preference, so
+an input change moves only what it has to (``kivyforge.lock.prefer``);
+``--update`` resolves every package to the newest version allowed. A lock
+whose inputs have not changed still gets the hashes it takes from local files
+(``include_files`` on Android, iOS and macOS) re-recorded, which needs no
+resolution.
 """
 
 from __future__ import annotations
 
+import functools
 import os
 import tempfile
 from collections.abc import Callable
@@ -16,9 +24,11 @@ from pathlib import Path
 
 import click
 
-from ..config import ConfigError, load_config, read_pyproject_text
-from ..lock.reader import LockError, is_in_sync
-from ..platforms.base import HostCapabilityError
+from ..artifacts import include_files
+from ..config import ConfigError, load_config
+from ..lock.inputs import is_in_sync
+from ..lock.reader import LockError
+from ..lock.sources import ignore_unrecorded_indexes, unused_explicit_indexes
 from ..platforms.ios.lock import (
     BuildError,
     build_lockfile,
@@ -28,6 +38,7 @@ from ..platforms.ios.lock import (
     semantic_equal,
 )
 from ..report import Diagnostic, Report, diagnostics, exit_codes
+from ..report.failures import ClassifiedError
 from ._common import ToolchainError, lockfile_path_for
 from ._output import output_options, reporting
 from ._platform import platform_option, resolve_target
@@ -53,11 +64,14 @@ class _LockOps:
     emits_warnings: bool = False
     #: The backend accepts ``on_progress``/``on_transfer`` and reports with them.
     emits_progress: bool = False
-    # Most backends resolve with pip alone, so `lock` runs anywhere and the
-    # result is committed. iOS is the exception: resolving declared Swift
-    # packages shells out to `swift package resolve`, which needs the Xcode
-    # toolchain, so the whole iOS workflow — lock included — is macOS-only.
-    requires_host_toolchain: bool = False
+    #: The backend can keep the existing lock's runtime (``prefer_runtime``):
+    #: the desktop wheel+runtime engine, whose runtime lookup is a slow
+    #: GitHub API query.
+    prefers_runtime: bool = False
+    #: ``(lock, config, *, project_root) -> lock``: re-records the pins a lock
+    #: takes from local file contents, which ``lock_inputs_sha256`` cannot see.
+    #: Returns the lock it was given when nothing changed.
+    refresh: Callable | None = None
 
 
 def _lock_ops(platform: str) -> _LockOps:
@@ -73,7 +87,9 @@ def _lock_ops(platform: str) -> _LockOps:
             build_error=BuildError,
             require_ios=True,
             require_macos=False,
-            requires_host_toolchain=True,
+            emits_warnings=True,
+            emits_progress=True,
+            refresh=functools.partial(include_files.refresh, platform="ios"),
         )
     if platform == "macos":
         from ..platforms.macos import lock as macos_lock
@@ -88,6 +104,9 @@ def _lock_ops(platform: str) -> _LockOps:
             require_ios=False,
             require_macos=True,
             emits_warnings=True,
+            emits_progress=True,
+            prefers_runtime=True,
+            refresh=functools.partial(include_files.refresh, platform="macos"),
         )
     if platform == "linux":
         from ..platforms.linux import lock as linux_lock
@@ -103,6 +122,8 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=False,
             require_linux=True,
             emits_warnings=True,
+            emits_progress=True,
+            prefers_runtime=True,
         )
     if platform == "windows":
         from ..platforms.windows import lock as windows_lock
@@ -118,6 +139,8 @@ def _lock_ops(platform: str) -> _LockOps:
             require_macos=False,
             require_windows=True,
             emits_warnings=True,
+            emits_progress=True,
+            prefers_runtime=True,
         )
     if platform == "android":
         from ..platforms.android.lock import builder as android_builder
@@ -136,22 +159,11 @@ def _lock_ops(platform: str) -> _LockOps:
             require_android=True,
             emits_warnings=True,
             emits_progress=True,
+            refresh=android_builder.refresh_include_files,
         )
     raise ToolchainError(
         f"`kivyforge lock` does not support platform {platform!r} yet."
     )
-
-
-def _require_host_toolchain(backend) -> None:
-    """Gate `lock` for backends whose resolution needs a host toolchain."""
-    try:
-        backend.check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(
-            str(exc),
-            code=diagnostics.HOST_INCAPABLE,
-            exit_code=exit_codes.ENVIRONMENT_ERROR,
-        ) from exc
 
 
 @click.command()
@@ -171,17 +183,16 @@ def lock(
     check: bool,
     json_out: bool,
     no_color: bool,
+    verbosity: int,
 ) -> None:
     """Generate pylock.<platform>.toml from pyproject.toml."""
-    with reporting("lock", json_out=json_out, no_color=no_color) as report:
-        backend, project_root = resolve_target(cli_platform, verb="lock")
-        report.platform = backend.name
+    with reporting(
+        "lock", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
+        backend, project_root = resolve_target(cli_platform, verb="lock", report=report)
         ops = _lock_ops(backend.name)
-        if ops.requires_host_toolchain:
-            _require_host_toolchain(backend)
 
         pyproject = project_root / "pyproject.toml"
-        pyproject_text = read_pyproject_text(pyproject)
         out_path = lockfile_path_for(backend.name, project_root)
         # Recorded before anything can fail, so even a drift or resolution
         # failure names the file it was talking about (agent-friendliness point
@@ -201,17 +212,35 @@ def lock(
             raise ToolchainError(exc.format()) from exc
 
         if check:
-            _run_check(
-                report, ops, config, pyproject_text, out_path, project_root, offline
-            )
+            _run_check(report, ops, config, out_path, project_root, offline)
             return
 
+        existing = None
         if out_path.is_file() and not update:
             try:
                 existing = ops.load(out_path)
             except LockError:
                 existing = None
-            if existing is not None and is_in_sync(existing, pyproject_text):
+            if existing is not None and is_in_sync(existing, config, backend.name):
+                refreshed = _refresh(ops, existing, config, project_root)
+                if refreshed is not existing:
+                    report.progress(f"{out_path.name}: local files changed:")
+                    for line in ops.diff_summary(existing, refreshed):
+                        report.progress(line)
+                    _atomic_write(out_path, ops.dumps(refreshed))
+                    report.line(
+                        f"Updated {out_path.name} (file hashes re-recorded; "
+                        "no package re-resolved)."
+                    )
+                    report.emit(
+                        ok=True,
+                        data={
+                            "action": "wrote",
+                            "in_sync": True,
+                            "packages": len(refreshed.packages),
+                        },
+                    )
+                    return
                 report.line(f"{out_path.name} is already in sync with pyproject.toml.")
                 report.line("  (use --update to force re-resolution)")
                 report.emit(
@@ -224,7 +253,15 @@ def lock(
                 )
                 return
 
-        new_lock = _build(report, ops, config, pyproject_text, project_root, offline)
+        new_lock = _build(
+            report,
+            ops,
+            config,
+            project_root,
+            offline,
+            prefer=existing.packages if existing is not None else (),
+            prefer_runtime=getattr(existing, "python_runtime", None),
+        )
         _atomic_write(out_path, ops.dumps(new_lock))
         report.line(
             f"Wrote {out_path.name} ({len(new_lock.packages)} packages pinned)."
@@ -243,12 +280,14 @@ def _run_check(
     report: Report,
     ops: _LockOps,
     config,
-    pyproject_text: str,
     out_path: Path,
     project_root: Path,
     offline: bool,
 ) -> None:
     """The CI pre-flight: report drift, write nothing.
+
+    The candidate is resolved preferring the existing lock's versions, as
+    ``lock`` would, so a new upstream release alone does not fail the check.
 
     All three failures here mean "your lock is not the lock this
     ``pyproject.toml`` implies", so all three exit ``LOCK_DRIFT`` and differ only
@@ -274,7 +313,17 @@ def _run_check(
             remediation=relock,
         ) from exc
 
-    candidate = _build(report, ops, config, pyproject_text, project_root, offline)
+    candidate = _build(
+        report,
+        ops,
+        config,
+        project_root,
+        offline,
+        prefer=existing.packages,
+        prefer_runtime=getattr(existing, "python_runtime", None),
+    )
+    # A lock from before #86 records no index; that alone is not drift.
+    candidate = ignore_unrecorded_indexes(existing, candidate)
     if ops.semantic_equal(existing, candidate):
         report.line(f"{out_path.name} is up to date.")
         report.emit(
@@ -307,16 +356,25 @@ def _build(
     report: Report,
     ops: _LockOps,
     config,
-    pyproject_text: str,
     project_root: Path,
     offline: bool,
+    *,
+    prefer=(),
+    prefer_runtime=None,
 ):
     kwargs = {}
+    if ops.prefers_runtime and prefer_runtime is not None:
+        # Skips a slow GitHub lookup when the locked runtime still fits.
+        kwargs["prefer_runtime"] = prefer_runtime
     if ops.emits_warnings:
         # Shown *and* recorded. These used to go to stderr only, so a --json
         # consumer could not see that (say) a vendored plain linux_* wheel had
         # been accepted -- a decision worth knowing about from a machine.
         kwargs["on_warning"] = lambda msg: _warn(report, msg)
+        # Config-wide, so not the builder's: it reads every overlay's sources,
+        # and the builder may only read its own lock inputs.
+        for message in unused_explicit_indexes(config):
+            _warn(report, message)
     if ops.emits_progress:
         # Locking downloads wheels (and, with Maven dependencies, Gradle's
         # graph). Silent, that looked like a hang on a slow connection (#84).
@@ -325,12 +383,23 @@ def _build(
     try:
         return ops.build(
             config,
-            pyproject_text,
             project_root=project_root,
+            prefer=prefer,
             offline=offline,
             **kwargs,
         )
-    except ops.build_error as exc:
+    except (ops.build_error, ClassifiedError) as exc:
+        # ClassifiedError: a failure the lock layer classified itself
+        # (KF-LOCK-PINS-CONFLICT, KF-LOCK-SOURCE-UNAVAILABLE, ...).
+        raise ToolchainError.wrap(exc) from exc
+
+
+def _refresh(ops: _LockOps, existing, config, project_root: Path):
+    if ops.refresh is None:
+        return existing
+    try:
+        return ops.refresh(existing, config, project_root=project_root)
+    except (ops.build_error, ClassifiedError) as exc:
         raise ToolchainError.wrap(exc) from exc
 
 

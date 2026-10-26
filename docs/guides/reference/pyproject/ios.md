@@ -22,9 +22,10 @@ converting it. For tasks, see [Configure your iOS app](../../guides/ios/configur
 | `build` | integer | `1` | Build number (`CFBundleVersion`). |
 | `deployment_target` | string | `"16.0"` | Minimum iOS version. Must be inside the range the installed Xcode accepts (15.0 and later for Xcode 27). |
 | `simulator_archs` | list of string | `["arm64"]` | Simulator architectures to pin. `"arm64"` is the only valid value. |
-| `extra_index_urls` | list of string | `[]` | Extra package indexes, such as the mobile wheel index. |
-| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. |
+| `extra_index_urls` | list of string | `[]` | Extra package indexes, such as the mobile wheel index. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
+| `find_links` | list of string | `[]` | Project-relative directories of prebuilt wheels, searched during `lock` only. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `exclude` | list of string | `[]` | Package names to drop from the resolve. |
+| `[sources]` | table | none | Which index a package comes from on this target, as `package = { index = "NAME" }`. An entry replaces the `[tool.kivy.sources]` entry for the same package. See [Package indexes and sources](tool-kivy.md#package-indexes-and-sources). |
 
 ## `[tool.kivy.ios.python]`
 
@@ -118,6 +119,29 @@ managed by kivyforge and rejected here:
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `source` | string | none | Path to your own `PrivacyInfo.xcprivacy`. When unset, kivyforge generates a minimal manifest that declares no tracking, no collected data, and no required-reason APIs. |
+
+## `[[tool.kivy.ios.include_files]]`
+
+An array of tables. Each entry copies project files into the `.app`. See
+[Add files to the app bundle](../../guides/ios/configure.md#add-files-to-the-app-bundle).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `dest` | string | required | Destination directory, relative to the root of the `.app`. `"."` is the root itself. |
+| `sources` | list of string | required | Project-relative files or directories to copy. Each must exist. A file lands in `dest` under its own name; a directory's contents land in `dest` with their subfolders. |
+
+Files are copied byte for byte: Xcode does not compile, convert or strip them.
+`build` checks the built `.app` and `.ipa` against the lock, and fails with
+`KF-ARTIFACT-CONTENT` if a file is missing or different. These are refused:
+
+- a path the build writes, such as `Info.plist`, `Assets.car`, `Frameworks/`,
+  `python/` or `app/` (`KF-INCLUDE-RESERVED`);
+- a top-level name ending in `.framework`, `.xcframework`, `.appex` or `.app`,
+  which Xcode treats as code (`KF-INCLUDE-RESERVED`). `.bundle` is allowed;
+- native code, a Mach-O file or a static archive (`KF-INCLUDE-NATIVE-CODE`).
+  Declare it under `[tool.kivy.ios.native.xcframeworks]`;
+- a format Xcode compiles: `.xcstrings`, `.storyboard`, `.xib` or `.xcassets`
+  (`KF-INCLUDE-SOURCE-FORMAT`). Include the compiled form.
 
 ## `[tool.kivy.ios.native.xcframeworks]`
 

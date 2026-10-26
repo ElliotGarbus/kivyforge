@@ -51,11 +51,26 @@ class Platform(ABC):
     #: Distributable artifact shapes for ``package -f`` (first = default).
     package_formats: tuple[str, ...] = ()
 
+    #: Whether ``package --debug`` builds a debug package in each of
+    #: ``package_formats``. The CLI rejects ``--debug`` where this is false.
+    package_debug: bool = False
+
     #: Build target architectures this platform accepts, in the spelling its
     #: config and ``--arch``/``--abi`` use. Sourced from the same constants the
     #: config validator rejects against, so the published set cannot drift from
     #: the accepted one.
     archs: tuple[str, ...] = ()
+
+    #: Host CPUs (lower-cased ``platform.machine()``) that may build this
+    #: target, on top of :meth:`check_host_capability`'s OS rule. Empty means
+    #: any CPU. :meth:`check_host` enforces it and ``capabilities`` publishes
+    #: it, so the rule and the matrix read the same tuple.
+    host_machines: tuple[str, ...] = ()
+
+    #: Whether this backend passes the verb's ``-v`` level to the tools it runs
+    #: (``report.verbosity``). Every verb accepts ``-v``; ``capabilities``
+    #: publishes this so an agent knows where it does anything.
+    verbose: bool = False
 
     @property
     def default_package_format(self) -> str | None:
@@ -74,6 +89,30 @@ class Platform(ABC):
         injectable so the check is unit-testable off the target host.
         """
         raise NotImplementedError
+
+    def check_host(
+        self, *, host_system: str | None = None, host_machine: str | None = None
+    ) -> None:
+        """The whole host gate every target verb runs: OS, then CPU.
+
+        Raises :class:`HostCapabilityError`. Both arguments default to the real
+        host and are injectable for tests.
+        """
+        self.check_host_capability(host_system=host_system)
+        if not self.host_machines:
+            return
+        from kivyforge.host import host_machine as _host_machine
+
+        machine = host_machine if host_machine is not None else _host_machine()
+        if machine not in self.host_machines:
+            raise HostCapabilityError(self.host_machine_error(machine))
+
+    def host_machine_error(self, machine: str) -> str:
+        """The message for a host whose CPU is not in :attr:`host_machines`."""
+        return (
+            f"building for {self.name} requires a "
+            f"{' or '.join(self.host_machines)} host; this host is {machine!r}."
+        )
 
     # -- verb dispatch ----------------------------------------------------- #
     #
@@ -143,6 +182,7 @@ class Platform(ABC):
         abi: str | None = None,
         keystore: str | None = None,
         key_alias: str | None = None,
+        debug: bool = False,
     ) -> BuildOutcome:
         raise NotImplementedError(f"package is not supported for {self.name!r}.")
 

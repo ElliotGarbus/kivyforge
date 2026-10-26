@@ -7,6 +7,9 @@
 
 #define APP_DIR            "@APP_DIR@"
 #define ENTRY_POINT        "@ENTRY_POINT@"
+/* For a module:function entry point, the launcher that calls it, run as
+   __main__ in place of ENTRY_POINT; "" runs ENTRY_POINT itself. */
+#define ENTRY_LAUNCHER     "@ENTRY_LAUNCHER@"
 #define PYTHON_MAJOR_MINOR "@PYTHON_MAJOR_MINOR@"
 
 #endif /* MAIN_CONFIG_H */

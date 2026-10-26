@@ -89,7 +89,6 @@ def test_pip_resolver_locks_a_real_local_wheel_to_path(tmp_path):
 
     lock = build_lockfile(
         cfg,
-        text,
         project_root=project,
         resolver=PipResolver(),
         python_provider=FakePythonProvider(),

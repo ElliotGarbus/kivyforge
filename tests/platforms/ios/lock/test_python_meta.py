@@ -103,6 +103,7 @@ def test_read_ios_floor_fallback_on_invalid_archive(tmp_path):
 class _FakeResponse:
     def __init__(self, data: bytes):
         self._buf = data
+        self.headers = {"Content-Length": str(len(data))}
 
     def read(self, n=None):
         if n is None or n < 0:

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import click
 
+from kivyforge.artifacts import include_files
 from kivyforge.artifacts.download import DownloadError, fetch_artifact
 from kivyforge.artifacts.verify import HashMismatch
 from kivyforge.build_outcome import (
@@ -26,14 +27,15 @@ from kivyforge.build_outcome import (
     OutcomeBuilder,
     discard_note,
 )
-from kivyforge.bundle import app_metadata
+from kivyforge.bundle import app_metadata, entry_launcher
 from kivyforge.bundle.pycompile import find_interpreter, target_minor
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
-from kivyforge.config import ConfigError, load_config, read_pyproject_text
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config, ResolvedVersion
 from kivyforge.config.version import android_version_code, with_version
-from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.lock.inputs import is_in_sync
+from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import os_failure, reclassify
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
@@ -73,7 +75,12 @@ from .bootstrap.render import (
     selftest_source,
 )
 from .elf import ABI_MACHINES, ElfError, scan_packaged_libs
-from .generate.manifest import generate_manifest, sdl_orientation_hint
+from .generate.launcher import LAUNCHER_CHECK_NAME, render_launcher_check
+from .generate.manifest import (
+    generate_manifest,
+    main_activity,
+    sdl_orientation_hint,
+)
 from .generate.project import (
     ABI_TO_TRIPLET,
     ProjectGenError,
@@ -500,11 +507,12 @@ def android_build(
             canonical_abi=canonical,
             app_src=project_root / config.kivy.app_dir,
             entry_point=config.kivy.entry_point,
+            launcher_source=entry_launcher.launcher_source(config.kivy),
             service_entry_points={s.name: s.entry_point for s in android.services},
             finder_source=finder_source(),
             kivy_bootstrap_source=kivy_bootstrap_source(),
             ext_manifest_json=ext_manifest_json,
-            selftest_source=selftest_source(generated),
+            selftest_source=selftest_source(generated, launcher=main_activity(android)),
             android_package_sources=android_package_sources(android.kivy_generation),
             app_metadata=generated,
             byte_compile=compiler,
@@ -523,7 +531,7 @@ def android_build(
     bootstrap = render_bootstrap(
         sdl=android.kivy_generation,
         python_version=python_version,
-        entry_point=config.kivy.entry_point,
+        entry_point=entry_launcher.main_module(config.kivy),
         fullscreen=android.fullscreen,
         orientation_hint=sdl_orientation_hint(config.kivy.orientation),
     )
@@ -560,6 +568,20 @@ def android_build(
     )
     if service_classes:
         events.on_progress(f"[generate] {len(service_classes)} service class(es)")
+
+    # 7c. With [tool.kivy.android].main_activity set, a file that compiles only
+    # if that class is a usable launcher; pruned once the key is gone, or it
+    # would keep demanding a class the app may have deleted.
+    launcher_check = render_launcher_check(android)
+    if launcher_check is not None:
+        out = app_main / launcher_check.relpath
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(launcher_check.content, encoding="utf-8", newline="\n")
+    _prune_stale(
+        app_main / "java" / "org" / "kivy" / "android",
+        LAUNCHER_CHECK_NAME,
+        keep={LAUNCHER_CHECK_NAME} if launcher_check is not None else set(),
+    )
 
     # The SDL glue and the wheel's libSDL<N>.so are a matched pair: SDLActivity
     # aborts onCreate silently when their versions disagree, and dies in its
@@ -614,6 +636,7 @@ def android_build(
             dest,
             config,
             android,
+            project_root=project_root,
             python_version=python_version,
             runtime_root=runtime_root,
             staged_libs=staged_libs,
@@ -719,6 +742,7 @@ def android_package(
     abi: str | None = None,
     keystore: str | None = None,
     key_alias: str | None = None,
+    debug: bool = False,
     no_verify_lock: bool = False,
     no_cache: bool = False,
     events: BuildEvents = ECHO_EVENTS,
@@ -727,6 +751,10 @@ def android_package(
 
     The inner ``android_build`` prints as usual but records nothing: the
     generated project is this verb's intermediate, not its product.
+
+    ``debug`` packages what ``build --debug`` builds instead: the debug payload,
+    without the release-only checks (dist-artifacts-proposal 5.2). Gradle signs
+    a debug APK with the SDK's debug keystore and leaves a debug AAB unsigned.
     """
     from .policy import ManifestPolicyError, enforce_release_manifest
     from .signing import SigningError, resolve_signing, signing_config_gradle
@@ -734,6 +762,32 @@ def android_package(
     outcome = OutcomeBuilder(events.on_artifact)
     config, _lock = _load(project_root, version, no_verify_lock=no_verify_lock)
     android = config.android_required
+
+    if debug:
+        if keystore is not None or key_alias is not None:
+            # Ignoring them would sign with a key other than the one asked for.
+            raise AndroidBuildError(
+                "--keystore and --key-alias sign the release package and cannot "
+                "be used with --debug, which uses the Android SDK's debug key. "
+                "Pass one or the other."
+            )
+        # android_build assembles the debug artifact and checks its libraries.
+        android_build(
+            project_root,
+            version=version,
+            debug=True,
+            fmt=fmt,
+            abi=abi,
+            no_verify_lock=no_verify_lock,
+            no_cache=no_cache,
+            events=events.without_artifacts(),
+        )
+        dest = project_dir_for(project_root, config)
+        published = _dist_output(project_root, config, abi, fmt, debug=True)
+        _publish(
+            project_root, _debug_output(dest, fmt), published, fmt, outcome, events
+        )
+        return outcome.finish()
 
     # Signing pre-flight (fail fast, BEFORE staging/generation).
     try:
@@ -769,6 +823,7 @@ def android_package(
         infos = enforce_release_manifest(
             manifest_xml,
             package=android.package,
+            launcher=main_activity(android),
             allow_exported=android.manifest.allow_exported,
         )
     except ManifestPolicyError as exc:
@@ -792,9 +847,30 @@ def android_package(
         raise _gradle_failure(exc, task) from exc
     out = _require_artifact(_release_output(dest, fmt), task)
     _check_packaged_libs(out)
-    # Copied, not moved: run, status and CI still read Gradle's output in the
-    # project. Only the copy is this verb's product (dist-artifacts-proposal).
-    published = _dist_output(project_root, config, abi, fmt)
+    _publish(
+        project_root,
+        out,
+        _dist_output(project_root, config, abi, fmt),
+        fmt,
+        outcome,
+        events,
+    )
+    return outcome.finish()
+
+
+def _publish(
+    project_root: Path,
+    out: Path,
+    published: Path,
+    fmt: str,
+    outcome: OutcomeBuilder,
+    events: BuildEvents,
+) -> None:
+    """Copy Gradle's verified *out* to *published* and record it as the product.
+
+    Copied, not moved: run, status and CI still read Gradle's output in the
+    project. Only the copy is this verb's product (dist-artifacts-proposal).
+    """
     try:
         copy_in(out, published)
     except OSError as exc:
@@ -806,20 +882,29 @@ def android_package(
     events.on_progress(f"[package] copied {out.relative_to(project_root)} to {rel}")
     events.on_line(f"Packaged {rel}")
     outcome.add(rel, ArtifactKind.APK if fmt == "apk" else ArtifactKind.AAB)
-    return outcome.finish()
 
 
-def _dist_output(project_root: Path, config: Config, abi: str | None, fmt: str) -> Path:
-    """Where ``package`` puts its artifact: ``dist/android/<slug>-<ver>[-<abi>]``.
+def _dist_output(
+    project_root: Path,
+    config: Config,
+    abi: str | None,
+    fmt: str,
+    *,
+    debug: bool = False,
+) -> Path:
+    """Where ``package`` puts its artifact: ``dist/android/<slug>-<ver>[-<abi>][-debug]``.
 
     The ABI is named only when the package holds a strict subset of the
     configured ABIs, which only ``--abi`` produces: Play accepts a one-ABI
     bundle without complaint, so a subset must never pass for the full app.
     ``--abi`` naming every configured ABI packages the full app, unqualified.
+    ``-debug`` comes last, so a debug package never takes a release name.
     """
     android = config.android_required
     abis = _select_abis(android, abi)
     qualifier = "".join(f"-{a}" for a in abis) if set(abis) < set(android.abis) else ""
+    if debug:
+        qualifier += "-debug"
     version = config.version_required.filename_part
     name = f"{config.app_slug}-{version}{qualifier}.{fmt}"
     return project_root / "dist" / "android" / name
@@ -857,6 +942,7 @@ def _enforce_merged_manifest(
         infos = enforce_release_manifest(
             merged.read_text(encoding="utf-8"),
             package=android.package,
+            launcher=main_activity(android),
             allow_exported=android.manifest.allow_exported,
         )
     except ManifestPolicyError as exc:
@@ -971,7 +1057,7 @@ def android_run(
     try:
         adb_mod.install_apk(device, apk)
         adb_mod.logcat_clear(device)
-        adb_mod.launch(device, android.package, "org.kivy.android.PythonActivity")
+        adb_mod.launch(device, android.package, main_activity(android))
         pid = _wait_for_pid(adb_mod, device, android.package)
         if pid is None:
             # Never seen running: it died at once or never started. Its own
@@ -1170,7 +1256,7 @@ def android_smoke(
 
     click.echo(f"[smoke] running the contract test on {device}...", err=True)
     try:
-        run_smoke(dest, release=release)
+        run_smoke(dest, device=device, release=release)
     except (adb_mod.AdbError, SmokeError) as exc:
         raise AndroidBuildError(str(exc)) from exc
     click.echo("Contract smoke test PASSED.")
@@ -1222,6 +1308,19 @@ _REQUIRED_VALUES = (
 )
 
 
+#: Files the generator writes that an include may not replace; the manifest and
+#: Gradle passthroughs exist for changing them.
+_GENERATED_FILES = frozenset(
+    {
+        "app/src/main/AndroidManifest.xml",
+        "app/build.gradle",
+        "build.gradle",
+        "settings.gradle",
+        "gradle.properties",
+    }
+)
+
+
 def _remove_previous_includes(dest: Path) -> None:
     """Delete the files the last build's ``include_files`` copied.
 
@@ -1230,17 +1329,7 @@ def _remove_previous_includes(dest: Path) -> None:
     before generation, so a generated file that an include had replaced is
     written fresh by this build.
     """
-    record = dest / _INCLUDE_RECORD
-    try:
-        lines = record.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return
-    for line in lines:
-        rel = Path(line)
-        if not line or rel.is_absolute() or ".." in rel.parts:
-            continue
-        (dest / rel).unlink(missing_ok=True)
-    record.unlink()
+    include_files.remove_recorded(dest, _INCLUDE_RECORD)
 
 
 def _copy_include_files(
@@ -1265,76 +1354,33 @@ def _copy_include_files(
     build's includes are gone by now (:func:`_remove_previous_includes`), so a
     file already at the destination is one this build generated.
     """
-    generated = {
-        "app/src/main/AndroidManifest.xml",
-        "app/build.gradle",
-        "build.gradle",
-        "settings.gradle",
-        "gradle.properties",
-    }
-    pins = {(p.dest, p.source): p.sha256 for p in lock.include_files}
-    staged: set[tuple[str, str]] = set()
-    copied: list[str] = []
+
+    def overwrites_generated(item: include_files.IncludeItem) -> str | None:
+        if item.path not in _GENERATED_FILES:
+            return None
+        return (
+            f"include_files entry would overwrite the generated {item.path}; use "
+            "the manifest/gradle passthroughs instead (android/01 §include_files)."
+        )
+
+    def replaced(rel: str) -> None:
+        events.on_progress(f"[include] {rel} replaces the file kivyforge generated")
+        events.note(
+            diagnostics.ANDROID_INCLUDE_OVERRIDE,
+            f"include_files replaced the generated {rel}.",
+            {"path": rel},
+        )
+
     try:
-        for entry in android.include_files:
-            target_dir = dest / entry.dest
-            for source in entry.sources:
-                src = project_root / source
-                targets = (
-                    [
-                        (
-                            child,
-                            target_dir / child.relative_to(src),
-                            (Path(source) / child.relative_to(src)).as_posix(),
-                        )
-                        for child in sorted(src.rglob("*"))
-                        if child.is_file()
-                    ]
-                    if src.is_dir()
-                    else [(src, target_dir / src.name, source)]
-                )
-                for file_src, file_dest, rel_source in targets:
-                    rel = file_dest.relative_to(dest).as_posix()
-                    if rel in generated:
-                        raise AndroidBuildError(
-                            f"include_files entry would overwrite the generated "
-                            f"{rel}; use the manifest/gradle passthroughs instead "
-                            f"(android/01 §include_files)."
-                        )
-                    if verify:
-                        _verify_include_file(file_src, rel_source, entry.dest, pins)
-                        staged.add((entry.dest, rel_source))
-                    if file_dest.is_file() and rel not in copied:
-                        events.on_progress(
-                            f"[include] {rel} replaces the file kivyforge generated"
-                        )
-                        events.note(
-                            diagnostics.ANDROID_INCLUDE_OVERRIDE,
-                            f"include_files replaced the generated {rel}.",
-                            {"path": rel},
-                        )
-                    file_dest.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(file_src, file_dest)
-                    copied.append(rel)
-    finally:
-        if copied:
-            (dest / _INCLUDE_RECORD).write_text(
-                "".join(f"{rel}\n" for rel in dict.fromkeys(copied)),
-                encoding="utf-8",
-                newline="\n",
-            )
-    if verify:
-        # A pin with nothing behind it: a file the lock recorded has since been
-        # deleted from a directory source, which the per-file loop cannot see.
-        missing = sorted(pins.keys() - staged)
-        if missing:
-            names = ", ".join(source for _dest, source in missing)
-            raise LockDrift(
-                f"include_files drift: the lock records {names}, which no longer "
-                "exists.\n"
-                "  Re-run `kivyforge lock -p android` to re-record what the "
-                "project actually ships."
-            )
+        items = include_files.expand(android.include_files, project_root)
+        include_files.refuse_reserved(items, overwrites_generated)
+        if verify:
+            include_files.verify_pins(items, lock.include_files, platform="android")
+    except include_files.IncludeFilesError as exc:
+        raise AndroidBuildError(str(exc), **reclassify(exc)) from exc
+    copied = include_files.copy_items(
+        items, dest, on_existing=replaced, record=_INCLUDE_RECORD
+    )
     _check_required_values(dest, copied)
 
 
@@ -1377,34 +1423,11 @@ def _check_required_values(dest: Path, copied: list[str]) -> None:
             )
 
 
-def _verify_include_file(
-    file_src: Path, rel_source: str, dest: str, pins: dict[tuple[str, str], str]
-) -> None:
-    from kivyforge.artifacts.verify import sha256_file
-
-    recorded = pins.get((dest, rel_source))
-    if recorded is None:
-        raise LockDrift(
-            f"include_files drift: {rel_source} would be staged into {dest} but "
-            "the lock records no hash for it.\n"
-            "  Re-run `kivyforge lock -p android` to record it."
-        )
-    actual = sha256_file(file_src)
-    if actual != recorded:
-        raise LockDrift(
-            f"include_files drift: {rel_source} has changed since the lock was "
-            "written.\n"
-            f"  locked:  {recorded}\n"
-            f"  on disk: {actual}\n"
-            "  Re-run `kivyforge lock -p android` to accept the new content."
-        )
-
-
 @user_facing
 def android_status(project_root: Path) -> StatusReport:
     """Read-only project snapshot (android/06 §status)."""
     from kivyforge.lock.model import canonical_name
-    from kivyforge.lock.reader import LockError, is_in_sync
+    from kivyforge.lock.reader import LockError
 
     config, _ = _load_config_only(project_root)
     android = config.android_required
@@ -1421,9 +1444,7 @@ def android_status(project_root: Path) -> StatusReport:
             kivy_ver = kivy.version if kivy else "—"
             state = (
                 LockState.IN_SYNC
-                if is_in_sync(
-                    lock, read_pyproject_text(project_root / "pyproject.toml")
-                )
+                if include_files.lock_current(lock, config, "android", project_root)
                 else LockState.OUT_OF_DATE
             )
         except LockError:
@@ -1569,7 +1590,7 @@ def _load(project_root: Path, version: ResolvedVersion | None, *, no_verify_lock
         lock = lock_reader.load(lock_path)
     except LockError as exc:
         raise LockUnreadable(str(exc)) from exc
-    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
+    if not no_verify_lock and not is_in_sync(lock, config, "android"):
         raise LockDrift(
             "pyproject.toml has changed since pylock.android.toml was "
             "generated.\n  Run: kivyforge lock -p android\n"

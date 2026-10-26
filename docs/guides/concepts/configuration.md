@@ -49,7 +49,10 @@ orientation = ["portrait"]
 ```
 
 `app_dir` is required and must be a subdirectory of the project, not the
-project root.
+project root. `entry_point` names either a module, which runs as `__main__`, or
+a `module:function`, which kivyforge calls. If you leave it unset and your
+project declares one `[project.gui-scripts]` entry, kivyforge uses that entry.
+See [How `entry_point` runs](../reference/pyproject/tool-kivy.md#how-entry_point-runs).
 
 ### `[tool.kivy.<platform>]`: per-target overlays
 
@@ -99,7 +102,15 @@ kivyforge init -p macos -p windows
 ```
 
 To regenerate an overlay that already exists, add `--force`. Your signing
-settings are preserved.
+settings are preserved, and `--force` never changes `[tool.kivy]`.
+
+The `entry_point` that `init` writes depends on your `[project.gui-scripts]`:
+
+- With no GUI scripts, `init` writes `entry_point = "main"`.
+- With one GUI script, `init` writes no `entry_point`, so the app starts that
+  script. A comment in `[tool.kivy]` says so.
+- With several, `init` sets `entry_point` to the first one and lists the others
+  in a comment. Change it if the app should start a different one.
 
 ## Icons and splash screens
 

@@ -168,7 +168,7 @@ Proposed field set (finalized in implementation):
 | `app_id` | string | yes | — | The explicit [AppUserModelID](https://learn.microsoft.com/en-us/windows/win32/shell/appids). The generated bootstrap sets it via `SetCurrentProcessExplicitAppUserModelID` before window creation so the taskbar button groups (and pins) under the app rather than `python.exe`. **Validation enforces only Microsoft's hard constraints — no spaces, ≤128 characters — as a config-time `ConfigError`.** The conventional pascal-cased, period-delimited form (`Company.Product`) is a *recommendation*, surfaced as a `doctor` **WARNING**, not an invented hard failure; hyphens are permitted. (This is a distinct identifier from the Linux reverse-DNS `app_id` and the macOS `bundle_id`, so it does not adopt their format rules.) |
 | `archs` | list of string | no | `["amd64"]` | Target architecture set. Only `amd64` is allowed this phase (`win_amd64` wheel tag; PBS triple `x86_64-pc-windows-msvc`). List-shaped so `arm64` is purely additive later. As on Linux there is no fat binary — each arch would be a separate bundle. |
 | `extra_index_urls` | list of string | no | `[]` | Supplemental wheel indexes (`win_amd64` tags), same semantics as iOS/macOS/Linux. |
-| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. |
+| `find_links` | list of string | no | `[]` | Repo-relative vendored-wheel directories for `lock`. A package with any wheel here comes only from `find_links`, on every arch ([package-index-proposal §3](../../dev/package-index-proposal.md#3-behaviour-and-config)). |
 | `exclude` | list of string | no | `[]` | Prune unused transitive deps from the resolved graph. |
 
 Icons: `[tool.kivy.windows.icons].source` (1024×1024 PNG) is rendered into a
@@ -411,7 +411,9 @@ the binary). The bootstrap:
 - puts `<bundle>\app` on `sys.path`, sets the working directory to it, and runs
   `[tool.kivy].entry_point` as `__main__` (via `runpy.run_module`), so a standard
   `if __name__ == "__main__": App().run()` guard fires — matching the macOS/Linux
-  launchers, which exec the interpreter directly on the entry script.
+  launchers, which exec the interpreter directly on the entry script. For a
+  `module:function` entry point the module is `_kivyforge_main`, the launcher
+  staged into `app\` that calls the function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)).
 
 ### What the binary deps do *not* cover
 
@@ -551,6 +553,20 @@ runner images reporting the same `14.51.36231` were observed running `cl` builds
 `36248` and `36252`, producing PEs that differed by 307 bytes with byte-identical
 machine code. `TOOLSET.txt` still pins MSVC + the Windows SDK, but for the other
 failure mode: a genuinely different toolchain can emit different *code*.
+
+**Toolchain drift is a warning, a missed re-vendor is a failure.** The version
+pin cannot catch everything either: the `win25-vs2026/20261021` runner image
+(October 2026) built different bytes from the same source, flags and
+`14.51.36231` / `10.0.26100.0` pin, most likely an SDK serviced in place, and
+the check failed on every PR that landed on it while the image rolled out. So
+`build` records, as an `inputs:` line in `TOOLSET.txt`, a hash of everything of
+ours that decides the bytes: `launcher.c` (line endings normalized), the
+compile/link flags and libraries, and the pin. On a byte mismatch, `verify`
+fails if those inputs changed (someone forgot to re-vendor) or were never
+recorded, and otherwise emits a `Launcher toolchain drift` GitHub warning and
+passes: nothing of ours moved, the runner's toolchain did. Re-vendor with
+`revendor_launcher` once the new image is the only one in use. The `SHA256SUMS`
+integrity check is strict either way.
 
 ## `init` / `build` / `run` / `package` / `status`
 

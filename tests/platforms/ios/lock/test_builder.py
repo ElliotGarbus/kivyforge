@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from kivyforge.config import load_config_from_text
-from kivyforge.lock.reader import compute_pyproject_sha256, is_in_sync
+from kivyforge.lock.inputs import is_in_sync
 from kivyforge.platforms.ios.lock import (
     BuildError,
     build_lockfile,
@@ -16,12 +16,30 @@ from kivyforge.platforms.ios.lock import (
     loads,
     semantic_equal,
 )
+from tests.lock_hash import inputs_sha
 from tests.platforms.ios.lock.conftest import FakeResolver
 
 
 def _build(toml, resolver, provider, **kw):
     cfg = load_config_from_text(toml)
-    return build_lockfile(cfg, toml, resolver=resolver, python_provider=provider, **kw)
+    return build_lockfile(cfg, resolver=resolver, python_provider=provider, **kw)
+
+
+class TestSourcePolicy:
+    def test_builder_passes_the_ios_policy(
+        self, minimal_pyproject, fake_resolver, fake_python_provider
+    ):
+        captured = {}
+        real = fake_resolver.resolve
+
+        def resolve(requirements, **kwargs):
+            captured.update(kwargs)
+            return real(requirements, **kwargs)
+
+        fake_resolver.resolve = resolve
+        _build(minimal_pyproject, fake_resolver, fake_python_provider)
+        assert captured["sources"].platform == "ios"
+        assert captured["sources"].rank[-1].name == "pypi"
 
 
 class TestBuild:
@@ -75,7 +93,7 @@ class TestBuild:
         self, minimal_pyproject, fake_resolver, fake_python_provider
     ):
         lock = _build(minimal_pyproject, fake_resolver, fake_python_provider)
-        assert lock.pyproject_sha256 == compute_pyproject_sha256(minimal_pyproject)
+        assert lock.lock_inputs_sha256 == inputs_sha(minimal_pyproject, "ios")
 
 
 class TestSimulatorArchs:
@@ -119,8 +137,17 @@ class TestDriftAndCheck:
         self, minimal_pyproject, fake_resolver, fake_python_provider
     ):
         lock = _build(minimal_pyproject, fake_resolver, fake_python_provider)
-        assert is_in_sync(lock, minimal_pyproject)
-        assert not is_in_sync(lock, minimal_pyproject + "\n# edited\n")
+
+        def config(text):
+            return load_config_from_text(text)
+
+        assert is_in_sync(lock, config(minimal_pyproject), "ios")
+        # A comment, or a field the lock does not record, is not drift (#126).
+        assert is_in_sync(lock, config(minimal_pyproject + "\n# edited\n"), "ios")
+        moved = minimal_pyproject.replace(
+            '"more-itertools>=10.5"', '"more-itertools>=11"'
+        )
+        assert not is_in_sync(lock, config(moved), "ios")
 
     def test_semantic_equal_ignores_timestamp(
         self, minimal_pyproject, fake_resolver, fake_python_provider
@@ -341,7 +368,6 @@ class TestNativeXcframeworks:
         cfg = load_config_from_text(toml)
         lock = build_lockfile(
             cfg,
-            toml,
             resolver=FakeResolver(),
             python_provider=fake_python_provider,
             project_root=tmp_path,
@@ -376,7 +402,6 @@ class TestNativeXcframeworks:
         cfg = load_config_from_text(toml)
         lock = build_lockfile(
             cfg,
-            toml,
             resolver=FakeResolver(),
             python_provider=fake_python_provider,
             project_root=tmp_path,
@@ -396,7 +421,6 @@ class TestNativeXcframeworks:
         with pytest.raises(BuildError, match="not found"):
             build_lockfile(
                 cfg,
-                toml,
                 resolver=FakeResolver(),
                 python_provider=fake_python_provider,
                 project_root=tmp_path,

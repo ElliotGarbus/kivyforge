@@ -41,7 +41,7 @@ from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64
 from kivyforge.platforms.android.generate.manifest import (
     ANDROID_NS,
     GENERATED_THEME,
-    MAIN_ACTIVITY,
+    TOOLS_NS,
     ManifestError,
     generate_manifest,
 )
@@ -56,11 +56,15 @@ from tests.artifact_checks import (
     ELFCLASS64,
     android_apk_problems,
     android_bundle_problems,
+    android_dex_problems,
     android_manifest_problems,
     apksigner_report_problems,
     bundle_uncompresses_native_libs,
+    dex_defined_classes,
+    dex_descriptor,
     ios_app_problems,
     ios_expected_plist,
+    ios_shipped_magics,
     jarsigner_report_problems,
     linux_appdir_problems,
     linux_appimage_file_problems,
@@ -75,6 +79,8 @@ from tests.artifact_checks import (
 MAGIC_314 = struct.pack("<H", 3627) + b"\r\n"
 MAGIC_314_ALPHA = struct.pack("<H", 3621) + b"\r\n"
 MAGIC_313 = struct.pack("<H", 3571) + b"\r\n"
+# CPython 3.15.0 final, read off a real iOS bundle's stdlib (2026-10-25).
+MAGIC_315 = struct.pack("<H", 3666) + b"\r\n"
 
 
 def _elf(machine: int, *, ei_class: int = ELFCLASS64) -> bytes:
@@ -446,6 +452,123 @@ class TestAndroidBundles:
         assert shipped_python_tags(_aab(tmp_path, _two_abi_entries())) == ["3.14"]
 
 
+def _dex(defined: list[str], referenced: tuple[str, ...] = ()) -> bytes:
+    """The smallest dex the reader can walk: header, string_ids, type_ids,
+    class_defs, then string data. Type *i* is string *i*; each defined class
+    gets a class_def, each referenced-only one gets a string and a type."""
+    strings = sorted({*defined, *referenced})
+    n = len(strings)
+    string_ids_off = 0x70
+    type_ids_off = string_ids_off + 4 * n
+    class_defs_off = type_ids_off + 4 * n
+    data_off = class_defs_off + 32 * len(defined)
+    data = b""
+    offsets = []
+    for s in strings:
+        offsets.append(data_off + len(data))
+        data += bytes([len(s)]) + s.encode() + b"\x00"  # uleb128 < 128
+    header = bytearray(0x70)
+    header[:8] = b"dex\n035\x00"
+    struct.pack_into("<2I", header, 0x38, n, string_ids_off)
+    struct.pack_into("<2I", header, 0x40, n, type_ids_off)
+    struct.pack_into("<2I", header, 0x60, len(defined), class_defs_off)
+    return (
+        bytes(header)
+        + b"".join(struct.pack("<I", o) for o in offsets)
+        + b"".join(struct.pack("<I", i) for i in range(n))
+        + b"".join(struct.pack("<I", strings.index(d)) + bytes(28) for d in defined)
+        + data
+    )
+
+
+_JAVA_MARKER = "org.kivyforge.t3.JavaMarker"
+_KOTLIN_MARKER = "org.kivyforge.t3.KotlinMarker"
+
+
+class TestDexClasses:
+    """Which classes the package's dex files define (`[tool.kivy.android.src]`)."""
+
+    def test_descriptor_spelling(self):
+        assert dex_descriptor("org.example.Main") == "Lorg/example/Main;"
+        assert dex_descriptor("org.example.Outer$Inner") == "Lorg/example/Outer$Inner;"
+
+    def test_defined_classes_are_read_from_class_defs(self):
+        dex = _dex(
+            ["Lorg/kivyforge/t3/JavaMarker;", "Lorg/kivy/android/PythonActivity;"]
+        )
+        assert dex_defined_classes(dex) == {
+            "Lorg/kivyforge/t3/JavaMarker;",
+            "Lorg/kivy/android/PythonActivity;",
+        }
+
+    def test_both_markers_in_an_apk_pass(self, tmp_path):
+        apk = _apk(
+            tmp_path,
+            {
+                "classes.dex": _dex([dex_descriptor(_JAVA_MARKER)]),
+                "classes2.dex": _dex([dex_descriptor(_KOTLIN_MARKER)]),
+            },
+        )
+        assert android_dex_problems(apk, classes=[_JAVA_MARKER, _KOTLIN_MARKER]) == []
+
+    def test_a_missing_class_is_reported(self, tmp_path):
+        apk = _apk(tmp_path, {"classes.dex": _dex([dex_descriptor(_JAVA_MARKER)])})
+        assert android_dex_problems(apk, classes=[_JAVA_MARKER, _KOTLIN_MARKER]) == [
+            f"{_KOTLIN_MARKER} is not defined in any of ['classes.dex']; it was "
+            "never compiled into the app"
+        ]
+
+    def test_a_class_only_referenced_does_not_count(self, tmp_path):
+        """The string table names every class the code calls; a launcher check
+        that references the user's class must not make that class present."""
+        dex = _dex(
+            ["Lorg/kivy/android/KivyforgeLauncherCheck;"],
+            referenced=(dex_descriptor(_JAVA_MARKER),),
+        )
+        apk = _apk(tmp_path, {"classes.dex": dex})
+        assert len(android_dex_problems(apk, classes=[_JAVA_MARKER])) == 1
+
+    def test_a_bundle_is_read_from_base_dex(self, tmp_path):
+        bundle = _apk(
+            tmp_path,
+            {
+                "BundleConfig.pb": REAL_BUNDLE_CONFIG,
+                "base/dex/classes.dex": _dex([dex_descriptor(_JAVA_MARKER)]),
+            },
+            name="app.aab",
+        )
+        assert android_dex_problems(bundle, classes=[_JAVA_MARKER]) == []
+
+    def test_a_package_without_dex_is_reported(self, tmp_path):
+        apk = _apk(tmp_path, {"AndroidManifest.xml": b""})
+        assert android_dex_problems(apk, classes=[_JAVA_MARKER]) == [
+            "app.apk contains no classes*.dex; the app has no code"
+        ]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [b"dex\n035\x00", b"not a dex at all" * 10],
+        ids=["truncated", "bad-magic"],
+    )
+    def test_an_unreadable_dex_is_reported_not_passed(self, tmp_path, payload):
+        apk = _apk(tmp_path, {"classes.dex": payload})
+        problems = android_dex_problems(apk, classes=[_JAVA_MARKER])
+        assert problems[0].startswith("classes.dex could not be read: not a dex file")
+        assert len(problems) == 2  # and the class is therefore not found
+
+    def test_a_table_offset_past_the_end_is_unreadable(self):
+        dex = bytearray(_dex([dex_descriptor(_JAVA_MARKER)]))
+        struct.pack_into("<I", dex, 0x64, len(dex) + 100)  # class_defs_off
+        with pytest.raises(ValueError, match="runs past the end"):
+            dex_defined_classes(bytes(dex))
+
+    def test_no_class_to_look_for_is_a_problem(self, tmp_path):
+        apk = _apk(tmp_path, {"classes.dex": _dex([])})
+        assert android_dex_problems(apk, classes=[]) == [
+            "no class given; the check needs to know what to look for"
+        ]
+
+
 class TestJarsignerReport:
     def test_a_verified_bundle_passes(self):
         output = "jar verified.\n\nWarning: \nThis jar contains entries whose signer certificate is self-signed.\n"
@@ -535,7 +658,8 @@ def _merged(
             "    </application>", _LIBRARY_COMPONENTS + "    </application>", 1
         )
     # AGP injects these four out of app/build.gradle's defaultConfig; the
-    # generated manifest carries none of them.
+    # generated manifest carries none of them. The merger also consumes the
+    # tools namespace: no tools: attribute, and no xmlns:tools, survives it.
     injected = (
         f'<manifest xmlns:android="{ANDROID_NS}"'
         f' package="{android.package}"'
@@ -544,7 +668,9 @@ def _merged(
         f'    <uses-sdk android:minSdkVersion="{android.min_sdk}"'
         f' android:targetSdkVersion="{android.target_sdk}" />'
     )
-    return generated.replace(f'<manifest xmlns:android="{ANDROID_NS}">', injected, 1)
+    root = f'<manifest xmlns:android="{ANDROID_NS}" xmlns:tools="{TOOLS_NS}">'
+    assert root in generated, "the simulated merge must start from the real root"
+    return generated.replace(root, injected, 1)
 
 
 def _mcheck(
@@ -796,9 +922,38 @@ class TestMergedManifestComponents:
 class TestMergedManifestMainActivity:
     def test_a_missing_launcher_activity_is_reported(self):
         android = _android()
-        bad = _merged(android).replace(MAIN_ACTIVITY, "com.other.Activity")
+        bad = _merged(android).replace(
+            "org.kivy.android.PythonActivity", "com.other.Activity"
+        )
         problems = _mcheck(bad, android)
         assert any("no <activity" in p and "no launcher" in p for p in problems)
+
+    def test_a_configured_launcher_is_the_one_checked(self):
+        android = _android(main_activity="com.example.MainActivity")
+        merged = _merged(android)
+        assert 'android:name="com.example.MainActivity"' in merged
+        assert _mcheck(merged, android) == []
+
+    def test_a_merge_that_kept_the_base_launcher_is_reported(self):
+        """The build would succeed and launch the base class, skipping the
+        subclass's onCreate; only the merged manifest shows it."""
+        merged = _merged(_android())
+        android = _android(main_activity="com.example.MainActivity")
+        problems = _mcheck(merged, android)
+        assert any("com.example.MainActivity" in p for p in problems)
+
+    def test_a_second_launcher_activity_is_reported(self):
+        android = _android()
+        second = (
+            '<activity android:name="com.vendor.Splash" android:exported="true">'
+            "<intent-filter>"
+            '<action android:name="android.intent.action.MAIN"/>'
+            '<category android:name="android.intent.category.LAUNCHER"/>'
+            "</intent-filter></activity>"
+        )
+        bad = _merged(android).replace("</application>", second + "</application>")
+        problems = _mcheck(bad, android)
+        assert any("com.vendor.Splash" in p and "LAUNCHER" in p for p in problems)
 
     def test_an_orientation_the_merge_changed_is_reported(self):
         android = _android()
@@ -934,16 +1089,18 @@ class TestMergedManifestPassthrough:
         A bare (un-prefixed) key lands in the generated manifest verbatim and
         in no namespace, so Android ignores it and this check must too —
         looking for it under the ``android:`` namespace would report a fault
-        on every build. ``tools:`` never reaches here at all: the generator
-        emits no ``xmlns:tools``, so a ``tools:``-prefixed passthrough key
-        fails well-formedness at generation time, which is the right place.
+        on every build. ``tools:`` never reaches here at all: the attribute
+        tables refuse a ``tools:``-prefixed key at generation time (the
+        generated root does declare ``xmlns:tools``, for the raw-XML
+        fragments), and the merger strips every ``tools:`` attribute a
+        fragment carries before the merged manifest exists.
         """
         android = _android(
             manifest=AndroidManifestConfig(application={"largeHeap": True})
         )
         assert _mcheck(_merged(android), android) == []
 
-        with pytest.raises(ManifestError, match="not well-formed"):
+        with pytest.raises(ManifestError, match="'tools' namespace"):
             generate_manifest(
                 _android(
                     manifest=AndroidManifestConfig(
@@ -1516,9 +1673,11 @@ class TestMacosRequiredEntries:
 #
 # The fixture is deliberately flat (no ``Contents/``) — see
 # ``artifact_checks.py``'s iOS module note and ios-t3-checks-findings.md's
-# Step 0 dump, which is what this shape is read off. No stripped/pyc-magic
-# variant exists here, for the same reason ``ios_app_problems`` takes no
-# ``stripped`` parameter: there is nothing honest to write a test against yet.
+# Step 0 dump, which is what this shape is read off. The stripped variant
+# mirrors the first real stripped ``.ipa`` (hello-kivy on CPython 3.15.0,
+# 2026-10-25): ``.pyc`` beside where the source was in ``app/`` and
+# ``pip-deps/``, and a stdlib that keeps its source *and* python.org's own
+# ``__pycache__``.
 
 
 def _ios_app(
@@ -1530,16 +1689,26 @@ def _ios_app(
     bundle_id: str = "org.example.test",
     version: str = "1.0",
     build: str = "1",
+    stripped: bool = True,
 ) -> Path:
     app = tmp_path / name
+    stdlib = app / "python" / "lib" / "python3.15"
     (app / "Frameworks" / "Python.framework").mkdir(parents=True)
-    (app / "python" / "lib" / "python3.15").mkdir(parents=True)
+    (stdlib / "__pycache__").mkdir(parents=True)
     (app / "app").mkdir(parents=True)
-    (app / "pip-deps").mkdir(parents=True)
+    (app / "pip-deps" / "kivy").mkdir(parents=True)
 
     (app / executable).write_bytes(_macho(arch))
     (app / "Frameworks" / "Python.framework" / "Python").write_bytes(_macho(arch))
-    (app / "app" / "main.py").write_text("x = 1\n")
+    if stripped:
+        (app / "app" / "main.pyc").write_bytes(MAGIC_315 + b"body")
+        (app / "pip-deps" / "kivy" / "__init__.pyc").write_bytes(MAGIC_315 + b"body")
+    else:
+        (app / "app" / "main.py").write_text("x = 1\n")
+        (app / "pip-deps" / "kivy" / "__init__.py").write_text("x = 1\n")
+    # The stdlib ships both, stripped or not; it is where the magic is read.
+    (stdlib / "os.py").write_text("x = 1\n")
+    (stdlib / "__pycache__" / "os.cpython-315.pyc").write_bytes(MAGIC_315 + b"body")
 
     plist = {
         "CFBundleIdentifier": bundle_id,
@@ -1553,13 +1722,42 @@ def _ios_app(
     return app
 
 
-def _check_ios(app: Path, *, arch: str = "arm64", expected_plist=None):
-    return ios_app_problems(app, arch=arch, expected_plist=expected_plist)
+def _check_ios(
+    app: Path,
+    *,
+    arch: str = "arm64",
+    stripped: bool = True,
+    magic: bytes = MAGIC_315,
+    expected_plist=None,
+):
+    return ios_app_problems(
+        app,
+        arch=arch,
+        stripped=stripped,
+        expected_magic=magic,
+        expected_plist=expected_plist,
+    )
 
 
 class TestIosCleanArtifacts:
-    def test_a_well_formed_app_has_no_problems(self, tmp_path):
+    def test_a_well_formed_stripped_app_has_no_problems(self, tmp_path):
         app = _ios_app(tmp_path)
+        assert _check_ios(app) == []
+
+    def test_an_unstripped_app_wants_source(self, tmp_path):
+        app = _ios_app(tmp_path, stripped=False)
+        assert _check_ios(app, stripped=False) == []
+
+    def test_stdlib_source_and_pycache_are_not_flagged_when_stripped(self, tmp_path):
+        app = _ios_app(tmp_path)
+        assert (app / "python/lib/python3.15/os.py").is_file()
+        assert _check_ios(app) == []
+
+    def test_a_project_with_no_third_party_deps_is_not_degraded(self, tmp_path):
+        """``pip-deps/`` always exists, so empty is a fact about the project."""
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "pip-deps")
+        (app / "pip-deps").mkdir()
         assert _check_ios(app) == []
 
     def test_x86_64_is_checked_against_its_own_arch(self, tmp_path):
@@ -1597,7 +1795,6 @@ class TestIosArch:
     def test_a_fwork_stub_is_not_mistaken_for_a_binary(self, tmp_path):
         """``.fwork`` stubs are plain text (a relative path), never Mach-O."""
         app = _ios_app(tmp_path)
-        (app / "pip-deps" / "kivy").mkdir(parents=True)
         (
             app / "pip-deps" / "kivy" / "_clock.cpython-315-iphonesimulator.fwork"
         ).write_text("Frameworks/kivy._clock.framework/kivy._clock\n")
@@ -1643,6 +1840,78 @@ class TestIosPlist:
     def test_keys_not_named_in_the_expectation_are_ignored(self, tmp_path):
         app = _ios_app(tmp_path, bundle_id="org.example.test")
         assert _check_ios(app, expected_plist={}) == []
+
+
+class TestIosStripped:
+    def test_leftover_source_in_pip_deps_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "pip-deps/kivy/app.py").write_text("x = 1\n")
+        problems = _check_ios(app)
+        assert any("1 .py file(s) remain under pip-deps" in p for p in problems)
+
+    def test_an_app_payload_with_no_bytecode_is_reported_as_degraded(self, tmp_path):
+        """What every iOS package did on a 3.15 pre-release: ship source."""
+        app = _ios_app(tmp_path)
+        (app / "app/main.pyc").unlink()
+        (app / "app/main.py").write_text("x = 1\n")
+        problems = _check_ios(app)
+        assert any("degraded to shipping source" in p for p in problems)
+
+    def test_pycache_defeats_sourceless_import(self, tmp_path):
+        app = _ios_app(tmp_path)
+        cache = app / "app/__pycache__"
+        cache.mkdir()
+        (cache / "main.cpython-315.pyc").write_bytes(MAGIC_315 + b"body")
+        problems = _check_ios(app)
+        assert any("__pycache__" in p and p.startswith("app ") for p in problems)
+
+    def test_an_unstripped_app_with_no_entry_point_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path, stripped=False)
+        (app / "app/main.py").unlink()
+        problems = _check_ios(app, stripped=False)
+        assert any("app has neither .py nor .pyc" in p for p in problems)
+
+
+class TestIosPycMagic:
+    def test_bytecode_from_the_wrong_interpreter_is_reported(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "pip-deps/kivy/__init__.pyc").write_bytes(MAGIC_314 + b"body")
+        problems = _check_ios(app)
+        assert any("3627" in p and "3666" in p for p in problems)
+
+    def test_the_app_payload_is_checked_too(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "app/main.pyc").write_bytes(MAGIC_314 + b"body")
+        problems = _check_ios(app)
+        assert any("under app " in p and "3627" in p for p in problems)
+
+    def test_the_magic_check_is_skipped_when_unstripped(self, tmp_path):
+        app = _ios_app(tmp_path, stripped=False)
+        problems = _check_ios(app, stripped=False, magic=MAGIC_314)
+        assert problems == []
+
+
+class TestIosShippedMagics:
+    def test_the_magic_is_read_off_the_stdlib(self, tmp_path):
+        assert ios_shipped_magics(_ios_app(tmp_path)) == [MAGIC_315]
+
+    def test_a_payload_pyc_does_not_count(self, tmp_path):
+        """Only the runtime's own bytecode may decide what is expected."""
+        app = _ios_app(tmp_path)
+        (app / "app/main.pyc").write_bytes(MAGIC_314 + b"body")
+        assert ios_shipped_magics(app) == [MAGIC_315]
+
+    def test_a_stdlib_without_bytecode_yields_nothing(self, tmp_path):
+        app = _ios_app(tmp_path)
+        shutil.rmtree(app / "python/lib/python3.15/__pycache__")
+        assert ios_shipped_magics(app) == []
+
+    def test_a_mixed_stdlib_yields_every_magic(self, tmp_path):
+        app = _ios_app(tmp_path)
+        (app / "python/lib/python3.15/__pycache__/re.cpython-315.pyc").write_bytes(
+            MAGIC_314 + b"body"
+        )
+        assert ios_shipped_magics(app) == [MAGIC_314, MAGIC_315]
 
     def test_the_expected_plist_comes_from_the_production_builder(self):
         """``ios_expected_plist`` must not grow its own copy of the key list.

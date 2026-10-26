@@ -10,10 +10,12 @@ from __future__ import annotations
 import os
 import plistlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import click
 
+from kivyforge.artifacts import include_files
 from kivyforge.artifacts.collect import CollectError, collect_artifacts
 from kivyforge.artifacts.download import DownloadError
 from kivyforge.artifacts.verify import HashMismatch
@@ -32,17 +34,18 @@ from kivyforge.cli._common import (
     ToolchainError,
     lockfile_path,
 )
-from kivyforge.config import ConfigError, load_config, read_pyproject_text
+from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import IconSourceError
-from kivyforge.config.model import VALID_SIMULATOR_ARCHS, ResolvedVersion
+from kivyforge.config.model import VALID_SIMULATOR_ARCHS, Config, ResolvedVersion
 from kivyforge.config.version import with_version
 from kivyforge.lock import LockError, is_in_sync
-from kivyforge.platforms.base import HostCapabilityError
-from kivyforge.report import failures
+from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
 from .entitlements import preflight_profile
-from .lock import load
+from .includes import verify_app, verify_ipa
+from .legacy_module import find_legacy_ios_imports
+from .lock import KivyUnsupported, check_kivy_supported, load
 from .materialize import materialize_project
 from .staging import StagingError, create_staging
 from .xcode import (
@@ -65,6 +68,7 @@ from .xcode import (
     resolve_simulator_destination,
     run_command,
     run_foreground,
+    show_simulator,
     simctl_install,
     simctl_launch,
     simctl_list,
@@ -89,7 +93,6 @@ def ios_build(
 ) -> BuildOutcome:
     """Download artifacts, generate the Xcode project, and optionally build it."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     # Signing pre-flight runs before any artifact work so --device/--release
     # fail fast on a missing team_id (spec 05 step 7).
     config = with_version(_load_config(project_root / "pyproject.toml"), version)
@@ -185,14 +188,29 @@ def prepare_build(
     Prints ``Generated`` but records nothing: whether the project is a product
     depends on the verb, so the caller decides.
     """
-    pyproject = project_root / "pyproject.toml"
     lock = _load_lock(project_root)
-    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
+    if not no_verify_lock and not is_in_sync(lock, config, "ios"):
         raise ToolchainError(
             f"{LOCKFILE_NAME} is out of date with pyproject.toml.\n"
             "  Run `kivyforge lock` to regenerate it (or pass --no-verify-lock "
             "to build against the stale lock anyway).",
             **failures.LOCK_DRIFT,
+        )
+    # The same check `lock` ran before writing, for a lock written by hand or
+    # by an older kivyforge: a 2.x pin would otherwise fail in wheel selection.
+    try:
+        check_kivy_supported(lock.packages, lockfile=LOCKFILE_NAME)
+    except KivyUnsupported as exc:
+        raise ToolchainError.wrap(exc) from exc
+
+    # A warning, not a refusal: the import may be guarded and the app run fine.
+    legacy = find_legacy_ios_imports(project_root / config.kivy.app_dir, project_root)
+    if legacy is not None:
+        events.on_progress(f"[build] warning: {legacy.message}.\n  {legacy.hint}")
+        events.note(
+            diagnostics.IOS_LEGACY_IOS_MODULE,
+            f"{legacy.message}. {legacy.hint}",
+            legacy.context,
         )
 
     build_slices = _resolve_slices(target, arch, config.ios.deployment_target)
@@ -231,6 +249,7 @@ def prepare_build(
             swift_packages=lock.swift_packages,
             xcframeworks=lock.xcframeworks,
             team_id=team_id,
+            include_pins=None if no_verify_lock else lock.include_files,
         )
     except (CollectError, WheelSelectionError) as exc:
         raise ToolchainError.wrap(exc) from exc
@@ -304,6 +323,7 @@ def _xcodebuild_step7(
             )
         )
         app = _require_product(product_app_path(derived_data, xb.scheme, target), xb)
+        _verify_includes(verify_app, config, xb, app)
         rel = app.relative_to(xb.project_root)
         events.on_line(f"Built {rel}")
         outcome.add(rel, ArtifactKind.APP)
@@ -336,6 +356,9 @@ def _xcodebuild_step7(
             allow_provisioning_updates=auto_signing,
         )
     )
+    if config.ios.include_files:
+        archived = xb.archive_path / "Products" / "Applications" / f"{xb.scheme}.app"
+        _verify_includes(verify_app, config, xb, _require_product(archived, xb))
 
     options = export_options_plist(
         method=export_method,
@@ -357,8 +380,26 @@ def _xcodebuild_step7(
         export_command(xb, options_path, allow_provisioning_updates=auto_signing)
     )
     ipa = _require_product(xb.ipa_path, xb)
+    _verify_includes(verify_ipa, config, xb, ipa)
     events.on_line(f"Exported {ipa.relative_to(xb.project_root)}")
     return ipa
+
+
+def _verify_includes(
+    check: Callable[[Config, Path, Path], None],
+    config: Config,
+    xb: XcodeBuild,
+    product: Path,
+) -> None:
+    """The product holds every include as staged, or the run fails (exit 5)."""
+    try:
+        check(config, xb.project_root, product)
+    except include_files.IncludeFilesError as exc:
+        raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        raise ToolchainError(
+            failures.os_failure(f"read {product.name} to check include_files", exc)
+        ) from exc
 
 
 def _require_product(path: Path, xb: XcodeBuild) -> Path:
@@ -454,21 +495,6 @@ def _encode_last_upgrade_check(version: str) -> str | None:
     return str(major * 100 + minor * 10 + patch)
 
 
-def _require_macos_host() -> None:
-    """Gate the Xcode-bound verbs (mirrors the macOS/Linux/Windows backends).
-
-    ``IosPlatform.check_host_capability`` has always described this rule; until
-    now nothing called it, so an off-macOS invocation failed later with
-    whatever error xcodebuild or SPM happened to raise first.
-    """
-    from kivyforge.platforms import get_platform
-
-    try:
-        get_platform("ios").check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
-
-
 def _load_config(pyproject: Path):
     try:
         return load_config(pyproject)
@@ -501,7 +527,6 @@ def ios_run(
     no_build: bool,
 ) -> None:
     """Build (unless --no-build), install, and launch the app."""
-    _require_macos_host()
     try:
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:
@@ -557,6 +582,8 @@ def ios_run(
                 "  Run without --no-build, or open the project in Xcode and build "
                 "once to populate DerivedData."
             )
+        if not no_build:
+            _verify_includes(verify_app, config, xb, app)
 
         bundle_id = config.ios_required.bundle_id
         if target == "simulator":
@@ -583,6 +610,13 @@ def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     label = f"{device.name} ({device.udid})"
     # Progress, so stderr: stdout belongs to the app console launched below,
     # which is `run`'s product (AGENTS.md).
+    if not show_simulator(device.udid):
+        click.echo(
+            f"Warning: could not open a window for simulator {label}; the app "
+            "will run, but nothing shows it. Open Device Hub (Xcode 27) or "
+            "Simulator (earlier Xcode) and select the device.",
+            err=True,
+        )
     click.echo(f"Installing on simulator {label} ...", err=True)
     run_command(simctl_install(device.udid, app))
     click.echo(f"Launching {bundle_id} ...", err=True)
@@ -617,7 +651,6 @@ def ios_package(
     are intermediates of ``package``, however visible the former's line is.
     """
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     config = with_version(_load_config(project_root / "pyproject.toml"), version)
     try:
         # Resolve before prepare_build so the generated .xcodeproj carries the
@@ -686,7 +719,6 @@ def _dist_output(project_root: Path, config, export_method: str) -> Path:
 
 def ios_open(project_root: Path, *, events: BuildEvents = ECHO_EVENTS) -> Path:
     """Open ``<app>-ios/<app>.xcodeproj`` in Xcode; return the project opened."""
-    _require_macos_host()
     try:
         config = load_config(project_root / "pyproject.toml")
     except ConfigError as exc:
@@ -731,7 +763,7 @@ def ios_status(project_root: Path) -> StatusReport:
         app_name=config.display_name,
         app_id=ios.bundle_id,
         python_version=ios.python_version or "(unset)",
-        lock=_lock_status(project_root, pyproject),
+        lock=_lock_status(project_root, config),
         artifacts=tuple(
             BuildArtifact.probe(
                 product_app_path(build_dir, config.app_slug, target), label
@@ -741,7 +773,7 @@ def ios_status(project_root: Path) -> StatusReport:
     )
 
 
-def _lock_status(project_root: Path, pyproject: Path) -> LockStatus:
+def _lock_status(project_root: Path, config: Config) -> LockStatus:
     # No -p: iOS is the default target, and the shorter command is the one the
     # iOS docs have always shown.
     relock = "kivyforge lock"
@@ -752,5 +784,5 @@ def _lock_status(project_root: Path, pyproject: Path) -> LockStatus:
         lock = load(lockfile)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    in_sync = is_in_sync(lock, read_pyproject_text(pyproject))
+    in_sync = include_files.lock_current(lock, config, "ios", project_root)
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)

@@ -50,8 +50,24 @@ _EXIT_REACTION = {
 _DIAGNOSTIC = {
     "KF-LOCK-DRIFT": (
         "error",
-        "The committed lock no longer matches `pyproject.toml`.",
-        "Run `kivyforge lock -p <platform>`.",
+        "A lock input in `pyproject.toml` (a dependency, the Python version, an "
+        "index, a native library) changed since the lock was written.",
+        "Run `kivyforge lock -p <platform>`; it keeps the versions already locked.",
+    ),
+    "KF-LOCK-PINS-CONFLICT": (
+        "error",
+        "`lock` could not resolve the changed lock inputs while keeping the "
+        "versions already in the lock, though it can without them.",
+        "Run `kivyforge lock -p <platform> --update` to take the newest version "
+        "of everything, or pin the package that has to move.",
+    ),
+    "KF-LOCK-SOURCE-UNAVAILABLE": (
+        "error",
+        "A package that comes from one source only (a pin in `sources`, or a "
+        "wheel in `find_links`) has no wheel there for one of the targets being "
+        "locked. kivyforge does not fall back to another source.",
+        "Pin the package to an index that has the wheel, or add the missing "
+        "wheel to the `find_links` directory.",
     ),
     "KF-LOCK-MISSING": (
         "error",
@@ -113,6 +129,57 @@ _DIAGNOSTIC = {
         "A build tool reported success but the product is not where it should be.",
         "Read the build log; this usually points at a broken toolchain step.",
     ),
+    "KF-ARTIFACT-CONTENT": (
+        "error",
+        "The product was built, but a file from include_files is missing from "
+        "it or differs from the copy that was staged.",
+        "Read the build log for the step that converted or dropped the file, and "
+        "report it; kivyforge copies includes byte for byte.",
+    ),
+    "KF-INCLUDE-RESERVED": (
+        "error",
+        "An include_files entry would replace a file the generated build writes, "
+        "or (iOS) uses a code-bundle name such as X.framework.",
+        "Pick another dest, or set the value through the key the message names.",
+    ),
+    "KF-INCLUDE-NATIVE-CODE": (
+        "error",
+        "An include_files file is native code (a Mach-O or a static archive), "
+        "which would ship unsigned.",
+        "List it under the platform's native-code key, which signs it.",
+    ),
+    "KF-MACOS-NATIVE-NOT-CODE": (
+        "error or warning",
+        "macOS: a `native.binaries` file is not a Mach-O. The channel places "
+        "native code only. An error for a single-file source; archive members "
+        "are skipped with a warning.",
+        "Put data under `include_files` and scripts under `app_dir`.",
+    ),
+    "KF-MACOS-NATIVE-UNSUPPORTED": (
+        "error",
+        "macOS: a `native.binaries` file is code the channel cannot place: a "
+        "Mach-O other than an executable or a dynamic library (a plug-in, an "
+        "object file), a universal file whose slices disagree, or a file "
+        "inside a bundle (`.framework`, `.app`) in an archive.",
+        "Ship the executable or `.dylib` itself; plug-ins and bundles are not "
+        "supported.",
+    ),
+    "KF-MACOS-NATIVE-LOAD-PATH": (
+        "error or warning",
+        "macOS: a native binary links a declared library by a path that does "
+        "not reach it in `Contents/Frameworks/`, in a process that loads it. A "
+        "warning when the link is weak, or when Python loads it by its install "
+        "name and the app can load the library first.",
+        "Relink with `install_name_tool`: link the library as `@rpath/<name>`, "
+        "and add an rpath of `@executable_path/../Frameworks` to a helper or "
+        "`@loader_path` to a library. The message gives the commands.",
+    ),
+    "KF-INCLUDE-SOURCE-FORMAT": (
+        "error",
+        "An include_files path is a format Xcode compiles (.xcstrings, "
+        ".storyboard, .xib, .xcassets), which would ship verbatim and do nothing.",
+        "Include the compiled form, or use the key the message names.",
+    ),
     "KF-TOOLCHAIN-MISSING": (
         "error",
         "A required tool is not installed.",
@@ -137,6 +204,24 @@ _DIAGNOSTIC = {
         "error",
         "This host cannot build this target at all (for example iOS from Windows).",
         "Build on a supported host; see the host matrix.",
+    ),
+    "KF-IOS-KIVY-UNSUPPORTED": (
+        "error",
+        "iOS: the project would run Kivy 2.x, which kivyforge does not build "
+        "there; iOS builds are Kivy 3 only. `lock` refuses a `kivy` requirement "
+        "that admits no 3.x release, and a resolved 2.x; `build` refuses a lock "
+        "that pins one.",
+        "Require Kivy 3 (for example `kivy>=3.0,<4`) and re-lock; kivy-ios "
+        "serves Kivy 2.x. `context` names the `requirement` or the `version`.",
+    ),
+    "KF-IOS-LEGACY-IOS-MODULE": (
+        "warning",
+        "iOS: a `.py` file under `app_dir` imports the kivy-ios `ios` module, "
+        "which kivyforge does not provide. The import may be guarded, so the "
+        "build goes on. Quiet when `app_dir` has its own `ios.py` or `ios/`.",
+        "Replace it with `kivy.mobile` and the standard library; the migration "
+        "guide maps each name. `context` names the first `file`, its `line` and "
+        "the number of `files`.",
     ),
     "KF-ANDROID-DEPENDENCY-CONFLICT": (
         "error",
@@ -252,7 +337,12 @@ def _host_matrix_md() -> str:
     sep = "|" + "---|" * (len(labels) + 1)
     rows = [header, sep]
     for platform in caps.platforms:
-        cells = ["Yes" if platform.hosts.get(h) else "No" for h in HOSTS]
+        only = (
+            f" ({' or '.join(platform.host_machines)} only)"
+            if platform.host_machines
+            else ""
+        )
+        cells = [f"Yes{only}" if platform.hosts.get(h) else "No" for h in HOSTS]
         rows.append(f"| `{platform.name}` | " + " | ".join(cells) + " |")
     return "\n".join(rows)
 

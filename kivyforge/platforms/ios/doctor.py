@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlparse
 
+from kivyforge.artifacts import include_files
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
 from kivyforge.config.model import DEFAULT_DEPLOYMENT_TARGET, Config
@@ -24,6 +25,7 @@ from kivyforge.doctor.probe import CertificateSubject, Probe, RealProbe
 from kivyforge.doctor.result import CheckResult, Status
 from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
+from kivyforge.report import diagnostics
 
 from .entitlements import (
     ProfileError,
@@ -34,6 +36,7 @@ from .entitlements import (
     read_profile,
     resolve_profile_path,
 )
+from .legacy_module import find_legacy_ios_imports
 from .lock import load
 from .lock.model import Lockfile
 from .xcode.commands import TEAM_ID_ENV, resolve_team_id
@@ -595,6 +598,23 @@ def check_app_native_binaries(
     return CheckResult("App-local native binaries", Status.PASS, "none non-iOS")
 
 
+def check_legacy_ios_module(config: Config, project_root: Path) -> CheckResult:
+    name = "kivy-ios ios module"
+    app_dir = project_root / config.kivy.app_dir
+    if not app_dir.is_dir():
+        return CheckResult(name, Status.SKIP, f"{config.kivy.app_dir} missing")
+    found = find_legacy_ios_imports(app_dir, project_root)
+    if found is None:
+        return CheckResult(name, Status.PASS, "not imported")
+    return CheckResult(
+        name,
+        Status.WARN,
+        found.message,
+        hint=found.hint,
+        code=diagnostics.IOS_LEGACY_IOS_MODULE,
+    )
+
+
 def check_app_privacy_manifest(config: Config, project_root: Path) -> CheckResult:
     manifest = project_root / f"{config.app_slug}-ios" / "PrivacyInfo.xcprivacy"
     if not manifest.exists():
@@ -697,8 +717,10 @@ def run_ios_checks(
             "find_links directories",
             "Required hosts reachable",
             "App-local native binaries",
+            "kivy-ios ios module",
             "App-level privacy manifest",
             "xcframework privacy manifests",
+            "include_files",
             C.BYTE_COMPILE_NAME,
         ):
             results.append(CheckResult(name, Status.SKIP, C.SKIP_NOTE))
@@ -726,10 +748,26 @@ def run_ios_checks(
         check_find_links(config, project_root),
         check_hosts_reachable(probe, lock),
         check_app_native_binaries(probe, config, project_root),
+        check_legacy_ios_module(config, project_root),
         check_app_privacy_manifest(config, project_root),
         check_xcframework_privacy_manifests(config, project_root),
+        check_include_files(config, project_root, lock),
     ]
     return results
+
+
+def check_include_files(
+    config: Config, project_root: Path, lock: Lockfile | None
+) -> CheckResult:
+    """Report include_files drift as a warning before the build refuses it."""
+    entries = config.ios_required.include_files
+    if entries and lock is None:
+        return CheckResult(
+            "include_files", Status.SKIP, "no pylock.ios.toml to compare against"
+        )
+    return include_files.doctor_check(
+        entries, lock.include_files if lock else (), project_root, platform="ios"
+    )
 
 
 def ios_doctor(

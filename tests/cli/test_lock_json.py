@@ -76,7 +76,7 @@ def make_ops(
             raise LockError("expected a table, found a string")
         return FakeLock()
 
-    def build(_config, _text, *, project_root=None, offline=False, **kwargs):
+    def build(_config, *, project_root=None, offline=False, **kwargs):
         for message in warnings:
             kwargs["on_warning"](message)
         return FakeLock()
@@ -108,7 +108,7 @@ def project(monkeypatch, tmp_path, runner):
         monkeypatch.setattr(lock_mod, "_lock_ops", lambda _platform: ops)
         # The non-check path consults the real drift check; the fake lock is
         # not something it can hash, so its verdict is chosen here too.
-        monkeypatch.setattr(lock_mod, "is_in_sync", lambda _lock, _text: True)
+        monkeypatch.setattr(lock_mod, "is_in_sync", lambda *_: True)
 
     with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
         (Path(fs) / "pyproject.toml").write_text(LINUX_PYPROJECT)
@@ -246,7 +246,7 @@ class TestProgress:
     """Locking downloads wheels; silent, a slow connection looked hung (#84)."""
 
     def _ops(self):
-        def build(_config, _text, *, project_root=None, offline=False, **kwargs):
+        def build(_config, *, project_root=None, offline=False, **kwargs):
             kwargs["on_progress"]("[lock] arm64_v8a: resolving wheels")
             for done in (0, 4_000_000, 8_889_878):
                 kwargs["on_transfer"](
@@ -276,7 +276,7 @@ class TestProgress:
         """Only Android's builder takes them; the others' signatures stay put."""
         seen = {}
 
-        def build(_config, _text, *, project_root=None, offline=False, **kwargs):
+        def build(_config, *, project_root=None, offline=False, **kwargs):
             seen.update(kwargs)
             return FakeLock()
 

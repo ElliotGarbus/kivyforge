@@ -10,9 +10,10 @@ is only the wiring that points them at a real bundle.
 Skips without ``--ios-app`` so a local `pytest` run stays green.
 
 ``--ios-project`` additionally turns on the Info.plist-vs-config comparison;
-see ``test_the_app_is_internally_consistent``. There is no ``--ios-stripped``
-option and no ``.pyc``-magic assertion here — see ``tests/artifact_checks.py``'s
-iOS module note on why that check cannot be written honestly yet.
+see ``test_the_app_is_internally_consistent``. ``--ios-stripped`` asserts the
+payload is bytecode-only and carries the shipped runtime's ``.pyc`` magic. It
+is for a ``package`` build, whose ``.app`` is ``Payload/<name>.app`` inside the
+``.ipa``; ``build`` never strips.
 """
 
 from __future__ import annotations
@@ -24,7 +25,11 @@ import pytest
 
 from kivyforge.config.loader import load_config
 from kivyforge.platforms.macos.machotools import codesign_verify
-from tests.artifact_checks import ios_app_problems, ios_expected_plist
+from tests.artifact_checks import (
+    ios_app_problems,
+    ios_expected_plist,
+    ios_shipped_magics,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -40,8 +45,26 @@ def app(pytestconfig) -> Path:
     return path
 
 
+def _expected_magic(app: Path) -> bytes:
+    """The ``.pyc`` header the bundle's *own* runtime will accept.
+
+    Read off the stdlib bytecode python.org ships inside the xcframework,
+    because there is no interpreter in the bundle to ask (see
+    ``tests/artifact_checks.py``'s iOS module note).
+    """
+    magics = ios_shipped_magics(app)
+    if len(magics) != 1:
+        pytest.fail(
+            f"expected exactly one .pyc magic in {app.name}'s python/lib, found "
+            f"{[m.hex() for m in magics]}; cannot tell which magic to require"
+        )
+    return magics[0]
+
+
 def test_the_app_is_internally_consistent(app, pytestconfig):
     arch = pytestconfig.getoption("--ios-arch")
+    stripped = pytestconfig.getoption("--ios-stripped")
+    expected_magic = _expected_magic(app) if stripped else b""
 
     # The Info.plist-vs-config half of test-matrix.md §5.1. Without
     # --ios-project only the plist's internal shape is checked.
@@ -53,9 +76,16 @@ def test_the_app_is_internally_consistent(app, pytestconfig):
         )
         expected_plist = ios_expected_plist(config)
 
-    problems = ios_app_problems(app, arch=arch, expected_plist=expected_plist)
+    problems = ios_app_problems(
+        app,
+        arch=arch,
+        stripped=stripped,
+        expected_magic=expected_magic,
+        expected_plist=expected_plist,
+    )
     assert not problems, (
-        f"{app.name} is not the artifact the build promised (arch={arch}):\n  "
+        f"{app.name} is not the artifact the build promised "
+        f"(arch={arch}, strip_source={'on' if stripped else 'off'}):\n  "
         + "\n  ".join(problems)
     )
 

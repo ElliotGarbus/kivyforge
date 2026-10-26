@@ -60,8 +60,8 @@ class PlatformLockProfile(ABC):
         return self.wheel_covers(wheel.platform_tag, archs), None
 
     @abstractmethod
-    def runtime_provider(self, config: Config) -> RuntimeProvider:
-        """The default runtime provider for this platform."""
+    def runtime_provider(self, config: Config, **progress) -> RuntimeProvider:
+        """The default runtime provider; ``progress`` is its ``on_progress``."""
 
     @abstractmethod
     def coverage_error(self, name: str, missing: list[str]) -> str:
@@ -73,8 +73,9 @@ class PlatformLockProfile(ABC):
 
     # --- fields with cross-platform defaults (overlay-name agnostic accessors) ---
 
-    def wheel_resolver(self) -> WheelResolver:
-        return get_wheel_resolver("pip")
+    def wheel_resolver(self, **progress) -> WheelResolver:
+        """The default resolver; ``progress`` is its ``on_progress``/``on_transfer``."""
+        return get_wheel_resolver("pip", **progress)
 
     def extra_index_urls(self, config: Config) -> tuple[str, ...]:
         return tuple(getattr(self.overlay(config), "extra_index_urls", ()) or ())

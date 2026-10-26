@@ -13,6 +13,7 @@ from pathlib import Path
 
 import click
 
+from kivyforge.artifacts import include_files
 from kivyforge.build_outcome import (
     ArtifactKind,
     BuildEvents,
@@ -25,16 +26,17 @@ from kivyforge.cli._common import (
     ToolchainError,
     lockfile_path_for,
 )
-from kivyforge.config import ConfigError, load_config, read_pyproject_text
-from kivyforge.config.model import ResolvedVersion
+from kivyforge.config import ConfigError, load_config
+from kivyforge.config.model import Config, ResolvedVersion
 from kivyforge.config.version import with_version
-from kivyforge.lock.reader import LockError, is_in_sync
+from kivyforge.lock.inputs import is_in_sync
+from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics, failures
 from kivyforge.status import BuildArtifact, LockState, LockStatus, StatusReport
 
-from .. import HostCapabilityError, get_platform
 from . import AppBundleError
 from .bundle import build_app_bundle
+from .includes import verify_bundle
 from .lock import MacosLockfile
 from .lock import load as load_macos_lock
 from .notarize import notarize_and_staple
@@ -54,12 +56,9 @@ def macos_build(
 ) -> BuildOutcome:
     """Assemble (and ad-hoc sign) the macOS ``.app``."""
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     config = _load_config(project_root, version)
     lock = _load_lock(project_root)
-
-    pyproject = project_root / "pyproject.toml"
-    if not no_verify_lock and not is_in_sync(lock, read_pyproject_text(pyproject)):
+    if not no_verify_lock and not is_in_sync(lock, config, "macos"):
         raise ToolchainError(
             f"{lockfile_path_for('macos').name} is out of date with "
             "pyproject.toml.\n"
@@ -77,6 +76,7 @@ def macos_build(
             sign=sign,
             no_cache=no_cache,
             release=release,
+            verify_lock=not no_verify_lock,
             echo=events.on_progress,
             note=events.note,
         )
@@ -114,7 +114,6 @@ def macos_run(
             "the existing build."
         )
     if no_build:
-        _require_macos_host()
         config = _load_config(project_root)
         app = project_root / "build" / "macos" / f"{config.display_name}.app"
         if not app.exists():
@@ -169,7 +168,6 @@ def macos_package(
     not even signed yet.
     """
     outcome = OutcomeBuilder(events.on_artifact)
-    _require_macos_host()
     config = _load_config(project_root, version)
     signing = config.macos_required.signing
     identity = signing_identity or signing.identity
@@ -241,10 +239,18 @@ def macos_package(
             extra_entitlements=config.macos_required.entitlements,
         )
         events.on_progress(f"  signed {count} Mach-O binaries + the bundle")
+        # Before the notary submission, so a bundle without its includes is
+        # never sent to Apple; and again on the stapled bundle being reported.
+        verify_bundle(config, project_root, app, artifact=rel.as_posix())
         if do_notarize:
             notarize_and_staple(app, profile=profile, echo=events.on_progress)
+            verify_bundle(config, project_root, app, artifact=rel.as_posix())
     except AppBundleError as exc:
         raise ToolchainError.wrap(exc) from exc
+    except OSError as exc:
+        raise ToolchainError(
+            failures.os_failure(f"read {app.name} to check include_files", exc)
+        ) from exc
 
     trust = "notarized + stapled" if do_notarize else "signed (not notarized)"
     events.on_line(f"Packaged {rel} (Developer ID {trust}).")
@@ -267,12 +273,12 @@ def macos_status(project_root: Path) -> StatusReport:
         app_name=config.display_name,
         app_id=macos.bundle_id,
         python_version=macos.python_version or "(unset)",
-        lock=_lock_status(project_root),
+        lock=_lock_status(project_root, config),
         artifacts=(BuildArtifact.probe(app),),
     )
 
 
-def _lock_status(project_root: Path) -> LockStatus:
+def _lock_status(project_root: Path, config: Config) -> LockStatus:
     relock = "kivyforge lock -p macos"
     path = lockfile_path_for("macos", project_root)
     if not path.is_file():
@@ -281,8 +287,7 @@ def _lock_status(project_root: Path) -> LockStatus:
         lock = load_macos_lock(path)
     except LockError:
         return LockStatus(LockState.UNREADABLE, relock)
-    pyproject = project_root / "pyproject.toml"
-    in_sync = is_in_sync(lock, read_pyproject_text(pyproject))
+    in_sync = include_files.lock_current(lock, config, "macos", project_root)
     return LockStatus(LockState.IN_SYNC if in_sync else LockState.OUT_OF_DATE, relock)
 
 
@@ -294,13 +299,6 @@ def _executable_name(app: Path) -> str:
     if not entries:
         raise ToolchainError(f"{app.name} has no launcher in Contents/MacOS.")
     return entries[0].name
-
-
-def _require_macos_host() -> None:
-    try:
-        get_platform("macos").check_host_capability()
-    except HostCapabilityError as exc:
-        raise ToolchainError(str(exc), **failures.HOST_INCAPABLE) from exc
 
 
 def _load_config(project_root: Path, version: ResolvedVersion | None = None):

@@ -1,17 +1,17 @@
 """In-memory model of ``pylock.ios.toml`` (spec 02).
 
 PEP 751-shaped ``[[packages]]`` plus the iOS ``[tool.kivyforge]`` extension
-(``python_xcframework``, xcframeworks, swift_packages). These dataclasses are
-produced by the builder/resolver and serialized by ``writer``. The shared
-``[[packages]]`` model (``LockedPackage``/``LockedWheel``) lives in
-``kivyforge.lock.model``.
+(``python_xcframework``, xcframeworks, swift_packages, include_files). These
+dataclasses are produced by the builder/resolver and serialized by ``writer``.
+The shared ``[[packages]]`` model (``LockedPackage``/``LockedWheel``) and the
+``include_files`` pin live in ``kivyforge.lock.model``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from kivyforge.lock.model import LOCK_VERSION, LockedPackage
+from kivyforge.lock.model import LOCK_VERSION, LockedIncludeFile, LockedPackage
 
 CREATED_BY = "kivyforge"
 TOOL_SCHEMA_VERSION = 1
@@ -83,10 +83,11 @@ class Lockfile:
     python_xcframework: PythonXcframework
     kivyforge_version: str
     generated_at: str
-    pyproject_sha256: str
+    lock_inputs_sha256: str
     tool_kivyforge_schema_version: int
     xcframeworks: tuple[LockedXcframework, ...] = ()
     swift_packages: tuple[LockedSwiftPackage, ...] = ()
+    include_files: tuple[LockedIncludeFile, ...] = ()
     schema_version: int = TOOL_SCHEMA_VERSION
     lock_version: str = LOCK_VERSION
     created_by: str = CREATED_BY

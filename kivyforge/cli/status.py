@@ -31,13 +31,18 @@ _LOCK_CODES = {
 @click.command()
 @platform_option
 @output_options
-def status(cli_platform: str | None, json_out: bool, no_color: bool) -> None:
+def status(
+    cli_platform: str | None, json_out: bool, no_color: bool, verbosity: int
+) -> None:
     """Show app identity, Python version, lock sync, and build state."""
-    with reporting("status", json_out=json_out, no_color=no_color) as report:
+    with reporting(
+        "status", json_out=json_out, no_color=no_color, verbosity=verbosity
+    ) as report:
         # Inside the block: resolving the target reads pyproject.toml, so it is
         # one of the things that can fail, and that failure needs an envelope.
-        backend, project_root = resolve_target(cli_platform, verb="status")
-        report.platform = backend.name
+        backend, project_root = resolve_target(
+            cli_platform, verb="status", report=report
+        )
 
         snapshot = backend.status(project_root)
 

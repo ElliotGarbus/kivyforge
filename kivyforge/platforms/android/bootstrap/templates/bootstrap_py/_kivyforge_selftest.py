@@ -20,6 +20,11 @@ import traceback
 #: ``None`` when kivyforge generated none (entry points in ``dynamic``).
 EXPECTED_APP_METADATA = None
 
+#: The launcher class the manifest names: ``[tool.kivy.android].main_activity``
+#: or the generated ``org.kivy.android.PythonActivity``. Rendered in at build
+#: time; ``None`` skips the check.
+EXPECTED_LAUNCHER = None
+
 
 def _result_path() -> str:
     private = os.environ.get("ANDROID_PRIVATE", ".")
@@ -146,6 +151,23 @@ def run() -> bool:
     except Exception:
         ok = False
         lines.append("APP_METADATA_FAIL")
+        lines.append(traceback.format_exc())
+
+    # 6. The running activity is the configured launcher. android.mActivity is
+    #    the base class's static, which holds the subclass instance when the
+    #    app supplies one.
+    try:
+        if EXPECTED_LAUNCHER is not None:
+            import android
+
+            running = android.mActivity.getClass().getName()
+            assert running == EXPECTED_LAUNCHER, (
+                f"running activity is {running}, expected {EXPECTED_LAUNCHER}"
+            )
+        lines.append("LAUNCHER_OK")
+    except Exception:
+        ok = False
+        lines.append("LAUNCHER_FAIL")
         lines.append(traceback.format_exc())
 
     if ok:
