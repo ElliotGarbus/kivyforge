@@ -1,0 +1,51 @@
+[project]
+name = "swift-bridge"
+version = "0.1.0"
+requires-python = ">=3.15"
+dependencies = [
+    "kivy>=3.0.0.dev0,<4",
+    # pyobjus calls the Swift shim. iOS wheels resolve from the
+    # kivy-mobile-wheels index (see [tool.kivy.ios].extra_index_urls below).
+    "pyobjus>=1.2.5.dev0",
+]
+
+[tool.kivy]
+display_name = "Swift Bridge"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.ios]
+schema_version = 1
+bundle_id = "org.kivy.swift-bridge"
+build = 1
+deployment_target = "16.0"
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+# Kivy's wheel declares deps that are not needed at runtime on iOS.
+# Remove an entry only if your app actually uses that feature.
+exclude = [
+    "kivy-garden",
+    "requests",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
+    "docutils",
+    "pygments",
+]
+
+[tool.kivy.ios.python]
+version = "3.15.0"
+
+# The shim: a local package whose @objc classes pyobjus looks up by name.
+# A local package is linked and embedded by default, so it loads at launch.
+# keychain-spm shows how to add a remote package behind a shim like this one.
+[tool.kivy.ios.native.swift_packages]
+SwiftBridge = { path = "swift-shims", products = ["SwiftBridge"] }
+
+[tool.kivy.ios.signing]
+team_id = ""
+identity = "Apple Development"
+provisioning_profile = ""
+auto_signing = true
+upload_symbols = true

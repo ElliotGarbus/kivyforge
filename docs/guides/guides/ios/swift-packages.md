@@ -73,6 +73,9 @@ KeychainBridge = { path = "swift-shims", products = ["KeychainBridge"] }
 
 A `path` must be relative to the project and must not point outside it.
 
+[Call Swift from Python](swift.md) shows how to write the shim's Swift side
+and call it: objects, collections, `async` work and delegates.
+
 ## Verify
 
 Lock and build for the Simulator. The build fails if a package does not resolve:
@@ -84,6 +87,7 @@ kivyforge build -p ios --simulator
 
 ## What's next
 
+- [Call Swift from Python](swift.md) to write the shim and call it.
 - [Call iOS APIs with pyobjus](pyobjus.md) to reach your shim's `@objc` class.
 - [Open the iOS project in Xcode](xcode.md) to inspect the resolved packages.
 - [`[tool.kivy.ios]` reference](../../reference/pyproject/ios.md).

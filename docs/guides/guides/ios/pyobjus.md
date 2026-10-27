@@ -86,6 +86,10 @@ value = KeychainBridge.stringForKey_("token")
 The shim framework is linked and embedded, so it loads at launch, and its load
 commands bring in the Swift package it wraps.
 
+[Call Swift from Python](swift.md) goes further: instances, collections,
+methods that throw, `async` work and delegates, and the pyobjus rules for
+each.
+
 ## Know what pyobjus gets wrong on iOS
 
 - **`load_framework` does nothing.** `pyobjus.dylib_manager.load_framework`
@@ -124,6 +128,7 @@ kivyforge run -p ios --simulator
 ## What's next
 
 - [Add a Swift package to your iOS app](swift-packages.md).
+- [Call Swift from Python](swift.md).
 - [Replace the kivy-ios ios module](ios-module.md).
 - [Run your iOS app on the simulator or a device](run.md).
 - [Handle mobile screen geometry](../cross-platform/mobile-geometry.md).

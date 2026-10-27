@@ -53,6 +53,19 @@
   the host's CPython, whose `.pyc` the app's CPython could never load; a
   release build still compiles `pip-deps/` itself with a matching interpreter.
 
+### iOS: call Swift from Python
+
+- **Added:** the `swift-bridge` example and the guide
+  [Call Swift from Python](docs/guides/guides/ios/swift.md), the answer to
+  [#181](https://github.com/ElliotGarbus/kivyforge/issues/181). A local Swift
+  package of `@objc` classes, declared in
+  `[tool.kivy.ios.native.swift_packages]`, is called from Python through
+  pyobjus. The guide covers objects with state, collections in both
+  directions, methods that throw, `async` work that Python polls from Kivy's
+  `Clock`, and a Swift delegate protocol implemented in Python, with the
+  workarounds pyobjus 1.2.5 needs. kivyforge itself is unchanged, so nothing
+  needs migrating.
+
 ### iOS: run code in the app lifecycle
 
 - **Added:** the `ios-lifecycle-hook` example and the guide

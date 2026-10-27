@@ -86,6 +86,7 @@ else
         pyobjus-ball
         pyobjus-deviceinfo
         svg-explorer
+        swift-bridge
     )
 fi
 
