@@ -69,7 +69,8 @@ says so.
 ## What was verified
 
 On an iOS 27 Simulator: every row above, including cancelling the prime count
-and stopping the metronome early.
+and stopping the metronome early. On an iPhone with iOS 27: each button wrote
+its results to the log, with no crash.
 
 ## Limits
 
