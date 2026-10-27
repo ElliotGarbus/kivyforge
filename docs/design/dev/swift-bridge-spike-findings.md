@@ -6,7 +6,9 @@
 > only class methods that take and return strings and booleans. The question:
 > what else can a pyobjus caller reach through an `@objc` shim, namely
 > instance methods, collections, an `async` API and a delegate written in
-> Python, and where does it break?
+> Python, and where does it break? The guide built on it is
+> [Call Swift from Python](../../guides/guides/ios/swift.md), with the
+> `examples/mobile/swift-bridge` example.
 
 **Short answer: nearly everything a tutorial needs works, with one rule per
 gap.** Instance methods, properties, `[String]`, `[Int]` and nested
