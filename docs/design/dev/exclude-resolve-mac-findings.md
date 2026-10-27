@@ -21,7 +21,8 @@ without it.
    Excluding `pycairo` is enough to get past `materialshapes`. The answer to
    the reporter's question ("can a KivyMD app ship on iOS with `pycairo`
    excluded?") is no, and that is because of `materialyoucolor`, not `pycairo`.
-   The fix is an iOS `materialyoucolor` wheel on kivy-mobile-wheels.
+   The fix is for `materialyoucolor` to publish iOS wheels on PyPI, which
+   CPython 3.15's release makes the natural next step for its maintainers.
    Android locked `materialyoucolor` fine (§7, Windows row), so the gap is
    iOS only.
 2. **Deviation from Step 2's expectation.** `pillow` has an iOS wheel
