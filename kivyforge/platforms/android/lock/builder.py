@@ -181,7 +181,7 @@ def build_lockfile(
     # Never excludable: an app without it crashes at launch.
     excluded.discard(PYJNIUS)
 
-    policy = overlay_policy(android, find_links, platform="android")
+    policy = overlay_policy(android, find_links, platform="android", exclude=excluded)
     if on_warning is not None:
         for warning in pinned_local_warnings(policy, root):
             on_warning(warning)

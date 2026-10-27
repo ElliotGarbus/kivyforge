@@ -78,6 +78,9 @@ class SourcePolicy:
     explicit: tuple[NamedIndex, ...] = ()
     #: Canonical package name to the name of the index it is pinned to.
     pins: Mapping[str, str] = field(default_factory=dict)
+    #: Canonical names pip must not follow as a dependency: the overlay's
+    #: ``exclude``, less the direct dependencies. They come from no source at all.
+    exclude: frozenset[str] = frozenset()
     #: The platform being locked, for messages that name its config table.
     platform: str = ""
 
@@ -118,6 +121,7 @@ class SourcePolicy:
                 "rank": [[i.name, i.url] for i in self.rank],
                 "explicit": [[i.name, i.url] for i in self.explicit],
                 "pins": dict(self.pins),
+                "exclude": sorted(self.exclude),
             }
         )
 
@@ -168,11 +172,13 @@ def source_policy(
     *,
     named: Sequence[tuple[str, str, bool]] = (),
     pins: Mapping[str, str] | None = None,
+    exclude: Iterable[str] = (),
     platform: str = "",
 ) -> SourcePolicy:
     """The rules for ``find_links`` (absolute directories), the overlay's
     ``extra_index_urls``, the effective named indexes as ``(name, url,
-    explicit)``, and the effective pins (package name to index name)."""
+    explicit)``, the effective pins (package name to index name), and the
+    names pip must not follow as a dependency."""
     rank = [
         NamedIndex(f"extra-{n}", index_base(url))
         for n, url in enumerate(extra_index_urls, 1)
@@ -193,6 +199,7 @@ def source_policy(
             if explicit
         ),
         pins={canonical_name(k): v for k, v in (pins or {}).items()},
+        exclude=frozenset(canonical_name(n) for n in exclude),
         platform=platform,
     )
 
@@ -338,15 +345,24 @@ def ignore_unrecorded_indexes[L](existing: L, candidate: L) -> L:
 
 
 def overlay_policy(
-    overlay: object, find_links: Sequence[str], *, platform: str
+    overlay: object,
+    find_links: Sequence[str],
+    *,
+    platform: str,
+    exclude: Iterable[str] = (),
 ) -> SourcePolicy:
     """The rules for a platform overlay: its ``extra_index_urls``, and the
-    effective named ``indexes`` and ``sources`` the loader computed for it."""
+    effective named ``indexes`` and ``sources`` the loader computed for it.
+
+    ``exclude`` is passed in rather than read from the overlay because the
+    builder decides it: direct dependencies, and on Android pyjnius, are
+    never excluded."""
     return source_policy(
         find_links,
         tuple(getattr(overlay, "extra_index_urls", ()) or ()),
         named=[(i.name, i.url, i.explicit) for i in getattr(overlay, "indexes", ())],
         pins=dict(getattr(overlay, "sources", ())),
+        exclude=exclude,
         platform=platform,
     )
 

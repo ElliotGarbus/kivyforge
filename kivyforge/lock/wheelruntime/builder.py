@@ -140,7 +140,10 @@ def build_wheel_runtime_lock(
     requirements = list(config.project.dependencies)
     extra_index_urls = list(profile.extra_index_urls(config))
     policy = overlay_policy(
-        profile.overlay(config), find_links, platform=profile.platform
+        profile.overlay(config),
+        find_links,
+        platform=profile.platform,
+        exclude=excluded,
     )
     if on_warning is not None:
         for warning in pinned_local_warnings(policy, root):
