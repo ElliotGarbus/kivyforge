@@ -39,8 +39,13 @@ report it first.
 ```bash
 sw_vers; xcodebuild -version; python3 --version; python3 -m pip --version
 git branch --show-current; git log --oneline -1
-pip install -e ".[dev]"
+pip show kivyforge | grep -i "editable project location"
 ```
+
+The branch adds no dependencies, so an existing editable install of this clone
+needs nothing more: it runs whatever is checked out, which Step 3 relies on to
+run `main`. Only if the last command prints nothing, or another path, run
+`pip install -e ".[dev]"` here.
 
 ### Step 1 — the scratch app
 
