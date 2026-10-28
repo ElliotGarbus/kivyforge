@@ -16,6 +16,20 @@
   `[project].dependencies`. Re-run `kivyforge lock` to apply this to an
   existing lock; `lock --check` reports the packages it removes.
 
+### iOS: `OTHER_LDFLAGS` from `[tool.kivy.ios.xcode.build_settings]` reaches the project
+
+- **Fixed:** an `OTHER_LDFLAGS` set under
+  `[tool.kivy.ios.xcode.build_settings]`, such as the
+  `"$(inherited) -ObjC"` Firebase requires, was silently replaced by
+  kivyforge's own `-framework UIKit` and never reached the Xcode project
+  ([#197](https://github.com/ElliotGarbus/kivyforge/issues/197)). Your flags
+  are now appended to kivyforge's, with `$(inherited)` once at the front if
+  you wrote it: `$(inherited) -framework UIKit -ObjC`.
+  `GCC_PREPROCESSOR_DEFINITIONS` had the same problem in Kivy apps, where
+  kivyforge sets `KIVYFORGE_REQUIRES_SDL=1`. It now merges the same way.
+- **Migration:** none needed. Run `kivyforge build -p ios` again to write the
+  merged value into an existing project.
+
 ### Android: `doctor` checks emulator acceleration on Windows, and `/dev/kvm` access on Linux
 
 - **Fixed:** on Windows, `kivyforge doctor -p android` said the emulator was

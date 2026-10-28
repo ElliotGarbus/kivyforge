@@ -451,6 +451,8 @@ GCC_OPTIMIZATION_LEVEL = "s"
 | `LD_RUNPATH_SEARCH_PATHS` | toolchain (`@executable_path/Frameworks` for embedded frameworks) |
 | `GCC_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER` | toolchain |
 
+Two managed keys are lists of flags and are **additive** rather than reserved: `OTHER_LDFLAGS` (kivyforge sets `-framework UIKit`) and `GCC_PREPROCESSOR_DEFINITIONS` (kivyforge sets `KIVYFORGE_REQUIRES_SDL=1` when SDL3 is staged). A user value for either is appended to kivyforge's, with `$(inherited)` written once at the front if either side has it — so `OTHER_LDFLAGS = "$(inherited) -ObjC"` (required by Firebase) becomes `$(inherited) -framework UIKit -ObjC`. Before this, the managed value silently replaced the user's ([#197](https://github.com/ElliotGarbus/kivyforge/issues/197)).
+
 See also [Xcode project generation §"Toolchain-managed build settings"](05-xcode-project-generation.md#toolchain-managed-build-settings) for the rationale behind each toolchain-managed entry.
 
 ## Concrete example

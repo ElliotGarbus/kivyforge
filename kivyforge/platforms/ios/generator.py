@@ -23,6 +23,7 @@ from .buildsettings import (
     PREVIOUS_BUILD_PYTHON_SCRIPTS,
     SIGNING_SETTING_KEYS,
     managed_settings,
+    merge_build_settings,
     signing_settings,
     user_build_settings,
 )
@@ -145,8 +146,9 @@ class XcodeProjectGenerator:
             settings = managed_settings(
                 self.config, configuration=configuration, layout=self.layout
             )
-            # user settings layered under managed (reserved keys already rejected)
-            merged = {**user, **settings, **signing}
+            # user settings layered under managed (reserved keys already
+            # rejected), except that additive flag lists keep the user's flags
+            merged = {**merge_build_settings(user, settings), **signing}
             for key, value in merged.items():
                 project.set_flags(
                     key,

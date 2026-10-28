@@ -338,6 +338,32 @@ class TestPbxprojGeneration:
         assert _settings_for(project, "touchtracer", "Debug")["SWIFT_VERSION"] == "5.0"
         assert _project_settings_for(project, "Debug")["SWIFT_VERSION"] == "5.0"
 
+    def test_user_ldflags_reach_the_project(self, config, project_root):
+        """Issue #197: ``OTHER_LDFLAGS = "$(inherited) -ObjC"`` (Firebase)
+        was replaced by the managed ``-framework UIKit`` without a word."""
+        assert config.ios is not None
+        flagged = dataclasses.replace(
+            config,
+            ios=dataclasses.replace(
+                config.ios, build_settings={"OTHER_LDFLAGS": "$(inherited) -ObjC"}
+            ),
+        )
+        layout = materialize_project(flagged, project_root)
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        for configuration in ("Debug", "Release"):
+            assert (
+                _settings_for(project, "touchtracer", configuration)["OTHER_LDFLAGS"]
+                == "$(inherited) -framework UIKit -ObjC"
+            )
+
+        # Removing the user's flag on a later run leaves only the managed one.
+        layout = materialize_project(config, project_root)
+        project = XcodeProject.load(str(layout.xcodeproj / "project.pbxproj"))
+        assert (
+            _settings_for(project, "touchtracer", "Debug")["OTHER_LDFLAGS"]
+            == "-framework UIKit"
+        )
+
     def test_signing_keys_are_all_reserved(self, config, make_config, project_root):
         # A signing key outside RESERVED_BUILD_SETTINGS could come from the
         # user's build_settings, and would then be deleted from under them.
