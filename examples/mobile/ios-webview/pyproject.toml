@@ -1,14 +1,14 @@
 [project]
 name = "ios-webview"
 version = "0.1.0"
-requires-python = ">=3.15.0b4"
+requires-python = ">=3.15"
 dependencies = [
     "kivy>=3.0.0.dev0,<4",
     # pyobjus is an iOS-only package; it is silently skipped on other
     # platforms at runtime (the app shows a desktop fallback).
     # iOS wheels resolve from the kivy-mobile-wheels index (see
     # [tool.kivy.ios].extra_index_urls below) before running `kivyforge lock`.
-    "pyobjus",
+    "pyobjus>=1.2.5.dev0",
 ]
 
 [tool.kivy]
@@ -37,7 +37,7 @@ exclude = [
 ]
 
 [tool.kivy.ios.python]
-version = "3.15.0b4"
+version = "3.15.0"
 
 [tool.kivy.ios.signing]
 team_id = ""

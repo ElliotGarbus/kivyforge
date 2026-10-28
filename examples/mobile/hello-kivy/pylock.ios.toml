@@ -8,6 +8,7 @@ default-groups = []
 [[packages]]
 name = "filetype"
 version = "1.2.0"
+index = "https://pypi.org/simple/"
 
 [packages.tool.kivyforge]
 direct_requirement = true
@@ -19,27 +20,29 @@ hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1
 
 [[packages]]
 name = "Kivy"
-version = "3.0.0.dev202610051055"
+version = "3.0.0.dev202610251128"
 requires-python = ">=3.11"
 dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }]
+index = "https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"
 
 [packages.tool.kivyforge]
 direct_requirement = true
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202610051055/kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
-hashes = { sha256 = "2ab99cb2650b08272b014970754f55b0f62e20d3b1a406da1a06b5f2f14f8883" }
+name = "kivy-3.0.0.dev202610251128-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202610251128/kivy-3.0.0.dev202610251128-cp315-cp315-ios_13_0_arm64_iphoneos.whl"
+hashes = { sha256 = "b2986e676ed5dc8ead033427c6369f005b5ce8fb63332fb82ae896b11a764deb" }
 
 [[packages.wheels]]
-name = "kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202610051055/kivy-3.0.0.dev202610051055-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
-hashes = { sha256 = "3bdeab7a91f6f0e0b480f57c9f9d9cefc3ca2808d2a4543d94a291d9379cd5a0" }
+name = "kivy-3.0.0.dev202610251128-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+url = "https://github.com/ElliotGarbus/kivy-mobile-wheels/releases/download/kivy-ios-3.0.0.dev202610251128/kivy-3.0.0.dev202610251128-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+hashes = { sha256 = "49d530449e019d09046d3845a9b06ad8ff5fbe5ee7fc2778cfc22feeabd706ed" }
 
 [[packages]]
 name = "more-itertools"
 version = "11.1.0"
 requires-python = ">=3.10"
+index = "https://pypi.org/simple/"
 
 [packages.tool.kivyforge]
 direct_requirement = true
@@ -52,11 +55,11 @@ hashes = { sha256 = "4b65538ae22f6fed0ce4874efd317463a7489796a0939fa66824dd54212
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
-generated_at = "2026-10-14T01:35:03Z"
-lock_inputs_sha256 = "07eed9ea8100f32f06e17101ad8ad16abd5b68a95adf87192331c604c2e856a7"
+generated_at = "2026-10-26T14:19:59Z"
+lock_inputs_sha256 = "a5d7980c351fced49dc8773ebd0c55bd742bb96c93ccf95a25c354023bdd1ee4"
 tool_kivyforge_schema_version = 1
 
 [tool.kivyforge.python_xcframework]
-version = "3.15.0b4"
-url = "https://www.python.org/ftp/python/3.15.0/python-3.15.0b4-iOS-XCframework.tar.gz"
-sha256 = "dbf1095502e0b4a0dc2a4d96ae1b1d92ee8c0b7bea773862f7124ede0017e3dc"
+version = "3.15.0"
+url = "https://www.python.org/ftp/python/3.15.0/python-3.15.0-iOS-XCframework.tar.gz"
+sha256 = "68e98ab35cc0643ba3a227a8c7768da45c2a5e67dbe1bc26598537e96680fd19"
