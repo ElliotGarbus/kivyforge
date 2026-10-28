@@ -112,7 +112,19 @@ managed by kivyforge and rejected here:
 `CODE_SIGN_IDENTITY`, `DEVELOPMENT_TEAM`, `PROVISIONING_PROFILE_SPECIFIER`,
 `ENABLE_USER_SCRIPT_SANDBOXING`, `ENABLE_TESTABILITY`, `FRAMEWORK_SEARCH_PATHS`,
 `HEADER_SEARCH_PATHS`, `LD_RUNPATH_SEARCH_PATHS`,
-`GCC_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER`.
+`GCC_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER`, `PRODUCT_NAME`, `SDKROOT`,
+`ALWAYS_SEARCH_USER_PATHS`, `COPY_PHASE_STRIP`.
+
+Two more are rejected only while kivyforge writes them itself:
+`ASSETCATALOG_COMPILER_APPICON_NAME` while `[tool.kivy.ios.icons].source` is
+set, and `CODE_SIGN_ENTITLEMENTS` while `[tool.kivy.ios.entitlements]` is set.
+Without those, you can set them here.
+
+`OTHER_LDFLAGS` and `GCC_PREPROCESSOR_DEFINITIONS` are lists of flags, so your
+value is added to kivyforge's rather than replacing it. `$(inherited)` is
+written once at the front if you include it. For example,
+`OTHER_LDFLAGS = "$(inherited) -ObjC"`, which Firebase requires, becomes
+`$(inherited) -framework UIKit -ObjC`.
 
 ## `[tool.kivy.ios.privacy_manifest]`
 

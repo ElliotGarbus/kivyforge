@@ -10,7 +10,15 @@ actually produces.
 
 from __future__ import annotations
 
+import dataclasses
+
+from kivyforge.config.model import (
+    CONDITIONAL_BUILD_SETTINGS,
+    RESERVED_BUILD_SETTINGS,
+    IconConfig,
+)
 from kivyforge.platforms.ios.buildsettings import (
+    ADDITIVE_BUILD_SETTINGS,
     managed_settings,
     merge_build_settings,
 )
@@ -115,3 +123,41 @@ class TestMergeBuildSettings:
         managed = managed_settings(config, configuration="Release")
         merged = merge_build_settings({"OTHER_LDFLAGS": "-ObjC"}, managed)
         assert merged["OTHER_LDFLAGS"].split() == ["-framework", "UIKit", "-ObjC"]
+
+
+class TestEveryManagedKeyIsAccountedFor:
+    def test_no_managed_key_can_be_silently_overridden(self, config, tmp_path):
+        """A managed key that is not reserved, conditional or additive is
+        accepted under xcode.build_settings and then replaced by the managed
+        value without a word, which is how #197 and its follow-up happened.
+        Every switch that adds a key is on here, so each one is emitted."""
+        assert config.ios is not None
+        everything = dataclasses.replace(
+            config,
+            ios=dataclasses.replace(
+                config.ios,
+                icons=IconConfig(source="icon.png"),
+                entitlements={"aps-environment": "development"},
+            ),
+        )
+        layout = _layout(tmp_path, sdl3=True)
+        accounted = (
+            RESERVED_BUILD_SETTINGS
+            | CONDITIONAL_BUILD_SETTINGS.keys()
+            | ADDITIVE_BUILD_SETTINGS
+        )
+        for configuration in ("Debug", "Release"):
+            emitted = managed_settings(
+                everything, configuration=configuration, layout=layout
+            )
+            assert set(CONDITIONAL_BUILD_SETTINGS) <= emitted.keys()
+            assert emitted.keys() - accounted == set()
+
+    def test_conditional_keys_are_absent_without_their_settings(self, config):
+        """The loader rejects a conditional key only while its setting is on,
+        so the generator must not emit it otherwise, or a user value accepted
+        by the loader would still be replaced."""
+        settings = managed_settings(config, configuration="Debug")
+        assert config.ios is not None
+        assert not config.ios.icons.source and not config.ios.entitlements
+        assert not CONDITIONAL_BUILD_SETTINGS.keys() & settings.keys()

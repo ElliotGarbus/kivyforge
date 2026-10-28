@@ -466,6 +466,63 @@ class TestRule8ReservedBuildSettings:
         assert cfg.ios_required.build_settings == {"SWIFT_VERSION": "5.0"}
 
 
+class TestManagedBuildSettingsNotSilentlyOverridden:
+    """A key kivyforge writes used to be accepted here and then replaced by the
+    managed value without a word (the follow-up to #197). The four it always
+    writes are reserved; the two it writes only on request are rejected only
+    while that request is made."""
+
+    @pytest.mark.parametrize(
+        "key",
+        ["PRODUCT_NAME", "SDKROOT", "ALWAYS_SEARCH_USER_PATHS", "COPY_PHASE_STRIP"],
+    )
+    def test_always_managed_keys_are_reserved(self, key):
+        with pytest.raises(ConfigError, match=rf"reserved key\(s\): {key}"):
+            load(_VALID_IOS + f"[tool.kivy.ios.xcode.build_settings]\n{key}='x'")
+
+    def test_app_icon_name_rejected_while_icons_are_configured(self):
+        with pytest.raises(ConfigError) as exc:
+            load(
+                _VALID_IOS + "[tool.kivy.ios.icons]\nsource='icon.png'\n"
+                "[tool.kivy.ios.xcode.build_settings]\n"
+                "ASSETCATALOG_COMPILER_APPICON_NAME='MyIcon'"
+            )
+        assert "ASSETCATALOG_COMPILER_APPICON_NAME" in exc.value.message
+        assert "[tool.kivy.ios.icons].source" in exc.value.message
+
+    def test_app_icon_name_free_without_icons(self):
+        cfg = load(
+            _VALID_IOS + "[tool.kivy.ios.xcode.build_settings]\n"
+            "ASSETCATALOG_COMPILER_APPICON_NAME='MyIcon'"
+        )
+        assert cfg.ios_required.build_settings == {
+            "ASSETCATALOG_COMPILER_APPICON_NAME": "MyIcon"
+        }
+
+    def test_entitlements_path_rejected_while_entitlements_are_configured(self):
+        with pytest.raises(ConfigError) as exc:
+            load(
+                _VALID_IOS + "[tool.kivy.ios.entitlements]\n"
+                "'aps-environment'='development'\n"
+                "[tool.kivy.ios.xcode.build_settings]\n"
+                "CODE_SIGN_ENTITLEMENTS='Mine.entitlements'"
+            )
+        assert "CODE_SIGN_ENTITLEMENTS" in exc.value.message
+        assert "[tool.kivy.ios.entitlements]" in exc.value.message
+        assert exc.value.key_path == (
+            "tool.kivy.ios.xcode.build_settings.CODE_SIGN_ENTITLEMENTS"
+        )
+
+    def test_entitlements_path_free_without_entitlements(self):
+        cfg = load(
+            _VALID_IOS + "[tool.kivy.ios.xcode.build_settings]\n"
+            "CODE_SIGN_ENTITLEMENTS='Mine.entitlements'"
+        )
+        assert cfg.ios_required.build_settings == {
+            "CODE_SIGN_ENTITLEMENTS": "Mine.entitlements"
+        }
+
+
 class TestRule10RequiresPython:
     def test_incompatible(self):
         with pytest.raises(ConfigError, match="requires-python"):

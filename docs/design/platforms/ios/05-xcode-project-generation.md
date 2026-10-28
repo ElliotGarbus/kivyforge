@@ -235,7 +235,7 @@ The Xcode project file is generated programmatically using the `pbxproj` Python 
 
 ### Toolchain-managed build settings
 
-The pbxproj generator sets the following (from the python.org docs §7.2.2 step 6) on every app target build configuration. Users cannot override these via `[tool.kivy.ios.xcode.build_settings]` (they're on the reserved list — see [iOS pyproject §`[tool.kivy.ios.xcode.build_settings]`](01-pyproject-ios.md#toolkivyiosxcodebuild_settings) for the full reserved set):
+The pbxproj generator sets the following (from the python.org docs §7.2.2 step 6) on every app target build configuration. Users cannot override these via `[tool.kivy.ios.xcode.build_settings]`: each is reserved, rejected while the setting that emits it is on (`ASSETCATALOG_COMPILER_APPICON_NAME`, `CODE_SIGN_ENTITLEMENTS`), or additive (`GCC_PREPROCESSOR_DEFINITIONS`, and `OTHER_LDFLAGS`, not listed here). See [iOS pyproject §`[tool.kivy.ios.xcode.build_settings]`](01-pyproject-ios.md#toolkivyiosxcodebuild_settings) for the full sets:
 
 | Setting | Value | Why |
 |---------|-------|-----|

@@ -27,6 +27,7 @@ from .model import (
     ANDROID_MIN_SDK_FLOOR,
     ANDROID_RELEASE_ONLY,
     ANDROID_VERSION_CODE_CEILING,
+    CONDITIONAL_BUILD_SETTINGS,
     DEFAULT_ANDROID_ABIS,
     DEFAULT_ANDROID_BASE_THEME,
     DEFAULT_ANDROID_KEY_PASSWORD_ENV,
@@ -1123,6 +1124,15 @@ def _parse_ios(
     python_build_settings = _parse_ios_python_build_settings(ios, finder)
     privacy_source = _parse_privacy(ios)
     entitlements = _parse_entitlements(ios)
+    _check_conditional_build_settings(
+        build_settings,
+        # The same conditions managed_settings() emits these under.
+        managed={
+            "ASSETCATALOG_COMPILER_APPICON_NAME": bool(icons.source),
+            "CODE_SIGN_ENTITLEMENTS": bool(entitlements),
+        },
+        finder=finder,
+    )
     include_files = _parse_include_files(
         ios, platform="ios", root_name=".app", project_root=project_root
     )
@@ -3857,6 +3867,26 @@ def _parse_build_settings(ios: dict, finder: _LineFinder) -> dict[str, str]:
             )
         result[key] = value
     return result
+
+
+def _check_conditional_build_settings(
+    settings: dict[str, str], *, managed: dict[str, bool], finder: _LineFinder
+) -> None:
+    """Reject a conditional key the toolchain will also write (spec 01).
+
+    *managed* says, per :data:`CONDITIONAL_BUILD_SETTINGS` key, whether this
+    config sets the setting that makes ``managed_settings`` emit it.
+    """
+    for key, controller in CONDITIONAL_BUILD_SETTINGS.items():
+        if key in settings and managed[key]:
+            raise ConfigError(
+                f"[tool.kivy.ios.xcode.build_settings] sets {key}, which kivyforge "
+                f"writes from {controller}",
+                key_path=f"tool.kivy.ios.xcode.build_settings.{key}",
+                line=finder.line(key),
+                hint=f"remove one of them; while {controller} is set, kivyforge's "
+                f"value would replace yours.",
+            )
 
 
 def _parse_privacy(ios: dict) -> str | None:

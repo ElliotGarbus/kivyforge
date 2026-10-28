@@ -274,8 +274,21 @@ RESERVED_BUILD_SETTINGS = frozenset(
         "HEADER_SEARCH_PATHS",
         "LD_RUNPATH_SEARCH_PATHS",
         "GCC_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER",
+        "PRODUCT_NAME",
+        "SDKROOT",
+        "ALWAYS_SEARCH_USER_PATHS",
+        "COPY_PHASE_STRIP",
     }
 )
+
+# Xcode build settings the toolchain writes only when a [tool.kivy.ios] setting
+# asks for them, mapped to that setting. Free under
+# [tool.kivy.ios.xcode.build_settings] otherwise; rejected when both are set,
+# because the managed value would win without a word (spec 01).
+CONDITIONAL_BUILD_SETTINGS: dict[str, str] = {
+    "ASSETCATALOG_COMPILER_APPICON_NAME": "[tool.kivy.ios.icons].source",
+    "CODE_SIGN_ENTITLEMENTS": "[tool.kivy.ios.entitlements]",
+}
 
 
 @dataclass(frozen=True)
