@@ -15,6 +15,12 @@ two pip internals, then hands control to pip unchanged:
   are ordered so the first-listed index wins a tie, and every survivor's
   source is written to a record file so the lock can name each package's index
   (docs/design/dev/package-index-proposal.md §4).
+- **Exclusions** (the policy's ``exclude``). It wraps
+  ``PipProvider.get_dependencies`` so a dependency on an excluded name is
+  never followed: pip does not look for, download, or build it, and neither
+  does it pull in what only that package needed (#190). Filtering the
+  resolved set afterwards is too late, since pip fails first on an excluded
+  package that has no wheel for the target.
 
 pip still performs the whole resolution, including backtracking and platform
 wheel-tag expansion; only what it is allowed to see changes. kivyforge
@@ -23,7 +29,7 @@ deliberately does not reimplement any of that.
 This file imports nothing from kivyforge: it is run by path, sometimes with an
 interpreter that only has pip installed.
 
-Both patches depend on pip internals, so they fail loudly rather than falling
+All three patches depend on pip internals, so they fail loudly rather than falling
 back: a quiet fallback would reintroduce exactly the host-dependent or
 wrong-source lock this exists to prevent.
 """
@@ -60,6 +66,8 @@ def main(argv: list[str]) -> int:
         policy = _Policy(json.loads(raw_policy))
         record = {}
         missing = _install_source_filter(policy, record)
+        if not missing and policy.exclude:
+            missing = _install_exclude_filter(policy.exclude)
         if missing:
             sys.stderr.write(
                 f"kivyforge {policy.kivyforge} cannot apply its source rules with "
@@ -121,6 +129,7 @@ class _Policy:
             os.path.normcase(os.path.abspath(p)) for p in data.get("find_links", ())
         )
         self.local_names = frozenset(data.get("local_names", ()))
+        self.exclude = frozenset(data.get("exclude", ()))
         # Highest priority first; PyPI is in here, last.
         self.rank = tuple(_base(url) for _name, url in data.get("rank", ()))
         self.explicit = tuple(_base(url) for _name, url in data.get("explicit", ()))
@@ -205,6 +214,34 @@ def _install_source_filter(policy: _Policy, record: dict[str, str | None]) -> st
         return kept
 
     PackageFinder.find_all_candidates = find_all_candidates
+    return ""
+
+
+def _install_exclude_filter(exclude: frozenset[str]) -> str:
+    """Wrap ``get_dependencies``; return what is missing, or ``""``.
+
+    Only dependencies are filtered: pip's top-level requirements never pass
+    through here, and kivyforge removes direct dependencies from the set anyway.
+    A requirement on ``name[extra]`` has ``project_name`` ``name``, so excluding
+    a package excludes its extras too.
+    """
+    try:
+        from pip._internal.resolution.resolvelib.provider import PipProvider
+    except ImportError as exc:
+        return f"importable {exc.name or 'module'}"
+    # Its own, not resolvelib's abstract one, which only raises.
+    original = vars(PipProvider).get("get_dependencies")
+    if original is None:
+        return "PipProvider.get_dependencies"
+
+    def get_dependencies(self, candidate):
+        return [
+            r
+            for r in original(self, candidate)
+            if getattr(r, "project_name", None) not in exclude
+        ]
+
+    PipProvider.get_dependencies = get_dependencies
     return ""
 
 

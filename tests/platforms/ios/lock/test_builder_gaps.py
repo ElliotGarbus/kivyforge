@@ -133,6 +133,19 @@ class TestExcludedPackagesDropped:
         )
         lock = _build(toml, fake_resolver, fake_python_provider)
         assert "kivy" in {p.name for p in lock.packages}
+        assert fake_resolver.calls[0]["sources"].exclude == frozenset()
+
+    def test_the_resolver_is_told_not_to_follow_excluded_names(
+        self, fake_resolver, fake_python_provider
+    ):
+        # Filtering afterwards is too late: pip fails first on an excluded
+        # package with no iOS wheel (#190).
+        toml = _toml("exclude = ['PyCairo', 'materialshape']\n")
+        _build(toml, fake_resolver, fake_python_provider)
+        assert fake_resolver.calls[0]["sources"].exclude == {
+            "pycairo",
+            "materialshape",
+        }
 
 
 class _LocalWheelResolver:

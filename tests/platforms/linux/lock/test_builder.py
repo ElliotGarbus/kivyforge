@@ -162,13 +162,15 @@ class TestBuild:
             "[tool.kivy.linux.python]\nversion='3.15.0'\n"
         )
         cfg = _config(text, tmp_path)
+        resolver = FakeLinuxResolver()
         lock = build_linux_lockfile(
             cfg,
             project_root=tmp_path,
-            resolver=FakeLinuxResolver(),
+            resolver=resolver,
             runtime_provider=FakeRuntimeProvider(),
         )
         assert {p.name for p in lock.packages} == {"kivy"}
+        assert resolver.calls[0]["sources"].exclude == {"more-itertools"}
 
     def test_no_linux_table(self, tmp_path):
         text = (

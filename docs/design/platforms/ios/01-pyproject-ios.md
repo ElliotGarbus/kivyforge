@@ -98,10 +98,14 @@ exclude = [
 
 Semantics:
 
-- **Resolution-graph pruning, not bundle-file exclusion.** `exclude` removes
-  whole packages from the resolved set *before* `pylock.ios.toml` is written, so
-  the pruned wheels are never downloaded or installed. It is unrelated to the
-  per-file bundle question discussed under `app_dir` in the common spec.
+- **Resolution-graph pruning, not bundle-file exclusion.** `exclude` cuts
+  whole packages out of the graph *during* resolution: pip never follows a
+  dependency on an excluded name, so its wheels are never looked for,
+  downloaded or installed, and an excluded package with no iOS wheel (KivyMD's
+  `pycairo`, say) does not fail the lock. Whatever only that package needed is
+  pruned with it ([#190](https://github.com/ElliotGarbus/kivyforge/issues/190)).
+  The pip shim applies it (`kivyforge/lock/_pip_shim.py`). It is unrelated to
+  the per-file bundle question discussed under `app_dir` in the common spec.
 - **Direct deps win.** Any name in `exclude` that also appears in
   `[project].dependencies` is dropped from the exclusion set — an explicit
   dependency is never silently removed.

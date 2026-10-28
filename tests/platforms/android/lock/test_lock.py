@@ -233,6 +233,20 @@ class TestBuilder:
         # docutils pruned; pyjnius survives (direct requirements win).
         assert names == ["pyjnius"]
 
+    def test_the_resolver_is_told_not_to_follow_excluded_names(self):
+        text = PYPROJECT.replace(
+            'package = "org.example.lockapp"',
+            'package = "org.example.lockapp"\nexclude = ["Docutils", "pyjnius"]',
+        )
+        resolver = FakeResolver([_pkg()])
+        build_lockfile(
+            _config(text),
+            project_root=Path.cwd(),
+            resolver=resolver,
+            python_provider=FakeProvider(),
+        )
+        assert resolver.calls[0][1]["sources"].exclude == {"docutils"}
+
     def test_include_files_hashed_and_dir_expanded(self, tmp_path):
         (tmp_path / "src").mkdir()
         cfg_dir = tmp_path / "config"
