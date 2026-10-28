@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from kivyforge.config.model import Config
@@ -245,3 +246,35 @@ def user_build_settings(config: Config) -> dict[str, str]:
     if not config.ios:
         return {}
     return dict(config.ios.build_settings)
+
+
+#: Managed settings that are lists of flags, so a user's value is added to the
+#: toolchain's rather than replaced by it. Layering user settings under managed
+#: ones silently dropped a user's ``OTHER_LDFLAGS = "$(inherited) -ObjC"``,
+#: which Firebase requires (issue #197).
+ADDITIVE_BUILD_SETTINGS = frozenset({"OTHER_LDFLAGS", "GCC_PREPROCESSOR_DEFINITIONS"})
+
+_INHERITED = "$(inherited)"
+_INHERITED_TOKEN = re.compile(r"(?<!\S)\$\(inherited\)(?!\S)")
+
+
+def merge_build_settings(
+    user: dict[str, str], managed: dict[str, str]
+) -> dict[str, str]:
+    """Layer *user* settings under *managed* ones, appending to additive keys.
+
+    For an :data:`ADDITIVE_BUILD_SETTINGS` key both sides set, the result is
+    the managed flags followed by the user's, with ``$(inherited)`` once at the
+    front if either side asked for it. Every other managed key wins.
+    """
+    merged = {**user, **managed}
+    for key in ADDITIVE_BUILD_SETTINGS & user.keys() & managed.keys():
+        inherited = False
+        parts: list[str] = []
+        for value in (managed[key], user[key]):
+            stripped = _INHERITED_TOKEN.sub("", value).strip()
+            inherited = inherited or stripped != value.strip()
+            if stripped:
+                parts.append(stripped)
+        merged[key] = " ".join(([_INHERITED] if inherited else []) + parts)
+    return merged
