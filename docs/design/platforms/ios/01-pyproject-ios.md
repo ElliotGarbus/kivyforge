@@ -450,6 +450,19 @@ GCC_OPTIMIZATION_LEVEL = "s"
 | `HEADER_SEARCH_PATHS` | toolchain |
 | `LD_RUNPATH_SEARCH_PATHS` | toolchain (`@executable_path/Frameworks` for embedded frameworks) |
 | `GCC_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER` | toolchain |
+| `PRODUCT_NAME` | toolchain (`$(TARGET_NAME)`) |
+| `SDKROOT` | toolchain (`iphoneos`) |
+| `ALWAYS_SEARCH_USER_PATHS` | toolchain |
+| `COPY_PHASE_STRIP` | toolchain (must be `NO` for the signed embedded frameworks) |
+
+Two managed keys are **conditional**: kivyforge writes them only when a `[tool.kivy.ios]` setting asks for it, and rejects a user value only while that setting is on. Otherwise they are free (`CONDITIONAL_BUILD_SETTINGS` in `config/model.py`).
+
+| Conditional key | Rejected while |
+|---|---|
+| `ASSETCATALOG_COMPILER_APPICON_NAME` | `[tool.kivy.ios.icons].source` is set |
+| `CODE_SIGN_ENTITLEMENTS` | `[tool.kivy.ios.entitlements]` is set |
+
+Every key the generator writes is reserved, conditional or additive; a test pins that, because a managed key in none of those groups is accepted here and then replaced without a word.
 
 Two managed keys are lists of flags and are **additive** rather than reserved: `OTHER_LDFLAGS` (kivyforge sets `-framework UIKit`) and `GCC_PREPROCESSOR_DEFINITIONS` (kivyforge sets `KIVYFORGE_REQUIRES_SDL=1` when SDL3 is staged). A user value for either is appended to kivyforge's, with `$(inherited)` written once at the front if either side has it — so `OTHER_LDFLAGS = "$(inherited) -ObjC"` (required by Firebase) becomes `$(inherited) -framework UIKit -ObjC`. Before this, the managed value silently replaced the user's ([#197](https://github.com/ElliotGarbus/kivyforge/issues/197)).
 

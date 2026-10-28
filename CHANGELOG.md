@@ -30,6 +30,21 @@
 - **Migration:** none needed. Run `kivyforge build -p ios` again to write the
   merged value into an existing project.
 
+### iOS: build settings kivyforge writes are rejected, not silently replaced
+
+- **Changed:** `[tool.kivy.ios.xcode.build_settings]` accepted six keys that
+  kivyforge also writes, then replaced your value with its own without a word.
+  `PRODUCT_NAME`, `SDKROOT`, `ALWAYS_SEARCH_USER_PATHS` and `COPY_PHASE_STRIP`
+  are now reserved, like `INFOPLIST_FILE`. `ASSETCATALOG_COMPILER_APPICON_NAME`
+  is rejected while `[tool.kivy.ios.icons].source` is set, and
+  `CODE_SIGN_ENTITLEMENTS` while `[tool.kivy.ios.entitlements]` is set; without
+  those, you can still set them yourself.
+- **Migration:** if config loading now fails naming one of these keys, delete
+  it from `[tool.kivy.ios.xcode.build_settings]`. It never took effect, so the
+  built app does not change. To use your own entitlements file or icon set,
+  remove `[tool.kivy.ios.entitlements]` or `[tool.kivy.ios.icons].source`
+  instead.
+
 ### Android: `doctor` checks emulator acceleration on Windows, and `/dev/kvm` access on Linux
 
 - **Fixed:** on Windows, `kivyforge doctor -p android` said the emulator was
