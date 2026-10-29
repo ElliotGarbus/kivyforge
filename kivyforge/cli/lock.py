@@ -34,6 +34,7 @@ from ..lock.reader import LockError
 from ..lock.sources import (
     changed_local_wheels,
     ignore_unrecorded_indexes,
+    keep_recorded_dependencies,
     unused_explicit_indexes,
 )
 from ..platforms.ios.lock import (
@@ -345,6 +346,9 @@ def _run_check(
     )
     # A lock from before #86 records no index; that alone is not drift.
     candidate = ignore_unrecorded_indexes(existing, candidate)
+    # A desktop lock from before #190 records unfiltered dependencies; that
+    # alone is not drift either.
+    candidate = keep_recorded_dependencies(existing, candidate)
     if ops.semantic_equal(existing, candidate):
         report.line(f"{out_path.name} is up to date.")
         report.emit(

@@ -20,8 +20,10 @@
 - **Added:** the guide
   [Build a wheel from a GitHub repository](docs/guides/guides/cross-platform/wheel-from-github.md),
   with KivyMD as the example.
-- **Migration:** none needed. A desktop lock's `dependencies` lists shrink the
-  next time each lock is re-resolved.
+- **Migration:** none needed. An existing desktop lock still passes
+  `lock --check`: a package whose wheels are unchanged keeps the
+  `dependencies` it was locked with. The lists shrink the next time `lock`
+  writes the file.
 
 ### `exclude` stops pip from looking for the package
 

@@ -401,6 +401,44 @@ def ignore_unrecorded_indexes[L](existing: L, candidate: L) -> L:
     return dataclasses.replace(candidate, packages=packages)
 
 
+def keep_recorded_dependencies[L](existing: L, candidate: L) -> L:
+    """``candidate`` with ``existing``'s dependency edges where the wheels are unchanged.
+
+    The same wheels carry the same metadata, so for a package whose version and
+    wheel hashes held, a different ``dependencies`` list can only come from how
+    kivyforge records it. Desktop locks written before #190 list extra-gated
+    and other-platform edges, and without this every one of them would fail
+    ``lock --check`` until re-locked, with nothing in the diff to say why. The
+    filtered list arrives with the next real re-lock.
+    """
+    if not dataclasses.is_dataclass(candidate) or isinstance(candidate, type):
+        return candidate
+    locked = {
+        canonical_name(p.name): p
+        for p in getattr(existing, "packages", ())
+        if isinstance(p, LockedPackage)
+    }
+
+    def kept(package: object) -> object:
+        if not isinstance(package, LockedPackage):
+            return package
+        before = locked.get(canonical_name(package.name))
+        if (
+            before is None
+            or before.version != package.version
+            or _wheel_hashes(before) != _wheel_hashes(package)
+        ):
+            return package
+        return dataclasses.replace(package, dependencies=before.dependencies)
+
+    packages = tuple(kept(p) for p in getattr(candidate, "packages", ()))
+    return dataclasses.replace(candidate, packages=packages)
+
+
+def _wheel_hashes(package: LockedPackage) -> set[tuple[str, str]]:
+    return {(w.name, w.sha256) for w in package.wheels}
+
+
 def overlay_policy(
     overlay: object,
     find_links: Sequence[str],

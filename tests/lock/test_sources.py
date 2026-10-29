@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from kivyforge.lock.model import LockedPackage, LockedWheel
+from kivyforge.lock.model import LockedPackage, LockedWheel, PackageDep
 from kivyforge.lock.sources import (
     PYPI_URL,
     RECORD_KEY,
@@ -18,6 +18,7 @@ from kivyforge.lock.sources import (
     drop_moved_pins,
     ignore_unrecorded_indexes,
     index_base,
+    keep_recorded_dependencies,
     local_names,
     local_wheels,
     read_record,
@@ -306,6 +307,31 @@ class TestCheckHelpers:
         by_name = {p.name: p.source_index for p in result.packages}
         # kivy was never recorded: ignored. x was: a change still shows.
         assert by_name == {"kivy": None, "x": "https://b/"}
+
+    def test_dependency_edges_of_unchanged_wheels_are_not_drift(self):
+        """A pre-#190 desktop lock records extra-gated edges."""
+        unfiltered = (PackageDep("asynckivy"), PackageDep("pytest"))
+        old = _lock(
+            [
+                dataclasses.replace(_locked("kivymd"), dependencies=unfiltered),
+                dataclasses.replace(_locked("kivy"), dependencies=unfiltered),
+            ]
+        )
+        rebuilt = dataclasses.replace(
+            _locked("kivy"),
+            wheels=(dataclasses.replace(_locked("kivy").wheels[0], sha256="1" * 64),),
+        )
+        filtered = (PackageDep("asynckivy"),)
+        new = _lock(
+            [
+                dataclasses.replace(_locked("kivymd"), dependencies=filtered),
+                dataclasses.replace(rebuilt, dependencies=filtered),
+            ]
+        )
+        result = keep_recorded_dependencies(old, new)
+        by_name = {p.name: p.dependencies for p in result.packages}
+        # kivymd's wheel held: its recorded edges stay. kivy's changed: new ones.
+        assert by_name == {"kivymd": unfiltered, "kivy": filtered}
 
 
 class TestChangedLocalWheels:
