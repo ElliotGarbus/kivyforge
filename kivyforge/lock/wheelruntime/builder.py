@@ -36,6 +36,7 @@ from ..sources import (
     overlay_policy,
     pinned_local_warnings,
     source_changes,
+    wheel_changes,
 )
 from .model import PythonRuntime, WheelRuntimeLock
 from .native_binaries import NativeBinaryResolverError, resolve_native_binaries
@@ -376,6 +377,7 @@ def diff_summary(old: WheelRuntimeLock, new: WheelRuntimeLock) -> list[str]:
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
     out.extend(source_changes(old.packages, new.packages))
+    out.extend(wheel_changes(old.packages, new.packages))
     if old.python_runtime.version != new.python_runtime.version:
         out.append(
             f"  ~ python runtime: {old.python_runtime.version} -> "

@@ -498,6 +498,28 @@ class TestPipWheelResolverResolve:
         assert packages[0].name == "kivy"
         assert len(packages[0].wheels) == 2
 
+    def test_resolve_records_only_the_edges_pip_followed(self, monkeypatch):
+        """Extra-gated and other-platform edges are not dependencies (#190)."""
+        item = _wheel_item(name="kivymd", filename="kivymd-2.0.1-py3-none-any.whl")
+        item["metadata"]["requires_dist"] = [
+            "materialyoucolor>=3.0.3",
+            'pywin32; sys_platform == "win32"',
+            'pyobjus; sys_platform == "darwin"',
+            'pytest; extra == "dev"',
+        ]
+
+        def fake_run_report(self_inner, requirements, **kwargs):
+            return {"environment": {"sys_platform": "win32"}, "install": [item]}
+
+        monkeypatch.setattr(PipWheelResolver, "_run_report", fake_run_report)
+        (package,) = PipWheelResolver().resolve(
+            ["kivymd"],
+            python_version="3.13.0",
+            variants=(Variant(arch="amd64", platform_tag="win_amd64"),),
+            extra_index_urls=[],
+        )
+        assert package.dependencies == ["materialyoucolor", "pywin32"]
+
     def test_resolve_raises_on_version_mismatch_between_variants(self, monkeypatch):
         variant_items = [
             [
