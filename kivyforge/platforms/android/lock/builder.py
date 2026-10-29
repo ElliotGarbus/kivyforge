@@ -40,6 +40,7 @@ from kivyforge.lock.sources import (
     overlay_policy,
     pinned_local_warnings,
     source_changes,
+    wheel_changes,
 )
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
@@ -500,6 +501,7 @@ def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
     out.extend(source_changes(old.packages, new.packages))
+    out.extend(wheel_changes(old.packages, new.packages))
     old_rt = {r.abi: r.version for r in old.python_android}
     new_rt = {r.abi: r.version for r in new.python_android}
     if old_rt != new_rt:

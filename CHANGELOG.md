@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### `lock` notices a rebuilt wheel in `find_links`
+
+- **Fixed:** replacing a locked wheel in a `find_links` directory with a new
+  build of the same filename, such as a wheel built from a newer commit on
+  GitHub, no longer leaves a lock that `lock` calls in sync and `build`
+  rejects with a SHA-256 mismatch
+  ([#190](https://github.com/ElliotGarbus/kivyforge/issues/190)). `lock` now
+  names the changed or missing wheel and resolves that package again, and
+  every other package keeps its locked version. `lock --check` names the wheel
+  instead of failing with an empty list of changes.
+- **Fixed:** a macOS, Linux, or Windows lock no longer lists a package's
+  optional (extra) and other-platform requirements, such as KivyMD's `pytest`
+  and `sphinx`, in that package's `dependencies`. Only that field changed:
+  those packages were never locked or installed. Android and iOS locks already
+  recorded only the requirements that apply.
+- **Added:** the guide
+  [Build a wheel from a GitHub repository](docs/guides/guides/cross-platform/wheel-from-github.md),
+  with KivyMD as the example.
+- **Migration:** none needed. A desktop lock's `dependencies` lists shrink the
+  next time each lock is re-resolved.
+
 ### `exclude` stops pip from looking for the package
 
 - **Fixed:** a name in `exclude` is no longer resolved at all, on every

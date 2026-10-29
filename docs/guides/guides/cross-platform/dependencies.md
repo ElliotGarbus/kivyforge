@@ -142,8 +142,20 @@ version.
     kivyforge lock -p android
     ```
 
-The lock records each local wheel with a project-relative `path`. Commit the
-wheels with the lock, because `build` installs from that path.
+The lock records each local wheel with a project-relative `path` and its
+SHA-256. Commit the wheels with the lock, because `build` installs from that
+path. When you replace a locked wheel, even with one of the same filename, the
+next `lock` resolves that package again and leaves the others as they are.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
+    `lock` keeps the old hash of a replaced wheel with the same filename, and
+    you re-lock with `--update`.
+
+To use a package from GitHub that isn't released on PyPI, build its wheel with
+pip and add it the same way. See
+[Build a wheel from a GitHub repository](wheel-from-github.md).
 
 If the directory has a wheel for a package on one ABI but not another, `lock`
 fails with `KF-LOCK-SOURCE-UNAVAILABLE` and names the missing ABI. It does not

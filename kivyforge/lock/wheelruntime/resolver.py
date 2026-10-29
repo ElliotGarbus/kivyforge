@@ -32,8 +32,8 @@ from ..pip_progress import PROGRESS_ARGS, PipProgress, without_progress
 from ..prefer import Pins, constraint_args
 from ..resolver import (
     MIN_PIP_VERSION,
-    _dep_names,
     abi_tags,
+    dep_names_for_environment,
     pip_python_version,
     pip_version,
     unresolved_requirement,
@@ -165,8 +165,11 @@ class PipWheelResolver:
                 constraints=constraints,
                 sources=policy,
             )
+            # The markers pip evaluated (the host's, for a desktop lock), so the
+            # recorded edges are the ones it actually followed.
+            environment = report.get("environment", {})
             for item in report.get("install", []):
-                self._absorb(item, merged, seen_filenames)
+                self._absorb(item, merged, seen_filenames, environment)
             indexes.add(report)
 
         for pkg in merged.values():
@@ -182,7 +185,7 @@ class PipWheelResolver:
                 f"  Upgrade it: {self._python} -m pip install --upgrade pip"
             )
 
-    def _absorb(self, item, merged, seen_filenames) -> None:
+    def _absorb(self, item, merged, seen_filenames, environment=None) -> None:
         meta = item.get("metadata", {})
         name = meta.get("name")
         version = meta.get("version")
@@ -204,7 +207,9 @@ class PipWheelResolver:
                 name=name,
                 version=version,
                 requires_python=meta.get("requires_python"),
-                dependencies=_dep_names(meta.get("requires_dist", [])),
+                dependencies=dep_names_for_environment(
+                    meta.get("requires_dist", []), environment or {}
+                ),
             )
             merged[key] = pkg
             seen_filenames[key] = set()

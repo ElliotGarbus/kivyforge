@@ -319,6 +319,63 @@ def source_changes(
     return out
 
 
+def wheel_changes(
+    old: Iterable[LockedPackage], new: Iterable[LockedPackage]
+) -> list[str]:
+    """``--check`` lines for a wheel whose version and filename held but whose hash moved.
+
+    A wheel rebuilt into ``find_links`` from a newer commit usually keeps its
+    filename (every commit on a branch builds as the same ``.devN``), so
+    without this line ``--check`` failed with an empty diff.
+    """
+    old_by_name = {canonical_name(p.name): p for p in old}
+    out: list[str] = []
+    for package in sorted(new, key=lambda p: canonical_name(p.name)):
+        before = old_by_name.get(canonical_name(package.name))
+        if before is None or before.version != package.version:
+            continue
+        hashes = {w.name: w.sha256 for w in before.wheels}
+        for wheel in sorted(package.wheels, key=lambda w: w.name):
+            was = hashes.get(wheel.name)
+            if was is not None and was != wheel.sha256:
+                out.append(
+                    f"  ~ {package.name}: {wheel.name} changed "
+                    f"(sha256 {was[:12]} -> {wheel.sha256[:12]})"
+                )
+    return out
+
+
+def changed_local_wheels(
+    packages: Iterable[LockedPackage], project_root: Path
+) -> dict[str, list[str]]:
+    """The locked ``find_links`` wheels that are missing or no longer match their hash.
+
+    ``lock_inputs_sha256`` sees the ``find_links`` *setting*, not the files in
+    it, so replacing a wheel with one of the same name left a lock that read
+    as in sync and a build that failed its hash check. Keyed by canonical
+    package name; each value is the ``lock`` progress lines for that package.
+    """
+    from ..artifacts.verify import sha256_file
+
+    root = project_root.resolve()
+    changed: dict[str, list[str]] = {}
+    for package in packages:
+        if not isinstance(package, LockedPackage):
+            continue
+        for wheel in package.wheels:
+            if not wheel.path:
+                continue
+            path = root / wheel.path
+            if not path.is_file():
+                line = f"  - {package.name}: {wheel.path} is missing"
+            elif sha256_file(path) != wheel.sha256:
+                line = f"  ~ {package.name}: {wheel.path} changed since it was locked"
+            else:
+                continue
+            changed.setdefault(canonical_name(package.name), []).append(line)
+    return changed
+
+
 def ignore_unrecorded_indexes[L](existing: L, candidate: L) -> L:
     """``candidate`` without the indexes ``existing`` never recorded.
 

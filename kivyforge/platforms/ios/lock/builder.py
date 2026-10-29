@@ -40,6 +40,7 @@ from kivyforge.lock.sources import (
     overlay_policy,
     pinned_local_warnings,
     source_changes,
+    wheel_changes,
 )
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
@@ -582,6 +583,7 @@ def diff_summary(old: Lockfile, new: Lockfile) -> list[str]:
                 f"{old_pkgs[name].version} -> {new_pkgs[name].version}"
             )
     out.extend(source_changes(old.packages, new.packages))
+    out.extend(wheel_changes(old.packages, new.packages))
     if old.python_xcframework.version != new.python_xcframework.version:
         out.append(
             f"  ~ Python.xcframework: {old.python_xcframework.version} -> "

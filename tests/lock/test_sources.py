@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from kivyforge.lock.sources import (
     IndexTracker,
     NamedIndex,
     SourceUnavailable,
+    changed_local_wheels,
     drop_moved_pins,
     ignore_unrecorded_indexes,
     index_base,
@@ -21,6 +23,7 @@ from kivyforge.lock.sources import (
     read_record,
     source_changes,
     source_policy,
+    wheel_changes,
 )
 from kivyforge.report import diagnostics
 
@@ -277,6 +280,25 @@ class TestCheckHelpers:
         moved = dataclasses.replace(_locked("kivy", path=True), version="2")
         assert source_changes(old, [moved, _locked("new")]) == []
 
+    def test_wheel_changes_name_a_rebuilt_wheel(self):
+        old = [_locked("kivymd", path=True), _locked("x")]
+        rebuilt = dataclasses.replace(
+            old[0],
+            wheels=(dataclasses.replace(old[0].wheels[0], sha256="1" * 64),),
+        )
+        assert wheel_changes(old, [rebuilt, _locked("x")]) == [
+            f"  ~ kivymd: kivymd.whl changed (sha256 {'0' * 12} -> {'1' * 12})"
+        ]
+
+    def test_wheel_changes_ignore_version_moves(self):
+        old = [_locked("kivymd", path=True)]
+        moved = dataclasses.replace(
+            old[0],
+            version="2",
+            wheels=(dataclasses.replace(old[0].wheels[0], sha256="1" * 64),),
+        )
+        assert wheel_changes(old, [moved]) == []
+
     def test_an_old_lock_without_indexes_is_not_drift(self):
         old = _lock([_locked("kivy"), _locked("x", index="https://a/")])
         new = _lock([_locked("kivy", index=PYPI_URL), _locked("x", index="https://b/")])
@@ -284,3 +306,38 @@ class TestCheckHelpers:
         by_name = {p.name: p.source_index for p in result.packages}
         # kivy was never recorded: ignored. x was: a change still shows.
         assert by_name == {"kivy": None, "x": "https://b/"}
+
+
+class TestChangedLocalWheels:
+    """A wheel replaced in find_links leaves the lock inputs unchanged (#190)."""
+
+    def _pinned(self, tmp_path, content: bytes) -> LockedPackage:
+        path = _wheel(tmp_path / "wheels", "kivymd.whl")
+        path.write_bytes(content)
+        wheel = LockedWheel(
+            name="kivymd.whl",
+            sha256=hashlib.sha256(content).hexdigest(),
+            path="wheels/kivymd.whl",
+        )
+        return LockedPackage(name="kivymd", version="1", wheels=(wheel,))
+
+    def test_an_unchanged_wheel_is_not_reported(self, tmp_path):
+        package = self._pinned(tmp_path, b"one")
+        assert changed_local_wheels([package], tmp_path) == {}
+
+    def test_a_replaced_wheel_is_reported(self, tmp_path):
+        package = self._pinned(tmp_path, b"one")
+        (tmp_path / "wheels" / "kivymd.whl").write_bytes(b"two")
+        assert changed_local_wheels([package], tmp_path) == {
+            "kivymd": ["  ~ kivymd: wheels/kivymd.whl changed since it was locked"]
+        }
+
+    def test_a_deleted_wheel_is_reported(self, tmp_path):
+        package = self._pinned(tmp_path, b"one")
+        (tmp_path / "wheels" / "kivymd.whl").unlink()
+        assert changed_local_wheels([package], tmp_path) == {
+            "kivymd": ["  - kivymd: wheels/kivymd.whl is missing"]
+        }
+
+    def test_index_wheels_are_not_read(self, tmp_path):
+        assert changed_local_wheels([_locked("kivy")], tmp_path) == {}
