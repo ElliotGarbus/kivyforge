@@ -28,7 +28,13 @@ from ..find_links import (
     wheel_path_from_project_root,
 )
 from ..inputs import lock_inputs_sha256
-from ..model import LockedPackage, LockedWheel, PackageDep, canonical_name
+from ..model import (
+    LockedPackage,
+    LockedSwiftPackage,
+    LockedWheel,
+    PackageDep,
+    canonical_name,
+)
 from ..prefer import preferred_pins, resolve_preferring
 from ..sources import (
     SourceUnavailable,
@@ -57,6 +63,7 @@ def build_wheel_runtime_lock(
     runtime_provider: RuntimeProvider | None = None,
     native_binaries: tuple[NativeBinaryDep, ...] = (),
     include_files: tuple[IncludeFile, ...] = (),
+    swift_packages: tuple[LockedSwiftPackage, ...] = (),
     prefer: Iterable[LockedPackage] = (),
     prefer_runtime: PythonRuntime | None = None,
     offline: bool = False,
@@ -72,6 +79,8 @@ def build_wheel_runtime_lock(
     its runtime, kept while the version, archs and provider floor still
     match, which skips the GitHub lookup. Empty resolves to the
     newest version each specifier allows (``lock --update``).
+    ``swift_packages`` are already resolved: SPM is a platform's concern, so the
+    platform pins them and this engine only records them.
     """
     if profile.overlay(config) is None:
         raise WheelRuntimeBuildError(profile.missing_overlay_error())
@@ -218,6 +227,7 @@ def build_wheel_runtime_lock(
         tool_kivyforge_schema_version=profile.schema_version(config),
         native_binaries=locked_native_binaries,
         include_files=tuple(include_pins),
+        swift_packages=tuple(sorted(swift_packages, key=lambda s: s.name)),
     )
 
 
@@ -358,6 +368,7 @@ def _normalized(lock: WheelRuntimeLock) -> WheelRuntimeLock:
         ),
         native_binaries=tuple(sorted(lock.native_binaries, key=lambda b: b.name)),
         include_files=tuple(sorted(lock.include_files, key=lambda p: p.key)),
+        swift_packages=tuple(sorted(lock.swift_packages, key=lambda s: s.name)),
     )
 
 

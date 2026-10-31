@@ -9,7 +9,8 @@ ad-hoc sign. Produces the layout documented in macos-spec:
                          Resources/{app,lib,python,<exe>.icns}}
 
 plus ``Helpers/`` and ``Frameworks/`` when ``native.binaries`` declares
-executables or libraries, and whatever ``include_files`` puts under
+executables or libraries, the frameworks and resource bundles
+``native.swift_packages`` builds, and whatever ``include_files`` puts under
 ``Resources/`` or ``SharedSupport/``.
 """
 
@@ -42,9 +43,10 @@ from .includes import check_includes, stage_includes, verify_bundle
 from .launcher import build_launcher, find_libpython
 from .lock import MacosLockfile
 from .native_stage import stage_native_binaries
-from .plist import build_info_plist
+from .plist import DEFAULT_MINIMUM_SYSTEM_VERSION, build_info_plist
 from .runtime_stage import stage_runtime
 from .signing import sign_bundle_adhoc
+from .swift_packages import XcodebuildRunner, build_swift_packages
 from .wheels_stage import stage_wheels
 
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store")
@@ -137,12 +139,14 @@ def build_app_bundle(
     cache: ArtifactCache | None = None,
     release: bool = False,
     verify_lock: bool = True,
+    swift_runner: XcodebuildRunner | None = None,
     echo=click.echo,
     note=discard_note,
 ) -> Path:
     """Build the ``.app`` and return its path.
 
     With *verify_lock*, ``include_files`` must match the lock's pins.
+    *swift_runner* replaces the ``xcodebuild`` run for Swift packages (tests).
     """
     target_arch = resolve_assembly_arch(lock.archs, arch)
     cache = cache or ArtifactCache()
@@ -199,6 +203,23 @@ def build_app_bundle(
                 no_cache=no_cache,
                 echo=echo,
                 note=note,
+            )
+
+        if lock.swift_packages:
+            # Built outside the temp bundle, so package checkouts and objects
+            # survive to the next build; only the products are copied in.
+            build_swift_packages(
+                lock.swift_packages,
+                contents,
+                project_root=project_root,
+                work_dir=staging_dir / "spm",
+                arch=target_arch,
+                minimum_system_version=(
+                    config.macos_required.minimum_system_version
+                    or DEFAULT_MINIMUM_SYSTEM_VERSION
+                ),
+                run=swift_runner,
+                echo=echo,
             )
 
         _copy_app_sources(config, project_root, resources / "app")

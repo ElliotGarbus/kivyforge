@@ -997,6 +997,72 @@ class TestMacosInfoPlist:
             _macos("info_plist = 'x'\n")
 
 
+class TestMacosSwiftPackages:
+    """``[tool.kivy.macos.native.swift_packages]`` (#201): the iOS keys less
+    ``link``/``embed``."""
+
+    def _load(self, body: str):
+        return load(_MACOS_BASE + body, require_ios=False, require_macos=True)
+
+    def test_none_by_default(self):
+        assert self._load("").macos_required.swift_packages == ()
+
+    def test_remote_and_local(self):
+        cfg = self._load(
+            "[tool.kivy.macos.native.swift_packages]\n"
+            'Firebase = { url = "https://github.com/firebase/firebase-ios-sdk", '
+            'requirement = { from = "11.0.0" }, products = ["FirebaseCore"] }\n'
+            'Shim = { path = "swift-shims", products = ["Shim"] }\n'
+        )
+        pkgs = {p.name: p for p in cfg.macos_required.swift_packages}
+        assert pkgs["Firebase"].requirement == {"from": "11.0.0"}
+        assert pkgs["Firebase"].products == ("FirebaseCore",)
+        assert pkgs["Shim"].path == "swift-shims"
+
+    def test_ios_table_is_not_read_on_macos(self):
+        cfg = load(
+            _MACOS_BASE + "[tool.kivy.ios]\nschema_version=1\n"
+            "bundle_id='org.example.app'\npython={version='3.15.0'}\n"
+            "[tool.kivy.ios.native.swift_packages]\n"
+            'Shim = { path = "swift-shims", products = ["Shim"] }\n',
+            require_ios=False,
+            require_macos=True,
+        )
+        assert cfg.macos_required.swift_packages == ()
+
+    @pytest.mark.parametrize("key", ["link", "embed"])
+    def test_xcode_target_settings_refused(self, key):
+        with pytest.raises(ConfigError, match="macOS does not use") as exc:
+            self._load(
+                "[tool.kivy.macos.native.swift_packages]\n"
+                f'Shim = {{ path = "swift-shims", products = ["Shim"], {key} = true }}\n'
+            )
+        assert exc.value.key_path == (
+            f"tool.kivy.macos.native.swift_packages.Shim.{key}"
+        )
+
+    def test_errors_name_the_macos_table(self):
+        with pytest.raises(ConfigError, match="exactly one of") as exc:
+            self._load(
+                '[tool.kivy.macos.native.swift_packages]\nShim = { products = ["S"] }\n'
+            )
+        assert exc.value.key_path == "tool.kivy.macos.native.swift_packages.Shim"
+
+    def test_path_must_stay_in_the_project(self):
+        with pytest.raises(ConfigError, match="escape"):
+            self._load(
+                "[tool.kivy.macos.native.swift_packages]\n"
+                'Shim = { path = "../elsewhere", products = ["Shim"] }\n'
+            )
+
+    def test_unknown_key_still_caught(self):
+        with pytest.raises(ConfigError, match="unknown key .prodcuts."):
+            self._load(
+                "[tool.kivy.macos.native.swift_packages]\n"
+                'Shim = { path = "swift-shims", products = ["Shim"], prodcuts = [] }\n'
+            )
+
+
 class TestMacosArchs:
     def test_default(self):
         assert _macos().macos_required.archs == ("arm64",)

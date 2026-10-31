@@ -478,7 +478,7 @@ VALID_SWIFT_REQUIREMENT_KINDS = frozenset(
 
 @dataclass(frozen=True)
 class SwiftPackageDep:
-    """One ``[tool.kivy.ios.native.swift_packages]`` entry (spec 07).
+    """One ``[tool.kivy.<ios|macos>.native.swift_packages]`` entry (spec 07).
 
     Exactly one of ``url`` (remote, with a ``requirement`` rule) or ``path``
     (local, repo-relative) is set. ``requirement`` is a single-key inline table
@@ -613,6 +613,10 @@ class MacosConfig:
     entitlements: dict[str, object] = field(default_factory=dict)
     signing: MacosSigningConfig = field(default_factory=MacosSigningConfig)
     binaries: tuple[NativeBinaryDep, ...] = ()
+    #: ``[tool.kivy.macos.native.swift_packages]`` (#201), built into
+    #: frameworks in ``Contents/Frameworks``. ``link``/``embed`` are refused
+    #: at load; nothing on macOS reads them.
+    swift_packages: tuple[SwiftPackageDep, ...] = ()
     build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
     include_files: tuple[IncludeFile, ...] = ()
     #: ``[tool.kivy.macos.info_plist]``: merged over the managed keys (#201).

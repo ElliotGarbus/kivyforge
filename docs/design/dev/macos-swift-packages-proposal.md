@@ -1,6 +1,8 @@
 # macOS: Swift packages (`[tool.kivy.macos.native.swift_packages]`)
 
-Status: **proposal**, 2026-10-31. Issue
+Status: **accepted**, 2026-10-31; the spike in
+[macos-swift-packages-spike-findings.md](macos-swift-packages-spike-findings.md)
+corrected §3.2 as noted there, and the design below is what shipped. Issue
 [#201](https://github.com/ElliotGarbus/kivyforge/issues/201) asks for Swift
 packages and `Info.plist` keys on macOS, as on iOS, citing Firebase. The
 `Info.plist` half and its prerequisite, a launcher that keeps the `.app` as
@@ -64,22 +66,36 @@ let package = Package(
 )
 ```
 
-- **One dynamic image.** Every declared product links statically into one
-  framework, so there is one thing to load from Python, and SwiftPM's
-  automatic products are never duplicated across images.
+- **One dynamic image to load.** Every product whose manifest leaves `type`
+  unset links statically into the root framework, so Python loads one thing
+  and SwiftPM's automatic products are never duplicated across images. A
+  product that declares `type: .dynamic` (the swift-bridge shim does) stays a
+  framework of its own, which the root links by `@rpath`. The build copies
+  every framework `xcodebuild` writes to `PackageFrameworks/`, and dyld loads
+  the others when Python loads the root.
+- **Run paths.** `xcodebuild` gives the frameworks only `/usr/lib/swift`, so
+  kivyforge builds with `LD_RUNPATH_SEARCH_PATHS=@loader_path/../../..`: from
+  `X.framework/Versions/A/` that is `Contents/Frameworks/`, whatever process
+  loads it.
 - **`-ObjC`.** Python reaches Swift through the Objective-C runtime by class
-  name. Nothing in the aggregate references those classes, so without it the
-  linker drops their object files from the static archives. Firebase needs
-  the same flag on iOS (#197). `unsafeFlags` is allowed because this is the
-  root package.
+  name. Xcode links each package target as a prelinked object, so its classes
+  stay without the flag (spike, step 2), but a package's static
+  `binaryTarget` is an archive the linker would strip of unreferenced classes
+  and categories. Firebase needs the flag on iOS (#197). `unsafeFlags` is
+  allowed because this is the root package.
 - **`xcodebuild`, not `swift build`**, because of the resource accessor in
-  section 2. The Xcode accessor also looks under the main bundle's and the
-  framework's `resourceURL`. **To verify in the spike:** where `xcodebuild`
-  puts each `<pkg>_<target>.bundle` for a dynamic package product, and that
-  `Bundle.module` finds them once copied into the framework's `Resources/`.
-- The framework is copied into `Contents/Frameworks/`, and the existing
-  inside-out deep sign covers it. Its resource bundles are data inside the
-  framework, sealed with it.
+  section 2. The Xcode accessor looks under the main bundle's `resourceURL`,
+  then the `resourceURL` of the image holding the module's code, then the top
+  of the main bundle. `xcodebuild` writes each `<pkg>_<target>.bundle` beside
+  `PackageFrameworks/`, outside every framework.
+- **Placement.** Frameworks go to `Contents/Frameworks/`. Resource bundles go
+  to `Contents/Resources/`: the first place every accessor looks, for static
+  and `.dynamic` products alike, and where Xcode puts them for an app. A
+  framework's own `Resources/` works only for code linked into it. The
+  existing inside-out deep sign covers both, unchanged (spike, step 4).
+- Built with `ARCHS=<assembly arch>` and `CODE_SIGNING_ALLOWED=NO`; the deep
+  sign signs the frameworks later, and resource-bundle targets never ask for a
+  team.
 
 ### 3.3 Python side
 
@@ -107,11 +123,12 @@ declared, and add "`xcodebuild` can build for macOS".
 1. Spike (section 3.2's open point): `examples/mobile/swift-bridge`'s local
    shim plus one remote package with resources, built as above; from Python,
    construct a shim class through Rubicon and read a `Bundle.module`
-   resource. Record in a findings doc.
+   resource. **Done 2026-10-31**:
+   [macos-swift-packages-spike-findings.md](macos-swift-packages-spike-findings.md).
 2. Firebase on macOS: `FirebaseCore` + `GoogleService-Info.plist` through
    `include_files` + `FirebaseApp.configure()` from Python, ad-hoc and
    Developer ID + notarized. A `hardware-checklist.toml` entry, since it needs
-   a Firebase project.
+   a Firebase project: `macos-firebase-swift-package`, not yet run.
 3. Hermetic tests for config, lock, `Package.swift` rendering and staging,
    with `xcodebuild` faked as `swift` is on iOS.
 

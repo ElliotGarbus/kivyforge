@@ -150,4 +150,5 @@ Replace `APP_PATH` with the path to the `.app`.
 
 - [Sign, notarize, and staple a macOS app](signing.md) for distribution.
 - [Package a macOS app in a .dmg](dmg.md).
+- [Add a Swift package to your macOS app](swift-packages.md).
 - [`[tool.kivy.macos]` reference](../../reference/pyproject/macos.md).

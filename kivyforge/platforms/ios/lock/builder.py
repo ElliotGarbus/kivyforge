@@ -53,10 +53,10 @@ from .model import (
 from .python_meta import PythonOrgProvider, PythonXcframeworkProvider
 from .resolver import Resolver, ResolverError, get_resolver
 from .spm import (
-    ResolvedSwiftPackage,
     SpmResolver,
     SpmResolverError,
     get_spm_resolver,
+    lock_swift_packages,
 )
 from .xcframework import XcframeworkResolverError, resolve_xcframeworks
 
@@ -381,49 +381,15 @@ def _resolve_swift_packages(
     project_root: Path,
     offline: bool,
 ) -> list[LockedSwiftPackage]:
-    """Resolve remote SPM packages to pins; assemble lock entries (sorted by name).
-
-    Local (``path``) packages need no resolution. The resolver is only built and
-    invoked when at least one remote package is declared, so a pure-wheel (or
-    local-only) project never requires the Swift toolchain.
-    """
-    if not declared:
-        return []
-    remote = [p for p in declared if p.url]
-    resolved: dict[str, ResolvedSwiftPackage] = {}
-    if remote:
-        resolver = spm_resolver or get_spm_resolver()
-        try:
-            for r in resolver.resolve(
-                remote, project_root=project_root, offline=offline
-            ):
-                resolved[r.name] = r
-        except SpmResolverError as exc:
-            raise BuildError(str(exc)) from exc
-
-    out: list[LockedSwiftPackage] = []
-    for pkg in declared:
-        pin = resolved.get(pkg.name)
-        if pkg.url and pin is None:
-            raise BuildError(
-                f"swift package {pkg.name!r} resolved to no revision; re-run lock "
-                f"with network access."
-            )
-        out.append(
-            LockedSwiftPackage(
-                name=pkg.name,
-                products=pkg.products,
-                url=pkg.url,
-                path=pkg.path,
-                requirement=pkg.requirement if pkg.url else None,
-                revision=pin.revision if pin else None,
-                version=pin.version if pin else None,
-                link=pkg.link,
-                embed=pkg.embed,
-            )
+    try:
+        return lock_swift_packages(
+            declared,
+            lambda: spm_resolver or get_spm_resolver(),
+            project_root=project_root,
+            offline=offline,
         )
-    out.sort(key=lambda s: s.name)
-    return out
+    except SpmResolverError as exc:
+        raise BuildError(str(exc)) from exc
 
 
 def _locked_wheel_from_resolved(w, *, project_root: Path) -> LockedWheel:

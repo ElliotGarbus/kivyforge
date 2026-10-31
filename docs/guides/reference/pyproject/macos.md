@@ -84,6 +84,25 @@ URL, or a project-relative path. Executables are staged into
 else is refused. See
 [Ship native binaries](../../guides/cross-platform/native-binaries.md).
 
+## `[tool.kivy.macos.native.swift_packages]`
+
+Each entry is `NAME = { ... }` and declares a Swift Package Manager dependency.
+Every product is built with `xcodebuild` into
+`Contents/Frameworks/KivyforgePackages.framework`, which your Python code
+loads. Building needs the full Xcode. See
+[Add a Swift package to your macOS app](../../guides/macos/swift-packages.md).
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `url` | string | none | Remote package URL. Set exactly one of `url` and `path`. |
+| `path` | string | none | Project-relative directory of a local package. |
+| `requirement` | table | required with `url` | Exactly one rule: `exact`, `from`, `up_to_next_minor`, `branch`, or `revision` (a string), or `range` (a list of two versions). |
+| `products` | list of string | required | Library products to build into the framework. Must not be empty. |
+
+`link` and `embed`, which iOS has, are refused: they configure an Xcode app
+target, and a macOS `.app` has none. `[tool.kivy.ios.native.swift_packages]` is
+not read on macOS; declare a package in each overlay that uses it.
+
 ## `[[tool.kivy.macos.include_files]]`
 
 An array of tables. Each entry copies project files into the `.app`. See

@@ -9,14 +9,13 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from kivyforge.lock.pep751 import parse_include_file
+from kivyforge.lock.pep751 import parse_include_file, parse_swift_package
 from kivyforge.lock.pep751 import parse_package as _parse_package
 from kivyforge.lock.reader import LockError
 
 from .model import (
     LOCK_VERSION,
     TOOL_SCHEMA_VERSION,
-    LockedSwiftPackage,
     LockedXcframework,
     Lockfile,
     PythonXcframework,
@@ -78,7 +77,7 @@ def _from_raw(raw: dict) -> Lockfile:
     packages = tuple(_parse_package(p) for p in _as_list(raw, "packages"))
     xcframeworks = tuple(_parse_xcframework(x) for x in _as_list(tool, "xcframeworks"))
     swift_packages = tuple(
-        _parse_swift_package(s) for s in _as_list(tool, "swift_packages")
+        parse_swift_package(s) for s in _as_list(tool, "swift_packages")
     )
     include_files = tuple(
         parse_include_file(f) for f in _as_list(tool, "include_files")
@@ -171,19 +170,4 @@ def _parse_xcframework(x: dict) -> LockedXcframework:
         link=bool(x.get("link", True)),
         embed=bool(x.get("embed", True)),
         source=x.get("source"),
-    )
-
-
-def _parse_swift_package(s: dict) -> LockedSwiftPackage:
-    requirement = s.get("requirement")
-    return LockedSwiftPackage(
-        name=s["name"],
-        products=tuple(s.get("products", [])),
-        url=s.get("url"),
-        path=s.get("path"),
-        requirement=dict(requirement) if requirement else None,
-        revision=s.get("revision"),
-        version=s.get("version"),
-        link=bool(s.get("link", True)),
-        embed=bool(s.get("embed", True)),
     )

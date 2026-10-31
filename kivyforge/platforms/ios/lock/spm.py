@@ -2,7 +2,7 @@
 
 ``kivyforge lock`` resolves each declared remote SPM package to a concrete Git
 **revision** (and resolved semantic version when tag-resolved) so the build is
-reproducible. Xcode/SPM owns the lifecycle; this module only drives a throwaway
+reproducible. iOS and macOS both lock through :func:`lock_swift_packages`. Xcode/SPM owns the lifecycle; this module only drives a throwaway
 ``swift package resolve`` and reads back the ``Package.resolved`` it produces.
 
 The backend is abstracted behind the ``SpmResolver`` protocol so unit tests can
@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Protocol
 
 from kivyforge.config.model import SwiftPackageDep
+from kivyforge.lock.model import LockedSwiftPackage
 from kivyforge.streaming import elapsed, run_streaming
 
 
@@ -103,7 +104,7 @@ class XcodeSpmResolver:
                     f"could not run {self._swift!r}; Xcode's Swift toolchain is "
                     "required to resolve Swift packages.\n"
                     "  Install Xcode and run `xcode-select --switch`, or remove the "
-                    "[tool.kivy.ios.native.swift_packages] entries."
+                    "remote swift_packages entries."
                 ) from exc
             if returncode != 0:
                 raise SpmResolverError(
@@ -152,6 +153,77 @@ def get_spm_resolver(backend: str = "xcode", **kwargs) -> SpmResolver:
     if backend == "xcode":
         return XcodeSpmResolver(**kwargs)
     raise SpmResolverError(f"unknown SPM resolver backend {backend!r} (expected xcode)")
+
+
+def lock_swift_packages(
+    declared: tuple[SwiftPackageDep, ...],
+    make_resolver: Callable[[], SpmResolver],
+    *,
+    project_root: Path,
+    offline: bool,
+) -> list[LockedSwiftPackage]:
+    """Resolve remote SPM packages to pins; assemble lock entries (sorted by name).
+
+    Local (``path``) packages need no resolution. *make_resolver* is called
+    only when at least one remote package is declared, so a pure-wheel (or
+    local-only) project never requires the Swift toolchain.
+    """
+    if not declared:
+        return []
+    remote = [p for p in declared if p.url]
+    resolved: dict[str, ResolvedSwiftPackage] = {}
+    if remote:
+        resolver = make_resolver()
+        for r in resolver.resolve(remote, project_root=project_root, offline=offline):
+            resolved[r.name] = r
+
+    out: list[LockedSwiftPackage] = []
+    for pkg in declared:
+        pin = resolved.get(pkg.name)
+        if pkg.url and pin is None:
+            raise SpmResolverError(
+                f"swift package {pkg.name!r} resolved to no revision; re-run lock "
+                f"with network access."
+            )
+        out.append(
+            LockedSwiftPackage(
+                name=pkg.name,
+                products=pkg.products,
+                url=pkg.url,
+                path=pkg.path,
+                requirement=pkg.requirement if pkg.url else None,
+                revision=pin.revision if pin else None,
+                version=pin.version if pin else None,
+                link=pkg.link,
+                embed=pkg.embed,
+            )
+        )
+    out.sort(key=lambda s: s.name)
+    return out
+
+
+def swift_package_changes(
+    old: tuple[LockedSwiftPackage, ...], new: tuple[LockedSwiftPackage, ...]
+) -> list[str]:
+    """``lock`` diff lines for Swift package pins that were added, removed or moved."""
+    out: list[str] = []
+    before = {s.name: s for s in old}
+    after = {s.name: s for s in new}
+    for name in sorted(after.keys() - before.keys()):
+        out.append(f"  + swift package {name} {_pin_label(after[name])} (added)")
+    for name in sorted(before.keys() - after.keys()):
+        out.append(f"  - swift package {name} {_pin_label(before[name])} (removed)")
+    for name in sorted(before.keys() & after.keys()):
+        o, n = before[name], after[name]
+        if o != n:
+            out.append(f"  ~ swift package {name}: {_pin_label(o)} -> {_pin_label(n)}")
+    return out
+
+
+def _pin_label(sp: LockedSwiftPackage) -> str:
+    if sp.path:
+        return f"(local {sp.path})"
+    return sp.version or (sp.revision or "")[:12]
 
 
 # --- pure helpers (unit-tested without a swift toolchain) ----------------------

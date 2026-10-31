@@ -227,7 +227,10 @@ MyApp.app/
 │       │                            absent when the table is empty
 │       ├── lib/                   ← installed wheels (site-packages)
 │       ├── python/                ← bundled CPython runtime + stdlib
+│       ├── <pkg>_<target>.bundle  ← Swift package resources (native.swift_packages)
 │       └── <include_files>        ← user data files under a Resources dest
+│   ├── Frameworks/                ← native.binaries libraries; KivyforgePackages.framework
+│   │                                and any .dynamic package product (native.swift_packages)
 │   └── SharedSupport/             ← user data files under a SharedSupport dest
 ```
 
@@ -401,6 +404,26 @@ magic — its walks-only-runtime-and-wheels assumption predates sweeping
 and fail `codesign`. The native channel's header reader tells the two apart by
 slice count; the signer does not yet. A known limitation; fix if anyone ever
 hits it.
+
+### Swift packages (`[tool.kivy.macos.native.swift_packages]`)
+
+> **Implementation status: implemented** (#201). Design:
+> [macos-swift-packages-proposal](../../dev/macos-swift-packages-proposal.md);
+> measured in
+> [macos-swift-packages-spike-findings](../../dev/macos-swift-packages-spike-findings.md).
+
+The iOS entry keys `url`, `path`, `requirement`, `products`; `link` and `embed`
+are refused (Xcode target settings, and there is no Xcode target). `lock` pins
+remote revisions with the iOS resolver (`platforms/ios/lock/spm.py`) into
+`[[tool.kivyforge.swift_packages]]`, without `link`/`embed`; the table is a lock
+input. `build` writes a root package under `build/macos/spm/` depending on
+every locked product, builds its one `.dynamic` product, `KivyforgePackages`,
+with `xcodebuild` (`ARCHS=<arch>`, `CODE_SIGNING_ALLOWED=NO`,
+`LD_RUNPATH_SEARCH_PATHS=@loader_path/../../..`, `-Xlinker -ObjC`), and copies
+every framework under `PackageFrameworks/` into `Contents/Frameworks/` and
+every `<pkg>_<target>.bundle` into `Contents/Resources/`, before byte-compiling
+and signing. Python loads the framework itself (`rubicon.objc.runtime.load_library`);
+nothing loads it at launch. Code: `platforms/macos/swift_packages.py`.
 
 ### Data files (`include_files`)
 
@@ -589,6 +612,8 @@ xcrun stapler staple MyApp.dmg
 | Signing identity | project | When Developer ID signing is configured, the identity is present in exactly one keychain (`security find-identity`). SKIP when unconfigured (ad-hoc floor). FAIL if it's present in more than one keychain (`codesign` refuses to disambiguate). WARN if it's found scoped to `login.keychain-db` — Apple's "Care and Feeding of Developer ID" recommends a dedicated keychain so unrelated login-keychain churn can't corrupt the signing key's ACL. |
 | Signing identity type | project | WARN if the configured identity isn't a `Developer ID Application`/`Developer ID Installer` certificate — notarization rejects any other type (e.g. `Apple Development`). SKIP when unconfigured. |
 | Notary setup | project | When `notary_profile` is configured, `xcrun notarytool` is available. Profile *validity* needs a network round-trip and is verified at submit time. |
+| Swift package toolchain | project | With `native.swift_packages` declared, `swift` is available (`lock` resolves with it). SKIP otherwise. |
+| Swift packages (xcodebuild) | project | With `native.swift_packages` declared, `xcodebuild` runs (the full Xcode, not just the command-line tools), and each local package has a `Package.swift`. SKIP otherwise. |
 
 `doctor` reports each check as PASS / WARN / FAIL with a remediation hint; exit
 code is non-zero only on FAIL.
@@ -604,7 +629,8 @@ build-then-notarize round trip.
 
 - A macOS host (Apple Silicon or Intel). The Xcode command-line tools provide
   `codesign`; the full Xcode IDE is **not** required for a macOS `.app` (unlike
-  iOS).
+  iOS), except to build `[tool.kivy.macos.native.swift_packages]`, which needs
+  `xcodebuild`.
 - No Apple Developer account is needed for ad-hoc signing. Developer ID signing
   + notarization needs a **paid** Apple Developer Program membership (a free
   Apple ID cannot issue Developer ID certificates or use the notary service).

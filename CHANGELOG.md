@@ -26,8 +26,27 @@
   `@rpath` links resolve where they did before.
 - **Migration:** run `kivyforge build -p macos` again; nothing in
   `pyproject.toml` needs to change. Swift packages on macOS, the other half
-  of #201, are not in this release. See
-  `docs/design/dev/macos-swift-packages-proposal.md`.
+  of #201, are in the next entry.
+
+### macOS: Swift packages (`[tool.kivy.macos.native.swift_packages]`)
+
+- **Added:** `[tool.kivy.macos.native.swift_packages]`, with the iOS keys
+  `url`, `path`, `requirement` and `products`
+  ([#201](https://github.com/ElliotGarbus/kivyforge/issues/201)). `lock -p
+  macos` pins each remote package's revision in
+  `[[tool.kivyforge.swift_packages]]` in `pylock.macos.toml`. `build` builds
+  every product with `xcodebuild` into
+  `Contents/Frameworks/KivyforgePackages.framework`, plus a framework for each
+  product a package declares `type: .dynamic`, and stages each package's
+  resource bundle in `Contents/Resources/`, where `Bundle.module` finds it.
+  Python loads the framework with Rubicon-ObjC's `load_library` and calls its
+  `@objc` classes; the guide is "Add a Swift package to your macOS app".
+  Building needs the full Xcode; `doctor -p macos` checks for it.
+- **Refused:** `link` and `embed` under the macOS table. They are Xcode
+  target settings, and a macOS `.app` has no Xcode target.
+- **Migration:** `swift_packages` is now a macOS lock input, so every existing
+  `pylock.macos.toml` reads as stale once, with or without the table. Run
+  `kivyforge lock -p macos`; it keeps the pinned versions and runtime.
 
 ### `exclude` stops pip from looking for the package
 

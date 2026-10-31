@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import textwrap
 
 from kivyforge.config import load_config_from_text
@@ -529,3 +530,82 @@ class TestAppIcon:
         )
         r = M.check_macos_app_icon(cfg, tmp_path)
         assert r.status is Status.FAIL
+
+
+_SWIFT = (
+    "[tool.kivy.macos.native.swift_packages]\n"
+    'Promises = { url = "https://github.com/google/promises", '
+    'requirement = { from = "2.4.0" }, products = ["Promises"] }\n'
+    'Shim = { path = "swift-shims", products = ["Shim"] }\n'
+)
+
+
+class TestSwiftPackages:
+    """``[tool.kivy.macos.native.swift_packages]`` (#201)."""
+
+    def _shim(self, tmp_path):
+        (tmp_path / "swift-shims").mkdir()
+        (tmp_path / "swift-shims" / "Package.swift").write_text("// shim")
+
+    def test_skip_when_none_declared(self, tmp_path):
+        r = M.check_macos_swift_packages(FakeProbe(), _macos_config(), tmp_path)
+        assert r.status is Status.SKIP
+
+    def test_pass_names_xcode(self, tmp_path):
+        self._shim(tmp_path)
+        r = M.check_macos_swift_packages(
+            FakeProbe(xcode="27.0"), _macos_config(_SWIFT), tmp_path
+        )
+        assert r.status is Status.PASS
+        assert r.detail == "Xcode 27.0; 2 swift package(s) declared"
+
+    def test_command_line_tools_alone_fail(self, tmp_path):
+        self._shim(tmp_path)
+        r = M.check_macos_swift_packages(
+            FakeProbe(xcode=None), _macos_config(_SWIFT), tmp_path
+        )
+        assert r.status is Status.FAIL
+        assert r.code == diagnostics.TOOLCHAIN_MISSING
+        assert "xcode-select --switch" in (r.hint or "")
+
+    def test_local_package_without_manifest_fails(self, tmp_path):
+        r = M.check_macos_swift_packages(FakeProbe(), _macos_config(_SWIFT), tmp_path)
+        assert r.status is Status.FAIL
+        assert "Shim (swift-shims)" in r.detail
+
+    def test_git_host_must_be_reachable(self):
+        from kivyforge.lock.model import LockedSwiftPackage
+
+        lock = dataclasses.replace(
+            _lock(),
+            swift_packages=(
+                LockedSwiftPackage(
+                    name="P",
+                    products=("P",),
+                    url="git@github.com:google/promises.git",
+                    revision="a" * 40,
+                ),
+            ),
+        )
+        r = M.check_macos_hosts_reachable(FakeProbe(), lock)
+        assert "github.com" in r.detail
+
+    def test_runner_includes_both_checks(self, tmp_path):
+        self._shim(tmp_path)
+        (tmp_path / "src").mkdir()
+        results = run_macos_checks(
+            FakeProbe(swift=False),
+            kivyforge_version="3.0.0",
+            config=_macos_config(_SWIFT),
+            project_root=tmp_path,
+            lock=_lock(),
+        )
+        by_name = {r.name: r for r in results}
+        assert by_name["Swift package toolchain"].status is Status.FAIL
+        assert by_name[M.SWIFT_PACKAGES_NAME].status is Status.PASS
+
+    def test_environment_mode_skips_them(self):
+        results = run_macos_checks(FakeProbe(), kivyforge_version="3.0.0", config=None)
+        by_name = {r.name: r for r in results}
+        assert by_name["Swift package toolchain"].status is Status.SKIP
+        assert by_name[M.SWIFT_PACKAGES_NAME].status is Status.SKIP

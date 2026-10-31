@@ -1261,6 +1261,7 @@ def _parse_macos(
     signing = _parse_macos_signing(macos, finder)
     _check_macos_entitlements_notarizable(entitlements, signing, finder)
     binaries = _parse_native_binaries(macos, "macos", finder)
+    swift_packages = _parse_swift_packages(macos, finder, platform="macos")
     build_settings = _parse_desktop_build_settings(
         macos.get("build_settings"), "tool.kivy.macos.build_settings", finder
     )
@@ -1289,6 +1290,7 @@ def _parse_macos(
         entitlements=entitlements,
         signing=signing,
         binaries=tuple(binaries),
+        swift_packages=tuple(swift_packages),
         build_settings=build_settings,
         include_files=tuple(include_files),
         info_plist=info_plist,
@@ -3626,26 +3628,28 @@ def _parse_ios_python_build_settings(
     )
 
 
-def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDep]:
-    native = ios.get("native")
+def _parse_swift_packages(
+    overlay: dict, finder: _LineFinder, *, platform: str = "ios"
+) -> list[SwiftPackageDep]:
+    native = overlay.get("native")
     if not isinstance(native, dict):
         return []
     table = native.get("swift_packages")
     if table is None:
         return []
+    table_path = f"tool.kivy.{platform}.native.swift_packages"
     if not isinstance(table, dict):
-        raise ConfigError(
-            "[tool.kivy.ios.native.swift_packages] must be a table",
-            key_path="tool.kivy.ios.native.swift_packages",
-        )
+        raise ConfigError(f"[{table_path}] must be a table", key_path=table_path)
     out: list[SwiftPackageDep] = []
     for name, entry in table.items():
-        key_path = f"tool.kivy.ios.native.swift_packages.{name}"
+        key_path = f"{table_path}.{name}"
         if not isinstance(entry, dict):
             raise ConfigError(
                 f"swift package {name!r} must be an inline table",
                 key_path=key_path,
             )
+        if platform == "macos":
+            _refuse_xcode_target_settings(name, entry, key_path)
         url = entry.get("url")
         path = entry.get("path")
         if url is not None and (not isinstance(url, str) or not url):
@@ -3704,8 +3708,10 @@ def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDe
                 # file.` Reproduced against two real remote products (Firebase's
                 # FirebaseCore and FirebaseAuth) — see
                 # docs/design/dev/ios-firebase-spm-signing-findings.md.
+                # On macOS both keys are refused above, so this is True there:
+                # the iOS default must not leak into pylock.macos.toml.
                 embed=_require_bool(
-                    entry.get("embed", not url),
+                    entry.get("embed", not url or platform != "ios"),
                     key_path=f"{key_path}.embed",
                     field="embed",
                     finder=finder,
@@ -3713,6 +3719,25 @@ def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDe
             )
         )
     return out
+
+
+def _refuse_xcode_target_settings(name: str, entry: dict, key_path: str) -> None:
+    """``link``/``embed`` say how an Xcode app target uses a product.
+
+    A macOS ``.app`` has no Xcode target: every product is built into one
+    framework the app loads (macos-swift-packages-proposal §3.1), so neither
+    has a meaning there, and accepting one would promise a choice nothing
+    makes.
+    """
+    for key in ("link", "embed"):
+        if key in entry:
+            raise ConfigError(
+                f"swift package {name!r} sets {key!r}, which macOS does not use",
+                key_path=f"{key_path}.{key}",
+                hint="on macOS every product is built into "
+                "Contents/Frameworks/KivyforgePackages.framework, which your "
+                "Python code loads; remove the key.",
+            )
 
 
 def _parse_swift_requirement(
