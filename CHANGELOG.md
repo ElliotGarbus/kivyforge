@@ -129,11 +129,15 @@
   [#181](https://github.com/ElliotGarbus/kivyforge/issues/181). A local Swift
   package of `@objc` classes, declared in
   `[tool.kivy.ios.native.swift_packages]`, is called from Python through
-  pyobjus. The guide covers objects with state, collections in both
-  directions, methods that throw, `async` work that Python polls from Kivy's
-  `Clock`, and a Swift delegate protocol implemented in Python, with the
-  workarounds pyobjus 1.2.5 needs. kivyforge itself is unchanged, so nothing
-  needs migrating.
+  [Rubicon-ObjC](https://github.com/beeware/rubicon-objc), whose pure-Python
+  wheel comes from PyPI. The guide covers objects with state, collections in
+  both directions, methods that throw, Swift `async` methods called with a
+  Python completion handler, long work that Python polls from Kivy's `Clock`
+  to show progress and cancel, and a Swift delegate protocol implemented in
+  Python. A short section says what changes for an app that calls the same
+  shim with pyobjus, and [Call iOS APIs with pyobjus](docs/guides/guides/ios/pyobjus.md)
+  now lists the pyobjus 1.2.5 defects a Swift shim meets, with their
+  workarounds. kivyforge itself is unchanged, so nothing needs migrating.
 
 ### iOS: run code in the app lifecycle
 

@@ -2,7 +2,7 @@ import Foundation
 
 /// An object with state: initialisers, properties, collections in and out,
 /// and a throwing method. Python creates it with
-/// `autoclass("SBNotebook").alloc().initWithTitle_("...")`.
+/// `ObjCClass("SBNotebook").alloc().initWithTitle("...")`.
 ///
 /// Every signature uses types Objective-C can represent: String, Int, Double,
 /// Bool, arrays and dictionaries of those, and NSObject subclasses. A Swift
@@ -16,8 +16,6 @@ public final class Notebook: NSObject {
     @objc public var author = "anonymous"
     /// A read-only array property; Python sees an NSArray.
     @objc public private(set) var notes: [String] = []
-    /// Why the last `noteAtIndex:error:` call failed, or nil.
-    @objc public private(set) var lastError: String?
 
     @objc public override convenience init() {
         self.init(title: "Untitled")
@@ -68,8 +66,7 @@ public final class Notebook: NSObject {
         ]
     }
 
-    /// Takes a dictionary built in Python with `pyobjus.objc_dict()`.
-    /// Returns the keys it received, sorted.
+    /// Takes a plain Python dict. Returns the keys it received, sorted.
     @objc(applyOptions:)
     public func apply(options: [String: Any]) -> [String] {
         if let author = options["author"] as? String {
@@ -82,17 +79,15 @@ public final class Notebook: NSObject {
     }
 
     /// Exported to Objective-C as `-noteAtIndex:error:`. Python calls it as
-    /// `noteAtIndex_error_(i, None)` and gets None when it throws. pyobjus
-    /// does not return the NSError, so the reason is also kept in `lastError`.
+    /// `noteAtIndex(i, error=byref(error))`, gets None when it throws, and
+    /// finds the NSError in `error`.
     @objc(noteAtIndex:error:)
     public func note(at index: Int) throws -> String {
         guard notes.indices.contains(index) else {
             let reason = "no note at index \(index); the notebook has \(notes.count)"
-            lastError = reason
             throw NSError(domain: "SBNotebook", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: reason])
         }
-        lastError = nil
         return notes[index]
     }
 }
