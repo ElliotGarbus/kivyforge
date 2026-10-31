@@ -96,12 +96,14 @@ def macos_leaves(monkeypatch):
     def fake_runtime(runtime, arch, home, **k):
         (home / "bin").mkdir(parents=True)
         (home / "bin" / "python3").write_text("py")
+        (home / "lib").mkdir()
+        (home / "lib" / "libpython3.14.dylib").write_text("py")
         return home
 
     def fake_wheels(packages, arch, lib, **k):
         lib.mkdir(parents=True)
 
-    def fake_launcher(dest, *, entry_point, arch):
+    def fake_launcher(dest, *, entry_point, libpython, arch):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(b"\xcf\xfa\xed\xfe")
 

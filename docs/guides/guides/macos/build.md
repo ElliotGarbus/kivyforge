@@ -68,6 +68,22 @@ its wheels, so it runs on a Mac that has no Python installed.
     foreground, so the app's output and tracebacks appear in your terminal. To
     iterate, edit your source and run the command again.
 
+## Add keys to Info.plist
+
+Put usage descriptions, URL schemes, and the keys an SDK reads under
+`[tool.kivy.macos.info_plist]`:
+
+```toml
+[tool.kivy.macos.info_plist]
+NSCameraUsageDescription = "Scans QR codes."
+FirebaseAppDelegateProxyEnabled = false
+```
+
+kivyforge writes the identity and version keys itself, and refuses a table
+that sets one of them; the
+[reference](../../reference/pyproject/macos.md#toolkivymacosinfo_plist) lists
+them.
+
 ## Add files to the app bundle
 
 Some SDKs read a file from the app bundle rather than from your Python code.

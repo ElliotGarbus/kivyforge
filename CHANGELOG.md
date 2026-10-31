@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### macOS: `[tool.kivy.macos.info_plist]`, and the app is its own main bundle
+
+- **Added:** `[tool.kivy.macos.info_plist]`, a table of keys merged into the
+  `.app`'s `Info.plist`: usage descriptions, URL schemes, or an SDK's keys
+  such as Firebase's `FirebaseAppDelegateProxyEnabled`
+  ([#201](https://github.com/ElliotGarbus/kivyforge/issues/201)). Keys
+  kivyforge writes, such as `CFBundleIdentifier` and `LSMinimumSystemVersion`,
+  are rejected; the reference lists them.
+- **Fixed:** inside a running macOS app, the main bundle was
+  `Contents/Resources/python/bin`, not the `.app`, because the launcher
+  replaced itself with `python3`. Code that looks in the main bundle found no
+  bundle identifier, no `Info.plist` keys and no `Contents/Resources`, so
+  Firebase could not find a `GoogleService-Info.plist` added with
+  `include_files`. The launcher now runs Python in its own process from the
+  runtime's `libpython`, so the main bundle is the `.app`. `sys.executable`
+  is still the bundled `python3`.
+- **Changed:** the `.app`'s entitlements now apply to the process Python runs
+  in. Before, they stayed with the launcher, and Python ran without them. For
+  a library your app loads with `ctypes`, `@executable_path` is now
+  `Contents/MacOS`, so Apple's `@executable_path/../Frameworks/<lib>` form
+  works instead of failing the build with `KF-MACOS-NATIVE-LOAD-PATH`.
+  `@rpath` links resolve where they did before.
+- **Migration:** run `kivyforge build -p macos` again; nothing in
+  `pyproject.toml` needs to change. Swift packages on macOS, the other half
+  of #201, are not in this release. See
+  `docs/design/dev/macos-swift-packages-proposal.md`.
+
 ### `exclude` stops pip from looking for the package
 
 - **Fixed:** a name in `exclude` is no longer resolved at all, on every

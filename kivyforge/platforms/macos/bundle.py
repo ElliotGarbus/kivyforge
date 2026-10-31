@@ -39,7 +39,7 @@ from kivyforge.report.failures import reclassify
 from . import AppBundleError
 from .icns import generate_icns
 from .includes import check_includes, stage_includes, verify_bundle
-from .launcher import build_launcher
+from .launcher import build_launcher, find_libpython
 from .lock import MacosLockfile
 from .native_stage import stage_native_binaries
 from .plist import build_info_plist
@@ -210,6 +210,7 @@ def build_app_bundle(
         build_launcher(
             contents / "MacOS" / exe,
             entry_point=entry_launcher.main_module(config.kivy),
+            libpython=find_libpython(resources / "python"),
             arch=target_arch,
         )
 

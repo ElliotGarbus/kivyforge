@@ -123,6 +123,7 @@ MACOS: dict[str, Spec] = {
     "minimum_system_version": None,
     "entitlements": OPEN,
     "signing": {"identity": None, "team_id": None, "notary_profile": None},
+    "info_plist": OPEN,
     "include_files": ArrayOf({"dest": None, "sources": None}),
 }
 

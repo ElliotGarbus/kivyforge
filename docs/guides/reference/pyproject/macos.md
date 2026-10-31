@@ -57,6 +57,24 @@ entitlements; your values win. Applied only to Developer ID signing. When an
 `identity` is set, `com.apple.security.get-task-allow = true` is rejected, because
 notarization always rejects it.
 
+## `[tool.kivy.macos.info_plist]`
+
+A table of keys merged into the generated `Info.plist`, such as
+usage-description strings (`NSCameraUsageDescription`), URL schemes
+(`CFBundleURLTypes`), or the keys an SDK reads, like Firebase's
+`FirebaseAppDelegateProxyEnabled`. Values are written as TOML gives them:
+strings, numbers, booleans, arrays and tables. These keys are managed by
+kivyforge and rejected here:
+
+`CFBundleName`, `CFBundleDisplayName`, `CFBundleIdentifier`,
+`CFBundleExecutable`, `CFBundlePackageType`, `CFBundleInfoDictionaryVersion`,
+`CFBundleShortVersionString`, `CFBundleVersion`, `CFBundleIconFile`,
+`LSMinimumSystemVersion`, `NSHighResolutionCapable`, `LSBackgroundOnly`.
+
+Python runs in the app's own process, so code that reads the main bundle,
+such as `NSBundle.mainBundle` or an SDK that looks there, sees this
+`Info.plist` and the files in `Contents/Resources`.
+
 ## `[tool.kivy.macos.native.binaries]`
 
 Each entry is `NAME = { version = "...", source = "..." }` and declares a native
@@ -108,6 +126,9 @@ version = "3.13.14"
 
 [tool.kivy.macos.icons]
 source = "assets/icon.png"
+
+[tool.kivy.macos.info_plist]
+NSCameraUsageDescription = "Scans QR codes."
 
 [tool.kivy.macos.signing]
 identity = "Developer ID Application: Jane Doe (ABCDE12345)"

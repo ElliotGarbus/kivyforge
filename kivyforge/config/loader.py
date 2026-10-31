@@ -50,6 +50,7 @@ from .model import (
     MANAGED_ANDROID_ACTIVITY_ATTRS,
     MANAGED_ANDROID_APPLICATION_ATTRS,
     MANAGED_INFO_PLIST_KEYS,
+    MANAGED_MACOS_INFO_PLIST_KEYS,
     RESERVED_ANDROID_GRADLE_PROPERTIES,
     RESERVED_BUILD_SETTINGS,
     SUPPORTED_ANDROID_SCHEMA_VERSION,
@@ -1270,6 +1271,9 @@ def _parse_macos(
         project_root=project_root,
         allowed_roots=MACOS_INCLUDE_ROOTS,
     )
+    info_plist = _parse_info_plist(
+        macos, finder, platform="macos", managed=MANAGED_MACOS_INFO_PLIST_KEYS
+    )
 
     return MacosConfig(
         schema_version=schema_version,
@@ -1287,6 +1291,7 @@ def _parse_macos(
         binaries=tuple(binaries),
         build_settings=build_settings,
         include_files=tuple(include_files),
+        info_plist=info_plist,
     )
 
 
@@ -3810,21 +3815,24 @@ def _parse_signing(ios: dict, finder: _LineFinder) -> SigningConfig:
     )
 
 
-def _parse_info_plist(ios: dict, finder: _LineFinder) -> dict[str, object]:
-    info = ios.get("info_plist")
+def _parse_info_plist(
+    overlay: dict,
+    finder: _LineFinder,
+    *,
+    platform: str = "ios",
+    managed: frozenset[str] = MANAGED_INFO_PLIST_KEYS,
+) -> dict[str, object]:
+    info = overlay.get("info_plist")
     if info is None:
         return {}
+    key_path = f"tool.kivy.{platform}.info_plist"
     if not isinstance(info, dict):
-        raise ConfigError(
-            "[tool.kivy.ios.info_plist] must be a table",
-            key_path="tool.kivy.ios.info_plist",
-        )
-    conflicts = sorted(set(info) & MANAGED_INFO_PLIST_KEYS)
+        raise ConfigError(f"[{key_path}] must be a table", key_path=key_path)
+    conflicts = sorted(set(info) & managed)
     if conflicts:
         raise ConfigError(
-            f"[tool.kivy.ios.info_plist] sets kivyforge-managed key(s): "
-            f"{', '.join(conflicts)}",
-            key_path="tool.kivy.ios.info_plist",
+            f"[{key_path}] sets kivyforge-managed key(s): {', '.join(conflicts)}",
+            key_path=key_path,
             line=finder.line("info_plist"),
             hint="set these via their dedicated schema fields instead.",
         )

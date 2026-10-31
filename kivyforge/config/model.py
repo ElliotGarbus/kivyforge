@@ -255,6 +255,26 @@ MANAGED_INFO_PLIST_KEYS = frozenset(
     }
 )
 
+# Info.plist keys the macOS bundler writes (``platforms/macos/plist.py``); users
+# may not set these via [tool.kivy.macos.info_plist] (macos-spec). Every key it
+# writes, so a user value is never silently replaced by the managed one.
+MANAGED_MACOS_INFO_PLIST_KEYS = frozenset(
+    {
+        "CFBundleName",
+        "CFBundleDisplayName",
+        "CFBundleIdentifier",
+        "CFBundleExecutable",
+        "CFBundlePackageType",
+        "CFBundleInfoDictionaryVersion",
+        "CFBundleShortVersionString",
+        "CFBundleVersion",
+        "CFBundleIconFile",
+        "LSMinimumSystemVersion",
+        "NSHighResolutionCapable",
+        "LSBackgroundOnly",
+    }
+)
+
 # Xcode build settings the toolchain manages; rejected under
 # [tool.kivy.ios.xcode.build_settings] (spec 01).
 RESERVED_BUILD_SETTINGS = frozenset(
@@ -595,6 +615,8 @@ class MacosConfig:
     binaries: tuple[NativeBinaryDep, ...] = ()
     build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
     include_files: tuple[IncludeFile, ...] = ()
+    #: ``[tool.kivy.macos.info_plist]``: merged over the managed keys (#201).
+    info_plist: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -24,6 +24,8 @@ def faked(monkeypatch):
         home.mkdir(parents=True, exist_ok=True)
         (home / "bin").mkdir()
         (home / "bin" / "python3").write_text("x")
+        (home / "lib").mkdir()
+        (home / "lib" / "libpython3.14.dylib").write_text("x")
         calls["runtime"].append(arch)
         calls["order"].append("runtime")
         return home
@@ -37,10 +39,11 @@ def faked(monkeypatch):
         calls["native"].append(tuple(b.name for b in lock.native_binaries))
         calls["order"].append("native")
 
-    def fake_launcher(dest, *, entry_point, arch):
+    def fake_launcher(dest, *, entry_point, libpython, arch):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(b"\xcf\xfa\xed\xfe")  # Mach-O magic placeholder
         calls["launcher"] = (entry_point, arch)
+        calls["libpython"] = libpython
 
     monkeypatch.setattr(bundle, "stage_runtime", fake_runtime)
     monkeypatch.setattr(bundle, "stage_wheels", fake_wheels)

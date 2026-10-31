@@ -945,6 +945,58 @@ class TestMacosOverlay:
         assert cfg.macos_required.minimum_system_version == "12.0"
 
 
+class TestMacosInfoPlist:
+    """``[tool.kivy.macos.info_plist]`` (#201): free keys merge, managed refused."""
+
+    def test_default_empty(self):
+        assert (
+            load(
+                _MACOS_BASE, require_ios=False, require_macos=True
+            ).macos_required.info_plist
+            == {}
+        )
+
+    def test_free_keys_kept(self):
+        cfg = load(
+            _MACOS_BASE + "[tool.kivy.macos.info_plist]\n"
+            "NSCameraUsageDescription='QR'\nFirebaseAppDelegateProxyEnabled=false\n"
+            "CFBundleURLTypes=[{CFBundleURLSchemes=['myapp']}]\n",
+            require_ios=False,
+            require_macos=True,
+        )
+        assert cfg.macos_required.info_plist == {
+            "NSCameraUsageDescription": "QR",
+            "FirebaseAppDelegateProxyEnabled": False,
+            "CFBundleURLTypes": [{"CFBundleURLSchemes": ["myapp"]}],
+        }
+
+    @pytest.mark.parametrize(
+        "key",
+        ["CFBundleIdentifier", "LSMinimumSystemVersion", "NSHighResolutionCapable"],
+    )
+    def test_managed_key_rejected(self, key):
+        with pytest.raises(ConfigError, match="managed") as exc:
+            load(
+                _MACOS_BASE + f"[tool.kivy.macos.info_plist]\n{key}='x'\n",
+                require_ios=False,
+                require_macos=True,
+            )
+        assert exc.value.key_path == "tool.kivy.macos.info_plist"
+
+    def test_ios_only_managed_keys_are_free_on_macos(self):
+        # MinimumOSVersion is iOS's; a macOS bundle never writes it.
+        cfg = load(
+            _MACOS_BASE + "[tool.kivy.macos.info_plist]\nMinimumOSVersion='x'\n",
+            require_ios=False,
+            require_macos=True,
+        )
+        assert cfg.macos_required.info_plist == {"MinimumOSVersion": "x"}
+
+    def test_not_a_table(self):
+        with pytest.raises(ConfigError, match="must be a table"):
+            _macos("info_plist = 'x'\n")
+
+
 class TestMacosArchs:
     def test_default(self):
         assert _macos().macos_required.archs == ("arm64",)

@@ -32,6 +32,7 @@ from kivyforge.lock.wheelruntime.model import (
     WheelRuntimeLock,
 )
 from kivyforge.platforms.macos import AppBundleError
+from kivyforge.platforms.macos.launcher import RPATHS
 from kivyforge.platforms.macos.native_stage import stage_native_binaries
 from kivyforge.platforms.macos.signing import sign_bundle_adhoc
 from kivyforge.report import diagnostics
@@ -53,7 +54,19 @@ _HELPER = (
 )
 _B = "int b(void) { return 7; }\n"
 _A = "int b(void); int a(void) { return b() * 6; }\n"
-_MAIN = "int main(void) { return 0; }\n"
+# The app's main executable: with a path, it loads that library the way
+# ctypes does in the launcher's process and calls ``a``.
+_MAIN = (
+    "#include <dlfcn.h>\n#include <stdio.h>\n"
+    "int main(int argc, char **argv) {\n"
+    "    if (argc < 2) return 0;\n"
+    "    void *h = dlopen(argv[1], RTLD_NOW);\n"
+    '    if (h == NULL) { fprintf(stderr, "%s\\n", dlerror()); return 1; }\n'
+    '    int (*a)(void) = (int (*)(void))dlsym(h, "a");\n'
+    '    printf("%d\\n", a());\n'
+    "    return 0;\n"
+    "}\n"
+)
 
 
 def _run(*cmd: str | Path, cwd: Path) -> None:
@@ -160,7 +173,7 @@ def built(tmp_path_factory) -> Path:
     )
     _run(*lib, "-install_name", "@rpath/libA3.dylib", "-o", "libA3.dylib", cwd=d)
 
-    _run(*cc, "-o", "App", "main.c", cwd=d)
+    _run(*cc, "-o", "App", "main.c", *[f"-Wl,-rpath,{r}" for r in RPATHS], cwd=d)
     _run(*cc, "-o", "python3", "main.c", "-Wl,-rpath,@executable_path/../lib", cwd=d)
     _run(*cc, "-bundle", "-o", "plugin.so", "lib.c", cwd=d)
     return d
@@ -303,11 +316,26 @@ def test_helpers_really_fail_where_the_check_says(built, tmp_path):
         assert "Library not loaded" in ran[helper].stderr
 
 
-def test_a1_is_refused(built, tmp_path):
-    with pytest.raises(AppBundleError) as exc:
-        _stage(built, tmp_path, "libA1.dylib", "libB.dylib")
-    assert exc.value.code == diagnostics.MACOS_NATIVE_LOAD_PATH
-    assert "Python (ctypes)" in str(exc.value)
+def test_a1_resolves_in_the_apps_process(built, tmp_path):
+    """Apple's ``@executable_path/../Frameworks`` form works from Python.
+
+    Refused while the launcher ``execv``ed ``python3``, whose directory that
+    was; since Python runs in the launcher's process (#201) it is
+    ``Contents/MacOS``, and dyld agrees with the check.
+    """
+    notes: list = []
+    app = _stage(built, tmp_path, "libA1.dylib", "libB.dylib", notes=notes)
+    assert notes == []
+    sign_bundle_adhoc(app)
+    contents = app / "Contents"
+    out = subprocess.run(
+        [str(contents / "MacOS" / "App"), str(contents / "Frameworks" / "libA1.dylib")],
+        capture_output=True,
+        text=True,
+        check=True,
+        stdin=subprocess.DEVNULL,
+    )
+    assert out.stdout.strip() == "42"
 
 
 def test_a3_warns(built, tmp_path):

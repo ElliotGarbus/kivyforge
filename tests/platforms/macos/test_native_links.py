@@ -21,9 +21,7 @@ from tests.platforms.macos import macho_fixtures as mf
 C = Path("/b/App.app/Contents")
 HELPERS = C / "Helpers"
 FRAMEWORKS = C / "Frameworks"
-PYTHON = Interpreter(
-    C / "Resources" / "python" / "bin" / "python3.13", ("@executable_path/../lib",)
-)
+PYTHON = Interpreter(C / "MacOS", ("@executable_path/../Resources/python/lib",))
 
 
 def _slice(data: bytes) -> machotools.MachoSlice:
@@ -116,22 +114,30 @@ class TestHelpers:
 class TestPython:
     """Section 2.2: libraries the app loads with ctypes."""
 
-    def test_executable_path_means_the_interpreter(self):
-        # A1: Apple's helper form, used in a library, looks beside python3.13.
-        problem = check_links(
+    def test_executable_path_means_the_apps_executable(self):
+        # A1: Apple's form resolves, since Python runs in the launcher's process
+        # (#201). The spike measured a failure beside python3.13, which the
+        # launcher used to execv.
+        found = problems(
+            lib("libA1.dylib", "@executable_path/../Frameworks/libB.dylib"),
+            lib("libB.dylib", install_name="@rpath/libB.dylib"),
+        )
+        assert found == set()
+
+    def test_executable_path_is_contents_macos(self):
+        (p,) = check_links(
             [
-                lib("libA1.dylib", "@executable_path/../Frameworks/libB.dylib"),
+                lib("libA.dylib", "@executable_path/libB.dylib"),
                 lib("libB.dylib", install_name="@rpath/libB.dylib"),
             ],
             PYTHON,
         )
-        (p,) = problem
         assert (p.binary.path.name, p.process, p.warning) == (
-            "libA1.dylib",
+            "libA.dylib",
             "Python (ctypes)",
             "",
         )
-        assert p.tried == (C / "Resources/python/Frameworks/libB.dylib",)
+        assert p.tried == (C / "MacOS/libB.dylib",)
 
     def test_own_loader_path_rpath_resolves(self):
         # A2
