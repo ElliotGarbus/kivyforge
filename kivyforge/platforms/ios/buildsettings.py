@@ -82,10 +82,41 @@ APP_METADATA_SCRIPT = (
     "fi\n"
 )
 
-BUILD_PYTHON_SCRIPT = _BUILD_PYTHON_SCRIPT_V1 + APP_METADATA_SCRIPT
+#: The frameworks of extension modules this build no longer installs.
+#: ``install_python`` only ever adds to the bundle's ``Frameworks/``, and Xcode
+#: never removes a file from an incremental product, so a dependency removed
+#: from the lock left ``Frameworks/<module>.framework`` in every later
+#: Simulator or device build until ``kivyforge clean`` (an archive starts empty). ``install_dylib`` writes
+#: ``<module>.origin`` into each framework it makes, naming the ``.fwork``
+#: placeholder it left where the ``.so`` was; the rsync above and
+#: ``install_stdlib`` drop that placeholder with its package. So a framework
+#: with an origin whose placeholder is gone is stale. Frameworks without one
+#: (Python, SDL3, a Swift package's, the user's) were not made by
+#: ``install_python`` and are left alone.
+PRUNE_EXTENSION_FRAMEWORKS_SCRIPT = (
+    "# Remove the framework of any extension module this build no longer\n"
+    "# installs: install_python only ever adds to Frameworks/.\n"
+    'for FRAMEWORK in "$CODESIGNING_FOLDER_PATH"/Frameworks/*.framework; do\n'
+    '    ORIGIN="$FRAMEWORK/$(basename "$FRAMEWORK" .framework).origin"\n'
+    '    [ -f "$ORIGIN" ] || continue\n'
+    '    FWORK="$(cat "$ORIGIN")"\n'
+    '    case "$FWORK" in *.fwork) ;; *) continue ;; esac\n'
+    '    if [ ! -f "$CODESIGNING_FOLDER_PATH/$FWORK" ]; then\n'
+    '        echo "Removing $(basename "$FRAMEWORK"): nothing installs $FWORK"\n'
+    '        rm -rf "$FRAMEWORK"\n'
+    "    fi\n"
+    "done\n"
+)
+
+#: The phase with package metadata, before stale extension frameworks were pruned.
+_BUILD_PYTHON_SCRIPT_V2 = _BUILD_PYTHON_SCRIPT_V1 + APP_METADATA_SCRIPT
+
+BUILD_PYTHON_SCRIPT = (
+    _BUILD_PYTHON_SCRIPT_V1 + PRUNE_EXTENSION_FRAMEWORKS_SCRIPT + APP_METADATA_SCRIPT
+)
 
 #: Every earlier text of the phase, oldest first, for the generator to remove.
-PREVIOUS_BUILD_PYTHON_SCRIPTS = (_BUILD_PYTHON_SCRIPT_V1,)
+PREVIOUS_BUILD_PYTHON_SCRIPTS = (_BUILD_PYTHON_SCRIPT_V1, _BUILD_PYTHON_SCRIPT_V2)
 
 #: Where the Build Python script writes inside the app bundle, declared as the
 #: phase's output paths. Xcode re-signs the app only when an input it tracks

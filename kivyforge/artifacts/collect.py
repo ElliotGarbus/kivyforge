@@ -304,13 +304,15 @@ def _install_wheels(
             if local.resolve() != staged.resolve():
                 shutil.copy2(local, staged)
             wheel_files.append(str(staged))
-        if not wheel_files:
-            return
         # Each collect always starts from a clean slate so no stale .so
-        # files from a previous slice accumulate in the slice-specific dir.
+        # files from a previous slice accumulate in the slice-specific dir --
+        # also when the lock now pins nothing, or removing the last dependency
+        # would leave the previous collect's packages in the app.
         if slice_pip_deps.is_dir():
             shutil.rmtree(slice_pip_deps)
         slice_pip_deps.mkdir(parents=True, exist_ok=True)
+        if not wheel_files:
+            return
         abi = "cp" + "".join(lock.python_xcframework.version.split(".")[:2])
         # Use the selected wheels' actual platform tag for pip's --platform.
         # The wheel tag reflects the Python binary's compile-time minimum OS
