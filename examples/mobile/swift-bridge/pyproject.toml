@@ -7,6 +7,8 @@ dependencies = [
     # pyobjus calls the Swift shim. iOS wheels resolve from the
     # kivy-mobile-wheels index (see [tool.kivy.ios].extra_index_urls below).
     "pyobjus>=1.2.5.dev0",
+    # Rubicon-ObjC calls the same shim. It is pure Python, so it comes from PyPI.
+    "rubicon-objc>=0.5.7",
 ]
 
 [tool.kivy]

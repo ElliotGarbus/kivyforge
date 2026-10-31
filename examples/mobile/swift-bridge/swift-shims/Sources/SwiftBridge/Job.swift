@@ -102,6 +102,30 @@ public final class Work: NSObject {
         }
     }
 
+    // The same kind of work as Swift `async` methods, with no Job. Objective-C
+    // sees each one as a method whose last argument is a completion handler.
+    // pyobjus cannot pass one, so its demos use the Job methods above;
+    // Rubicon-ObjC passes a Python function and Swift calls it when done.
+
+    /// Calls the completion handler with the settings, on a background thread.
+    @objc(currentNotificationSettingsWithCompletionHandler:)
+    public static func currentNotificationSettings() async -> [String: Any] {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        return [
+            "authorizationStatus": settings.authorizationStatus.rawValue,
+            "alertsEnabled": settings.alertSetting == .enabled,
+        ]
+    }
+
+    /// A throwing `async` method. Its completion handler takes the result and
+    /// an error, and exactly one of them is nil.
+    @objc(failAfterDelayWithCompletionHandler:)
+    public static func failAfterDelay() async throws -> String {
+        try await Task.sleep(nanoseconds: 200_000_000)
+        throw NSError(domain: "SBWork", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "the work failed on purpose"])
+    }
+
     private static func isPrime(_ n: Int) -> Bool {
         if n < 4 { return n > 1 }
         if n % 2 == 0 { return false }

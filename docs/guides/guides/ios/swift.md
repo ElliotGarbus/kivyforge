@@ -8,6 +8,7 @@ sources:
   - examples/mobile/swift-bridge/swift-shims/Sources/SwiftBridge/Metronome.swift
   - examples/mobile/swift-bridge/src/objc_convert.py
   - examples/mobile/swift-bridge/src/demos.py
+  - examples/mobile/swift-bridge/src/demos_rubicon.py
 ---
 
 # Call Swift from Python
@@ -21,7 +22,9 @@ app needs, and call it from Python by class name.
 
 This page shows you how to write the shim and how to call it. It covers
 objects with state, collections, methods that throw, `async` work and
-delegates, and the rules pyobjus sets for each.
+delegates, and the rules pyobjus sets for each. The same shim can also be
+called with [Rubicon-ObjC](#call-the-shim-with-rubicon-objc), which avoids
+most of those rules.
 
 ## Before you begin
 
@@ -222,6 +225,8 @@ pyobjus cannot pass a Python function to Swift as a closure. A Swift `async`
 method, or an API that takes a completion handler, therefore cannot call
 back into Python. Swift exports an `async` method as a
 `...WithCompletionHandler:` selector, and calling it from Python fails.
+(Rubicon-ObjC can pass one: see
+[Call an `async` method with a completion handler](#call-an-async-method-with-a-completion-handler).)
 
 Instead, have the shim start the work and return an object that holds the
 outcome, and poll that object from Kivy's `Clock`. The example's `SBJob`
@@ -375,6 +380,227 @@ Write every delegate method to these rules:
 The main thread's run loop runs while Kivy runs, so a `Timer` or
 `DispatchQueue.main` in the shim fires on time.
 
+## Call the shim with Rubicon-ObjC
+
+[Rubicon-ObjC](https://github.com/beeware/rubicon-objc), BeeWare's bridge to
+the Objective-C runtime, calls the same shim with no change to the Swift. It
+is pure Python on top of `ctypes`, and it does several things pyobjus 1.2.5
+cannot: it passes a Python function where Swift expects a completion
+handler, returns a delegate method's value to Swift, hands you the `NSError`
+from a throwing method, and converts a plain `dict` or a nested list
+correctly.
+
+The example has both. `src/demos_rubicon.py` runs the same demos as
+`src/demos.py`, and the buttons at the top of the screen switch between
+them. Both bridges can live in one app.
+
+### Add Rubicon-ObjC
+
+Add it to your dependencies:
+
+```toml
+[project]
+dependencies = [
+    "kivy>=3.0.0.dev0,<4",
+    "rubicon-objc>=0.5.7",
+]
+```
+
+Rubicon-ObjC is one `py3-none-any` wheel, so `kivyforge lock -p ios` takes
+it from PyPI for every iOS slice, with no mobile wheel index. Version 0.5.7
+is the one tested here, and it supports CPython 3.15. As with pyobjus,
+import it only on iOS, where the shim exists.
+
+### Call methods and properties
+
+Look the class up with `ObjCClass` by its Objective-C name. The first part
+of a selector is the method name and each later part is a keyword argument,
+so `initWithTitle:` is `initWithTitle(...)` and `noteAtIndex:error:` is
+`noteAtIndex(..., error=...)`:
+
+```python
+from rubicon.objc import ObjCClass
+
+Notebook = ObjCClass("SBNotebook")
+
+notebook = Notebook.alloc().initWithTitle("Groceries")
+notebook.author = "Kivy"
+count = notebook.addNote("apples and pears")
+```
+
+### Convert what Swift returns
+
+A returned `NSString` formats and compares like a `str`, but is not one;
+call `str()` when you need a real `str`. An `NSArray` or `NSDictionary`
+behaves like a read-only list or dictionary. `py_from_ns()` converts a whole
+tree, so you do not need the example's `objc_convert.py`:
+
+```python
+from rubicon.objc import py_from_ns
+
+print(notebook.title)                   # Groceries
+print(py_from_ns(notebook.summary()))   # {'count': 1, 'isEmpty': 0, ...}
+```
+
+A Swift `Bool` inside a collection comes back as `0` or `1`, not `False` or
+`True`. Wrap it in `bool()` where the type matters. A `Bool` returned
+directly from a method or property is a Python `bool`.
+
+### Pass collections
+
+Pass a Python `list` or `dict` as it is. Rubicon-ObjC builds the dictionary
+correctly, and nested lists and dictionaries convert too:
+
+```python
+notebook.addNotes(["more apples", "bread"])
+notebook.applyOptions({"author": "Swift", "keepLast": 2})
+```
+
+### Read the error from a throwing method
+
+Pass a pointer to an `objc_id` for the `error:` argument. When the method
+throws, it returns `None` and the pointer holds the `NSError`, so the shim
+does not need to keep the reason itself:
+
+```python
+from ctypes import byref
+
+from rubicon.objc import ObjCInstance
+from rubicon.objc.runtime import objc_id
+
+error = objc_id()
+note = notebook.noteAtIndex(10, error=byref(error))
+if note is None:
+    print("failed:", ObjCInstance(error).localizedDescription)
+```
+
+### Call an `async` method with a completion handler
+
+Swift exports an `async` method as one whose last argument is a completion
+handler. Give it an explicit selector that ends in `completionHandler:`:
+
+```swift
+@objc(currentNotificationSettingsWithCompletionHandler:)
+public static func currentNotificationSettings() async -> [String: Any] {
+    let settings = await UNUserNotificationCenter.current().notificationSettings()
+    return ["authorizationStatus": settings.authorizationStatus.rawValue]
+}
+```
+
+Pass a Python function for the handler. Swift calls it once, when the work
+finishes:
+
+```python
+from kivy.clock import Clock
+from rubicon.objc import ObjCClass, ObjCInstance, py_from_ns
+from rubicon.objc.runtime import objc_id
+
+Work = ObjCClass("SBWork")
+
+
+def done(settings: objc_id) -> None:
+    result = py_from_ns(ObjCInstance(settings))
+    Clock.schedule_once(lambda _dt: print(result), 0)
+
+
+Work.currentNotificationSettingsWithCompletionHandler(done)
+```
+
+Write every completion handler to these rules:
+
+- **Annotate every parameter and the return.** Rubicon-ObjC builds the
+  block's signature from the annotations, and raises `ValueError` without
+  them. Use `objc_id` for an object, and `-> None`.
+- **Wrap each object argument yourself.** It arrives as a bare `objc_id`
+  pointer even when annotated `ObjCInstance`. Pass it to `ObjCInstance()` to
+  call methods on it. A null pointer is false.
+- **Move to Kivy's thread before touching widgets.** Swift calls the handler
+  on one of its own threads. `Clock.schedule_once` is safe to call from any
+  thread, so schedule the rest of the work there.
+- **Expect two arguments from a throwing method.** The handler of an
+  `async throws` method takes the result and an error, and exactly one of
+  them is null:
+
+    ```python
+    def done(result: objc_id, error: objc_id) -> None:
+        if error:
+            print("failed:", ObjCInstance(error).localizedDescription)
+    ```
+
+You do not need to keep a reference to the function: Rubicon-ObjC keeps it
+alive until Swift releases the handler. A completion handler cannot report
+progress or be cancelled, so for long work that needs either, keep the
+polled-job pattern. The example still counts primes with `SBJob`.
+
+### Implement a Swift delegate in Python
+
+Subclass `NSObject` and name the protocol. Mark each method with
+`@objc_method`; its name maps to the selector the same way, underscores for
+colons. Annotate parameters that are not objects: a Swift `Int` is
+`NSInteger`, and a `Bool` return is `bool`. Unannotated parameters arrive
+as objects you can call methods on:
+
+```python
+from rubicon.objc import NSObject, ObjCProtocol, objc_method
+from rubicon.objc.types import NSInteger
+
+
+class MetronomeListener(NSObject, protocols=[ObjCProtocol("SBMetronomeDelegate")]):
+    @objc_method
+    def metronome_didTick_(self, metronome, count: NSInteger) -> None:
+        print("tick", count)
+
+    @objc_method
+    def metronome_shouldContinueAfter_(self, metronome, count: NSInteger) -> bool:
+        return count < 6
+
+
+listener = MetronomeListener.alloc().init()
+metronome = ObjCClass("SBMetronome").alloc().init()
+metronome.delegate = listener
+metronome.start()
+```
+
+Swift reads the return value, so the metronome stops after six ticks without
+the `maxTicks` property the pyobjus version needs. Write every delegate class
+to these rules:
+
+- **Define the class once, at module level.** It is a real Objective-C class,
+  and class names are global to the process: defining the same name twice
+  raises `RuntimeError`.
+- **Keep a reference to the delegate.** A delegate property is usually
+  `weak`, and Rubicon-ObjC does not keep the object alive for it the way
+  pyobjus does. Hold it for as long as Swift should call it, as the example's
+  `MetronomeDemo` does.
+- **An exception is printed, not raised.** Python prints the traceback, and
+  Swift reads `0`, `false` or `nil` as the method's return value. Later calls
+  work normally. Catch the exception yourself if a wrong return value would
+  matter.
+- **Expect to run on the caller's thread.** This rule is the same as for
+  pyobjus: Swift should call the delegate on the main thread.
+
+You can set Python attributes on the instance, such as a callback
+(`listener.log = print`), and read them from its methods.
+
+### Compare the two bridges
+
+The shim is the same for both: `@objc` names, Objective-C types and a
+dynamic product. What differs is the Python side:
+
+| | pyobjus 1.2.5 | Rubicon-ObjC 0.5.7 |
+|---|---|---|
+| Wheel | compiled, from the kivy-mobile-wheels index | pure Python, from PyPI |
+| Look up a class | `autoclass("SBNotebook")` | `ObjCClass("SBNotebook")` |
+| Call `noteAtIndex:error:` | `noteAtIndex_error_(i, None)` | `noteAtIndex(i, error=...)` |
+| Convert a result | `objc_convert.to_py()` from the example | `py_from_ns()`; a `Bool` in a collection is `0`/`1` |
+| `dict` argument | `objc_dict(...)` | a plain `dict` |
+| List inside a list | can crash the call | converts |
+| Error from a throwing method | not returned; the shim keeps the reason | `error=byref(objc_id())` |
+| `async` work | poll a job from `Clock` | a completion handler, or poll |
+| Delegate return value | dropped | reaches Swift |
+| Exception in a delegate | ends the app later; catch it | printed; Swift reads zero |
+| Delegate lifetime | kept alive forever | you keep a reference |
+
 ## Verify
 
 Build and run the example on the Simulator:
@@ -388,7 +614,9 @@ kivyforge run -p ios --simulator
 
 Tap each button. The log shows the converted results, the async jobs
 finishing, failing or being cancelled, and the metronome's ticks arriving in
-Python.
+Python. Then tap **Rubicon-ObjC** at the top and tap each button again: the
+results match, and the metronome stops at six ticks because Swift read the
+Python delegate's answer.
 
 ## Things to know
 
@@ -406,19 +634,20 @@ Python.
     The workarounds stay correct after the fixes, so code written to them
     keeps working.
 
-- **No closures in either direction.** Besides completion handlers, this
-  rules out any Swift API that takes a closure, such as a sort comparator or
-  an observer block. Wrap such APIs in the shim and expose the result as a
-  value, a polled job or a delegate call.
+- **No closures with pyobjus.** Besides completion handlers, this rules
+  out any Swift API that takes a closure, such as a sort comparator or an
+  observer block. Wrap such APIs in the shim and expose the result as a
+  value, a polled job or a delegate call, or call them with Rubicon-ObjC,
+  which passes a Python function as the closure.
 - **Struct arguments to delegate methods.** pyobjus 1.2.5 copies each
   delegate argument into a pointer-sized slot, so a larger struct, such as a
   `CGRect`, cannot arrive intact. Pass the fields as separate numbers. [Call iOS APIs with pyobjus](pyobjus.md#know-what-pyobjus-gets-wrong-on-ios)
   covers structs passed to Objective-C methods.
 - **When you need more than a shim.** A shim keeps Python's view of Swift to
   a few `@objc` classes, which is usually what an app wants. If you need
-  Python to receive closures, or Swift to hold Python objects as ordinary
-  values, you need a binding tool that generates a CPython extension module
-  instead. kivyforge does not register extension modules built from Swift
+  Python to see Swift types that Objective-C cannot represent, or Swift to
+  hold Python objects as ordinary values, you need a binding tool that
+  generates a CPython extension module instead. kivyforge does not register extension modules built from Swift
   yet.
 
 ## What's next

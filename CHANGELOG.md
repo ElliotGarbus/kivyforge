@@ -82,6 +82,18 @@
   the host's CPython, whose `.pyc` the app's CPython could never load; a
   release build still compiles `pip-deps/` itself with a matching interpreter.
 
+### iOS: call Swift from Python with Rubicon-ObjC
+
+- **Added:** a section of [Call Swift from Python](docs/guides/guides/ios/swift.md)
+  that calls the same `@objc` shim with
+  [Rubicon-ObjC](https://github.com/beeware/rubicon-objc) instead of pyobjus,
+  and a switch in the `swift-bridge` example to run every demo either way.
+  Rubicon-ObjC passes a Python function as a Swift completion handler,
+  returns a delegate method's value to Swift, and hands Python the `NSError`
+  from a throwing method, so it needs none of the pyobjus workarounds. Its
+  pure-Python wheel comes from PyPI. kivyforge itself is unchanged, so nothing
+  needs migrating.
+
 ### iOS: call Swift from Python
 
 - **Added:** the `swift-bridge` example and the guide
