@@ -4,9 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.15"
 dependencies = [
     "kivy>=3.0.0.dev0,<4",
-    # pyobjus calls the Swift shim. iOS wheels resolve from the
-    # kivy-mobile-wheels index (see [tool.kivy.ios].extra_index_urls below).
-    "pyobjus>=1.2.5.dev0",
+    # Rubicon-ObjC calls the Swift shim. It is pure Python, so its wheel comes
+    # from PyPI; Kivy's iOS wheel comes from the kivy-mobile-wheels index
+    # (see [tool.kivy.ios].extra_index_urls below).
+    "rubicon-objc>=0.5.7",
 ]
 
 [tool.kivy]
@@ -37,7 +38,7 @@ exclude = [
 [tool.kivy.ios.python]
 version = "3.15.0"
 
-# The shim: a local package whose @objc classes pyobjus looks up by name.
+# The shim: a local package whose @objc classes Rubicon-ObjC looks up by name.
 # A local package is linked and embedded by default, so it loads at launch.
 # keychain-spm shows how to add a remote package behind a shim like this one.
 [tool.kivy.ios.native.swift_packages]

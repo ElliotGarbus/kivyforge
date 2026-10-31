@@ -1,9 +1,10 @@
-"""swift-bridge: call Swift from Python through an @objc shim and pyobjus.
+"""swift-bridge: call Swift from Python through an @objc shim and Rubicon-ObjC.
 
 The shim, ``swift-shims/``, is a local Swift package with three classes:
 ``SBNotebook`` (an object with state and collections), ``SBWork``/``SBJob``
-(async work that Python polls), and ``SBMetronome`` (which calls a delegate
-that Python implements). ``demos.py`` calls each one; this file is the UI.
+(async work, through a completion handler or a polled job), and
+``SBMetronome`` (which calls a delegate that Python implements).
+``demos.py`` calls each one; this file is the UI.
 
 Off iOS the shim does not exist, so the buttons are disabled and the app only
 says so. That keeps the UI runnable on a desktop for a quick look.
@@ -26,7 +27,7 @@ MAX_LOG_LINES = 200
 
 demos = None
 if platform == "ios":
-    import demos  # noqa: F811 - needs pyobjus and the shim
+    import demos  # noqa: F811 - needs Rubicon-ObjC and the shim
 
 
 def safe_area_insets():
@@ -173,7 +174,7 @@ class BridgeRoot(BoxLayout):
 
     def toggle_metronome(self) -> None:
         if not self._metronome.running:
-            self.log("--- metronome, 6 ticks")
+            self.log(f"--- metronome, {demos.METRONOME_TICKS} ticks")
         self._metronome.toggle()
         self._sync_metronome()
 

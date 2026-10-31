@@ -1,12 +1,9 @@
 import Foundation
 
-/// What a Metronome tells its delegate. Python implements it with pyobjus'
-/// `@protocol("SBMetronomeDelegate")`. pyobjus finds a Swift @objc protocol
-/// by name at runtime, so it needs no entry in pyobjus' protocol table.
-///
-/// The methods return nothing. pyobjus 1.2.5 drops a Python delegate's return
-/// value (Swift reads zero, false or nil), so anything the Metronome needs to
-/// ask the app, such as when to stop, is a property the app sets instead.
+/// What a Metronome tells its delegate. Python implements it with a
+/// Rubicon-ObjC class declared with
+/// `protocols=[ObjCProtocol("SBMetronomeDelegate")]`, which finds a Swift
+/// @objc protocol by name at runtime.
 @objc(SBMetronomeDelegate)
 public protocol MetronomeDelegate: NSObjectProtocol {
     @objc(metronome:didTick:)
@@ -15,17 +12,20 @@ public protocol MetronomeDelegate: NSObjectProtocol {
     /// Optional: a delegate that leaves it out is never sent it.
     @objc(metronome:didStopWithSummary:)
     optional func metronome(_ metronome: Metronome, didStopWithSummary summary: [String: Any])
+
+    /// Optional: return false to stop after this tick. Without it, the
+    /// metronome runs until `stop()`.
+    @objc(metronome:shouldContinueAfter:)
+    optional func metronome(_ metronome: Metronome, shouldContinueAfter count: Int) -> Bool
 }
 
 /// Calls its delegate on a timer, the way SDK classes call theirs.
 @objc(SBMetronome)
 public final class Metronome: NSObject {
-    /// Weak, like UIKit delegates. pyobjus keeps the Python delegate alive.
+    /// Weak, like UIKit delegates: the app must keep a reference to it.
     @objc public weak var delegate: MetronomeDelegate?
     /// Seconds between ticks.
     @objc public var interval = 0.5
-    /// Stop after this many ticks; 0 runs until `stop()`.
-    @objc public var maxTicks = 0
     @objc public private(set) var ticks = 0
     @objc public var isRunning: Bool { timer != nil }
     private var timer: Timer?
@@ -51,14 +51,13 @@ public final class Metronome: NSObject {
         delegate?.metronome?(self, didStopWithSummary: [
             "ticks": ticks,
             "interval": interval,
-            "reachedLimit": maxTicks > 0 && ticks >= maxTicks,
         ])
     }
 
     private func tick() {
         ticks += 1
         delegate?.metronome(self, didTick: ticks)
-        if maxTicks > 0 && ticks >= maxTicks {
+        if delegate?.metronome?(self, shouldContinueAfter: ticks) == false {
             stop()
         }
     }

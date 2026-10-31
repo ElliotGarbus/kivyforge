@@ -1,14 +1,14 @@
 import Foundation
 import UserNotifications
 
-/// Runs Swift `async` work and keeps the outcome until Python reads it.
+/// Runs Swift `async` work that reports progress and can be cancelled, and
+/// keeps the outcome until Python reads it.
 ///
-/// pyobjus cannot pass a Python function to Swift as a closure, so an async
-/// API or a completion handler cannot call back into Python directly.
-/// Instead, a method starts the work and returns a Job right away, and Python
-/// checks `isFinished` from Kivy's Clock, then reads `result` or
-/// `errorMessage`. The properties are behind a lock because the work runs on
-/// another thread.
+/// A completion handler can do neither, so for such work a method starts it
+/// and returns a Job right away. Python checks `isFinished` and `progress`
+/// from Kivy's Clock, calls `cancel()` when the user asks, then reads
+/// `result` or `errorMessage`. The properties are behind a lock because the
+/// work runs on another thread.
 @objc(SBJob)
 public final class Job: NSObject {
     private let lock = NSLock()
@@ -63,10 +63,11 @@ public final class Job: NSObject {
     }
 }
 
-/// Async work the app starts from Python. Each method returns a running Job.
+/// Async work the app starts from Python.
 @objc(SBWork)
 public final class Work: NSObject {
-    /// Long-running work that reports progress and can be cancelled.
+    /// Long-running work that reports progress and can be cancelled, so it
+    /// returns a Job for Python to poll.
     @objc(countPrimesBelow:)
     public static func countPrimes(below limit: Int) -> Job {
         Job { job in
@@ -82,24 +83,27 @@ public final class Work: NSObject {
         }
     }
 
-    /// An Apple async API. Its answer waits in the Job for Python to collect.
-    @objc public static func notificationSettings() -> Job {
-        Job { _ in
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
-            return [
-                "authorizationStatus": settings.authorizationStatus.rawValue,
-                "alertsEnabled": settings.alertSetting == .enabled,
-            ]
-        }
+    // Objective-C sees each `async` method below as one whose last argument is
+    // a completion handler. Python passes a function, which Swift calls on one
+    // of its own threads when the work ends.
+
+    /// An Apple async API, wrapped. The handler receives the settings.
+    @objc(notificationSettingsWithCompletionHandler:)
+    public static func notificationSettings() async -> [String: Any] {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        return [
+            "authorizationStatus": settings.authorizationStatus.rawValue,
+            "alertsEnabled": settings.alertSetting == .enabled,
+        ]
     }
 
-    /// Fails after a short wait, to show how an error reaches Python.
-    @objc public static func failingWork() -> Job {
-        Job { _ in
-            try await Task.sleep(nanoseconds: 200_000_000)
-            throw NSError(domain: "SBWork", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "the work failed on purpose"])
-        }
+    /// A throwing `async` method. Its completion handler takes the result and
+    /// an error, and exactly one of them is nil.
+    @objc(failingWorkWithCompletionHandler:)
+    public static func failingWork() async throws -> String {
+        try await Task.sleep(nanoseconds: 200_000_000)
+        throw NSError(domain: "SBWork", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "the work failed on purpose"])
     }
 
     private static func isPrime(_ n: Int) -> Bool {
