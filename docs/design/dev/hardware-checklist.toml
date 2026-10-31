@@ -405,6 +405,46 @@ record = [
 previous = "never: test-matrix section 7 has only paid-team device runs, the first on 2026-09-14"
 
 [[item]]
+id = "ios-swift-bridge-rubicon"
+title = "iOS: the swift-bridge example calls its Swift shim through Rubicon-ObjC on a physical iPhone"
+status = "runnable"
+hosts = ["macos"]
+target = "iOS device `arm64` (Swift shim through Rubicon-ObjC)"
+tier = "T4 + T5"
+needs = [
+    "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`.",
+    "An Apple ID signed into Xcode whose team is passed in `KIVYFORGE_TEAM_ID` (the example commits `team_id = \"\"`; do not edit it).",
+    "The phone unlocked and in hand: every check is a tap and a read of the app's on-screen log. The device console does not carry Python's `print`.",
+    "The network for the lock: Kivy's wheel comes from kivy-mobile-wheels, Rubicon-ObjC's from PyPI.",
+]
+# The Simulator pass does not cover this. The risky part is Swift calling into
+# Python: a completion handler and a delegate are ctypes callbacks, which run
+# through libffi closures, and a device enforces executable-memory rules the
+# Simulator does not.
+commands = [
+    "cd examples/mobile/swift-bridge",
+    "kivyforge clean",
+    "kivyforge lock -p ios",
+    "KIVYFORGE_TEAM_ID=<your team> kivyforge run -p ios --device",
+]
+pass = [
+    "The app launches on the phone and shows `SwiftBridge shim loaded.`",
+    "**Notebook** logs the notes, `wordCounts()` and `summary()` as a Python list and dicts, `applyOptions: got ['author', 'keepLast']; author is now Swift`, and `noteAtIndex 10: None, because no note at index 10; the notebook has 2` (the reason read from the `NSError`).",
+    "**Notification settings** logs `notification settings: done, result {...}` with `authorizationStatus` and `alertsEnabled`: a Python completion handler called by Swift on a background thread.",
+    "**Failing work** logs `failing work: failed, the work failed on purpose`: the error argument of a throwing `async` method's completion handler.",
+    "**Count primes** logs progress in 10% steps; tapping **Cancel primes** before it ends logs `count primes: cancelled`.",
+    "**Start metronome** logs `tick 1` to `tick 6`, then `metronome stopped: {'interval': 0.5, 'ticks': 6}`: Swift stopped because the Python delegate's `metronome:shouldContinueAfter:` returned `False`.",
+    "**Start metronome** again, then **Stop metronome** after two ticks, logs a summary with `'ticks': 2`.",
+    "The app does not crash through any of the above, tapped in this order and then once more each.",
+]
+record = [
+    "iPhone model and iOS version.",
+    "Xcode version, and the rubicon-objc version from `pylock.ios.toml`.",
+    "A screenshot of the on-screen log before **Clear log**, since the console does not carry it.",
+]
+previous = "never on a device: test-matrix section 7, 2026-10-31, iOS 27.0 Simulator only"
+
+[[item]]
 id = "macos-notarize"
 title = "macOS: Developer ID signing, notarization and stapling"
 status = "runnable"

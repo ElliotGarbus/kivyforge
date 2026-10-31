@@ -1,61 +1,96 @@
 """The four ways this example calls the SwiftBridge shim. iOS only.
 
-Each demo reports through ``log``, a callable that takes one string, so the
-UI in ``main.py`` can show it. The Swift side of each demo is in
-``swift-shims/Sources/SwiftBridge/``.
+Rubicon-ObjC, pure Python on top of ``ctypes``, looks the shim's classes up
+by their ``@objc(...)`` names and calls them. Each demo reports through
+``log``, a callable that takes one string, so the UI in ``main.py`` can show
+it. The Swift side of each demo is in ``swift-shims/Sources/SwiftBridge/``.
 """
 
 from __future__ import annotations
 
-import traceback
+from ctypes import byref
 
 from kivy.clock import Clock
-from objc_convert import nsstr, to_py
-from pyobjus import autoclass, objc_dict, protocol
+from rubicon.objc import NSObject, ObjCClass, ObjCInstance, ObjCProtocol, objc_method
+from rubicon.objc import py_from_ns as to_py
+from rubicon.objc.runtime import objc_id
+from rubicon.objc.types import NSInteger
 
 # Looked up by their @objc(...) runtime names.
-Notebook = autoclass("SBNotebook")
-Work = autoclass("SBWork")
-Metronome = autoclass("SBMetronome")
+Notebook = ObjCClass("SBNotebook")
+Work = ObjCClass("SBWork")
+Metronome = ObjCClass("SBMetronome")
 
 PRIME_LIMIT = 10_000_000  # a few seconds of work, long enough to cancel
+METRONOME_TICKS = 6
 
 
 # --- 1 and 2: an object with state, and collections ----------------------
 
 
 def notebook_demo(log) -> None:
-    notebook = Notebook.alloc().initWithTitle_("Groceries")
+    notebook = Notebook.alloc().initWithTitle("Groceries")
     notebook.author = "Kivy"  # a Swift var, set as an attribute
-    notebook.addNote_("apples and pears")
-    count = notebook.addNotes_(["more apples", "bread"])  # a flat list of str
-    log(f"{nsstr(notebook.title)} by {nsstr(notebook.author)}: {count} notes")
+    notebook.addNote("apples and pears")
+    count = notebook.addNotes(["more apples", "bread"])
+    # A returned NSString formats and compares like a str; str() makes one.
+    log(f"{notebook.title} by {notebook.author}: {count} notes")
     log(f"notes: {to_py(notebook.notes)}")
     log(f"wordCounts(): {to_py(notebook.wordCounts())}")
     log(f"summary(): {to_py(notebook.summary())}")
 
-    # A dict argument goes through objc_dict(). A plain dict reaches Swift
-    # with its keys and values swapped in pyobjus 1.2.5.
-    keys = notebook.applyOptions_(objc_dict({"author": "Swift", "keepLast": 2}))
-    log(f"applyOptions: got {to_py(keys)}; author is now {nsstr(notebook.author)}")
+    # A plain dict converts correctly; no wrapper needed.
+    keys = notebook.applyOptions({"author": "Swift", "keepLast": 2})
+    log(f"applyOptions: got {to_py(keys)}; author is now {notebook.author}")
     log(f"notes kept: {to_py(notebook.notes)}")
 
-    # A throwing method returns None when it throws.
-    first = notebook.noteAtIndex_error_(0, None)
-    missing = notebook.noteAtIndex_error_(10, None)
-    log(f"noteAtIndex 0: {nsstr(first)!r}")
-    log(f"noteAtIndex 10: {missing!r}, because {nsstr(notebook.lastError)}")
+    # A throwing method takes a pointer to an NSError variable, and returns
+    # None when it throws.
+    error = objc_id()
+    first = notebook.noteAtIndex(0, error=byref(error))
+    log(f"noteAtIndex 0: {str(first)!r}")
+    missing = notebook.noteAtIndex(10, error=byref(error))
+    reason = ObjCInstance(error).localizedDescription if error else None
+    log(f"noteAtIndex 10: {missing!r}, because {reason}")
 
 
-# --- 3: async work, polled from Kivy's Clock -----------------------------
+# --- 3: async work, through a completion handler or a polled Job --------
+
+
+def on_kivy_thread(func, *args) -> None:
+    """Run ``func(*args)`` on Kivy's thread. Clock.schedule_once is thread-safe."""
+    Clock.schedule_once(lambda _dt: func(*args), 0)
+
+
+def notification_settings(log) -> None:
+    # Swift calls this on one of its own threads. A block argument arrives
+    # as a bare objc_id pointer, whatever its annotation says.
+    def done(settings: objc_id) -> None:
+        result = to_py(ObjCInstance(settings))
+        on_kivy_thread(log, f"notification settings: done, result {result}")
+
+    Work.notificationSettingsWithCompletionHandler(done)
+
+
+def failing_work(log) -> None:
+    # A throwing async method's handler takes the result and an error; one of
+    # them is a null pointer, which is false.
+    def done(result: objc_id, error: objc_id) -> None:
+        if error:
+            message = f"failed, {ObjCInstance(error).localizedDescription}"
+        else:
+            message = f"done, result {to_py(ObjCInstance(result))}"
+        on_kivy_thread(log, f"failing work: {message}")
+
+    Work.failingWorkWithCompletionHandler(done)
 
 
 class JobWatcher:
-    """Polls an SBJob until it finishes, then reports its outcome."""
+    """Polls an SBJob until it finishes. Used for work that reports progress
+    and can be cancelled, which a completion handler cannot do."""
 
-    # Kivy's Clock holds a bound method weakly, so a watcher nobody else
-    # references would be collected and stop polling. Keep each one here
-    # until its job finishes.
+    # Kivy's Clock holds a bound method weakly; keep each watcher until its
+    # job finishes.
     _active: set[JobWatcher] = set()
 
     def __init__(self, label: str, job, log, on_done=None) -> None:
@@ -77,11 +112,9 @@ class JobWatcher:
                 self._last_tenth = tenth
                 self.log(f"{self.label}: {tenth * 10}%")
             return True  # keep polling
-        state = nsstr(self.job.state)
+        state = str(self.job.state)
         if state == "done":
             self.log(f"{self.label}: done, result {to_py(self.job.result)}")
-        elif state == "failed":
-            self.log(f"{self.label}: failed, {nsstr(self.job.errorMessage)}")
         else:
             self.log(f"{self.label}: {state}")
         JobWatcher._active.discard(self)
@@ -91,59 +124,47 @@ class JobWatcher:
 
 
 def count_primes(log, on_done=None) -> JobWatcher:
-    job = Work.countPrimesBelow_(PRIME_LIMIT)
+    job = Work.countPrimesBelow(PRIME_LIMIT)
     return JobWatcher("count primes", job, log, on_done)
-
-
-def notification_settings(log) -> JobWatcher:
-    return JobWatcher("notification settings", Work.notificationSettings(), log)
-
-
-def failing_work(log) -> JobWatcher:
-    return JobWatcher("failing work", Work.failingWork(), log)
 
 
 # --- 4: a Swift protocol implemented in Python ---------------------------
 
 
-class MetronomeListener:
-    """Implements SBMetronomeDelegate.
+class MetronomeListener(NSObject, protocols=[ObjCProtocol("SBMetronomeDelegate")]):
+    """Implements SBMetronomeDelegate as a real Objective-C class.
 
-    Every method catches its own exceptions: in pyobjus 1.2.5 an exception
-    that escapes a delegate method is never cleared and later ends the app.
-    The methods return nothing, because Swift would not see a return value.
+    Objective-C class names are global to the process, so this class can be
+    defined only once: keep it at module level. An exception raised here is
+    printed and ignored, and Swift reads zero, false or nil.
     """
 
-    def __init__(self, log) -> None:
-        self.log = log
+    @objc_method
+    def metronome_didTick_(self, metronome, count: NSInteger) -> None:
+        self.log(f"tick {count}")
 
-    @protocol("SBMetronomeDelegate")
-    def metronome_didTick_(self, metronome, count) -> None:
-        try:
-            self.log(f"tick {count}")
-        except Exception:
-            traceback.print_exc()
-
-    @protocol("SBMetronomeDelegate")
+    @objc_method
     def metronome_didStopWithSummary_(self, metronome, summary) -> None:
-        try:
-            self.log(f"metronome stopped: {to_py(summary)}")
-        except Exception:
-            traceback.print_exc()
+        self.log(f"metronome stopped: {to_py(summary)}")
+
+    # Swift reads the return value and stops after this tick on False.
+    @objc_method
+    def metronome_shouldContinueAfter_(self, metronome, count: NSInteger) -> bool:
+        return count < METRONOME_TICKS
 
 
 class MetronomeDemo:
     """One Metronome and one listener for the life of the app.
 
-    pyobjus keeps every Python delegate alive for good, so create the
-    listener once and reuse it rather than making one per start.
+    The Metronome's delegate is weak and Rubicon-ObjC does not keep the
+    listener alive for it, so this object holds the reference.
     """
 
     def __init__(self, log) -> None:
-        self.listener = MetronomeListener(log)
+        self.listener = MetronomeListener.alloc().init()
+        self.listener.log = log  # a Python attribute on an Objective-C object
         self.metronome = Metronome.alloc().init()
         self.metronome.interval = 0.5
-        self.metronome.maxTicks = 6
         self.metronome.delegate = self.listener
 
     @property

@@ -3,6 +3,7 @@ title: Call iOS APIs with pyobjus
 sources:
   - examples/mobile/pyobjus-deviceinfo/pyproject.toml
   - examples/mobile/keychain-spm/pyproject.toml
+  - docs/design/dev/swift-bridge-spike-findings.md
 ---
 
 # Call iOS APIs with pyobjus
@@ -87,8 +88,9 @@ The shim framework is linked and embedded, so it loads at launch, and its load
 commands bring in the Swift package it wraps.
 
 [Call Swift from Python](swift.md) goes further: instances, collections,
-methods that throw, `async` work and delegates, and the pyobjus rules for
-each.
+methods that throw, `async` work and delegates. It uses Rubicon-ObjC, which
+reaches more of Swift than pyobjus; the defects below say where pyobjus falls
+short.
 
 ## Know what pyobjus gets wrong on iOS
 
@@ -110,6 +112,33 @@ each.
 
 The `ios-webview` example (`examples/mobile/ios-webview`) does both, and
 [Replace the kivy-ios ios module](ios-module.md) prints the working code.
+
+Calling a Swift shim with pyobjus 1.2.5 meets these as well. Each has an open
+fix in pyobjus; until a pyobjus wheel that includes it is published, follow
+the workaround, which stays correct after the fix:
+
+| Defect | Workaround | Fix |
+|---|---|---|
+| A plain `dict` argument arrives with keys and values swapped, which crashes a Swift method that expects `[String: Any]` | pass `pyobjus.objc_dict(d)` | [kivy/pyobjus#180](https://github.com/kivy/pyobjus/pull/180) |
+| A delegate method's return value is dropped: Swift reads `false`, `0` or `nil` | return nothing; make the answer a property the app sets | [kivy/pyobjus#181](https://github.com/kivy/pyobjus/pull/181) |
+| An exception that escapes a delegate method is never cleared: the next call into the delegate ends the app, or the error surfaces later in unrelated code | `try`/`except` in every delegate method | [kivy/pyobjus#181](https://github.com/kivy/pyobjus/pull/181) |
+| A list nested in a list can crash a call | pass flat lists, or a JSON string | [kivy/pyobjus#182](https://github.com/kivy/pyobjus/pull/182) |
+
+Three more limits have no fix in progress:
+
+- **No closures.** pyobjus cannot pass a Python function where Objective-C
+  expects a block, so a Swift `async` method or any completion handler
+  cannot call back into Python. Have the shim return an object that holds
+  the outcome, and poll it from Kivy's `Clock`.
+- **No `NSError`.** A throwing method, called with `None` for `error:`,
+  returns `None` when it throws but does not hand Python the error. Have the
+  shim keep the reason in a property.
+- **Struct arguments to delegate methods.** pyobjus copies each delegate
+  argument into a pointer-sized slot, so a larger struct, such as a
+  `CGRect`, cannot arrive intact. Pass the fields as separate numbers.
+
+pyobjus also keeps every Python object it turns into a delegate alive for
+the life of the app, so create one delegate and reuse it.
 
 ## Use plyer's iOS facades
 

@@ -1,10 +1,10 @@
-"""swift-bridge: call Swift from Python through an @objc shim.
+"""swift-bridge: call Swift from Python through an @objc shim and Rubicon-ObjC.
 
 The shim, ``swift-shims/``, is a local Swift package with three classes:
 ``SBNotebook`` (an object with state and collections), ``SBWork``/``SBJob``
-(async work), and ``SBMetronome`` (which calls a delegate that Python
-implements). ``demos.py`` calls each one with pyobjus, ``demos_rubicon.py``
-with Rubicon-ObjC; this file is the UI, with a switch between the two.
+(async work, through a completion handler or a polled job), and
+``SBMetronome`` (which calls a delegate that Python implements).
+``demos.py`` calls each one; this file is the UI.
 
 Off iOS the shim does not exist, so the buttons are disabled and the app only
 says so. That keeps the UI runnable on a desktop for a quick look.
@@ -25,12 +25,9 @@ DARK_BG = (0.08, 0.09, 0.12, 1)
 BASE_PADDING = 16  # dp; matches the KV padding
 MAX_LOG_LINES = 200
 
-BRIDGES = {}  # bridge name -> its demos module
+demos = None
 if platform == "ios":
-    import demos  # needs pyobjus and the shim
-    import demos_rubicon  # needs Rubicon-ObjC and the shim
-
-    BRIDGES = {"pyobjus": demos, "Rubicon-ObjC": demos_rubicon}
+    import demos  # noqa: F811 - needs Rubicon-ObjC and the shim
 
 
 def safe_area_insets():
@@ -49,12 +46,6 @@ KV = """
 <DemoButton@Button>:
     font_size: "14sp"
 
-<BridgeButton@Button>:
-    font_size: "14sp"
-    selected: False
-    background_color: (0.2, 0.65, 0.9, 1) if self.selected else (1, 1, 1, 1)
-    on_release: app.root.use_bridge(self.text)
-
 <BridgeRoot>:
     orientation: "vertical"
     padding: "16dp"
@@ -69,18 +60,6 @@ KV = """
         valign: "middle"
         text_size: self.width, None
         text: root.banner
-
-    BoxLayout:
-        size_hint_y: None
-        height: "40dp"
-        spacing: "8dp"
-        disabled: not root.native or root.primes_running or root.metronome_running
-        BridgeButton:
-            text: "pyobjus"
-            selected: root.bridge == self.text
-        BridgeButton:
-            text: "Rubicon-ObjC"
-            selected: root.bridge == self.text
 
     GridLayout:
         cols: 2
@@ -127,8 +106,7 @@ BridgeRoot:
 
 
 class BridgeRoot(BoxLayout):
-    native = BooleanProperty(bool(BRIDGES))
-    bridge = StringProperty("pyobjus")
+    native = BooleanProperty(demos is not None)
     banner = StringProperty("")
     log_text = StringProperty("")
     primes_running = BooleanProperty(False)
@@ -138,14 +116,12 @@ class BridgeRoot(BoxLayout):
         super().__init__(**kwargs)
         self._lines: list[str] = []
         self._primes = None
-        self._metronomes = {}
+        self._metronome = None
         if self.native:
             self.banner = (
                 "SwiftBridge shim loaded.\nTap a button; results appear below."
             )
-            self._metronomes = {
-                name: module.MetronomeDemo(self.log) for name, module in BRIDGES.items()
-            }
+            self._metronome = demos.MetronomeDemo(self.log)
             Clock.schedule_interval(self._sync_metronome, 0.2)
         else:
             self.banner = "Not on iOS: the Swift shim is only built into the iOS app."
@@ -168,53 +144,42 @@ class BridgeRoot(BoxLayout):
         self.log_text = "\n".join(self._lines)
         Clock.schedule_once(lambda _dt: setattr(self.ids.scroller, "scroll_y", 0), 0)
 
-    @property
-    def demos(self):
-        """The demos module of the bridge selected at the top of the screen."""
-        return BRIDGES[self.bridge]
-
-    def use_bridge(self, name: str) -> None:
-        if name != self.bridge:
-            self.bridge = name
-            self.log(f"=== bridge: {name}")
-
     def clear_log(self) -> None:
         self._lines.clear()
         self.log_text = ""
 
     def run_notebook(self) -> None:
         self.log("--- notebook")
-        self.demos.notebook_demo(self.log)
+        demos.notebook_demo(self.log)
 
     def run_settings(self) -> None:
         self.log("--- notification settings")
-        self.demos.notification_settings(self.log)
+        demos.notification_settings(self.log)
 
     def run_failing(self) -> None:
         self.log("--- failing work")
-        self.demos.failing_work(self.log)
+        demos.failing_work(self.log)
 
     def toggle_primes(self) -> None:
         if self._primes is not None:
             self._primes.cancel()
             return
-        self.log(f"--- count primes below {self.demos.PRIME_LIMIT:,}")
+        self.log(f"--- count primes below {demos.PRIME_LIMIT:,}")
         self.primes_running = True
-        self._primes = self.demos.count_primes(self.log, on_done=self._primes_done)
+        self._primes = demos.count_primes(self.log, on_done=self._primes_done)
 
     def _primes_done(self, _watcher) -> None:
         self._primes = None
         self.primes_running = False
 
     def toggle_metronome(self) -> None:
-        metronome = self._metronomes[self.bridge]
-        if not metronome.running:
-            self.log("--- metronome, 6 ticks")
-        metronome.toggle()
+        if not self._metronome.running:
+            self.log(f"--- metronome, {demos.METRONOME_TICKS} ticks")
+        self._metronome.toggle()
         self._sync_metronome()
 
     def _sync_metronome(self, *_) -> None:
-        self.metronome_running = self._metronomes[self.bridge].running
+        self.metronome_running = self._metronome.running
 
 
 class SwiftBridgeApp(App):

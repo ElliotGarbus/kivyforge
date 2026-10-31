@@ -82,18 +82,6 @@
   the host's CPython, whose `.pyc` the app's CPython could never load; a
   release build still compiles `pip-deps/` itself with a matching interpreter.
 
-### iOS: call Swift from Python with Rubicon-ObjC
-
-- **Added:** a section of [Call Swift from Python](docs/guides/guides/ios/swift.md)
-  that calls the same `@objc` shim with
-  [Rubicon-ObjC](https://github.com/beeware/rubicon-objc) instead of pyobjus,
-  and a switch in the `swift-bridge` example to run every demo either way.
-  Rubicon-ObjC passes a Python function as a Swift completion handler,
-  returns a delegate method's value to Swift, and hands Python the `NSError`
-  from a throwing method, so it needs none of the pyobjus workarounds. Its
-  pure-Python wheel comes from PyPI. kivyforge itself is unchanged, so nothing
-  needs migrating.
-
 ### iOS: call Swift from Python
 
 - **Added:** the `swift-bridge` example and the guide
@@ -101,11 +89,15 @@
   [#181](https://github.com/ElliotGarbus/kivyforge/issues/181). A local Swift
   package of `@objc` classes, declared in
   `[tool.kivy.ios.native.swift_packages]`, is called from Python through
-  pyobjus. The guide covers objects with state, collections in both
-  directions, methods that throw, `async` work that Python polls from Kivy's
-  `Clock`, and a Swift delegate protocol implemented in Python, with the
-  workarounds pyobjus 1.2.5 needs. kivyforge itself is unchanged, so nothing
-  needs migrating.
+  [Rubicon-ObjC](https://github.com/beeware/rubicon-objc), whose pure-Python
+  wheel comes from PyPI. The guide covers objects with state, collections in
+  both directions, methods that throw, Swift `async` methods called with a
+  Python completion handler, long work that Python polls from Kivy's `Clock`
+  to show progress and cancel, and a Swift delegate protocol implemented in
+  Python. A short section says what changes for an app that calls the same
+  shim with pyobjus, and [Call iOS APIs with pyobjus](docs/guides/guides/ios/pyobjus.md)
+  now lists the pyobjus 1.2.5 defects a Swift shim meets, with their
+  workarounds. kivyforge itself is unchanged, so nothing needs migrating.
 
 ### iOS: run code in the app lifecycle
 
