@@ -9,7 +9,13 @@ source of truth for the PEP 751 layout and string escaping.
 
 from __future__ import annotations
 
-from .model import LockedIncludeFile, LockedPackage, LockedWheel, PackageDep
+from .model import (
+    LockedIncludeFile,
+    LockedPackage,
+    LockedSwiftPackage,
+    LockedWheel,
+    PackageDep,
+)
 
 
 def s(value: str) -> str:
@@ -121,6 +127,55 @@ def parse_include_file(entry: dict) -> LockedIncludeFile:
     return LockedIncludeFile(
         source=entry["source"], dest=entry["dest"], sha256=entry["sha256"]
     )
+
+
+def emit_swift_package(
+    lines: list[str], sp: LockedSwiftPackage, *, target_settings: bool
+) -> None:
+    """One ``[[tool.kivyforge.swift_packages]]`` table.
+
+    *target_settings* writes ``link``/``embed``, which only iOS has.
+    """
+    lines.append("[[tool.kivyforge.swift_packages]]")
+    lines.append(f"name = {s(sp.name)}")
+    if sp.url:
+        lines.append(f"url = {s(sp.url)}")
+    else:
+        path = sp.path
+        assert path is not None
+        lines.append(f"path = {s(path)}")
+    if sp.requirement:
+        lines.append(f"requirement = {_requirement_inline(sp.requirement)}")
+    if sp.revision:
+        lines.append(f"revision = {s(sp.revision)}")
+    if sp.version:
+        lines.append(f"version = {s(sp.version)}")
+    lines.append(f"products = {arr(sp.products)}")
+    if target_settings:
+        lines.append(f"link = {b(sp.link)}")
+        lines.append(f"embed = {b(sp.embed)}")
+
+
+def parse_swift_package(entry: dict) -> LockedSwiftPackage:
+    requirement = entry.get("requirement")
+    return LockedSwiftPackage(
+        name=entry["name"],
+        products=tuple(entry.get("products", [])),
+        url=entry.get("url"),
+        path=entry.get("path"),
+        requirement=dict(requirement) if requirement else None,
+        revision=entry.get("revision"),
+        version=entry.get("version"),
+        link=bool(entry.get("link", True)),
+        embed=bool(entry.get("embed", True)),
+    )
+
+
+def _requirement_inline(requirement: dict[str, object]) -> str:
+    ((kind, value),) = requirement.items()
+    if isinstance(value, list):
+        return f"{{ {kind} = {arr([str(v) for v in value])} }}"
+    return f"{{ {kind} = {s(str(value))} }}"
 
 
 def _dep_inline(dep: PackageDep) -> str:

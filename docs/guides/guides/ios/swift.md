@@ -2,6 +2,7 @@
 title: Call Swift from Python
 sources:
   - docs/design/dev/swift-bridge-spike-findings.md
+  - docs/design/dev/macos-swift-packages-spike-findings.md
   - examples/mobile/swift-bridge/pyproject.toml
   - examples/mobile/swift-bridge/swift-shims/Sources/SwiftBridge/Notebook.swift
   - examples/mobile/swift-bridge/swift-shims/Sources/SwiftBridge/Job.swift
@@ -11,7 +12,7 @@ sources:
 
 # Call Swift from Python
 
-Python on iOS reaches native code through the Objective-C runtime. Swift code
+Python on iOS and macOS reaches native code through the Objective-C runtime. Swift code
 is visible there only when it is marked `@objc`, and only in the shapes
 Objective-C understands. To call Swift, you write a small Swift package of
 `@objc` classes, called a *shim*, that exposes exactly what your app needs,
@@ -487,6 +488,29 @@ Tap each button. The log shows the converted results, the error from the
 throwing method, the completion handlers' results, the prime count's
 progress and its cancellation, and the metronome's ticks arriving in Python
 until the delegate tells Swift to stop.
+
+## Call the shim on macOS
+
+The same shim and the same Python work in a macOS app, with two differences:
+
+- Declare the package under `[tool.kivy.macos.native.swift_packages]`,
+  without `link` or `embed`.
+- Nothing loads the shim at launch. Load the framework kivyforge builds before
+  you look up a class:
+
+    ```python
+    import sys
+    from pathlib import Path
+
+    from rubicon.objc.runtime import load_library
+
+    frameworks = Path(sys.prefix).parents[1] / "Frameworks"
+    load_library(str(frameworks / "KivyforgePackages.framework" / "KivyforgePackages"))
+    ```
+
+[Add a Swift package to your macOS app](../macos/swift-packages.md) explains
+the build. The `swift-bridge` example itself stays iOS-only, because its UI
+needs Kivy 3, which has no macOS wheel yet.
 
 ## Things to know
 

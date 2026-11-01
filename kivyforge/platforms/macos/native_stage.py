@@ -35,6 +35,7 @@ from kivyforge.build_outcome import discard_note
 from kivyforge.report import diagnostics
 
 from . import AppBundleError
+from .launcher import RPATHS
 from .lock import MacosLockfile
 from .machotools import (
     MH_DYLIB,
@@ -103,8 +104,7 @@ def stage_native_binaries(
 ) -> list[Path]:
     """Place every pinned native binary under *contents*; return what was placed.
 
-    *contents* is the bundle's ``Contents/``, with the runtime already staged
-    (the link check reads the interpreter's run paths).
+    *contents* is the bundle's ``Contents/``.
     """
     if not lock.native_binaries:
         return []
@@ -121,7 +121,7 @@ def stage_native_binaries(
         )
         if skipped:
             _report_skipped(skipped, echo, note)
-        _check_links(plan, contents, target_arch, echo, note)
+        _check_links(plan, contents, echo, note)
         for item in plan:
             item.dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item.staged, item.dest)
@@ -298,14 +298,12 @@ def _report_skipped(skipped: list[tuple[str, str]], echo, note) -> None:
     )
 
 
-def _check_links(
-    plan: list[_Planned], contents: Path, target_arch: str, echo, note
-) -> None:
+def _check_links(plan: list[_Planned], contents: Path, echo, note) -> None:
     images = [
         Image(item.dest, item.macho, is_helper=item.dest.parent.name == HELPERS)
         for item in plan
     ]
-    problems = check_links(images, _interpreter(contents, target_arch))
+    problems = check_links(images, _interpreter(contents))
     errors = [p for p in problems if not p.warning]
     for problem in problems:
         if problem.warning:
@@ -327,15 +325,6 @@ def _check_links(
         )
 
 
-def _interpreter(contents: Path, target_arch: str) -> Interpreter:
-    """The staged CPython, the process a ``ctypes`` load happens in."""
-    link = contents / "Resources" / "python" / "bin" / "python3"
-    path = link.resolve() if link.exists() else link
-    rpaths: tuple[str, ...] = ()
-    try:
-        chosen = read_macho(path).slice_for(target_arch)
-    except MachoError:
-        chosen = None
-    if chosen is not None:
-        rpaths = chosen.rpaths
-    return Interpreter(path, rpaths)
+def _interpreter(contents: Path) -> Interpreter:
+    """The process a ``ctypes`` load happens in: the launcher, running CPython."""
+    return Interpreter(contents / "MacOS", RPATHS)

@@ -8,6 +8,7 @@ default-groups = []
 [[packages]]
 name = "filetype"
 version = "1.2.0"
+index = "https://pypi.org/simple/"
 
 [[packages.wheels]]
 name = "filetype-1.2.0-py2.py3-none-any.whl"
@@ -18,7 +19,8 @@ hashes = { sha256 = "7ce71b6880181241cf7ac8697a2f1eb6a8bd9b429f7ad6d27b8db9ba5f1
 name = "Kivy"
 version = "2.3.1"
 requires-python = ">=3.8"
-dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }, { name = "kivy-deps.angle" }, { name = "kivy-deps.sdl2" }, { name = "kivy-deps.glew" }, { name = "pypiwin32" }, { name = "kivy-deps.angle" }, { name = "pillow" }, { name = "pytest" }, { name = "pytest-cov" }, { name = "pytest-asyncio" }, { name = "pytest-timeout" }, { name = "pytest-benchmark" }, { name = "pyinstaller" }, { name = "sphinx" }, { name = "sphinxcontrib-jquery" }, { name = "flake8" }, { name = "pre-commit" }, { name = "responses" }, { name = "kivy-deps.gstreamer-dev" }, { name = "kivy-deps.sdl2-dev" }, { name = "kivy-deps.glew-dev" }, { name = "pillow" }, { name = "ffpyplayer" }, { name = "kivy-deps.gstreamer" }, { name = "kivy-deps.glew" }, { name = "kivy-deps.gstreamer" }, { name = "ffpyplayer" }, { name = "kivy-deps.gstreamer" }, { name = "kivy-deps.sdl2" }, { name = "oscpy" }]
+dependencies = [{ name = "Kivy-Garden" }, { name = "docutils" }, { name = "pygments" }, { name = "requests" }, { name = "filetype" }]
+index = "https://pypi.org/simple/"
 
 [packages.tool.kivyforge]
 direct_requirement = true
@@ -31,8 +33,8 @@ hashes = { sha256 = "d8d9e57501961c5d45e5a2c5af0caef24e48f43a0cd88f607eb3b517198
 [tool.kivyforge]
 schema_version = 1
 kivyforge_version = "3.0.0.dev1"
-generated_at = "2026-10-19T03:28:36Z"
-lock_inputs_sha256 = "326d12724cd615017b335c40ca38f9916266e77e917411aa2ccac80ec638a945"
+generated_at = "2026-11-01T00:20:13Z"
+lock_inputs_sha256 = "c19106a3fb37b34e7b7dae0102e8dae31bb46555cec4caad8cb956da7888fe38"
 tool_kivyforge_schema_version = 1
 archs = ["arm64"]
 

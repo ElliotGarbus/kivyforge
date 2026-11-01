@@ -11,7 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from kivyforge.lock.model import LOCK_VERSION, LockedIncludeFile, LockedPackage
+from kivyforge.lock.model import (
+    LOCK_VERSION,
+    LockedIncludeFile,
+    LockedPackage,
+    LockedSwiftPackage,
+)
 
 CREATED_BY = "kivyforge"
 TOOL_SCHEMA_VERSION = 1
@@ -46,33 +51,6 @@ class LockedXcframework:
         if bool(self.url) == bool(self.path):
             raise ValueError(
                 f"xcframework {self.name!r} must have exactly one of url/path"
-            )
-
-
-@dataclass(frozen=True)
-class LockedSwiftPackage:
-    """One ``[[tool.kivyforge.swift_packages]]`` entry (spec 07).
-
-    Unlike xcframeworks, kivyforge computes no output hash here: Xcode owns the
-    SPM lifecycle, so reproducibility is the pinned ``revision`` (+ the generated
-    ``Package.resolved``). Exactly one of ``url`` (remote) or ``path`` (local) is
-    set; ``requirement``/``revision``/``version`` are remote-only.
-    """
-
-    name: str
-    products: tuple[str, ...]
-    url: str | None = None
-    path: str | None = None
-    requirement: dict[str, object] | None = None
-    revision: str | None = None
-    version: str | None = None
-    link: bool = True
-    embed: bool = True
-
-    def __post_init__(self) -> None:
-        if bool(self.url) == bool(self.path):
-            raise ValueError(
-                f"swift package {self.name!r} must have exactly one of url/path"
             )
 
 

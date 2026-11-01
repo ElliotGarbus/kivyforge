@@ -2,7 +2,8 @@
 
 Reuses the platform-neutral PEP 751 ``[[packages]]`` emitter/parser
 (``kivyforge.lock.pep751``) and adds the ``[tool.kivyforge]`` extension: the arch
-set plus the bundled Python runtime pin (provider + per-arch artifacts). The
+set plus the bundled Python runtime pin (provider + per-arch artifacts), and on
+macOS the Swift package pins, without iOS's ``link``/``embed``. The
 platform is carried by the filename, so ``loads``/``load`` take it explicitly
 (used only for clear error messages and to stamp the model).
 """
@@ -14,7 +15,12 @@ from pathlib import Path
 
 from ..model import LOCK_VERSION
 from ..pep751 import arr as _arr
-from ..pep751 import emit_include_files, parse_include_file
+from ..pep751 import (
+    emit_include_files,
+    emit_swift_package,
+    parse_include_file,
+    parse_swift_package,
+)
 from ..pep751 import emit_package as _emit_package
 from ..pep751 import parse_package as _parse_package
 from ..pep751 import s as _s
@@ -81,6 +87,10 @@ def dumps(lock: WheelRuntimeLock) -> str:
             lines.append(f"path = {_s(nb.path)}")
         lines.append(f"sha256 = {_s(nb.sha256)}")
 
+    for sp in sorted(lock.swift_packages, key=lambda s: s.name):
+        lines.append("")
+        emit_swift_package(lines, sp, target_settings=False)
+
     emit_include_files(lines, lock.include_files)
 
     return "\n".join(lines) + "\n"
@@ -122,6 +132,12 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
     include_files = tuple(
         parse_include_file(f) for f in _as_list(tool, "include_files", name)
     )
+    swift_packages = tuple(
+        sorted(
+            (parse_swift_package(s) for s in _as_list(tool, "swift_packages", name)),
+            key=lambda s: s.name,
+        )
+    )
 
     packages = tuple(_parse_package(p) for p in _as_list(raw, "packages", name))
 
@@ -143,6 +159,7 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
         default_groups=tuple(raw.get("default-groups", [])),
         native_binaries=native_binaries,
         include_files=include_files,
+        swift_packages=swift_packages,
     )
 
 

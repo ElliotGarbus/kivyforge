@@ -2,8 +2,8 @@
 
 Reuses the platform-neutral checks (pip, toolchain version, app source dir) from
 ``checks`` and adds the macOS environment (host + codesign) and project checks
-(arch coverage, runtime floor, icon, find_links, reachable hosts) over the
-``pylock.macos.toml`` model.
+(arch coverage, runtime floor, icon, find_links, Swift packages, reachable
+hosts) over the ``pylock.macos.toml`` model.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from kivyforge.lock.find_links import find_links_doctor_detail
 from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics
 
+from ..ios.doctor import git_host, swift_toolchain_check
 from .lock import MacosLockfile, load, wheel_arch
 from .machotools import (
     MH_DYLIB,
@@ -36,6 +37,7 @@ from .machotools import (
 
 _ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz")
 _LOCATIONS = {MH_EXECUTE: "Helpers", MH_DYLIB: "Frameworks"}
+SWIFT_PACKAGES_NAME = "Swift packages (xcodebuild)"
 
 
 def check_macos_host(probe: Probe) -> CheckResult:
@@ -399,6 +401,53 @@ def check_macos_native_binaries(config: Config, project_root: Path) -> CheckResu
     )
 
 
+def check_macos_swift_packages(
+    probe: Probe, config: Config, project_root: Path
+) -> CheckResult:
+    """The build can run ``xcodebuild`` on the declared Swift packages (#201).
+
+    The macOS backend builds them with ``xcodebuild``, which needs the full
+    Xcode: the command-line tools ship ``swift`` but not ``xcodebuild``
+    (macos-swift-packages-proposal §2). A local package must have its
+    ``Package.swift`` where ``path`` says.
+    """
+    packages = config.macos_required.swift_packages
+    if not packages:
+        return CheckResult(
+            SWIFT_PACKAGES_NAME, Status.SKIP, "no swift_packages declared"
+        )
+    xcode = probe.xcode_version()
+    if xcode is None:
+        return CheckResult(
+            SWIFT_PACKAGES_NAME,
+            Status.FAIL,
+            "xcodebuild not found",
+            hint="install Xcode from the App Store and select it with "
+            "`sudo xcode-select --switch /Applications/Xcode.app`; the "
+            "command-line tools alone cannot build Swift packages.",
+            code=diagnostics.TOOLCHAIN_MISSING,
+        )
+    root = project_root.resolve()
+    missing = [
+        f"{sp.name} ({sp.path})"
+        for sp in packages
+        if sp.path and not (root / sp.path / "Package.swift").is_file()
+    ]
+    if missing:
+        return CheckResult(
+            SWIFT_PACKAGES_NAME,
+            Status.FAIL,
+            f"no Package.swift for: {', '.join(missing)}",
+            hint="fix the 'path' in [tool.kivy.macos.native.swift_packages]; it "
+            "is relative to the project root.",
+        )
+    return CheckResult(
+        SWIFT_PACKAGES_NAME,
+        Status.PASS,
+        f"Xcode {xcode}; {len(packages)} swift package(s) declared",
+    )
+
+
 def check_macos_hosts_reachable(
     probe: Probe, lock: MacosLockfile | None
 ) -> CheckResult:
@@ -417,6 +466,10 @@ def check_macos_hosts_reachable(
     for nb in lock.native_binaries:
         if nb.url:
             _add_host(hosts, nb.url)
+    for sp in lock.swift_packages:
+        host = git_host(sp.url) if sp.url else None
+        if host:
+            hosts.add(host)
     if not hosts:
         return CheckResult(
             "Required hosts reachable", Status.PASS, "all artifacts vendored"
@@ -467,6 +520,8 @@ def run_macos_checks(
             "App icon",
             "find_links directories",
             "Native binaries",
+            "Swift package toolchain",
+            SWIFT_PACKAGES_NAME,
             "Signing identity",
             "Signing identity type",
             "Notary setup",
@@ -493,6 +548,8 @@ def run_macos_checks(
         check_macos_app_icon(config, project_root),
         check_macos_find_links(config, project_root),
         check_macos_native_binaries(config, project_root),
+        swift_toolchain_check(probe, macos.swift_packages),
+        check_macos_swift_packages(probe, config, project_root),
         check_macos_signing_identity(probe, config),
         check_macos_signing_identity_type(config),
         check_macos_notary_setup(probe, config),

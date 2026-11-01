@@ -2,8 +2,9 @@
 
 The per-slice wheel + package dataclasses here are consumed by every backend
 (iOS, macOS, Linux) and the generic wheel+runtime engine. Platform-specific
-lockfile models (the iOS ``Lockfile`` + xcframework/swift-package entries, the
-macOS/Linux ``WheelRuntimeLock``) build on top of these.
+lockfile models (the iOS ``Lockfile`` + xcframework entries, the
+macOS/Linux ``WheelRuntimeLock``) build on top of these. ``LockedSwiftPackage``
+is here because iOS and macOS both pin Swift packages.
 """
 
 from __future__ import annotations
@@ -80,3 +81,33 @@ class LockedIncludeFile:
 def canonical_name(name: str) -> str:
     """PEP 503 normalization for package-name comparison."""
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+@dataclass(frozen=True)
+class LockedSwiftPackage:
+    """One ``[[tool.kivyforge.swift_packages]]`` entry (spec 07).
+
+    In ``pylock.ios.toml`` and ``pylock.macos.toml``. Unlike xcframeworks,
+    kivyforge computes no output hash here: Xcode owns the SPM lifecycle, so
+    reproducibility is the pinned ``revision`` (+ the generated
+    ``Package.resolved``). Exactly one of ``url`` (remote) or ``path`` (local) is
+    set; ``requirement``/``revision``/``version`` are remote-only. ``link`` and
+    ``embed`` are iOS's Xcode target settings; macOS neither writes nor reads
+    them.
+    """
+
+    name: str
+    products: tuple[str, ...]
+    url: str | None = None
+    path: str | None = None
+    requirement: dict[str, object] | None = None
+    revision: str | None = None
+    version: str | None = None
+    link: bool = True
+    embed: bool = True
+
+    def __post_init__(self) -> None:
+        if bool(self.url) == bool(self.path):
+            raise ValueError(
+                f"swift package {self.name!r} must have exactly one of url/path"
+            )
