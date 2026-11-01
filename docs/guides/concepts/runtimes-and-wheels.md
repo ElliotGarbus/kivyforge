@@ -63,7 +63,8 @@ cannot build one from source, and `kivyforge lock` fails to resolve it.
 Kivy, pyjnius, and pyobjus are published as first-party prebuilt iOS and
 Android wheels on the
 [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels) index
-until they land on PyPI. Add the index with `extra_index_urls` in the mobile
+until they land on PyPI. Rubicon-ObjC, the bridge to Objective-C the iOS
+guides use, is pure Python and comes from PyPI. Add the index with `extra_index_urls` in the mobile
 overlay, as the mobile examples do:
 
 ```toml

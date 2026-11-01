@@ -88,5 +88,5 @@ kivyforge build -p ios --simulator --json
 
 - [Open the iOS project in Xcode](xcode.md).
 - [Add a Swift package to your iOS app](swift-packages.md) or
-  [call iOS APIs with pyobjus](pyobjus.md).
+  [call iOS APIs with Rubicon-ObjC](rubicon.md).
 - [Sign your iOS app](signing.md) for distribution.

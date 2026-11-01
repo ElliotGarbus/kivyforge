@@ -470,7 +470,7 @@ job; a delegate method's return value never reaches Swift; and it does not
 return the `NSError` from a throwing method. Its defects with a dictionary
 argument, a nested list and an exception in a delegate method each need a
 workaround.
-[Call iOS APIs with pyobjus](pyobjus.md#know-what-pyobjus-gets-wrong-on-ios)
+[Use pyobjus](pyobjus.md#know-what-pyobjus-gets-wrong-on-ios)
 lists them with their fixes.
 
 ## Verify

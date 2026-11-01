@@ -1,7 +1,7 @@
 # pyjnius-deviceinfo
 
 Reads Android device information from Python via **pyjnius** — the Android
-counterpart of the iOS `pyobjus-deviceinfo` example. No Java is written: the
+counterpart of the iOS `rubicon-deviceinfo` example. No Java is written: the
 app `autoclass`es `android.os.Build`, `BatteryManager`, and the display metrics
 directly from Python.
 

@@ -1,48 +1,38 @@
-"""ios-webview — a spike for the web view recipe in the ios-module guide.
+"""ios-webview — the web view recipe in the ios-module guide.
 
 kivyforge does not ship the kivy-ios ``ios`` module
 (docs/design/dev/ios-module-proposal.md). The one function of that module
 with no drop-in replacement is ``ios.IOSWebView().open(url, x, y, w, h)``,
-which put a ``WKWebView`` over the Kivy window. The migration guide will
-carry a short recipe for it instead. This app exists to run that recipe on
-the simulator before the guide claims it works, and to settle two questions
-the guide depends on:
+which put a ``WKWebView`` over the Kivy window. The ios-module guide carries
+a short recipe for it instead, and this app is the working code it is
+condensed from. It calls UIKit and WebKit through Rubicon-ObjC.
 
-1. Can pyobjus pass a ``CGRect`` to ``initWithFrame:``? Structs of doubles
-   are pyobjus's known weak spot (kivy/pyobjus#148, for *returned* structs;
-   its conversion code says arguments are fine). The "Open (pyobjus)" button
-   tries it. "Open (ctypes)" does the same through the Objective-C runtime
-   with ``ctypes``, the fallback the guide would carry if pyobjus cannot.
+It also logs the numbers the guide's unit conversion rests on. Kivy 3's SDL3
+window is created high-pixel-density and lays out in **pixels**;
+``kivy.mobile`` reports Kivy pixels too (with kivy/kivy#9441; earlier Kivy 3
+builds return UIKit points); UIKit frames are points with a top-left origin.
+The keyboard height from ``Window`` and from ``kivy.mobile`` is logged side by
+side when the URL field is focused.
 
-2. Which unit is which. Kivy 3's SDL3 window is created high-pixel-density
-   and lays out in **pixels**; ``kivy.mobile`` reports Kivy pixels too (with
-   kivy/kivy#9441; earlier Kivy 3 builds return UIKit points); UIKit frames
-   are points with a top-left origin. The app logs every number it
-   uses so the findings can state the conversion with evidence, and logs the
-   keyboard height from ``Window`` and from ``kivy.mobile`` side by side when
-   the URL field is focused.
+What the runs settled (docs/design/dev/ios-webview-spike-findings.md):
 
-What the simulator run (iOS 27.0, pyobjus 1.2.4) settled:
-
-- pyobjus's ``load_framework(INCLUDE.WebKit)`` does nothing on iOS, so
-  ``autoclass("WKWebView")`` fails. ``load_webkit()`` uses ``dlopen`` instead.
-- pyobjus corrupts the heap when it passes a ``CGRect`` by value
-  (kivy/pyobjus#90). Both variants set the frame with ctypes; the pyobjus
-  variant hands ctypes its object via ``get_address()``.
+- The app does not link WebKit, so ``WKWebView`` does not exist until the
+  framework is loaded. ``load_library("WebKit")`` loads it through dyld.
 - Kivy lays out in pixels: ``Window.size == UIScreen.bounds * nativeScale``.
+
+The first run compared pyobjus with raw ``ctypes``; pyobjus needed ``ctypes``
+for loading WebKit and for every ``CGRect``. Rubicon-ObjC needs neither.
 
 Every observation is logged as ``ios-webview: ...`` so the Xcode console can
 be grepped. Run it with ``kivyforge run -p ios --simulator`` from this
-directory (after ``kivyforge lock -p ios``); the prompt that drives the run
-is docs/design/dev/ios-webview-spike-prompt.md. Without a simulator window,
-set ``IOS_WEBVIEW_AUTORUN`` (see ``_schedule_autorun``).
+directory (after ``kivyforge lock -p ios``). Without a simulator window, set
+``IOS_WEBVIEW_AUTORUN`` (see ``_schedule_autorun``).
 
 On desktop the buttons are disabled and the layout still renders.
 """
 
 from __future__ import annotations
 
-import ctypes
 import os
 import traceback
 
@@ -105,195 +95,68 @@ def kivy_rect_to_uikit(x: float, y: float, width: float, height: float) -> tuple
 
 
 # ---------------------------------------------------------------------------
-# Variant A: pyobjus
+# The web view, through Rubicon-ObjC
 # ---------------------------------------------------------------------------
-
-
-def _get(obj, name):
-    """Read an Objective-C property or call a no-argument method.
-
-    pyobjus exposes properties as attributes and methods as callables, and the
-    same selector (``rootViewController``, ``view``) is both in Objective-C.
-    Accept either so the spike reports which form pyobjus chose rather than
-    failing on it.
-    """
-    value = getattr(obj, name)
-    return value() if callable(value) else value
-
-
-WEBKIT_BINARY = "/System/Library/Frameworks/WebKit.framework/WebKit"
 
 
 def load_webkit() -> None:
     """Load WebKit so the runtime can find ``WKWebView``.
 
     The app does not link WebKit, so the class does not exist until the
-    framework is loaded. pyobjus's ``load_framework(INCLUDE.WebKit)`` cannot do
-    it on iOS: it uses ``NSBundle``, and the WebKit bundle has no binary on
-    disk there (it lives only in the dyld shared cache), so ``load()``
-    returns NO and ``load_framework`` ignores it (kivy/pyobjus#158).
-    ``dlopen`` goes through dyld, which resolves system frameworks from the
-    shared cache on device and simulator alike. Loading an already loaded
-    image is a no-op.
+    framework is loaded. On iOS, ``load_library`` falls back to
+    ``/System/Library/Frameworks/WebKit.framework/WebKit``; ``dlopen``
+    resolves that from the dyld shared cache on device and simulator alike.
+    Loading an already loaded image is a no-op.
     """
-    ctypes.CDLL(WEBKIT_BINARY)
+    from rubicon.objc.runtime import load_library
 
-
-def open_with_pyobjus(url: str, frame_points: tuple):
-    """Objects through pyobjus, the frame through ctypes.
-
-    pyobjus 1.2.4 copies a struct argument into a ``malloc(0)`` buffer, so a
-    32-byte ``CGRect`` overruns it (kivy/pyobjus#90):
-    ``initWithFrame_(NSRect(...))`` gave a 0x0 view on one launch and the
-    right frame on the next. Object and string arguments are fine. So the view
-    is created with a zero frame and placed with ``setFrame:`` sent through
-    ``objc_msgSend``, using the pointer from ``get_address()``.
-    """
-    from pyobjus import autoclass, objc_str
-
-    load_webkit()
-    WKWebView = autoclass("WKWebView")
-    NSURL = autoclass("NSURL")
-    NSURLRequest = autoclass("NSURLRequest")
-    UIApplication = autoclass("UIApplication")
-
-    app = UIApplication.sharedApplication()
-    window = _get(app, "keyWindow")
-    if not window:
-        window = _get(_get(app, "windows"), "firstObject")
-    root_vc = _get(window, "rootViewController")
-    root_view = _get(root_vc, "view")
-    log(f"pyobjus: rootViewController={root_vc!r}")
-
-    web_view = WKWebView.alloc().init()
-    set_frame(web_view.get_address(), frame_points)
-    root_view.addSubview_(web_view)
-    log(f"pyobjus: frame={get_frame(web_view.get_address())}")
-    ns_url = NSURL.URLWithString_(objc_str(url))
-    if not ns_url:
-        web_view.removeFromSuperview()
-        raise ValueError(f"NSURL cannot parse {url!r}")
-    web_view.loadRequest_(NSURLRequest.requestWithURL_(ns_url))
-    return web_view
-
-
-def close_with_pyobjus(web_view) -> None:
-    web_view.removeFromSuperview()
-
-
-# ---------------------------------------------------------------------------
-# Variant B: ctypes over the Objective-C runtime
-# ---------------------------------------------------------------------------
-
-
-class _CGPoint(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
-
-
-class _CGSize(ctypes.Structure):
-    _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
-
-
-class _CGRect(ctypes.Structure):
-    _fields_ = [("origin", _CGPoint), ("size", _CGSize)]
-
-
-class _ObjC:
-    """The few runtime entry points the recipe needs, typed per call."""
-
-    def __init__(self) -> None:
-        load_webkit()
-        self.lib = ctypes.CDLL(None)
-        self.lib.objc_getClass.restype = ctypes.c_void_p
-        self.lib.objc_getClass.argtypes = [ctypes.c_char_p]
-        self.lib.sel_registerName.restype = ctypes.c_void_p
-        self.lib.sel_registerName.argtypes = [ctypes.c_char_p]
-        self._msg_send = ctypes.cast(self.lib.objc_msgSend, ctypes.c_void_p).value
-
-    def cls(self, name: bytes):
-        return self.lib.objc_getClass(name)
-
-    def sel(self, name: bytes):
-        return self.lib.sel_registerName(name)
-
-    def send(
-        self, receiver, selector: bytes, *args, argtypes=(), restype=ctypes.c_void_p
-    ):
-        proto = ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)
-        return proto(self._msg_send)(receiver, self.sel(selector), *args)
-
-    def ns_string(self, text: str):
-        return self.send(
-            self.cls(b"NSString"),
-            b"stringWithUTF8String:",
-            text.encode("utf-8"),
-            argtypes=(ctypes.c_char_p,),
-        )
-
-
-_objc: _ObjC | None = None
-
-
-def _runtime() -> _ObjC:
-    global _objc
-    if _objc is None:
-        _objc = _ObjC()
-    return _objc
+    load_library("WebKit")
 
 
 def set_frame(view, frame_points: tuple) -> None:
+    """Place ``view`` at a UIKit frame; call again when the layout changes."""
+    from rubicon.objc import CGPoint, CGRect, CGSize
+
     x, y, w, h = frame_points
-    _runtime().send(
-        view,
-        b"setFrame:",
-        _CGRect(_CGPoint(x, y), _CGSize(w, h)),
-        argtypes=(_CGRect,),
-        restype=None,
-    )
+    view.frame = CGRect(CGPoint(x, y), CGSize(w, h))
 
 
 def get_frame(view) -> tuple:
-    rect = _runtime().send(view, b"frame", restype=_CGRect)
+    rect = view.frame
     return (rect.origin.x, rect.origin.y, rect.size.width, rect.size.height)
 
 
-def open_with_ctypes(url: str, frame_points: tuple):
-    rt = _runtime()
+def open_web_view(url: str, frame_points: tuple):
+    """Show ``url`` in a WKWebView over the Kivy window, at a UIKit frame."""
+    from rubicon.objc import ObjCClass
 
-    app = rt.send(rt.cls(b"UIApplication"), b"sharedApplication")
-    window = rt.send(app, b"keyWindow")
-    if not window:
-        window = rt.send(rt.send(app, b"windows"), b"firstObject")
-    root_vc = rt.send(window, b"rootViewController")
-    root_view = rt.send(root_vc, b"view")
-    log(f"ctypes: rootViewController=0x{root_vc or 0:x}")
+    load_webkit()
+    WKWebView = ObjCClass("WKWebView")
+    NSURL = ObjCClass("NSURL")
+    NSURLRequest = ObjCClass("NSURLRequest")
+    UIApplication = ObjCClass("UIApplication")
 
-    x, y, w, h = frame_points
-    frame = _CGRect(_CGPoint(x, y), _CGSize(w, h))
-    web_view = rt.send(rt.cls(b"WKWebView"), b"alloc")
-    # CGRect by value: four doubles, an arm64 homogeneous aggregate in d0-d3.
-    web_view = rt.send(web_view, b"initWithFrame:", frame, argtypes=(_CGRect,))
-    rt.send(root_view, b"addSubview:", web_view, argtypes=(ctypes.c_void_p,))
-    log(f"ctypes: frame={get_frame(web_view)}")
-    ns_url = rt.send(
-        rt.cls(b"NSURL"),
-        b"URLWithString:",
-        rt.ns_string(url),
-        argtypes=(ctypes.c_void_p,),
-    )
-    if not ns_url:
-        close_with_ctypes(web_view)
+    # sharedApplication, keyWindow, rootViewController and view are all
+    # properties, so none is called.
+    app = UIApplication.sharedApplication
+    window = app.keyWindow or app.windows.firstObject
+    root_view = window.rootViewController.view
+    log(f"root view={root_view!r}")
+
+    web_view = WKWebView.alloc().init()
+    set_frame(web_view, frame_points)
+    root_view.addSubview(web_view)
+    log(f"frame={get_frame(web_view)}")
+    ns_url = NSURL.URLWithString(url)
+    if ns_url is None:
+        web_view.removeFromSuperview()
         raise ValueError(f"NSURL cannot parse {url!r}")
-    request = rt.send(
-        rt.cls(b"NSURLRequest"), b"requestWithURL:", ns_url, argtypes=(ctypes.c_void_p,)
-    )
-    rt.send(web_view, b"loadRequest:", request, argtypes=(ctypes.c_void_p,))
+    web_view.loadRequest(NSURLRequest.requestWithURL(ns_url))
     return web_view
 
 
-def close_with_ctypes(web_view) -> None:
-    assert _objc is not None
-    _objc.send(web_view, b"removeFromSuperview", restype=None)
+def close_web_view(web_view) -> None:
+    web_view.removeFromSuperview()
 
 
 # ---------------------------------------------------------------------------
@@ -312,17 +175,14 @@ def log_units() -> None:
         f"kivy.mobile: scale={get_scale()} dpi={get_dpi()} "
         f"safe_area={get_safe_area()} keyboard_height={get_keyboard_height()}"
     )
-    try:
-        from pyobjus import autoclass
+    from rubicon.objc import ObjCClass
 
-        screen = autoclass("UIScreen").mainScreen()
-        bounds = _get(screen, "bounds")
-        log(
-            f"UIScreen.bounds={bounds.size.width}x{bounds.size.height} pt "
-            f"nativeScale={_get(screen, 'nativeScale')}"
-        )
-    except Exception as exc:  # the bounds read is itself a struct-return test
-        log(f"UIScreen.bounds via pyobjus failed: {exc!r}")
+    screen = ObjCClass("UIScreen").mainScreen
+    bounds = screen.bounds
+    log(
+        f"UIScreen.bounds={bounds.size.width}x{bounds.size.height} pt "
+        f"nativeScale={screen.nativeScale}"
+    )
     log(
         "expected: Window.size == UIScreen.bounds * nativeScale if Kivy lays "
         "out in pixels; == UIScreen.bounds if in points"
@@ -366,20 +226,16 @@ KV = """
         input_type: "url"
         keyboard_suggestions: False
         text: root.url
-        on_text_validate: root.open_web_view("pyobjus")
+        on_text_validate: root.open_web_view()
 
     BoxLayout:
         size_hint_y: None
         height: "44dp"
         spacing: "8dp"
         Button:
-            text: "Open (pyobjus)"
+            text: "Open"
             disabled: not root.on_ios
-            on_release: root.open_web_view("pyobjus")
-        Button:
-            text: "Open (ctypes)"
-            disabled: not root.on_ios
-            on_release: root.open_web_view("ctypes")
+            on_release: root.open_web_view()
         Button:
             text: "Close"
             disabled: not root.on_ios
@@ -401,7 +257,6 @@ class WebViewSpikeRoot(BoxLayout):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._web_view = None
-        self._variant = None
 
     def on_kv_post(self, _base_widget) -> None:
         self.status_text = (
@@ -426,17 +281,13 @@ class WebViewSpikeRoot(BoxLayout):
         self._schedule_autorun(os.environ.get("IOS_WEBVIEW_AUTORUN", ""))
 
     def _schedule_autorun(self, steps: str) -> None:
-        """Press the buttons from ``IOS_WEBVIEW_AUTORUN``, e.g. ``"pyobjus close"``.
+        """Press the buttons from ``IOS_WEBVIEW_AUTORUN``, e.g. ``"open close"``.
 
         For a simulator with no window to tap in (``xcrun simctl launch`` with
         ``SIMCTL_CHILD_IOS_WEBVIEW_AUTORUN=...``). One step every 3 seconds.
         """
         for n, step in enumerate(steps.split(), start=1):
-            action = (
-                self.close_web_view
-                if step == "close"
-                else (lambda s=step: self.open_web_view(s))
-            )
+            action = self.close_web_view if step == "close" else self.open_web_view
             Clock.schedule_once(lambda dt, a=action: a(), 3 * n)
 
     def _web_area_frame_points(self) -> tuple:
@@ -452,40 +303,32 @@ class WebViewSpikeRoot(BoxLayout):
         log(f"web area: kivy px {kivy_rect} -> uikit pt {frame}")
         return frame
 
-    def open_web_view(self, variant: str) -> None:
+    def open_web_view(self) -> None:
         self.close_web_view()
         url = normalize_url(self.ids.url.text)
         self.ids.url.text = url
         frame = self._web_area_frame_points()
         try:
-            if variant == "pyobjus":
-                self._web_view = open_with_pyobjus(url, frame)
-            else:
-                self._web_view = open_with_ctypes(url, frame)
+            self._web_view = open_web_view(url, frame)
         except Exception:
-            log(f"{variant}: FAILED\n{traceback.format_exc()}")
-            self.status_text = f"{variant}: failed, see log"
+            log(f"open FAILED\n{traceback.format_exc()}")
+            self.status_text = "open failed, see log"
             self._web_view = None
             return
-        self._variant = variant
-        log(f"{variant}: web view opened for {url}")
-        self.status_text = f"{variant}: opened {url}"
+        log(f"web view opened for {url}")
+        self.status_text = f"opened {url}"
 
     def close_web_view(self) -> None:
         if self._web_view is None:
             return
         try:
-            if self._variant == "pyobjus":
-                close_with_pyobjus(self._web_view)
-            else:
-                close_with_ctypes(self._web_view)
-            log(f"{self._variant}: web view closed")
-            self.status_text = f"{self._variant}: closed"
+            close_web_view(self._web_view)
+            log("web view closed")
+            self.status_text = "closed"
         except Exception:
-            log(f"{self._variant}: close FAILED\n{traceback.format_exc()}")
-            self.status_text = f"{self._variant}: close failed, see log"
+            log(f"close FAILED\n{traceback.format_exc()}")
+            self.status_text = "close failed, see log"
         self._web_view = None
-        self._variant = None
 
 
 class WebViewSpikeApp(App):

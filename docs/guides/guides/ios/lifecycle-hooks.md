@@ -22,7 +22,7 @@ need, and hands what they receive to Python as Kivy events.
 
 - [Add a Swift package](swift-packages.md) explains how local packages are
   declared. This page uses a `path` package.
-- [Call iOS APIs with pyobjus](pyobjus.md): add `pyobjus` to your
+- [Call iOS APIs with Rubicon-ObjC](rubicon.md): add `rubicon-objc` to your
   dependencies. Python reads the hook through it.
 - Have the `ios-lifecycle-hook` example from the kivyforge repository at hand
   (`examples/mobile/ios-lifecycle-hook`). You copy two pieces from it.

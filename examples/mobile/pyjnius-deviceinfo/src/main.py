@@ -2,7 +2,7 @@
 
 Featured: pyjnius ``autoclass`` reaching ``android.os.Build``, the battery
 level via ``BatteryManager``, and the display metrics — the Android analog of
-the iOS ``pyobjus-deviceinfo`` example. All device access is pure Python; the
+the iOS ``rubicon-deviceinfo`` example. All device access is pure Python; the
 pyjnius bridge is delivered as a prebuilt Android wheel.
 """
 

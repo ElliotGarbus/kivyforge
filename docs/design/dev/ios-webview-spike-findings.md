@@ -4,6 +4,16 @@ Results of [`ios-webview-spike-prompt.md`](ios-webview-spike-prompt.md),
 run with `examples/mobile/ios-webview`. Taps by the owner in Device Hub;
 unattended passes through the app's `IOS_WEBVIEW_AUTORUN` hook (below).
 
+> **Addendum 2026-11-01:** the example and the recipe in `ios-module.md` now
+> use Rubicon-ObjC, the bridge the docs present first
+> ([`pyobjus-to-rubicon-followup.md`](pyobjus-to-rubicon-followup.md)). Both
+> pyobjus workarounds below are gone: `load_library("WebKit")` loads the
+> framework, and a `CGRect` is assigned to `frame` directly. The pyobjus and
+> ctypes variants and their buttons were removed; **Open** and **Close**
+> remain, and `IOS_WEBVIEW_AUTORUN` takes `open` and `close`. Re-run on an
+> iOS 27.0 Simulator (test-matrix section 7, 2026-11-01). The units findings
+> are unchanged. The findings below describe the 2026-10-19 run as it was.
+
 ## Environment
 
 | | |

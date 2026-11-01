@@ -51,7 +51,7 @@ On iOS, most legacy kivy-ios recipes are no longer needed: the Python runtime
 or the Kivy wheel bundles what they built, a pure-Python package installs from
 PyPI, or a prebuilt iOS wheel exists. For a few, such as the barcode-scanning
 recipes, the replacement is an Apple framework that you call through
-[pyobjus](../ios/pyobjus.md).
+[Rubicon-ObjC](../ios/rubicon.md).
 
 ## Migrate an Android project
 

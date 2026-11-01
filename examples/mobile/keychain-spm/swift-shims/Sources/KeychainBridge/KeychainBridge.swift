@@ -4,10 +4,10 @@ import KeychainAccess
 /// Objective-C-facing shim over the pure-Swift `KeychainAccess` package.
 ///
 /// `KeychainAccess` exposes a throwing API and Swift subscripts, neither of
-/// which pyobjus can call. This class re-exports the three operations the demo
+/// which Python can call. This class re-exports the three operations the demo
 /// needs as `@objc` class methods with flat, Objective-C-representable
 /// signatures (`String` <-> `NSString`, `Bool` <-> `BOOL`). The explicit
-/// `@objc(...)` selectors keep the names pyobjus looks up stable and avoid
+/// `@objc(...)` selectors keep the names Python looks up stable and avoid
 /// clashing with `NSObject`'s key-value-coding methods.
 @objc(KeychainBridge)
 public final class KeychainBridge: NSObject {

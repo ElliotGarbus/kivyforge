@@ -1,24 +1,17 @@
-"""pyobjus-ball — an interactive kivyforge 3.0 example.
+"""rubicon-ball — an interactive kivyforge 3.0 example.
 
-Demonstrates calling native iOS APIs from Python using ctypes bindings to the
-Objective-C runtime.
+Demonstrates calling native iOS APIs from Python with Rubicon-ObjC.
 
 Two native APIs are exercised:
 
-  CMMotionManager (ctypes)
-      Accelerometer data to steer the ball.  pyobjus cannot decode ObjC structs
-      whose fields are ``double`` (CMAcceleration = ddd), so we call
-      objc_msgSend via ctypes — the same technique used in ``ios.py`` for
-      UIEdgeInsets.  This is a known pyobjus limitation (kivy/pyobjus#148).
+  CMMotionManager (CoreMotion)
+      Accelerometer data to steer the ball. ``acceleration`` returns a C
+      struct of three doubles, ``CMAcceleration``; Rubicon-ObjC returns struct
+      results as ``ctypes`` structures, and registering our own structure for
+      its type encoding gives the fields their names.
 
-  UIScreen (ctypes)
-      Read and write screen brightness from a slider.  We use ctypes here as
-      well because pyobjus triggers spurious ``AttributeError`` exceptions when
-      introspecting UIScreen's property list on recent iOS versions.
-
-Both usages are good examples of the ctypes / ObjC-runtime pattern that
-kivyforge apps can use for any Objective-C API that pyobjus cannot decode
-correctly.
+  UIScreen (UIKit)
+      Read and write screen brightness from a slider, as a plain property.
 
 On the Simulator (or any environment where CoreMotion is unavailable) the app
 falls back to touch/drag steering so the layout can still be exercised.
@@ -76,7 +69,7 @@ KV = """
             pos: self.pos
             size: self.size
 
-<PyobjusBallRoot>:
+<BallRoot>:
     orientation: "vertical"
     padding: "16dp"
     spacing: "8dp"
@@ -128,7 +121,7 @@ KV = """
         color: 0.6, 0.6, 0.6, 1
         text: f"Bounces: {root.bounces}"
 
-PyobjusBallRoot:
+BallRoot:
 """
 
 
@@ -136,8 +129,8 @@ class BallWidget(Widget):
     hue = NumericProperty(0.55)
 
 
-class _CMAcceleration(ctypes.Structure):
-    """Mirror of the ObjC ``CMAcceleration`` struct (three doubles)."""
+class CMAcceleration(ctypes.Structure):
+    """Mirror of CoreMotion's ``CMAcceleration`` struct (three doubles)."""
 
     _fields_ = [
         ("x", ctypes.c_double),
@@ -146,81 +139,23 @@ class _CMAcceleration(ctypes.Structure):
     ]
 
 
-class _ObjC:
-    """Thin ctypes wrapper around the ObjC runtime (ARM64).
-
-    Provides typed ``CFUNCTYPE`` wrappers for the argument/return-type
-    combinations used by the two APIs in this example.  A single raw
-    ``objc_msgSend`` pointer is cast to each wrapper type; this matches
-    the ARM64 calling convention where the return type determines which
-    registers are used.
-    """
+class _Accelerometer:
+    """CMMotionManager through Rubicon-ObjC."""
 
     def __init__(self) -> None:
-        lib = ctypes.CDLL(None)
+        from rubicon.objc import ObjCClass
+        from rubicon.objc.types import register_encoding
 
-        _get_cls = lib.objc_getClass
-        _get_cls.restype = ctypes.c_void_p
-        _get_cls.argtypes = [ctypes.c_char_p]
+        # CMAcceleration is an anonymous C struct, so its type encoding is
+        # "{?=ddd}". Without a registered type, Rubicon-ObjC builds one with
+        # fields named field_0, field_1, field_2; this one names them x, y, z.
+        # CMRotationRate shares the encoding and the layout.
+        register_encoding(b"{?=ddd}", CMAcceleration)
 
-        _sel = lib.sel_registerName
-        _sel.restype = ctypes.c_void_p
-        _sel.argtypes = [ctypes.c_char_p]
-
-        raw = ctypes.cast(lib.objc_msgSend, ctypes.c_void_p).value
-
-        self._get_cls = _get_cls
-        self._sel = _sel
-        # id  msg(id, SEL)
-        self.send_id = ctypes.CFUNCTYPE(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
-        )(raw)
-        # bool msg(id, SEL)
-        self.send_bool = ctypes.CFUNCTYPE(
-            ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p
-        )(raw)
-        # void msg(id, SEL)
-        self.send_void = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)(raw)
-        # CGFloat msg(id, SEL)  — CGFloat is double on 64-bit ARM
-        self.send_cgfloat = ctypes.CFUNCTYPE(
-            ctypes.c_double, ctypes.c_void_p, ctypes.c_void_p
-        )(raw)
-        # void msg(id, SEL, CGFloat)
-        self.send_void_d = ctypes.CFUNCTYPE(
-            None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_double
-        )(raw)
-        # CMAcceleration msg(id, SEL)  — 3-double HFA returned in d0-d2
-        self.send_accel = ctypes.CFUNCTYPE(
-            _CMAcceleration, ctypes.c_void_p, ctypes.c_void_p
-        )(raw)
-
-    def cls(self, name: bytes) -> ctypes.c_void_p:
-        return self._get_cls(name)
-
-    def sel(self, name: bytes) -> ctypes.c_void_p:
-        return self._sel(name)
-
-
-class _Accelerometer:
-    """CMMotionManager via the ObjC runtime (ctypes).
-
-    pyobjus currently cannot decode ObjC structs whose fields are ``double``
-    (CMAcceleration = {CMAcceleration=ddd} in ObjC type encoding).  We bypass
-    it here and call ``objc_msgSend`` via ctypes — the same technique used in
-    ``ios.py`` for reading ``UIEdgeInsets``.
-    """
-
-    def __init__(self, objc: _ObjC) -> None:
-        self._objc = objc
-        mm_cls = objc.cls(b"CMMotionManager")
-        self._mm = objc.send_id(
-            objc.send_id(mm_cls, objc.sel(b"alloc")), objc.sel(b"init")
-        )
-        self._available: bool = bool(
-            objc.send_bool(self._mm, objc.sel(b"isAccelerometerAvailable"))
-        )
+        self._mm = ObjCClass("CMMotionManager").alloc().init()
+        self._available = bool(self._mm.isAccelerometerAvailable)
         if self._available:
-            objc.send_void(self._mm, objc.sel(b"startAccelerometerUpdates"))
+            self._mm.startAccelerometerUpdates()
 
     @property
     def available(self) -> bool:
@@ -231,47 +166,35 @@ class _Accelerometer:
         """Return ``(x, y)`` tilt in *g* (positive x = tilt right)."""
         if not self._available:
             return 0.0, 0.0
-        objc = self._objc
-        data = objc.send_id(self._mm, objc.sel(b"accelerometerData"))
-        if not data:
+        data = self._mm.accelerometerData
+        if data is None:
             return 0.0, 0.0
-        acc = objc.send_accel(data, objc.sel(b"acceleration"))
+        acc = data.acceleration
         return float(acc.x), float(acc.y)
 
     def stop(self) -> None:
         if self._available:
-            objc = self._objc
-            objc.send_void(self._mm, objc.sel(b"stopAccelerometerUpdates"))
+            self._mm.stopAccelerometerUpdates()
 
 
 class _Screen:
-    """UIScreen.mainScreen brightness read/write via ctypes.
+    """UIScreen.mainScreen brightness, read and written as a property."""
 
-    Using ctypes avoids the spurious ``AttributeError`` that pyobjus raises
-    when it tries to introspect UIScreen's internal property list on recent
-    iOS versions.
-    """
+    def __init__(self) -> None:
+        from rubicon.objc import ObjCClass
 
-    def __init__(self, objc: _ObjC) -> None:
-        self._objc = objc
-        screen_cls = objc.cls(b"UIScreen")
-        self._screen = objc.send_id(screen_cls, objc.sel(b"mainScreen"))
+        self._screen = ObjCClass("UIScreen").mainScreen
 
     @property
     def brightness(self) -> float:
-        return float(
-            self._objc.send_cgfloat(self._screen, self._objc.sel(b"brightness"))
-        )
+        return float(self._screen.brightness)
 
     @brightness.setter
     def brightness(self, value: float) -> None:
-        # The ObjC setter selector is "setBrightness:" (colon required).
-        self._objc.send_void_d(
-            self._screen, self._objc.sel(b"setBrightness:"), float(value)
-        )
+        self._screen.brightness = float(value)
 
 
-class PyobjusBallRoot(BoxLayout):
+class BallRoot(BoxLayout):
     ball_hue = NumericProperty(0.55)
     bounces = NumericProperty(0)
     has_native = NumericProperty(0)  # bool cast to number for KV opacity
@@ -290,11 +213,10 @@ class PyobjusBallRoot(BoxLayout):
 
     def on_kv_post(self, _base_widget) -> None:
         try:
-            objc = _ObjC()
-            accel = _Accelerometer(objc)
-            if accel.available:
+            accel = _Accelerometer() if platform == "ios" else None
+            if accel is not None and accel.available:
                 self._accel = accel
-                self._screen = _Screen(objc)
+                self._screen = _Screen()
                 self.has_native = 1
                 self.ids.bright_slider.value = self._screen.brightness
                 self.status_text = "Tilt to steer · slide to adjust brightness"
@@ -401,10 +323,10 @@ class PyobjusBallRoot(BoxLayout):
             self.ball_hue = random()
 
 
-class PyobjusBallApp(App):
-    def build(self) -> PyobjusBallRoot:
+class BallApp(App):
+    def build(self) -> BallRoot:
         Window.clearcolor = DARK_BG
         return Builder.load_string(KV)
 
 
-PyobjusBallApp().run()
+BallApp().run()

@@ -7,7 +7,7 @@ Demonstrates the full SPM feature plus the `@objc` shim pattern:
     into the app by ``kivyforge build``.
   * A *local* shim package (``KeychainBridge``, under ``swift-shims/``) wraps
     KeychainAccess's pure-Swift API behind a small ``@objc`` class.
-  * This Python app calls that shim through ``pyobjus`` to store, load, and
+  * This Python app calls that shim through Rubicon-ObjC to store, load, and
     delete a secret in the iOS **Keychain** — secure, on-device storage that
     has no pure-Python equivalent on iOS.
 
@@ -54,18 +54,6 @@ def safe_area_insets():
     return [insets["left"], insets["top"], insets["right"], insets["bottom"]]
 
 
-def _objc_str(value) -> str | None:
-    """Convert a pyobjus NSString result into a Python ``str`` (or None)."""
-    if value is None:
-        return None
-    # pyobjus returns an NSString proxy; UTF8String() yields a C string.
-    try:
-        raw = value.UTF8String()
-    except AttributeError:
-        return str(value)
-    return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-
-
 class KeychainStore:
     """Secret storage backed by the KeychainBridge SPM shim on iOS.
 
@@ -81,11 +69,11 @@ class KeychainStore:
             from kivy.utils import platform
 
             if platform == "ios":
-                from pyobjus import autoclass
+                from rubicon.objc import ObjCClass
 
                 # Looked up by the @objc(KeychainBridge) runtime name; the
                 # framework is loaded at launch via the link+embed wiring.
-                self._bridge = autoclass("KeychainBridge")
+                self._bridge = ObjCClass("KeychainBridge")
                 self.native = True
         except Exception:
             self._bridge = None
@@ -93,18 +81,20 @@ class KeychainStore:
 
     def store(self, key: str, value: str) -> bool:
         if self._bridge is not None:
-            return bool(self._bridge.storeString_forKey_(value, key))
+            return bool(self._bridge.storeString(value, forKey=key))
         self._fallback[key] = value
         return True
 
     def load(self, key: str) -> str | None:
         if self._bridge is not None:
-            return _objc_str(self._bridge.stringForKey_(key))
+            value = self._bridge.stringForKey(key)
+            # An NSString formats like a str but is not one; nil is None.
+            return None if value is None else str(value)
         return self._fallback.get(key)
 
     def delete(self, key: str) -> bool:
         if self._bridge is not None:
-            return bool(self._bridge.deleteKey_(key))
+            return bool(self._bridge.deleteKey(key))
         return self._fallback.pop(key, None) is not None
 
 
