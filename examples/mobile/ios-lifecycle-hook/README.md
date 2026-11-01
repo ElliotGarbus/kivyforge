@@ -30,10 +30,10 @@ explains how to adapt it.
 
 - macOS with Xcode, and kivyforge installed from this repo
   (`pip install -e ".[dev]"`).
-- Network access to `elliotgarbus.github.io` the first time you lock: Kivy and
-  pyobjus iOS wheels come from the
+- Network access the first time you lock: Kivy's iOS wheel comes from the
   [`kivy-mobile-wheels`](https://github.com/ElliotGarbus/kivy-mobile-wheels)
-  index.
+  index on `elliotgarbus.github.io`, and Rubicon-ObjC, which reads the hook
+  from Python, from PyPI.
 - For push on a device: a paid Apple Developer team, so automatic signing can
   add the Push Notifications capability.
 
@@ -75,6 +75,13 @@ from the debugger. On an iOS 27 Simulator: every row except the notification
 tap and **Refresh task**. A background push from Apple's console was
 verified on the phone with the spike this example was built from, which
 installs the same delegate method.
+
+Those results were recorded when Python read the hook through pyobjus. After
+the move to Rubicon-ObjC they were re-run on an iPhone with iOS 27.0.1: the
+push token, a notification while in front, a notification tap with the app in
+the background and after a force-quit (a cold launch), and **Refresh task**
+submitting (its handler was not triggered). Every Simulator row passed again
+on an iOS 27 Simulator.
 
 ## Limits
 

@@ -4,11 +4,11 @@ version = "0.1.0"
 requires-python = ">=3.15"
 dependencies = [
     "kivy>=3.0.0.dev0,<4",
-    # pyobjus is an iOS-only package; it is silently skipped on other
-    # platforms at runtime (the app shows a desktop fallback).
-    # iOS wheels resolve from the kivy-mobile-wheels index (see
-    # [tool.kivy.ios].extra_index_urls below) before running `kivyforge lock`.
-    "pyobjus>=1.2.5.dev0",
+    # Rubicon-ObjC calls UIKit and WebKit. It is pure Python, so its wheel
+    # comes from PyPI; it is only imported on iOS (elsewhere the app shows a
+    # desktop fallback). Kivy's iOS wheel comes from the kivy-mobile-wheels
+    # index (see [tool.kivy.ios].extra_index_urls below).
+    "rubicon-objc>=0.5.7",
 ]
 
 [tool.kivy]

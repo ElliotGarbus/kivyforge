@@ -3,7 +3,7 @@
 /// App-lifecycle events captured before and after Python starts.
 ///
 /// Every method is a class method that takes and returns strings or numbers,
-/// so pyobjus can call it with `autoclass("LifecycleHook")`.
+/// so Python can call it through Rubicon-ObjC's `ObjCClass("LifecycleHook")`.
 @interface LifecycleHook : NSObject
 
 /// "ok", or why the hook could not install itself.

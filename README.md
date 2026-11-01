@@ -140,8 +140,9 @@ To work on kivyforge itself, see [Development](#development).
 > pyobjus, and pyjnius resolve from the
 > [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels)
 > index — a companion repo of first-party iOS/Android cross-builds published as
-> a static PEP 503 index — so `kivyforge lock` just works against any mobile
-> example. `scripts/build_ios_wheels.sh` / `scripts/build_pyobjus_ios_wheels.sh`
+> a static PEP 503 index — and Rubicon-ObjC, the iOS examples' bridge to
+> Objective-C, is pure Python from PyPI, so `kivyforge lock` just works against
+> any mobile example. `scripts/build_ios_wheels.sh` / `scripts/build_pyobjus_ios_wheels.sh`
 > remain for cross-building your own iOS wheels locally (e.g. to vendor one via
 > a `path` lock instead of the index); neither is required to run the examples.
 >
@@ -394,11 +395,11 @@ Kivy 3.0, Android on either generation (wheels from
   `kivy.mobile` runtime-geometry API (DPI, safe-area insets, keyboard height).
 - [`svg-explorer`](examples/mobile/svg-explorer/) — interactive SVG viewer
   (multitouch pan/zoom/rotate).
-- [`pyobjus-ball`](examples/mobile/pyobjus-ball/) — calls native iOS APIs
-  (CoreMotion, UIScreen) from Python via the Objective-C runtime.
-- [`pyobjus-deviceinfo`](examples/mobile/pyobjus-deviceinfo/) — reads native iOS
-  device info (model, system version, battery) via pyobjus; a CPython 3.15
-  pre-release example.
+- [`rubicon-ball`](examples/mobile/rubicon-ball/) — calls native iOS APIs
+  (CoreMotion, UIScreen) from Python through Rubicon-ObjC, including a C
+  struct return.
+- [`rubicon-deviceinfo`](examples/mobile/rubicon-deviceinfo/) — reads native
+  iOS device info (model, system version, battery) through Rubicon-ObjC.
 - [`keychain-spm`](examples/mobile/keychain-spm/) — declares a remote Swift Package
   (`KeychainAccess`), pins it with `kivyforge lock`, and calls it from Python
   through a local `@objc` shim package.

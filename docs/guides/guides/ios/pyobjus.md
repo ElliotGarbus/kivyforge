@@ -1,16 +1,24 @@
 ---
-title: Call iOS APIs with pyobjus
+title: Use pyobjus
 sources:
-  - examples/mobile/pyobjus-deviceinfo/pyproject.toml
-  - examples/mobile/keychain-spm/pyproject.toml
+  - docs/design/dev/ios-webview-spike-findings.md
   - docs/design/dev/swift-bridge-spike-findings.md
 ---
 
-# Call iOS APIs with pyobjus
+# Use pyobjus
 
-[pyobjus](https://github.com/kivy/pyobjus) bridges Python and Objective-C, so
-your app can call the iOS frameworks and any `@objc` class you ship. This page
-shows you how to add pyobjus and call both kinds of class.
+[pyobjus](https://github.com/kivy/pyobjus) is Kivy's bridge to the
+Objective-C runtime. kivyforge's guides and examples use
+[Rubicon-ObjC](rubicon.md) instead, which reaches more of iOS and of Swift
+with fewer workarounds. pyobjus is still supported, and you need it when:
+
+- your app already uses it, and you are moving it to kivyforge;
+- you use a package that imports it, such as
+  [plyer's iOS facades](#use-plyers-ios-facades).
+
+This page shows you how to add pyobjus, how its calls differ from
+Rubicon-ObjC's, and what it gets wrong on iOS. The two bridges can be used in
+one app, so code you write with Rubicon-ObjC keeps working next to pyobjus.
 
 ## Before you begin
 
@@ -37,8 +45,7 @@ shows you how to add pyobjus and call both kinds of class.
 
 !!! note
     pyobjus works only on iOS. Import it inside a platform check and provide a
-    fallback, so the app still runs when you test it elsewhere. The
-    `pyobjus-deviceinfo` example does this:
+    fallback, so the app still runs when you test it elsewhere:
 
     ```python
     from kivy.utils import platform
@@ -50,8 +57,10 @@ shows you how to add pyobjus and call both kinds of class.
 ## Call an iOS framework class
 
 `autoclass` returns a proxy for an Objective-C class. This example reads the
-device name and system version through `UIDevice`. Objective-C properties are
-plain attributes; `NSString` values come back as proxies, which you convert with
+device name and system version through `UIDevice`. Unlike Rubicon-ObjC,
+pyobjus calls a class property such as `currentDevice` as a method, and writes
+each colon in a selector as an underscore. Instance properties are plain
+attributes; `NSString` values come back as proxies, which you convert with
 `UTF8String()`:
 
 ```python
@@ -88,9 +97,8 @@ The shim framework is linked and embedded, so it loads at launch, and its load
 commands bring in the Swift package it wraps.
 
 [Call Swift from Python](swift.md) goes further: instances, collections,
-methods that throw, `async` work and delegates. It uses Rubicon-ObjC, which
-reaches more of Swift than pyobjus; the defects below say where pyobjus falls
-short.
+methods that throw, `async` work and delegates. It uses Rubicon-ObjC; the
+defects below say where pyobjus falls short.
 
 ## Know what pyobjus gets wrong on iOS
 
@@ -110,8 +118,10 @@ short.
   [kivy/pyobjus#157](https://github.com/kivy/pyobjus/pull/157), is not in a
   released pyobjus yet.
 
-The `ios-webview` example (`examples/mobile/ios-webview`) does both, and
-[Replace the kivy-ios ios module](ios-module.md) prints the working code.
+Rubicon-ObjC has neither defect: its `load_library("WebKit")` loads the
+framework, and it passes a `CGRect` by value.
+[Replace the kivy-ios ios module](ios-module.md) shows a web view built that
+way.
 
 Calling a Swift shim with pyobjus 1.2.5 meets these as well. Each has an open
 fix in pyobjus; until a pyobjus wheel that includes it is published, follow
@@ -156,6 +166,7 @@ kivyforge run -p ios --simulator
 
 ## What's next
 
+- [Call iOS APIs with Rubicon-ObjC](rubicon.md).
 - [Add a Swift package to your iOS app](swift-packages.md).
 - [Call Swift from Python](swift.md).
 - [Replace the kivy-ios ios module](ios-module.md).

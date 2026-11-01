@@ -36,12 +36,6 @@ from kivy.utils import platform
 POLL_INTERVAL = 0.25  # seconds
 
 
-def _objc_str(value) -> str:
-    """Convert a pyobjus NSString result into a Python ``str``."""
-    raw = value.UTF8String()
-    return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-
-
 class Lifecycle(EventDispatcher):
     __events__ = (
         "on_url",
@@ -73,10 +67,11 @@ class Lifecycle(EventDispatcher):
         self._hook = None
         self.status = "not on iOS"
         if platform == "ios":
-            from pyobjus import autoclass
+            from rubicon.objc import ObjCClass
 
-            self._hook = autoclass("LifecycleHook")
-            self.status = _objc_str(self._hook.status())
+            self._hook = ObjCClass("LifecycleHook")
+            # An NSString formats like a str but is not one; str() makes one.
+            self.status = str(self._hook.status())
             if self.status != "ok":
                 Logger.warning("Lifecycle: %s", self.status)
             Clock.schedule_interval(self._poll, POLL_INTERVAL)
@@ -94,15 +89,15 @@ class Lifecycle(EventDispatcher):
         """Submit an app-refresh request. Returns "" or an error message."""
         if self._hook is None:
             return "not on iOS"
-        return _objc_str(self._hook.submitRefreshTask_(identifier))
+        return str(self._hook.submitRefreshTask(identifier))
 
     def schedule_test_notification(self, seconds: float) -> None:
         """Post a local notification after ``seconds``."""
         if self._hook is not None:
-            self._hook.scheduleTestNotificationAfter_(float(seconds))
+            self._hook.scheduleTestNotificationAfter(float(seconds))
 
     def _poll(self, _dt) -> None:
-        for event in json.loads(_objc_str(self._hook.drainEvents())):
+        for event in json.loads(str(self._hook.drainEvents())):
             name, fields = self._DISPATCH.get(event["type"], (None, ()))
             if name is None:
                 Logger.warning("Lifecycle: unknown event %r", event)

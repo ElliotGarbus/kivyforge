@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Docs and examples: Rubicon-ObjC is the documented bridge to Objective-C
+
+- **Changed:** the iOS guides and examples call Objective-C through
+  [Rubicon-ObjC](https://github.com/beeware/rubicon-objc). A new guide, *Call
+  iOS APIs with Rubicon-ObjC*, comes before the Swift guides; *Call iOS APIs
+  with pyobjus* is now *Use pyobjus*, for apps that already use it or depend
+  on a package that does, such as plyer's iOS facades. pyobjus stays
+  supported, and the two can be used in one app.
+- **Changed:** `keychain-spm`, `ios-lifecycle-hook` and `ios-webview` use
+  Rubicon-ObjC. `ios-webview` and the web-view recipe in *Replace the
+  kivy-ios ios module* need no `ctypes` any more, and the example's
+  **Open (pyobjus)** and **Open (ctypes)** buttons are one **Open**.
+- **Renamed:** `pyobjus-ball` is now `rubicon-ball`, with its `ctypes` calls
+  replaced by Rubicon-ObjC, and `pyobjus-deviceinfo` is now
+  `rubicon-deviceinfo`. Their bundle IDs changed with them, so each installs
+  as a new app beside the old one.
+- **Migration:** nothing in kivyforge changes. An app that copied
+  `lifecycle.py` from `ios-lifecycle-hook` keeps working with pyobjus; to
+  move it, take the new `lifecycle.py` and replace `pyobjus` with
+  `rubicon-objc>=0.5.7` in `[project].dependencies`, then re-lock.
+
 ### iOS rebuilds drop a removed wheel's xcframeworks
 
 - **Fixed:** after a wheel that ships xcframeworks is removed from the iOS

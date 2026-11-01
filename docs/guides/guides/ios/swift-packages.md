@@ -17,7 +17,7 @@ resolves and builds them.
 
 - [Configure your iOS app](configure.md).
 - Decide whether you call the package from Python. Python reaches Swift code
-  through [pyobjus](pyobjus.md), which sees only Objective-C-compatible APIs.
+  through [Rubicon-ObjC](rubicon.md), which sees only Objective-C-compatible APIs.
   A pure-Swift API, such as one built on throwing functions, generics, or
   subscripts, needs a small `@objc` wrapper, called a *shim*.
 
@@ -88,6 +88,6 @@ kivyforge build -p ios --simulator
 ## What's next
 
 - [Call Swift from Python](swift.md) to write the shim and call it.
-- [Call iOS APIs with pyobjus](pyobjus.md) to reach your shim's `@objc` class.
+- [Call iOS APIs with Rubicon-ObjC](rubicon.md) to reach your shim's `@objc` class.
 - [Open the iOS project in Xcode](xcode.md) to inspect the resolved packages.
 - [`[tool.kivy.ios]` reference](../../reference/pyproject/ios.md).

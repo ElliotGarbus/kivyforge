@@ -445,6 +445,76 @@ record = [
 previous = "never on a device: test-matrix section 7, 2026-10-31, iOS 27.0 Simulator only"
 
 [[item]]
+id = "ios-rubicon-examples"
+title = "iOS: rubicon-ball, rubicon-deviceinfo, keychain-spm and ios-webview call iOS through Rubicon-ObjC on a physical iPhone"
+status = "runnable"
+hosts = ["macos"]
+target = "iOS device `arm64` (Rubicon-ObjC examples)"
+tier = "T4 + T5"
+needs = [
+    "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`.",
+    "An Apple ID signed into Xcode whose team is passed in `KIVYFORGE_TEAM_ID` (the examples commit `team_id = \"\"`; do not edit them).",
+    "The phone unlocked and in hand; every check is read off the screen.",
+    "The network for the lock: Kivy's wheel comes from kivy-mobile-wheels, Rubicon-ObjC's from PyPI; `keychain-spm` also fetches KeychainAccess.",
+]
+# The Simulator reports an accelerometer but never delivers accelerometerData,
+# so rubicon-ball's CMAcceleration struct return (an anonymous struct named
+# through register_encoding) has never run. A device is the only place it does.
+commands = [
+    "cd examples/mobile/rubicon-ball && kivyforge clean && kivyforge lock -p ios && KIVYFORGE_TEAM_ID=<your team> kivyforge run -p ios --device",
+    "cd examples/mobile/rubicon-deviceinfo && kivyforge clean && kivyforge lock -p ios && KIVYFORGE_TEAM_ID=<your team> kivyforge run -p ios --device",
+    "cd examples/mobile/keychain-spm && kivyforge clean && kivyforge lock -p ios && KIVYFORGE_TEAM_ID=<your team> kivyforge run -p ios --device",
+    "cd examples/mobile/ios-webview && kivyforge clean && kivyforge lock -p ios && KIVYFORGE_TEAM_ID=<your team> kivyforge run -p ios --device",
+]
+pass = [
+    "**rubicon-ball** shows `Tilt to steer`, and tilting the phone steers the ball: the `CMAcceleration` struct reaches Python with named `x` and `y`.",
+    "**rubicon-ball**: moving the **Brightness** slider changes the screen's brightness.",
+    "**rubicon-deviceinfo** shows `Source: Rubicon-ObjC -> UIDevice / NSProcessInfo`, the phone's name, model and iOS version, and a battery percentage with its state (not `n/a`).",
+    "**keychain-spm**: type a value, **Save**, clear the field, **Load** brings it back; force-quit and relaunch, **Load** still brings it back; **Delete**, then **Load** reports no value.",
+    "**ios-webview**: **Open** shows `https://kivy.org` over the area below the buttons, inside the safe area; **Close** removes it.",
+    "None of the four apps crashes through the above.",
+]
+record = [
+    "iPhone model and iOS version.",
+    "Xcode version, and the rubicon-objc version from each `pylock.ios.toml`.",
+]
+previous = "PASS 2026-11-01 on an iPhone 18 Pro Max, iOS 27.0.1: test-matrix section 7"
+
+[[item]]
+id = "ios-lifecycle-hook-rubicon"
+title = "iOS: the ios-lifecycle-hook example, read through Rubicon-ObjC, on a physical iPhone"
+status = "runnable"
+hosts = ["macos"]
+target = "iOS device `arm64` (`ios-lifecycle-hook`, Rubicon-ObjC)"
+tier = "T4 + T5"
+needs = [
+    "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`.",
+    "A paid Apple Developer team in `KIVYFORGE_TEAM_ID`, so automatic signing can add the Push Notifications capability.",
+    "The phone unlocked and in hand.",
+]
+# The README's device results were recorded with pyobjus reading the hook. The
+# Objective-C package is unchanged; only the Python side moved to Rubicon-ObjC.
+commands = [
+    "cd examples/mobile/ios-lifecycle-hook",
+    "kivyforge clean",
+    "kivyforge lock -p ios",
+    "KIVYFORGE_TEAM_ID=<your team> kivyforge run -p ios --device",
+]
+pass = [
+    "The status line reads `LifecycleHook: ok`.",
+    "**Register for push**, then Allow: `on_push_permission(true)`, then `on_push_token(\"...\")`.",
+    "**Test notification**, staying in the app: `on_notification({\"source\": \"test\"})` after 5 s, and a banner.",
+    "**Test notification**, press Home, tap the notification: `on_notification_response({\"source\": \"test\"}, ...)` when the app is in front again.",
+    "The same with the app force-quit before the notification arrives: the tap cold-launches the app and the event is in the log.",
+    "**Refresh task**: `submitted`.",
+]
+record = [
+    "iPhone model and iOS version.",
+    "Whether the refresh task's handler was exercised (it needs the debugger's `_simulateLaunchForTaskWithIdentifier`).",
+]
+previous = "PASS 2026-11-01 on an iPhone 18 Pro Max, iOS 27.0.1, read through Rubicon-ObjC: test-matrix section 7"
+
+[[item]]
 id = "macos-notarize"
 title = "macOS: Developer ID signing, notarization and stapling"
 status = "runnable"

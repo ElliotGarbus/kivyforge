@@ -83,8 +83,8 @@ else
         hello-kivy
         keychain-spm
         mobile-geometry
-        pyobjus-ball
-        pyobjus-deviceinfo
+        rubicon-ball
+        rubicon-deviceinfo
         svg-explorer
         swift-bridge
     )

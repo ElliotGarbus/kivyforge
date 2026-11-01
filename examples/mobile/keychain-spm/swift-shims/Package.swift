@@ -2,7 +2,7 @@
 import PackageDescription
 
 // Local @objc shim that wraps the pure-Swift KeychainAccess API in
-// Objective-C-representable signatures so pyobjus can call it.  kivyforge wires
+// Objective-C-representable signatures so Python can call it.  kivyforge wires
 // this in via the `path` form of [tool.kivy.ios.native.swift_packages].
 //
 // The product is declared `.dynamic` so it builds as a framework kivyforge can

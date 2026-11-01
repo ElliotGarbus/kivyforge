@@ -1,7 +1,7 @@
-"""pyobjus-deviceinfo — a working pyobjus example for kivyforge 3.0.
+"""rubicon-deviceinfo — calling stock iOS classes from Python with Rubicon-ObjC.
 
-Reads device and OS facts from two stock Apple frameworks using pyobjus'
-``autoclass`` — no Swift, no SPM, no hand-rolled ctypes:
+Reads device and OS facts from two stock Apple frameworks through
+Rubicon-ObjC's ``ObjCClass`` — no Swift, no SPM, no hand-rolled ctypes:
 
   UIDevice (UIKit)
       name, model, system name/version, battery level + charging state.
@@ -9,21 +9,16 @@ Reads device and OS facts from two stock Apple frameworks using pyobjus'
   NSProcessInfo (Foundation)
       OS version string, physical memory, CPU core counts, thermal state.
 
-Why this works (and pyobjus-ball uses ctypes instead): pyobjus handles
-Objective-C methods that return objects (``NSString``) and plain scalars
-(``BOOL``, ``NSInteger``, ``float``, ``unsigned long long``) cleanly. It
-struggles only with C structs of doubles (e.g. ``CMAcceleration``) and with
-introspecting a few classes' property lists — none of which this app uses.
+Rubicon-ObjC exposes Objective-C *properties*, class properties included, as
+plain attributes: ``UIDevice.currentDevice``, ``device.systemVersion`` and
+``proc.processorCount`` are read without a call, and
+``device.batteryMonitoringEnabled = True`` sets one. An ``NSString`` result
+formats like a ``str``; ``str()`` makes a real one. Scalars (``BOOL``,
+``NSInteger``, ``float``, ``unsigned long long``) come back as Python numbers.
 
-pyobjus exposes Objective-C *properties* as plain attributes (no call):
-``device.systemVersion`` returns an ``NSString`` proxy and
-``proc.processorCount`` returns an int directly. Real *methods* are called:
-class methods like ``UIDevice.currentDevice()`` and the setter
-``device.setBatteryMonitoringEnabled_(True)`` (trailing ``_`` per colon).
-
-On desktop (no pyobjus / no UIKit) the app shows a small Python ``platform``
-fallback so the layout can still be exercised. On the iOS Simulator the
-native path runs — only ``batteryLevel`` is unavailable there (reported -1).
+On desktop (no UIKit) the app shows a small Python ``platform`` fallback so
+the layout can still be exercised. On the iOS Simulator the native path runs —
+only ``batteryLevel`` is unavailable there (reported -1).
 """
 
 from __future__ import annotations
@@ -67,17 +62,6 @@ _BATTERY_STATE = {0: "unknown", 1: "unplugged", 2: "charging", 3: "full"}
 _THERMAL_STATE = {0: "nominal", 1: "fair", 2: "serious", 3: "critical"}
 
 
-def _nsstr(value) -> str:
-    """Convert a pyobjus NSString proxy (or anything) into a Python str."""
-    if value is None:
-        return ""
-    try:
-        raw = value.UTF8String()
-    except AttributeError:
-        return str(value)
-    return raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
-
-
 def _format_bytes(num: int) -> str:
     size = float(num)
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -90,7 +74,7 @@ def _format_bytes(num: int) -> str:
 def read_device_info() -> tuple[bool, list[tuple[str, str]]]:
     """Return ``(native, rows)`` where rows is a list of (label, value).
 
-    Uses pyobjus on iOS; falls back to the Python ``platform`` module
+    Uses Rubicon-ObjC on iOS; falls back to the Python ``platform`` module
     everywhere else so the UI still renders.
     """
     try:
@@ -99,16 +83,16 @@ def read_device_info() -> tuple[bool, list[tuple[str, str]]]:
         if platform != "ios":
             return False, _desktop_rows()
 
-        from pyobjus import autoclass
+        from rubicon.objc import ObjCClass
 
-        # currentDevice / processInfo are class *methods* -> call them.
-        device = autoclass("UIDevice").currentDevice()
-        device.setBatteryMonitoringEnabled_(True)  # setter method (takes an arg)
-        proc = autoclass("NSProcessInfo").processInfo()
+        # currentDevice / processInfo are class *properties*: no call.
+        device = ObjCClass("UIDevice").currentDevice
+        device.batteryMonitoringEnabled = True  # a settable property
+        proc = ObjCClass("NSProcessInfo").processInfo
 
-        # Everything below is an Objective-C *property*: pyobjus exposes these
-        # as plain attributes (no parentheses). NSString properties return a
-        # proxy on which we call UTF8String(); scalars come back directly.
+        # Everything below is an Objective-C *property* too. NSString
+        # properties need str() to become a Python str; scalars come back
+        # directly.
         battery_level = float(device.batteryLevel)
         battery = (
             "n/a (Simulator)"
@@ -118,13 +102,10 @@ def read_device_info() -> tuple[bool, list[tuple[str, str]]]:
         )
 
         rows = [
-            ("Name", _nsstr(device.name)),
-            ("Model", _nsstr(device.model)),
-            (
-                "System",
-                f"{_nsstr(device.systemName)} {_nsstr(device.systemVersion)}",
-            ),
-            ("OS string", _nsstr(proc.operatingSystemVersionString)),
+            ("Name", str(device.name)),
+            ("Model", str(device.model)),
+            ("System", f"{device.systemName} {device.systemVersion}"),
+            ("OS string", str(proc.operatingSystemVersionString)),
             ("Battery", battery),
             ("Memory", _format_bytes(int(proc.physicalMemory))),
             (
@@ -139,7 +120,7 @@ def read_device_info() -> tuple[bool, list[tuple[str, str]]]:
         ]
         return True, rows
     except Exception as exc:  # pragma: no cover — device-only path
-        return False, [("pyobjus error", str(exc))]
+        return False, [("Rubicon-ObjC error", str(exc))]
 
 
 def _desktop_rows() -> list[tuple[str, str]]:
@@ -235,9 +216,9 @@ class DeviceInfoRoot(BoxLayout):
 
         native, rows = read_device_info()
         self.backend_text = (
-            "Source: pyobjus -> UIDevice / NSProcessInfo"
+            "Source: Rubicon-ObjC -> UIDevice / NSProcessInfo"
             if native
-            else "Source: desktop fallback (pyobjus not on iOS)"
+            else "Source: desktop fallback (not on iOS)"
         )
         container = self.ids.rows
         container.clear_widgets()

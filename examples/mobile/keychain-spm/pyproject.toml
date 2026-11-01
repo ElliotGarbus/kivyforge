@@ -4,11 +4,11 @@ version = "0.1.0"
 requires-python = ">=3.15"
 dependencies = [
     "kivy>=3.0.0.dev0,<4",
-    # pyobjus is an iOS-only package; it is silently skipped on other
-    # platforms at runtime (the app falls back to an in-memory store).
-    # iOS wheels resolve from the kivy-mobile-wheels index (see
-    # [tool.kivy.ios].extra_index_urls below) before running `kivyforge lock`.
-    "pyobjus>=1.2.5.dev0",
+    # Rubicon-ObjC calls the Swift shim. It is pure Python, so its wheel comes
+    # from PyPI; it is only imported on iOS (elsewhere the app falls back to an
+    # in-memory store). Kivy's iOS wheel comes from the kivy-mobile-wheels
+    # index (see [tool.kivy.ios].extra_index_urls below).
+    "rubicon-objc>=0.5.7",
 ]
 
 [tool.kivy]
@@ -57,8 +57,8 @@ version = "3.15.0"
 #
 #   * KeychainBridge  — a *local* `path` package (the shim).  It depends on
 #     KeychainAccess and re-exports the two calls we need behind a tiny
-#     `@objc` class that pyobjus can reach (see swift-shims/). The app links +
-#     embeds this one (the defaults); pyobjus looks the class up by name at
+#     `@objc` class that Rubicon-ObjC can reach (see swift-shims/). The app
+#     links + embeds this one (the defaults); Python looks the class up by name at
 #     runtime, and its load command pulls KeychainAccess in with it.
 [tool.kivy.ios.native.swift_packages]
 KeychainAccess = { url = "https://github.com/kishikawakatsumi/KeychainAccess", requirement = { from = "4.2.2" }, products = ["KeychainAccess"], link = false, embed = false }
