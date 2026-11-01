@@ -128,7 +128,9 @@ declared, and add "`xcodebuild` can build for macOS".
 2. Firebase on macOS: `FirebaseCore` + `GoogleService-Info.plist` through
    `include_files` + `FirebaseApp.configure()` from Python, ad-hoc and
    Developer ID + notarized. A `hardware-checklist.toml` entry, since it needs
-   a Firebase project: `macos-firebase-swift-package`, not yet run.
+   a Firebase project: `macos-firebase-swift-package`. **Passed 2026-10-31**
+   with FirebaseCore 11.15.0 and a synthetic `GoogleService-Info.plist`
+   (test-matrix §7); not yet against a real project.
 3. Hermetic tests for config, lock, `Package.swift` rendering and staging,
    with `xcodebuild` faked as `swift` is on iOS.
 
