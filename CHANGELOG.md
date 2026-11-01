@@ -21,8 +21,29 @@
 - **Migration:** nothing in kivyforge changes. An app that copied
   `lifecycle.py` from `ios-lifecycle-hook` keeps working with pyobjus; to
   move it, take the new `lifecycle.py` and replace `pyobjus` with
-  `rubicon-objc>=0.5.7` in `[project].dependencies`, then re-lock. Run
-  `kivyforge clean` once after removing pyobjus.
+  `rubicon-objc>=0.5.7` in `[project].dependencies`, then re-lock.
+
+### iOS rebuilds drop a removed wheel's xcframeworks
+
+- **Fixed:** after a wheel that ships xcframeworks is removed from the iOS
+  lock, such as kivy with `SDL3.xcframework`, `libEGL.xcframework` and the
+  rest, the next `build -p ios` no longer links and embeds them. `build` only
+  ever added to `<app>-ios/Frameworks/`, so they stayed there, and the Xcode
+  project kept every one in Link Binary With Libraries and Embed Frameworks
+  until `kivyforge clean`. This affected Simulator and `--device` builds, and
+  `package -p ios` too: an archive starts from an empty app, but still embeds
+  what the project references. `build` now rebuilds `Frameworks/` from the
+  lock each time, so the same applies to a removed
+  `[tool.kivy.ios.native.xcframeworks]` entry. Xcode then removes the embedded
+  copies from an incremental `.app` itself.
+- **Changed:** `build` now also removes `KIVYFORGE_REQUIRES_SDL=1` from the
+  project's `GCC_PREPROCESSOR_DEFINITIONS` when SDL3 is not staged. It was
+  only ever added, and with SDL3 now leaving with kivy, the next build would
+  have stopped at `Kivy app selected (KIVYFORGE_REQUIRES_SDL) but SDL3 headers
+  were not found`. Other defines in that setting, including ones added in
+  Xcode, are kept.
+- **Migration:** none needed. The next `build` clears what the removed wheel
+  left in an existing project.
 
 ### macOS: `[tool.kivy.macos.info_plist]`, and the app is its own main bundle
 

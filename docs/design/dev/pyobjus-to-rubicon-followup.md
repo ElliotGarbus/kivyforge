@@ -6,10 +6,11 @@
 > new guide is `docs/guides/guides/ios/rubicon.md`; `pyobjus.md` is now "Use
 > pyobjus"; `ios-webview` dropped its pyobjus and ctypes variants. Results:
 > test-matrix section 7, 2026-11-01. Still open: the device checks
-> (`ios-rubicon-examples`, `ios-lifecycle-hook-rubicon`), and whether the
-> stale pyobjus framework left by an incremental build is a kivyforge bug
-> (`clean` was run before every build here, so this pass did not re-test it).
-> The list below is kept as the plan it was.
+> (`ios-rubicon-examples`, `ios-lifecycle-hook-rubicon`). The stale pyobjus
+> framework an incremental build left behind was a kivyforge bug, already
+> fixed: `build` prunes extension frameworks a removed wheel left (section 7,
+> 2026-10-31) and rebuilds `Frameworks/` from the lock (#205). The list below
+> is kept as the plan it was.
 
 Raised 2026-10-31 on `swift-bridge-rubicon`, after `swift-bridge` was
 restructured around Rubicon-ObjC (test-matrix §7, 2026-10-31 rows). Five

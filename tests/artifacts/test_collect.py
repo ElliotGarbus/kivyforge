@@ -759,3 +759,134 @@ class TestCollectArtifactsByteCompileWiring:
         )
 
         assert (layout.pip_deps_device / "purepkg.py").exists()
+
+
+class TestRemovedXcframeworks:
+    """An xcframework leaves Frameworks/ with the wheel or lock entry that staged it.
+
+    Collect only ever added to Frameworks/, so after kivy left the lock
+    SDL3.xcframework stayed staged, and the project linked and embedded it in
+    every later build.
+    """
+
+    def _lock(self, tmp_path, py_tar, *, wheel=None, native=None):
+        packages = ()
+        if wheel is not None:
+            packages = (
+                LockedPackage(
+                    name="kivy",
+                    version="3.0.0",
+                    wheels=(
+                        LockedWheel(
+                            name=wheel.name,
+                            sha256=sha256_file(wheel),
+                            path=str(wheel.relative_to(tmp_path)),
+                        ),
+                    ),
+                ),
+            )
+        xcframeworks = ()
+        if native is not None:
+            xcframeworks = (
+                LockedXcframework(
+                    name="Sentry",
+                    version="8.0.0",
+                    sha256=sha256_file(native),
+                    slices=("ios-arm64",),
+                    path=str(native.relative_to(tmp_path)),
+                    archive_format="zip",
+                ),
+            )
+        return Lockfile(
+            requires_python=">=3.15",
+            packages=packages,
+            python_xcframework=PythonXcframework(
+                version="3.15.0",
+                url="https://example/python.tar.gz",
+                sha256=sha256_file(py_tar),
+            ),
+            kivyforge_version="3.0.0.dev0",
+            generated_at="2026-01-01T00:00:00Z",
+            lock_inputs_sha256="d" * 64,
+            tool_kivyforge_schema_version=1,
+            xcframeworks=xcframeworks,
+        )
+
+    def _collect(self, tmp_path, layout, cache, py_tar, lock):
+        def fake_pip(cmd, capture_output=True, text=True):
+            # What pip leaves for the kivy wheel: SDL3 inside kivy.frameworks/.
+            slice_ = "ios-arm64_x86_64-simulator"
+            xc = layout.pip_deps_simulator / "kivy.frameworks" / "SDL3.xcframework"
+            (xc / slice_ / "SDL3.framework").mkdir(parents=True)
+            (xc / slice_ / "SDL3.framework" / "SDL3").write_text("binary")
+            (xc / "Info.plist").write_text("<plist/>")
+
+            class P:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return P()
+
+        class FakeDownloader:
+            def fetch_to(self, url, dest):
+                import shutil
+
+                shutil.copyfile(py_tar, dest)
+
+        collect_artifacts(
+            lock,
+            layout,
+            build_slices=[BuildSlice("simulator", "arm64", "13.0")],
+            project_root=tmp_path,
+            cache=cache,
+            downloader=FakeDownloader(),
+            runner=fake_pip,
+        )
+
+    def _native_zip(self, art: Path) -> Path:
+        src = art / "Sentry-src" / "Sentry.xcframework"
+        (src / "ios-arm64" / "Sentry.framework").mkdir(parents=True)
+        (src / "ios-arm64" / "Sentry.framework" / "Sentry").write_text("binary")
+        (src / "Info.plist").write_text("<plist/>")
+        archive = art / "Sentry.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            for p in src.rglob("*"):
+                zf.write(p, p.relative_to(src.parent))
+        return archive
+
+    @pytest.fixture
+    def art(self, tmp_path):
+        art = tmp_path / "art"
+        art.mkdir()
+        wheel = _make_wheel(
+            art / "kivy-3.0.0-cp315-cp315-ios_13_0_arm64_iphonesimulator.whl"
+        )
+        return _make_python_tarball(art), wheel, self._native_zip(art)
+
+    def _staged(self, layout) -> list[str]:
+        return sorted(p.name for p in layout.frameworks.iterdir())
+
+    def test_dropping_the_wheel_and_native_entry_unstages_both(
+        self, tmp_path, layout, cache, art
+    ):
+        py_tar, wheel, native = art
+        full = self._lock(tmp_path, py_tar, wheel=wheel, native=native)
+        self._collect(tmp_path, layout, cache, py_tar, full)
+        assert self._staged(layout) == ["SDL3.xcframework", "Sentry.xcframework"]
+
+        self._collect(tmp_path, layout, cache, py_tar, self._lock(tmp_path, py_tar))
+
+        assert self._staged(layout) == []
+
+    def test_only_what_left_the_lock_is_unstaged(self, tmp_path, layout, cache, art):
+        py_tar, wheel, native = art
+        full = self._lock(tmp_path, py_tar, wheel=wheel, native=native)
+        self._collect(tmp_path, layout, cache, py_tar, full)
+
+        with_kivy = self._lock(tmp_path, py_tar, wheel=wheel)
+        self._collect(tmp_path, layout, cache, py_tar, with_kivy)
+
+        assert self._staged(layout) == ["SDL3.xcframework"]
+        sdl3 = layout.frameworks / "SDL3.xcframework"
+        assert (sdl3 / "ios-arm64_x86_64-simulator/SDL3.framework/SDL3").is_file()
