@@ -11,6 +11,7 @@ import pytest
 
 from kivyforge.artifacts.frameworks import (
     FrameworkConflict,
+    clear_staged_frameworks,
     copy_wheel_frameworks,
     extract_xcframework_archive,
     read_xcframework_slices,
@@ -247,3 +248,23 @@ class TestReadSlices:
         xc.mkdir()
         with pytest.raises(FileNotFoundError, match="Info.plist"):
             read_xcframework_slices(xc)
+
+
+class TestClearStagedFrameworks:
+    """Frameworks/ holds only what this lock stages, so a removed wheel's goes."""
+
+    def test_empties_the_folder(self, tmp_path):
+        frameworks = tmp_path / "Frameworks"
+        frameworks.mkdir()
+        _make_xcframework(frameworks, "SDL3")
+        _make_xcframework(frameworks, "libEGL")
+
+        clear_staged_frameworks(frameworks)
+
+        assert frameworks.is_dir()
+        assert list(frameworks.iterdir()) == []
+
+    def test_creates_a_missing_folder(self, tmp_path):
+        frameworks = tmp_path / "Frameworks"
+        clear_staged_frameworks(frameworks)
+        assert frameworks.is_dir()

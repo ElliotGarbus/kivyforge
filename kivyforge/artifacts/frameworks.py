@@ -40,6 +40,22 @@ class PlacedFramework:
     tree_hash: str
 
 
+def clear_staged_frameworks(frameworks_dir: Path) -> None:
+    """Empty ``Frameworks/`` before collect stages this lock's xcframeworks.
+
+    ``Frameworks/`` holds only what collect puts there (wheel-embedded and
+    locked native xcframeworks), and collect copies all of it again every
+    run. Only ever added to, it kept an xcframework whose wheel or lock entry
+    was gone, and the project went on linking and embedding it: kivy removed
+    from the lock left ``SDL3.xcframework`` in every later build. Once it is
+    off disk the project sync drops its reference, and Xcode removes the
+    embedded copy from an incremental ``.app`` as a stale file.
+    """
+    if frameworks_dir.is_dir():
+        shutil.rmtree(frameworks_dir)
+    frameworks_dir.mkdir(parents=True)
+
+
 def copy_wheel_frameworks(
     pip_deps: Path,
     frameworks_dir: Path,
