@@ -140,6 +140,12 @@ BUILD_PYTHON_OUTPUTS = tuple(
 )
 
 
+#: The define that makes ``kivyforge_bootstrap.m`` require SDL3's headers,
+#: emitted while ``SDL3.xcframework`` is staged. The generator removes it from
+#: the project when SDL3 is not, so it never outlives kivy leaving the lock.
+REQUIRES_SDL_DEFINE = "KIVYFORGE_REQUIRES_SDL=1"
+
+
 def managed_settings(
     config: Config, *, configuration: str, layout: StagingLayout | None = None
 ) -> dict[str, str]:
@@ -187,9 +193,7 @@ def managed_settings(
         # HEADER_SEARCH_PATHS), rather than silently compiling the no-SDL
         # smoke-test path in kivyforge_bootstrap.m -- an app that launches
         # but can never open a window. Credit: PR #1 (kengoon).
-        settings["GCC_PREPROCESSOR_DEFINITIONS"] = (
-            "$(inherited) KIVYFORGE_REQUIRES_SDL=1"
-        )
+        settings["GCC_PREPROCESSOR_DEFINITIONS"] = f"$(inherited) {REQUIRES_SDL_DEFINE}"
 
     if ios.icons.source:
         # Designate the AppIcon set in Assets.xcassets as the app icon. Without

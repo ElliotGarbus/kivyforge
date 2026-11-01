@@ -323,3 +323,64 @@ class TestPhaseHelpersDirect:
         # Must not raise even though every framework's ref resolves to None.
         project = _regenerate(config, layout, xcframeworks=())
         assert project is not None
+
+
+def _target_configs(project, configuration=None):
+    """pbxproj's object store is untyped; reach it through an untyped param."""
+    return project.objects.get_configurations_on_targets("touchtracer", configuration)
+
+
+def _defines(project, configuration):
+    for cfg in _target_configs(project, configuration):
+        return cfg["buildSettings"]["GCC_PREPROCESSOR_DEFINITIONS"]
+    raise AssertionError(f"no {configuration} configuration")
+
+
+class TestSdlDefineLeavesWithSdl3:
+    """KIVYFORGE_REQUIRES_SDL went with SDL3.xcframework only into the project.
+
+    Once collect unstaged SDL3 (kivy removed from the lock) the define stayed,
+    and the next build stopped at kivyforge_bootstrap.m's ``#error``.
+    """
+
+    def test_removed_with_sdl3(self, config, project_root):
+        import shutil
+
+        layout = materialize_project(config, project_root)
+        sdl3 = _make_xcframework(layout.frameworks, "SDL3")
+        project = _regenerate(config, layout)
+        assert "KIVYFORGE_REQUIRES_SDL=1" in str(_defines(project, "Debug"))
+
+        shutil.rmtree(sdl3)
+        project = _regenerate(config, layout)
+
+        assert _defines(project, "Debug") is None
+        assert _defines(project, "Release") is None
+
+    def test_a_define_added_in_xcode_is_kept(self, config, project_root):
+        import shutil
+
+        layout = materialize_project(config, project_root)
+        sdl3 = _make_xcframework(layout.frameworks, "SDL3")
+        project = _regenerate(config, layout)
+        for cfg in _target_configs(project):
+            cfg["buildSettings"]["GCC_PREPROCESSOR_DEFINITIONS"] = (
+                "$(inherited) KIVYFORGE_REQUIRES_SDL=1 MY_FLAG=1"
+            )
+        project.save()
+
+        shutil.rmtree(sdl3)
+        project = _regenerate(config, layout)
+
+        assert _defines(project, "Debug") == "$(inherited) MY_FLAG=1"
+
+    def test_a_define_without_the_sdl_flag_is_left_alone(self, config, project_root):
+        layout = materialize_project(config, project_root)
+        project = _regenerate(config, layout)
+        for cfg in _target_configs(project):
+            cfg["buildSettings"]["GCC_PREPROCESSOR_DEFINITIONS"] = "MY_FLAG=1"
+        project.save()
+
+        project = _regenerate(config, layout)
+
+        assert _defines(project, "Debug") == "MY_FLAG=1"

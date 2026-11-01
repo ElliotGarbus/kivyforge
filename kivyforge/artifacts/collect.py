@@ -2,8 +2,9 @@
 
 Downloads/verifies the Python.xcframework, installs pinned wheels into
 ``pip-deps/``, copies wheel-embedded ``.frameworks/`` into ``Frameworks/``, and
-extracts user-declared native xcframeworks. The subprocess runner is injectable
-so the orchestration can be unit-tested without invoking pip.
+extracts user-declared native xcframeworks; ``Frameworks/`` is rebuilt from the
+lock every run. The subprocess runner is injectable so the orchestration can be
+unit-tested without invoking pip.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from .cache import ArtifactCache
 from .download import Downloader, fetch_artifact
 from .frameworks import (
     PlacedFramework,
+    clear_staged_frameworks,
     copy_wheel_frameworks,
     extract_xcframework_archive,
 )
@@ -111,6 +113,9 @@ def collect_artifacts(
     # Threaded across every pip-deps slice and into native xcframework
     # extraction so identical duplicates dedupe and conflicting ones fail loudly.
     staged: dict[str, PlacedFramework] = {}
+    # Frameworks/ is rebuilt from this lock alone, so a removed wheel or
+    # native entry takes its xcframework with it.
+    clear_staged_frameworks(layout.frameworks)
     for build_slice in build_slices:
         slice_pip_deps = layout.pip_deps_for_slice(build_slice.target)
         _install_wheels(

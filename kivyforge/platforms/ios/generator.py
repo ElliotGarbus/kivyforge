@@ -21,6 +21,7 @@ from .buildsettings import (
     BUILD_PYTHON_OUTPUTS,
     BUILD_PYTHON_SCRIPT,
     PREVIOUS_BUILD_PYTHON_SCRIPTS,
+    REQUIRES_SDL_DEFINE,
     SIGNING_SETTING_KEYS,
     managed_settings,
     merge_build_settings,
@@ -156,13 +157,16 @@ class XcodeProjectGenerator:
                     target_name=self.app_name,
                     configuration_name=configuration,
                 )
-            self._drop_stale(
+            target_configs = list(
                 cast(Any, project).objects.get_configurations_on_targets(
                     self.app_name, configuration
-                ),
-                owned=RESERVED_BUILD_SETTINGS,
-                keep=merged,
+                )
             )
+            self._drop_stale(target_configs, owned=RESERVED_BUILD_SETTINGS, keep=merged)
+            if "GCC_PREPROCESSOR_DEFINITIONS" not in merged:
+                self._drop_stale_flag(
+                    target_configs, "GCC_PREPROCESSOR_DEFINITIONS", REQUIRES_SDL_DEFINE
+                )
             self._apply_project_level_signing(project, signing, configuration)
             self._sync_project_deployment_target(project, configuration)
 
@@ -205,6 +209,30 @@ class XcodeProjectGenerator:
             for key in owned - keep.keys():
                 if settings[key] is not None:
                     del settings[key]
+
+    @staticmethod
+    def _drop_stale_flag(config_objs: Any, key: str, flag: str) -> None:
+        """Take *flag* out of *key*, which this run no longer emits.
+
+        *key* is not the toolchain's alone (a user may set it in Xcode), so
+        only the toolchain's own flag goes, and the key with it if nothing but
+        ``$(inherited)`` is left. Without this, the SDL3 define stayed after
+        kivy left the lock, and the next build stopped at its ``#error``.
+        """
+        for config_obj in config_objs:
+            settings = config_obj["buildSettings"]
+            if settings is None or settings[key] is None:
+                continue
+            value = settings[key]
+            values = value if isinstance(value, list) else [value]
+            words = " ".join(str(v) for v in values).split()
+            if flag not in words:
+                continue
+            rest = [word for word in words if word != flag]
+            if rest in ([], ["$(inherited)"]):
+                del settings[key]
+            else:
+                settings[key] = " ".join(rest)
 
     def _apply_project_level_signing(
         self,
