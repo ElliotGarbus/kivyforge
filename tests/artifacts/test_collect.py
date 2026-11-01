@@ -219,6 +219,54 @@ def test_collect_zero_dep_app_stamps_empty_slice(tmp_path, layout, cache):
     assert not any(layout.pip_deps_simulator.iterdir())  # empty, but collected
 
 
+def test_collect_zero_dep_app_clears_the_previous_slice(tmp_path, layout, cache):
+    # Removing the last dependency used to skip the clean slate along with pip,
+    # so the slice kept the previous collect's packages and the app shipped them.
+    art = tmp_path / "art"
+    art.mkdir()
+    py_tar = _make_python_tarball(art)
+    previous = layout.pip_deps_simulator / "pyobjus"
+    previous.mkdir(parents=True)
+    (previous / "pyobjus.cpython-315-iphonesimulator.so").write_text("")
+
+    lock = Lockfile(
+        requires_python=">=3.15",
+        packages=(),
+        python_xcframework=PythonXcframework(
+            version="3.15.0",
+            url="https://example/python.tar.gz",
+            sha256=sha256_file(py_tar),
+        ),
+        kivyforge_version="3.0.0.dev0",
+        generated_at="2026-01-01T00:00:00Z",
+        lock_inputs_sha256="d" * 64,
+        tool_kivyforge_schema_version=1,
+    )
+
+    class FakeDownloader:
+        def fetch_to(self, url, dest):
+            import shutil
+
+            shutil.copyfile(py_tar, dest)
+
+    def boom(*a, **k):
+        raise AssertionError("pip should not run with no packages")
+
+    collect_artifacts(
+        lock,
+        layout,
+        build_slices=[BuildSlice("simulator", "arm64", "13.0")],
+        project_root=tmp_path,
+        cache=cache,
+        downloader=FakeDownloader(),
+        runner=boom,
+    )
+
+    assert layout.pip_deps_simulator.is_dir()
+    assert not any(layout.pip_deps_simulator.iterdir())
+    assert (layout.root / "pip-deps-simulator.collected").is_file()
+
+
 def test_collect_both_slices_installs_each_pip_deps(tmp_path, layout, cache):
     # A bare `kivyforge build` collects device + simulator: Python.xcframework is
     # fetched once, but pip-deps is installed into BOTH slice directories so

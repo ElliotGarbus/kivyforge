@@ -48,6 +48,23 @@
   `pylock.macos.toml` reads as stale once, with or without the table. Run
   `kivyforge lock -p macos`; it keeps the pinned versions and runtime.
 
+### iOS rebuilds drop a removed dependency's frameworks
+
+- **Fixed:** after a dependency with an extension module is removed and the
+  project re-locked, the next iOS Simulator or `--device` build no longer
+  keeps its `Frameworks/<package>.<module>.framework` from the previous build
+  in the `.app`. Before this change only `kivyforge clean` removed it. The
+  Build Python phase now removes every framework that python.org's
+  `install_python` made for a module this build no longer installs. Python,
+  SDL3, Swift package and your own frameworks are not touched. `package -p ios`
+  was not affected, because an archive starts from an empty app.
+- **Fixed:** removing an iOS project's last dependency no longer leaves the
+  previous build's packages in `pip-deps/`. With nothing to install, `build`
+  had skipped clearing the slice along with pip.
+- **Migration:** none needed. The next `build` replaces the Build Python phase
+  in an existing generated project. A stale framework from an earlier build is
+  removed by that build.
+
 ### `lock` notices a rebuilt wheel in `find_links`
 
 - **Fixed:** replacing a locked wheel in a `find_links` directory with a new
