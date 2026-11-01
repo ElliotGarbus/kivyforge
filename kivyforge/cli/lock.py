@@ -10,7 +10,9 @@ an input change moves only what it has to (``kivyforge.lock.prefer``);
 ``--update`` resolves every package to the newest version allowed. A lock
 whose inputs have not changed still gets the hashes it takes from local files
 (``include_files`` on Android, iOS and macOS) re-recorded, which needs no
-resolution.
+resolution. A ``find_links`` wheel that changed or went missing does need one,
+because a rebuilt wheel can bring a new version or new dependencies: that
+package is re-resolved and the rest keep their versions.
 """
 
 from __future__ import annotations
@@ -27,8 +29,14 @@ import click
 from ..artifacts import include_files
 from ..config import ConfigError, load_config
 from ..lock.inputs import is_in_sync
+from ..lock.model import canonical_name
 from ..lock.reader import LockError
-from ..lock.sources import ignore_unrecorded_indexes, unused_explicit_indexes
+from ..lock.sources import (
+    changed_local_wheels,
+    ignore_unrecorded_indexes,
+    keep_recorded_dependencies,
+    unused_explicit_indexes,
+)
 from ..platforms.ios.lock import (
     BuildError,
     build_lockfile,
@@ -216,12 +224,24 @@ def lock(
             return
 
         existing = None
+        changed: dict[str, list[str]] = {}
         if out_path.is_file() and not update:
             try:
                 existing = ops.load(out_path)
             except LockError:
                 existing = None
-            if existing is not None and is_in_sync(existing, config, backend.name):
+            if existing is not None:
+                changed = changed_local_wheels(existing.packages, project_root)
+                if changed:
+                    report.progress(f"{out_path.name}: find_links wheels changed:")
+                    for lines in changed.values():
+                        for line in lines:
+                            report.progress(line)
+            if (
+                existing is not None
+                and not changed
+                and is_in_sync(existing, config, backend.name)
+            ):
                 refreshed = _refresh(ops, existing, config, project_root)
                 if refreshed is not existing:
                     report.progress(f"{out_path.name}: local files changed:")
@@ -259,7 +279,7 @@ def lock(
             config,
             project_root,
             offline,
-            prefer=existing.packages if existing is not None else (),
+            prefer=_kept(existing.packages, changed) if existing is not None else (),
             prefer_runtime=getattr(existing, "python_runtime", None),
         )
         _atomic_write(out_path, ops.dumps(new_lock))
@@ -319,11 +339,16 @@ def _run_check(
         config,
         project_root,
         offline,
-        prefer=existing.packages,
+        prefer=_kept(
+            existing.packages, changed_local_wheels(existing.packages, project_root)
+        ),
         prefer_runtime=getattr(existing, "python_runtime", None),
     )
     # A lock from before #86 records no index; that alone is not drift.
     candidate = ignore_unrecorded_indexes(existing, candidate)
+    # A desktop lock from before #190 records unfiltered dependencies; that
+    # alone is not drift either.
+    candidate = keep_recorded_dependencies(existing, candidate)
     if ops.semantic_equal(existing, candidate):
         report.line(f"{out_path.name} is up to date.")
         report.emit(
@@ -392,6 +417,18 @@ def _build(
         # ClassifiedError: a failure the lock layer classified itself
         # (KF-LOCK-PINS-CONFLICT, KF-LOCK-SOURCE-UNAVAILABLE, ...).
         raise ToolchainError.wrap(exc) from exc
+
+
+def _kept(packages, changed: dict[str, list[str]]) -> tuple:
+    """The locked packages to prefer, without those whose local wheel changed.
+
+    A rebuilt wheel may carry a new version, and a kept ``==`` pin on the old
+    one would fail the resolve with ``KF-LOCK-PINS-CONFLICT``. Everything else
+    keeps its version, so only the rebuilt package moves.
+    """
+    if not changed:
+        return packages
+    return tuple(p for p in packages if canonical_name(p.name) not in changed)
 
 
 def _refresh(ops: _LockOps, existing, config, project_root: Path):
