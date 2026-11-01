@@ -132,7 +132,7 @@ class TestRenderManifest:
         )
         assert "from:" not in text
         # A local one by absolute path: the root package lives under build/.
-        local = (tmp_path / "swift-shims").resolve()
+        local = (tmp_path / "swift-shims").resolve().as_posix()
         assert f'.package(path: "{local}")' in text
         # Products name their package by identity, not by the pyproject key.
         assert '.product(name: "Promises", package: "promises")' in text

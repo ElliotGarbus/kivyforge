@@ -96,7 +96,9 @@ def render_manifest(
         else:
             assert sp.path is not None
             local = (project_root / sp.path).resolve()
-            deps.append(f".package(path: {_swift_str(str(local))})")
+            # as_posix: SwiftPM wants forward slashes, and the text is then
+            # the same whatever host renders it (the tests run on Windows).
+            deps.append(f".package(path: {_swift_str(local.as_posix())})")
         identity = package_identity(sp)
         products += [
             f".product(name: {_swift_str(p)}, package: {_swift_str(identity)})"
