@@ -76,10 +76,12 @@ tap and **Refresh task**. A background push from Apple's console was
 verified on the phone with the spike this example was built from, which
 installs the same delegate method.
 
-Those results were recorded when Python read the hook through pyobjus. Since
-the move to Rubicon-ObjC, every Simulator row of the table above has passed
-again on an iOS 27 Simulator; the device rows have not been re-run yet
-(checklist item `ios-lifecycle-hook-rubicon`).
+Those results were recorded when Python read the hook through pyobjus. After
+the move to Rubicon-ObjC they were re-run on an iPhone with iOS 27.0.1: the
+push token, a notification while in front, a notification tap with the app in
+the background and after a force-quit (a cold launch), and **Refresh task**
+submitting (its handler was not triggered). Every Simulator row passed again
+on an iOS 27 Simulator.
 
 ## Limits
 

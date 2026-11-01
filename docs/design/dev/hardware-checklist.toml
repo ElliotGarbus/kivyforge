@@ -478,7 +478,7 @@ record = [
     "iPhone model and iOS version.",
     "Xcode version, and the rubicon-objc version from each `pylock.ios.toml`.",
 ]
-previous = "never on a device: test-matrix section 7, 2026-11-01, iOS 27.0 Simulator only"
+previous = "PASS 2026-11-01 on an iPhone 18 Pro Max, iOS 27.0.1: test-matrix section 7"
 
 [[item]]
 id = "ios-lifecycle-hook-rubicon"
@@ -512,7 +512,7 @@ record = [
     "iPhone model and iOS version.",
     "Whether the refresh task's handler was exercised (it needs the debugger's `_simulateLaunchForTaskWithIdentifier`).",
 ]
-previous = "pyobjus-read device results in examples/mobile/ios-lifecycle-hook/README.md; with Rubicon-ObjC never on a device: test-matrix section 7, 2026-11-01, iOS 27.0 Simulator only"
+previous = "PASS 2026-11-01 on an iPhone 18 Pro Max, iOS 27.0.1, read through Rubicon-ObjC: test-matrix section 7"
 
 [[item]]
 id = "macos-notarize"

@@ -1,12 +1,13 @@
 # Follow-up: move the remaining pyobjus examples to Rubicon-ObjC
 
-> **DONE 2026-11-01**, Simulator only. All five examples use Rubicon-ObjC;
+> **DONE 2026-11-01**, on the Simulator and on an iPhone. All five examples use Rubicon-ObjC;
 > `pyobjus-ball` and `pyobjus-deviceinfo` are now `rubicon-ball` and
 > `rubicon-deviceinfo`. `rubicon-ball` took option (b): no ctypes left. The
 > new guide is `docs/guides/guides/ios/rubicon.md`; `pyobjus.md` is now "Use
 > pyobjus"; `ios-webview` dropped its pyobjus and ctypes variants. Results:
-> test-matrix section 7, 2026-11-01. Still open: the device checks
-> (`ios-rubicon-examples`, `ios-lifecycle-hook-rubicon`). The stale pyobjus
+> test-matrix section 7, 2026-11-01, including both device checks
+> (`ios-rubicon-examples`, `ios-lifecycle-hook-rubicon`) on an iPhone 18 Pro
+> Max with iOS 27.0.1. Nothing is open. The stale pyobjus
 > framework an incremental build left behind was a kivyforge bug, already
 > fixed: `build` prunes extension frameworks a removed wheel left (section 7,
 > 2026-10-31) and rebuilds `Frameworks/` from the lock (#205). The list below
