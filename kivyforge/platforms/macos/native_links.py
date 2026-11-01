@@ -9,8 +9,8 @@ channel staged, so the build can refuse a binary that will not load.
 dyld's rules, as the spikes measured them (proposal §2):
 
 - ``@executable_path`` is the directory of the process's main executable: a
-  helper's own directory, or the bundled interpreter's for a library the app
-  loads with ``ctypes`` (the launcher ``execv``s the interpreter).
+  helper's own directory, or ``Contents/MacOS/`` for a library the app loads
+  with ``ctypes`` (the launcher runs CPython in its own process).
 - ``@loader_path`` is the directory of the image holding the link.
 - ``@rpath`` tries the run paths of that image, then of each image that
   loaded it, back to the main executable. Run paths are never shared between
@@ -55,9 +55,13 @@ class Image:
 
 @dataclass(frozen=True)
 class Interpreter:
-    """The process ``ctypes`` loads libraries into: the staged CPython."""
+    """The process ``ctypes`` loads libraries into: the launcher's, running CPython.
 
-    path: Path
+    *exe_dir* is its main executable's directory and *rpaths* that
+    executable's run paths.
+    """
+
+    exe_dir: Path
     rpaths: tuple[str, ...]
 
 
@@ -114,7 +118,7 @@ def check_links(images: list[Image], interpreter: Interpreter) -> list[LinkProbl
 
     linked_by_helper = _linked(helpers, targets)
     linked = linked_by_helper | _linked(libraries, targets)
-    exe_dir = interpreter.path.parent
+    exe_dir = interpreter.exe_dir
     root: list[_Step] = [(exe_dir, interpreter.rpaths)]
     process = _Process("Python (ctypes)", exe_dir, True)
     for lib in libraries:

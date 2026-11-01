@@ -18,7 +18,11 @@ from urllib.parse import urlparse
 from kivyforge.artifacts import include_files
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.icons import APP_ICON_SIZE, icon_source_problem
-from kivyforge.config.model import DEFAULT_DEPLOYMENT_TARGET, Config
+from kivyforge.config.model import (
+    DEFAULT_DEPLOYMENT_TARGET,
+    Config,
+    SwiftPackageDep,
+)
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.checks_common import _ver_tuple
 from kivyforge.doctor.probe import CertificateSubject, Probe, RealProbe
@@ -327,7 +331,13 @@ def check_swift_toolchain(probe: Probe, config: Config) -> CheckResult:
     Skipped for pure-wheel projects — only relevant when ``swift_packages`` is
     declared (spec 07).
     """
-    packages = config.ios_required.swift_packages
+    return swift_toolchain_check(probe, config.ios_required.swift_packages)
+
+
+def swift_toolchain_check(
+    probe: Probe, packages: tuple[SwiftPackageDep, ...]
+) -> CheckResult:
+    """The "Swift package toolchain" check, for iOS's or macOS's packages."""
     if not packages:
         return CheckResult(
             "Swift package toolchain", Status.SKIP, "no swift_packages declared"
@@ -662,7 +672,7 @@ def _lock_hosts(lock: Lockfile) -> set[str]:
             _add_host(hosts, xc.url)
     for sp in lock.swift_packages:
         if sp.url:
-            host = _git_host(sp.url)
+            host = git_host(sp.url)
             if host:
                 hosts.add(host)
     if lock.python_xcframework.url:
@@ -676,7 +686,7 @@ def _add_host(hosts: set[str], url: str) -> None:
         hosts.add(netloc)
 
 
-def _git_host(url: str) -> str | None:
+def git_host(url: str) -> str | None:
     """Host of a Git URL, handling both ``https://`` and scp-like ``git@host:``."""
     if "://" in url:
         return urlparse(url).hostname

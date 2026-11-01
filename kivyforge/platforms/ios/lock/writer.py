@@ -10,15 +10,11 @@ from __future__ import annotations
 
 from kivyforge.lock.pep751 import arr as _arr
 from kivyforge.lock.pep751 import b as _b
-from kivyforge.lock.pep751 import emit_include_files
+from kivyforge.lock.pep751 import emit_include_files, emit_swift_package
 from kivyforge.lock.pep751 import emit_package as _emit_package
 from kivyforge.lock.pep751 import s as _s
 
-from .model import (
-    LockedSwiftPackage,
-    LockedXcframework,
-    Lockfile,
-)
+from .model import LockedXcframework, Lockfile
 
 
 def dumps(lock: Lockfile) -> str:
@@ -60,7 +56,7 @@ def dumps(lock: Lockfile) -> str:
     # --- [[tool.kivyforge.swift_packages]] (deterministic order) ---
     for sp in sorted(lock.swift_packages, key=lambda s: s.name):
         lines.append("")
-        _emit_swift_package(lines, sp)
+        emit_swift_package(lines, sp, target_settings=True)
 
     emit_include_files(lines, lock.include_files)
 
@@ -88,30 +84,3 @@ def _emit_xcframework(lines: list[str], xc: LockedXcframework) -> None:
     lines.append(f"embed = {_b(xc.embed)}")
     if xc.source:
         lines.append(f"source = {_s(xc.source)}")
-
-
-def _emit_swift_package(lines: list[str], sp: LockedSwiftPackage) -> None:
-    lines.append("[[tool.kivyforge.swift_packages]]")
-    lines.append(f"name = {_s(sp.name)}")
-    if sp.url:
-        lines.append(f"url = {_s(sp.url)}")
-    else:
-        path = sp.path
-        assert path is not None
-        lines.append(f"path = {_s(path)}")
-    if sp.requirement:
-        lines.append(f"requirement = {_requirement_inline(sp.requirement)}")
-    if sp.revision:
-        lines.append(f"revision = {_s(sp.revision)}")
-    if sp.version:
-        lines.append(f"version = {_s(sp.version)}")
-    lines.append(f"products = {_arr(sp.products)}")
-    lines.append(f"link = {_b(sp.link)}")
-    lines.append(f"embed = {_b(sp.embed)}")
-
-
-def _requirement_inline(requirement: dict[str, object]) -> str:
-    ((kind, value),) = requirement.items()
-    if isinstance(value, list):
-        return f"{{ {kind} = {_arr([str(v) for v in value])} }}"
-    return f"{{ {kind} = {_s(str(value))} }}"

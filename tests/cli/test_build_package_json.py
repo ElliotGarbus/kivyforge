@@ -570,6 +570,7 @@ class TestStagingWriteFailure:
             packages=(),
             native_binaries=(),
             include_files=(),
+            swift_packages=(),
         )
 
     @pytest.mark.parametrize("blocker", ["build_dir_is_a_file", "app_copy_fails"])

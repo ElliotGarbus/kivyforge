@@ -50,6 +50,7 @@ from .model import (
     MANAGED_ANDROID_ACTIVITY_ATTRS,
     MANAGED_ANDROID_APPLICATION_ATTRS,
     MANAGED_INFO_PLIST_KEYS,
+    MANAGED_MACOS_INFO_PLIST_KEYS,
     RESERVED_ANDROID_GRADLE_PROPERTIES,
     RESERVED_BUILD_SETTINGS,
     SUPPORTED_ANDROID_SCHEMA_VERSION,
@@ -1260,6 +1261,7 @@ def _parse_macos(
     signing = _parse_macos_signing(macos, finder)
     _check_macos_entitlements_notarizable(entitlements, signing, finder)
     binaries = _parse_native_binaries(macos, "macos", finder)
+    swift_packages = _parse_swift_packages(macos, finder, platform="macos")
     build_settings = _parse_desktop_build_settings(
         macos.get("build_settings"), "tool.kivy.macos.build_settings", finder
     )
@@ -1269,6 +1271,9 @@ def _parse_macos(
         root_name="bundle's Contents/",
         project_root=project_root,
         allowed_roots=MACOS_INCLUDE_ROOTS,
+    )
+    info_plist = _parse_info_plist(
+        macos, finder, platform="macos", managed=MANAGED_MACOS_INFO_PLIST_KEYS
     )
 
     return MacosConfig(
@@ -1285,8 +1290,10 @@ def _parse_macos(
         entitlements=entitlements,
         signing=signing,
         binaries=tuple(binaries),
+        swift_packages=tuple(swift_packages),
         build_settings=build_settings,
         include_files=tuple(include_files),
+        info_plist=info_plist,
     )
 
 
@@ -3621,26 +3628,28 @@ def _parse_ios_python_build_settings(
     )
 
 
-def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDep]:
-    native = ios.get("native")
+def _parse_swift_packages(
+    overlay: dict, finder: _LineFinder, *, platform: str = "ios"
+) -> list[SwiftPackageDep]:
+    native = overlay.get("native")
     if not isinstance(native, dict):
         return []
     table = native.get("swift_packages")
     if table is None:
         return []
+    table_path = f"tool.kivy.{platform}.native.swift_packages"
     if not isinstance(table, dict):
-        raise ConfigError(
-            "[tool.kivy.ios.native.swift_packages] must be a table",
-            key_path="tool.kivy.ios.native.swift_packages",
-        )
+        raise ConfigError(f"[{table_path}] must be a table", key_path=table_path)
     out: list[SwiftPackageDep] = []
     for name, entry in table.items():
-        key_path = f"tool.kivy.ios.native.swift_packages.{name}"
+        key_path = f"{table_path}.{name}"
         if not isinstance(entry, dict):
             raise ConfigError(
                 f"swift package {name!r} must be an inline table",
                 key_path=key_path,
             )
+        if platform == "macos":
+            _refuse_xcode_target_settings(name, entry, key_path)
         url = entry.get("url")
         path = entry.get("path")
         if url is not None and (not isinstance(url, str) or not url):
@@ -3699,8 +3708,10 @@ def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDe
                 # file.` Reproduced against two real remote products (Firebase's
                 # FirebaseCore and FirebaseAuth) — see
                 # docs/design/dev/ios-firebase-spm-signing-findings.md.
+                # On macOS both keys are refused above, so this is True there:
+                # the iOS default must not leak into pylock.macos.toml.
                 embed=_require_bool(
-                    entry.get("embed", not url),
+                    entry.get("embed", not url or platform != "ios"),
                     key_path=f"{key_path}.embed",
                     field="embed",
                     finder=finder,
@@ -3708,6 +3719,25 @@ def _parse_swift_packages(ios: dict, finder: _LineFinder) -> list[SwiftPackageDe
             )
         )
     return out
+
+
+def _refuse_xcode_target_settings(name: str, entry: dict, key_path: str) -> None:
+    """``link``/``embed`` say how an Xcode app target uses a product.
+
+    A macOS ``.app`` has no Xcode target: every product is built into one
+    framework the app loads (macos-swift-packages-proposal §3.1), so neither
+    has a meaning there, and accepting one would promise a choice nothing
+    makes.
+    """
+    for key in ("link", "embed"):
+        if key in entry:
+            raise ConfigError(
+                f"swift package {name!r} sets {key!r}, which macOS does not use",
+                key_path=f"{key_path}.{key}",
+                hint="on macOS every product is built into "
+                "Contents/Frameworks/KivyforgePackages.framework, which your "
+                "Python code loads; remove the key.",
+            )
 
 
 def _parse_swift_requirement(
@@ -3810,21 +3840,24 @@ def _parse_signing(ios: dict, finder: _LineFinder) -> SigningConfig:
     )
 
 
-def _parse_info_plist(ios: dict, finder: _LineFinder) -> dict[str, object]:
-    info = ios.get("info_plist")
+def _parse_info_plist(
+    overlay: dict,
+    finder: _LineFinder,
+    *,
+    platform: str = "ios",
+    managed: frozenset[str] = MANAGED_INFO_PLIST_KEYS,
+) -> dict[str, object]:
+    info = overlay.get("info_plist")
     if info is None:
         return {}
+    key_path = f"tool.kivy.{platform}.info_plist"
     if not isinstance(info, dict):
-        raise ConfigError(
-            "[tool.kivy.ios.info_plist] must be a table",
-            key_path="tool.kivy.ios.info_plist",
-        )
-    conflicts = sorted(set(info) & MANAGED_INFO_PLIST_KEYS)
+        raise ConfigError(f"[{key_path}] must be a table", key_path=key_path)
+    conflicts = sorted(set(info) & managed)
     if conflicts:
         raise ConfigError(
-            f"[tool.kivy.ios.info_plist] sets kivyforge-managed key(s): "
-            f"{', '.join(conflicts)}",
-            key_path="tool.kivy.ios.info_plist",
+            f"[{key_path}] sets kivyforge-managed key(s): {', '.join(conflicts)}",
+            key_path=key_path,
             line=finder.line("info_plist"),
             hint="set these via their dedicated schema fields instead.",
         )

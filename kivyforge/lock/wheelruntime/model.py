@@ -17,7 +17,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..model import LOCK_VERSION, LockedIncludeFile, LockedPackage
+from ..model import (
+    LOCK_VERSION,
+    LockedIncludeFile,
+    LockedPackage,
+    LockedSwiftPackage,
+)
 
 # The wheel-runtime [tool.kivyforge] extension schema version.
 TOOL_SCHEMA_VERSION = 1
@@ -93,3 +98,5 @@ class WheelRuntimeLock:
     default_groups: tuple[str, ...] = ()
     native_binaries: tuple[LockedNativeBinary, ...] = ()
     include_files: tuple[LockedIncludeFile, ...] = ()
+    #: macOS only: ``[tool.kivy.macos.native.swift_packages]`` pins (#201).
+    swift_packages: tuple[LockedSwiftPackage, ...] = ()

@@ -42,6 +42,7 @@ LOCK_INPUTS: dict[str, tuple[str, ...]] = {
         "minimum_system_version",
         *_INDEXES,
         "binaries",
+        "swift_packages",
         "include_files",
     ),
     "linux": _PROJECT

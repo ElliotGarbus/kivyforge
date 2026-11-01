@@ -1,12 +1,14 @@
 """Build the ``.app`` ``Info.plist`` from the project config (macos-spec).
 
-kivyforge owns the identity/versioning keys (mirroring the iOS managed-plist
-discipline); there is no user Info.plist merge on macOS in this phase.
+kivyforge owns the identity/versioning keys and merges the user's free-form
+``[tool.kivy.macos.info_plist]`` on top (#201), mirroring the iOS managed-plist
+discipline: setting a managed key is refused at config load, and again here so
+the builder is safe in isolation.
 """
 
 from __future__ import annotations
 
-from kivyforge.config.model import Config
+from kivyforge.config.model import MANAGED_MACOS_INFO_PLIST_KEYS, Config
 
 # LSMinimumSystemVersion when the project sets none. Matches the macOS lock's
 # default pip floor so the plist and the resolved wheels agree.
@@ -34,4 +36,8 @@ def build_info_plist(config: Config, *, executable: str, icon_file: str | None) 
     }
     if icon_file is not None:
         plist["CFBundleIconFile"] = icon_file
+    for key, value in macos.info_plist.items():
+        if key in MANAGED_MACOS_INFO_PLIST_KEYS:
+            raise ValueError(f"info_plist key {key!r} is managed by kivyforge")
+        plist[key] = value
     return plist

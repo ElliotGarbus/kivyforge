@@ -469,6 +469,42 @@ pass = [
 previous = "test-matrix section 7: 2026-09-14 (notarytool history: five Accepted submissions since 2026-07-07)"
 
 [[item]]
+id = "macos-firebase-swift-package"
+title = "macOS: FirebaseCore as a Swift package, configured from Python, in a notarized app"
+status = "runnable"
+hosts = ["macos"]
+target = "macOS `arm64` (FirebaseCore through `native.swift_packages`)"
+tier = "T4 + T5 (signing)"
+needs = [
+    "The full Xcode, selected with `xcode-select` (the build runs `xcodebuild`).",
+    "A Firebase project with an Apple app whose bundle id is the scratch project's, and its `GoogleService-Info.plist`.",
+    "A `Developer ID Application` certificate and a notarytool keychain profile, as for `macos-notarize`.",
+    "A scratch project outside the repo: `rubicon-objc` in its dependencies, `GoogleService-Info.plist` under `[[tool.kivy.macos.include_files]]` with `dest = \"Resources\"`, `Firebase = { url = \"https://github.com/firebase/firebase-ios-sdk\", requirement = { from = \"11.0.0\" }, products = [\"FirebaseCore\"] }` under `[tool.kivy.macos.native.swift_packages]`, and a `main.py` that loads `Contents/Frameworks/KivyforgePackages.framework/KivyforgePackages` with `load_library`, calls `ObjCClass(\"FIRApp\").configure()`, and writes `FIRApp.defaultApp.options.googleAppID` to a file.",
+]
+# macos-swift-packages-proposal section 4 step 2. The spike and the 2026-10-31
+# run covered a local shim and google/promises; Firebase adds 13 transitive
+# packages, static binary targets (GoogleAppMeasurement) that need -ObjC, and
+# FIRApp reading GoogleService-Info.plist from the main bundle.
+commands = [
+    "kivyforge doctor -p macos",
+    "kivyforge lock -p macos",
+    "kivyforge package -p macos --signing-identity \"Developer ID Application: <name> (<team>)\" --notarize --notary-profile <profile>",
+    "codesign --verify --deep --strict build/macos/*.app",
+    "spctl -a -vvv -t exec build/macos/*.app",
+    "build/macos/*.app/Contents/MacOS/<exe>",
+]
+pass = [
+    "`doctor` passes `Swift package toolchain` and `Swift packages (xcodebuild)`.",
+    "`package` reports the notarization accepted and the ticket stapled; `codesign` and `spctl` accept the app.",
+    "The app writes the `googleAppID` from `GoogleService-Info.plist`, so `FIRApp configure` found the file in the main bundle and the `FIRApp` class was in the framework.",
+]
+record = [
+    "The Firebase version the lock resolved.",
+    "The notary submission id.",
+    "Which `*.bundle` resource bundles `Contents/Resources/` held.",
+]
+
+[[item]]
 id = "windows-authenticode"
 title = "Windows: Authenticode with a publicly trusted certificate"
 status = "needs-credentials"

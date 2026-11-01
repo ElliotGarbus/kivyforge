@@ -286,11 +286,13 @@ class TestMacos:
         root, config = project
         app = tmp_path / "Demo.app" / "Contents" / "Resources" / "app"
         macos_bundle._copy_app_sources(config, root, app)
-        source = render_launcher_source(entry_launcher.main_module(config.kivy))
+        source = render_launcher_source(
+            entry_launcher.main_module(config.kivy), "libpython3.14.dylib"
+        )
         release_compile(app)
         found = re.search(r'static const char \*ENTRY = "([^"]+)";', source)
         assert found is not None
-        # The launcher execs python3 -P -m ENTRY with app on PYTHONPATH.
+        # The launcher runs python3 -P -m ENTRY with app on PYTHONPATH.
         probe = run_python(["-P", "-m", found.group(1)], tmp_path, pythonpath=app)
         assert probe == EXPECTED_PROBE
 

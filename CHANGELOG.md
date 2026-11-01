@@ -24,6 +24,52 @@
 - **Migration:** none needed. The next `build` clears what the removed wheel
   left in an existing project.
 
+### macOS: `[tool.kivy.macos.info_plist]`, and the app is its own main bundle
+
+- **Added:** `[tool.kivy.macos.info_plist]`, a table of keys merged into the
+  `.app`'s `Info.plist`: usage descriptions, URL schemes, or an SDK's keys
+  such as Firebase's `FirebaseAppDelegateProxyEnabled`
+  ([#201](https://github.com/ElliotGarbus/kivyforge/issues/201)). Keys
+  kivyforge writes, such as `CFBundleIdentifier` and `LSMinimumSystemVersion`,
+  are rejected; the reference lists them.
+- **Fixed:** inside a running macOS app, the main bundle was
+  `Contents/Resources/python/bin`, not the `.app`, because the launcher
+  replaced itself with `python3`. Code that looks in the main bundle found no
+  bundle identifier, no `Info.plist` keys and no `Contents/Resources`, so
+  Firebase could not find a `GoogleService-Info.plist` added with
+  `include_files`. The launcher now runs Python in its own process from the
+  runtime's `libpython`, so the main bundle is the `.app`. `sys.executable`
+  is still the bundled `python3`.
+- **Changed:** the `.app`'s entitlements now apply to the process Python runs
+  in. Before, they stayed with the launcher, and Python ran without them. For
+  a library your app loads with `ctypes`, `@executable_path` is now
+  `Contents/MacOS`, so Apple's `@executable_path/../Frameworks/<lib>` form
+  works instead of failing the build with `KF-MACOS-NATIVE-LOAD-PATH`.
+  `@rpath` links resolve where they did before.
+- **Migration:** run `kivyforge build -p macos` again; nothing in
+  `pyproject.toml` needs to change. Swift packages on macOS, the other half
+  of #201, are in the next entry.
+
+### macOS: Swift packages (`[tool.kivy.macos.native.swift_packages]`)
+
+- **Added:** `[tool.kivy.macos.native.swift_packages]`, with the iOS keys
+  `url`, `path`, `requirement` and `products`
+  ([#201](https://github.com/ElliotGarbus/kivyforge/issues/201)). `lock -p
+  macos` pins each remote package's revision in
+  `[[tool.kivyforge.swift_packages]]` in `pylock.macos.toml`. `build` builds
+  every product with `xcodebuild` into
+  `Contents/Frameworks/KivyforgePackages.framework`, plus a framework for each
+  product a package declares `type: .dynamic`, and stages each package's
+  resource bundle in `Contents/Resources/`, where `Bundle.module` finds it.
+  Python loads the framework with Rubicon-ObjC's `load_library` and calls its
+  `@objc` classes; the guide is "Add a Swift package to your macOS app".
+  Building needs the full Xcode; `doctor -p macos` checks for it.
+- **Refused:** `link` and `embed` under the macOS table. They are Xcode
+  target settings, and a macOS `.app` has no Xcode target.
+- **Migration:** `swift_packages` is now a macOS lock input, so every existing
+  `pylock.macos.toml` reads as stale once, with or without the table. Run
+  `kivyforge lock -p macos`; it keeps the pinned versions and runtime.
+
 ### iOS rebuilds drop a removed dependency's frameworks
 
 - **Fixed:** after a dependency with an extension module is removed and the

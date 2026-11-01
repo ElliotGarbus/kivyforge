@@ -26,7 +26,7 @@ the projection do not count.
 
 | Platform | Inputs beyond `project.dependencies` and `project.requires_python` |
 |---|---|
-| macOS | `schema_version`, `python_version`, `archs`, `minimum_system_version`, `extra_index_urls`, `find_links`, `exclude`, `binaries`, `include_files` |
+| macOS | `schema_version`, `python_version`, `archs`, `minimum_system_version`, `extra_index_urls`, `find_links`, `exclude`, `binaries`, `swift_packages`, `include_files` |
 | Linux | `schema_version`, `python_version`, `archs`, `glibc_floor`, `extra_index_urls`, `find_links`, `exclude`, `binaries` |
 | Windows | `schema_version`, `python_version`, `archs`, `extra_index_urls`, `find_links`, `exclude`, `binaries` |
 | Android | `schema_version`, `python`, `abis`, `min_sdk`, `kivy_generation`, `extra_index_urls`, `find_links`, `exclude`, `aars`, `jars`, `gradle`, `include_files` |

@@ -257,6 +257,13 @@ class TestBuildAppBundle:
         assert faked["runtime"] == ["arm64"]
         assert faked["wheels"] == ["arm64"]
 
+    def test_the_launcher_loads_the_staged_libpython(self, tmp_path, faked):
+        root = _project(tmp_path)
+        bundle.build_app_bundle(
+            _config(), _lock(), root, staging_dir=tmp_path / "out", echo=lambda *a: None
+        )
+        assert faked["libpython"] == "libpython3.14.dylib"
+
     def test_native_binaries_staged_after_wheels(self, tmp_path, faked):
         from kivyforge.lock.wheelruntime.model import LockedNativeBinary
 

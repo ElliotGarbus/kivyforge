@@ -78,6 +78,17 @@ _DESKTOP_COMMON: dict[str, Spec] = {
     "build_settings": _TRI_STATE_BUILD_SETTINGS,
 }
 
+# ``link`` and ``embed`` are Xcode target settings. macOS lists them only so its
+# parser can say why they are refused there, instead of "unknown key".
+_SWIFT_PACKAGE: dict[str, Spec] = {
+    "url": None,
+    "path": None,
+    "requirement": None,
+    "products": None,
+    "link": None,
+    "embed": None,
+}
+
 IOS: dict[str, Spec] = {
     **_OVERLAY_COMMON,
     "bundle_id": None,
@@ -91,16 +102,7 @@ IOS: dict[str, Spec] = {
         "xcframeworks": Each(
             {"version": None, "source": None, "link": None, "embed": None}
         ),
-        "swift_packages": Each(
-            {
-                "url": None,
-                "path": None,
-                "requirement": None,
-                "products": None,
-                "link": None,
-                "embed": None,
-            }
-        ),
+        "swift_packages": Each(_SWIFT_PACKAGE),
     },
     "signing": {
         "team_id": None,
@@ -118,11 +120,13 @@ IOS: dict[str, Spec] = {
 
 MACOS: dict[str, Spec] = {
     **_DESKTOP_COMMON,
+    "native": {"binaries": Each(_ARTIFACT), "swift_packages": Each(_SWIFT_PACKAGE)},
     "bundle_id": None,
     "build": None,
     "minimum_system_version": None,
     "entitlements": OPEN,
     "signing": {"identity": None, "team_id": None, "notary_profile": None},
+    "info_plist": OPEN,
     "include_files": ArrayOf({"dest": None, "sources": None}),
 }
 

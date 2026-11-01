@@ -68,6 +68,9 @@ source = "assets/icon-macos.png"        # 1024×1024 PNG → generated .icns
 byte_compile = "release"   # "release" | true | false — .pyc for Resources/app + Resources/lib
 strip_source = "release"   # "release" | true | false — drop .py once byte-compiled
 
+[tool.kivy.macos.info_plist]  # merged over the managed keys (#201)
+NSCameraUsageDescription = "Scans QR codes."
+
 # extra_index_urls / find_links / exclude behave as on iOS (macOS-tagged wheels).
 ```
 
@@ -216,7 +219,7 @@ MyApp.app/
 ├── Contents/
 │   ├── Info.plist                 ← from [project] + [tool.kivy.macos]
 │   ├── MacOS/
-│   │   └── MyApp                  ← launcher (compiled Mach-O stub; sets env, execs Python)
+│   │   └── MyApp                  ← launcher (compiled Mach-O stub; sets env, runs libpython in-process)
 │   └── Resources/
 │       ├── MyApp.icns             ← from [tool.kivy.macos.icons].source
 │       ├── app/                   ← user code (from [tool.kivy].app_dir)
@@ -224,7 +227,10 @@ MyApp.app/
 │       │                            absent when the table is empty
 │       ├── lib/                   ← installed wheels (site-packages)
 │       ├── python/                ← bundled CPython runtime + stdlib
+│       ├── <pkg>_<target>.bundle  ← Swift package resources (native.swift_packages)
 │       └── <include_files>        ← user data files under a Resources dest
+│   ├── Frameworks/                ← native.binaries libraries; KivyforgePackages.framework
+│   │                                and any .dynamic package product (native.swift_packages)
 │   └── SharedSupport/             ← user data files under a SharedSupport dest
 ```
 
@@ -254,9 +260,25 @@ canonical layout regardless of provider).
 The launcher resolves the bundle relative to itself (via `_NSGetExecutablePath`,
 so the `.app` stays relocatable), points `PYTHONHOME` at the bundled runtime and
 `PYTHONPATH` at `Resources/app` + `Resources/lib`, sets `PYTHONNOUSERSITE`, then
-`execv`s `Resources/python/bin/python3 -P -m <entry_point>` (by module, so a
+`dlopen`s `Resources/python/lib/libpython3.X.dylib` and runs
+`Py_BytesMain(python3 -P -m <entry_point>)` in its own process (by module, so a
 `strip_source` build's sourceless `.pyc` is found) — the desktop analog of the
-iOS `main.m` bootstrap. For a `module:function` entry point the module is
+iOS `main.m` bootstrap.
+
+**In-process, not `execv` (#201).** Apple's main bundle is "the bundle
+directory that contains the current executable". The launcher used to `execv`
+`python3`, after which the main bundle was `Resources/python/bin`: no
+identifier, no `Info.plist`, no `Resources/`. Anything that asks
+`NSBundle.mainBundle` — Firebase looking for `GoogleService-Info.plist` and
+checking the bundle id, a read of an `info_plist` key, SwiftPM's resource
+accessor — saw the wrong bundle. Measured on 2026-10-31: with `execv`,
+`CFBundleGetMainBundle()` inside the app was `…/Resources/python/bin` with a
+null identifier; in-process it is the `.app`, and a custom `Info.plist` key
+reads back. `PYTHONEXECUTABLE` keeps `sys.executable` at `python3`, so
+`subprocess`/`multiprocessing` start an interpreter rather than a second copy
+of the app; the launcher's `LC_RPATH` is `@executable_path/../Resources/python/lib`,
+the run path `python3` had, restated; and the `.app`'s entitlements now govern
+the process Python runs in. For a `module:function` entry point the module is
 `_kivyforge_main`, the launcher staged into `Resources/app` that calls the
 function ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)). It is itself ad-hoc-signed along
 with the Mach-O binaries in the runtime + wheels.
@@ -333,8 +355,8 @@ Semantics, per pipeline stage:
   it works out, per process, where dyld would look for each link between
   declared binaries (`native_links.py`). A helper is its own process, so
   `@executable_path` is `Contents/Helpers/`; a library the app loads with
-  `ctypes` runs in the interpreter's process, where it is
-  `Resources/python/bin/`. A link that will not resolve fails the build with
+  `ctypes` runs in the app's process, where it is `Contents/MacOS/` and the
+  run path is the launcher's (`@executable_path/../Resources/python/lib`). A link that will not resolve fails the build with
   `KF-MACOS-NATIVE-LOAD-PATH` and the `install_name_tool` fix. A weak link,
   and a link from a Python-loaded library that resolves only when the app has
   loaded its target first, are warnings under the same code. Links to
@@ -382,6 +404,26 @@ magic — its walks-only-runtime-and-wheels assumption predates sweeping
 and fail `codesign`. The native channel's header reader tells the two apart by
 slice count; the signer does not yet. A known limitation; fix if anyone ever
 hits it.
+
+### Swift packages (`[tool.kivy.macos.native.swift_packages]`)
+
+> **Implementation status: implemented** (#201). Design:
+> [macos-swift-packages-proposal](../../dev/macos-swift-packages-proposal.md);
+> measured in
+> [macos-swift-packages-spike-findings](../../dev/macos-swift-packages-spike-findings.md).
+
+The iOS entry keys `url`, `path`, `requirement`, `products`; `link` and `embed`
+are refused (Xcode target settings, and there is no Xcode target). `lock` pins
+remote revisions with the iOS resolver (`platforms/ios/lock/spm.py`) into
+`[[tool.kivyforge.swift_packages]]`, without `link`/`embed`; the table is a lock
+input. `build` writes a root package under `build/macos/spm/` depending on
+every locked product, builds its one `.dynamic` product, `KivyforgePackages`,
+with `xcodebuild` (`ARCHS=<arch>`, `CODE_SIGNING_ALLOWED=NO`,
+`LD_RUNPATH_SEARCH_PATHS=@loader_path/../../..`, `-Xlinker -ObjC`), and copies
+every framework under `PackageFrameworks/` into `Contents/Frameworks/` and
+every `<pkg>_<target>.bundle` into `Contents/Resources/`, before byte-compiling
+and signing. Python loads the framework itself (`rubicon.objc.runtime.load_library`);
+nothing loads it at launch. Code: `platforms/macos/swift_packages.py`.
 
 ### Data files (`include_files`)
 
@@ -570,6 +612,8 @@ xcrun stapler staple MyApp.dmg
 | Signing identity | project | When Developer ID signing is configured, the identity is present in exactly one keychain (`security find-identity`). SKIP when unconfigured (ad-hoc floor). FAIL if it's present in more than one keychain (`codesign` refuses to disambiguate). WARN if it's found scoped to `login.keychain-db` — Apple's "Care and Feeding of Developer ID" recommends a dedicated keychain so unrelated login-keychain churn can't corrupt the signing key's ACL. |
 | Signing identity type | project | WARN if the configured identity isn't a `Developer ID Application`/`Developer ID Installer` certificate — notarization rejects any other type (e.g. `Apple Development`). SKIP when unconfigured. |
 | Notary setup | project | When `notary_profile` is configured, `xcrun notarytool` is available. Profile *validity* needs a network round-trip and is verified at submit time. |
+| Swift package toolchain | project | With `native.swift_packages` declared, `swift` is available (`lock` resolves with it). SKIP otherwise. |
+| Swift packages (xcodebuild) | project | With `native.swift_packages` declared, `xcodebuild` runs (the full Xcode, not just the command-line tools), and each local package has a `Package.swift`. SKIP otherwise. |
 
 `doctor` reports each check as PASS / WARN / FAIL with a remediation hint; exit
 code is non-zero only on FAIL.
@@ -585,7 +629,8 @@ build-then-notarize round trip.
 
 - A macOS host (Apple Silicon or Intel). The Xcode command-line tools provide
   `codesign`; the full Xcode IDE is **not** required for a macOS `.app` (unlike
-  iOS).
+  iOS), except to build `[tool.kivy.macos.native.swift_packages]`, which needs
+  `xcodebuild`.
 - No Apple Developer account is needed for ad-hoc signing. Developer ID signing
   + notarization needs a **paid** Apple Developer Program membership (a free
   Apple ID cannot issue Developer ID certificates or use the notary service).

@@ -255,6 +255,26 @@ MANAGED_INFO_PLIST_KEYS = frozenset(
     }
 )
 
+# Info.plist keys the macOS bundler writes (``platforms/macos/plist.py``); users
+# may not set these via [tool.kivy.macos.info_plist] (macos-spec). Every key it
+# writes, so a user value is never silently replaced by the managed one.
+MANAGED_MACOS_INFO_PLIST_KEYS = frozenset(
+    {
+        "CFBundleName",
+        "CFBundleDisplayName",
+        "CFBundleIdentifier",
+        "CFBundleExecutable",
+        "CFBundlePackageType",
+        "CFBundleInfoDictionaryVersion",
+        "CFBundleShortVersionString",
+        "CFBundleVersion",
+        "CFBundleIconFile",
+        "LSMinimumSystemVersion",
+        "NSHighResolutionCapable",
+        "LSBackgroundOnly",
+    }
+)
+
 # Xcode build settings the toolchain manages; rejected under
 # [tool.kivy.ios.xcode.build_settings] (spec 01).
 RESERVED_BUILD_SETTINGS = frozenset(
@@ -458,7 +478,7 @@ VALID_SWIFT_REQUIREMENT_KINDS = frozenset(
 
 @dataclass(frozen=True)
 class SwiftPackageDep:
-    """One ``[tool.kivy.ios.native.swift_packages]`` entry (spec 07).
+    """One ``[tool.kivy.<ios|macos>.native.swift_packages]`` entry (spec 07).
 
     Exactly one of ``url`` (remote, with a ``requirement`` rule) or ``path``
     (local, repo-relative) is set. ``requirement`` is a single-key inline table
@@ -593,8 +613,14 @@ class MacosConfig:
     entitlements: dict[str, object] = field(default_factory=dict)
     signing: MacosSigningConfig = field(default_factory=MacosSigningConfig)
     binaries: tuple[NativeBinaryDep, ...] = ()
+    #: ``[tool.kivy.macos.native.swift_packages]`` (#201), built into
+    #: frameworks in ``Contents/Frameworks``. ``link``/``embed`` are refused
+    #: at load; nothing on macOS reads them.
+    swift_packages: tuple[SwiftPackageDep, ...] = ()
     build_settings: DesktopBuildSettings = field(default_factory=DesktopBuildSettings)
     include_files: tuple[IncludeFile, ...] = ()
+    #: ``[tool.kivy.macos.info_plist]``: merged over the managed keys (#201).
+    info_plist: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

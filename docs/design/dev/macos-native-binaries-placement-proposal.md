@@ -64,6 +64,15 @@ helped.
 
 ### 2.2 Libraries loaded from Python
 
+> **Superseded in part, 2026-10-31 (#201).** The launcher now runs CPython in
+> its own process instead of `execv`ing `python3`, so for a `ctypes` load the
+> main executable is `Contents/MacOS/<app>`: `@executable_path` is
+> `Contents/MacOS/`, and the run path is the launcher's
+> `@executable_path/../Resources/python/lib` — the same directory `python3`'s
+> run path named. A3 to A8 are unchanged. A1 now **resolves**
+> (`test_a1_resolves_in_the_apps_process` runs it under dyld). The
+> measurements below are kept as taken.
+
 The launcher does not stay running: it `execv`s the bundled interpreter
 (`launcher.py`). So for a library the app loads with `ctypes`, the process's
 main executable is `Contents/Resources/python/bin/python3.13` (`python3` is a
