@@ -81,25 +81,22 @@ dependencies = [
 ]
 ```
 
-A package you did not list moves as well. On Android, `lock` adds pyjnius when
-you have not declared it, using a range, so a re-lock picks up newer pyjnius
-releases. Declare it yourself to choose the version. See
+`--update` also moves packages you did not list. On Android, `lock` adds pyjnius
+when you have not declared it, using a range, so `--update` picks up newer
+pyjnius releases. Declare it yourself to choose the version. See
 [Call Android APIs with pyjnius](../android/pyjnius.md). A package pulled in by
 another package moves the same way. List it in `[project].dependencies` with
 `==` and that requirement is the one `lock` resolves.
 
-`lock --check` resolves again and compares the result with the lock on disk.
-An exact pin stays stable. A range fails the check when a newer match is
-published, even though `pyproject.toml` has not changed. `build`, `run`, and
-`package` still accept that lock. They refuse it when the file hash no longer
-matches.
+`lock --check` resolves again, keeping the locked versions, and compares the
+result with the lock on disk, so a new upstream release alone doesn't fail it.
 
 The next `lock` overwrites a hand-edited `pylock.<platform>.toml`. Change the
 specifier and re-lock.
 
 When a step edits `pyproject.toml` after the lock was resolved, and this build
-should keep the pins on disk, pass `--no-verify-lock` to `build`, `run`, or
-`package`. That skips the drift check. See
+should keep the pins on disk, pass `--no-verify-lock` to `build` or `package`.
+That skips the drift check. See
 [Drive kivyforge from CI or an agent](ci-and-agents.md).
 
 ## Make sure every dependency has a wheel

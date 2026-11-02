@@ -33,7 +33,7 @@ Required.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `version` | string | required | CPython version. Must match a `Python.xcframework` that python.org publishes for iOS, for example `"3.15.0b4"`. `[project].requires-python` must allow it. |
+| `version` | string | required | CPython version. Must match a `Python.xcframework` that python.org publishes for iOS, for example `"3.15.0"`. Kivy's iOS wheels are built for CPython 3.15. `[project].requires-python` must allow it. |
 
 ## `[tool.kivy.ios.python.build_settings]`
 
@@ -193,7 +193,7 @@ extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 exclude = ["kivy-garden", "docutils", "pygments"]
 
 [tool.kivy.ios.python]
-version = "3.15.0b4"
+version = "3.15.0"
 
 [tool.kivy.ios.signing]
 team_id = "ABCDE12345"

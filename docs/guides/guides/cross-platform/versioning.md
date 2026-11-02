@@ -117,7 +117,7 @@ version it used; check that line in your CI log. With GitHub Actions, fetch
 the full history:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v6
   with:
     fetch-depth: 0
 ```

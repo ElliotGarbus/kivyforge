@@ -57,8 +57,8 @@ target_sdk = 35
 | 3.14 | `2` | Kivy 2.3.1 on SDL2 | 1.7 or newer | Tested on an emulator and a device with 1.7 and 1.8 |
 | 3.14 | `3` | Kivy 3.0 development snapshot on SDL3 | 1.7 or newer | Tested on an emulator and a device with 1.7 and 1.8 |
 
-Kivy 3.0 is not released yet. The SDL3 row is tested against a `3.0.0.dev0`
-snapshot.
+Kivy 3.0 is not released yet. The SDL3 row is tested against the
+`3.0.0.dev202607301604` snapshot.
 
 The build fails, instead of producing an app that crashes at startup, when:
 

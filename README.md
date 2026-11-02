@@ -3,7 +3,7 @@
 
 [![Backers on Open Collective](https://opencollective.com/kivy/backers/badge.svg)](https://opencollective.com/kivy)
 [![Sponsors on Open Collective](https://opencollective.com/kivy/sponsors/badge.svg)](https://opencollective.com/kivy)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](https://github.com/ElliotGarbus/kivyforge/blob/main/CODE_OF_CONDUCT.md)
 
 ![PyPI - Version](https://img.shields.io/pypi/v/kivyforge)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/kivyforge)
@@ -11,507 +11,347 @@
 [![kivyforge](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivyforge.yml/badge.svg)](https://github.com/ElliotGarbus/kivyforge/actions/workflows/kivyforge.yml)
 
 kivyforge is a declarative, [PEP 621](https://peps.python.org/pep-0621/)-aligned
-build toolchain for [Kivy](https://kivy.org) (and other Python) apps. You
-describe your app once in `pyproject.toml`; kivyforge resolves your dependencies
-into a lockfile and packages the app for the platform you target. It is the
-successor to **kivy-ios**, **python-for-android**, and **buildozer**, unifying
-their per-platform workflows behind a single declarative configuration.
-
-The goal is one toolchain for every platform Kivy runs on — **Android, iOS,
-Linux (including **Raspberry Pi**), macOS, and Windows**.
+build toolchain for [Kivy](https://kivy.org) apps. You describe your app once in
+`pyproject.toml`. kivyforge resolves your dependencies into a lockfile, downloads
+a prebuilt Python runtime and prebuilt wheels, and drives the platform's own
+tools to produce a signed app. It is the successor to **kivy-ios**,
+**python-for-android**, and **buildozer**, with one workflow for every platform
+Kivy runs on: **Android, iOS, macOS, Windows, and Linux (including Raspberry
+Pi)**.
 
 📖 **Documentation:** <https://elliotgarbus.github.io/kivyforge/> — installation,
 quickstarts for every platform, the configuration and CLI reference, and
-troubleshooting. Build it locally with `pip install -e ".[docs]"` then
-`mkdocs serve`.
+troubleshooting.
 
-> **Status: early development — iOS + macOS + Linux (x86_64 and Raspberry Pi) + Windows + Android.**
-> kivyforge targets **iOS** (resolve into `pylock.ios.toml`, download the official
-> [`Python.xcframework`](https://www.python.org/downloads/) + prebuilt iOS
-> wheels, generate an [Xcode](https://developer.apple.com/xcode/) project),
-> **macOS** (resolve into `pylock.macos.toml`, bundle a relocatable
-> [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
-> CPython + wheels into a signed, double-clickable `.app`), **Linux** (resolve
-> into `pylock.linux.toml`, bundle a PBS gnu/glibc CPython + manylinux wheels into
-> an [AppImage](https://appimage.org/) — with a run-from-folder AppDir substrate;
-> `x86_64` PCs and `aarch64` **Raspberry Pi** boards, the latter cross-built from
-> an x86_64 host),
-> **Windows** (resolve into `pylock.windows.toml`, bundle a PBS MSVC CPython +
-> `win_amd64` wheels into a run-from-folder `onedir` with a windowed launcher
-> `.exe`, optionally Authenticode-signed), and **Android** (resolve into
-> `pylock.android.toml`, assemble the official
-> [python.org Android runtime](https://www.python.org/downloads/android/) +
-> per-ABI `android_*` wheels into a generated Gradle project, and produce a
-> signed `.apk`/`.aab` — with pyjnius as a prebuilt wheel, no per-app
-> compilation). If you need a shipping toolchain today, use kivy-ios 2.x,
-> python-for-android, or buildozer.
+> **Status: beta.** All five platforms build, run, and package, tested in CI and
+> by hand on real hardware. Configuration keys and command options
+> can still change between releases, and the
+> [release notes](https://elliotgarbus.github.io/kivyforge/release-notes/) list
+> each change. If an app of yours ships with kivy-ios, python-for-android, or
+> buildozer today, try kivyforge on a branch and keep your current toolchain
+> until you have tested the result.
+>
+> **On iOS, kivyforge builds Kivy 3 only**, and Kivy 3.0 is not released yet, so
+> iOS apps use its development snapshots. Apps on Kivy 2.x stay on kivy-ios for
+> now. Android builds either Kivy 2.3.1 or a Kivy 3.0 snapshot, and the desktop
+> targets use Kivy 2.3.1 from PyPI.
 
-### Currently supported targets
+## Help test kivyforge
+
+We're looking for beta testers. The most useful test is your own app: move one
+from buildozer, python-for-android, or kivy-ios
+([migration guide](https://elliotgarbus.github.io/kivyforge/guides/cross-platform/migrate/)),
+or start from a
+[quickstart](https://elliotgarbus.github.io/kivyforge/get-started/quickstart-desktop/).
+We'd especially like reports on what we haven't been able to test ourselves:
+
+- Uploading an App Bundle to Google Play, and an `.ipa` to App Store Connect and
+  TestFlight.
+- Authenticode signing with a publicly trusted certificate.
+- A Raspberry Pi 4, and running on a free Apple ID's personal team.
+- Linux distributions other than Ubuntu, and phones and tablets of every kind.
+
+Tell us what worked as well as what didn't. To report a problem, see
+[Report a problem](https://elliotgarbus.github.io/kivyforge/troubleshooting/#report-a-problem)
+for what to include, then
+[open an issue](https://github.com/ElliotGarbus/kivyforge/issues).
+
+## Supported targets
 
 | Target | Architectures | Output | Signing | Build host |
 |---|---|---|---|---|
-| [iOS](https://www.apple.com/ios/) device | arm64 (iPhone / iPad) | generated Xcode project → `.app` | Apple Developer signing via Xcode | macOS + [Xcode](https://developer.apple.com/xcode/) |
+| [iOS](https://www.apple.com/ios/) device | arm64 (iPhone / iPad) | generated Xcode project → `.app` / `.ipa` | Apple Development or Distribution, through Xcode | macOS + [Xcode](https://developer.apple.com/xcode/) |
 | iOS Simulator | arm64 | generated Xcode project → `.app` | none required | macOS + Xcode |
-| [Android](https://www.android.com/) device / emulator | `arm64_v8a`, `x86_64` | generated Gradle/AGP project → `.apk` / `.aab` | auto debug keystore, or release keystore (v1–v4 schemes) | Windows, macOS, or Linux + JDK/Android SDK/NDK |
-| [macOS](https://www.apple.com/macos/) | arm64 (Apple Silicon) | `.app` | ad-hoc (default) **or** Developer ID sign + notarize + staple | macOS (Apple Silicon) |
-| [Linux](https://appimage.org/) | x86_64 (glibc ≥ 2.17), aarch64 | `.AppImage` / AppDir | none | Linux |
-| [Raspberry Pi](https://www.raspberrypi.com/) (Pi 4 / Pi 5, 64-bit Raspberry Pi OS) | aarch64 | `.AppImage` (a Linux target — see [Build for Raspberry Pi](docs/guides/guides/linux/raspberry-pi.md)) | none | x86_64 Linux (cross-build; WSL2 works) |
-| [Windows](https://learn.microsoft.com/windows/) | amd64 | `onedir` folder + windowed launcher `.exe` | optional Authenticode (unsigned by default) | Windows |
+| [Android](https://www.android.com/) device / emulator | `arm64_v8a`, `x86_64` | generated Gradle project → `.apk` / `.aab` | debug key, or your release keystore | Windows, macOS, or Linux + JDK, Android SDK, and NDK |
+| [macOS](https://www.apple.com/macos/) | arm64 (Apple Silicon) | `.app` | ad-hoc (default), or Developer ID + notarization | macOS (Apple Silicon) |
+| [Linux](https://appimage.org/) | x86_64 (glibc ≥ 2.17) | `.AppImage` / AppDir | none | x86_64 Linux |
+| [Raspberry Pi](https://www.raspberrypi.com/) (Pi 4 / Pi 5, 64-bit Raspberry Pi OS) | aarch64 | `.AppImage` | none | x86_64 Linux (cross-build; WSL2 works) |
+| [Windows](https://learn.microsoft.com/windows/) | amd64 | folder with a windowed launcher `.exe` | optional Authenticode (unsigned by default) | Windows |
 
-Desktop targets (macOS / Linux / Windows) bundle a self-contained runtime +
-wheels; on Linux (including Raspberry Pi), libGL/EGL and X11/Wayland come from
-the host. Raspberry Pi is built as `archs = ["aarch64"]` on the Linux backend;
-you do not install kivyforge on the Pi. It is tested on a Raspberry Pi 5; the
-Pi 4 is supported but untested, and 32-bit Raspberry Pi OS is not supported. Building for iOS
-requires a Mac with Xcode; Android builds on any of the three desktop hosts.
+Desktop apps carry their own Python runtime and wheels. On Linux, libGL/EGL and
+X11/Wayland come from the machine that runs the app. Raspberry Pi is tested on a
+Pi 5; the Pi 4 is supported but untested, and 32-bit Raspberry Pi OS is not
+supported.
 
-**Apple targets are Apple Silicon only.** kivyforge does not build Intel (`x86_64`)
-macOS apps or pin the Intel iOS-Simulator slice: macOS 27 stops installing on
-Intel hardware and macOS 28 removes Rosetta, so an Intel slice would be one
-nothing can execute or validate. `universal2` *wheels* are still resolved
-normally — they contain arm64.
+**Apple targets are Apple Silicon only.** kivyforge does not build Intel
+(`x86_64`) macOS apps or pin the Intel iOS Simulator slice: macOS 27 stops
+installing on Intel hardware and macOS 28 removes Rosetta, so an Intel slice
+would be one nothing can execute or validate. `universal2` *wheels* are still
+resolved normally, because they contain arm64.
 
 kivyforge builds on the work of the [Kivy Team](https://kivy.org/about.html).
 
-## Requirements
-
-Each target platform has its own host requirements. **Building for iOS requires
-macOS** (Xcode-based), so the iOS workflow below is useful only on a Mac:
-
-- macOS with the full [Xcode](https://developer.apple.com/xcode/) 15 or newer installed
-  from the [Mac App Store](https://apps.apple.com/app/xcode/id497799835).
-  (`xcode-select --install` installs only the command-line tools, which are
-  not enough for iOS.) Point the tools at it:
-
-      sudo xcode-select --switch /Applications/Xcode.app
-
-- Accept the Xcode license once:
-
-      sudo xcodebuild -license
-
-**Building for Android** works from Windows, macOS, or Linux, and needs three
-user-installed prerequisites (kivyforge never installs a host toolchain — it only
-detects one):
-
-- A **JDK 17 to 23** on `PATH` or `JAVA_HOME` (the range the pinned Gradle can
-  run on; Android Studio's bundled JDK may be newer than that).
-- The **Android SDK** (`ANDROID_HOME`/`ANDROID_SDK_ROOT`), with the `compile_sdk`
-  platform, build-tools, platform-tools, and recorded SDK licenses (see the
-  [Android quickstart](docs/guides/get-started/quickstart-android.md#sdk-licenses-and-sdkmanager)).
-  Android Studio's SDK Manager covers all of it.
-- The **NDK** — required for *every* Android build, not just apps with native
-  code: it compiles the bootstrap's native launcher (`libmain.so`).
-
-`kivyforge doctor -p android` checks each of these and prints the `sdkmanager`
-command for whatever is missing. Add an AVD (or attach a device with USB debugging
-enabled) before `kivyforge run`.
-
 ## Installation
 
-kivyforge is a command-line tool and needs Python 3.13 or newer. It is on PyPI,
-but every release so far is a **pre-release** (currently `3.0.0.dev1`). pipx and
-pip skip pre-releases unless you opt in, so their commands below carry a
-pre-release flag; uv picks a pre-release when no stable release exists, so it
-needs none. The recommended installer is [uv](https://docs.astral.sh/uv/), which
-installs it into its own isolated environment and puts `kivyforge` on your
-`PATH`:
+kivyforge is a command-line tool and needs Python 3.13 or newer. The recommended
+installer is [uv](https://docs.astral.sh/uv/), which installs it into its own
+isolated environment and puts `kivyforge` on your `PATH`:
 
-      uv tool install kivyforge
+```bash
+uv tool install kivyforge
+```
 
 If your shell reports that `kivyforge` is not found, run `uv tool update-shell`
 and open a new terminal. Upgrade or remove it later with
 `uv tool upgrade kivyforge` / `uv tool uninstall kivyforge`.
-Once a stable release is published, the pre-release flags are no longer needed.
 
-Alternatives: [pipx](https://pipx.pypa.io/)
-(`pipx install --pip-args="--pre" kivyforge`), or pip inside a virtual
-environment so it does not collide with other projects:
-
-      python3 -m venv .venv
-      . .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
-      pip install --pre kivyforge
+Alternatives: [pipx](https://pipx.pypa.io/) (`pipx install kivyforge`), or pip
+inside a virtual environment (`pip install kivyforge`).
 
 Check the install with `kivyforge --version` and `kivyforge capabilities`. The
 install also provides a short alias, `kf`. For the full walk-through, see
 [Install kivyforge](https://elliotgarbus.github.io/kivyforge/get-started/install/).
-To work on kivyforge itself, see [Development](#development).
 
-> **Mobile examples need no local wheel-building.** Kivy (2.3.1 and 3.0),
-> pyobjus, and pyjnius resolve from the
-> [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels)
-> index — a companion repo of first-party iOS/Android cross-builds published as
-> a static PEP 503 index — and Rubicon-ObjC, the iOS examples' bridge to
-> Objective-C, is pure Python from PyPI, so `kivyforge lock` just works against
-> any mobile example. `scripts/build_ios_wheels.sh` / `scripts/build_pyobjus_ios_wheels.sh`
-> remain for cross-building your own iOS wheels locally (e.g. to vendor one via
-> a `path` lock instead of the index); neither is required to run the examples.
->
-> **Desktop needs no wheel-building either.** The desktop examples under
-> [`examples/desktop/`](examples/desktop/) build straight from PyPI — Kivy
-> 2.3.1 ships universal2 macOS wheels, so there is no macOS wheel-building
-> step. Kivy 3.0 has no public desktop wheels yet, which is why desktop
-> examples stay on 2.3.1; the iOS mobile examples need 3.0 for its structural
-> mobile changes, while the Android examples run either generation (2.3.1/SDL2
-> for most, 3.0/SDL3 for `hello-sdl3`) depending on which bootstrap they gate.
+## Requirements
 
-> **Detailed documentation.** For the full design and reference docs — the
-> cross-platform model, the `pyproject.toml` / `pylock.<platform>.toml` schemas,
-> artifact distribution, the CLI shape, and the per-platform backends (Android,
-> iOS, macOS, Linux, Windows) — start with the
-> [kivyforge design overview](docs/design/common/00-overview.md).
+kivyforge detects each target's toolchain but never installs one. Run
+`kivyforge doctor -p <platform>` on your machine to see what is missing.
 
-## Quick start (iOS)
+| Target | You need |
+|---|---|
+| iOS | A Mac with the full [Xcode](https://developer.apple.com/xcode/) 15 or newer, selected with `sudo xcode-select --switch /Applications/Xcode.app` and its license accepted with `sudo xcodebuild -license`. The command-line tools alone are not enough. |
+| Android | A JDK 17 to 23, on `PATH` or in `JAVA_HOME`. The Android SDK with build-tools, platform-tools, and recorded licenses. The [NDK](https://developer.android.com/ndk), which every build uses. Android Studio's SDK Manager installs them; see the [Android quickstart](https://elliotgarbus.github.io/kivyforge/get-started/quickstart-android/). |
+| macOS | The Xcode command-line tools (`xcode-select --install`). |
+| Windows | Nothing extra. `signtool` from the Windows SDK if you sign. |
+| Linux | An x86_64 Linux machine. WSL2 works. To run the app: `libGL` and `libEGL`, and an X11 or Wayland session. |
 
-The workflow below targets iOS; see Quick start (Android), (macOS), (Linux),
-and (Windows) further down for the other backends. Run every command from the
-directory that contains your app's `pyproject.toml`.
+## Quick start
 
-      # 1. Seed [tool.kivy] / [tool.kivy.ios] config into pyproject.toml
-      kivyforge init
+The fastest way to see kivyforge work is to build an example, as the
+[quickstarts](https://elliotgarbus.github.io/kivyforge/get-started/quickstart-desktop/)
+do. The commands below are for your own app. Run them from the directory that
+holds your `pyproject.toml`, which needs a `[project]` table with at least `name`
+and `version`. Your code goes in `src/`, starting with `src/main.py`.
 
-      # 2. Resolve dependencies into pylock.ios.toml
-      kivyforge lock
+Every platform follows the same steps: `init` adds the configuration, with `TODO`
+markers on the values to change, `lock` resolves dependencies, `build` and `run`
+are the development loop, and `package` produces the distributable.
 
-      # 3. Download artifacts and generate <app>-ios/<app>.xcodeproj
-      kivyforge build
+### iOS
 
-      # 4a. Open the project in Xcode and press Run...
-      kivyforge open
+Depend on Kivy 3 in `[project].dependencies`, for example
+`"kivy>=3.0.0.dev0,<4"`, and set `requires-python` to allow Python 3.15.
 
-      # 4b. ...or build, install, and launch on the simulator from the CLI
-      kivyforge build --simulator
-      kivyforge run --simulator
+```bash
+kivyforge init -p ios                 # add [tool.kivy] and [tool.kivy.ios]
+kivyforge lock -p ios                 # write pylock.ios.toml
+kivyforge run -p ios --simulator      # build, install, and launch
+kivyforge open -p ios                 # or open the generated project in Xcode
+kivyforge package -p ios              # dist/ios/<name>-<version>.ipa
+```
 
-## Quick start (macOS)
+Running on a device and `package` need signing; see
+[Sign the app](https://elliotgarbus.github.io/kivyforge/guides/ios/signing/).
 
-macOS needs only the Xcode command-line tools (`codesign`), not the full Xcode
-IDE. The macOS backend bundles a relocatable CPython + your wheels into a signed
-`.app`:
+### Android
 
-      # 1. Seed [tool.kivy] / [tool.kivy.macos] config (or add the overlay by hand)
-      kivyforge init            # then add a [tool.kivy.macos] table
+```bash
+kivyforge init -p android             # add [tool.kivy] and [tool.kivy.android]
+kivyforge lock -p android             # write pylock.android.toml
+kivyforge run -p android              # build, install, launch, and follow the log
+kivyforge package -p android          # dist/android/<name>-<version>.apk
+kivyforge package -p android -f aab   # dist/android/<name>-<version>.aab, for Google Play
+```
 
-      # 2. Resolve dependencies + pin the runtime into pylock.macos.toml
-      kivyforge lock -p macos
+`run` picks a connected device, else a running emulator, else it boots your first
+AVD. `package` needs a release keystore; see
+[Sign and publish to Google Play](https://elliotgarbus.github.io/kivyforge/guides/android/signing/).
 
-      # 3. Build the .app (arm64)
-      kivyforge build -p macos
+Kivy has no Android wheel on PyPI, so `init` adds the first-party
+[kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels) index to
+`extra_index_urls`. Any other dependency with compiled code must publish an
+`android_*` wheel, or you supply one through `find_links`. `lock` fails and names
+the package otherwise. Only 64-bit ABIs are supported.
 
-      # 4a. Launch it (foreground, so you see stdout/tracebacks)
-      kivyforge run -p macos
+`kivy_generation = 2` targets Kivy 2.3.1 on SDL2, and `kivy_generation = 3`
+targets a Kivy 3.0 snapshot on SDL3, which you also request in your dependencies;
+see [Configure your Android app](https://elliotgarbus.github.io/kivyforge/guides/android/configure/).
 
-      # 4b. ...or produce the finished, signed distributable
-      kivyforge package -p macos      # -> build/macos/<App>.app
+### macOS
 
-`package` is config-driven: with no signing config it ships the **ad-hoc**-signed
-`.app` (runs locally; downloaded copies hit Gatekeeper). For distribution to
-other Macs, configure `[tool.kivy.macos.signing]` with a *Developer ID
-Application* identity (paid Apple Developer Program) and a `notary_profile`
-(created with `xcrun notarytool store-credentials`) — then the same command
-deep-signs with Hardened Runtime, **notarizes, and staples** the `.app` so
-Gatekeeper trusts it everywhere. `--no-notarize` skips the submission. (Hit
-`errSecInternalComponent` from `codesign`? See the
-[FAQ entry](FAQ.md#macos-developer-id-signing-fails-with-errsecinternalcomponent)
-on corrupted keychain ACLs.)
+```bash
+kivyforge init -p macos               # add [tool.kivy] and [tool.kivy.macos]
+kivyforge lock -p macos               # write pylock.macos.toml
+kivyforge run -p macos                # build build/macos/<App>.app and launch it
+kivyforge package -p macos            # sign build/macos/<App>.app for distribution
+```
 
-`kivyforge doctor -p macos` reports environment + project health (host, codesign,
-arch coverage, runtime floor, signing identity, notary setup, reachable hosts).
+Without signing configuration, `package` ships an **ad-hoc** signature: it runs on
+your Mac, and Gatekeeper blocks downloaded copies. To distribute it, add a
+Developer ID identity and a notary profile, and the same command signs, notarizes,
+and staples the app; see
+[Sign, notarize, and staple](https://elliotgarbus.github.io/kivyforge/guides/macos/signing/).
 
-## Quick start (Linux)
+### Linux
 
-The Linux backend bundles a relocatable CPython + your manylinux wheels into an
-[AppImage](https://appimage.org/) (the default) or a run-from-folder **AppDir**.
-It needs a Linux host (the runtime is a gnu/glibc build); no compiler or FUSE is
-required at build time.
+```bash
+kivyforge init -p linux               # add [tool.kivy] and [tool.kivy.linux]
+kivyforge lock -p linux               # write pylock.linux.toml
+kivyforge run -p linux                # build build/linux/<App>.AppDir and launch it
+kivyforge package -p linux            # dist/linux/<name>-<version>-x86_64.AppImage
+kivyforge package -p linux -f folder  # or a run-from-folder AppDir
+```
 
-      # 1. Add a [tool.kivy.linux] table to pyproject.toml (app_id, icons, ...)
-
-      # 2. Resolve dependencies + pin the runtime into pylock.linux.toml
-      kivyforge lock -p linux
-
-      # 3. Build the AppDir (build/linux/<App>.AppDir)
-      kivyforge build -p linux
-
-      # 4a. Launch it (runs ./AppRun directly — the fast dev loop, no FUSE)
-      kivyforge run -p linux
-
-      # 4b. ...or produce the distributable
-      kivyforge package -p linux              # -> dist/linux/<app>-<ver>-x86_64.AppImage
-      kivyforge package -p linux -f folder    # -> the AppDir itself
-
-The AppImage embeds a **static-FUSE runtime**, so recipients need no `libfuse2`;
-`./<App>.AppImage --appimage-extract-and-run` is the universal no-FUSE fallback.
-The **host contract** is explicit: the bundle never vendors libGL/libEGL or a
-display server, so the host must provide glibc ≥ the artifact's effective floor,
-`libGL.so.1`/`libEGL.so.1`, and an X11 or Wayland session.
-
-`kivyforge doctor -p linux` reports environment + project health (Linux/glibc
-host, GL libraries, display session, glibc floor, arch coverage, generated
-`.desktop` validity, reachable hosts).
+The AppImage embeds a static-FUSE runtime, so recipients need no `libfuse2`. It
+never bundles libGL/libEGL or a display server; see
+[Meet the Linux host requirements](https://elliotgarbus.github.io/kivyforge/guides/linux/host-requirements/).
 
 ### Raspberry Pi
 
-Raspberry Pi is a first-class **Linux** target, not a separate platform. Set
-`archs = ["aarch64"]` in `[tool.kivy.linux]`, then cross-build the AppImage on
-an x86_64 Linux machine (WSL2 works) and copy it to a Pi 4 or Pi 5 running
-64-bit Raspberry Pi OS with a desktop:
+Raspberry Pi is a **Linux** target, not a separate platform. Set
+`archs = ["aarch64"]` in `[tool.kivy.linux]`, cross-build on an x86_64 Linux
+machine (WSL2 works), and copy the AppImage to a Pi 4 or Pi 5 running 64-bit
+Raspberry Pi OS with a desktop. You do not install kivyforge on the Pi.
 
-      kivyforge lock -p linux
-      kivyforge package -p linux -f appimage --arch aarch64   # -> dist/linux/<app>-<ver>-aarch64.AppImage
+```bash
+kivyforge lock -p linux
+kivyforge package -p linux --arch aarch64   # dist/linux/<name>-<version>-aarch64.AppImage
+```
 
-On the Pi: `chmod +x <app>.AppImage && ./<app>.AppImage`. An `aarch64` build
-cannot be launched with `kivyforge run` on the x86_64 host. See
-[Build for Raspberry Pi](docs/guides/guides/linux/raspberry-pi.md) for the full
-guide and scope.
+See [Build for Raspberry Pi](https://elliotgarbus.github.io/kivyforge/guides/linux/raspberry-pi/).
 
-## Quick start (Windows)
+### Windows
 
-The Windows backend bundles a relocatable CPython + your `win_amd64` wheels into
-a run-from-folder **`onedir`**: a windowed launcher `.exe` beside a full
-python-build-standalone prefix, your app source, and any declared native
-binaries. It needs a Windows host (the runtime is an MSVC amd64 build and the
-resource/signing tools are Windows-only); no compiler is required at build time.
+```bash
+kivyforge init -p windows             # add [tool.kivy] and [tool.kivy.windows]
+kivyforge lock -p windows             # write pylock.windows.toml
+kivyforge run -p windows              # build build\windows\<App>\ and launch it
+kivyforge package -p windows          # dist\windows\<App>-<version>-amd64\
+```
 
-      # 1. Add a [tool.kivy.windows] table to pyproject.toml (app_id, icons, ...)
+Double-clicking the launcher opens the app with no console window, and
+`kivyforge run` attaches it to your terminal so you see tracebacks. Signing is
+optional; see
+[Sign with Authenticode](https://elliotgarbus.github.io/kivyforge/guides/windows/signing/).
 
-      # 2. Resolve dependencies + pin the runtime into pylock.windows.toml
-      kivyforge lock -p windows
+## Examples
 
-      # 3. Build the onedir bundle (build\windows\<App>\)
-      kivyforge build -p windows
+The [`examples/`](https://github.com/ElliotGarbus/kivyforge/tree/main/examples)
+folder holds complete, copy-pasteable apps. None of them needs you to build a
+wheel: desktop examples use Kivy 2.3.1 from PyPI, and mobile examples get Kivy
+from the
+[kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels) index.
 
-      # 4a. Launch it (runs the launcher .exe in the foreground — the dev loop)
-      kivyforge run -p windows
+**Desktop** ([`examples/desktop/`](https://github.com/ElliotGarbus/kivyforge/tree/main/examples/desktop)):
 
-      # 4b. ...or produce the distributable (copied to dist\windows\)
-      kivyforge package -p windows            # -> dist\windows\<app>-<ver>-amd64\
+- `dice-roller`: a minimal Kivy UI that builds on macOS, Linux (x86_64 and
+  Raspberry Pi), and Windows.
+- `notes`: a Kivy app with a pure-Python dependency (`platformdirs`).
+- `desktop-viewer`: a macOS-only app with a resizable window, ⌘ keyboard
+  shortcuts, and Finder's open panel.
+- `hello-native`: ships native binaries that don't come from a wheel, a helper
+  executable and a shared library, on all three desktops.
 
-Double-clicking the launcher opens the app with **no console flash**; `kivyforge
-run` attaches it to the terminal so stdout/stderr and tracebacks are visible. The
-`onedir` folder keeps every file real and signable — installers stay external.
-**Authenticode signing** is optional and off by default: configure
-`[tool.kivy.windows.signing]` with a certificate-store `thumbprint` and `package`
-signs (and RFC-3161 timestamps) the launcher in the `dist\windows` copy.
+**iOS** ([`examples/mobile/`](https://github.com/ElliotGarbus/kivyforge/tree/main/examples/mobile), on Kivy 3.0):
 
-`kivyforge doctor -p windows` reports environment + project health (Windows host,
-long-path support, `app_id` style, arch coverage, icon, native-binary
-sources/collisions/arch, build-output lock, build volume (Dev Drive advisory),
-reachable hosts, signtool + signing certificate).
+- `hello-world`: a Kivy-free toolchain smoke test with no dependencies.
+- `hello-kivy`: a minimal Kivy 3.0 UI.
+- `mobile-geometry`: shows the `kivy.mobile` runtime geometry API: DPI, safe-area
+  insets, and keyboard height. It also runs on Android.
+- `svg-explorer`: an SVG viewer with multitouch pan, zoom, and rotate.
+- `rubicon-ball`: calls CoreMotion and UIScreen from Python through Rubicon-ObjC,
+  including a C struct return.
+- `rubicon-deviceinfo`: reads device info (model, system version, battery) through
+  Rubicon-ObjC.
+- `keychain-spm`: pins a remote Swift package (`KeychainAccess`) and calls it from
+  Python through a local `@objc` shim.
+- `swift-bridge`: calls Swift from Python: objects with state, collections, a
+  throwing method, `async` work, and a Swift delegate protocol implemented in
+  Python.
+- `ios-lifecycle-hook`: runs Objective-C before Python to add the app-delegate
+  methods SDL lacks, and delivers them to Python as Kivy events.
+- `ios-webview`: shows a `WKWebView` over the Kivy window.
 
-## Quick start (Android)
+**Android** ([`examples/mobile/`](https://github.com/ElliotGarbus/kivyforge/tree/main/examples/mobile)):
 
-The Android backend assembles the official
-[python.org Android runtime](https://www.python.org/downloads/android/) + your
-`android_*` wheels into a generated **Gradle/AGP** project and produces a
-signed **`.apk`** (sideload/CI) or **`.aab`** (Play upload) — a wheel-assembly
-and Gradle-drive backend, no python-for-android recipe system, no per-app C
-compilation. It needs a JDK, the Android SDK, and the NDK, but builds on
-Windows, macOS, or Linux. 64-bit only (`arm64_v8a`, `x86_64`).
-
-      # 1. Seed [tool.kivy] + [tool.kivy.android] into pyproject.toml
-      kivyforge init -p android               # then set `package`, kivy_generation, ...
-      #    If your app depends on kivy or pyjnius, uncomment `extra_index_urls`
-      #    in [tool.kivy.android] (see "Android wheels" below).
-
-      # 2. Resolve dependencies + pin the runtime into pylock.android.toml
-      kivyforge lock -p android
-
-      # 3. Generate the Gradle project (<app>-android/) and assemble a debug APK
-      kivyforge build -p android --debug      # -> <app>-android/app/build/outputs/apk/debug/
-
-      # 4a. Install and launch on a connected device or emulator
-      kivyforge run -p android --emulator
-
-      # 4b. ...or produce the signed release distributable
-      kivyforge package -p android            # -> dist/android/<app>-<version>.apk
-      kivyforge package -p android -f aab     # -> dist/android/<app>-<version>.aab (Play upload)
-
-**Android wheels.** Kivy has no Android wheel on PyPI, so `kivyforge lock -p android`
-fails with "pip could not resolve the Android ABI" until you point it at the
-first-party [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels)
-index. `kivyforge init -p android` writes the line commented out; uncomment it
-(this is the recommended route, and needs no wheel-building):
-
-      [tool.kivy.android]
-      extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
-
-The index carries Kivy and pyjnius only. Every other dependency must already
-publish an `android_*` wheel, or you supply one in a directory listed in
-`find_links` (cross-building your own wheel). The error names the package pip
-could not find, so check it before changing anything else. `lock` uses the pip
-that ships inside kivyforge, not the one in your app's virtual environment.
-
-Without `--debug`, step 3 stops after generating the project — ready to open in
-Android Studio (`kivyforge open -p android`) or to drive `gradlew` by hand.
-
-`kivy_generation = 2` targets Kivy 2.3.1 (SDL2, stable); `kivy_generation = 3`
-targets Kivy 3.0 (SDL3, pre-release) — mutually exclusive per app, and the SDL
-Java glue + `libSDL*.so` must come from the same release (`kivyforge build`
-fails fast on a mismatch rather than the silent black-screen failure that
-would otherwise produce).
-Debug builds sign with an auto-managed debug keystore; `package` requires a
-configured release keystore (`[tool.kivy.android.signing]`, passwords from
-environment variables, never in `pyproject.toml`).
-
-`kivyforge doctor -p android` reports environment + project health
-(JDK/SDK/build-tools/NDK/emulator/adb, the SDL↔Kivy pairing, the pyjnius
-`invoke0` contract, a hermetic 16 KB page-alignment scanner, ABI coverage,
-signing, lock-host reachability). `kivyforge run --smoke` runs a generated
-instrumented contract test on a real device/emulator — validated on an x86_64
-API-31 emulator and a Pixel 8a (Android 16 / API 36) for both SDL2 and SDL3.
-
-See the runnable examples for complete, copy-pasteable walk-throughs. They are
-split by runtime requirement — **desktop uses Kivy 2.3.1 from PyPI, mobile
-resolves Kivy (2.3.1 and 3.0) from the
-[kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels)
-index**:
-
-**Desktop** ([`examples/desktop/`](examples/desktop/)) — macOS/Linux/Windows:
-
-- [`dice-roller`](examples/desktop/dice-roller/) — minimal Kivy UI that **builds &
-  runs on macOS, Linux (x86_64 and Raspberry Pi), and Windows today** from PyPI
-  (Kivy 2.3.1).
-- [`notes`](examples/desktop/notes/) — Kivy app with a pure-Python dependency
-  (`platformdirs`); builds on macOS, Linux, and Windows from PyPI.
-- [`desktop-viewer`](examples/desktop/desktop-viewer/) — a **macOS-only** Kivy app
-  (resizable window, ⌘ keyboard shortcuts, and Finder's native open panel via
-  `osascript`); no Linux/Windows overlay.
-- [`hello-native`](examples/desktop/hello-native/) — ships **non-wheel** native
-  binaries (a helper executable + a shared library) via
-  `[tool.kivy.<platform>.native.binaries]`; builds and runs on macOS, Linux, and
-  Windows (`greet.dll` loaded by name, `roll.exe` run by name).
-
-**Mobile** ([`examples/mobile/`](examples/mobile/)) — iOS and Android; iOS on
-Kivy 3.0, Android on either generation (wheels from
-[`kivy-mobile-wheels`](https://github.com/ElliotGarbus/kivy-mobile-wheels)):
-
-*iOS:*
-
-- [`hello-world`](examples/mobile/hello-world/) — Kivy-free toolchain smoke test;
-  no dependencies, no wheels (builds on iOS via the python.org `Python.xcframework`;
-  the first example to bring up a new backend).
-- [`hello-kivy`](examples/mobile/hello-kivy/) — minimal Kivy 3.0 UI.
-- [`mobile-geometry`](examples/mobile/mobile-geometry/) — showcases the
-  `kivy.mobile` runtime-geometry API (DPI, safe-area insets, keyboard height).
-- [`svg-explorer`](examples/mobile/svg-explorer/) — interactive SVG viewer
-  (multitouch pan/zoom/rotate).
-- [`rubicon-ball`](examples/mobile/rubicon-ball/) — calls native iOS APIs
-  (CoreMotion, UIScreen) from Python through Rubicon-ObjC, including a C
-  struct return.
-- [`rubicon-deviceinfo`](examples/mobile/rubicon-deviceinfo/) — reads native
-  iOS device info (model, system version, battery) through Rubicon-ObjC.
-- [`keychain-spm`](examples/mobile/keychain-spm/) — declares a remote Swift Package
-  (`KeychainAccess`), pins it with `kivyforge lock`, and calls it from Python
-  through a local `@objc` shim package.
-- [`swift-bridge`](examples/mobile/swift-bridge/) — calls Swift from Python
-  through an `@objc` shim and Rubicon-ObjC: objects with state, collections,
-  a throwing method, `async` work through a completion handler or a polled
-  job, and a Swift delegate protocol implemented in Python.
-- [`ios-lifecycle-hook`](examples/mobile/ios-lifecycle-hook/) — runs
-  Objective-C before Python to add the app-delegate methods SDL lacks (push
-  token, background pushes, notification taps, background tasks, launch URLs)
-  and delivers them to Python as Kivy events.
-
-*Android:*
-
-- [`hello-android`](examples/mobile/hello-android/) — the smallest kivyforge
-  Android app (a single `Label`); the Kivy 2.3.1 / SDL2 on-device gate.
-- [`hello-sdl3`](examples/mobile/hello-sdl3/) — the same app on **Kivy 3.0 /
-  SDL3**; deliberately identical to `hello-android` apart from the SDL
-  generation, and the SDL3 on-device gate.
-- [`pyjnius-deviceinfo`](examples/mobile/pyjnius-deviceinfo/) — reads Android
-  device info (`Build`, `BatteryManager`, display metrics) via pyjnius, no
-  Java written.
-- [`qr-maven`](examples/mobile/qr-maven/) — renders a QR code with Google's
-  ZXing, resolved as a Gradle/Maven coordinate (channel 4) and driven from
-  Python via a pyjnius `invoke0` round-trip.
+- `hello-android`: the smallest Android app, on Kivy 2.3.1 and SDL2.
+- `hello-sdl3`: the same app on Kivy 3.0 and SDL3.
+- `pyjnius-deviceinfo`: reads device info through pyjnius, with no Java written.
+- `qr-maven`: renders a QR code with Google's ZXing, resolved as a Maven
+  dependency and driven from Python.
+- `android-services`: a background and a foreground service.
+- `android-activity-class`: runs Java in the activity's `onCreate`, through your
+  own `PythonActivity` subclass and through a `ContentProvider`.
+- `android-package`, `android-package-sdl3`: use python-for-android's `android`
+  package on each Kivy generation.
+- `android-fullscreen`: hides the system bars with `fullscreen = true`.
+- `android-safe-area`: paints the unsafe region so you can see the insets.
 
 ## Configuring your app
 
 Your app is described declaratively in `pyproject.toml`. Standard
 [PEP 621](https://peps.python.org/pep-0621/) `[project]` metadata supplies the
-name, version, and runtime `dependencies`; shared, platform-neutral settings live
-under `[tool.kivy]`, and iOS-specific settings live under `[tool.kivy.ios]`
-(each other platform has its own `[tool.kivy.<platform>]` table — `macos`,
-`linux`, `windows`, `android`):
+name, version, and runtime `dependencies`. Shared settings live under
+`[tool.kivy]`, and each target has its own `[tool.kivy.<platform>]` table: `ios`,
+`android`, `macos`, `linux`, and `windows`. For example, an iOS app:
 
 ```toml
 [project]
-name = "hello-world"
+name = "hello-kivy"
 version = "0.1.0"
-requires-python = ">=3.15.0b4"
-dependencies = []                       # PyPI/local deps resolved into the lockfile
+requires-python = ">=3.14"
+dependencies = ["kivy>=3.0.0.dev0,<4"]
 
 [tool.kivy]
-display_name = "Hello World"            # name shown under the icon
+display_name = "Hello Kivy"             # name shown under the icon
 app_dir = "src"                         # folder containing your Python source
 entry_point = "main"                    # module run as __main__ at launch (main.py)
 orientation = ["portrait"]
 
 [tool.kivy.ios]
-bundle_id = "org.example.hello-world"   # reverse-DNS; UTI characters only (no underscores)
+schema_version = 1
+bundle_id = "org.example.hello-kivy"    # reverse-DNS; no underscores
 build = 1
 deployment_target = "16.0"
-# find_links = ["../../wheels/ios"]     # repo-relative wheel directory for lock
-# exclude = ["docutils", "pygments"]    # drop transitive deps you don't use at runtime
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+exclude = ["kivy-garden", "docutils", "pygments"]   # Kivy deps you don't use at runtime
 
 [tool.kivy.ios.python]
-version = "3.15.0b4"                     # python.org Python.xcframework version
+version = "3.15.0"                      # python.org Python.xcframework version
 
 [tool.kivy.ios.signing]
 team_id = ""                            # Apple Developer Team ID (device / release builds)
-identity = "Apple Development"
 auto_signing = true
 ```
 
-`kivyforge build` syncs your `app_dir` into the generated `<app>-ios/` tree on
-every run, so make changes in your source folder (e.g. `src/`), never in the
-generated project.
-
-Kivy's wheel declares dependencies that are not all needed at runtime on iOS.
-The `exclude` list trims them; the
-[hello-kivy example](examples/mobile/hello-kivy/pyproject.toml) documents what each one
-is for, so you can re-enable only the few that map to widgets you actually use
-(e.g. `docutils` for `RSTDocument`, `pygments` for `CodeInput`, or `requests`
-for `UrlRequest`).
+Make changes in your source folder, never in the generated project: `build`
+regenerates it. Every key is in the
+[configuration reference](https://elliotgarbus.github.io/kivyforge/reference/pyproject/tool-kivy/).
 
 ## Commands
 
-The verbs are platform-neutral; each resolves a target from `-p/--platform`, the
-`KIVYFORGE_PLATFORM` environment variable, or the host default, and then does the
-platform's version of the same job. `init` is the one exception: `-p` is
-repeatable there (`-p ios -p android`), since seeding several platforms into
-one `pyproject.toml` is its normal use case — every other verb builds, runs,
-or packages exactly one target per invocation.
+The verbs are platform-neutral. Each resolves a target from `-p/--platform`, the
+`KIVYFORGE_PLATFORM` environment variable, or the host's own platform if
+`pyproject.toml` has an overlay for it, and then does that platform's version of
+the same job. iOS and Android always need `-p` or the variable.
 
-      kivyforge init       Seed [tool.kivy] + the target's overlay into pyproject.toml
-      kivyforge lock       Generate pylock.<platform>.toml from pyproject.toml
-      kivyforge build      Download artifacts, generate the native project, build
-      kivyforge run        Build (unless --no-build), install, and launch the app
-      kivyforge package    Produce the signed, distributable artifact
-      kivyforge open       Open the generated project in Xcode / Android Studio
-      kivyforge status     Show app identity, Python version, lock sync, build state
-      kivyforge clean      Remove generated artifacts in the project folder
-      kivyforge upgrade    Re-fetch the pinned runtime and native artifacts
-      kivyforge doctor     Run environment and project health checks
+```text
+kivyforge init          Seed [tool.kivy] + the target's overlay into pyproject.toml
+kivyforge lock          Generate pylock.<platform>.toml from pyproject.toml
+kivyforge build         Download artifacts, generate the native project, build
+kivyforge run           Build (unless --no-build), install, and launch the app
+kivyforge package       Produce the signed, distributable artifact
+kivyforge open          Open the generated project in Xcode / Android Studio
+kivyforge status        Show app identity, Python version, lock sync, build state
+kivyforge clean         Remove generated artifacts in the project folder
+kivyforge upgrade       Re-fetch the pinned runtime and native artifacts
+kivyforge doctor        Run environment and project health checks
+kivyforge capabilities  List platforms, archs, package formats, and which hosts build what
+```
 
-Run `kivyforge <command> -h` (or `kf <command> -h`) for the full set of
-options on any verb. A few common ones:
+Run `kivyforge <command> -h` (or `kf <command> -h`) for every option on a verb. A
+few common ones:
 
-- `kivyforge init -p ios -p android` — seed several platforms' overlays in one run.
-- `kivyforge lock --check` — CI pre-flight; exits non-zero if the lock is stale.
-- `kivyforge build --simulator | --device | --release` (iOS) — pick the build flavor.
-- `kivyforge build --debug [--abi arm64_v8a|x86_64]` (Android) — assemble a debug APK, optionally for one ABI.
-- `kivyforge run --list-devices` — list available simulators/emulators and devices.
-- `kivyforge run --smoke` (Android) — run the generated on-device contract test.
-- `kivyforge run --release` (Android, Linux, macOS, Windows) — build and launch the release flavor, to exercise `byte_compile`/`strip_source` outside of `package`.
-- `kivyforge clean --cache` — also flush the artifact download cache.
+- `kivyforge init -p ios -p android`: seed several platforms' overlays in one run.
+- `kivyforge lock --check`: CI pre-flight; exits non-zero if the lock is stale.
+- `kivyforge build -p ios --simulator | --device | --release`: pick the iOS build flavor.
+- `kivyforge build -p android --debug [--abi arm64_v8a|x86_64]`: assemble a debug APK, optionally for one ABI.
+- `kivyforge run -p ios --list-devices`: list available simulators or emulators and devices.
+- `kivyforge run -p android --smoke`: run the generated on-device contract test.
+- `kivyforge run --release` (Android, Linux, macOS, Windows): build and launch the release flavor, to exercise `byte_compile` and `strip_source` outside of `package`.
+- `kivyforge clean --cache`: also flush the artifact download cache.
 
-Downloaded artifacts (`Python.xcframework`, the per-ABI Android runtime,
-`.aar`/`.jar`s, runtime archives) are cached per-user and shared across projects.
-
-Every verb but `run` also takes `--json`, for scripting or driving kivyforge
-from an agent — see [Working with agents](#working-with-agents) below.
+Downloaded artifacts are cached per user and shared across projects.
 
 ## Typical workflow
 
@@ -592,10 +432,18 @@ Clone the repository and install it into a virtual environment:
       . .venv/bin/activate
       pip install -e ".[dev]"
 
-Run the test suite and the linter:
+Run the same four checks CI runs:
 
       pytest
-      ruff check .
+      ruff check kivyforge tests
+      ruff format --check kivyforge tests
+      pyright
+
+To build the documentation locally, run `pip install -e ".[docs]"`, then
+`mkdocs serve`. For the design documents, start with the
+[design overview](https://github.com/ElliotGarbus/kivyforge/blob/main/docs/design/common/00-overview.md),
+and see [AGENTS.md](https://github.com/ElliotGarbus/kivyforge/blob/main/AGENTS.md)
+for the rules of working in this repository.
 
 ## FAQ
 
@@ -605,7 +453,7 @@ the latest
 
 ## License
 
-kivyforge is [MIT licensed](LICENSE), and builds on work actively developed by a
+kivyforge is [MIT licensed](https://github.com/ElliotGarbus/kivyforge/blob/main/LICENSE), and builds on work actively developed by a
 great community and supported by many projects managed by the 
 [Kivy Organization](https://www.kivy.org/about.html).
 
@@ -644,7 +492,7 @@ Please consult the [latest Kivy Code of Conduct](https://github.com/kivy/kivy/bl
 
 This project exists thanks to 
 [all the people who contribute](https://github.com/ElliotGarbus/kivyforge/graphs/contributors).
-[[Become a contributor](CONTRIBUTING.md)].
+[[Become a contributor](https://github.com/ElliotGarbus/kivyforge/blob/main/CONTRIBUTING.md)].
 
 <img src="https://contrib.nn.ci/api?repo=ElliotGarbus/kivyforge&pages=5&no_bot=true&radius=22&cols=18">
 

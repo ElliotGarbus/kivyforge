@@ -60,17 +60,30 @@ cannot build one from source, and `kivyforge lock` fails to resolve it.
 
 ### Mobile wheels for Kivy
 
-Kivy, pyjnius, and pyobjus are published as first-party prebuilt iOS and
-Android wheels on the
+Kivy's iOS and Android wheels, and the iOS wheel of pyobjus, are published as
+first-party prebuilt wheels on the
 [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels) index
-until they land on PyPI. Rubicon-ObjC, the bridge to Objective-C the iOS
-guides use, is pure Python and comes from PyPI. Add the index with `extra_index_urls` in the mobile
-overlay, as the mobile examples do:
+until they land on PyPI. pyjnius publishes its own Android wheels on PyPI, and
+Rubicon-ObjC, the bridge to Objective-C the iOS guides use, is pure Python and
+comes from PyPI. Add the index with `extra_index_urls` in the mobile overlay.
+`kivyforge init` and the mobile examples already set it:
 
 ```toml
 [tool.kivy.android]
 extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
 ```
+
+### Choose a Python version Kivy has wheels for
+
+A Kivy app can only use a CPython version that Kivy publishes wheels for, and
+that differs by target. If you choose another version, `kivyforge lock` can't
+resolve Kivy.
+
+| Target | Kivy | CPython |
+|---|---|---|
+| iOS | 3.0 development snapshots | 3.15 |
+| Android | 2.3.1, or 3.0 development snapshots | 3.14 |
+| macOS, Linux, and Windows | 2.3.1 | 3.13 or earlier |
 
 ## Where packages come from
 

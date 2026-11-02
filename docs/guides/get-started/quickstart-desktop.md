@@ -17,11 +17,10 @@ The first run spends most of its time downloading the Python runtime and wheels.
 
 ## Before you begin
 
-- A macOS (Apple Silicon), Linux, or Windows machine. You build for the
+- A macOS (Apple Silicon), x86_64 Linux, or Windows machine. You build for the
   operating system you are on, so no cross-compilation toolchain is needed.
-- kivyforge, installed as described in [Install kivyforge](install.md). The
-  example app sets an icon, so on Linux install the `linux` extra and on Windows
-  the `windows` extra. On macOS, also install the Xcode command-line tools.
+- kivyforge, installed as described in [Install kivyforge](install.md). On
+  macOS, also install the Xcode command-line tools.
 - [git](https://git-scm.com/), to fetch the example app.
 
 ## Step 1: Get the example app
@@ -37,16 +36,7 @@ cd kivyforge/examples/desktop/dice-roller
 Run every command from this directory. kivyforge reads the `pyproject.toml` in
 the current directory and does not search parent directories.
 
-## Step 2: Adjust the example for your machine
-
-Only Linux on an ARM machine (for example a Raspberry Pi) needs a change: in
-`[tool.kivy.linux]`, change `archs = ["x86_64"]` to `archs = ["aarch64"]`. Edit
-`pyproject.toml` now, before you lock, because any later edit makes the
-lockfile out of date.
-
-On macOS, Windows, and x86_64 Linux, skip this step.
-
-## Step 3: Check your environment
+## Step 2: Check your environment
 
 `doctor` verifies that this host can build the target and that the toolchain is
 present. It picks the target from your operating system, because the example
@@ -59,7 +49,7 @@ kivyforge doctor
 Fix anything it reports as `FAIL` before you continue. `WARN` items are safe to
 leave for now.
 
-## Step 4: Lock the dependencies
+## Step 3: Lock the dependencies
 
 Resolve the app's dependencies for your platform and write the lockfile:
 
@@ -71,7 +61,7 @@ This writes `pylock.macos.toml`, `pylock.linux.toml`, or `pylock.windows.toml`,
 with every artifact pinned by URL and SHA-256. See
 [Lockfiles](../concepts/lockfiles.md) for what that means.
 
-## Step 5: Build and run
+## Step 4: Build and run
 
 Build the app and launch it:
 
@@ -91,7 +81,7 @@ your platform.
     To build without launching, use `kivyforge build`. To remove the generated
     output and start fresh, run `kivyforge clean`.
 
-## Step 6: Package the distributable
+## Step 5: Package the distributable
 
 Produce the finished artifact for your platform:
 

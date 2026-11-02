@@ -116,16 +116,16 @@ defects below say where pyobjus falls short.
   floating-point arguments, and returned structs, are fine. Send a `CGRect`
   argument, such as a frame, through `objc_msgSend` with ctypes. The fix,
   [kivy/pyobjus#157](https://github.com/kivy/pyobjus/pull/157), is not in a
-  released pyobjus yet.
+  pyobjus release on PyPI yet.
 
 Rubicon-ObjC has neither defect: its `load_library("WebKit")` loads the
 framework, and it passes a `CGRect` by value.
 [Replace the kivy-ios ios module](ios-module.md) shows a web view built that
 way.
 
-Calling a Swift shim with pyobjus 1.2.5 meets these as well. Each has an open
-fix in pyobjus; until a pyobjus wheel that includes it is published, follow
-the workaround, which stays correct after the fix:
+Calling a Swift shim with pyobjus 1.2.5 meets these as well. Each is fixed in
+pyobjus's source. Until a pyobjus wheel that includes the fix is published,
+follow the workaround, which stays correct after the fix:
 
 | Defect | Workaround | Fix |
 |---|---|---|

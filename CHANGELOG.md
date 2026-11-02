@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### `init` seeds CPython 3.15.0 for iOS
+
+- **Changed:** `kivyforge init -p ios` writes `version = "3.15.0"` in
+  `[tool.kivy.ios.python]`. It still wrote the `3.15.0b4` pre-release after the
+  examples moved to the final release.
+- **Fixed:** the comment `init -p android` writes on `extra_index_urls` no longer
+  says the index serves pyjnius, which publishes its Android wheels on PyPI.
+- **Migration:** none needed. An existing project keeps the version it pins, and
+  `init --force` preserves it. To move from `3.15.0b4`, set the version and run
+  `kivyforge lock -p ios`.
+
+### Docs: the README and guides checked against the tool before the beta
+
+- **Fixed:** the README's iOS quick start left out `-p ios`, so on a Mac it
+  configured and built macOS instead. Its sample configuration lacked the
+  required `schema_version`.
+- **Fixed:** the guides and FAQ said kivyforge ignores unknown keys, that a new
+  upstream release can fail `lock --check`, that a plain `lock` takes the newest
+  versions, that `run` takes `--no-verify-lock`, and that the Android pyjnius
+  wheel comes from the mobile wheel index. kivyforge rejects unknown keys,
+  `lock` and `lock --check` keep the locked versions, `run` has no such flag, and
+  pyjnius comes from PyPI. The desktop quickstart no longer asks for `linux` and
+  `windows` extras that don't exist, or for an `aarch64` Linux build host, which
+  kivyforge refuses.
+- **Changed:** the install commands no longer use `--pre`. pip and pipx take a
+  pre-release when a package has no stable release, and after one, `--pre` would
+  choose an older development release. iOS examples in the guides use CPython
+  3.15.0, the version the iOS examples pin.
+- **Added:** which CPython versions Kivy's wheels support on each target, how to
+  report a problem, and *Add a Swift package to your macOS app* in the site's
+  navigation, where it was missing.
+
 ### Docs and examples: Rubicon-ObjC is the documented bridge to Objective-C
 
 - **Changed:** the iOS guides and examples call Objective-C through

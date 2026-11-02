@@ -133,6 +133,23 @@ The [FAQ](../faq.md) covers common platform problems, including:
 To find your app's own output in a noisy Android log, see [Filter the app's
 log](../guides/android/run.md#filter-the-apps-log).
 
+## Report a problem
+
+kivyforge is in beta, so a report helps even when you found a way around the
+problem. Search the [open issues](https://github.com/ElliotGarbus/kivyforge/issues)
+first, then [open a new one](https://github.com/ElliotGarbus/kivyforge/issues/new/choose)
+with:
+
+- The output of `kivyforge --version`.
+- The output of `kivyforge doctor -p PLATFORM`, for the target you are building.
+- The exact command you ran, and the build log from
+  [Capture the build log](#capture-the-build-log). For Android, add `-v`.
+- Your `pyproject.toml`, or a small project that reproduces the problem.
+- For a failure on a device, the device model and its OS version.
+
+Check that the log and `pyproject.toml` hold no passwords, tokens, or private
+paths before you post them.
+
 ## What's next
 
 - [Exit and diagnostic codes](../reference/codes.md)

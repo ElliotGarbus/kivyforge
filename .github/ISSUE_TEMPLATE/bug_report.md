@@ -1,51 +1,50 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report something in kivyforge that doesn't work
 title: ''
-labels: ''
+labels: 'bug'
 assignees: ''
 
 ---
 
 <!--
-The issue tracker is a tool to address bugs.
-Please use the Discord community or Stack Overflow for support questions,
-more information at https://github.com/ElliotGarbus/kivyforge#support
+Please check the open issues first:
+https://github.com/ElliotGarbus/kivyforge/issues
 
-Before opening a new issue, make sure you do the following:
-    * check that your issue isn't already filed: https://github.com/ElliotGarbus/kivyforge/issues
-    * prepare a short, runnable example that reproduces the issue
-    * reproduce the problem with the latest development version (`master`)
-    * double-check that the issue is indeed a bug and not a support request
-    * please use backticks to format code or logs
+If a build fails, the troubleshooting guide may already explain it:
+https://elliotgarbus.github.io/kivyforge/troubleshooting/
+
+Check that what you paste holds no passwords, tokens, or private paths.
 -->
 
 **Versions**
 
-* Python :
-* MacOS version :
-* XCode Version :
-* Cython version :
+* kivyforge (`kivyforge --version`):
+* Target platform (`-p`):
+* Build host and its OS version:
+* Device or emulator and its OS version, if the problem is at run time:
 
 **Describe the bug**
-// REPLACE ME: A clear and concise description of what the bug is.
+// REPLACE ME: What happened, and what you expected to happen instead.
 
-**To Reproduce**
-// REPLACE ME: Add your `kivyforge ....` command or a complete explanation of what you did so We can reproduce your error.
+**To reproduce**
+// REPLACE ME: The exact `kivyforge ...` commands you ran, in order.
 
-**Expected behavior**
-// REPLACE ME: A clear and concise description of what you expected to happen.
-
-**Logs**
+**`kivyforge doctor -p PLATFORM`**
 ```
-// REPLACE ME: Paste the build output containing the error
+// REPLACE ME: The output for the target you are building.
 ```
 
-**Screenshots**
-<!--
-ONLY for XCode related errors, use the LOGS section for kivyforge related problems!
- If applicable, add screenshots to help explain your problem.
--->
+**Build log**
+<!-- `kivyforge COMMAND > build.log 2>&1` captures all of it. For Android, add -v. -->
+```
+// REPLACE ME: The output of the failing command, including the error.
+```
+
+**`pyproject.toml`**
+```toml
+// REPLACE ME: Your configuration, or a link to a small project that reproduces the problem.
+```
 
 **Additional context**
-Add any other context about the problem here.
+Anything else that might help, such as screenshots of an Xcode error or the app's log from the device.
