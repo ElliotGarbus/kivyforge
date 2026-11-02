@@ -84,7 +84,7 @@ Every lock has these keys:
 | Key | Description |
 |---|---|
 | `schema_version` | Version of the `[tool.kivyforge]` table layout. |
-| `kivyforge_version` | The kivyforge version that wrote the lock. |
+| `kivyforge_version` | The kivyforge version that wrote the lock. `lock --check` ignores it, so upgrading kivyforge does not make a lock stale. |
 | `generated_at` | When the lock was written. |
 | `lock_inputs_sha256` | SHA-256 of the lock inputs: the parsed `pyproject.toml` values the lock was resolved from. Used for drift detection. |
 

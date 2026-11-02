@@ -13,12 +13,21 @@
   the development build. `kivyforge doctor` does not warn about it, for the same
   reason. Run `pip install kivyforge==0.1.0`, or
   `uv tool install --force kivyforge==0.1.0`. Existing projects and locks keep
-  working: the version a lock records is informational.
+  working.
 - **Known issues:** on iOS 27, rotation breaks a Kivy app's layout
   ([#195](https://github.com/ElliotGarbus/kivyforge/issues/195)), and the current
   Kivy iOS wheel can show blank text or crash KivyMD
   ([kivy/kivy#9443](https://github.com/kivy/kivy/pull/9443)). See
   [Known issues on iOS](docs/guides/troubleshooting/index.md#known-issues-on-ios).
+
+### Upgrading kivyforge no longer makes `lock --check` fail
+
+- **Fixed:** `lock --check` compared the kivyforge version each lock records, so
+  every kivyforge upgrade reported every lock as stale, with an empty diff. It now
+  ignores that version on every platform. A real difference in the lock still
+  fails the check.
+- **Migration:** none needed. You don't have to re-lock. The next re-lock updates
+  the recorded version.
 
 ### `init` seeds CPython 3.15.0 for iOS
 

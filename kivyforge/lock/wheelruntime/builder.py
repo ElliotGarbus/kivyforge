@@ -335,7 +335,7 @@ def _check_variants_complete(
 
 
 def semantic_equal(a: WheelRuntimeLock, b: WheelRuntimeLock) -> bool:
-    """Compare two locks ignoring the volatile ``generated_at`` field.
+    """Compare two locks ignoring ``generated_at`` and ``kivyforge_version``.
 
     ``build_wheel_runtime_lock`` returns ``packages``/``native_binaries`` (and
     each package's ``wheels``) in resolver-encounter order; only
@@ -356,6 +356,9 @@ def _normalized(lock: WheelRuntimeLock) -> WheelRuntimeLock:
     return dataclasses.replace(
         lock,
         generated_at="",
+        # Which kivyforge wrote the lock says nothing about whether it still
+        # matches the project, and diff_summary has nothing to show for it.
+        kivyforge_version="",
         packages=tuple(
             sorted(
                 (
