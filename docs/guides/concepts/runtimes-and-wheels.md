@@ -87,13 +87,6 @@ resolve Kivy.
 
 ## Where packages come from
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-    there were no pins or named indexes, and pip chose among all sources by
-    version and wheel tag alone, so a wheel in `find_links` lost to an index
-    wheel of the same version.
-
 A package can be available from several places: PyPI, the indexes in
 `extra_index_urls` and `[[tool.kivy.index]]`, and the local directories in
 `find_links`. When you run `kivyforge lock`, kivyforge decides which of them

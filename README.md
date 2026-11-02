@@ -31,6 +31,10 @@ troubleshooting.
 > buildozer today, try kivyforge on a branch and keep your current toolchain
 > until you have tested the result.
 >
+> **Known issue:** on iOS 27, rotating a Kivy app breaks its layout until a new
+> SDL and Kivy wheel ship
+> ([#195](https://github.com/ElliotGarbus/kivyforge/issues/195)).
+>
 > **On iOS, kivyforge builds Kivy 3 only**, and Kivy 3.0 is not released yet, so
 > iOS apps use its development snapshots. Apps on Kivy 2.x stay on kivy-ios for
 > now. Android builds either Kivy 2.3.1 or a Kivy 3.0 snapshot, and the desktop

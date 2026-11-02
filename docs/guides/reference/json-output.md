@@ -21,7 +21,7 @@ and a parseable result from the same run.
 ```json
 {
   "schema": 1,
-  "kivyforge": "3.0.0.dev0",
+  "kivyforge": "0.1.0",
   "command": "doctor",
   "platform": "linux",
   "ok": true,

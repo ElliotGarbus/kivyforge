@@ -1,6 +1,24 @@
 # Changelog
 
-## [Unreleased]
+## [v0.1.0](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.0) - 2026-11-02
+
+### Version numbers restart at 0.1.0
+
+- **Changed:** the first public release of kivyforge is 0.1.0, a beta. The
+  earlier development builds were numbered 3.0.0.dev0 and 3.0.0.dev1, which read
+  as tied to Kivy 3.0, but Android can use Kivy 2.3.1 and the desktop targets do.
+  Both development builds are yanked from PyPI.
+- **Migration:** if you installed a development build, ask for this version by
+  number, because 0.1.0 sorts below 3.0.0.dev1 and an upgrade command can stay on
+  the development build. `kivyforge doctor` does not warn about it, for the same
+  reason. Run `pip install kivyforge==0.1.0`, or
+  `uv tool install --force kivyforge==0.1.0`. Existing projects and locks keep
+  working: the version a lock records is informational.
+- **Known issues:** on iOS 27, rotation breaks a Kivy app's layout
+  ([#195](https://github.com/ElliotGarbus/kivyforge/issues/195)), and the current
+  Kivy iOS wheel can show blank text or crash KivyMD
+  ([kivy/kivy#9443](https://github.com/kivy/kivy/pull/9443)). See
+  [Known issues on iOS](docs/guides/troubleshooting/index.md#known-issues-on-ios).
 
 ### `init` seeds CPython 3.15.0 for iOS
 
@@ -2406,16 +2424,16 @@ pass between libraries from different wheels; see
   runs on both macOS and Linux hosts). Artifact cache respects
   `$XDG_CACHE_HOME` on Linux (`~/.cache/kivyforge`).
 
-## [v3.0.0](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0)
+## The rewrite (never released as 3.0.0)
 
 **Complete rewrite.** kivyforge is the successor to kivy-ios, python-for-android,
 and buildozer — a declarative, PEP 621-aligned build toolchain for Kivy apps
-aimed at every platform Kivy runs on. This first release implements the **iOS**
-target, built around pre-built Python.xcframeworks and pip-installable iOS wheels.
+aimed at every platform Kivy runs on. It began with the **iOS** target, built
+around pre-built Python.xcframeworks and pip-installable iOS wheels.
 The recipe-based `kivyforge build-recipe` workflow is gone; see the
 [design docs](docs/design/common/00-overview.md) and the updated README.
 
-### What's new in 3.0
+### What the rewrite introduced
 
 - **Declarative config** — project settings live in `[tool.kivy]` /
   `[tool.kivy.ios]` sections of your app's `pyproject.toml`; no more
@@ -2460,7 +2478,7 @@ The recipe-based `kivyforge build-recipe` workflow is gone; see the
 
 > **Historical entries below this line describe kivy-ios 2.x** (the
 > recipe-based toolchain). They are preserved for reference but describe
-> a workflow that no longer exists in 3.0.
+> a workflow that no longer exists in kivyforge.
 
 ---
 

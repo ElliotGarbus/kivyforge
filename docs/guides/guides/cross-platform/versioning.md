@@ -142,12 +142,6 @@ last kivyforge build.
 
 ## Read your package metadata inside the app
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier, the
-    app's only metadata is a development `<name>.egg-info` that happens to sit
-    in `app_dir`.
-
 A packaged app isn't an installed Python distribution, so kivyforge writes its
 metadata into the app itself, on every platform: a `<name>-<version>.dist-info`
 folder beside your code, made from `[project]`. Inside the app,

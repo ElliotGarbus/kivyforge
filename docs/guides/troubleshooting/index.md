@@ -133,6 +133,28 @@ The [FAQ](../faq.md) covers common platform problems, including:
 To find your app's own output in a noisy Android log, see [Filter the app's
 log](../guides/android/run.md#filter-the-apps-log).
 
+## Known issues on iOS
+
+Both issues are in the Kivy iOS wheel, not in your project.
+
+- **Rotation breaks on iOS 27.** After you rotate the device, or launch in
+  landscape, `Window.size` snaps back to portrait while the screen stays in
+  landscape, so most of the UI is drawn off screen. The app can also crash when
+  you rotate back. iOS 26 and earlier are not affected. The cause is SDL 3.4.2,
+  and the fix needs an SDL release that includes it and a new Kivy wheel. Follow
+  [#195](https://github.com/ElliotGarbus/kivyforge/issues/195).
+- **Text is blank, or KivyMD crashes with `FBO Initialization failed`.** Calling
+  `dp()` or `sp()` before the window exists caches a density of 0, and KivyMD
+  does this when imported. Until a wheel with
+  [kivy/kivy#9443](https://github.com/kivy/kivy/pull/9443) is published, set the
+  density at the top of `main.py`, before anything imports Kivy:
+
+    ```python
+    import os
+
+    os.environ["KIVY_METRICS_DENSITY"] = "3"
+    ```
+
 ## Report a problem
 
 kivyforge is in beta, so a report helps even when you found a way around the

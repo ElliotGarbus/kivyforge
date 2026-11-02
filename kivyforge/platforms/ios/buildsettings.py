@@ -10,7 +10,7 @@ from kivyforge.config.model import Config
 from .entitlements import xcode_profile_specifier
 from .staging import APP_METADATA_DIR, StagingLayout
 
-#: The Build Python script up to package metadata (0.x to 3.0.0.dev1). Kept
+#: The Build Python script up to package metadata (through 3.0.0.dev1). Kept
 #: verbatim: the generator finds the phase to replace by its exact text, so
 #: without it a project generated before would end up with both phases.
 _BUILD_PYTHON_SCRIPT_V1 = (

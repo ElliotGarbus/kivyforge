@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kivyforge"
-version = "3.0.0.dev1"
+version = "0.1.0"
 description = "Declarative, PEP 621-aligned build toolchain for Kivy apps — successor to kivy-ios, python-for-android, and buildozer (iOS, Android, macOS, Linux, and Windows)"
 license = "MIT"
 readme = "README.md"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["kivy", "ios", "android", "toolchain", "packaging", "mobile", "buildozer"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Build Tools",
     "Programming Language :: Python :: 3",

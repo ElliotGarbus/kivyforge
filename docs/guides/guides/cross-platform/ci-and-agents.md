@@ -144,11 +144,8 @@ Upload the Python distributions one of these ways instead:
   action's `packages-dir` at `wheels`.
 - Use `uv publish`, which skips anything that is not a distribution.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. `package -p android` and
-    `package -p ios` also write into `dist/`, as `dist/android/` and
-    `dist/ios/`.
+`package -p android` and `package -p ios` also write into `dist/`, as
+`dist/android/` and `dist/ios/`.
 
 ## Verify
 

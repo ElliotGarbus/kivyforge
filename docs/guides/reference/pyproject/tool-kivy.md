@@ -21,10 +21,6 @@ dependencies from `[project].dependencies`. The version can be dynamic, taken
 from git by your build backend; see
 [Set the app version](../../guides/cross-platform/versioning.md).
 
-!!! note "Preview"
-    This paragraph describes behavior that is on `main` but not yet in a
-    released version. It will ship in a future release.
-
 kivyforge also writes the app's package metadata from `[project]`: its name,
 version and entry points (`[project.scripts]`, `[project.gui-scripts]` and
 `[project.entry-points]`); see
@@ -143,10 +139,6 @@ instead, set `entry_point` to the module name. If `[project].dynamic` lists
 to set `entry_point`.
 
 ## Package indexes and sources
-
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release.
 
 Name an index once in `[tool.kivy]`, then pin packages to it in `sources`. A
 pinned package comes only from its index, on every target that applies the

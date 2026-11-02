@@ -1,4 +1,4 @@
-"""``kivyforge`` — the kivyforge 3.0 command-line interface.
+"""``kivyforge`` — the kivyforge command-line interface.
 
 A slim click-based dispatcher. Each verb lives in its own module under
 ``kivyforge.cli`` and is registered onto the top-level group here.
@@ -27,7 +27,7 @@ from . import (
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"]},
     help=(
-        "kivyforge 3.0: build, run, and package Kivy apps for Android, iOS, "
+        "Build, run, and package Kivy apps for Android, iOS, "
         "macOS, Windows, and Linux from one pyproject.toml.\n\n"
         "Run commands from the directory that contains your pyproject.toml."
     ),

@@ -119,11 +119,6 @@ directory in your project and list that directory in `find_links`. A package
 with a wheel there comes only from there, even when an index publishes a newer
 version.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier, an
-    index wheel of the same or a newer version replaced your local wheel.
-
 1. Copy the wheels into a directory inside your project, such as `wheels/`.
    Include one wheel for each architecture or ABI you lock.
 2. List the directory in the target's overlay:
@@ -144,12 +139,6 @@ SHA-256. Commit the wheels with the lock, because `build` installs from that
 path. When you replace a locked wheel, even with one of the same filename, the
 next `lock` resolves that package again and leaves the others as they are.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-    `lock` keeps the old hash of a replaced wheel with the same filename, and
-    you re-lock with `--update`.
-
 To use a package from GitHub that isn't released on PyPI, build its wheel with
 pip and add it the same way. See
 [Build a wheel from a GitHub repository](wheel-from-github.md).
@@ -169,10 +158,6 @@ package's source, and never changes the source.
 When several indexes publish the same package, pin it to the one you want. A
 pinned package comes only from that index, and an index you mark `explicit`
 supplies only the packages pinned to it, so it cannot replace anything else.
-
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release.
 
 1. Declare the index in `[tool.kivy]`, giving it a name:
 

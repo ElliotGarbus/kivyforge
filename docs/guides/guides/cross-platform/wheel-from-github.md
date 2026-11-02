@@ -127,12 +127,6 @@ time can't find it in an archive. KivyMD stores `"Unknown"` in
     ]
     ```
 
-    !!! note "Preview"
-        This describes behavior that is on `main` but not yet in a released
-        version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-        `exclude` dropped a package only after pip resolved it, so a
-        dependency with no wheel for the target still failed the lock.
-
     Excluding a package removes it from the app. Your app fails if it uses
     the feature that needs the package. With `pycairo` excluded, don't use
     KivyMD's `MDLoadingIndicator`.
@@ -167,15 +161,6 @@ time can't find it in an archive. KivyMD stores `"Unknown"` in
 
     `lock` sees that the wheel changed, names it, and resolves KivyMD again.
     Every other package keeps its locked version.
-
-    !!! note "Preview"
-        This describes behavior that is on `main` but not yet in a released
-        version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-        `lock` reports that the lock is in sync and keeps the old hash when
-        the new wheel has the same filename. Run
-        `kivyforge lock -p android --update` instead. `--update` also moves
-        every package with a range specifier to its newest match. See
-        [Pin a package version](dependencies.md#pin-a-package-version).
 
 ## Verify
 

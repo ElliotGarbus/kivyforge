@@ -129,11 +129,6 @@ To also install and launch it, use `kivyforge run -p ios --device`. See
 kivyforge package -p ios
 ```
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-    `package` leaves the `.ipa` at `<app>-ios/build/<app>.ipa`.
-
 `package` archives the app, exports a signed `.ipa`, and copies it to
 `dist/ios/APP_NAME-VERSION.ipa`. `APP_NAME` is your `[project].name` and
 `VERSION` is your app's version.

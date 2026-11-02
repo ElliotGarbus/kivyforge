@@ -10,6 +10,19 @@
 > **docs are MkDocs Material → GitHub Pages** · **PyPI stays a solo-owner
 > personal project until the GitHub repo moves to the Kivy org** ·
 > **no emulation anywhere in the build path**.
+>
+> **Version numbering, decided 2026-11-02:** the first public release is a final
+> `0.1.0`, marked beta by its `Development Status` classifier, and `3.0.0.dev0`
+> and `3.0.0.dev1` are yanked once it is published. A 3.x number read as tied to
+> Kivy 3.0, and its only lineage was kivy-ios, which used calendar versions under
+> another name. A final release rather than `0.1.0b1`, so plain install commands
+> work and a later pre-release stays opt-in. The cost: `0.1.0` sorts below the
+> development builds, so `doctor` cannot tell their users to upgrade, and the
+> changelog tells them to reinstall instead. Publish first and yank second, so
+> there is no moment with nothing to install. After this, minor versions carry
+> changes that can break a project, patch versions carry fixes, and `1.0.0` means
+> config stability. "3.0.0" elsewhere in this file is the old name for the first
+> stable release.
 
 ## Where things stand
 
@@ -1874,7 +1887,9 @@ under the Kivy org.
       stand" above for why that was safe here specifically.
 - [ ] Re-check the SDL-glue sync workflow's cross-repo reference to
       `kivy-mobile-wheels` if that repo moves too.
-- [ ] Bump `3.0.0.dev0` → `3.0.0`, tag, release.
+- [x] ~~Bump `3.0.0.dev0` → `3.0.0`, tag, release.~~ **Superseded 2026-11-02:**
+      the first release is `0.1.0` and does not wait for the move; see the
+      version-numbering decision at the top of this file.
 
 **Ordering note.** Nothing here should start before the repo actually moves —
 doing any of it early means doing it twice, and in the Trusted Publishing case
