@@ -15,8 +15,9 @@ The Android overlay of `pyproject.toml`. For a task-oriented walkthrough, see
 [Configure your Android app](../../guides/android/configure.md).
 
 kivyforge validates the value of every key it reads and fails with a message
-that names the key. It ignores keys it does not recognize, so check the spelling
-of a key that seems to have no effect. A change to a lock input (the
+that names the key. It also rejects a key it does not recognize, except in
+tables whose keys belong to another tool, such as `gradle_properties`. A change
+to a lock input (the
 dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
 `exclude`, or native libraries) makes the lock stale; run
 `kivyforge lock -p android` afterward.

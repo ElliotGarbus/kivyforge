@@ -10,14 +10,12 @@ sources:
 # Call Android APIs with pyjnius
 
 [pyjnius](https://github.com/kivy/pyjnius) bridges Python and Java, so your app
-can call the Android framework and any Java library you have added. The Android
-build of pyjnius is a prebuilt wheel on the mobile wheel index, so you compile
-nothing.
+can call the Android framework and any Java library you have added. pyjnius
+publishes prebuilt Android wheels on PyPI, so you compile nothing.
 
 ## Before you begin
 
-- [Configure your Android app](configure.md), including the mobile wheel index
-  in `extra_index_urls`.
+- [Configure your Android app](configure.md).
 - You don't need to add `pyjnius` to your dependencies. Kivy itself uses it on
   Android, so `kivyforge lock -p android` adds it to every Android lock, in the
   range kivyforge supports (`>=1.7.0`, so new pyjnius releases work as they

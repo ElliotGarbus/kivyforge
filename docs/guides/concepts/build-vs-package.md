@@ -74,11 +74,6 @@ version in the name:
 `[tool.kivy].display_name`, `VERSION` is your app's version, and `ARCH` is the
 architecture packaged. With `--json`, the path is in `data.artifacts`.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-    Android and iOS `package` leave the artifact in the generated project.
-
 ## The `-f` format selector
 
 `package -f FORMAT` chooses the artifact shape where a platform offers more

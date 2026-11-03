@@ -110,6 +110,7 @@ nav:
           - Build a .app: guides/macos/build.md
           - Sign, notarize, and staple: guides/macos/signing.md
           - Package a .dmg: guides/macos/dmg.md
+          - Add a Swift package: guides/macos/swift-packages.md
       - Windows:
           - Build an onedir app: guides/windows/build.md
           - Understand the launcher: guides/windows/launcher.md

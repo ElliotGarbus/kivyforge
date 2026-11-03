@@ -24,9 +24,9 @@ from ..config.model import (
 )
 
 # Default Python.xcframework version init seeds (spec 01).
-DEFAULT_PYTHON_VERSION = "3.15.0b4"
-# Default python-build-standalone version seeded for macOS/Linux (desktop
-# targets pin a released runtime, not a beta xcframework).
+DEFAULT_PYTHON_VERSION = "3.15.0"
+# Default python-build-standalone version seeded for the desktop targets. Kivy
+# 2.3.1, the desktop Kivy, has no wheels for CPython 3.14 or later.
 DEFAULT_DESKTOP_PYTHON_VERSION = "3.13.14"
 # Default python.org Android embeddable-package version init seeds (android/01;
 # the load-model prototype validated 3.14.6 — android-loadmodel-findings.md).
@@ -707,7 +707,7 @@ def render_android_tables(
         abis_line,
         '# find_links = ["wheels"]  '
         "# a local wheelhouse, for wheels you cross-build yourself",
-        mobile_index_line(what="first-party Android wheels for kivy and pyjnius"),
+        mobile_index_line(what="first-party Android wheels for kivy"),
     ]
     lines += [""] + _KIVY_EXCLUDE_LINES
     lines += [

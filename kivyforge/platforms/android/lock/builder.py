@@ -445,7 +445,7 @@ def _check_abis_complete(
 
 
 def _normalized(lock: AndroidLockfile) -> AndroidLockfile:
-    """Sort every resolver-derived collection, ignoring ``generated_at``.
+    """Sort every resolver-derived collection, ignoring who wrote the lock and when.
 
     ``writer.py`` always sorts these before serializing, but a freshly
     resolved lockfile (as ``--check`` builds to compare against) reflects
@@ -468,6 +468,9 @@ def _normalized(lock: AndroidLockfile) -> AndroidLockfile:
     return dataclasses.replace(
         lock,
         generated_at="",
+        # Which kivyforge wrote the lock says nothing about whether it still
+        # matches the project, and diff_summary has nothing to show for it.
+        kivyforge_version="",
         packages=tuple(sorted(lock.packages, key=lambda p: p.sort_key)),
         python_android=tuple(sorted(lock.python_android, key=lambda r: r.abi)),
         android_libs=tuple(
@@ -481,7 +484,7 @@ def _normalized(lock: AndroidLockfile) -> AndroidLockfile:
 
 
 def semantic_equal(a: AndroidLockfile, b: AndroidLockfile) -> bool:
-    """Compare two lockfiles ignoring volatile timestamps and tuple order."""
+    """Compare two lockfiles ignoring who wrote them, when, and tuple order."""
     return _normalized(a) == _normalized(b)
 
 

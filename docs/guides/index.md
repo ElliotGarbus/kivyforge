@@ -16,9 +16,9 @@ native project, and drives the platform's own toolchain to produce a runnable
 artifact.
 
 kivyforge is the successor to **kivy-ios**, **python-for-android**, and
-**buildozer**. It can also replace Pyinstaller for dekstop apps. 
-One toolchain and one configuration file target every platform Kivy 
-runs on: **Android, iOS, Linux (include Raspberry Pi), macOS, and Windows**.
+**buildozer**, and it can also replace PyInstaller for desktop apps. One
+toolchain and one configuration file target every platform Kivy runs on:
+**Android, iOS, Linux (including Raspberry Pi), macOS, and Windows**.
 
 
 <div class="grid cards" markdown>
@@ -110,10 +110,11 @@ target with `archs = ["aarch64"]`, for a Pi 4 or Pi 5 running 64-bit
 Raspberry Pi OS. For the generated host matrix, see
 [Which host builds which target](get-started/hosts.md).
 
-!!! note "Early development"
-    kivyforge is alpha software. Configuration keys and command options can
-    still change between releases. The [release notes](release-notes.md) list
-    each change.
+!!! note "Beta"
+    kivyforge is in beta. Configuration keys and command options can still
+    change between releases, and the [release notes](release-notes.md) list each
+    change. If something doesn't work, please
+    [report it](troubleshooting/index.md#report-a-problem).
 
 ## What's next
 

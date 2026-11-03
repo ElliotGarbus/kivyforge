@@ -111,12 +111,6 @@ manifest. A finding in either blocks the release.
 
 ## Verify
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-    `package` leaves the artifact in the Gradle project, as
-    `app-release.apk` or `app-release.aab`.
-
 `package` prints the path of the artifact it produced, in `dist/android/`:
 
 - APK: `dist/android/APP_NAME-VERSION.apk`

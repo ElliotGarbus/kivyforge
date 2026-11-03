@@ -66,11 +66,9 @@ none. `build` installs from each wheel's `url` or `path` and does not use
 `index`. See
 [Where packages come from](../concepts/runtimes-and-wheels.md#where-packages-come-from).
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. Locks written by 3.0.0.dev1 and
-    earlier have no `index`. They stay valid, and `lock --check` does not count
-    the missing `index` as drift. The next re-lock adds it.
+Locks written by the 3.0.0.dev1 development build and earlier have no `index`.
+They stay valid, and `lock --check` does not count the missing `index` as
+drift. The next re-lock adds it.
 
 A package can also carry a `[packages.tool.kivyforge]` table, which other PEP 751
 tools ignore:
@@ -86,7 +84,7 @@ Every lock has these keys:
 | Key | Description |
 |---|---|
 | `schema_version` | Version of the `[tool.kivyforge]` table layout. |
-| `kivyforge_version` | The kivyforge version that wrote the lock. |
+| `kivyforge_version` | The kivyforge version that wrote the lock. `lock --check` ignores it, so upgrading kivyforge does not make a lock stale. |
 | `generated_at` | When the lock was written. |
 | `lock_inputs_sha256` | SHA-256 of the lock inputs: the parsed `pyproject.toml` values the lock was resolved from. Used for drift detection. |
 

@@ -81,25 +81,22 @@ dependencies = [
 ]
 ```
 
-A package you did not list moves as well. On Android, `lock` adds pyjnius when
-you have not declared it, using a range, so a re-lock picks up newer pyjnius
-releases. Declare it yourself to choose the version. See
+`--update` also moves packages you did not list. On Android, `lock` adds pyjnius
+when you have not declared it, using a range, so `--update` picks up newer
+pyjnius releases. Declare it yourself to choose the version. See
 [Call Android APIs with pyjnius](../android/pyjnius.md). A package pulled in by
 another package moves the same way. List it in `[project].dependencies` with
 `==` and that requirement is the one `lock` resolves.
 
-`lock --check` resolves again and compares the result with the lock on disk.
-An exact pin stays stable. A range fails the check when a newer match is
-published, even though `pyproject.toml` has not changed. `build`, `run`, and
-`package` still accept that lock. They refuse it when the file hash no longer
-matches.
+`lock --check` resolves again, keeping the locked versions, and compares the
+result with the lock on disk, so a new upstream release alone doesn't fail it.
 
 The next `lock` overwrites a hand-edited `pylock.<platform>.toml`. Change the
 specifier and re-lock.
 
 When a step edits `pyproject.toml` after the lock was resolved, and this build
-should keep the pins on disk, pass `--no-verify-lock` to `build`, `run`, or
-`package`. That skips the drift check. See
+should keep the pins on disk, pass `--no-verify-lock` to `build` or `package`.
+That skips the drift check. See
 [Drive kivyforge from CI or an agent](ci-and-agents.md).
 
 ## Make sure every dependency has a wheel
@@ -122,11 +119,6 @@ directory in your project and list that directory in `find_links`. A package
 with a wheel there comes only from there, even when an index publishes a newer
 version.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier, an
-    index wheel of the same or a newer version replaced your local wheel.
-
 1. Copy the wheels into a directory inside your project, such as `wheels/`.
    Include one wheel for each architecture or ABI you lock.
 2. List the directory in the target's overlay:
@@ -147,12 +139,6 @@ SHA-256. Commit the wheels with the lock, because `build` installs from that
 path. When you replace a locked wheel, even with one of the same filename, the
 next `lock` resolves that package again and leaves the others as they are.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release. In 3.0.0.dev1 and earlier,
-    `lock` keeps the old hash of a replaced wheel with the same filename, and
-    you re-lock with `--update`.
-
 To use a package from GitHub that isn't released on PyPI, build its wheel with
 pip and add it the same way. See
 [Build a wheel from a GitHub repository](wheel-from-github.md).
@@ -172,10 +158,6 @@ package's source, and never changes the source.
 When several indexes publish the same package, pin it to the one you want. A
 pinned package comes only from that index, and an index you mark `explicit`
 supplies only the packages pinned to it, so it cannot replace anything else.
-
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release.
 
 1. Declare the index in `[tool.kivy]`, giving it a name:
 

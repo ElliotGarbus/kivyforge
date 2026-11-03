@@ -101,8 +101,9 @@ option is repeatable, so one run can seed several overlays:
 kivyforge init -p macos -p windows
 ```
 
-To regenerate an overlay that already exists, add `--force`. Your signing
-settings are preserved, and `--force` never changes `[tool.kivy]`.
+To regenerate an overlay that already exists, add `--force`. Your signing,
+Python, and icon settings are preserved, and `--force` never changes
+`[tool.kivy]`.
 
 The `entry_point` that `init` writes depends on your `[project.gui-scripts]`:
 

@@ -12,6 +12,9 @@ from click.testing import CliRunner
 from kivyforge.cli import init as init_mod
 from kivyforge.cli.init import init
 from kivyforge.cli.init_writer import (
+    DEFAULT_ANDROID_PYTHON_VERSION,
+    DEFAULT_DESKTOP_PYTHON_VERSION,
+    DEFAULT_PYTHON_VERSION,
     bundle_id_segment,
     has_platform_overlay,
     has_shared_table,
@@ -569,14 +572,28 @@ class TestUpdatePath:
             data = tomllib.loads(pp.read_text())
         assert data["tool"]["kivy"]["ios"]["signing"]["team_id"] == "TEAM123456"
 
+    @pytest.mark.parametrize(
+        ("seeded", "example", "table"),
+        [
+            (DEFAULT_PYTHON_VERSION, "mobile/hello-kivy", "ios"),
+            (DEFAULT_ANDROID_PYTHON_VERSION, "mobile/hello-android", "android"),
+            (DEFAULT_DESKTOP_PYTHON_VERSION, "desktop/dice-roller", "macos"),
+        ],
+    )
+    def test_seeded_python_matches_the_gate_example(self, seeded, example, table):
+        # A new project starts on the version the examples are tested on. iOS
+        # kept seeding a beta after the examples moved to the final release.
+        repo = init_mod.Path(__file__).resolve().parents[2]
+        pyproject = repo / "examples" / example / "pyproject.toml"
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        assert seeded == data["tool"]["kivy"][table]["python"]["version"]
+
     def test_force_preserves_python_version(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
             pp = init_mod.Path(fs) / "pyproject.toml"
             pp.write_text(self.PYPROJECT + "\n")
             runner.invoke(init, [])
-            text = pp.read_text().replace(
-                'version = "3.15.0b4"', 'version = "3.15.0b1"'
-            )
+            text = pp.read_text().replace('version = "3.15.0"', 'version = "3.15.0b1"')
             pp.write_text(text)
             result = runner.invoke(init, ["--force"])
             assert result.exit_code == 0, result.output

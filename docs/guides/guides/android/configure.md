@@ -101,8 +101,8 @@ required. The other keys shown have defaults, listed in the reference.
     to cover development and distribution.
 
 `extra_index_urls`
-:   Where to find the Android builds of Kivy and pyjnius, which are not on PyPI
-    yet.
+:   Where to find the Android builds of Kivy, which are not on PyPI yet.
+    pyjnius publishes its Android wheels on PyPI.
 
 `exclude`
 :   Dependencies that Kivy declares but an Android app does not use. Pruning
@@ -219,9 +219,9 @@ kivyforge lock -p android
 kivyforge build -p android --debug --abi x86_64
 ```
 
-kivyforge rejects an invalid value with a message that names the key. It
-ignores keys it does not recognize, so a misspelled key has no effect instead of
-failing.
+kivyforge rejects an invalid value with a message that names the key. It also
+rejects a key it does not recognize, and suggests the closest valid one, so a
+misspelled key fails instead of having no effect.
 
 ## What's next
 

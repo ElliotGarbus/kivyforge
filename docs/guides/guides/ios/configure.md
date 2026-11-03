@@ -45,7 +45,7 @@ full key list, see the [iOS overlay reference](../../reference/pyproject/ios.md)
     exclude = ["kivy-garden", "docutils", "pygments"]
 
     [tool.kivy.ios.python]
-    version = "3.15.0b4"
+    version = "3.15.0"
     ```
 
 2. Optional: add an app icon:
@@ -81,9 +81,9 @@ full key list, see the [iOS overlay reference](../../reference/pyproject/ios.md)
 `python.version`
 :   Required. The CPython version to bundle. kivyforge downloads the matching
     iOS `Python.xcframework` from python.org, so the version must be one that
-    python.org publishes for iOS, such as the prerelease `3.15.0b4`. Your
-    `[project].requires-python` must allow it; a prerelease needs an explicit
-    floor such as `">=3.15.0b4"`.
+    python.org publishes for iOS. Kivy's iOS wheels are built for CPython 3.15,
+    so a Kivy app needs a 3.15 version, such as `3.15.0`. Your
+    `[project].requires-python` must allow it.
 
 `extra_index_urls`
 :   Extra package indexes to search. The mobile Kivy wheels are published on the

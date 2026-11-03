@@ -25,9 +25,13 @@ good first stop.
 
 ### `kivyforge: command not found`
 
-The `kivyforge` script (and its `kf` alias) is installed into your virtual
-environment. Activate it (`. .venv/bin/activate`) and make sure kivyforge is
-installed (`pip install -e ".[dev]"` from the repo).
+If you installed with uv, its tool directory is not on your `PATH` yet. Run
+`uv tool update-shell` and open a new terminal.
+
+If you installed with pip, the `kivyforge` script (and its `kf` alias) is in
+your virtual environment, so activate it first (`. .venv/bin/activate`, or
+`.venv\Scripts\Activate.ps1` in PowerShell). See
+[Install kivyforge](docs/guides/get-started/install.md).
 
 ### Error: SDK "iphonesimulator" cannot be located
 
@@ -39,13 +43,13 @@ If the command line tools are missing, install them with `xcode-select --install
 
 ### `kivyforge build` says the lock is out of sync
 
-Your `pyproject.toml` changed since `pylock.ios.toml` was generated. Re-resolve:
+A lock input in your `pyproject.toml`, such as a dependency or the Python
+version, changed since `pylock.<platform>.toml` was written. Re-lock the target:
 
-    kivyforge lock
+    kivyforge lock -p <platform>
 
-That re-lock takes the newest version each specifier in
-`[project].dependencies` allows. Require an exact version, such as
-`kivy==2.3.1`, to hold a package still. See
+That keeps the versions already locked and moves only what the change requires.
+To take the newest version each specifier allows, add `--update`. See
 [Pin a package version](docs/guides/guides/cross-platform/dependencies.md#pin-a-package-version).
 
 In CI, `kivyforge lock --check` exits non-zero when the lock is stale (it writes
@@ -55,9 +59,9 @@ skip the drift check.
 ### Downloading `Python.xcframework` fails with HTTP 404
 
 `[tool.kivy.ios.python].version` must match a build that python.org actually
-publishes. iOS support is new, so during the preview period you may need a
-prerelease such as `3.15.0b4` rather than a final `3.15.0`. Set the version to a
-published release and re-run `kivyforge lock`.
+publishes for iOS. Set the version to a published release, such as `3.15.0`, and
+re-run `kivyforge lock -p ios`. Kivy's iOS wheels are built for CPython 3.15, so
+a Kivy app needs a 3.15 version.
 
 ### "invalid character in Bundle Identifier"
 
@@ -67,18 +71,22 @@ A bundle identifier is a UTI: only letters, digits, hyphen (`-`), and period
 
 ### I edited my Python source but the app didn't change
 
-Editing Python source does **not** require `kivyforge build`: the generated
-project links your source directory (`app/` is a symlink to `app_dir`), so just
-relaunch — `kivyforge run --simulator`, or ⌘R in Xcode. Re-run `kivyforge build`
-only when you change app config or need to regenerate the project, and
+Run `kivyforge run` again. On Android and the desktop targets, it copies your
+source into the app on every run.
+
+On iOS you can also use ⌘R in Xcode, because the generated project links your
+source directory (`app/` is a symlink to `app_dir`). Re-run `kivyforge build` only
+when you change app config or need to regenerate the project, and
 `kivyforge clean` to reset the generated `<app>-ios/` folder for a fresh build.
 
 ### Where are downloaded artifacts stored?
 
-`Python.xcframework` and other xcframeworks are cached under
-`~/Library/Caches/kivy-ios/artifacts/` and shared across projects. Flush the
-cache with `kivyforge clean --cache`, or force a fresh download for one build
-with `kivyforge build --no-cache`.
+Runtimes and other artifacts are cached per user and shared across projects: in
+`~/Library/Caches/kivyforge/artifacts` on macOS,
+`~/.cache/kivyforge/artifacts` on Linux, and
+`%LOCALAPPDATA%\kivyforge\Cache\artifacts` on Windows. Flush the cache with
+`kivyforge clean --cache`, or force a fresh download for one build with
+`kivyforge build --no-cache`.
 
 ### Can I bundle a plain Python app without Kivy?
 
@@ -231,11 +239,11 @@ newly-signed, low-reputation) executable — it is not a kivyforge bug. kivyforg
 ships the default artifact **unsigned**, so recipients see the blue prompt and
 must click *More info → Run anyway*. Two ways to reduce it: (1) configure
 Authenticode signing (`[tool.kivy.windows.signing]` with a certificate-store
-`thumbprint`) so `kivyforge package` signs + timestamps the launcher — a standard
-OV certificate still needs to *build reputation* before the prompt stops; an
-**EV** certificate clears it immediately. (2) Distribute through a channel users
-already trust. SmartScreen reputation is per-signature and accrues over
-downloads; there is no way to bypass it from inside the bundle.
+`thumbprint`) so `kivyforge package` signs + timestamps the launcher. The app
+still needs to *build reputation* before the prompt stops: since August 2024,
+Microsoft treats OV and EV certificates the same. (2) Distribute through a
+channel users already trust. SmartScreen reputation is per-signature and accrues
+over downloads; there is no way to bypass it from inside the bundle.
 
 ### `kivyforge build -p windows` fails with a long-path (`MAX_PATH`) error
 

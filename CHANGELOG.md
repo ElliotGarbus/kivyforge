@@ -1,6 +1,65 @@
 # Changelog
 
-## [Unreleased]
+## [v0.1.0](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.0) - 2026-11-02
+
+### Version numbers restart at 0.1.0
+
+- **Changed:** the first public release of kivyforge is 0.1.0, a beta. The
+  earlier development builds were numbered 3.0.0.dev0 and 3.0.0.dev1, which read
+  as tied to Kivy 3.0, but Android can use Kivy 2.3.1 and the desktop targets do.
+  Both development builds are yanked from PyPI.
+- **Migration:** if you installed a development build, ask for this version by
+  number, because 0.1.0 sorts below 3.0.0.dev1 and an upgrade command can stay on
+  the development build. `kivyforge doctor` does not warn about it, for the same
+  reason. Run `pip install kivyforge==0.1.0`, or
+  `uv tool install --force kivyforge==0.1.0`. Existing projects and locks keep
+  working.
+- **Known issues:** on iOS 27, rotation breaks a Kivy app's layout
+  ([#195](https://github.com/ElliotGarbus/kivyforge/issues/195)), and the current
+  Kivy iOS wheel can show blank text or crash KivyMD
+  ([kivy/kivy#9443](https://github.com/kivy/kivy/pull/9443)). See
+  [Known issues on iOS](docs/guides/troubleshooting/index.md#known-issues-on-ios).
+
+### Upgrading kivyforge no longer makes `lock --check` fail
+
+- **Fixed:** `lock --check` compared the kivyforge version each lock records, so
+  every kivyforge upgrade reported every lock as stale, with an empty diff. It now
+  ignores that version on every platform. A real difference in the lock still
+  fails the check.
+- **Migration:** none needed. You don't have to re-lock. The next re-lock updates
+  the recorded version.
+
+### `init` seeds CPython 3.15.0 for iOS
+
+- **Changed:** `kivyforge init -p ios` writes `version = "3.15.0"` in
+  `[tool.kivy.ios.python]`. It still wrote the `3.15.0b4` pre-release after the
+  examples moved to the final release.
+- **Fixed:** the comment `init -p android` writes on `extra_index_urls` no longer
+  says the index serves pyjnius, which publishes its Android wheels on PyPI.
+- **Migration:** none needed. An existing project keeps the version it pins, and
+  `init --force` preserves it. To move from `3.15.0b4`, set the version and run
+  `kivyforge lock -p ios`.
+
+### Docs: the README and guides checked against the tool before the beta
+
+- **Fixed:** the README's iOS quick start left out `-p ios`, so on a Mac it
+  configured and built macOS instead. Its sample configuration lacked the
+  required `schema_version`.
+- **Fixed:** the guides and FAQ said kivyforge ignores unknown keys, that a new
+  upstream release can fail `lock --check`, that a plain `lock` takes the newest
+  versions, that `run` takes `--no-verify-lock`, and that the Android pyjnius
+  wheel comes from the mobile wheel index. kivyforge rejects unknown keys,
+  `lock` and `lock --check` keep the locked versions, `run` has no such flag, and
+  pyjnius comes from PyPI. The desktop quickstart no longer asks for `linux` and
+  `windows` extras that don't exist, or for an `aarch64` Linux build host, which
+  kivyforge refuses.
+- **Changed:** the install commands no longer use `--pre`. pip and pipx take a
+  pre-release when a package has no stable release, and after one, `--pre` would
+  choose an older development release. iOS examples in the guides use CPython
+  3.15.0, the version the iOS examples pin.
+- **Added:** which CPython versions Kivy's wheels support on each target, how to
+  report a problem, and *Add a Swift package to your macOS app* in the site's
+  navigation, where it was missing.
 
 ### Docs and examples: Rubicon-ObjC is the documented bridge to Objective-C
 
@@ -2374,16 +2433,16 @@ pass between libraries from different wheels; see
   runs on both macOS and Linux hosts). Artifact cache respects
   `$XDG_CACHE_HOME` on Linux (`~/.cache/kivyforge`).
 
-## [v3.0.0](https://github.com/ElliotGarbus/kivyforge/tree/v3.0.0)
+## The rewrite (never released as 3.0.0)
 
 **Complete rewrite.** kivyforge is the successor to kivy-ios, python-for-android,
 and buildozer — a declarative, PEP 621-aligned build toolchain for Kivy apps
-aimed at every platform Kivy runs on. This first release implements the **iOS**
-target, built around pre-built Python.xcframeworks and pip-installable iOS wheels.
+aimed at every platform Kivy runs on. It began with the **iOS** target, built
+around pre-built Python.xcframeworks and pip-installable iOS wheels.
 The recipe-based `kivyforge build-recipe` workflow is gone; see the
 [design docs](docs/design/common/00-overview.md) and the updated README.
 
-### What's new in 3.0
+### What the rewrite introduced
 
 - **Declarative config** — project settings live in `[tool.kivy]` /
   `[tool.kivy.ios]` sections of your app's `pyproject.toml`; no more
@@ -2428,7 +2487,7 @@ The recipe-based `kivyforge build-recipe` workflow is gone; see the
 
 > **Historical entries below this line describe kivy-ios 2.x** (the
 > recipe-based toolchain). They are preserved for reference but describe
-> a workflow that no longer exists in 3.0.
+> a workflow that no longer exists in kivyforge.
 
 ---
 

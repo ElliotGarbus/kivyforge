@@ -488,7 +488,7 @@ def _check_slices_complete(
 
 
 def semantic_equal(a: Lockfile, b: Lockfile) -> bool:
-    """Compare two lockfiles ignoring the volatile ``generated_at`` field.
+    """Compare two lockfiles ignoring ``generated_at`` and ``kivyforge_version``.
 
     Used by ``lock --check`` so a re-resolve that produces identical pins (but
     a new timestamp) still reports "in sync". ``build_lockfile`` returns
@@ -514,6 +514,9 @@ def _normalized(lock: Lockfile) -> Lockfile:
     return dataclasses.replace(
         lock,
         generated_at="",
+        # Which kivyforge wrote the lock says nothing about whether it still
+        # matches the project, and diff_summary has nothing to show for it.
+        kivyforge_version="",
         packages=tuple(
             sorted(
                 (
