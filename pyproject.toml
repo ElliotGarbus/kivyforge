@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "kivyforge"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Declarative, PEP 621-aligned build toolchain for Kivy apps — successor to kivy-ios, python-for-android, and buildozer (iOS, Android, macOS, Linux, and Windows)"
 license = "MIT"
 readme = "README.md"
@@ -80,6 +80,9 @@ docs = [
 # ---------------------------------------------------------------------------
 # Setuptools package discovery
 # ---------------------------------------------------------------------------
+[tool.setuptools_scm]
+# can be empty if no extra settings are needed, presence enables setuptools-scm
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["kivyforge*"]
