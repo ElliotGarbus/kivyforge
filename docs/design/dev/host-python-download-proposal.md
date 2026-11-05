@@ -321,6 +321,43 @@ NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
 
   Dropping it also removed a rule (`-p` and `--python` exclusive) and a
   question (which form the error prints).
+- **A setting naming the interpreter, like Chaquopy's `buildPython`.**
+  Considered 2026-11-05 and not adopted. Chaquopy, Briefcase's Android backend,
+  takes an interpreter command in `build.gradle`
+  (`buildPython("C:/path/to/python.exe")`, or `buildPython("py", "-3.13")`)
+  and uses it instead of its own `python3.X` / `python3` / `python` search. It
+  must still match the app's major.minor version
+  ([Chaquopy's docs](https://github.com/chaquo/chaquopy/blob/master/product/runtime/docs/sphinx/android.rst)).
+  It doesn't fit kivyforge:
+  - **The problem it solves mostly doesn't arise.** Gradle usually runs inside
+    Android Studio, and a Mac app launched from the Dock doesn't get the shell's
+    `PATH`, so a Python the terminal finds can be invisible to the build. That
+    is the reason inferred here; Chaquopy's docs only say "if this doesn't work
+    for you". kivyforge is a CLI run from the shell, and it byte-compiles in its
+    own staging step rather than inside Xcode or Gradle, so it already sees the
+    user's `PATH`.
+  - **`pyproject.toml` is the wrong home for it.** Its values are absolute
+    machine paths in a committed file, which break on a teammate's machine or
+    in CI. That is the objection that dropped this proposal's first draft.
+  - **One value can't cover every platform.** A kivyforge project can ship 3.15
+    to iOS and 3.14 to Android; a single setting names one interpreter.
+
+  **The workaround already works.** A final CPython of the right minor that the
+  search misses (pyenv, conda, a python.org framework that isn't linked,
+  `/opt/python/3.15` in a CI image) is found by putting its directory first on
+  `PATH`, because the search tries `python3.X` there:
+
+  ```bash
+  PATH=/opt/python/3.15/bin:$PATH kivyforge package -p ios
+  ```
+
+  The iOS and Android pyproject references should show this example.
+
+  If a user asks for it anyway, the form that fits is an environment variable,
+  not a config key: for example `KIVYFORGE_BYTECOMPILER`, a `PATH`-style list of
+  interpreters checked before the search, using the first of the right minor,
+  with an entry that fails the minor or final-release check a hard error. It
+  would add little over the `PATH` workaround beyond that error.
 - **Using the installed Python for anything else** (resolving, building
   sdists). It compiles `.pyc` and nothing more.
 - **Free-threaded or non-CPython hosts.** PBS's `install_only` default build is
