@@ -208,11 +208,11 @@ iteration) or an explicit
 `true`/`false`. `strip_source` is ignored while `byte_compile` is off. The
 compiler is picked in order: the bundle's own staged `python.exe` when it can
 run on this host (target arch == host arch — kivyforge never depends on
-emulation); otherwise the interpreter running `kivyforge` itself, if its
-CPython minor matches the target (a `.pyc`'s magic number is keyed to minor
-version only, not architecture); otherwise, `byte_compile = "release"`
-degrades to shipping source with a note, while `byte_compile = true` fails
-the build outright. Same defaults and ladder as [macos-spec](../macos/macos-spec.md)
+emulation); otherwise a final CPython of the same minor found on the host;
+otherwise, `byte_compile = "release"` degrades to shipping source with a
+warning, while `byte_compile = true` fails the build outright. The search after
+the staged interpreter is described once, in
+[10 — byte-compiling](../../common/10-byte-compile.md). Same defaults and ladder as [macos-spec](../macos/macos-spec.md)
 and [linux-spec](../linux/linux-spec.md); Android's own `build_settings`
 (which additionally compiles the stdlib) documents the shared rationale in
 [01-pyproject-android §build_settings](../android/01-pyproject-android.md#toolkivyandroidbuild_settings).

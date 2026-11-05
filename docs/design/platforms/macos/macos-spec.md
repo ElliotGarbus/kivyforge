@@ -105,11 +105,11 @@ keep readable `.py`) or an explicit `true`/`false`; `strip_source` is ignored wh
 is off. The compiler is picked in order: the bundle's own staged
 `Resources/python/bin/python3` when it can run on this host (target arch ==
 host arch — kivyforge never depends on Rosetta or any other emulation);
-otherwise the interpreter running `kivyforge` itself, if its CPython minor
-matches the target (a `.pyc`'s magic number is keyed to minor version only,
-not architecture); otherwise, `byte_compile = "release"` degrades to
-shipping source with a note, while `byte_compile = true` fails the build
-outright. Byte-compilation always runs **before** ad-hoc signing — codesign
+otherwise a final CPython of the same minor found on the host; otherwise,
+`byte_compile = "release"` degrades to shipping source with a warning, while
+`byte_compile = true` fails the build outright. The search after the staged
+interpreter is described once, in
+[10 — byte-compiling](../../common/10-byte-compile.md). Byte-compilation always runs **before** ad-hoc signing — codesign
 seals the bundle, so mutating it afterward would invalidate the signature.
 Same defaults and ladder as [windows-spec](../windows/windows-spec.md) and
 [linux-spec](../linux/linux-spec.md).

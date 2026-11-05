@@ -40,6 +40,9 @@ request.
 
 ## 2. What ships today (`cad70344`)
 
+[10 — byte-compiling](../common/10-byte-compile.md) is the full description; in
+short:
+
 `bundle/pycompile.py::find_interpreter` searches, in order:
 
 1. kivyforge's own interpreter, if it is a final release of the target minor;
@@ -384,32 +387,33 @@ A user who hits the error should find the command in the guides, and a
 contributor should find the search order in the design docs. Both fall behind
 this change unless it updates them.
 
-### 7.1 Already stale, before this change
+### 7.1 Already stale before this change: fixed 2026-11-05
 
-Several design docs still describe the search before `cad70344`, in which iOS,
-Android and the desktop fallback compiled only with "the interpreter running
-`kivyforge` itself". The search has since gained the `py` launcher (Windows),
-`python3.X`, `python3` and `python` on `PATH`, and uv. These need fixing
-whether or not `bytecompiler` is built, and can be fixed sooner:
+Six design docs described the search before `cad70344`, in which iOS, Android
+and the desktop fallback compiled only with "the interpreter running
+`kivyforge` itself". The search had since gained the `py` launcher (Windows),
+`python3.X`, `python3` and `python` on `PATH`, and uv. They were fixed ahead of
+this proposal, because they described shipped behaviour wrongly whether or not
+`bytecompiler` is built.
 
-| Document | What is stale |
+The search is now described once, in
+[10 — byte-compiling](../common/10-byte-compile.md), and these link to it:
+
+| Document | Was |
 |---|---|
 | `docs/design/platforms/ios/01-pyproject-ios.md`, "Compiler selection" | "Compilation always uses the interpreter running `kivyforge` itself". |
-| `docs/design/dev/ios-source-stripping.md`, "Compiler selection" | "the ladder collapses to two rungs: the interpreter running `kivyforge` itself" or degrade. |
-| `docs/design/platforms/android/01-pyproject-android.md`, "Which interpreter writes the `.pyc`" | Lists only the current interpreter, then `py -X.Y` / `pythonX.Y`; no `python3`, `python` or uv. |
-| `docs/design/platforms/macos/macos-spec.md`, `windows-spec.md`, `linux-spec.md` | The fallback after the staged interpreter is "the interpreter running `kivyforge` itself". |
+| `docs/design/dev/ios-source-stripping.md`, "Compiler selection" | "the ladder collapses to two rungs". A completed plan, so it keeps its text and gains a dated note. |
+| `docs/design/platforms/android/01-pyproject-android.md`, "Which interpreter writes the `.pyc`" | Only the current interpreter, then `py -X.Y` / `pythonX.Y`. |
+| `docs/design/platforms/macos/macos-spec.md`, `windows-spec.md`, `linux-spec.md` | The fallback after the staged interpreter was "the interpreter running `kivyforge` itself". |
 
-The fix in each is to describe the search in one place, for example the
-docstring of `pycompile.find_interpreter` or a section of
-`common/05-platform-architecture.md`, and link to it, so the next change to the
-search updates one page instead of six.
+So this change updates one page for the search, not six.
 
 ### 7.2 Design docs this change updates
 
 | Document | Change |
 |---|---|
 | `docs/design/common/02-cli-and-platform-resolution.md` | Add `bytecompiler` to "Verbs". Record that its `-p` is optional with no default, the one verb where the resolution chain (`-p`, `KIVYFORGE_PLATFORM`, host default) does not apply, and why (3.2). |
-| The search's single description (7.1) | Add the "installed by kivyforge" step after "this interpreter" (3.3). |
+| [`docs/design/common/10-byte-compile.md`](../common/10-byte-compile.md) | Add the "installed by kivyforge" step after "kivyforge's own interpreter" (3.3), the new `Fix:` option, and the `doctor` hint. Drop its "not implemented" pointer to this proposal. |
 | `docs/design/platforms/ios/01-pyproject-ios.md` and `docs/design/platforms/android/01-pyproject-android.md` | Name `bytecompiler` as the fix when no interpreter is found. |
 | `docs/design/platforms/linux/linux-spec.md` | The same, for an `aarch64` target built on x86_64, the one desktop case that needs a host interpreter. |
 | `docs/design/dev/roadmap.md` | An entry for the verb, linking this proposal. |
@@ -477,6 +481,5 @@ A machine that already has the right Python is unaffected.
 - Section 4's remaining questions are decided and recorded here.
 - The hermetic tests in section 8 pass, and the iOS real-toolchain run is in
   `test-matrix.md` §7.
-- Every document in section 7 is updated in the same change, and 7.1's stale
-  descriptions are fixed, here or sooner.
+- Every document in 7.2 and 7.3 is updated in the same change.
 - #209 is answered, pointing at the command.
