@@ -122,7 +122,7 @@ class FakeProbe:
     def latest_kivyforge_version(self):
         return self._latest
 
-    def byte_compile_interpreter(self, python_version):
+    def byte_compile_interpreter(self, python_version, *, searched=None):
         # () means "this interpreter"; None would mean no match was found.
         return self._byte_compiler
 

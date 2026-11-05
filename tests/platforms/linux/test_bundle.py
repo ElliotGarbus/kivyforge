@@ -176,7 +176,7 @@ class TestByteCompileResolution:
         out = capsys.readouterr().out
         assert "not byte-compiling" in out
         # The notice must say how to fix it, not just what happened.
-        assert "Fix: install a final CPython" in out
+        assert "Fix: install any final CPython" in out
 
     def test_explicit_true_fails_when_no_compiler_found(self, monkeypatch):
         self._select(monkeypatch, None)

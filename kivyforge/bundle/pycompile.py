@@ -36,9 +36,15 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
-from kivyforge.report.failures import ClassifiedError, spawn_failure
+from kivyforge.report import diagnostics, exit_codes
+from kivyforge.report.failures import (
+    Classification,
+    ClassifiedError,
+    spawn_failure,
+)
 from kivyforge.report.streams import stderr_for_child
 
 
@@ -47,7 +53,11 @@ class PycompileError(ClassifiedError):
 
 
 def select_compiler(
-    *, staged_interpreter: Path, native: bool, python_version: str
+    *,
+    staged_interpreter: Path,
+    native: bool,
+    python_version: str,
+    searched: list[Candidate] | None = None,
 ) -> tuple[str, ...] | None:
     """Pick the interpreter argv to byte-compile the staged payload with.
 
@@ -60,13 +70,31 @@ def select_compiler(
     the right minor will do regardless of which arch it runs on.
     Returns ``None`` when neither works, telling the caller to degrade (skip
     compiling, ship source) rather than write a ``.pyc`` nothing can load.
+    *searched* is passed through to :func:`find_interpreter`.
     """
     if native and staged_interpreter.is_file():
         return (str(staged_interpreter),)
-    return find_interpreter(python_version)
+    return find_interpreter(python_version, searched=searched)
 
 
-def find_interpreter(python_version: str) -> tuple[str, ...] | None:
+@dataclass(frozen=True)
+class Candidate:
+    """One interpreter :func:`find_interpreter` looked at, and what it was.
+
+    Kept so a failure can say what was searched. "No final CPython 3.15 found"
+    alone was read as kivyforge believing 3.15 unreleased (issue #209), when the
+    host simply had no 3.15 on ``PATH``.
+    """
+
+    #: How it was reached: an argv, or ``("uv", "python", "find")``.
+    label: str
+    #: ``"3.14.7"``, ``"3.15.0rc1"``; ``None`` when it was absent or would not run.
+    version: str | None
+
+
+def find_interpreter(
+    python_version: str, *, searched: list[Candidate] | None = None
+) -> tuple[str, ...] | None:
     """Find an interpreter on this host able to write ``.pyc`` for *python_version*.
 
     kivyforge is installed under whatever Python the user happens to have, which
@@ -80,12 +108,23 @@ def find_interpreter(python_version: str) -> tuple[str, ...] | None:
     different minor will not. A pre-release of the *right* minor is the trap it
     has to exclude; see :func:`is_final_release`.
 
+    The search, in order: this interpreter; the ``py`` launcher (Windows);
+    ``python3.x``, ``python3`` and ``python`` on ``PATH``; and, only when uv is
+    installed, whatever ``uv python find`` reports. uv is never required — an
+    interpreter it manages is often not on ``PATH``, which is the one case the
+    earlier rungs miss. Each candidate looked at is appended to *searched*.
+
     Returns ``()`` for "this interpreter", an argv prefix for another one, or
     ``None`` when there is no match to be found.
     """
+    seen = searched if searched is not None else []
     target = target_minor(python_version)
+    this = _describe(
+        *sys.version_info[:3], sys.version_info.releaselevel, sys.version_info.serial
+    )
     if sys.version_info[:2] == target and is_final_release():
         return ()
+    seen.append(Candidate(f"this interpreter ({sys.executable})", this))
     tag = f"{target[0]}.{target[1]}"
     candidates: list[tuple[str, ...]] = []
     if os.name == "nt":
@@ -94,25 +133,44 @@ def find_interpreter(python_version: str) -> tuple[str, ...] | None:
         candidates.append(("py", f"-{tag}"))
     candidates += [(f"python{tag}",), (f"python{target[0]}",), ("python",)]
     for candidate in candidates:
-        if _reports_version(candidate, tag):
+        if _accept(candidate, tag, " ".join(candidate), seen):
             return candidate
+    uv = _uv_executable()
+    if uv is None:
+        return None
+    uv_found = _uv_find(uv, tag)
+    if uv_found is None:
+        seen.append(Candidate("uv python find", None))
+        return None
+    if _accept(uv_found, tag, f"uv python find ({uv_found[0]})", seen):
+        return uv_found
     return None
 
 
-def _reports_version(argv: tuple[str, ...], tag: str) -> bool:
-    """Whether *argv* is a **final** release of CPython minor *tag*.
+def _accept(argv: tuple[str, ...], tag: str, label: str, seen: list[Candidate]) -> bool:
+    """Probe *argv*, record it in *seen*, and say whether it can compile for *tag*.
 
     The releaselevel half is load-bearing, not belt-and-braces: an alpha of the
     right minor passes a bare version check and then writes ``.pyc`` the
     shipped runtime cannot import (see :func:`find_interpreter`).
     """
+    probed = _probe_version(argv)
+    if probed is None:
+        seen.append(Candidate(label, None))
+        return False
+    major, minor, micro, level, serial = probed
+    seen.append(Candidate(label, _describe(major, minor, micro, level, serial)))
+    return f"{major}.{minor}" == tag and level == "final"
+
+
+def _probe_version(argv: tuple[str, ...]) -> tuple[int, int, int, str, int] | None:
+    """*argv*'s ``sys.version_info``, or ``None`` if it is absent or will not run."""
     try:
         proc = subprocess.run(
             [
                 *argv,
                 "-c",
-                "import sys;print('%d.%d %s' % (sys.version_info[0],"
-                " sys.version_info[1], sys.version_info.releaselevel))",
+                "import sys;print('%d %d %d %s %d' % tuple(sys.version_info))",
             ],
             capture_output=True,
             stdin=subprocess.DEVNULL,
@@ -120,11 +178,124 @@ def _reports_version(argv: tuple[str, ...], tag: str) -> bool:
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
-        return False
+        return None
     if proc.returncode != 0:
-        return False
+        return None
     parts = proc.stdout.split()
-    return len(parts) == 2 and parts[0] == tag and parts[1] == "final"
+    if len(parts) != 5:
+        return None
+    try:
+        return int(parts[0]), int(parts[1]), int(parts[2]), parts[3], int(parts[4])
+    except ValueError:
+        return None
+
+
+def _uv_executable() -> str | None:
+    """uv, if it is installed. Optional: nothing here requires it."""
+    return shutil.which("uv")
+
+
+def _uv_find(uv: str, tag: str) -> tuple[str, ...] | None:
+    """The interpreter ``uv python find`` reports for *tag*.
+
+    ``--no-project`` keeps the cwd's ``.python-version`` and ``requires-python``
+    out of the answer; ``--no-python-downloads`` keeps the search off the
+    network, which byte-compiling must never need.
+    """
+    try:
+        proc = subprocess.run(
+            [uv, "python", "find", "--no-project", "--no-python-downloads", tag],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = proc.stdout.strip()
+    if proc.returncode != 0 or not path:
+        return None
+    return (path,)
+
+
+_LEVELS = {"alpha": "a", "beta": "b", "candidate": "rc"}
+
+
+def _describe(major: int, minor: int, micro: int, level: str, serial: int) -> str:
+    """``3.15.2`` for a final release, ``3.15.0rc1`` for a pre-release."""
+    version = f"{major}.{minor}.{micro}"
+    if level == "final":
+        return version
+    return f"{version}{_LEVELS.get(level, level)}{serial}"
+
+
+@dataclass(frozen=True)
+class NoInterpreter:
+    """What every backend says when byte-compiling has no interpreter to use.
+
+    One wording for all six call sites (iOS app and pip-deps, macOS, Linux,
+    Windows, Android) and doctor, which had drifted into copies of each other.
+    """
+
+    headline: str
+    #: The search, an optional pre-release note, and the ``Fix:`` line.
+    lines: tuple[str, ...]
+    #: For ``ClassifiedError(**...)`` when ``byte_compile = true`` insists.
+    #: Exit 3: what is missing is on the machine, not in the config.
+    classification: Classification
+
+    def detail(self, indent: str = "  ") -> str:
+        return "\n".join(indent + line for line in self.lines)
+
+    def required(self, table: str) -> str:
+        """The message for ``byte_compile = true``, which fails the build."""
+        return f"[{table}].byte_compile = true, but {self.headline}.\n{self.detail()}"
+
+
+def no_interpreter(
+    python_version: str, *, table: str, searched: Sequence[Candidate]
+) -> NoInterpreter:
+    """Describe a failed :func:`find_interpreter` search for the user."""
+    target = target_minor(python_version)
+    minor = f"{target[0]}.{target[1]}"
+    headline = f"no final CPython {minor} found (this project ships {python_version})"
+    lines: list[str] = []
+    if searched:
+        lines.append(
+            f"The .pyc files must be written by a final CPython {minor} on this "
+            "machine. Looked at:"
+        )
+        lines += [
+            f"  {c.label}: {c.version if c.version else 'not found'}" for c in searched
+        ]
+    prereleases = [
+        c.version
+        for c in searched
+        if c.version is not None
+        and c.version.startswith(f"{minor}.")
+        and not c.version[len(minor) + 1 :].isdigit()
+    ]
+    if prereleases:
+        lines.append(
+            f"{', '.join(prereleases)} is a pre-release, which does not count: "
+            "CPython only freezes the .pyc format at the first release "
+            f"candidate, so an alpha writes bytecode {python_version} refuses "
+            "to import."
+        )
+    lines.append(
+        f"Fix: install any final CPython {minor}.x (for example "
+        f"`uv python install {minor}`, or python.org) so python{minor} is on "
+        f"PATH, or set byte_compile = false in [{table}]."
+    )
+    return NoInterpreter(
+        headline=headline,
+        lines=tuple(lines),
+        classification={
+            "code": diagnostics.BYTECOMPILE_NO_INTERP,
+            "exit_code": exit_codes.ENVIRONMENT_ERROR,
+            "context": {"tool": f"python{minor}"},
+        },
+    )
 
 
 def is_final_release() -> bool:

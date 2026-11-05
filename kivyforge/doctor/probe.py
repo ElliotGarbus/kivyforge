@@ -20,7 +20,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import NamedTuple, Protocol
+from typing import TYPE_CHECKING, NamedTuple, Protocol
+
+if TYPE_CHECKING:
+    from ..bundle.pycompile import Candidate
 
 # How long to keep retrying to restore the build output after the lock probe
 # moved it aside. It was just renamed there on the same volume with no open
@@ -93,7 +96,7 @@ class Probe(Protocol):
     def build_output_locked(self, path: Path) -> bool | None: ...
     def filesystem_type(self, path: Path) -> str | None: ...
     def byte_compile_interpreter(
-        self, python_version: str
+        self, python_version: str, *, searched: list[Candidate] | None = None
     ) -> tuple[str, ...] | None: ...
     def host_machine(self) -> str: ...
 
@@ -102,11 +105,13 @@ class RealProbe:
     def host_system(self) -> str:
         return _platform.system()
 
-    def byte_compile_interpreter(self, python_version: str) -> tuple[str, ...] | None:
+    def byte_compile_interpreter(
+        self, python_version: str, *, searched: list[Candidate] | None = None
+    ) -> tuple[str, ...] | None:
         """Delegate to the *build's* resolver, so the two cannot disagree."""
         from ..bundle.pycompile import find_interpreter
 
-        return find_interpreter(python_version)
+        return find_interpreter(python_version, searched=searched)
 
     def host_machine(self) -> str:
         """Lower-cased ``platform.machine()``; see :func:`kivyforge.host.host_machine`."""

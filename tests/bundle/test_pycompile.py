@@ -8,11 +8,13 @@ import sys
 import pytest
 
 from kivyforge.bundle.pycompile import (
+    Candidate,
     PycompileError,
-    _reports_version,
+    _accept,
     byte_compile,
     compile_stdlib,
     find_interpreter,
+    no_interpreter,
     select_compiler,
     stdlib_dir,
     strip_sources,
@@ -157,6 +159,20 @@ class TestTargetMinor:
         assert target_minor("3.14.0rc2") == (3, 14)
 
 
+_PYCOMPILE = "kivyforge.bundle.pycompile"
+
+
+@pytest.fixture(autouse=True)
+def _no_uv(monkeypatch):
+    """uv is optional, and whether this host has it must not reach a test."""
+    monkeypatch.setattr(f"{_PYCOMPILE}._uv_executable", lambda: None)
+
+
+def _versions(table):
+    """A ``_probe_version`` stand-in: argv -> version_info tuple, else absent."""
+    return lambda argv: table.get(argv)
+
+
 class TestPreReleaseInterpretersRejected:
     """A pre-release of the *right* minor must not be used as the compiler.
 
@@ -168,49 +184,50 @@ class TestPreReleaseInterpretersRejected:
     because two 3.14 stdlib modules use t-string syntax the alpha cannot parse.
     """
 
-    def _fake_interpreter(self, monkeypatch, minor: str, releaselevel: str):
+    def _fake_interpreter(self, monkeypatch, version: str, releaselevel: str):
         """Stand in for a real interpreter answering the probe."""
         import subprocess
 
+        major, minor, micro = version.split(".")
+
         class _Proc:
             returncode = 0
-            stdout = f"{minor} {releaselevel}\n"
+            stdout = f"{major} {minor} {micro} {releaselevel} 1\n"
             stderr = ""
 
         monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Proc())
 
+    def _accepts(self) -> bool:
+        return _accept(("python3.14",), "3.14", "python3.14", [])
+
     def test_final_release_accepted(self, monkeypatch):
-        self._fake_interpreter(monkeypatch, "3.14", "final")
-        assert _reports_version(("python3.14",), "3.14") is True
+        self._fake_interpreter(monkeypatch, "3.14.6", "final")
+        assert self._accepts() is True
 
     def test_alpha_rejected(self, monkeypatch):
-        self._fake_interpreter(monkeypatch, "3.14", "alpha")
-        assert _reports_version(("python3.14",), "3.14") is False
+        self._fake_interpreter(monkeypatch, "3.14.0", "alpha")
+        assert self._accepts() is False
 
     def test_beta_rejected(self, monkeypatch):
-        self._fake_interpreter(monkeypatch, "3.14", "beta")
-        assert _reports_version(("python3.14",), "3.14") is False
+        self._fake_interpreter(monkeypatch, "3.14.0", "beta")
+        assert self._accepts() is False
 
     def test_release_candidate_rejected(self, monkeypatch):
         # Safe in principle (the magic freezes at rc1), but the margin is not
         # worth it when the fallback is simply shipping readable source.
-        self._fake_interpreter(monkeypatch, "3.14", "candidate")
-        assert _reports_version(("python3.14",), "3.14") is False
+        self._fake_interpreter(monkeypatch, "3.14.0", "candidate")
+        assert self._accepts() is False
 
     def test_wrong_minor_still_rejected(self, monkeypatch):
-        self._fake_interpreter(monkeypatch, "3.13", "final")
-        assert _reports_version(("python3.14",), "3.14") is False
+        self._fake_interpreter(monkeypatch, "3.13.9", "final")
+        assert self._accepts() is False
 
     def test_running_under_a_prerelease_is_not_used_in_process(self, monkeypatch):
         """The `return ()` in-process shortcut needs the same guard."""
         version = f"{sys.version_info[0]}.{sys.version_info[1]}.0"
-        monkeypatch.setattr(
-            "kivyforge.bundle.pycompile.is_final_release", lambda: False
-        )
+        monkeypatch.setattr(f"{_PYCOMPILE}.is_final_release", lambda: False)
         # No other interpreter can be found either, so the search degrades.
-        monkeypatch.setattr(
-            "kivyforge.bundle.pycompile._reports_version", lambda argv, tag: False
-        )
+        monkeypatch.setattr(f"{_PYCOMPILE}._probe_version", lambda argv: None)
         assert find_interpreter(version) is None
 
 
@@ -222,16 +239,152 @@ class TestFindInterpreter:
     def test_a_matching_interpreter_elsewhere_is_found(self, monkeypatch):
         """The whole point: kivyforge need not *run* on the target's minor."""
         monkeypatch.setattr(
-            "kivyforge.bundle.pycompile._reports_version",
-            lambda argv, tag: argv == ("python9.9",),
+            f"{_PYCOMPILE}._probe_version",
+            _versions({("python9.9",): (9, 9, 0, "final", 0)}),
         )
         assert find_interpreter("9.9.1") == ("python9.9",)
 
     def test_no_match_degrades_to_none(self, monkeypatch):
-        monkeypatch.setattr(
-            "kivyforge.bundle.pycompile._reports_version", lambda argv, tag: False
-        )
+        monkeypatch.setattr(f"{_PYCOMPILE}._probe_version", lambda argv: None)
         assert find_interpreter("9.9.1") is None
+
+    def test_records_what_it_looked_at(self, monkeypatch):
+        """Issue #209: the failure has to be able to say what was searched."""
+        monkeypatch.setattr(f"{_PYCOMPILE}.os.name", "posix")
+        monkeypatch.setattr(
+            f"{_PYCOMPILE}._probe_version",
+            _versions({("python9",): (9, 8, 3, "final", 0)}),
+        )
+        searched: list[Candidate] = []
+        assert find_interpreter("9.9.1", searched=searched) is None
+        assert [(c.label, c.version) for c in searched[1:]] == [
+            ("python9.9", None),
+            ("python9", "9.8.3"),
+            ("python", None),
+        ]
+        assert searched[0].label.startswith("this interpreter (")
+
+
+class TestUvIsOptional:
+    """``uv python find`` is a last rung, used only when uv is installed.
+
+    An interpreter uv manages is often not on ``PATH``, so without this rung a
+    host that has the right Python still failed to byte-compile. uv must never
+    be required, so its absence is silent: no candidate, no hint to install it.
+    """
+
+    def _uv(self, monkeypatch, *, found):
+        monkeypatch.setattr(f"{_PYCOMPILE}._uv_executable", lambda: "/bin/uv")
+        monkeypatch.setattr(f"{_PYCOMPILE}._uv_find", lambda uv, tag: found)
+
+    def test_found_by_uv_when_path_has_nothing(self, monkeypatch):
+        self._uv(monkeypatch, found=("/uv/python9.9",))
+        monkeypatch.setattr(
+            f"{_PYCOMPILE}._probe_version",
+            _versions({("/uv/python9.9",): (9, 9, 0, "final", 0)}),
+        )
+        assert find_interpreter("9.9.1") == ("/uv/python9.9",)
+
+    def test_uv_answer_gets_the_same_final_release_check(self, monkeypatch):
+        self._uv(monkeypatch, found=("/uv/python9.9",))
+        monkeypatch.setattr(
+            f"{_PYCOMPILE}._probe_version",
+            _versions({("/uv/python9.9",): (9, 9, 0, "beta", 2)}),
+        )
+        searched: list[Candidate] = []
+        assert find_interpreter("9.9.1", searched=searched) is None
+        assert searched[-1] == Candidate("uv python find (/uv/python9.9)", "9.9.0b2")
+
+    def test_uv_with_no_match_is_reported(self, monkeypatch):
+        self._uv(monkeypatch, found=None)
+        monkeypatch.setattr(f"{_PYCOMPILE}._probe_version", lambda argv: None)
+        searched: list[Candidate] = []
+        assert find_interpreter("9.9.1", searched=searched) is None
+        assert searched[-1] == Candidate("uv python find", None)
+
+    def test_no_uv_leaves_no_trace(self, monkeypatch):
+        monkeypatch.setattr(f"{_PYCOMPILE}._probe_version", lambda argv: None)
+        searched: list[Candidate] = []
+        find_interpreter("9.9.1", searched=searched)
+        assert not any(c.label.startswith("uv") for c in searched)
+
+    def test_uv_find_stays_off_the_network(self, monkeypatch):
+        import subprocess
+
+        from kivyforge.bundle.pycompile import _uv_find
+
+        seen = {}
+
+        class _Proc:
+            returncode = 0
+            stdout = "/uv/python9.9\n"
+
+        def run(cmd, **kwargs):
+            seen["cmd"], seen["stdin"] = cmd, kwargs.get("stdin")
+            return _Proc()
+
+        monkeypatch.setattr(subprocess, "run", run)
+        assert _uv_find("/bin/uv", "9.9") == ("/uv/python9.9",)
+        assert "--no-python-downloads" in seen["cmd"]
+        assert "--no-project" in seen["cmd"]
+        assert seen["stdin"] is subprocess.DEVNULL
+
+
+class TestNoInterpreterMessage:
+    """One wording for six backends and doctor (issue #209).
+
+    The old message led with "Pre-releases do not count", which read as
+    kivyforge believing 3.15 unreleased; the reporter simply had no 3.15 on
+    ``PATH``. The note now appears only when a pre-release was actually seen.
+    """
+
+    TABLE = "tool.kivy.ios.python.build_settings"
+
+    def _missing(self, *searched):
+        return no_interpreter("3.15.2", table=self.TABLE, searched=list(searched))
+
+    def test_names_what_was_searched_and_found(self):
+        missing = self._missing(
+            Candidate("python3.15", None), Candidate("python3", "3.14.7")
+        )
+        assert missing.headline == (
+            "no final CPython 3.15 found (this project ships 3.15.2)"
+        )
+        detail = missing.detail()
+        assert "  python3.15: not found" in detail
+        assert "  python3: 3.14.7" in detail
+        assert "pre-release" not in detail
+
+    def test_prerelease_note_only_when_one_was_seen(self):
+        missing = self._missing(Candidate("python3.15", "3.15.0rc1"))
+        assert "3.15.0rc1 is a pre-release" in missing.detail()
+
+    def test_other_minors_prerelease_is_not_mentioned(self):
+        missing = self._missing(Candidate("python3", "3.16.0a1"))
+        assert "pre-release" not in missing.detail()
+
+    def test_fix_names_the_table_and_an_install_route(self):
+        fix = self._missing().lines[-1]
+        assert fix.startswith("Fix: install any final CPython 3.15.x")
+        assert "uv python install 3.15" in fix
+        assert f"[{self.TABLE}]" in fix
+
+    def test_required_message_shape(self):
+        message = self._missing(Candidate("python3", "3.14.7")).required(self.TABLE)
+        assert message.startswith(
+            f"[{self.TABLE}].byte_compile = true, but no final CPython 3.15 found"
+        )
+
+    def test_classified_as_a_missing_tool(self):
+        """Exit 3, "fix the machine": it was KF-ERROR / exit 1 before #209."""
+        classification = self._missing().classification
+        assert classification.get("code") == diagnostics.BYTECOMPILE_NO_INTERP
+        assert classification.get("exit_code") == exit_codes.ENVIRONMENT_ERROR
+        assert classification.get("context") == {"tool": "python3.15"}
+
+    def test_encodes_for_a_redirected_stream(self):
+        missing = self._missing(Candidate("python3.15", "3.15.0b1"))
+        missing.required(self.TABLE).encode("cp1252")
 
 
 class TestSelectCompiler:
@@ -254,8 +407,8 @@ class TestSelectCompiler:
         staged = tmp_path / "python"
         staged.write_text("", encoding="utf-8")
         monkeypatch.setattr(
-            "kivyforge.bundle.pycompile._reports_version",
-            lambda argv, tag: argv == ("python9.9",),
+            f"{_PYCOMPILE}._probe_version",
+            _versions({("python9.9",): (9, 9, 0, "final", 0)}),
         )
         assert select_compiler(
             staged_interpreter=staged, native=False, python_version="9.9.1"
@@ -263,8 +416,8 @@ class TestSelectCompiler:
 
     def test_missing_staged_interpreter_still_searches(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "kivyforge.bundle.pycompile._reports_version",
-            lambda argv, tag: argv == ("python9.9",),
+            f"{_PYCOMPILE}._probe_version",
+            _versions({("python9.9",): (9, 9, 0, "final", 0)}),
         )
         assert select_compiler(
             staged_interpreter=tmp_path / "absent",
@@ -273,17 +426,18 @@ class TestSelectCompiler:
         ) == ("python9.9",)
 
     def test_degrades_when_nothing_matches(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "kivyforge.bundle.pycompile._reports_version", lambda argv, tag: False
-        )
+        monkeypatch.setattr(f"{_PYCOMPILE}._probe_version", lambda argv: None)
+        searched: list[Candidate] = []
         assert (
             select_compiler(
                 staged_interpreter=tmp_path / "absent",
                 native=False,
                 python_version="9.9.1",
+                searched=searched,
             )
             is None
         )
+        assert searched, "the search is passed through for the failure message"
 
 
 class TestStripSources:

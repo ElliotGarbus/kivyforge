@@ -9,12 +9,14 @@ mirrors how the build reads the setting -- ``true`` is "I insist" (FAIL),
 
 from __future__ import annotations
 
+from kivyforge.bundle.pycompile import Candidate
 from kivyforge.doctor.checks_common import (
     BYTE_COMPILE_NAME,
     builds_natively,
     check_byte_compile,
 )
 from kivyforge.doctor.result import Status
+from kivyforge.report import diagnostics
 
 from .probe_fakes import FakeProbe
 
@@ -72,10 +74,32 @@ class TestCompilerMissing:
     def test_both_severities_say_how_to_fix_it(self):
         for setting in (True, "release"):
             result = _check(byte_compile=setting, probe=FakeProbe(byte_compiler=None))
-            assert "Fix: install a final CPython 3.14" in result.hint
+            assert "Fix: install any final CPython 3.14" in result.hint
             assert f"byte_compile = false in [{TABLE}]" in result.hint
-            # The *why* matters as much: a matching minor is not sufficient.
-            assert "Pre-releases do not count" in result.hint
+            assert result.code == diagnostics.BYTECOMPILE_NO_INTERP
+
+    def test_says_what_was_searched(self):
+        """Issue #209: "no final CPython 3.15 found" alone was read as kivyforge
+        believing 3.15 unreleased. The hint lists what the search looked at,
+        and explains pre-releases only when it actually found one."""
+
+        class _Searching(FakeProbe):
+            def byte_compile_interpreter(self, python_version, *, searched=None):
+                assert searched is not None
+                searched += [
+                    Candidate("python3.14", "3.14.0rc2"),
+                    Candidate("python3", "3.13.9"),
+                ]
+                return None
+
+        result = _check(byte_compile=True, probe=_Searching(byte_compiler=None))
+        assert "python3.14: 3.14.0rc2" in result.hint
+        assert "python3: 3.13.9" in result.hint
+        assert "3.14.0rc2 is a pre-release" in result.hint
+
+    def test_no_prerelease_note_without_a_prerelease(self):
+        result = _check(byte_compile=True, probe=FakeProbe(byte_compiler=None))
+        assert "pre-release" not in result.hint
 
     def test_reports_the_configured_version_not_just_the_minor(self):
         result = _check(

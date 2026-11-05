@@ -198,6 +198,14 @@ in `pyproject.toml`.
 | `debug_symbols` | string | `"symbol_table"` | Native debug symbols to export: `symbol_table`, `full`, or `none`. |
 | `minify` | bool | `false` | Enable R8 for release builds. |
 | `shrink_resources` | bool | `false` | Remove unused resources. Requires `minify = true`. |
+
+Compiling needs a final CPython of the same minor as the runtime you ship on
+the machine you build on, for example any 3.14.x for a project that ships
+3.14.6, because the Android runtime can't run there. kivyforge looks for
+`python3.X` (the minor you ship), `python3` and `python` on `PATH`, and asks
+`uv python find` when uv is installed. Install one with `uv python install 3.X`
+or from python.org. `kivyforge doctor -p android` shows what it finds. Without
+one, `"release"` ships source with a warning and `true` fails the build.
 | `multidex` | bool | `true` | Enable multidex. |
 
 ## Example

@@ -42,7 +42,7 @@ class TestRequiresSdlFlag:
 
     def test_set_when_sdl3_is_staged(self, config, tmp_path):
         layout = _layout(tmp_path, sdl3=True)
-        settings = managed_settings(config, configuration="Debug", layout=layout)
+        settings = managed_settings(config, configuration="Release", layout=layout)
         assert (
             settings["GCC_PREPROCESSOR_DEFINITIONS"]
             == "$(inherited) KIVYFORGE_REQUIRES_SDL=1"
@@ -53,13 +53,15 @@ class TestRequiresSdlFlag:
         SDL3. The no-SDL branch is the smoke-test scaffold, and failing the
         build over its lack of SDL would reject that project."""
         layout = _layout(tmp_path, sdl3=False)
-        settings = managed_settings(config, configuration="Debug", layout=layout)
+        settings = managed_settings(config, configuration="Release", layout=layout)
         assert "GCC_PREPROCESSOR_DEFINITIONS" not in settings
+        debug = managed_settings(config, configuration="Debug", layout=layout)
+        assert "KIVYFORGE_REQUIRES_SDL=1" not in debug["GCC_PREPROCESSOR_DEFINITIONS"]
 
     def test_absent_when_no_layout_given(self, config):
         """`layout=None` is a valid call shape (e.g. a settings-only refresh
         with no staging tree to inspect yet) and must not guess either way."""
-        settings = managed_settings(config, configuration="Debug", layout=None)
+        settings = managed_settings(config, configuration="Release", layout=None)
         assert "GCC_PREPROCESSOR_DEFINITIONS" not in settings
 
     def test_agrees_with_header_search_paths_on_the_same_signal(self, config, tmp_path):
@@ -70,6 +72,58 @@ class TestRequiresSdlFlag:
         settings = managed_settings(config, configuration="Debug", layout=layout)
         assert "SDL3.xcframework" in settings["HEADER_SEARCH_PATHS"]
         assert "KIVYFORGE_REQUIRES_SDL=1" in settings["GCC_PREPROCESSOR_DEFINITIONS"]
+
+
+class TestConsoleStdioFlag:
+    """KIVYFORGE_CONSOLE_STDIO=1 keeps Python's stdout and stderr on fds 1 and 2.
+
+    Issue #210: CPython's iOS default sends them to the Apple system log, which
+    ``run``'s console (``simctl --console-pty``, ``devicectl --console``) never
+    shows, so a Kivy app ran with no Python output at all. Debug builds are
+    what ``run`` launches; a Release build has no console to write to and keeps
+    the system log, where a shipped app's traceback can be recovered.
+    """
+
+    def _defines(self, config, configuration, layout):
+        settings = managed_settings(config, configuration=configuration, layout=layout)
+        return settings.get("GCC_PREPROCESSOR_DEFINITIONS", "").split()
+
+    def test_set_for_debug(self, config, tmp_path):
+        layout = _layout(tmp_path, sdl3=False)
+        assert self._defines(config, "Debug", layout) == [
+            "$(inherited)",
+            "KIVYFORGE_CONSOLE_STDIO=1",
+        ]
+
+    def test_absent_for_release(self, config, tmp_path):
+        layout = _layout(tmp_path, sdl3=True)
+        assert "KIVYFORGE_CONSOLE_STDIO=1" not in self._defines(
+            config, "Release", layout
+        )
+
+    def test_sits_beside_the_sdl_flag(self, config, tmp_path):
+        """Both are one key's words; neither may replace the other."""
+        layout = _layout(tmp_path, sdl3=True)
+        assert self._defines(config, "Debug", layout) == [
+            "$(inherited)",
+            "KIVYFORGE_REQUIRES_SDL=1",
+            "KIVYFORGE_CONSOLE_STDIO=1",
+        ]
+
+    def test_bootstrap_sets_the_logger_both_ways(self):
+        """The define only matters if the bootstrap reads it, and the Release
+        side is set explicitly rather than left to CPython's default."""
+        from importlib.resources import files
+
+        source = (
+            files("kivyforge.platforms.ios")
+            .joinpath("templates/kivyforge_bootstrap.m")
+            .read_text(encoding="utf-8")
+        )
+        guarded = source.split("#if defined(KIVYFORGE_CONSOLE_STDIO)", 1)[1]
+        console, system_log = guarded.split("#else", 1)
+        assert "config.use_system_logger       = 0;" in console
+        assert "config.use_system_logger       = 1;" in system_log.split("#endif")[0]
 
 
 class TestMergeBuildSettings:

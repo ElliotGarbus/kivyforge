@@ -10,7 +10,13 @@ from pathlib import Path
 
 from kivyforge.build_outcome import discard_note
 from kivyforge.bundle import app_metadata
-from kivyforge.bundle.pycompile import PycompileError, byte_compile, select_compiler
+from kivyforge.bundle.pycompile import (
+    Candidate,
+    PycompileError,
+    byte_compile,
+    no_interpreter,
+    select_compiler,
+)
 from kivyforge.config.model import Config
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError, reclassify
@@ -235,31 +241,25 @@ def _compile_app_copy(
     settings = config.ios_required.python_build_settings
     if not _setting_applies(settings.byte_compile, release=True):
         return
+    searched: list[Candidate] = []
     compiler = select_compiler(
-        staged_interpreter=Path(), native=False, python_version=python_version
+        staged_interpreter=Path(),
+        native=False,
+        python_version=python_version,
+        searched=searched,
     )
     if compiler is None:
-        minor = ".".join(python_version.split(".")[:2])
-        headline = (
-            f"no final CPython {minor} found (this project ships {python_version})"
-        )
-        why_and_fix = (
-            "  Pre-releases do not count: CPython only freezes the .pyc "
-            f"magic number at the first release candidate, so a {minor} alpha "
-            f"writes bytecode {python_version} refuses to import.\n"
-            f"  Fix: install a final CPython {minor} — kivyforge finds it "
-            "automatically — or set byte_compile = false in "
-            "[tool.kivy.ios.python.build_settings]."
-        )
+        table = "tool.kivy.ios.python.build_settings"
+        missing = no_interpreter(python_version, table=table, searched=searched)
         if settings.byte_compile is True:
-            raise StagingError(
-                "[tool.kivy.ios.python.build_settings].byte_compile = true, but "
-                f"{headline}.\n{why_and_fix}"
-            )
-        echo(f"[stage] not byte-compiling app sources: {headline}.\n{why_and_fix}")
+            raise StagingError(missing.required(table), **missing.classification)
+        echo(
+            f"[stage] not byte-compiling app sources: {missing.headline}.\n"
+            f"{missing.detail()}"
+        )
         note(
             diagnostics.BYTECOMPILE_NO_INTERP,
-            f"not byte-compiling app sources: {headline}.",
+            f"not byte-compiling app sources: {missing.headline}.",
             {"payload": "app-sources"},
         )
         return

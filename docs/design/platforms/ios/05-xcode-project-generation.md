@@ -198,7 +198,13 @@ The `main.m` template, aligned with the [Python 3.15 iOS docs](https://docs.pyth
    - `buffered_stdio = 0` (per python.org docs)
    - `write_bytecode = 0` (per python.org docs)
    - `install_signal_handlers = 1`
-   - `use_system_logger = 1` (default in 3.13+)
+   - `use_system_logger = 0` in Debug, `1` in Release, set explicitly rather than
+     left to CPython's iOS default of `1` (issue #210). With `1`, `print()` and
+     Kivy's log go to the Apple system log, which neither `simctl launch
+     --console-pty` nor `devicectl --console` carries, so `run` showed no Python
+     output. The Debug configuration's `KIVYFORGE_CONSOLE_STDIO=1` define
+     selects `0`; Release keeps the system log, since a shipped app has no
+     console and the log is where its traceback can be recovered.
 4. Initializes Python via `Py_InitializeFromConfig`.
 5. **Registers `pip-deps/` as a site directory** via `site.addsitedir(<resource_path>/pip-deps)` *after* Python init. Per python.org's docs: "If any of the folders that contain third-party packages will contain `.pth` files, you should add that folder as a *site directory* (using `site.addsitedir()`), rather than adding to PYTHONPATH or sys.path directly." Pip-installed wheels frequently include `.pth` files (namespace packages, editable installs), so `pip-deps/` goes through `addsitedir` rather than `PYTHONPATH`. The user-code `app/` folder typically has no `.pth` files and goes on `PYTHONPATH` directly. This pairs with passing `pip-deps` to `install_python` above — both registrations are required for packages in `pip-deps/` to be importable (see the "two registrations" note in the Build Python section).
 6. Runs the entry module as `__main__` via `runpy.run_module(ENTRY_POINT, run_name="__main__", alter_sys=True)`, matching every other platform since 2026-09-21 (was `PyImport_ImportModule(ENTRY_POINT)` before) — see the [common spec's entry_point callout](../../common/01-pyproject-kivy-spec.md) for the unified contract. For a `module:function` entry point (issue #68), `main_config.h` also defines `ENTRY_LAUNCHER`, the launcher source that imports the module and calls the function, and the bootstrap runs that with `PyRun_SimpleString` (as `__main__`) instead. It is compiled in rather than staged as a file because a debug build's `app/` is the user's own source tree ([common spec](../../common/01-pyproject-kivy-spec.md#modulefunction-and-projectgui-scripts)).

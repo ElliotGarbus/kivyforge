@@ -191,7 +191,7 @@ def android(tmp_path, monkeypatch):
     )
     # Pin the byte-compile decision: whether this host has a final CPython 3.14
     # must not decide what the test expects to see.
-    monkeypatch.setattr(cli, "find_interpreter", lambda version: None)
+    monkeypatch.setattr(cli, "find_interpreter", lambda version, **_kw: None)
     resolved = ResolvedSigning(
         keystore=Path("release.keystore"),
         key_alias="upload",

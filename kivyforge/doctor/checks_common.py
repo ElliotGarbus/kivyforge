@@ -10,9 +10,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from ..bundle.pycompile import Candidate, no_interpreter
 from ..config.model import AutoVersionCode, Config, StaticVersion
 from ..host import host_runs_natively
 from ..lock.resolver import MIN_PIP_VERSION, version_str
+from ..report import diagnostics
 from .probe import Probe
 from .result import CheckResult, Status
 
@@ -21,7 +23,7 @@ class ByteCompileProbe(Protocol):
     """The one probe method the byte-compile check needs, so Android's probe fits."""
 
     def byte_compile_interpreter(
-        self, python_version: str
+        self, python_version: str, *, searched: list[Candidate] | None = None
     ) -> tuple[str, ...] | None: ...
 
 
@@ -146,7 +148,8 @@ def check_byte_compile(
             f"byte_compile = {setting}, but no Python version is configured",
         )
     minor = ".".join(python_version.split(".")[:2])
-    compiler = probe.byte_compile_interpreter(python_version)
+    searched: list[Candidate] = []
+    compiler = probe.byte_compile_interpreter(python_version, searched=searched)
     if compiler is not None:
         found = "this interpreter" if compiler == () else " ".join(compiler)
         return CheckResult(
@@ -154,29 +157,24 @@ def check_byte_compile(
             Status.PASS,
             f"byte_compile = {setting}; CPython {minor} via {found}",
         )
-    # Same headline/why/Fix shape the six backends use at build time.
-    hint = (
-        f"Pre-releases do not count: CPython only freezes the .pyc magic number "
-        f"at the first release candidate, so a {minor} alpha writes bytecode "
-        f"{python_version} refuses to import.\n"
-        f"       Fix: install a final CPython {minor} — kivyforge finds it "
-        f"automatically — or set byte_compile = false in [{table}]."
-    )
+    # The same search report and Fix line the six backends print at build time.
+    missing = no_interpreter(python_version, table=table, searched=searched)
+    hint = missing.detail(indent="       ").lstrip()
     if byte_compile is True:
         return CheckResult(
             BYTE_COMPILE_NAME,
             Status.FAIL,
-            f"byte_compile = true, but no final CPython {minor} found "
-            f"(this project ships {python_version}); the build will fail",
+            f"byte_compile = true, but {missing.headline}; the build will fail",
             hint=hint,
+            code=diagnostics.BYTECOMPILE_NO_INTERP,
         )
     return CheckResult(
         BYTE_COMPILE_NAME,
         Status.WARN,
-        f"byte_compile = {setting}, but no final CPython {minor} found "
-        f"(this project ships {python_version}); release builds will "
+        f"byte_compile = {setting}, but {missing.headline}; release builds will "
         f"silently ship source",
         hint=hint,
+        code=diagnostics.BYTECOMPILE_NO_INTERP,
     )
 
 

@@ -16,7 +16,7 @@
  * only when SDL3.xcframework is present, which is exactly the condition
  * __has_include tests.
  *
- * Build flag (set by `kivyforge build` via GCC_PREPROCESSOR_DEFINITIONS,
+ * Build flags (set by `kivyforge build` via GCC_PREPROCESSOR_DEFINITIONS,
  * platforms/ios/buildsettings.py):
  *
  *   KIVYFORGE_REQUIRES_SDL=1
@@ -26,6 +26,13 @@
  *       FAILS with an actionable error instead of silently falling back to
  *       the no-SDL path below, which runs Python and exits and can never
  *       open a window. Credit: PR #1 (kengoon).
+ *
+ *   KIVYFORGE_CONSOLE_STDIO=1
+ *       Set for the Debug configuration only. Python's stdout and stderr stay
+ *       on file descriptors 1 and 2, which `kivyforge run` shows. Without it
+ *       (Release) they go to the Apple system log, CPython's iOS default:
+ *       a shipped app has no console, and the log is where a traceback can
+ *       be recovered from. Issue #210.
  */
 
 /* ── common ─────────────────────────────────────────────────────────────── */
@@ -144,6 +151,13 @@ static void _run_python(void) {
     config.write_bytecode          = 0;
     config.install_signal_handlers = 1;
     config.use_environment         = 1;
+    /* Set either way rather than left to CPython's default, so which stream
+     * Python writes to is this file's decision (KIVYFORGE_CONSOLE_STDIO). */
+#if defined(KIVYFORGE_CONSOLE_STDIO)
+    config.use_system_logger       = 0;
+#else
+    config.use_system_logger       = 1;
+#endif
     PyConfig_SetBytesString(&config, &config.home, [pythonHome UTF8String]);
 
     status = Py_InitializeFromConfig(&config);
