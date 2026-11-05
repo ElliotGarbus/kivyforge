@@ -93,11 +93,10 @@ user decides whether to run it.
 |---|---|
 | `kivyforge bytecompiler` | For every platform the project configures, the minor its build would compile for, where this machine can't already supply one. A project that ships 3.15 to iOS and 3.14 to Android gets both. |
 | `kivyforge bytecompiler -p ios` | The same, for that platform only. |
-| `kivyforge bytecompiler --python 3.15` | That minor. It reads no project, so it works anywhere: a CI image, a fresh machine, outside a project. |
 
-`-p` and `--python` are exclusive. Both select a *version*; the interpreter is
-always for the host, so its triple comes from the machine (3.5), never from
-`-p`.
+It runs in a project, like `build`: the error that sends a user here comes from
+one. `-p` selects a *version*, never the interpreter's target: the interpreter
+is always for the host, so its triple comes from the machine (3.5).
 
 **`-p` is optional, and has no default.** Other verbs fall back to
 `KIVYFORGE_PLATFORM`, then to the host's own platform. That would be wrong
@@ -152,8 +151,7 @@ directory, because only one is needed per minor.
    triple. PBS can lag a CPython patch release by days, and any final release
    of the minor writes `.pyc` the runtime loads.
 3. **Never a pre-release.** A project shipping `3.16.0b2` gets nothing, with a
-   line saying why, as in the search. `--python 3.16` installs the newest final
-   3.16, or fails if none is out.
+   line saying why, as in the search.
 
 `GithubPbsMetadataFetcher.fetch(version, triple)` already does step 1. Step 2
 needs a minor-wide lookup it doesn't have: reading `SHA256SUMS` newest first
@@ -219,16 +217,16 @@ All of these are about the machine, so all are exit 3:
 | Hash mismatch | Q6 (`artifacts/verify.py::HashMismatch` is unclassified today) | the file and both hashes |
 | Host not in the table (3.5) | `KF-HOST-INCAPABLE` | the host |
 
-A project problem is exit 1 or 4 as elsewhere: no project found and no
-`--python` (1), or `-p <platform>` whose lock is missing or stale (4). Without
+A project problem is exit 1 or 4 as elsewhere: no project found (1), or
+`-p <platform>` whose lock is missing or stale (4). Without
 `-p`, such a platform is skipped with an `INFO` diagnostic instead (3.2), and
 the command fails only if no platform is left to set up.
 
 ### 3.9 The message, `doctor` and `clean`
 
-- **The shared message** gets the command as its first `Fix:` option (3.1). It
-  prints the narrowest form that works: `-p <platform>` from a build, since the
-  build knows its platform.
+- **The shared message** gets the command as its first `Fix:` option (3.1),
+  with `-p <platform>`, since the build knows its platform. `doctor` prints the
+  same.
 - **`doctor`**: with no interpreter, the hint carries the same command. With
   kivyforge's own install found, the check passes and names it ("via
   kivyforge's CPython 3.15.2"). `doctor` never downloads.
@@ -254,7 +252,6 @@ draft's per-host-arch lock entries and forced re-lock don't arise.
 | Q5 | **Should `bytecompiler` also verify the `.pyc` it would write?** It could compile a one-line module and check its magic against the lock's runtime stdlib. | **No.** The T3 magic check already covers shipped `.pyc`; the probe in 3.6 covers the interpreter. |
 | Q6 | **A new code for download failures?** `KF-BYTECOMPILE-NO-INTERP` still fits the outcome; a new code (for example `KF-HOST-PYTHON-FETCH`) would let an agent tell "no network" from "nothing to download". | **New code** for the network, rate-limit and hash-mismatch rows; keep `NO-INTERP` for "PBS has no build". Classifying `HashMismatch` everywhere is a separate change. |
 | Q7 | **Upgrades and removal.** Does a plain `bytecompiler` replace an installed `3.15.0` with a newer `3.15.2`, or only `--force`? Is there an uninstall? | **Only `--force`.** An installed 3.15.0 already compiles correctly. No uninstall verb; `clean --cache` covers it. |
-| Q8 | **Should the error offer `--python 3.15` instead of `-p ios`?** It works without a project, but `-p` also checks the lock and the platform. | **`-p <platform>`** from a build; `doctor` likewise. `--python` is for CI images and outside projects. |
 
 ### 4.1 Q1: why `bytecompiler`
 
@@ -310,6 +307,20 @@ NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
   - **Escape hatches.** It would need `--yes`, `--no-input` and a CI check,
     three paths to test for one keystroke. The copy-paste command gets almost
     all of that keystroke's value.
+- **A `--python X.Y` switch** that installs a given minor without reading a
+  project. Dropped 2026-11-05 for lack of a use case:
+  - **CI image baking** doesn't need it. A CI job checks out the project
+    anyway, so `kivyforge bytecompiler -p ios` is one step there, and an image
+    built ahead of any project can use `uv python install` or python.org.
+  - **Outside a project** there is no build that needs byte-compiling.
+  - **It can be wrong.** `--python 3.14` while the lock ships 3.15 installs
+    something useless, and the same error comes back. Reading the version from
+    the lock, as the build does, can't make that mistake.
+  - **The flow it serves** is "a build failed, run the fix it printed", which
+    happens in a project. Choosing a version by hand doesn't fit it.
+
+  Dropping it also removed a rule (`-p` and `--python` exclusive) and a
+  question (which form the error prints).
 - **Using the installed Python for anything else** (resolving, building
   sdists). It compiles `.pyc` and nothing more.
 - **Free-threaded or non-CPython hosts.** PBS's `install_only` default build is
@@ -318,7 +329,7 @@ NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
 
 ## 6. Steps
 
-1. The verb (Q1): `-p`, `--python`, `--force`, `--json`, and the no-`-p`
+1. The verb (Q1): `-p`, `--force`, `--json`, and the no-`-p`
    platform walk (3.2), reading each lock's runtime version.
 2. A host-triple helper (3.5).
 3. A minor-wide PBS lookup (3.4, step 2) next to `GithubPbsMetadataFetcher`.
@@ -338,8 +349,8 @@ NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
 - No `-p`: a project with iOS on 3.15 and Android on 3.14 asks for both minors;
   a platform with `byte_compile = false`, no lock, or a host that can't build it
   is skipped with an `INFO` diagnostic.
-- `-p ios` asks only for iOS's minor; `--python 3.15` reads no project.
-- `-p` with `--python` is a usage error.
+- `-p ios` asks only for iOS's minor.
+- Outside a project, the command fails with exit 1, like other verbs.
 - An interpreter found by the search means no download, and `source: "found"`.
 - A fake fetcher: exact patch first, then the newest final of the minor, never
   a pre-release.
