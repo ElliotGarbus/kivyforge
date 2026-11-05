@@ -375,11 +375,67 @@ NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
 5. `pycompile`: the new search step (3.3), recorded in `searched`.
 6. Failure classification (3.8); the `Fix:` line, `doctor` and `clean --cache`
    help (3.9).
-7. `capabilities --json` lists the verb. Docs: the iOS and Android pyproject
-   references, the hosts guide, and the CI guide's iOS recipe. CHANGELOG under
-   `[Unreleased]`.
+7. `capabilities --json` lists the verb.
+8. The documentation in section 7, and CHANGELOG under `[Unreleased]`.
 
-## 7. Test plan
+## 7. Documentation
+
+A user who hits the error should find the command in the guides, and a
+contributor should find the search order in the design docs. Both fall behind
+this change unless it updates them.
+
+### 7.1 Already stale, before this change
+
+Several design docs still describe the search before `cad70344`, in which iOS,
+Android and the desktop fallback compiled only with "the interpreter running
+`kivyforge` itself". The search has since gained the `py` launcher (Windows),
+`python3.X`, `python3` and `python` on `PATH`, and uv. These need fixing
+whether or not `bytecompiler` is built, and can be fixed sooner:
+
+| Document | What is stale |
+|---|---|
+| `docs/design/platforms/ios/01-pyproject-ios.md`, "Compiler selection" | "Compilation always uses the interpreter running `kivyforge` itself". |
+| `docs/design/dev/ios-source-stripping.md`, "Compiler selection" | "the ladder collapses to two rungs: the interpreter running `kivyforge` itself" or degrade. |
+| `docs/design/platforms/android/01-pyproject-android.md`, "Which interpreter writes the `.pyc`" | Lists only the current interpreter, then `py -X.Y` / `pythonX.Y`; no `python3`, `python` or uv. |
+| `docs/design/platforms/macos/macos-spec.md`, `windows-spec.md`, `linux-spec.md` | The fallback after the staged interpreter is "the interpreter running `kivyforge` itself". |
+
+The fix in each is to describe the search in one place, for example the
+docstring of `pycompile.find_interpreter` or a section of
+`common/05-platform-architecture.md`, and link to it, so the next change to the
+search updates one page instead of six.
+
+### 7.2 Design docs this change updates
+
+| Document | Change |
+|---|---|
+| `docs/design/common/02-cli-and-platform-resolution.md` | Add `bytecompiler` to "Verbs". Record that its `-p` is optional with no default, the one verb where the resolution chain (`-p`, `KIVYFORGE_PLATFORM`, host default) does not apply, and why (3.2). |
+| The search's single description (7.1) | Add the "installed by kivyforge" step after "this interpreter" (3.3). |
+| `docs/design/platforms/ios/01-pyproject-ios.md` and `docs/design/platforms/android/01-pyproject-android.md` | Name `bytecompiler` as the fix when no interpreter is found. |
+| `docs/design/platforms/linux/linux-spec.md` | The same, for an `aarch64` target built on x86_64, the one desktop case that needs a host interpreter. |
+| `docs/design/dev/roadmap.md` | An entry for the verb, linking this proposal. |
+| `docs/design/dev/hardware-checklist.toml`, `ios-strip-source` | Its "Needs" asks for `python3.15` on `PATH`; add `kivyforge bytecompiler -p ios` as the alternative. |
+| `docs/design/dev/test-matrix.md` §7 | The real-toolchain rows from section 8. |
+| This proposal | Status to implemented, with the decisions in section 4. |
+
+### 7.3 User guides this change updates
+
+| Document | Change |
+|---|---|
+| `docs/guides/reference/pyproject/ios.md` and `android.md` | The note under `build_settings` added in `cad70344`: lead with `kivyforge bytecompiler`, then "install one yourself", then the `PATH` example from section 5 for a Python the search misses. |
+| `docs/guides/reference/pyproject/linux.md` | The same note, for an `aarch64` target. |
+| `docs/guides/concepts/build-vs-package.md` | It says `package` byte-compiles by default; add that this needs a host Python of the shipped minor, and how to get one. |
+| `docs/guides/get-started/hosts.md` | A line under the host requirements: building iOS or Android release packages byte-compiles, which needs a host CPython of the minor the app ships. |
+| `docs/guides/guides/cross-platform/ci-and-agents.md` | The CI recipe gets a `kivyforge bytecompiler` step before `package`. The exit-code table's `3` row mentions it as one fix. |
+| `docs/guides/troubleshooting/index.md` | A row in the codes table for `KF-BYTECOMPILE-NO-INTERP`, which it lacks, with the fix `kivyforge bytecompiler -p PLATFORM`. A row for the new download-failure code (Q6), if there is one. |
+| `docs/guides/reference/json-output.md` | `bytecompiler`'s `data.interpreters` (3.7), next to `data.artifacts` and `data.version`. |
+| `README.md` | A line in the command list: `kivyforge bytecompiler`: install a host CPython that byte-compiles for your targets. |
+| `AGENTS.md`, "Driving kivyforge from an agent" | Exit 3 with `KF-BYTECOMPILE-NO-INTERP`: run `kivyforge bytecompiler -p <platform>`, then retry unchanged. |
+
+Generated, so they update themselves: `docs/guides/reference/cli.md` (from the
+click commands, so the help text is what it shows, 4.1) and
+`docs/guides/reference/codes.md` (from `report/diagnostics.py`).
+
+## 8. Test plan
 
 **Hermetic** (no network, no toolchain):
 
@@ -411,14 +467,16 @@ NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
 - Android: the same on an x86_64 Linux host, release APK on an emulator.
 - A second `bytecompiler` with the network off reports `already-installed` and exits 0.
 
-## 8. Migration
+## 9. Migration
 
 None. The verb is new, nothing in the project changes, and no lock goes stale.
 A machine that already has the right Python is unaffected.
 
-## 9. Done when
+## 10. Done when
 
 - Section 4's remaining questions are decided and recorded here.
-- The hermetic tests in section 7 pass, and the iOS real-toolchain run is in
+- The hermetic tests in section 8 pass, and the iOS real-toolchain run is in
   `test-matrix.md` §7.
+- Every document in section 7 is updated in the same change, and 7.1's stale
+  descriptions are fixed, here or sooner.
 - #209 is answered, pointing at the command.
