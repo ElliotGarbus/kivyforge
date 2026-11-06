@@ -273,7 +273,8 @@ class TestKivyforgesOwnInstall:
     this interpreter and ahead of PATH (proposal Q2), so running the command
     always changes what the build uses."""
 
-    EXE = "/cache/host-python/9.9/python/bin/python9.9"
+    # str(Path(...)), as the search builds its argv: backslashes on Windows.
+    EXE = str(Path("/cache/host-python/9.9/python/bin/python9.9"))
 
     def _installed(self, monkeypatch):
         monkeypatch.setattr(

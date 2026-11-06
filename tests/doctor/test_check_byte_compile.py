@@ -60,7 +60,8 @@ class TestCompilerFound:
         assert "this interpreter" in result.detail
 
     def test_kivyforges_own_install_is_named_as_such(self, monkeypatch):
-        exe = "/cache/host-python/3.14/python/bin/python3.14"
+        # str(Path(...)), as the search builds its argv: backslashes on Windows.
+        exe = str(Path("/cache/host-python/3.14/python/bin/python3.14"))
         monkeypatch.setattr(
             "kivyforge.doctor.checks_common.installed_interpreter",
             lambda minor: Path(exe),

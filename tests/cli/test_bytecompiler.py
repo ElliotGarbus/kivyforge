@@ -141,10 +141,8 @@ class TestCoversConfiguredPlatforms:
         _add(world, "ios", _need("ios"))
         result = _run()
         assert result.exit_code == 0, result.output
-        assert result.stdout == (
-            "Installed CPython 3.15.2 for byte-compiling: "
-            "/cache/host-python/3.15/python/bin/python3.15\n"
-        )
+        exe = Path("/cache/host-python/3.15/python/bin/python3.15")
+        assert result.stdout == f"Installed CPython 3.15.2 for byte-compiling: {exe}\n"
         assert "[bytecompiler] ios ships CPython 3.15.2" in result.stderr
 
 
@@ -163,9 +161,10 @@ class TestNothingInstalledWhenNotNeeded:
         )
 
     def test_kivyforges_own_install_is_already_installed(self, world):
-        exe = "/cache/host-python/3.15/python/bin/python3.15"
-        world["found"]["3.15"] = (exe, "3.15.2")
-        world["installed"]["3.15"] = Path(exe)
+        # The search returns str(installed), so the two compare equal on any OS.
+        exe = Path("/cache/host-python/3.15/python/bin/python3.15")
+        world["found"]["3.15"] = (str(exe), "3.15.2")
+        world["installed"]["3.15"] = exe
         _add(world, "ios", _need("ios"))
         _, env = _json()
         assert env["data"]["interpreters"][0]["source"] == "already-installed"
