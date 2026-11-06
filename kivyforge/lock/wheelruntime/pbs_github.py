@@ -206,13 +206,29 @@ class GithubPbsMetadataFetcher:
         # {triple: {micro: (variant, asset)}}, from the newest release that has it.
         seen: dict[str, dict[int, tuple[str, ReleaseAsset]]] = {}
         tags = self._list_release_tags()
+        expected = triples
+        newest_here: int | None = None
+
+        def settled() -> bool:
+            # Releases come newest first, so once every expected triple has
+            # been seen, "newest" is settled; a preferred patch is settled once
+            # every one has it, or once releases have dropped below it.
+            return all(t in seen for t in expected) and (
+                want is None
+                or all(want in seen[t] for t in expected)
+                or (newest_here is not None and newest_here < want)
+            )
+
         done = False
         first_hit: int | None = None
         for start in range(0, len(tags), _SUMS_BATCH):
             # A triple still unseen one batch after the first match has no
-            # build of the minor: reading every older release won't change it.
+            # build of the minor: stop waiting for it. The preferred patch can
+            # still be further back for the others, so the scan goes on.
             if first_hit is not None and start > first_hit:
-                break
+                expected = tuple(t for t in triples if t in seen)
+                if settled():
+                    break
             batch = tags[start : start + _SUMS_BATCH]
             with ThreadPoolExecutor(max_workers=len(batch)) as pool:
                 sums = list(pool.map(self._release_sums, batch))
@@ -226,15 +242,8 @@ class GithubPbsMetadataFetcher:
                     )
                 if first_hit is None:
                     first_hit = start
-                # Releases come newest first, so once every triple has been
-                # seen, "newest" is settled; a preferred patch is settled once
-                # every triple has it, or once releases have dropped below it.
                 newest_here = max(micro for (_t, micro) in here)
-                done = all(t in seen for t in triples) and (
-                    want is None
-                    or all(want in seen[t] for t in triples)
-                    or newest_here < want
-                )
+                done = settled()
                 if done:
                     break
             if done:

@@ -389,6 +389,47 @@ class TestFindCommonInstallOnly:
         assert version == "3.15.2"
         assert set(builds) == {self.MAC, self.LINUX}
 
+    def _history(self, micros, triples):
+        """One release per entry of *micros*, newest first, each carrying that
+        patch for every one of *triples*."""
+        return {
+            f"2026{len(micros) - i:04d}": [(f"3.14.{m}", t) for t in triples]
+            for i, m in enumerate(micros)
+        }
+
+    def test_the_shipped_version_further_back_than_one_batch(self):
+        """PBS as of 2026-11-06: 3.14.6 is the 15th release down, two batches
+        in. The scan once stopped after the first batch and pinned 3.14.10."""
+        micros = [10, 9, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 5]
+        f = self._fetcher(self._history(micros, (self.MAC, self.LINUX, self.WIN)))
+        version, builds = f.find_common_install_only(
+            "3.14", (self.MAC, self.LINUX, self.WIN), prefer="3.14.6"
+        )
+        assert version == "3.14.6"
+        assert set(builds) == {self.MAC, self.LINUX, self.WIN}
+        assert len(f.sums_read) == 16
+
+    def test_a_host_without_a_build_still_ends_the_scan(self):
+        """Windows never built the minor: give up on it one batch after the
+        first match, but still find the shipped patch for the others."""
+        micros = [10, 9, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 5] * 3
+        f = self._fetcher(self._history(micros, (self.MAC, self.LINUX)))
+        version, builds = f.find_common_install_only(
+            "3.14", (self.MAC, self.LINUX, self.WIN), prefer="3.14.6"
+        )
+        assert version == "3.14.6"
+        assert set(builds) == {self.MAC, self.LINUX}
+        assert len(f.sums_read) == 16
+
+    def test_without_a_preference_one_batch_is_enough(self):
+        micros = [10, 9, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6]
+        f = self._fetcher(self._history(micros, (self.MAC, self.WIN)))
+        version, _builds = f.find_common_install_only(
+            "3.14", (self.MAC, self.LINUX, self.WIN)
+        )
+        assert version == "3.14.10"
+        assert len(f.sums_read) == 8
+
     def test_stripped_wins_over_full_in_one_release(self):
         f = self._fetcher(
             {
