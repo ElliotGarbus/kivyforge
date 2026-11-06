@@ -81,7 +81,7 @@ a Pi 4 has not been run.
 
 The byte-compile ladder already handles a foreign target: the staged aarch64
 interpreter cannot run on x86_64, so compilation falls back to a final CPython
-of the same minor on the host. A `.pyc`'s magic number is keyed to the minor,
+of the same minor on the host ([10 — byte-compiling](../../common/10-byte-compile.md)). A `.pyc`'s magic number is keyed to the minor,
 not the architecture. `appimagetool` runs as a *host* binary and embeds the
 *target* type2 runtime with `--runtime-file`.
 
@@ -156,11 +156,11 @@ meaning `package` and `run --release` only — plain `build`/`run` keep
 readable `.py`) or an explicit `true`/`false`; `strip_source` is ignored while `byte_compile` is
 off. The compiler is picked in order: the bundle's own staged
 `usr/python/bin/python3` when it can run on this host (target arch == host
-arch — kivyforge never depends on emulation); otherwise the interpreter
-running `kivyforge` itself, if its CPython minor matches the target (a
-`.pyc`'s magic number is keyed to minor version only, not architecture);
-otherwise, `byte_compile = "release"` degrades to shipping source with a
-note, while `byte_compile = true` fails the build outright. Same defaults and
+arch — kivyforge never depends on emulation); otherwise a final CPython of
+the same minor found on the host; otherwise, `byte_compile = "release"`
+degrades to shipping source with a warning, while `byte_compile = true` fails
+the build outright. The search after the staged interpreter is described once,
+in [10 — byte-compiling](../../common/10-byte-compile.md). Same defaults and
 ladder as [windows-spec](../windows/windows-spec.md) and
 [macos-spec](../macos/macos-spec.md).
 

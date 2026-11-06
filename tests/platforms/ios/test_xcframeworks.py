@@ -354,7 +354,10 @@ class TestSdlDefineLeavesWithSdl3:
         shutil.rmtree(sdl3)
         project = _regenerate(config, layout)
 
-        assert _defines(project, "Debug") is None
+        assert str(_defines(project, "Debug")).split() == [
+            "$(inherited)",
+            "KIVYFORGE_CONSOLE_STDIO=1",
+        ]
         assert _defines(project, "Release") is None
 
     def test_a_define_added_in_xcode_is_kept(self, config, project_root):
@@ -372,7 +375,9 @@ class TestSdlDefineLeavesWithSdl3:
         shutil.rmtree(sdl3)
         project = _regenerate(config, layout)
 
-        assert _defines(project, "Debug") == "$(inherited) MY_FLAG=1"
+        # Release: Debug always carries the managed console-stdio define, so
+        # its key is the toolchain's to write (issue #210).
+        assert _defines(project, "Release") == "$(inherited) MY_FLAG=1"
 
     def test_a_define_without_the_sdl_flag_is_left_alone(self, config, project_root):
         layout = materialize_project(config, project_root)
@@ -383,4 +388,4 @@ class TestSdlDefineLeavesWithSdl3:
 
         project = _regenerate(config, layout)
 
-        assert _defines(project, "Debug") == "MY_FLAG=1"
+        assert _defines(project, "Release") == "MY_FLAG=1"

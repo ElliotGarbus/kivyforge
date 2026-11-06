@@ -720,10 +720,10 @@ class TestByteCompileResolution:
         return cli._resolve_byte_compile(android, python_version="3.14.6", debug=debug)
 
     def _found(self, monkeypatch, argv=("py", "-3.14")):
-        monkeypatch.setattr(cli, "find_interpreter", lambda _v: argv)
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v, **_kw: argv)
 
     def _missing(self, monkeypatch):
-        monkeypatch.setattr(cli, "find_interpreter", lambda _v: None)
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v, **_kw: None)
 
     def test_release_default_compiles_and_strips(self, monkeypatch):
         self._found(monkeypatch)
@@ -764,7 +764,7 @@ class TestByteCompileResolution:
         out = capsys.readouterr().out
         assert "not byte-compiling" in out
         # The notice must say how to fix it, not just what happened.
-        assert "Fix: install a final CPython" in out
+        assert "Fix: install any final CPython" in out
 
     def test_explicit_true_fails_when_no_interpreter_exists(self, monkeypatch):
         """Asked for outright, silence would ship a bundle the user believes is
@@ -776,7 +776,7 @@ class TestByteCompileResolution:
         with pytest.raises(AndroidBuildError, match=r"no final CPython 3\.14") as exc:
             self._resolve(android)
         # The message must say how to get out of it, not just what went wrong.
-        assert "Fix: install a final CPython 3.14" in str(exc.value)
+        assert "Fix: install any final CPython 3.14" in str(exc.value)
         assert "byte_compile = false" in str(exc.value)
 
     def test_the_choice_reaches_the_bundle(self, build_env, monkeypatch):
@@ -1941,7 +1941,7 @@ class TestAndroidRun:
         are progress and go to stderr (AGENTS.md)."""
         project, _ = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v, **_kw: ("python3.14",))
         for name in ("install_apk", "launch", "logcat_clear"):
             monkeypatch.setattr(adb_mod, name, lambda *a: None)
         _fake_app(monkeypatch, log=["I python.stderr: booted\n"])
@@ -2280,7 +2280,7 @@ class TestAndroidSmoke:
         """
         project, _ = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v, **_kw: ("python3.14",))
         monkeypatch.setattr(
             smoke_mod, "run_smoke", lambda dest, *, device, release: None
         )
@@ -2338,7 +2338,7 @@ class TestAndroidSmoke:
         assemble task runs either way."""
         project, calls = build_env
         _fake_device(monkeypatch)
-        monkeypatch.setattr(cli, "find_interpreter", lambda _v: ("python3.14",))
+        monkeypatch.setattr(cli, "find_interpreter", lambda _v, **_kw: ("python3.14",))
         monkeypatch.setattr(
             smoke_mod, "run_smoke", lambda dest, *, device, release: None
         )

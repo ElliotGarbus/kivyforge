@@ -145,6 +145,15 @@ BUILD_PYTHON_OUTPUTS = tuple(
 #: the project when SDL3 is not, so it never outlives kivy leaving the lock.
 REQUIRES_SDL_DEFINE = "KIVYFORGE_REQUIRES_SDL=1"
 
+#: The define that makes ``kivyforge_bootstrap.m`` keep Python's stdout and
+#: stderr on file descriptors 1 and 2, emitted for Debug only. CPython's iOS
+#: default sends them to the Apple system log instead, which neither
+#: ``simctl launch --console-pty`` nor ``devicectl --console`` carries, so
+#: ``run`` showed no Python output at all (issue #210). Release keeps the system
+#: log: a shipped app has no console, and the log is where a traceback can be
+#: recovered from.
+CONSOLE_STDIO_DEFINE = "KIVYFORGE_CONSOLE_STDIO=1"
+
 
 def managed_settings(
     config: Config, *, configuration: str, layout: StagingLayout | None = None
@@ -187,13 +196,18 @@ def managed_settings(
         "COPY_PHASE_STRIP": "NO",
     }
 
+    defines: list[str] = []
     if _sdl3_staged(layout):
         # Fail the build at compile time if SDL3 headers then turn out to be
         # missing (a broken vendoring step, a manually edited
         # HEADER_SEARCH_PATHS), rather than silently compiling the no-SDL
         # smoke-test path in kivyforge_bootstrap.m -- an app that launches
         # but can never open a window. Credit: PR #1 (kengoon).
-        settings["GCC_PREPROCESSOR_DEFINITIONS"] = f"$(inherited) {REQUIRES_SDL_DEFINE}"
+        defines.append(REQUIRES_SDL_DEFINE)
+    if not is_release:
+        defines.append(CONSOLE_STDIO_DEFINE)
+    if defines:
+        settings["GCC_PREPROCESSOR_DEFINITIONS"] = " ".join(["$(inherited)", *defines])
 
     if ios.icons.source:
         # Designate the AppIcon set in Assets.xcassets as the app icon. Without

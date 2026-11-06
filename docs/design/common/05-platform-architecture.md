@@ -25,6 +25,7 @@ flowchart TD
 - **`core/config`** — parse the shared `[project]` + `[tool.kivy]` tables; each platform backend registers an overlay parser + config dataclass. `Config` holds `project`, `kivy`, and `platforms: dict[str, PlatformConfig]`. A `load_config(require_platform=...)` entry point validates the shared tables plus the requested overlay.
 - **`core/lock`** — generic PEP 751 `[[packages]]` resolve/read/write; platform backends supply platform-tag selection, runtime metadata, and any extension subtables. The lockfile is named `pylock.<platform>.toml` with a single `[tool.kivyforge]` extension table (platform identified by filename; see [03 — lockfile concept](03-lockfile-concept.md)).
 - **`core/artifacts`** — generic download / cache / verify (SHA-256). The cache dir is platform-appropriate for the *host* running kivyforge (e.g. `~/Library/Caches/kivyforge/` on macOS).
+- **`bundle/pycompile`** — byte-compiling and source stripping for every backend, including the search for the interpreter that writes the `.pyc` (see [10 — byte-compiling](10-byte-compile.md)).
 - **`core/doctor`** — a probe + runner framework; backends contribute their own checks (including host-capability checks for the target).
 - **`core/cli`** — the Click group, verb dispatch, and the `--platform` → `KIVYFORGE_PLATFORM` → host resolution chain; verbs delegate to the resolved backend (see [02 — CLI + platform resolution](02-cli-and-platform-resolution.md)).
 

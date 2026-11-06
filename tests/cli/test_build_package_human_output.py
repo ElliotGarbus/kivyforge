@@ -246,11 +246,9 @@ class TestIos:
 _ANDROID_NO_BYTECOMPILE = (
     "[stage] not byte-compiling: no final CPython 3.14 found (this project ships "
     "3.14.6).\n"
-    "  Pre-releases do not count: CPython only freezes the .pyc magic number at "
-    "the first release candidate, so a 3.14 alpha writes bytecode 3.14.6 refuses "
-    "to import.\n"
-    "  Fix: install a final CPython 3.14 — kivyforge finds it automatically — or "
-    "set byte_compile = false in [tool.kivy.android.build_settings].\n"
+    "  Fix: install any final CPython 3.14.x (for example `uv python install "
+    "3.14`, or python.org) so python3.14 is on PATH, or set byte_compile = false "
+    "in [tool.kivy.android.build_settings].\n"
 )
 
 # Deliberate (proposal §5 step 1): the project gets a product line, so a plain

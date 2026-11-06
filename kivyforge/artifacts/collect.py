@@ -19,7 +19,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..build_outcome import discard_note
-from ..bundle.pycompile import PycompileError, byte_compile, select_compiler
+from ..bundle.pycompile import (
+    Candidate,
+    PycompileError,
+    byte_compile,
+    no_interpreter,
+    select_compiler,
+)
 from ..config.model import DesktopBuildSettings
 from ..lock.model import LockedWheel
 from ..platforms.ios.lock.model import Lockfile
@@ -192,31 +198,25 @@ def _compile_pip_deps(
     settings = build_settings or DesktopBuildSettings()
     if not _setting_applies(settings.byte_compile, release=release):
         return
+    searched: list[Candidate] = []
     compiler = select_compiler(
-        staged_interpreter=Path(), native=False, python_version=python_version
+        staged_interpreter=Path(),
+        native=False,
+        python_version=python_version,
+        searched=searched,
     )
     if compiler is None:
-        minor = ".".join(python_version.split(".")[:2])
-        headline = (
-            f"no final CPython {minor} found (this project ships {python_version})"
-        )
-        why_and_fix = (
-            "  Pre-releases do not count: CPython only freezes the .pyc "
-            f"magic number at the first release candidate, so a {minor} alpha "
-            f"writes bytecode {python_version} refuses to import.\n"
-            f"  Fix: install a final CPython {minor} — kivyforge finds it "
-            "automatically — or set byte_compile = false in "
-            "[tool.kivy.ios.python.build_settings]."
-        )
+        table = "tool.kivy.ios.python.build_settings"
+        missing = no_interpreter(python_version, table=table, searched=searched)
         if settings.byte_compile is True:
-            raise CollectError(
-                "[tool.kivy.ios.python.build_settings].byte_compile = true, but "
-                f"{headline}.\n{why_and_fix}"
-            )
-        echo(f"[stage] not byte-compiling pip-deps: {headline}.\n{why_and_fix}")
+            raise CollectError(missing.required(table), **missing.classification)
+        echo(
+            f"[stage] not byte-compiling pip-deps: {missing.headline}.\n"
+            f"{missing.detail()}"
+        )
         note(
             BYTECOMPILE_NO_INTERP,
-            f"not byte-compiling pip-deps: {headline}.",
+            f"not byte-compiling pip-deps: {missing.headline}.",
             {"payload": "pip-deps"},
         )
         return

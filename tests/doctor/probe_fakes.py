@@ -126,7 +126,7 @@ class FakeProbe:
     def filesystem_type(self, path):
         return self._filesystem
 
-    def byte_compile_interpreter(self, python_version):
+    def byte_compile_interpreter(self, python_version, *, searched=None):
         return self._byte_compiler
 
     def host_machine(self):

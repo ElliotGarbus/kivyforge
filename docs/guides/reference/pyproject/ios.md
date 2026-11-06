@@ -42,6 +42,21 @@ Required.
 | `byte_compile` | bool or `"release"` | `"release"` | Compile your app and its dependencies to `.pyc`. `"release"` applies to release exports only. |
 | `strip_source` | bool or `"release"` | `"release"` | Remove `.py` files after compiling. |
 
+Compiling needs a final CPython of the same minor as `version` on the Mac you
+build on, for example any 3.15.x for a project that ships 3.15.2, because the
+iOS runtime can't run there. kivyforge looks for `python3.X` (the minor you
+ship), `python3` and `python` on `PATH`, and asks `uv python find` when uv is
+installed. Install one with `uv python install 3.X` or from python.org.
+`kivyforge doctor -p ios` shows what it finds. Without one, `"release"` ships
+source with a warning and `true` fails the build.
+
+If you have one that kivyforge doesn't find, for example from pyenv or conda,
+put its directory first on `PATH` for the build:
+
+```bash
+PATH=/opt/python/3.15/bin:$PATH kivyforge package -p ios
+```
+
 ## `[tool.kivy.ios.icons]`
 
 | Key | Type | Default | Description |

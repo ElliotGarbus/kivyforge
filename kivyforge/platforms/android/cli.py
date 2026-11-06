@@ -28,7 +28,7 @@ from kivyforge.build_outcome import (
     discard_note,
 )
 from kivyforge.bundle import app_metadata, entry_launcher
-from kivyforge.bundle.pycompile import find_interpreter, target_minor
+from kivyforge.bundle.pycompile import Candidate, find_interpreter, no_interpreter
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config
@@ -264,27 +264,18 @@ def _resolve_byte_compile(
     settings = android.build_settings
     if not _setting_applies(settings.byte_compile, release=not debug):
         return None, False
-    compiler = find_interpreter(python_version)
+    searched: list[Candidate] = []
+    compiler = find_interpreter(python_version, searched=searched)
     if compiler is None:
-        target = ".".join(str(p) for p in target_minor(python_version))
-        headline = (
-            f"no final CPython {target} found (this project ships {python_version})"
-        )
-        why_and_fix = (
-            "  Pre-releases do not count: CPython only freezes the .pyc magic "
-            f"number at the first release candidate, so a {target} alpha writes "
-            f"bytecode {python_version} refuses to import.\n"
-            f"  Fix: install a final CPython {target} — kivyforge finds it "
-            "automatically — or set byte_compile = false in "
-            "[tool.kivy.android.build_settings]."
-        )
+        table = "tool.kivy.android.build_settings"
+        missing = no_interpreter(python_version, table=table, searched=searched)
         if settings.byte_compile is True:
-            raise AndroidBuildError(
-                "[tool.kivy.android.build_settings].byte_compile = true, but "
-                f"{headline}.\n{why_and_fix}"
-            )
-        echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
-        note(diagnostics.BYTECOMPILE_NO_INTERP, f"not byte-compiling: {headline}.")
+            raise AndroidBuildError(missing.required(table), **missing.classification)
+        echo(f"[stage] not byte-compiling: {missing.headline}.\n{missing.detail()}")
+        note(
+            diagnostics.BYTECOMPILE_NO_INTERP,
+            f"not byte-compiling: {missing.headline}.",
+        )
         return None, False
     # Documented as "ignored when byte_compile is off": stripping sources with
     # no .pyc beside them would ship a bundle that imports nothing.

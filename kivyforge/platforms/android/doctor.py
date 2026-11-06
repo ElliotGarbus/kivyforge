@@ -19,7 +19,7 @@ import sys
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import NamedTuple, Protocol
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config
@@ -36,6 +36,9 @@ from .bootstrap.contract import (
 from .elf import scan_alignment
 from .lock import reader as lock_reader
 from .splash import SPLASH_MIN_COMPILE_SDK
+
+if TYPE_CHECKING:
+    from kivyforge.bundle.pycompile import Candidate
 
 _EXE = ".exe" if os.name == "nt" else ""
 _BAT = ".bat" if os.name == "nt" else ""
@@ -83,7 +86,7 @@ class AndroidProbe(Protocol):
     def adb_port_owner(self) -> tuple[int, str] | None: ...
     def latest_kivyforge_version(self) -> str | None: ...
     def byte_compile_interpreter(
-        self, python_version: str
+        self, python_version: str, *, searched: list[Candidate] | None = None
     ) -> tuple[str, ...] | None: ...
 
 
@@ -161,11 +164,13 @@ class RealAndroidProbe:
     def which(self, name: str) -> str | None:
         return shutil.which(name)
 
-    def byte_compile_interpreter(self, python_version: str) -> tuple[str, ...] | None:
+    def byte_compile_interpreter(
+        self, python_version: str, *, searched: list[Candidate] | None = None
+    ) -> tuple[str, ...] | None:
         """Delegate to the *build's* resolver, so the two cannot disagree."""
         from kivyforge.bundle.pycompile import find_interpreter
 
-        return find_interpreter(python_version)
+        return find_interpreter(python_version, searched=searched)
 
     def java_home(self) -> str | None:
         jh = os.environ.get("JAVA_HOME")

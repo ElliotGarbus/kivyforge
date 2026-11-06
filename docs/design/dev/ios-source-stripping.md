@@ -68,6 +68,12 @@ number is keyed to minor only, never architecture); otherwise degrade
 `select_compiler()` from `kivyforge/bundle/pycompile.py` unchanged — iOS just
 always passes `native=False`.
 
+> **Updated 2026-11-05:** "two rungs" describes this plan as written. The
+> search has since grown: after kivyforge's own interpreter it tries the `py`
+> launcher (Windows), `python3.X`, `python3` and `python` on `PATH`, and
+> `uv python find` when uv is installed (`cad70344`, issue #209). The current
+> search is described in [10 — byte-compiling](../common/10-byte-compile.md).
+
 ## Work
 
 - `kivyforge/config/model.py` — `IosConfig.python_build_settings:

@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased]
+
+### iOS: `run` shows the app's Python output again
+
+- **Fixed:** with CPython 3.15 final, `kivyforge run -p ios` showed only native
+  log lines. `print()` and Kivy's log went to the Apple system log, which the
+  simulator and device consoles don't carry
+  ([#210](https://github.com/ElliotGarbus/kivyforge/issues/210)). Debug builds now
+  keep Python's stdout and stderr on the console. Release builds still write to
+  the system log, because a shipped app has no console and the log is where a
+  crash's traceback can be recovered.
+- **Changed:** the Debug configuration of a generated Xcode project always sets
+  `GCC_PREPROCESSOR_DEFINITIONS` (`KIVYFORGE_CONSOLE_STDIO=1`). A define added to
+  Debug in Xcode's editor is replaced on the next build, as it already was for
+  Kivy apps. Put your own defines in `[tool.kivy.ios.xcode.build_settings]`,
+  which are added to kivyforge's.
+- **Migration:** none needed. The next `build` or `run` regenerates the project.
+
+### Byte-compiling says what it searched, and finds uv's Pythons
+
+- **Fixed:** when no host interpreter could write the `.pyc` files, the message
+  led with "Pre-releases do not count", which read as kivyforge treating a final
+  Python as unreleased
+  ([#209](https://github.com/ElliotGarbus/kivyforge/issues/209)). It now lists
+  every interpreter it looked at and the version each one is, mentions
+  pre-releases only when it found one, and says how to install the right minor.
+  `doctor` reports the same search.
+- **Changed:** when uv is installed, the search also asks `uv python find`, so a
+  uv-managed Python that is not on `PATH` is used. uv is not required, and the
+  search never downloads a Python.
+- **Changed:** with `byte_compile = true` and no interpreter, `build` and
+  `package` exit `3` with `KF-BYTECOMPILE-NO-INTERP`, not `1` with `KF-ERROR`,
+  on every platform. `doctor`'s byte-compile check carries the same code.
+- **Migration:** a script that treated exit `1` as this failure should check for
+  `3`, or for the code.
+
 ## [v0.1.0](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.0) - 2026-11-02
 
 ### Version numbers restart at 0.1.0

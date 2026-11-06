@@ -63,6 +63,7 @@ The numbers below are a **reading order for the design**, not a version or RFC s
 | 07 | [Runtime provider pattern](07-runtime-provider-pattern.md) | The shared `RuntimeProvider` abstraction desktop platforms (macOS, Linux, Windows) use to bridge to a relocatable CPython |
 | 08 | [Native-binaries channel](08-native-binaries-channel.md) | The shared `[tool.kivy.<platform>.native.binaries]` channel for non-wheel native code (**placeholder — revisit after Windows**) |
 | 09 | [Native-integration](09-native-sidecar-contract.md) | A PyPI package declares the Java/Maven/SPM/manifest material it needs, so it composes instead of being hand-transcribed. Pointer only — the normative spec is [`SPEC.md`](https://github.com/ElliotGarbus/native-integration) in its own repo (**not implemented**) |
+| 10 | [Byte-compiling](10-byte-compile.md) | Which interpreter writes the `.pyc`: the rules, the search, and what happens when nothing qualifies |
 
 ### iOS
 

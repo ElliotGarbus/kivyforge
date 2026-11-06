@@ -72,7 +72,9 @@ LOCK_WARNING = "KF-LOCK-WARNING"
 
 #: ``byte_compile`` is on but no compatible host interpreter was found. The bug
 #: roadmap item 1 fixed; the check that now catches it lives in
-#: ``doctor/checks_common.py``.
+#: ``doctor/checks_common.py``. A WARNING when the build degrades to shipping
+#: source; an ERROR, exit 3, when ``byte_compile = true`` insists (issue #209).
+#: ``context`` names the ``tool`` looked for.
 BYTECOMPILE_NO_INTERP = "KF-BYTECOMPILE-NO-INTERP"
 
 #: A package shipped unsigned or ad-hoc signed where real signing is

@@ -229,12 +229,11 @@ app+deps scope.
 
 **Compiler selection.** The `Python.xcframework` ships no standalone
 interpreter binary to shell out to — it's a linkable library, not an
-executable — so unlike desktop, the "staged interpreter" rung of the ladder
-never applies on iOS. Compilation always uses the interpreter running
-`kivyforge` itself, if its CPython minor matches `[tool.kivy.ios.python].version`
-(a `.pyc`'s magic number is keyed to minor version only, not architecture);
-otherwise `byte_compile = "release"` degrades to shipping source with a
-note, while `byte_compile = true` fails the build outright.
+executable — so unlike desktop, the "staged interpreter" step never applies on
+iOS. The `.pyc` are written by a final CPython of the shipped minor found on
+the Mac, and with none, `byte_compile = "release"` ships source with a warning
+while `byte_compile = true` fails the build. The search and its outcomes are
+described once, in [10 — byte-compiling](../../common/10-byte-compile.md).
 
 ### `[tool.kivy.ios.native.xcframeworks]`
 

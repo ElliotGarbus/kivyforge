@@ -3,6 +3,7 @@ title: Run your iOS app on the simulator or a device
 sources:
   - docs/design/platforms/ios/04-cli-ios.md
   - docs/design/platforms/ios/08-signing-prerequisites-ios.md
+  - docs/design/platforms/ios/05-xcode-project-generation.md
   - FAQ.md
 ---
 
@@ -65,6 +66,27 @@ only suspends it. iOS often ends a closed app with SIGKILL, which `devicectl`
 reports as "App terminated due to signal 9.", so `run` then exits with an
 error even though the app ran normally. Pressing Ctrl+C in the terminal stops
 `run` instead.
+
+### Where the app's output goes
+
+`run` builds the Debug configuration, which keeps the app's `print()` output and
+Kivy's log on the console, so they stream to your terminal. A Release build,
+which `package` makes, sends them to the Apple system log instead: a shipped app
+has no console, and the system log is where a crash's traceback can be found.
+
+To read a Release build's output:
+
+- **On a device**, open Console.app on your Mac, select the device, and filter
+  on the app's process name.
+- **Kivy's own log file** is in the app's data container. Copy it to your Mac
+  with `devicectl`, replacing `DEVICE_UDID`, `BUNDLE_ID` and the date in the
+  file name:
+
+    ```bash
+    xcrun devicectl device copy from --device DEVICE_UDID --domain-type appDataContainer --domain-identifier BUNDLE_ID --source Documents/.kivy/logs/kivy_YY-MM-DD_0.txt --destination kivy.txt
+    ```
+
+    To list the log files, run `xcrun devicectl device info files --device DEVICE_UDID --domain-type appDataContainer --domain-identifier BUNDLE_ID --subdirectory Documents/.kivy/logs`.
 
 To install an app you already built, add `--no-build`.
 

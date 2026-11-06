@@ -26,9 +26,11 @@ from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
 from kivyforge.bundle import app_metadata, entry_launcher
 from kivyforge.bundle.pycompile import (
+    Candidate,
     PycompileError,
     byte_compile,
     compile_stdlib,
+    no_interpreter,
     select_compiler,
 )
 from kivyforge.bundle.workdir import make_work_dir, swap_in
@@ -97,31 +99,23 @@ def _resolve_byte_compile(
     if not _setting_applies(settings.byte_compile, release=release):
         return None, False
     native = host_runs_natively(target_arch)
+    searched: list[Candidate] = []
     compiler = select_compiler(
         staged_interpreter=staged_interpreter,
         native=native,
         python_version=python_version,
+        searched=searched,
     )
     if compiler is None:
-        minor = ".".join(python_version.split(".")[:2])
-        headline = (
-            f"no final CPython {minor} found (this project ships {python_version})"
-        )
-        why_and_fix = (
-            "  Pre-releases do not count: CPython only freezes the .pyc "
-            f"magic number at the first release candidate, so a {minor} alpha "
-            f"writes bytecode {python_version} refuses to import.\n"
-            f"  Fix: install a final CPython {minor} — kivyforge finds it "
-            "automatically — or set byte_compile = false in "
-            "[tool.kivy.macos.build_settings]."
-        )
+        table = "tool.kivy.macos.build_settings"
+        missing = no_interpreter(python_version, table=table, searched=searched)
         if settings.byte_compile is True:
-            raise AppBundleError(
-                "[tool.kivy.macos.build_settings].byte_compile = true, but "
-                f"{headline}.\n{why_and_fix}"
-            )
-        echo(f"[stage] not byte-compiling: {headline}.\n{why_and_fix}")
-        note(diagnostics.BYTECOMPILE_NO_INTERP, f"not byte-compiling: {headline}.")
+            raise AppBundleError(missing.required(table), **missing.classification)
+        echo(f"[stage] not byte-compiling: {missing.headline}.\n{missing.detail()}")
+        note(
+            diagnostics.BYTECOMPILE_NO_INTERP,
+            f"not byte-compiling: {missing.headline}.",
+        )
         return None, False
     strip = _setting_applies(settings.strip_source, release=release)
     return compiler, strip
