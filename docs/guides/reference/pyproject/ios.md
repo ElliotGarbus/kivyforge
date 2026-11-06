@@ -50,6 +50,13 @@ installed. Install one with `uv python install 3.X` or from python.org.
 `kivyforge doctor -p ios` shows what it finds. Without one, `"release"` ships
 source with a warning and `true` fails the build.
 
+If you have one that kivyforge doesn't find, for example from pyenv or conda,
+put its directory first on `PATH` for the build:
+
+```bash
+PATH=/opt/python/3.15/bin:$PATH kivyforge package -p ios
+```
+
 ## `[tool.kivy.ios.icons]`
 
 | Key | Type | Default | Description |
