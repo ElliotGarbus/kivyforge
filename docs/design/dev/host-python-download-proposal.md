@@ -1,498 +1,583 @@
-# Proposal — a command that installs the host Python that byte-compiles
+# Proposal — pin the host Python that byte-compiles in the lock
 
-> Status: **implemented 2026-11-05** on branch `bytecompiler`, not yet
-> released. The hermetic tests in section 8 pass. On 2026-11-05 a real install
-> and iOS release build on this Mac passed, and a `hello-kivy` release
-> byte-compiled by the installed CPython booted on an iPhone (`test-matrix.md`
-> §7, hardware pass `ios-strip-source`). Still open from section 8: the Android
-> run on a Linux host. Two details changed while implementing, each marked in
-> place: where the install lives (3.3) and which skips are diagnostics (3.7).
+> Status: **revised 2026-11-06 after review, not implemented.** Every question
+> in section 4 is decided, including the review's (4.2). This design replaces
+> the `kivyforge bytecompiler` command of 2026-11-05, which was implemented on
+> branch `bytecompiler`
+> ([#213](https://github.com/ElliotGarbus/kivyforge/pull/213), not merged) and
+> is now superseded (section 6). #213 is reworked in place to this design
+> (Q15).
 >
 > Responds to [#209](https://github.com/ElliotGarbus/kivyforge/issues/209).
 > Writing `.pyc` for iOS or Android needs a final CPython of the shipped minor
-> *on the machine that builds*, and the reporter had none. `cad70344` fixed the
-> message and the search (section 2). On the issue, the reporter then proposed
-> keeping a host install as the default, with an opt-in way for kivyforge to
-> provide one.
->
-> An earlier draft of this proposal did that with a `pyproject.toml` key that
-> let `build` download the interpreter. It was dropped the same day. A missing
-> tool on one machine is not a property of the project, and the fix shouldn't
-> be "edit `pyproject.toml`". This draft replaces the key with a command you run
-> once per machine, and that the error message prints ready to copy.
+> *on the machine that builds*, and the reporter had none.
+> [#212](https://github.com/ElliotGarbus/kivyforge/pull/212) made the error
+> say what it searched. This proposal removes the need to search: `lock` pins
+> one build of that CPython for each host that can build the target, and
+> `build` fetches and uses it, as it already does for every other pinned
+> artifact.
 
 ## 1. Problem
 
 `byte_compile` writes the `.pyc` files with an interpreter that has to run on
-the build machine. Desktop builds usually have one: the runtime they ship, when
-it can run here. iOS and Android never do, because their runtime is built for
-the device. The `.pyc` format is fixed per CPython minor from the first release
-candidate on, so any final `3.15.x` on the build machine can compile for a
-shipped `3.15.2`, but something has to be installed.
+the build machine. Desktop builds have one: the runtime they ship, which the
+lock pins and which runs on the host. iOS and Android never do, because their
+runtime is built for the device, and neither does a Linux `aarch64` target
+built on x86_64. The `.pyc` format is fixed per CPython minor from the first
+release candidate on, so any final `3.15.x` can compile for a shipped `3.15.2`,
+but something has to provide it.
 
-Today that is the user's job. A developer who has never installed 3.15 on their
-Mac, or a CI runner with only the system Python, gets one of two outcomes:
+Today the user does. A developer who has never installed 3.15 on their Mac, or
+a CI runner with only the system Python, gets a release that silently ships
+source (`byte_compile = "release"`, with a `KF-BYTECOMPILE-NO-INTERP` warning)
+or a failed build (`byte_compile = true`, exit 3). And when a 3.15 *is* found,
+which one depends on the machine: kivyforge's own interpreter, `python3.15` on
+`PATH`, a uv-managed one. Different machines compile the same app with
+different builds of CPython.
 
-- with the default `byte_compile = "release"`, a release that silently ships
-  source, with a `KF-BYTECOMPILE-NO-INTERP` warning;
-- with `byte_compile = true`, a failed build, exit 3.
+## 2. What ships today (#212, `cad70344`)
 
-The message says what to install, but leaves the user to find an installer.
-kivyforge already downloads standalone CPython builds (python-build-standalone,
-"PBS") for the desktop runtimes it ships, so it can install one for the host on
-request.
+[10 — byte-compiling](../common/10-byte-compile.md) describes it. For iOS,
+Android and a Linux `aarch64` target, `bundle/pycompile.py::find_interpreter`
+searches kivyforge's own interpreter, the `py` launcher (Windows), `python3.X`
+/ `python3` / `python` on `PATH`, then `uv python find`, and takes the first
+final release of the minor. With none, a shared message lists what it looked
+at, and `byte_compile = true` fails with `KF-BYTECOMPILE-NO-INTERP`, exit 3.
 
-## 2. What ships today (`cad70344`)
-
-[10 — byte-compiling](../common/10-byte-compile.md) is the full description; in
-short:
-
-`bundle/pycompile.py::find_interpreter` searches, in order:
-
-1. kivyforge's own interpreter, if it is a final release of the target minor;
-2. `py -3.X` (Windows only);
-3. `python3.X`, `python3` and `python` on `PATH`;
-4. `uv python find --no-project --no-python-downloads 3.X`, only when uv is
-   installed.
-
-Each candidate must report the target minor *and* `releaselevel == "final"`.
-When none does, all six call sites (iOS app sources, iOS pip-deps, macOS, Linux,
-Windows, Android) and `doctor` print one shared message
-(`pycompile.no_interpreter`). It lists every candidate and its version, and its
-`Fix:` line says to install the minor or set `byte_compile = false`. A
-`byte_compile = true` failure is `KF-BYTECOMPILE-NO-INTERP`, exit 3.
-
-All of that stays. This proposal adds a command, one more search step, and a
-line in the message.
+This proposal replaces that search for those three cases (3.4). Desktop
+builds whose staged runtime runs on the host are unchanged.
 
 ## 3. Design
 
 ### 3.1 The flow
 
 ```
-$ kivyforge package -p ios
-Error: [tool.kivy.ios.python.build_settings].byte_compile = true, but no final CPython 3.15 found (this project ships 3.15.2).
-  The .pyc files must be written by a final CPython 3.15 on this machine. Looked at:
-    ...
-  Fix: run `kivyforge bytecompiler -p ios` to install a host CPython 3.15 for
-  byte-compiling, or install any final CPython 3.15.x yourself (for example
-  `uv python install 3.15`, or python.org) so python3.15 is on PATH, or set
-  byte_compile = false in [tool.kivy.ios.python.build_settings].
-
-$ kivyforge bytecompiler -p ios
-[bytecompiler] ios ships CPython 3.15.2; no final 3.15 on this machine
-[bytecompiler] installing CPython 3.15.2 (aarch64-apple-darwin)
-[download] cpython-3.15.2+20261101-aarch64-apple-darwin-install_only.tar.gz  100% of 27.8 MB
-Installed CPython 3.15.2 for byte-compiling: ~/Library/Caches/kivyforge/artifacts/host-python/3.15/python/bin/python3.15
-
-$ kivyforge package -p ios
-[stage] byte-compiling app sources with ~/Library/Caches/kivyforge/artifacts/host-python/3.15/python/bin/python3.15 (.pyc only)
+$ kivyforge lock -p ios
+[lock] host CPython 3.15.2 for byte-compiling: aarch64-apple-darwin
 ...
+Wrote pylock.ios.toml
+
+$ kivyforge package -p ios
+[stage] host CPython 3.15.2 (aarch64-apple-darwin): installing from the lock
+[download] cpython-3.15.2+20261101-aarch64-apple-darwin-install_only_stripped.tar.gz  100% of ...
+[stage] byte-compiling app sources with the locked host CPython 3.15.2 (.pyc only)
+...
+
+$ kivyforge package -p ios        # any later build, on any machine with it cached
+[stage] byte-compiling app sources with the locked host CPython 3.15.2 (.pyc only)
 ```
 
-`build` and `package` never download a host Python themselves. The network is
-used only when the user runs the command, so a build's network use is
-unchanged, and nothing waits for input: the error suggests a command, and the
-user decides whether to run it.
+No step for the user to remember, and nothing waits for input. A teammate who
+clones the repo, or a CI job that runs `lock --check`, gets the same pinned
+build from the committed lock.
 
-### 3.2 The command
+### 3.2 What the lock pins
 
-| Form | Installs |
-|---|---|
-| `kivyforge bytecompiler` | For every platform the project configures, the minor its build would compile for, where this machine can't already supply one. A project that ships 3.15 to iOS and 3.14 to Android gets both. |
-| `kivyforge bytecompiler -p ios` | The same, for that platform only. |
+A new table in the platform's lock, **one entry per host that can build it,
+always**. Each entry records its state explicitly, so a missing entry can only
+mean a lock written before this table existed (R1):
 
-It runs in a project, like `build`: the error that sends a user here comes from
-one. `-p` selects a *version*, never the interpreter's target: the interpreter
-is always for the host, so its triple comes from the machine (3.5).
+```toml
+[[tool.kivyforge.host_python]]
+triple = "aarch64-apple-darwin"
+state = "pinned"
+version = "3.15.2"
+variant = "install_only_stripped"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261101/cpython-3.15.2%2B20261101-aarch64-apple-darwin-install_only_stripped.tar.gz"
+sha256 = "..."
 
-**`-p` is optional, and has no default.** Other verbs fall back to
-`KIVYFORGE_PLATFORM`, then to the host's own platform. That would be wrong
-here: on a Mac the host platform is `macos`, which compiles with the runtime it
-ships, so a defaulted `bytecompiler` would do nothing when the user meant iOS. Without
-`-p`, the command covers every configured platform instead.
-
-**What "configured" means**, for the no-`-p` form, decided per platform:
-
-- the project has that platform's overlay (`[tool.kivy.<platform>]`);
-- this host can build it (`capabilities`); others are skipped with a line
-  saying so (iOS on Windows);
-- `byte_compile` is not `false` for it;
-- its build cannot already compile with what it ships. On desktop that is only
-  a Linux `aarch64` target built on an x86_64 host. macOS ships only arm64 and
-  Windows only amd64, so their staged runtime always runs.
-
-**Which version a platform needs** comes from its lock, exactly as `build`
-reads it: `python_xcframework.version` (iOS), `python_android[0].version`
-(Android), `python_runtime.version` (macOS, Linux, Windows). With no lock, or a
-stale one, the platform is reported ("run `kivyforge lock -p ios` first") and
-the others still run. Reading `pyproject.toml` instead would be wrong for any
-project whose lock has not caught up with its config.
-
-**Idempotent.** For each minor the command first runs the same search a build
-runs (section 2, plus 3.3). If anything qualifies, it says what and installs
-nothing:
-
-```
-[bytecompiler] ios ships CPython 3.15.2; already compiled by python3.15 (3.15.0)
+[[tool.kivyforge.host_python]]
+triple = "x86_64-pc-windows-msvc"
+state = "no-build"           # PBS has no final build of this minor for the triple yet
+minor = "3.16"
 ```
 
-`--force` reinstalls kivyforge's copy (Q7).
-
-### 3.3 Where it goes, and the new search step
-
-The interpreter is extracted inside the artifact cache's root, one directory
-per minor: `<cache>/host-python/<major.minor>/python/`, so `clean --cache`
-removes it along with everything else. The `.tar.gz` itself stays in
-`ArtifactCache` like any other download. *(The draft put it beside the cache;
-inside it, `clean --cache` needs no change to remove it.)*
-
-`find_interpreter` gains a step right after "this interpreter": **a final
-CPython of the minor that kivyforge installed.** Putting it before `PATH` makes
-the install the deterministic choice once the user has asked for it, whatever
-`PATH` holds. A newer final patch release replaces the old one in the same
-directory, because only one is needed per minor.
-
-### 3.4 Which build is installed
-
-1. The **exact version the lock ships** (`3.15.2`), when PBS has an
-   `install_only` build of it for the host's triple.
-2. Otherwise the **newest final release of the same minor** PBS has for that
-   triple. PBS can lag a CPython patch release by days, and any final release
-   of the minor writes `.pyc` the runtime loads.
-3. **Never a pre-release.** A project shipping `3.16.0b2` gets nothing, with a
-   line saying why, as in the search.
-
-`GithubPbsMetadataFetcher.fetch(version, triple)` already does step 1. Step 2
-needs a minor-wide lookup it doesn't have: reading `SHA256SUMS` newest first
-and taking the first final `cpython-3.15.*` for the triple.
-
-### 3.5 Host triples
-
-The host's own triple. kivyforge supports three build hosts
-([`get-started/hosts.md`](../../guides/get-started/hosts.md), and `hosts` /
-`host_machines` in `capabilities --json`), so the table is complete:
-
-| Host | Triple |
-|---|---|
-| macOS arm64 (Apple Silicon) | `aarch64-apple-darwin` |
-| Linux x86_64 | `x86_64-unknown-linux-gnu` |
-| Windows amd64 | `x86_64-pc-windows-msvc` |
-
-An Intel Mac and an aarch64 Linux machine are not build hosts. A Raspberry Pi
-is a Linux *target* built from an x86_64 host. On a host missing from the
-table, the command fails with exit 3 rather than guessing a triple.
-
-### 3.6 Verification
-
-The interpreter is a binary kivyforge will run, so it is verified even though
-no lock pins it:
-
-- the sha256 comes from the PBS release's own `SHA256SUMS`, which the existing
-  fetcher already reads for desktop runtimes;
-- the archive is checked with `artifacts/verify.py` before it is extracted;
-- after extraction, the installed interpreter is probed like any search
-  candidate, and must report the expected minor and `final`.
-
-**Trust model, stated plainly:** this trusts the hash published *with* the
-release, fetched over HTTPS from GitHub. That is weaker than a desktop runtime,
-whose hash the user commits in the lock. It is accepted here because the
-interpreter never ships, and because the T3 magic check verifies the `.pyc` it
-writes (Q5).
-
-Cost: one archive per host and minor, about 24 MB for `aarch64-apple-darwin`
-(measured from a cached 3.13 build), shared by every project on the machine.
-
-### 3.7 Output
-
-- Progress on stderr, prefixed `[bytecompiler]`, as in 3.1.
-- One product line per minor on stdout: `Installed CPython 3.15.2 for
-  byte-compiling: <path>`, or `Already available: ...`.
-- `--json`, like every verb but `run`. `data.interpreters` lists one entry per
-  minor: `{"minor", "version", "path", "source": "installed" | "found" |
-  "already-installed", "platforms": [...]}`. It is not `data.artifacts`: an
-  interpreter is a tool, not a build product.
-- Skipped platforms are listed in `data.skipped`, each with `platform` and
-  `reason`, so an agent can see why a platform got nothing. A platform skipped
-  because this host can't build it, or because its lock is missing or stale,
-  also gets an `INFO` diagnostic with that existing code (`KF-HOST-INCAPABLE`,
-  `KF-LOCK-*`). The other reasons (`byte_compile = false`, a runtime that
-  compiles itself, a pre-release) have no diagnostic: each would need a new
-  code for something that isn't a problem. *(Changed while implementing; the
-  draft made every skip a diagnostic.)*
-
-### 3.8 Failures
-
-All of these are about the machine, so all are exit 3:
-
-| Case | Code | Message names |
+| `state` | Meaning | Fields |
 |---|---|---|
-| No network, or the fetch fails | `KF-HOST-PYTHON-FETCH` | the URL tried |
-| GitHub rate limit (403/429) | `KF-HOST-PYTHON-FETCH` | the existing fetcher's rate-limit hint |
-| No final PBS build of the minor for this triple | `KF-BYTECOMPILE-NO-INTERP` | the triple and minor |
-| Hash mismatch | `KF-HOST-PYTHON-FETCH` (`artifacts/verify.py::HashMismatch` itself stays unclassified elsewhere) | the file and both hashes |
-| Host not in the table (3.5) | `KF-HOST-INCAPABLE` | the host |
+| `pinned` | A build is pinned for this host. | `version`, `variant`, `url`, `sha256` |
+| `no-build` | PBS publishes no final build of the minor for this triple, when `lock` last looked. | `minor` |
+| `unresolved-offline` | `lock --offline` ran with no earlier pin to keep. | `minor` |
 
-A project problem is exit 1 or 4 as elsewhere: no project found (1), or
-`-p <platform>` whose lock is missing or stale (4). Without
-`-p`, such a platform is skipped with an `INFO` diagnostic instead (3.2), and
-the command fails only if no platform is left to set up.
+**Which platforms.** Those whose build compiles with a host interpreter: iOS,
+Android, and Linux when `archs` includes `aarch64`. macOS and Windows ship only
+the arch they build on, so their staged runtime always compiles its own
+payload, and their locks gain nothing. The table is written whatever
+`byte_compile` says: `build_settings` is not a lock input, so turning
+`byte_compile` on later must not find the pin missing.
 
-### 3.9 The message, `doctor` and `clean`
+**Which hosts** (Q2). Every host that can build the target, so a lock written
+on one machine serves the others:
 
-- **The shared message** gets the command as its first `Fix:` option (3.1),
-  with `-p <platform>`, since the build knows its platform. `doctor` prints the
-  same.
-- **`doctor`**: with no interpreter, the hint carries the same command. With
-  kivyforge's own install found, the check passes and names it ("via
-  kivyforge's CPython 3.15.2"). `doctor` never downloads.
-- **`clean --cache`** already removes the whole cache, so it removes these
-  installs too. Its help text should say so, since the next release build
-  would then fail until `bytecompiler` runs again.
+| Platform | Triples |
+|---|---|
+| iOS | `aarch64-apple-darwin` |
+| Android | `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `x86_64-pc-windows-msvc` |
+| Linux, `archs` including `aarch64` | `x86_64-unknown-linux-gnu` |
 
-### 3.10 The lock and `pyproject.toml` are untouched
+These are kivyforge's three build hosts
+([`get-started/hosts.md`](../../guides/get-started/hosts.md), and `hosts` /
+`host_machines` in `capabilities --json`). An Intel Mac and an aarch64 Linux
+machine are not build hosts.
 
-Nothing is written to the project. The interpreter never ships, and which final
-`3.15.x` writes the `.pyc` doesn't change whether the runtime loads them, so no
-lock records it. There is no new config key. The objections to the earlier
-draft's per-host-arch lock entries and forced re-lock don't arise.
+**Which version** (Q3). **One version for every triple a platform pins**, so
+all hosts compile with the same CPython release:
 
-## 4. Decisions (recorded 2026-11-05)
+1. the version the lock ships, if PBS has it for every triple;
+2. otherwise the newest final release of the minor that PBS has for every
+   triple;
+3. a triple with no final build of the minor at all gets `no-build`, and the
+   others still share one version;
+4. never a pre-release: a project shipping `3.16.0b2` gets `no-build` on every
+   triple.
+
+One release's `SHA256SUMS` lists every triple, so the lookup reads each
+release once for all of them, newest first (a batched form of
+`GithubPbsMetadataFetcher.find_install_only` from #213).
+
+**Which variant** (Q12). `install_only_stripped` (debug symbols removed, the
+same layout, compiling identically) where PBS publishes it for the chosen
+version and triple, otherwise `install_only`. The entry records `variant`, so
+a build never has to infer it from the URL.
+
+### 3.3 `lock`, `lock --check`, `--update` and older locks
+
+- **Plain `lock` completes a lock before its "already in sync" shortcut**
+  (R2). `cli/lock.py` returns early when `lock_inputs_sha256` matches, and
+  `build_settings` and the host-Python table aren't lock inputs, so without a
+  check a plain `lock` would report "in sync" and add nothing. Before that
+  shortcut, `lock` checks the table: a missing table, or an entry that is
+  `no-build` or `unresolved-offline`, is resolved, and the lock rewritten with
+  every other pin kept. This is lighter than the pyjnius precedent, whose fix
+  is `lock --update` and re-resolves every dependency.
+- **Keeping pins** (Q8). Plain `lock` and `lock --check` keep every `pinned`
+  entry while the minor still matches, as `prefer_runtime` keeps a desktop
+  runtime, and skip the lookup. A new PBS release is not drift, and
+  `lock --check` on a complete lock stays off GitHub's API.
+- **`lock --update` re-pins** (R4): it resolves the host Python afresh, as it
+  does every dependency.
+- **`lock --check` on an incomplete lock.** A missing table on a platform that
+  needs one is **`KF-LOCK-INCOMPLETE`**, exit 4: the lock matches
+  `pyproject.toml` but predates something kivyforge now supplies (the code's
+  existing meaning). `unresolved-offline` is also incomplete, so CI notices a
+  lock written offline. `no-build` passes: there is nothing for a re-lock to
+  pin until PBS publishes, and finding out would put the check on the network.
+  It is reported as a warning.
+- **`lock --offline`** keeps existing pins, and records `unresolved-offline`
+  where there is none.
+
+### 3.4 What `build` does
+
+For iOS, Android and a Linux `aarch64` target, when `byte_compile` applies,
+`build` reads this host's entry from the lock. There is **no fallback** to an
+interpreter already on the machine (Q5, 4.1): the pinned build is the only
+compiler.
+
+| This host's entry | `build` |
+|---|---|
+| `pinned` | Use the installed pin; else extract the cached archive; else fetch it (unless downloads are off, 3.7). Verify, extract and probe (3.5), then compile with it. |
+| `no-build` | No compiler: ships source or fails (3.8). |
+| `unresolved-offline` | No compiler, and the lock is incomplete: ships source or fails. |
+| No table (an older lock) | No compiler, and the lock is incomplete: ships source or fails. |
+
+Desktop builds whose staged runtime runs here keep compiling with it. That
+runtime is also pinned in the lock, so every byte-compile is done by a pinned
+build.
+
+### 3.5 Archive, install, cache and concurrency
+
+- **Two states on disk.** The **archive** is a pinned artifact in
+  `ArtifactCache`, fetched and verified like any other. The **install** is the
+  archive extracted to `<cache>/host-python/<full sha256>/`, keyed by the
+  pin's full SHA-256, so two projects pinning different builds keep both, and
+  `clean --cache` removes them with everything else. Extracting a cached
+  archive needs no network, so it is allowed with downloads off.
+- **Completion marker.** An install is complete only when its
+  `.kivyforge-complete` marker exists, written last, after the extracted
+  interpreter has been probed (it must run and report the pinned minor and a
+  final release). An install directory without the marker, or one whose
+  interpreter no longer runs, is deleted and extracted again from the archive.
+  The new tree is extracted beside the final directory and renamed into place,
+  so a failed install never leaves a half-written one (from #213).
+- **Concurrency** (Q11). A file lock per pin
+  (`<cache>/host-python/<sha256>.lock`) around fetch and extract, so parallel
+  jobs sharing one cache don't install the same build twice at once. The second
+  waits up to a timeout, then finds it installed. A lock it can't acquire in
+  that time is a failure (3.8), not a race.
+
+### 3.6 Verification and provenance
+
+`artifacts/verify.py` checks the archive against the lock's SHA-256 before
+extraction, and the probe checks the interpreter after. The T3 magic check
+still verifies the shipped `.pyc`.
+
+What the committed hash does, stated precisely: it makes every machine use the
+same bytes, and it catches an archive replaced or corrupted after locking, on
+GitHub, a mirror or the cache. It does **not** strengthen where the build came
+from: the hash was read from the same GitHub release that serves the archive,
+so `lock` trusts GitHub, over HTTPS, exactly once.
+
+### 3.7 Download settings
+
+Both are environment variables, because both describe the machine or the
+organisation, not the project (Q9, Q10). Both affect **only the host Python
+that byte-compiles**: runtimes, wheels and other pinned artifacts download as
+before. The names say so (R5), rather than matching uv's broader
+`UV_PYTHON_DOWNLOADS` and `UV_PYTHON_INSTALL_MIRROR`.
+
+- **`KIVYFORGE_HOST_PYTHON_DOWNLOADS`**: `automatic` (default) or `never`. With
+  `never`, `build` uses the pinned install, or extracts the pinned archive if
+  it is cached, and never reaches the network for it; otherwise it ships source
+  or fails (3.8). For hermetic CI images, air-gapped machines with a pre-filled
+  cache, and policies that forbid build tools downloading executables. No CLI
+  flag: the choice belongs to the machine, not one invocation.
+  **`--no-cache` with `never` is a usage error**, exit 1: one asks to
+  download again, the other forbids downloading.
+- **`KIVYFORGE_HOST_PYTHON_MIRROR`**: a URL that replaces
+  `https://github.com/astral-sh/python-build-standalone/releases/download` in
+  a pinned URL. The pinned SHA-256 still verifies what the mirror serves.
+  **It serves builds from an existing lock only** (R3): `lock` still lists
+  releases through GitHub's API and reads their `SHA256SUMS` from GitHub, so
+  writing or updating a lock needs GitHub access. A machine behind a firewall
+  can build from a lock committed elsewhere.
+
+### 3.8 Failures and codes
+
+| Case | `"release"` | `true` | Code | Fix in the message |
+|---|---|---|---|---|
+| No table for this host (an older lock), or `unresolved-offline` | ships source, warns | exit 4 | `KF-LOCK-INCOMPLETE` | `kivyforge lock -p <platform>` |
+| `no-build` | ships source, warns | exit 3 | `KF-BYTECOMPILE-NO-INTERP` | wait for a PBS build and re-lock, or `byte_compile = false` |
+| Downloads off and nothing cached | ships source, warns | exit 3 | `KF-BYTECOMPILE-NO-INTERP` | `kivyforge upgrade -p <platform>` with network, or unset the variable |
+| No network, a timeout, or a GitHub rate limit | ships source, warns | exit 3 | `KF-HOST-PYTHON-FETCH` | retry with network access; set `GITHUB_TOKEN` |
+| SHA-256 mismatch | ships source, warns | exit 3 | `KF-HOST-PYTHON-FETCH` | check the mirror serves the pinned file; re-lock if the release changed; report it if neither |
+| Extraction fails, or the extracted interpreter won't run as the pinned minor | ships source, warns | exit 3 | `KF-BYTECOMPILE-NO-INTERP` | the cache is cleared for that pin; retry, or `clean --cache` |
+| Disk full or permission denied writing the cache | exit 1 | exit 1 | `KF-ERROR`, unclassified | `os_failure()`'s message: what was being done, the path and the reason |
+| The install lock can't be acquired in time | ships source, warns | exit 3 | `KF-HOST-PYTHON-FETCH` | another build is installing; retry |
+| `--no-cache` with `KIVYFORGE_HOST_PYTHON_DOWNLOADS=never` | exit 1 | exit 1 | usage | drop one |
+
+Exit 4 where the fix is in the lock, exit 3 where it is on the machine. An OS
+refusal stays unclassified and fails in both modes, as every other one in
+kivyforge does (`report/failures.py::os_failure`): a full disk or a read-only
+cache would break the rest of the build anyway, and has nothing in common with
+a missing compiler.
+`KF-HOST-PYTHON-FETCH` is new in #213 and unreleased, so its meaning can still
+be set: "the pinned host CPython could not be fetched". The mismatch case
+shares it but carries its own fix, because a retry rarely helps.
+
+### 3.9 Messages and `doctor`
+
+No list of what was searched. The message names the entry and its fix, for
+example:
+
+```
+Error: [tool.kivy.ios.python.build_settings].byte_compile = true, but the locked host CPython 3.15.2 (aarch64-apple-darwin) isn't available: KIVYFORGE_HOST_PYTHON_DOWNLOADS=never, and it isn't in the cache.
+  Fix: run `kivyforge upgrade -p ios` on a machine with network access, unset KIVYFORGE_HOST_PYTHON_DOWNLOADS, or set byte_compile = false.
+```
+
+`doctor`, for each platform that byte-compiles with a host interpreter, never
+downloading or extracting:
+
+| This host's state | Result |
+|---|---|
+| `pinned`, installed | PASS, naming it |
+| `pinned`, archive cached | PASS: "extracted on the first release build" |
+| `pinned`, not cached, downloads on | PASS: "downloaded on the first release build" |
+| `pinned`, not cached, downloads off | FAIL with `true`, WARN with `"release"` |
+| `no-build` | FAIL with `true`, WARN with `"release"`: no PBS build yet |
+| No table, or `unresolved-offline` | FAIL with `true`, WARN with `"release"`: re-lock |
+
+No size is given: `SHA256SUMS` doesn't record one, and fetching it would cost
+`lock` a request per triple.
+
+### 3.10 `upgrade`
+
+`kivyforge upgrade -p <platform>` already re-fetches every artifact the lock
+pins, and now fetches this host's `pinned` archive with them (Q14). Its
+selectors:
+
+| Form | Host Python |
+|---|---|
+| no selector | fetched |
+| `--python` | fetched, with the runtime |
+| `--name host-python` | fetched alone |
+| `--libs`, `--xcframeworks` | not fetched |
+
+It fetches the archive; the first build extracts it, offline if need be. It is
+how to fill a cache ahead of time. It is **not** enough for a fully offline CI
+image: `upgrade` never fetches wheels. An image that must build offline runs a
+full `package` while it's being built, which fills every cache, and then sets
+`KIVYFORGE_HOST_PYTHON_DOWNLOADS=never`. There is no `bytecompiler` verb.
+
+### 3.11 What is guaranteed, and what isn't
+
+Guaranteed: every machine that builds a given lock compiles with the same
+pinned CPython build, and the `.pyc` it writes load in the shipped runtime.
+
+Not guaranteed (R2 of 4.2): byte-for-byte identical `.pyc` across hosts. Each
+host runs a different PBS binary, and on Windows the source path recorded in
+each code object keeps backslashes after the payload prefix is stripped, so a
+`.pyc` written on Windows differs from one written on macOS. `marshal` output
+has also been reported to depend on reference counts in some CPython
+versions; that is unverified for 3.15. Byte-identity across hosts would be a
+separate goal, with a three-host comparison in CI (section 7).
+
+### 3.12 What #212 and #213 leave behind
+
+Removed, for the three host-compiled cases: the search (kivyforge's own
+interpreter, the `py` launcher, `PATH`, uv), its "Looked at:" list, and the
+`bytecompiler` verb with its `-p`, `--force` and `data.interpreters`. Kept from
+#213: the PBS lookup (made batched across triples), download, verification,
+extraction and probe (`bundle/hostpython.py`), the host-triple table, and
+`KF-HOST-PYTHON-FETCH`. Desktop builds whose staged runtime can't run (a
+missing staged interpreter) keep reporting `KF-BYTECOMPILE-NO-INTERP`.
+
+## 4. Decisions (recorded 2026-11-06)
 
 | # | Question | Decision |
 |---|---|---|
-| Q1 | **The verb's name.** | **`bytecompiler`** (4.1). |
-| Q2 | **Search order.** Should kivyforge's own install come before `PATH` (deterministic once installed) or after it (a user's own Python wins)? | **Before `PATH`**, right after kivyforge's own interpreter (3.3), so that running the command always changes what the build uses. Either order writes correct `.pyc`, since any final release of the minor will do. Putting it last was rejected: running `bytecompiler` could then change nothing, when `PATH` already held some other match. |
-| Q3 | **How is the downloaded interpreter's hash trusted?** | **The PBS release's own `SHA256SUMS`, read at download time** (3.6), as the desktop runtimes already are, with the trust model documented. Rejected: a table of approved builds and hashes shipped inside kivyforge, as uv embeds its download metadata. It is stronger, but a new CPython patch would then need a kivyforge release before `bytecompiler` could install it. Pinning per host triple in a committed file was rejected earlier, because it reopens the lock question. |
-| Q4 | **Which build is installed?** | **The exact version the lock ships when PBS has it for this host, otherwise the newest final release of that minor** (3.4). Rejected: always the newest of the minor (simpler, but needlessly different from what ships), and the exact version only (strictest, but blocked for days whenever PBS lags a CPython patch release). |
-| Q5 | **Should `bytecompiler` self-check the `.pyc` its interpreter would write?** | **No.** The installed interpreter is probed for minor and final release (3.6), and the T3 magic check already verifies shipped `.pyc`. A self-check would duplicate both. |
-| Q6 | **What code do download failures get?** | **One new code, `KF-HOST-PYTHON-FETCH`**, exit 3, for no network, a rate limit and a hash mismatch (3.8): the cases a retry with network or later can fix. `KF-BYTECOMPILE-NO-INTERP` stays for "PBS has no build of this minor". Rejected: reusing `NO-INTERP` for everything (an agent couldn't tell "retry" from "nothing to download"), and a code per case (three codes for one verb). The name is final once it ships; classifying `HashMismatch` for every other download is a separate change. |
-| Q7 | **Upgrades and removal.** | **A plain run keeps an installed patch**: an installed 3.15.0 already compiles correctly for a shipped 3.15.2, so the command reports it and installs nothing. **`--force` reinstalls**, taking the build 3.4 picks. No uninstall verb; `clean --cache` removes the installs. Rejected: upgrading on every run, which needs a network check each time and changes nothing about correctness. |
+| Q1 | Does `lock` pin the host Python and `build` fetch it, or does a command the user runs install it? | **`lock` pins, `build` fetches.** A command was the 2026-11-05 design (6.2). It never reached a teammate or CI building from a committed lock, the common case. |
+| Q2 | Which hosts get an entry? | **Every host that can build the target** (3.2), so a lock from a Mac serves Android CI on Linux. Only the host that ran `lock` was rejected for that reason. |
+| Q3 | Which version? | **One version for all of a platform's triples:** the shipped version if every triple has it, otherwise the newest final every triple has; never a pre-release (3.2). Changed in review: choosing per triple could pin 3.15.1 on one host and 3.15.2 on another. |
+| Q4 | The pin, or an interpreter already on the machine, first? | **The pin**, so every machine compiles with the same build. Superseded by Q5: the pin is the only one. |
+| Q5 | Fall back to an interpreter on the machine when there's no usable pin? | **No** (4.1). |
+| Q6 | Let uv do the install when it's present? | **No; and with no fallback, moot.** uv can't install a specific pinned build, its result would depend on whether and which uv is installed, and it writes outside kivyforge's cache. |
+| Q7 | What is a lock without the table? | **Incomplete, not drift: `KF-LOCK-INCOMPLETE`, exit 4**, and a plain `lock` completes it (3.3). Changed in review from "drift": `pyproject.toml` didn't move, and the code exists for exactly this. |
+| Q8 | Do `lock` and `lock --check` keep pins? | **Yes**, like `prefer_runtime`, so a new PBS build isn't drift and the check stays off the GitHub API. |
+| Q9 | A setting to never download? | **Yes: `KIVYFORGE_HOST_PYTHON_DOWNLOADS=automatic\|never`**, an environment variable only (3.7). Extracting a cached archive is still allowed. The use case it no longer serves is compiling with your own CPython on purpose, the weakest of the four. |
+| Q10 | A mirror setting? | **Yes, now: `KIVYFORGE_HOST_PYTHON_MIRROR`**, for builds from an existing lock (3.7, R3). |
+| Q11 | A lock on concurrent installs? | **Yes**, per pin, with a timeout (3.5). |
+| Q12 | Stripped or full PBS build? | **Stripped where PBS publishes it, otherwise full, recorded as `variant`** (3.2). Decided in review; measuring the sizes confirms the choice and changes nothing if stripped turns out no smaller. |
+| Q13 | Failure codes at build time? | **`KF-HOST-PYTHON-FETCH`, exit 3**, for a failed fetch, a hash mismatch (with its own fix) and a lock timeout; `KF-LOCK-INCOMPLETE`, exit 4, where the lock is the problem; `"release"` degrades to shipping source in every case (3.8). |
+| Q14 | What happens to `kivyforge bytecompiler`? | **Dropped.** Fetching ahead of time moves into `upgrade` (3.10). |
+| Q15 | #213: rework or replace? | **Rework in place**: most of its code carries over (3.12). |
 
-### 4.1 Q1: why `bytecompiler`
+### 4.1 Q5: why no fallback
 
-Decided 2026-11-05. The verb is narrow, so its name is too: it installs the
-interpreter that byte-compiles, and nothing broader.
+Decided 2026-11-06. A fallback to an interpreter already on the machine was
+proposed and rejected; each reason for it is covered another way.
 
-- **It answers the error.** The failure begins `byte_compile = true, but no
-  final CPython 3.15 found`, so `kivyforge bytecompiler -p ios` reads as its
-  fix.
-- **One word, like the other verbs.** Nouns are already verbs here (`doctor`,
-  `status`, `capabilities`), and no verb is hyphenated.
-- **Nothing else in kivyforge it could mean.**
-
-As a noun it doesn't say "install". That is acceptable because the command is
-idempotent: it reports what it found, or installs when nothing qualifies. The
-help line leads with the action: `Install a host CPython that byte-compiles for
-the target, if none is found`.
-
-Rejected:
-
-| Name | Why not |
+| Reason for a fallback | Covered by |
 |---|---|
-| `setup` | Promises "everything this project needs on this machine" and does one narrow thing. Too generic. |
-| `doctor --fix` | `--fix` promises to fix any problem `doctor` reports, and this would fix exactly one. It would also turn `doctor` from a read-only check into something that downloads. |
-| `python` | kivyforge already has three Pythons: the one it runs under, each platform's shipped runtime (which `status` shows), and the host interpreter. `kivyforge python -p ios` reads as the *iOS runtime*, the opposite of what it does. The bare word also reads as "run Python", as in `uv run python`. |
-| `python install` (a group) | Mirrors `uv python install`, but is only worth it with `list` and `find` subcommands, which are more than this feature needs. It would also be kivyforge's first subcommand group. |
-| `hostpython` | Literal, and familiar from python-for-android, but it doesn't explain itself in the error, and "host" is jargon to a user who wants their iOS build to work. |
+| Older locks keep byte-compiling until a re-lock | A plain `lock` completes them (3.3). |
+| No network on the first build after a clone | Explicit: `"release"` ships source with a warning, `true` fails. `upgrade` fetches ahead of time. |
+| Networks that block GitHub | The mirror, for builds from a committed lock (3.7), or a pre-filled cache. Writing the lock still needs GitHub. |
+| "Never download" users | Hermetic images (a full `package`, then `never`), air-gapped machines and reviewed-artifact policies are served by a cache or a mirror. Only "compile with my own CPython" is lost, and byte-compiling needs only the right minor. |
 
-Also considered and not shortlisted: `install` (collides with installing the
-app on a device, which `run` does), `bootstrap` (collides with the Android
-bootstrap), `provision` (generic, and close to Apple's provisioning profiles),
-`compiler` and `install-compiler` (read as a C compiler next to Xcode and the
-NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
+Against it: a compiler that differs per machine, and a second path to test and
+explain. Without it, most of the #212 search goes for the host-compiled cases,
+and the message and `doctor` get simpler (3.9). That search is unreleased, so
+removing it breaks no user.
 
-## 5. Not in this change
+### 4.2 Review, 2026-11-06
 
-- **`build` or `package` downloading anything.** That was the earlier draft.
-  It stays rejected: a build should not fetch a toolchain unasked, and a flag on
-  `build` would have to be passed on every CI run.
-- **Asking yes/no at build time** ("Download a host Python? [y/N]"). Rejected
-  2026-11-05. AGENTS.md's rule is that no verb waits for input, with `run`'s
-  app launch the only exception, and this would break it:
-  - **CI and scripts hang.** With no terminal attached, the build waits until
-    the job times out, a worse failure than today's clear error.
-  - **Behaviour depends on how it ran.** Prompting only at a terminal makes the
-    same `package -p ios` download at a terminal and fail in CI.
-  - **Agents can't answer.** An agent running `package --json` would block on a
-    question it can't see, with stdout's single envelope unfinished.
-  - **The answer needs a home.** Asking on every build nags; remembering the
-    answer rebuilds the config key this proposal dropped, only hidden.
-  - **A download mid-build.** Yes puts the network, and its failures, back
-    into `build`, in the middle of staging.
-  - **Escape hatches.** It would need `--yes`, `--no-input` and a CI check,
-    three paths to test for one keystroke. The copy-paste command gets almost
-    all of that keystroke's value.
-- **A `--python X.Y` switch** that installs a given minor without reading a
-  project. Dropped 2026-11-05 for lack of a use case:
-  - **CI image baking** doesn't need it. A CI job checks out the project
-    anyway, so `kivyforge bytecompiler -p ios` is one step there, and an image
-    built ahead of any project can use `uv python install` or python.org.
-  - **Outside a project** there is no build that needs byte-compiling.
-  - **It can be wrong.** `--python 3.14` while the lock ships 3.15 installs
-    something useless, and the same error comes back. Reading the version from
-    the lock, as the build does, can't make that mistake.
-  - **The flow it serves** is "a build failed, run the fix it printed", which
-    happens in a project. Choosing a version by hand doesn't fit it.
+A review of the first 2026-11-06 revision found five gaps and asked four
+questions. Each is now resolved:
 
-  Dropping it also removed a rule (`-p` and `--python` exclusive) and a
-  question (which form the error prints).
-- **A setting naming the interpreter, like Chaquopy's `buildPython`.**
-  Considered 2026-11-05 and not adopted. Chaquopy, Briefcase's Android backend,
-  takes an interpreter command in `build.gradle`
-  (`buildPython("C:/path/to/python.exe")`, or `buildPython("py", "-3.13")`)
-  and uses it instead of its own `python3.X` / `python3` / `python` search. It
-  must still match the app's major.minor version
-  ([Chaquopy's docs](https://github.com/chaquo/chaquopy/blob/master/product/runtime/docs/sphinx/android.rst)).
-  It doesn't fit kivyforge:
-  - **The problem it solves mostly doesn't arise.** Gradle usually runs inside
-    Android Studio, and a Mac app launched from the Dock doesn't get the shell's
-    `PATH`, so a Python the terminal finds can be invisible to the build. That
-    is the reason inferred here; Chaquopy's docs only say "if this doesn't work
-    for you". kivyforge is a CLI run from the shell, and it byte-compiles in its
-    own staging step rather than inside Xcode or Gradle, so it already sees the
-    user's `PATH`.
-  - **`pyproject.toml` is the wrong home for it.** Its values are absolute
-    machine paths in a committed file, which break on a teammate's machine or
-    in CI. That is the objection that dropped this proposal's first draft.
-  - **One value can't cover every platform.** A kivyforge project can ship 3.15
-    to iOS and 3.14 to Android; a single setting names one interpreter.
+| Point | Resolution |
+|---|---|
+| A lock with no entry, and one written offline or before a build existed, looked the same | Every capable host gets an entry with an explicit `state` (3.2); absence means only "older lock". |
+| Plain `lock` would say "in sync" and never add the pin | A completeness check before the shortcut (3.3). |
+| Android could pin a different patch per host | One version common to all triples (Q3). |
+| Byte-identical cross-host `.pyc` was assumed | The claim is narrowed to "the same pinned compiler, loadable `.pyc`" (3.11). |
+| The mirror doesn't help `lock` behind a firewall | Documented: it serves builds from an existing lock only (3.7). |
+| Clarifications | Archive versus install, full-hash directory and completion marker (3.5); `--no-cache` with `never` (3.7); variable names scoped to the host Python (3.7); `upgrade` selectors and offline images (3.10); no size estimate (3.9); a fuller failure table and the mismatch fix (3.8); Q12 decided; `--update` re-pins (3.3); provenance stated precisely (3.6). |
 
-  **The workaround already works.** A final CPython of the right minor that the
-  search misses (pyenv, conda, a python.org framework that isn't linked,
-  `/opt/python/3.15` in a CI image) is found by putting its directory first on
-  `PATH`, because the search tries `python3.X` there:
+The review's questions, answered:
 
-  ```bash
-  PATH=/opt/python/3.15/bin:$PATH kivyforge package -p ios
-  ```
+- **R1. Should `lock` succeed when a triple has no PBS build?** Yes, with an
+  explicit `no-build` entry, never a silent absence.
+- **R2. Is byte-for-byte cross-host `.pyc` reproducibility a requirement?** No:
+  the same pinned compiler, and `.pyc` the runtime loads (3.11).
+- **R3. Must the mirror support writing and updating locks without GitHub?**
+  No, not now (section 7).
+- **R4. Should `lock --update` re-pin the host Python?** Yes (3.3).
+- **R5** (from the clarifications). The variables are named for the host
+  Python they control, not uv's broader names (3.7).
 
-  The iOS and Android pyproject references should show this example.
+## 5. How other tools do it
 
-  If a user asks for it anyway, the form that fits is an environment variable,
-  not a config key: for example `KIVYFORGE_BYTECOMPILER`, a `PATH`-style list of
-  interpreters checked before the search, using the first of the right minor,
-  with an entry that fails the minor or final-release check a hard error. It
-  would add little over the `PATH` workaround beyond that error.
-- **Using the installed Python for anything else** (resolving, building
+None of these downloads a prebuilt host Python for byte-compiling. Read from
+each project's source, 2026-11-05.
+
+| Tool | Approach |
+|---|---|
+| python-for-android (Buildozer) | Builds a host CPython from source (`hostpython3` recipe), and refuses unless its version equals the target `python3` recipe's. Compiles with `hostpython -m compileall -b`; `--no-byte-compile-python` opts out ([recipe](https://github.com/kivy/python-for-android/blob/develop/pythonforandroid/recipes/hostpython3/__init__.py)). |
+| kivy-ios | The same: a `hostpython3` recipe built from python.org source at the iOS `python3` version, used by `compileall` ([recipe](https://github.com/kivy/kivy-ios/blob/master/kivy_ios/recipes/hostpython3/__init__.py)). |
+| Briefcase | The app's Python is the Python running Briefcase (`python_version_tag` from its own `sys.version_info`), so a matching host interpreter always exists. It doesn't byte-compile iOS apps itself; Android goes through Chaquopy ([source](https://github.com/beeware/briefcase/blob/main/src/briefcase/commands/base.py)). |
+| Chaquopy | Searches `python3.X`, `python3`, `python` (`py -3.X` on Windows), with a `buildPython` override in `build.gradle`. A failed compile warns and ships source unless `pyc` is set to `true`, much as #212 shipped ([docs](https://github.com/chaquo/chaquopy/blob/master/product/runtime/docs/sphinx/android.rst)). |
+| uv | Not a build tool, but the reference for installing interpreters: PBS builds verified against hashes shipped with uv, a mirror setting, a downloads on/off switch, and locking around installs. This design takes the last three (3.5, 3.7). |
+
+p4a and kivy-ios get a pinned, exact-version host interpreter because they must
+build CPython anyway. kivyforge uses prebuilt python.org runtimes, so it gets
+the same property by pinning a prebuilt host build instead.
+
+## 6. Rejected and superseded designs
+
+### 6.1 An opt-in `pyproject.toml` key (draft of 2026-11-05)
+
+`compiler = "download"` in `build_settings` let `build` download an unpinned
+interpreter. Dropped the same day: a missing tool on one machine isn't a
+property of the project, and "edit `pyproject.toml`" was the wrong fix to print.
+
+### 6.2 `kivyforge bytecompiler` (2026-11-05, implemented in #213)
+
+A command run once per machine that searched first and installed a PBS build
+only when nothing qualified, with the hash read from the release's
+`SHA256SUMS`. It worked (test-matrix §7, 2026-11-05, including a device boot),
+but:
+
+- **It never reached a committed lock's users.** CI and teammates build from a
+  lock they didn't write, and still had to know to run it.
+- **The compiler still varied per machine**, since the search came first.
+- **Its hash was read at install time**, not committed, so a replaced archive
+  went unnoticed.
+
+Its name was chosen over `setup`, `doctor --fix`, `python`, `python install` and
+`hostpython`; that reasoning no longer applies with no verb.
+
+### 6.3 Asking yes/no at build time
+
+Rejected: AGENTS.md's rule is that no verb waits for input. CI and scripts
+would hang, the build would behave differently at a terminal than in CI, an
+agent running `--json` couldn't answer, and the answer would need somewhere to
+live. Automatic download from a pinned lock needs no question.
+
+### 6.4 A `--python X.Y` switch
+
+For the `bytecompiler` command, installing a minor without reading a project.
+Dropped for lack of a use case, and because a minor picked by hand could differ
+from what the lock ships. Moot without the verb.
+
+### 6.5 A setting naming the interpreter, like Chaquopy's `buildPython`
+
+Chaquopy needs one mostly because Gradle runs inside Android Studio, which may
+not see the shell's `PATH`. kivyforge byte-compiles from the shell; a machine
+path doesn't belong in a committed `pyproject.toml`; and one value can't serve
+a project shipping different minors per platform. With no fallback, there is
+also nothing for it to point at: the pin is the compiler.
+
+## 7. Not in this change
+
+- **A mirror for writing locks**: serving the release list and `SHA256SUMS`
+  without GitHub. Only if someone needs to lock behind a firewall (R3).
+- **Byte-identical `.pyc` across hosts**, including normalising the Windows
+  path separator in code objects, and a three-host comparison in CI (R2).
+- **Using the pinned host Python for anything else** (resolving, building
   sdists). It compiles `.pyc` and nothing more.
-- **Free-threaded or non-CPython hosts.** PBS's `install_only` default build is
-  the standard one. The search's missing CPython check (`sys.implementation`) is
-  a separate fix.
+- **Free-threaded or non-CPython builds.** The pin is PBS's standard CPython.
+- **Classifying `HashMismatch` for every other download.** It still has no code
+  outside this path; a separate change.
 
-## 6. Steps
+## 8. Steps
 
-1. The verb (Q1): `-p`, `--force`, `--json`, and the no-`-p`
-   platform walk (3.2), reading each lock's runtime version.
-2. A host-triple helper (3.5).
-3. A minor-wide PBS lookup (3.4, step 2) next to `GithubPbsMetadataFetcher`.
-4. Download, verify, extract and probe (3.6), reusing `ArtifactCache` and
-   `artifacts/verify.py`.
-5. `pycompile`: the new search step (3.3), recorded in `searched`.
-6. Failure classification (3.8), with `KF-HOST-PYTHON-FETCH` defined in
-   `report/diagnostics.py`; the `Fix:` line, `doctor` and `clean --cache` help
-   (3.9).
-7. `capabilities --json` lists the verb.
-8. The documentation in section 7, and CHANGELOG under `[Unreleased]`.
+1. Measure the stripped and full archives for the three triples, and confirm
+   the stripped layout matches (Q12).
+2. Lock model: the `host_python` table with its three states, in the iOS,
+   Android and Linux lock models, readers, writers, `semantic_equal` and
+   `diff_summary`.
+3. Lock resolution: one version common to the platform's triples, in one pass
+   over the releases (3.2); keeping pins (Q8); `--update` re-pinning; `no-build`
+   and `unresolved-offline` entries; the completeness check before `lock`'s
+   shortcut, and `KF-LOCK-INCOMPLETE` from `lock --check` (3.3).
+4. Build: the pinned interpreter as the only compiler for the host-compiled
+   cases (3.4), replacing `find_interpreter` there; archive, install, marker
+   and recovery, and the per-pin file lock, from #213's `hostpython` (3.5).
+5. `KIVYFORGE_HOST_PYTHON_DOWNLOADS` and `KIVYFORGE_HOST_PYTHON_MIRROR`, and
+   the `--no-cache` conflict (3.7).
+6. Failures and messages (3.8, 3.9); `doctor`'s six states.
+7. `upgrade` fetches this host's pin, with its selectors (3.10).
+8. Remove the `bytecompiler` verb, its tests and docs, and the parts of the
+   #212 search the host-compiled cases no longer use (3.12).
+9. Re-lock the tracked example locks that need the table (section 11).
+10. The documentation in section 9, and CHANGELOG under `[Unreleased]`.
 
-## 7. Documentation
-
-A user who hits the error should find the command in the guides, and a
-contributor should find the search order in the design docs. Both fall behind
-this change unless it updates them.
-
-### 7.1 Already stale before this change: fixed 2026-11-05
-
-Six design docs described the search before `cad70344`, in which iOS, Android
-and the desktop fallback compiled only with "the interpreter running
-`kivyforge` itself". The search had since gained the `py` launcher (Windows),
-`python3.X`, `python3` and `python` on `PATH`, and uv. They were fixed ahead of
-this proposal, because they described shipped behaviour wrongly whether or not
-`bytecompiler` is built.
-
-The search is now described once, in
-[10 — byte-compiling](../common/10-byte-compile.md), and these link to it:
-
-| Document | Was |
-|---|---|
-| `docs/design/platforms/ios/01-pyproject-ios.md`, "Compiler selection" | "Compilation always uses the interpreter running `kivyforge` itself". |
-| `docs/design/dev/ios-source-stripping.md`, "Compiler selection" | "the ladder collapses to two rungs". A completed plan, so it keeps its text and gains a dated note. |
-| `docs/design/platforms/android/01-pyproject-android.md`, "Which interpreter writes the `.pyc`" | Only the current interpreter, then `py -X.Y` / `pythonX.Y`. |
-| `docs/design/platforms/macos/macos-spec.md`, `windows-spec.md`, `linux-spec.md` | The fallback after the staged interpreter was "the interpreter running `kivyforge` itself". |
-
-So this change updates one page for the search, not six.
-
-### 7.2 Design docs this change updates
+## 9. Documentation
 
 | Document | Change |
 |---|---|
-| `docs/design/common/02-cli-and-platform-resolution.md` | Add `bytecompiler` to "Verbs". Record that its `-p` is optional with no default, the one verb where the resolution chain (`-p`, `KIVYFORGE_PLATFORM`, host default) does not apply, and why (3.2). |
-| [`docs/design/common/10-byte-compile.md`](../common/10-byte-compile.md) | Add the "installed by kivyforge" step after "kivyforge's own interpreter" (3.3), the new `Fix:` option, and the `doctor` hint. Drop its "not implemented" pointer to this proposal. |
-| `docs/design/platforms/ios/01-pyproject-ios.md` and `docs/design/platforms/android/01-pyproject-android.md` | Name `bytecompiler` as the fix when no interpreter is found. |
-| `docs/design/platforms/linux/linux-spec.md` | The same, for an `aarch64` target built on x86_64, the one desktop case that needs a host interpreter. |
-| `docs/design/dev/roadmap.md` | An entry for the verb, linking this proposal. |
-| `docs/design/dev/hardware-checklist.toml`, `ios-strip-source` | Its "Needs" asks for `python3.15` on `PATH`; add `kivyforge bytecompiler -p ios` as the alternative. |
-| `docs/design/dev/test-matrix.md` §7 | The real-toolchain rows from section 8. |
-| This proposal | Status to implemented, with the decisions in section 4. |
+| [`docs/design/common/10-byte-compile.md`](../common/10-byte-compile.md) | Rewrite "The search" and "Installing one" around the pin: the table and its states, how `build` gets it, the two environment variables, the failures, and what is and isn't guaranteed (3.11). Desktop's staged-runtime rule stays. |
+| `docs/design/common/03-lockfile-concept.md` | The `host_python` table: a lock entry for a tool that never ships, why it's still a lock's job, and the completeness rule. |
+| `docs/design/common/02-cli-and-platform-resolution.md` | Remove `bytecompiler` from "Verbs" and its resolution note; `upgrade` fetches the host-Python pin. |
+| `docs/design/platforms/ios/02-pylock-ios-spec.md`, and the Android and Linux lock docs | The table, its triples and states, and `KF-LOCK-INCOMPLETE`. |
+| `docs/design/platforms/ios/01-pyproject-ios.md`, `android/01-pyproject-android.md`, `linux/linux-spec.md` | Replace "run `kivyforge bytecompiler`" with the pinned interpreter. |
+| `docs/design/dev/roadmap.md` | Item 14 retitled and pointed at this design. |
+| `docs/design/dev/hardware-checklist.toml`, `ios-strip-source` | "Needs" no longer asks for a Python on `PATH`. |
+| `docs/design/dev/test-matrix.md` §7 | The real-toolchain rows from section 10. |
+| `docs/guides/reference/pyproject/ios.md`, `android.md`, `linux.md` | The byte-compile note: the lock pins it and the first release build downloads it; the two environment variables; drop the `bytecompiler` and `PATH` advice. |
+| `docs/guides/reference/environment.md` | `KIVYFORGE_HOST_PYTHON_DOWNLOADS` and `KIVYFORGE_HOST_PYTHON_MIRROR`, including the mirror's limit. |
+| `docs/guides/reference/lockfile.md` | The `host_python` table. |
+| `docs/guides/concepts/build-vs-package.md`, `get-started/hosts.md` | The host-Python lines: nothing to install; the first release build downloads it. |
+| `docs/guides/guides/cross-platform/ci-and-agents.md` | Replace the `bytecompiler` step: `GITHUB_TOKEN` for `lock`, and for offline images a full `package` while building the image, then `KIVYFORGE_HOST_PYTHON_DOWNLOADS=never`. |
+| `docs/guides/troubleshooting/index.md`, `docs/hooks/kf_generated.py` | The three codes' fixes from 3.8. |
+| `docs/guides/reference/json-output.md` | Remove `data.interpreters`. |
+| `README.md`, `AGENTS.md` | Remove the `bytecompiler` lines; AGENTS.md's hint becomes "`KF-LOCK-INCOMPLETE`: run `kivyforge lock`; `KF-HOST-PYTHON-FETCH`: retry with network access". |
 
-### 7.3 User guides this change updates
+Generated, so they update themselves: `docs/guides/reference/cli.md` and
+`docs/guides/reference/codes.md`.
 
-| Document | Change |
-|---|---|
-| `docs/guides/reference/pyproject/ios.md` and `android.md` | The note under `build_settings` added in `cad70344`: lead with `kivyforge bytecompiler`, then "install one yourself", then the `PATH` example from section 5 for a Python the search misses. |
-| `docs/guides/reference/pyproject/linux.md` | The same note, for an `aarch64` target. |
-| `docs/guides/concepts/build-vs-package.md` | It says `package` byte-compiles by default; add that this needs a host Python of the shipped minor, and how to get one. |
-| `docs/guides/get-started/hosts.md` | A line under the host requirements: building iOS or Android release packages byte-compiles, which needs a host CPython of the minor the app ships. |
-| `docs/guides/guides/cross-platform/ci-and-agents.md` | A note after the example job, with a `kivyforge bytecompiler` step for iOS, Android and Linux `aarch64` jobs. The example itself builds a native x86_64 AppImage, where the step would install nothing, so it isn't added there. The exit-code table's `3` row mentions it as one fix. |
-| `docs/guides/troubleshooting/index.md` | A row in the codes table for `KF-BYTECOMPILE-NO-INTERP`, which it lacks, with the fix `kivyforge bytecompiler -p PLATFORM`. A row for `KF-HOST-PYTHON-FETCH`, with the fix "retry with network access, or install a Python yourself". |
-| `docs/guides/reference/json-output.md` | `bytecompiler`'s `data.interpreters` (3.7), next to `data.artifacts` and `data.version`. |
-| `README.md` | A line in the command list: `kivyforge bytecompiler`: install a host CPython that byte-compiles for your targets. |
-| `AGENTS.md`, "Driving kivyforge from an agent" | Exit 3 with `KF-BYTECOMPILE-NO-INTERP`: run `kivyforge bytecompiler -p <platform>`, then retry unchanged. |
-
-Generated, so they update themselves: `docs/guides/reference/cli.md` (from the
-click commands, so the help text is what it shows, 4.1) and
-`docs/guides/reference/codes.md` (from `report/diagnostics.py`).
-
-## 8. Test plan
+## 10. Test plan
 
 **Hermetic** (no network, no toolchain):
 
-- No `-p`: a project with iOS on 3.15 and Android on 3.14 asks for both minors;
-  a platform with `byte_compile = false`, no lock, or a host that can't build it
-  is skipped with an `INFO` diagnostic.
-- `-p ios` asks only for iOS's minor.
-- Outside a project, the command fails with exit 1, like other verbs.
-- An interpreter found by the search means no download, and `source: "found"`.
-- A fake fetcher: exact patch first, then the newest final of the minor, never
-  a pre-release.
-- A second run is `already-installed` and doesn't call the fetcher. `--force`
-  does.
-- The new search step finds the install ahead of `PATH` (Q2), and records it in
-  `searched`.
-- No network, rate limit, hash mismatch, no PBS build and an unsupported host
-  each give exit 3 and their code.
-- The message's `Fix:` line names `bytecompiler -p <platform>` and encodes as cp1252;
-  `doctor`'s hint does too.
-- stdout under `--json` is exactly one envelope, on success and on every
-  failure (`tests/cli/test_build_package_json.py`'s pattern).
+- `lock` writes one entry per capable triple for iOS, Android and Linux with
+  `aarch64`, and no table for macOS, Windows or Linux without `aarch64`.
+- One version across triples: the shipped version when every triple has it;
+  the newest common final otherwise; a triple with no build gets `no-build`
+  while the others still share a version; never a pre-release.
+- The variant: stripped where published, full otherwise, recorded.
+- Plain `lock` on an older lock (no table) adds it and keeps every other pin,
+  instead of reporting "in sync"; it also resolves `no-build` and
+  `unresolved-offline` entries.
+- `lock --check` keeps pins without calling the fetcher; reports
+  `KF-LOCK-INCOMPLETE` (exit 4) for a missing table and for
+  `unresolved-offline`; passes `no-build` with a warning.
+- `lock --update` re-pins; `lock --offline` keeps pins and writes
+  `unresolved-offline` where there is none.
+- `build` uses the pinned interpreter and no other, whatever is on `PATH`. An
+  installed pin is used; a cached archive is extracted with downloads off; a
+  miss fetches, verifies, extracts, probes and writes the marker.
+- An install directory without the marker, or whose interpreter won't run, is
+  rebuilt from the archive.
+- Two concurrent installs of one pin: one installs, the other waits and reuses
+  it; a lock not acquired in time fails as 3.8 says.
+- `KIVYFORGE_HOST_PYTHON_DOWNLOADS=never` with the install, with only the
+  archive, and with neither; `--no-cache` with `never` exits 1; the mirror
+  rewrites the URL and the hash still verifies; neither variable affects a
+  runtime or wheel download.
+- Each row of 3.8 with `"release"` and with `true`, including the mismatch's
+  own fix; messages encode as cp1252.
+- `doctor`'s six states; `upgrade`'s selectors.
+- stdout under `--json` is exactly one envelope on success and every failure.
 
 **Real toolchain** (logged in `test-matrix.md` §7):
 
-- iOS: on a Mac with no `python3.15` on `PATH` and no uv, `package -p ios`
-  fails with the new `Fix:` line; `bytecompiler -p ios` installs; `package` then
-  compiles with the installed interpreter, the T3 stripped check passes, and the
-  app boots on a device (`ios-strip-source`).
-- Android: the same on an x86_64 Linux host, release APK on an emulator.
-- A second `bytecompiler` with the network off reports `already-installed` and exits 0.
+- iOS on a Mac with no `python3.15` and no uv: `lock`, then `package` downloads
+  the pin once and compiles with it; the T3 stripped check passes; the app
+  boots on a device (`ios-strip-source`).
+- Android on an x86_64 Linux host from a lock written on the Mac: the Linux
+  entry is fetched and used; release APK on an emulator.
+- `upgrade -p ios`, then `KIVYFORGE_HOST_PYTHON_DOWNLOADS=never` with the
+  network off: `package` extracts and compiles from the cache.
+- An older iOS lock: `lock --check` reports `KF-LOCK-INCOMPLETE`, a plain
+  `lock` adds the table and nothing else changes.
 
-## 9. Migration
+## 11. Migration
 
-None. The verb is new, nothing in the project changes, and no lock goes stale.
-A machine that already has the right Python is unaffected.
+- **Re-lock once** each iOS and Android lock, and each Linux lock with
+  `aarch64`, with a plain `kivyforge lock -p <platform>`: it adds the table and
+  keeps every other pin. Until then `lock --check` reports `KF-LOCK-INCOMPLETE`,
+  and a release build ships source (`"release"`) or fails (`true`). The
+  CHANGELOG says so. Desktop locks without a host-compiled target are
+  unaffected.
+- **Tracked example locks.** `hello-kivy` (iOS) and `hello-android`,
+  `hello-sdl3`, `android-services`, `android-activity-class` (Android) track
+  their locks (`03-lockfile-concept.md`, "Example-repo lock policy"). Re-locking
+  adds the table; the change is diffed and reported, and committed by the owner.
+- **Machines that compiled with their own Python** under #212 now download the
+  pinned build once. Nothing to do.
 
-## 10. Done when
+## 12. Done when
 
-- The hermetic tests in section 8 pass, and the iOS real-toolchain run is in
-  `test-matrix.md` §7.
-- Every document in 7.2 and 7.3 is updated in the same change.
-- #209 is answered, pointing at the command.
+- The hermetic tests in section 10 pass, and the iOS and Android
+  real-toolchain runs are in `test-matrix.md` §7.
+- Every document in section 9 is updated in the same change.
+- #209 is answered.
