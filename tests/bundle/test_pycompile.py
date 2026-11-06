@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -164,8 +165,10 @@ _PYCOMPILE = "kivyforge.bundle.pycompile"
 
 @pytest.fixture(autouse=True)
 def _no_uv(monkeypatch):
-    """uv is optional, and whether this host has it must not reach a test."""
+    """uv is optional, and whether this host has it must not reach a test.
+    Nor whether `kivyforge bytecompiler` has installed a CPython on it."""
     monkeypatch.setattr(f"{_PYCOMPILE}._uv_executable", lambda: None)
+    monkeypatch.setattr(f"{_PYCOMPILE}._installed_interpreter", lambda tag: None)
 
 
 def _versions(table):
@@ -263,6 +266,52 @@ class TestFindInterpreter:
             ("python", None),
         ]
         assert searched[0].label.startswith("this interpreter (")
+
+
+class TestKivyforgesOwnInstall:
+    """The CPython `kivyforge bytecompiler` installed is searched right after
+    this interpreter and ahead of PATH (proposal Q2), so running the command
+    always changes what the build uses."""
+
+    EXE = "/cache/host-python/9.9/python/bin/python9.9"
+
+    def _installed(self, monkeypatch):
+        monkeypatch.setattr(
+            f"{_PYCOMPILE}._installed_interpreter", lambda tag: Path(self.EXE)
+        )
+
+    def test_used_ahead_of_path(self, monkeypatch):
+        self._installed(monkeypatch)
+        monkeypatch.setattr(
+            f"{_PYCOMPILE}._probe_version",
+            _versions(
+                {
+                    (self.EXE,): (9, 9, 0, "final", 0),
+                    ("python9.9",): (9, 9, 1, "final", 0),
+                }
+            ),
+        )
+        searched: list[Candidate] = []
+        assert find_interpreter("9.9.1", searched=searched) == (self.EXE,)
+        assert searched[-1] == Candidate(
+            f"installed by kivyforge ({self.EXE})", "9.9.0"
+        )
+
+    def test_one_that_no_longer_runs_falls_through_to_path(self, monkeypatch):
+        self._installed(monkeypatch)
+        monkeypatch.setattr(
+            f"{_PYCOMPILE}._probe_version",
+            _versions({("python9.9",): (9, 9, 1, "final", 0)}),
+        )
+        searched: list[Candidate] = []
+        assert find_interpreter("9.9.1", searched=searched) == ("python9.9",)
+        assert Candidate(f"installed by kivyforge ({self.EXE})", None) in searched
+
+    def test_nothing_installed_leaves_no_trace(self, monkeypatch):
+        monkeypatch.setattr(f"{_PYCOMPILE}._probe_version", lambda argv: None)
+        searched: list[Candidate] = []
+        find_interpreter("9.9.1", searched=searched)
+        assert not any(c.label.startswith("installed by") for c in searched)
 
 
 class TestUvIsOptional:
@@ -365,9 +414,21 @@ class TestNoInterpreterMessage:
 
     def test_fix_names_the_table_and_an_install_route(self):
         fix = self._missing().lines[-1]
-        assert fix.startswith("Fix: install any final CPython 3.15.x")
+        assert fix.startswith(
+            "Fix: run `kivyforge bytecompiler -p ios` to install a host CPython 3.15"
+        )
+        assert "install any final CPython 3.15.x" in fix
         assert "uv python install 3.15" in fix
         assert f"[{self.TABLE}]" in fix
+
+    @pytest.mark.parametrize("platform", ["macos", "windows"])
+    def test_fix_offers_no_command_where_it_cannot_help(self, platform):
+        """macOS and Windows reach the search only with a missing staged
+        runtime, which the command doesn't fix."""
+        table = f"tool.kivy.{platform}.build_settings"
+        fix = no_interpreter("3.15.2", table=table, searched=[]).lines[-1]
+        assert fix.startswith("Fix: install any final CPython 3.15.x")
+        assert "bytecompiler" not in fix
 
     def test_required_message_shape(self):
         message = self._missing(Candidate("python3", "3.14.7")).required(self.TABLE)

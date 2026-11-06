@@ -65,6 +65,8 @@ remediation.
 | `KF-LOCK-MISSING` | The target has no lockfile. | Run `kivyforge lock -p PLATFORM`. |
 | `KF-TOOLCHAIN-MISSING` | A required tool is not installed. | Install the tool the message names. |
 | `KF-HOST-INCAPABLE` | This host can't build the target, for example iOS on Windows. | Build on a [supported host](../get-started/hosts.md). |
+| `KF-BYTECOMPILE-NO-INTERP` | Byte-compiling needs a CPython of the minor your app ships on this machine, and there is none. A warning when the build shipped source instead; an error with `byte_compile = true`. | Run `kivyforge bytecompiler -p PLATFORM`, or install that CPython yourself. |
+| `KF-HOST-PYTHON-FETCH` | `kivyforge bytecompiler` couldn't download its CPython: no network, a GitHub rate limit, or a download that failed its check. | Retry with network access. In CI, set `GITHUB_TOKEN`. |
 | `KF-BUILD-TOOL-FAILED` | Gradle, `xcodebuild`, or `appimagetool` ran and failed. | Read the build log on stderr. |
 | `KF-SIGNING-UNCONFIGURED` | A warning: the package shipped unsigned or ad-hoc signed. | [Configure signing](signing-prerequisites.md), or ship unsigned on purpose. |
 

@@ -45,6 +45,11 @@ The key constraints:
 
 A **Yes** says the operating system can build the target. Whether the toolchain
 is installed is a separate question: `kivyforge doctor -p PLATFORM` answers it.
+
+Release packages for iOS and Android, and Linux packages for `aarch64`, also
+need a CPython of the minor the app ships, on the machine that builds, to
+byte-compile the app. Run `kivyforge bytecompiler` once on each such machine to
+install one, or install it yourself.
 Replace `PLATFORM` with the target name.
 
 ## Target selection versus host capability

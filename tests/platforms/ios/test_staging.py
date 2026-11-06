@@ -149,7 +149,8 @@ class TestByteCompileResolution:
         )
         assert any("not byte-compiling" in m for m in messages)
         # The notice must say how to fix it, not just what happened.
-        assert any("Fix: install any final CPython" in m for m in messages)
+        assert any("Fix: run `kivyforge bytecompiler -p ios`" in m for m in messages)
+        assert any("install any final CPython" in m for m in messages)
         # Degraded: the copy is untouched source, not partially compiled.
         assert (layout.app / "main.py").is_file()
 

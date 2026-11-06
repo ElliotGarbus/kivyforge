@@ -2248,3 +2248,22 @@ where it is, and defers macOS and a debug variant of `package -p android`.
 **Implemented 2026-10-15** on branch `dist-artifacts`; the real
 `package -p ios` run passed on 2026-10-16 (`test-matrix.md` §7). **Done
 when** the proposal's §11 holds, which leaves only the reply to the reporter.
+
+### 14. `kivyforge bytecompiler`: install the host Python that byte-compiles
+
+**New 2026-11-05**, from
+[#209](https://github.com/ElliotGarbus/kivyforge/issues/209). Design:
+[`host-python-download-proposal.md`](host-python-download-proposal.md); the
+search it extends: [`10-byte-compile.md`](../common/10-byte-compile.md).
+
+Byte-compiling an iOS or Android release, or a Linux `aarch64` one, needs a
+final CPython of the shipped minor on the build machine. The reporter had none,
+and the error left them to find an installer. `cad70344` fixed the message and
+the search; this adds a command, run once per machine, that installs a verified
+python-build-standalone CPython for each minor the project's locks ship that
+nothing on the machine can compile. The error prints it ready to copy. `build`
+and `package` never download one.
+
+**Implemented 2026-11-05** on branch `bytecompiler`. **Done when** the
+proposal's section 10 holds.
+

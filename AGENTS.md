@@ -132,6 +132,10 @@ result into `test-matrix.md` §7. Commit that row with the pass.
 - **Branch on `exit_code` first, then `diagnostics[].code`**: `1` fix the
   config, `3` fix the machine, `4` re-lock, `5` read the build log. `2` is
   click's usage error and kivyforge never raises it.
+- **`KF-BYTECOMPILE-NO-INTERP`** (exit 3, or a warning on a release that
+  shipped source): run `kivyforge bytecompiler -p <platform>`, then retry
+  unchanged. It installs the host CPython that byte-compiles, and does nothing
+  if the machine already has one.
 - **`diagnostics` on an `ok: true` run are warnings**, not failures — an
   unsigned package, a byte-compile that degraded, a policy note.
 - **Build outputs are in `data.artifacts`** as `{"path", "kind"}`, relative to

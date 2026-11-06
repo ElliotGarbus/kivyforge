@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from ..bundle.hostpython import installed_interpreter
 from ..bundle.pycompile import Candidate, no_interpreter
 from ..config.model import AutoVersionCode, Config, StaticVersion
 from ..host import host_runs_natively
@@ -151,7 +152,7 @@ def check_byte_compile(
     searched: list[Candidate] = []
     compiler = probe.byte_compile_interpreter(python_version, searched=searched)
     if compiler is not None:
-        found = "this interpreter" if compiler == () else " ".join(compiler)
+        found = _compiler_label(compiler, minor)
         return CheckResult(
             BYTE_COMPILE_NAME,
             Status.PASS,
@@ -176,6 +177,16 @@ def check_byte_compile(
         hint=hint,
         code=diagnostics.BYTECOMPILE_NO_INTERP,
     )
+
+
+def _compiler_label(compiler: tuple[str, ...], minor: str) -> str:
+    """How the PASS line names the interpreter the search picked."""
+    if compiler == ():
+        return "this interpreter"
+    installed = installed_interpreter(minor)
+    if installed is not None and compiler == (str(installed),):
+        return f"kivyforge's CPython ({installed})"
+    return " ".join(compiler)
 
 
 def check_app_dir(config: Config, project_root: Path) -> CheckResult:

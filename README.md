@@ -353,6 +353,7 @@ few common ones:
 - `kivyforge run -p ios --list-devices`: list available simulators or emulators and devices.
 - `kivyforge run -p android --smoke`: run the generated on-device contract test.
 - `kivyforge run --release` (Android, Linux, macOS, Windows): build and launch the release flavor, to exercise `byte_compile` and `strip_source` outside of `package`.
+- `kivyforge bytecompiler`: install a host CPython that byte-compiles for your targets, if the machine has none. A release build that needs one says so and prints the command.
 - `kivyforge clean --cache`: also flush the artifact download cache.
 
 Downloaded artifacts are cached per user and shared across projects.

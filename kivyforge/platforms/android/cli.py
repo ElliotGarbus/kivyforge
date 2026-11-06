@@ -28,6 +28,7 @@ from kivyforge.build_outcome import (
     discard_note,
 )
 from kivyforge.bundle import app_metadata, entry_launcher
+from kivyforge.bundle.hostpython import ByteCompileNeed, byte_compile_need
 from kivyforge.bundle.pycompile import Candidate, find_interpreter, no_interpreter
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
@@ -1412,6 +1413,24 @@ def _check_required_values(dest: Path, copied: list[str]) -> None:
                 "your file another name so kivyforge's own "
                 f"{generated_file} stays."
             )
+
+
+@user_facing
+def android_byte_compile_need(project_root: Path) -> ByteCompileNeed:
+    """Android always compiles with a host interpreter: its runtime is built for
+    the device."""
+    config, _ = _load_config_only(project_root)
+    return byte_compile_need(
+        "android",
+        byte_compile=config.android_required.build_settings.byte_compile,
+        host_compiler=True,
+        lock=android_status(project_root).lock,
+        lock_version=lambda: (
+            lock_reader.load(project_root / "pylock.android.toml")
+            .python_android[0]
+            .version
+        ),
+    )
 
 
 @user_facing

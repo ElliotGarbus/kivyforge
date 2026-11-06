@@ -39,7 +39,10 @@ rather than afterward. What signing means depends on the platform:
 
 When `package` falls back to ad-hoc or unsigned, it reports a
 `KF-SIGNING-UNCONFIGURED` warning. By default, `package` also byte-compiles
-your app's Python and strips the source; `build` does neither.
+your app's Python and strips the source; `build` does neither. For iOS,
+Android and a Linux `aarch64` target, byte-compiling needs a CPython of the
+minor your app ships on the machine you build on; `kivyforge bytecompiler`
+installs one.
 
 ```mermaid
 flowchart LR

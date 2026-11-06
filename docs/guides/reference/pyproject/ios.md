@@ -44,11 +44,20 @@ Required.
 
 Compiling needs a final CPython of the same minor as `version` on the Mac you
 build on, for example any 3.15.x for a project that ships 3.15.2, because the
-iOS runtime can't run there. kivyforge looks for `python3.X` (the minor you
-ship), `python3` and `python` on `PATH`, and asks `uv python find` when uv is
-installed. Install one with `uv python install 3.X` or from python.org.
-`kivyforge doctor -p ios` shows what it finds. Without one, `"release"` ships
-source with a warning and `true` fails the build.
+iOS runtime can't run there. The simplest way to get one is to run, once on
+each Mac you build on:
+
+```bash
+kivyforge bytecompiler -p ios
+```
+
+It installs a CPython of the minor your lock ships for kivyforge to use, and
+does nothing if the Mac already has one. You can also install one yourself
+with `uv python install 3.X` or from python.org: kivyforge looks for
+`python3.X` (the minor you ship), `python3` and `python` on `PATH`, and asks
+`uv python find` when uv is installed. `kivyforge doctor -p ios` shows what it
+finds. Without one, `"release"` ships source with a warning and `true` fails
+the build.
 
 If you have one that kivyforge doesn't find, for example from pyenv or conda,
 put its directory first on `PATH` for the build:

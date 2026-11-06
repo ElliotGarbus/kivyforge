@@ -85,6 +85,39 @@ kivyforge records it before the build starts, so a failed build still reports
 it. A run that fails while looking up the version has no `data.version`. See
 [Set the app version](../guides/cross-platform/versioning.md).
 
+## `data.interpreters`
+
+For `bytecompiler`, `data.interpreters` lists one entry per CPython minor the
+project's locks ship, and `data.skipped` lists the platforms it skipped:
+
+| Key | Description |
+|---|---|
+| `minor` | The CPython minor, for example `3.15`. |
+| `version` | The exact version of the interpreter that will byte-compile. |
+| `path` | Its path. |
+| `source` | `installed` (this run installed it), `already-installed` (an earlier run did), or `found` (it was already on the machine). |
+| `platforms` | The platforms that ship this minor. |
+
+Each `data.skipped` entry has `platform` and `reason`, for example
+`byte_compile = false` or `its build compiles with the runtime it ships`.
+
+```json
+{
+  "data": {
+    "interpreters": [
+      {
+        "minor": "3.15",
+        "platforms": ["ios"],
+        "version": "3.15.2",
+        "path": "/Users/me/Library/Caches/kivyforge/artifacts/host-python/3.15/python/bin/python3.15",
+        "source": "installed"
+      }
+    ],
+    "skipped": [{ "platform": "macos", "reason": "its build compiles with the runtime it ships" }]
+  }
+}
+```
+
 ## Diagnostics
 
 Each entry in `diagnostics` has these keys:

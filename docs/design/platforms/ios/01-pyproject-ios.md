@@ -232,8 +232,10 @@ interpreter binary to shell out to — it's a linkable library, not an
 executable — so unlike desktop, the "staged interpreter" step never applies on
 iOS. The `.pyc` are written by a final CPython of the shipped minor found on
 the Mac, and with none, `byte_compile = "release"` ships source with a warning
-while `byte_compile = true` fails the build. The search and its outcomes are
-described once, in [10 — byte-compiling](../../common/10-byte-compile.md).
+while `byte_compile = true` fails the build. The message's first fix is
+`kivyforge bytecompiler -p ios`, which installs one. The search, the command
+and the outcomes are described once, in
+[10 — byte-compiling](../../common/10-byte-compile.md).
 
 ### `[tool.kivy.ios.native.xcframeworks]`
 

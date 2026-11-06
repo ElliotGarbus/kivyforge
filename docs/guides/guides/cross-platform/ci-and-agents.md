@@ -65,7 +65,7 @@ specific cause.
 |---|---|---|
 | `0` | Success | Continue. Check `diagnostics` for warnings. |
 | `1` | Configuration or user error | Fix `pyproject.toml` or the command, then retry. |
-| `3` | Toolchain or host missing | Install the named tool, or use a host that can build the target, then retry unchanged. |
+| `3` | Toolchain or host missing | Install the named tool, or use a host that can build the target, then retry unchanged. For `KF-BYTECOMPILE-NO-INTERP`, run `kivyforge bytecompiler -p PLATFORM`. |
 | `4` | Lock missing, unreadable, or out of date | Re-lock with `kivyforge lock -p PLATFORM`. |
 | `5` | Build failed | Read the build log on stderr. |
 
@@ -122,6 +122,16 @@ jobs:
 
 `doctor` fails the step only when a check reports FAIL; WARN results, such as
 no display on a headless runner, don't change its exit code.
+
+A job that packages for iOS, Android or a Linux `aarch64` target byte-compiles
+with a CPython of the minor the app ships, which the runner may not have. Add a
+step before `package`; it installs one only when the runner has none:
+
+```yaml
+      - run: kivyforge bytecompiler -p ios
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
 !!! tip "Avoid GitHub API rate limits"
     Resolving the desktop Python runtime queries the GitHub API, which allows 60
