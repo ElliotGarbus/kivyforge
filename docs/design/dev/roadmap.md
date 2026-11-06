@@ -2249,21 +2249,24 @@ where it is, and defers macOS and a debug variant of `package -p android`.
 `package -p ios` run passed on 2026-10-16 (`test-matrix.md` §7). **Done
 when** the proposal's §11 holds, which leaves only the reply to the reporter.
 
-### 14. `kivyforge bytecompiler`: install the host Python that byte-compiles
+### 14. Pin the host Python that byte-compiles in the lock
 
 **New 2026-11-05**, from
 [#209](https://github.com/ElliotGarbus/kivyforge/issues/209). Design:
-[`host-python-download-proposal.md`](host-python-download-proposal.md); the
-search it extends: [`10-byte-compile.md`](../common/10-byte-compile.md).
+[`host-python-download-proposal.md`](host-python-download-proposal.md);
+described in [`10-byte-compile.md`](../common/10-byte-compile.md).
 
 Byte-compiling an iOS or Android release, or a Linux `aarch64` one, needs a
 final CPython of the shipped minor on the build machine. The reporter had none,
 and the error left them to find an installer. `cad70344` fixed the message and
-the search; this adds a command, run once per machine, that installs a verified
-python-build-standalone CPython for each minor the project's locks ship that
-nothing on the machine can compile. The error prints it ready to copy. `build`
-and `package` never download one.
+the search. A first answer, a `kivyforge bytecompiler` command run once per
+machine (#213, merged 2026-11-06), never reached a teammate or CI building from
+a committed lock, and left the compiler varying per machine.
 
-**Implemented 2026-11-05** on branch `bytecompiler`. **Done when** the
-proposal's section 10 holds.
+The replacement: `lock` pins one python-build-standalone build per host that
+can build the platform (`[[tool.kivyforge.host_python]]`), at one version for
+all hosts; `build` downloads and caches this host's entry and compiles with
+nothing else. The `bytecompiler` verb is removed (it was never released).
 
+**Implemented 2026-11-06** on branch `host-python-lock`. **Done when** the
+proposal's section 12 holds.

@@ -108,15 +108,16 @@ def find_interpreter(
     different minor will not. A pre-release of the *right* minor is the trap it
     has to exclude; see :func:`is_final_release`.
 
-    The search, in order: this interpreter; the one ``kivyforge bytecompiler``
-    installed (:mod:`kivyforge.bundle.hostpython`), ahead of ``PATH`` so that
-    running the command always changes what the build uses; the ``py``
-    launcher (Windows); ``python3.x``, ``python3`` and ``python`` on ``PATH``;
-    and, only when uv is installed, whatever ``uv python find`` reports. uv is
-    never required — an interpreter it manages is often not on ``PATH``, which
-    is the one case the earlier rungs miss. Each candidate looked at is
-    appended to *searched*. ``docs/design/common/10-byte-compile.md`` describes
-    the same search for readers of the design docs.
+    Used only by a desktop build whose staged runtime can't compile its own
+    payload (it is missing). iOS, Android and a Linux ``aarch64`` target never
+    search: they compile with the host CPython the lock pins
+    (:mod:`kivyforge.bundle.hostpython`).
+
+    The search, in order: this interpreter; the ``py`` launcher (Windows);
+    ``python3.x``, ``python3`` and ``python`` on ``PATH``; and, only when uv is
+    installed, whatever ``uv python find`` reports. uv is never required — an
+    interpreter it manages is often not on ``PATH``, which is the one case the
+    earlier rungs miss. Each candidate looked at is appended to *searched*.
 
     Returns ``()`` for "this interpreter", an argv prefix for another one, or
     ``None`` when there is no match to be found.
@@ -130,11 +131,6 @@ def find_interpreter(
         return ()
     seen.append(Candidate(f"this interpreter ({sys.executable})", this))
     tag = f"{target[0]}.{target[1]}"
-    installed = _installed_interpreter(tag)
-    if installed is not None:
-        argv = (str(installed),)
-        if _accept(argv, tag, f"installed by kivyforge ({installed})", seen):
-            return argv
     candidates: list[tuple[str, ...]] = []
     if os.name == "nt":
         # The PEP 397 launcher is the reliable way to reach a specific version
@@ -154,13 +150,6 @@ def find_interpreter(
     if _accept(uv_found, tag, f"uv python find ({uv_found[0]})", seen):
         return uv_found
     return None
-
-
-def _installed_interpreter(tag: str) -> Path | None:
-    """The interpreter ``kivyforge bytecompiler`` installed for *tag*, if any."""
-    from .hostpython import installed_interpreter
-
-    return installed_interpreter(tag)
 
 
 def _accept(argv: tuple[str, ...], tag: str, label: str, seen: list[Candidate]) -> bool:
@@ -268,20 +257,6 @@ class NoInterpreter:
         return f"[{table}].byte_compile = true, but {self.headline}.\n{self.detail()}"
 
 
-#: Where ``kivyforge bytecompiler`` can supply the interpreter: iOS and Android,
-#: whose runtime never runs on the build machine, and Linux, whose ``aarch64``
-#: target is built on x86_64. macOS and Windows reach the search only when their
-#: staged runtime is missing, which the command doesn't fix, so their message
-#: doesn't offer it.
-BYTECOMPILER_PLATFORMS = frozenset({"ios", "android", "linux"})
-
-
-def _platform_of(table: str) -> str:
-    """``tool.kivy.ios.python.build_settings`` -> ``ios``."""
-    parts = table.split(".")
-    return parts[2] if len(parts) > 2 else ""
-
-
 def no_interpreter(
     python_version: str, *, table: str, searched: Sequence[Candidate]
 ) -> NoInterpreter:
@@ -312,15 +287,8 @@ def no_interpreter(
             f"candidate, so an alpha writes bytecode {python_version} refuses "
             "to import."
         )
-    platform = _platform_of(table)
-    command = (
-        f"run `kivyforge bytecompiler -p {platform}` to install a host CPython "
-        f"{minor} for byte-compiling, or "
-        if platform in BYTECOMPILER_PLATFORMS
-        else ""
-    )
     lines.append(
-        f"Fix: {command}install any final CPython {minor}.x (for example "
+        f"Fix: install any final CPython {minor}.x (for example "
         f"`uv python install {minor}`, or python.org) so python{minor} is on "
         f"PATH, or set byte_compile = false in [{table}]."
     )

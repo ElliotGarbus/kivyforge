@@ -65,8 +65,9 @@ remediation.
 | `KF-LOCK-MISSING` | The target has no lockfile. | Run `kivyforge lock -p PLATFORM`. |
 | `KF-TOOLCHAIN-MISSING` | A required tool is not installed. | Install the tool the message names. |
 | `KF-HOST-INCAPABLE` | This host can't build the target, for example iOS on Windows. | Build on a [supported host](../get-started/hosts.md). |
-| `KF-BYTECOMPILE-NO-INTERP` | Byte-compiling needs a CPython of the minor your app ships on this machine, and there is none. A warning when the build shipped source instead; an error with `byte_compile = true`. | Run `kivyforge bytecompiler -p PLATFORM`, or install that CPython yourself. |
-| `KF-HOST-PYTHON-FETCH` | `kivyforge bytecompiler` couldn't download its CPython: no network, a GitHub rate limit, or a download that failed its check. | Retry with network access. In CI, set `GITHUB_TOKEN`. |
+| `KF-LOCK-INCOMPLETE` | The lock matches `pyproject.toml` but predates something kivyforge now records, for example the host CPython that byte-compiles. | Run `kivyforge lock -p PLATFORM`; it adds what's missing and keeps every other pin. |
+| `KF-BYTECOMPILE-NO-INTERP` | No host CPython to byte-compile with on this machine: python-build-standalone has no build of the minor yet, downloads are off and nothing is cached, or the extracted interpreter won't run. A warning when the build shipped source instead; an error with `byte_compile = true`. | Read the message's `Fix:` line: re-lock once a build is published, run `kivyforge upgrade -p PLATFORM` with network access, or set `byte_compile = false`. |
+| `KF-HOST-PYTHON-FETCH` | The host CPython the lock pins couldn't be fetched: no network, a GitHub rate limit, a download that didn't match the lock's SHA-256, or another build installing it. | Retry with network access; in CI, set `GITHUB_TOKEN`. For a mismatch, check `KIVYFORGE_HOST_PYTHON_MIRROR` if set, or re-lock with `--update`. |
 | `KF-BUILD-TOOL-FAILED` | Gradle, `xcodebuild`, or `appimagetool` ran and failed. | Read the build log on stderr. |
 | `KF-SIGNING-UNCONFIGURED` | A warning: the package shipped unsigned or ad-hoc signed. | [Configure signing](signing-prerequisites.md), or ship unsigned on purpose. |
 

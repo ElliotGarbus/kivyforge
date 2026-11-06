@@ -8,6 +8,7 @@ wheels by filename) so diffs across runs show only real changes.
 
 from __future__ import annotations
 
+from kivyforge.lock.host_python import emit as emit_host_python
 from kivyforge.lock.pep751 import arr as _arr
 from kivyforge.lock.pep751 import b as _b
 from kivyforge.lock.pep751 import emit_include_files, emit_swift_package
@@ -59,6 +60,7 @@ def dumps(lock: Lockfile) -> str:
         emit_swift_package(lines, sp, target_settings=True)
 
     emit_include_files(lines, lock.include_files)
+    emit_host_python(lines, lock.host_python)
 
     return "\n".join(lines) + "\n"
 

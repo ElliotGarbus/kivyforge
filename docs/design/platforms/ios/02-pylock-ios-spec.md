@@ -256,6 +256,29 @@ This array is typically **empty** in the lockfile of a vanilla Kivy app: the kiv
 
 Some xcframeworks should be linked but not embedded (e.g. system-provided frameworks that the user references for symbols but Apple already ships). Some should be embedded but not linked (rare; usually a runtime-loaded plugin). Defaulting both to `true` covers the common case; the toml can override per entry.
 
+### `[[tool.kivyforge.host_python]]`
+
+The CPython that byte-compiles the app on the Mac, which the `Python.xcframework`
+can't do (it is a library). One entry, for `aarch64-apple-darwin`:
+
+```toml
+[[tool.kivyforge.host_python]]
+triple = "aarch64-apple-darwin"
+state = "pinned"
+minor = "3.15"
+version = "3.15.2"
+variant = "install_only_stripped"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261101/cpython-3.15.2%2B20261101-aarch64-apple-darwin-install_only_stripped.tar.gz"
+sha256 = "..."
+```
+
+`state` is `pinned`, `no-build` (no final python-build-standalone build of the
+minor yet) or `unresolved-offline` (`lock --offline` with no pin to keep). The
+table isn't a lock input: `lock` and `lock --check` keep its pin, `--update`
+re-pins, and a lock without it is `KF-LOCK-INCOMPLETE`. The Android lock
+carries the same table with an entry for each of the three build hosts. See
+[10 — byte-compiling](../../common/10-byte-compile.md).
+
 ## Resolution semantics
 
 `kivyforge lock` performs the following:

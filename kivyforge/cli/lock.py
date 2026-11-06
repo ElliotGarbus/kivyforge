@@ -17,6 +17,7 @@ package is re-resolved and the rest keep their versions.
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import os
 import tempfile
@@ -28,6 +29,7 @@ import click
 
 from ..artifacts import include_files
 from ..config import ConfigError, load_config
+from ..lock import host_python
 from ..lock.inputs import is_in_sync
 from ..lock.model import canonical_name
 from ..lock.reader import LockError
@@ -243,14 +245,24 @@ def lock(
                 and is_in_sync(existing, config, backend.name)
             ):
                 refreshed = _refresh(ops, existing, config, project_root)
+                completed = _complete_host_python(
+                    report, backend.name, refreshed, offline=offline
+                )
                 if refreshed is not existing:
                     report.progress(f"{out_path.name}: local files changed:")
                     for line in ops.diff_summary(existing, refreshed):
                         report.progress(line)
-                    _atomic_write(out_path, ops.dumps(refreshed))
+                if completed is not existing:
+                    _atomic_write(out_path, ops.dumps(completed))
+                    what = (
+                        "file hashes re-recorded"
+                        if completed is refreshed
+                        else "host CPython pinned"
+                        if refreshed is existing
+                        else "file hashes re-recorded, host CPython pinned"
+                    )
                     report.line(
-                        f"Updated {out_path.name} (file hashes re-recorded; "
-                        "no package re-resolved)."
+                        f"Updated {out_path.name} ({what}; no package re-resolved)."
                     )
                     report.emit(
                         ok=True,
@@ -281,6 +293,13 @@ def lock(
             offline,
             prefer=_kept(existing.packages, changed) if existing is not None else (),
             prefer_runtime=getattr(existing, "python_runtime", None),
+        )
+        new_lock = _pin_host_python(
+            report,
+            backend.name,
+            new_lock,
+            prefer=getattr(existing, "host_python", None),
+            offline=offline,
         )
         _atomic_write(out_path, ops.dumps(new_lock))
         report.line(
@@ -344,12 +363,19 @@ def _run_check(
         ),
         prefer_runtime=getattr(existing, "python_runtime", None),
     )
+    # The host-CPython table is judged on its own below: keeping its pins is
+    # what makes the check stay off the GitHub API (proposal Q8).
+    if _carries_host_python(candidate):
+        candidate = dataclasses.replace(
+            candidate, host_python=getattr(existing, "host_python", None)
+        )
     # A lock from before #86 records no index; that alone is not drift.
     candidate = ignore_unrecorded_indexes(existing, candidate)
     # A desktop lock from before #190 records unfiltered dependencies; that
     # alone is not drift either.
     candidate = keep_recorded_dependencies(existing, candidate)
     if ops.semantic_equal(existing, candidate):
+        _require_host_python(report, report.platform or "", existing, out_path, relock)
         report.line(f"{out_path.name} is up to date.")
         report.emit(
             ok=True,
@@ -417,6 +443,94 @@ def _build(
         # ClassifiedError: a failure the lock layer classified itself
         # (KF-LOCK-PINS-CONFLICT, KF-LOCK-SOURCE-UNAVAILABLE, ...).
         raise ToolchainError.wrap(exc) from exc
+
+
+def _pin_host_python(report: Report, platform: str, lock, *, prefer, offline: bool):
+    """*lock* with its ``[[tool.kivyforge.host_python]]`` table resolved.
+
+    *prefer* is the existing table: its pins are kept (``lock``), or ``None``
+    re-pins (``lock --update``, or a first lock). Entries a build can't use are
+    reported as lock warnings, so a ``no-build`` host is never silent.
+    """
+    if not _carries_host_python(lock):
+        return lock
+    triples = host_python.lock_triples(platform, lock)
+    if not triples:
+        if lock.host_python is None:
+            return lock
+        return dataclasses.replace(lock, host_python=None)
+    try:
+        entries = host_python.resolve(
+            host_python.shipped_version(lock),
+            triples,
+            prefer=prefer,
+            offline=offline,
+            on_progress=report.progress,
+        )
+    except ClassifiedError as exc:
+        raise ToolchainError.wrap(exc) from exc
+    for message in host_python.describe_gaps(entries):
+        _warn(report, message)
+    if entries == lock.host_python:
+        return lock
+    return dataclasses.replace(lock, host_python=entries)
+
+
+def _complete_host_python(report: Report, platform: str, lock, *, offline: bool):
+    """For ``lock``'s in-sync shortcut: fill a missing or unresolved table.
+
+    ``lock_inputs_sha256`` can't see the table, so without this a plain
+    ``lock`` on a lock written before it would answer "already in sync" and
+    add nothing (proposal 3.3). A ``no-build`` entry is looked up again too.
+    Returns *lock* itself when there is nothing to do.
+    """
+    if not _carries_host_python(lock):
+        return lock
+    triples = host_python.lock_triples(platform, lock)
+    if not triples:
+        return lock
+    entries = getattr(lock, "host_python", None)
+    minor = host_python.minor_of(host_python.shipped_version(lock))
+    retry = any(e.state == host_python.NO_BUILD for e in entries or ())
+    if host_python.incomplete(entries, triples, minor) is None and not retry:
+        return lock
+    return _pin_host_python(report, platform, lock, prefer=entries, offline=offline)
+
+
+def _require_host_python(
+    report: Report, platform: str, lock, out_path: Path, relock: str
+) -> None:
+    """``lock --check``: an incomplete table is ``KF-LOCK-INCOMPLETE``.
+
+    Not drift -- ``pyproject.toml`` did not move -- but the same remedy, and
+    lighter: a plain ``lock`` completes it and keeps every other pin.
+    ``no-build`` passes with a warning: nothing can be pinned yet.
+    """
+    if not _carries_host_python(lock):
+        return
+    triples = host_python.lock_triples(platform, lock)
+    if not triples:
+        return
+    entries = getattr(lock, "host_python", None)
+    minor = host_python.minor_of(host_python.shipped_version(lock))
+    problem = host_python.incomplete(entries, triples, minor)
+    if problem is not None:
+        raise ToolchainError(
+            f"{out_path.name} is incomplete: {problem}.\n"
+            f"  Fix: run `{relock}`; it adds the host CPython and keeps every "
+            "other pin.",
+            code=diagnostics.LOCK_INCOMPLETE,
+            exit_code=exit_codes.LOCK_DRIFT,
+            remediation=relock,
+        )
+    for message in host_python.describe_gaps(entries):
+        _warn(report, message)
+
+
+def _carries_host_python(lock) -> bool:
+    """Whether *lock* is a model with the table: every real lock family is; a
+    test's stand-in may not be."""
+    return dataclasses.is_dataclass(lock) and hasattr(lock, "host_python")
 
 
 def _kept(packages, changed: dict[str, list[str]]) -> tuple:

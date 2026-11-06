@@ -15,6 +15,7 @@ from kivyforge.lock.wheelruntime.model import (
     WheelRuntimeLock,
 )
 from kivyforge.platforms.linux import AppDirError, bundle
+from tests.conftest import pin_compiler
 
 _PYPROJECT = (
     "[project]\nname='myapp'\nversion='1.2.0'\nrequires-python='>=3.15'\n"
@@ -113,6 +114,36 @@ def _project(tmp_path):
     return tmp_path
 
 
+class TestCrossArchUsesThePinnedCompiler:
+    """An ``aarch64`` target built on x86_64 can't run its staged runtime, so
+    it compiles with the host CPython the lock pins, and never searches."""
+
+    def _resolve(self, config, *, host_python=None):
+        return bundle._resolve_byte_compile(
+            config,
+            staged_interpreter=Path("unused"),
+            target_arch="aarch64",
+            python_version="3.15.0",
+            release=True,
+            host_python=host_python,
+        )
+
+    def test_the_pinned_compiler_is_used(self, monkeypatch):
+        monkeypatch.setattr(bundle, "host_runs_natively", lambda arch: False)
+        pin_compiler(monkeypatch, ("/cache/host-python/x/python3.15",))
+        monkeypatch.setattr(
+            bundle, "select_compiler", lambda **kw: pytest.fail("searched")
+        )
+        assert self._resolve(_config()) == (("/cache/host-python/x/python3.15",), True)
+
+    def test_a_lock_without_the_pin_ships_source(self, monkeypatch, capsys):
+        monkeypatch.setattr(bundle, "host_runs_natively", lambda arch: False)
+        assert self._resolve(_config()) == (None, False)
+        out = capsys.readouterr().out
+        assert "pylock.linux.toml has no host CPython" in out
+        assert "kivyforge lock -p linux" in out
+
+
 class TestByteCompileResolution:
     """``byte_compile``/``strip_source`` (linux-spec §build_settings).
 
@@ -137,6 +168,9 @@ class TestByteCompileResolution:
         )
 
     def _select(self, monkeypatch, result):
+        # The native path: an x86_64 target on an x86_64 host, whatever runs
+        # the tests. The cross path is TestCrossArchUsesThePinnedCompiler.
+        monkeypatch.setattr(bundle, "host_runs_natively", lambda arch: True)
         monkeypatch.setattr(bundle, "select_compiler", lambda **kw: result)
 
     def test_release_default_compiles_and_strips(self, monkeypatch):
@@ -176,8 +210,7 @@ class TestByteCompileResolution:
         out = capsys.readouterr().out
         assert "not byte-compiling" in out
         # The notice must say how to fix it, not just what happened.
-        assert "Fix: run `kivyforge bytecompiler -p linux`" in out
-        assert "install any final CPython" in out
+        assert "Fix: install any final CPython" in out
 
     def test_explicit_true_fails_when_no_compiler_found(self, monkeypatch):
         self._select(monkeypatch, None)
@@ -187,6 +220,7 @@ class TestByteCompileResolution:
 
     def test_the_choice_reaches_the_bundle(self, tmp_path, faked, monkeypatch):
         root = _project(tmp_path)
+        monkeypatch.setattr(bundle, "host_runs_natively", lambda arch: True)
         monkeypatch.setattr(bundle, "select_compiler", lambda **kw: ())
         calls = []
         monkeypatch.setattr(
@@ -208,6 +242,7 @@ class TestByteCompileResolution:
     def test_the_staged_stdlib_is_compiled_too(self, tmp_path, faked, monkeypatch):
         """An AppImage can never cache it at runtime: read-only squashfs."""
         root = _project(tmp_path)
+        monkeypatch.setattr(bundle, "host_runs_natively", lambda arch: True)
         monkeypatch.setattr(bundle, "select_compiler", lambda **kw: ())
         monkeypatch.setattr(bundle, "byte_compile", lambda trees, **kw: None)
         compiled = []

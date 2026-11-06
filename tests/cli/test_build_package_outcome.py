@@ -21,6 +21,7 @@ from kivyforge.build_outcome import (
 )
 from kivyforge.cli._common import ToolchainError
 from kivyforge.report import diagnostics
+from tests.conftest import NO_HOST_PYTHON_HEADLINE, pin_compiler
 
 
 class Recorder:
@@ -390,7 +391,7 @@ def test_ios_byte_compile_notes_carry_their_payload(tmp_path, monkeypatch):
     from kivyforge.artifacts import collect
     from kivyforge.config.model import DesktopBuildSettings
 
-    monkeypatch.setattr(collect, "select_compiler", lambda **kw: None)
+    pin_compiler(monkeypatch, None)
     rec = Recorder()
     collect._compile_pip_deps(
         tmp_path,
@@ -403,8 +404,7 @@ def test_ios_byte_compile_notes_carry_their_payload(tmp_path, monkeypatch):
     assert rec.notes == [
         (
             diagnostics.BYTECOMPILE_NO_INTERP,
-            "not byte-compiling pip-deps: no final CPython 3.14 found (this "
-            "project ships 3.14.0).",
+            f"not byte-compiling pip-deps: {NO_HOST_PYTHON_HEADLINE}.",
             {"payload": "pip-deps"},
         )
     ]

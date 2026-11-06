@@ -230,12 +230,12 @@ app+deps scope.
 **Compiler selection.** The `Python.xcframework` ships no standalone
 interpreter binary to shell out to — it's a linkable library, not an
 executable — so unlike desktop, the "staged interpreter" step never applies on
-iOS. The `.pyc` are written by a final CPython of the shipped minor found on
-the Mac, and with none, `byte_compile = "release"` ships source with a warning
-while `byte_compile = true` fails the build. The message's first fix is
-`kivyforge bytecompiler -p ios`, which installs one. The search, the command
-and the outcomes are described once, in
-[10 — byte-compiling](../../common/10-byte-compile.md).
+iOS. The `.pyc` are written by the host CPython `pylock.ios.toml` pins for
+the Mac (`[[tool.kivyforge.host_python]]`), which the first release build
+downloads and caches; never by a Python found on the machine. With no usable
+pin, `byte_compile = "release"` ships source with a warning while
+`byte_compile = true` fails the build. The pin, its states and the outcomes are
+described once, in [10 — byte-compiling](../../common/10-byte-compile.md).
 
 ### `[tool.kivy.ios.native.xcframeworks]`
 

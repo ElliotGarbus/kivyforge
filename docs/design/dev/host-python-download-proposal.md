@@ -1,7 +1,10 @@
 # Proposal — pin the host Python that byte-compiles in the lock
 
-> Status: **revised 2026-11-06 after review, not implemented.** Every question
-> in section 4 is decided, including the review's (4.2). This design replaces
+> Status: **implemented 2026-11-06** on branch `host-python-lock`, not yet
+> released. The hermetic tests in section 10 pass; the real-toolchain runs in
+> section 10 and the re-lock of the tracked example locks (section 11) are not
+> done yet. Every question in section 4 is decided, including the review's
+> (4.2). This design replaces
 > the `kivyforge bytecompiler` command of 2026-11-05, which was implemented on
 > branch `bytecompiler`
 > ([#213](https://github.com/ElliotGarbus/kivyforge/pull/213), not merged) and
@@ -136,7 +139,9 @@ release once for all of them, newest first (a batched form of
 
 **Which variant** (Q12). `install_only_stripped` (debug symbols removed, the
 same layout, compiling identically) where PBS publishes it for the chosen
-version and triple, otherwise `install_only`. The entry records `variant`, so
+version and triple, otherwise `install_only`. Measured 2026-11-06 for 3.15.0:
+36.2 MB against 78.7 MB on Linux, 23.3 MB against 50.0 MB on Windows, and
+26.4 MB against 26.5 MB on macOS. The entry records `variant`, so
 a build never has to infer it from the URL.
 
 ### 3.3 `lock`, `lock --check`, `--update` and older locks

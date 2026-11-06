@@ -56,20 +56,10 @@ The verb set is uniform; each platform backend implements the platform-specific 
 | `run` | Build (unless `--no-build`), then install/launch on a device, simulator/emulator, or the host, as the platform supports. |
 | `package` | Produce the distributable, signed **runnable artifact** (see below). |
 | `open` | Open the generated native project in the platform IDE, where applicable (e.g. Xcode on iOS). |
-| `upgrade` | Re-download pinned runtime/native artifacts per the existing lock. |
-| `bytecompiler` | Install a host CPython that byte-compiles, for each minor the project's locks ship that nothing on the machine can compile. The one verb whose `-p` has no default (below). See [10 — byte-compiling](10-byte-compile.md). |
+| `upgrade` | Re-download pinned runtime/native artifacts per the existing lock, including this host's pinned host CPython for byte-compiling. |
 | `clean [--cache]` | Remove generated artifacts; with `--cache`, also flush the download cache. |
 | `status` | Read-only project snapshot: identity, runtime version, lock sync, build state. |
 | `doctor` | Environment + project health check, including host-capability checks for the resolved target. |
-
-**`bytecompiler` and the resolution chain.** Its `-p` is optional and has no
-default: neither `KIVYFORGE_PLATFORM` nor the host default applies. The host's
-own platform (`macos` on a Mac) compiles with the runtime it ships, so a
-defaulted target would install nothing when the user meant iOS. Without `-p`
-the verb covers every platform the project configures, skipping, with a
-reason, any this host can't build, any with `byte_compile = false`, and any
-whose lock is missing or stale. With `-p`, a host that can't build the target
-is exit 3 and a missing or stale lock is exit 4, as for every other verb.
 
 `build` vs. `package`:
 

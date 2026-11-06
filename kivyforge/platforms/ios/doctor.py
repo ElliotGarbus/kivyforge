@@ -741,13 +741,12 @@ def run_ios_checks(
         C.check_app_dir(config, project_root),
         C.check_version(config),
         # iOS never has a runnable staged interpreter: Python.xcframework is a
-        # linkable library, not an executable, so native= is always False here.
-        C.check_byte_compile(
-            probe,
+        # linkable library, so it compiles with the host CPython the lock pins.
+        C.check_host_python(
+            platform="ios",
             byte_compile=ios.python_build_settings.byte_compile,
-            python_version=ios.python_version,
+            lock=lock,
             table="tool.kivy.ios.python.build_settings",
-            native=False,
         ),
         check_signing_identity(probe, config),
         check_team_id(probe, config, project_root),

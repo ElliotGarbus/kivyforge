@@ -81,8 +81,9 @@ a Pi 4 has not been run.
 
 The byte-compile ladder already handles a foreign target: the staged aarch64
 interpreter cannot run on x86_64, so compilation falls back to a final CPython
-of the same minor on the host, which `kivyforge bytecompiler -p linux` installs
-when there is none ([10 — byte-compiling](../../common/10-byte-compile.md)). A `.pyc`'s magic number is keyed to the minor,
+of the same minor on the host: the one `pylock.linux.toml` pins for x86_64
+Linux whenever `archs` includes `aarch64`
+([10 — byte-compiling](../../common/10-byte-compile.md)). A `.pyc`'s magic number is keyed to the minor,
 not the architecture. `appimagetool` runs as a *host* binary and embeds the
 *target* type2 runtime with `--runtime-file`.
 

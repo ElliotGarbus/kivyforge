@@ -1248,19 +1248,6 @@ def android_doctor(
             f"abis {', '.join(android.abis)})",
         )
     )
-    # Android never has a runnable staged interpreter — the payload targets an
-    # ARM/x86 device — so native= is always False, exactly as the build resolves
-    # it. The version comes from config rather than the lock so the check works
-    # before a first `kivyforge lock`.
-    results.append(
-        C.check_byte_compile(
-            probe,
-            byte_compile=android.build_settings.byte_compile,
-            python_version=android.python.version if android.python else None,
-            table="tool.kivy.android.build_settings",
-            native=False,
-        )
-    )
     app_dir = cwd / config.kivy.app_dir
     results.append(
         CheckResult("App source directory", Status.PASS, str(app_dir))
@@ -1281,6 +1268,17 @@ def android_doctor(
     results.append(_check_implied_features(config))
 
     lock_path = cwd / "pylock.android.toml"
+
+    # Android never has a runnable staged interpreter (the payload targets an
+    # ARM/x86 device), so it compiles with the host CPython the lock pins.
+    def host_python_check(lock):
+        return C.check_host_python(
+            platform="android",
+            byte_compile=android.build_settings.byte_compile,
+            lock=lock,
+            table="tool.kivy.android.build_settings",
+        )
+
     if lock_path.is_file():
         try:
             lock = lock_reader.load(lock_path)
@@ -1288,6 +1286,7 @@ def android_doctor(
             results.append(CheckResult("Lock", Status.FAIL, f"unreadable lock: {exc}"))
             return results
         results += [
+            host_python_check(lock),
             _check_sdl_kivy_match(config, lock),
             _check_pyjnius_contract(lock),
             _check_abi_coverage(config, lock),
@@ -1304,6 +1303,7 @@ def android_doctor(
                 hint="run `kivyforge lock -p android`.",
             )
         )
+        results.append(host_python_check(None))
 
     from .cli import project_dir_for
 

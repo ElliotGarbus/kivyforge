@@ -11,7 +11,6 @@ import click
 from .. import __version__
 from . import (
     build,
-    bytecompiler,
     capabilities,
     clean,
     doctor,
@@ -46,7 +45,6 @@ main.add_command(run.run)
 main.add_command(open_cmd.open_)
 main.add_command(package.package)
 main.add_command(upgrade.upgrade)
-main.add_command(bytecompiler.bytecompiler)
 main.add_command(clean.clean)
 main.add_command(status.status)
 main.add_command(doctor.doctor)

@@ -8,6 +8,7 @@ Maven modules by coordinate) so re-lock diffs show only real changes.
 
 from __future__ import annotations
 
+from kivyforge.lock.host_python import emit as emit_host_python
 from kivyforge.lock.pep751 import arr as _arr
 from kivyforge.lock.pep751 import emit_include_files
 from kivyforge.lock.pep751 import emit_package as _emit_package
@@ -71,6 +72,7 @@ def dumps(lock: AndroidLockfile) -> str:
             _emit_resolved_module(lines, module)
 
     emit_include_files(lines, lock.include_files)
+    emit_host_python(lines, lock.host_python)
 
     return "\n".join(lines) + "\n"
 

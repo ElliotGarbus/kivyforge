@@ -11,6 +11,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from kivyforge.lock.host_python import parse as parse_host_python
 from kivyforge.lock.pep751 import parse_include_file
 from kivyforge.lock.pep751 import parse_package as _parse_package
 from kivyforge.lock.reader import LockError
@@ -79,6 +80,10 @@ def _from_raw(raw: dict) -> AndroidLockfile:
     include_files = tuple(
         parse_include_file(f) for f in _as_list(tool, "include_files")
     )
+    try:
+        host_python = parse_host_python(tool)
+    except ValueError as exc:
+        raise LockError(f"pylock.android.toml {exc}") from exc
 
     kivy_generation = tool.get("kivy_generation", 2)
     if kivy_generation not in (2, 3):
@@ -101,6 +106,7 @@ def _from_raw(raw: dict) -> AndroidLockfile:
         android_libs=android_libs,
         gradle=gradle,
         include_files=include_files,
+        host_python=host_python,
         schema_version=schema_version,
         lock_version=lock_version,
         created_by=raw.get("created-by", "kivyforge"),

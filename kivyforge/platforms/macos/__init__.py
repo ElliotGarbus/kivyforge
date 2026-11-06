@@ -19,7 +19,6 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.build_outcome import BuildEvents, BuildOutcome
-    from kivyforge.bundle.hostpython import ByteCompileNeed
     from kivyforge.config.model import ResolvedVersion
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
@@ -129,11 +128,6 @@ class MacosPlatform(Platform):
             notarize=notarize,
             notary_profile=notary_profile,
         )
-
-    def byte_compile_need(self, project_root: Path) -> ByteCompileNeed:
-        from .cli import macos_byte_compile_need
-
-        return macos_byte_compile_need(project_root)
 
     def status(self, project_root: Path) -> StatusReport:
         from .cli import macos_status

@@ -21,6 +21,7 @@ import click
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.build_outcome import discard_note
 from kivyforge.bundle import app_metadata, entry_launcher
+from kivyforge.bundle.hostpython import pinned_compiler
 from kivyforge.bundle.pycompile import (
     Candidate,
     PycompileError,
@@ -32,6 +33,7 @@ from kivyforge.bundle.pycompile import (
 from kivyforge.bundle.workdir import make_work_dir, swap_in
 from kivyforge.config.model import Config
 from kivyforge.host import host_runs_natively
+from kivyforge.lock.host_python import HostPython
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import reclassify
 
@@ -81,6 +83,8 @@ def _resolve_byte_compile(
     target_arch: str,
     python_version: str,
     release: bool,
+    host_python: tuple[HostPython, ...] | None = None,
+    no_cache: bool = False,
     echo=click.echo,
     note=discard_note,
 ) -> tuple[tuple[str, ...] | None, bool]:
@@ -91,11 +95,31 @@ def _resolve_byte_compile(
     interpreter is an error; the default ``"release"`` degrades to shipping
     source with a warning rather than breaking a build the user never
     configured.
+
+    A target arch this host runs compiles with its own staged runtime. One it
+    can't (``aarch64`` built on x86_64) compiles with the host CPython the lock
+    pins for this machine (*host_python*), never another.
     """
     settings = config.linux_required.build_settings
     if not _setting_applies(settings.byte_compile, release=release):
         return None, False
     native = host_runs_natively(target_arch)
+    if not native:
+        compiler = pinned_compiler(
+            host_python,
+            platform="linux",
+            python_version=python_version,
+            byte_compile=settings.byte_compile,
+            table="tool.kivy.linux.build_settings",
+            what="",
+            error=AppDirError,
+            echo=echo,
+            note=note,
+            no_cache=no_cache,
+        )
+        if compiler is None:
+            return None, False
+        return compiler, _setting_applies(settings.strip_source, release=release)
     searched: list[Candidate] = []
     compiler = select_compiler(
         staged_interpreter=staged_interpreter,
@@ -186,6 +210,8 @@ def build_appdir(
             target_arch=target_arch,
             python_version=lock.python_runtime.version,
             release=release,
+            host_python=lock.host_python,
+            no_cache=no_cache,
             echo=echo,
             note=note,
         )

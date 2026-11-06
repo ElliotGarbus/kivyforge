@@ -200,29 +200,21 @@ in `pyproject.toml`.
 | `shrink_resources` | bool | `false` | Remove unused resources. Requires `minify = true`. |
 | `multidex` | bool | `true` | Enable multidex. |
 
-Compiling needs a final CPython of the same minor as the runtime you ship on
-the machine you build on, for example any 3.14.x for a project that ships
-3.14.6, because the Android runtime can't run there. The simplest way to get
-one is to run, once on each machine you build on:
+Compiling needs a CPython of the same minor as the runtime you ship, running
+on the machine you build on, because the Android runtime can't run there. You
+don't install it: `kivyforge lock` pins one for each of macOS, Linux and Windows in the lock, and the
+first release build on a machine downloads it (about 23 to 36 MB, depending on the host), caches it, and
+compiles with it. Every machine that builds the lock uses the same build.
+`kivyforge doctor -p android` says whether it's installed yet.
 
-```bash
-kivyforge bytecompiler -p android
-```
+Without a usable pin, `"release"` ships source with a warning and `true` fails
+the build. A lock written before kivyforge pinned it is reported by
+`kivyforge lock --check`; a plain `kivyforge lock -p android` adds the pin and
+keeps every other one.
 
-It installs a CPython of the minor your lock ships for kivyforge to use, and
-does nothing if the machine already has one. You can also install one
-yourself with `uv python install 3.X` or from python.org: kivyforge looks for
-`python3.X` (the minor you ship), `python3` and `python` on `PATH`, and asks
-`uv python find` when uv is installed. `kivyforge doctor -p android` shows what
-it finds. Without one, `"release"` ships source with a warning and `true`
-fails the build.
-
-If you have one that kivyforge doesn't find, for example from pyenv or conda,
-put its directory first on `PATH` for the build:
-
-```bash
-PATH=/opt/python/3.14/bin:$PATH kivyforge package -p android
-```
+For build machines without network access or behind a firewall, see
+`KIVYFORGE_HOST_PYTHON_DOWNLOADS` and `KIVYFORGE_HOST_PYTHON_MIRROR` in
+[Environment variables](../environment.md).
 
 ## Example
 

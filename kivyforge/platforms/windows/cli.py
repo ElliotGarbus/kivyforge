@@ -21,7 +21,6 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
-from kivyforge.bundle.hostpython import ByteCompileNeed, byte_compile_need
 from kivyforge.cli._common import (
     ECHO_EVENTS,
     PROGRESS_ONLY_EVENTS,
@@ -258,19 +257,6 @@ def windows_run(
     proc = subprocess.run([str(exe)])
     if proc.returncode != 0:
         raise ToolchainError(f"{bundle.name} exited with status {proc.returncode}.")
-
-
-def windows_byte_compile_need(project_root: Path) -> ByteCompileNeed:
-    """Windows ships only amd64 and builds only on amd64, so the staged runtime
-    always compiles its own payload."""
-    config = _load_config(project_root)
-    return byte_compile_need(
-        "windows",
-        byte_compile=config.windows_required.build_settings.byte_compile,
-        host_compiler=False,
-        lock=_lock_status(project_root, config),
-        lock_version=lambda: _load_lock(project_root).python_runtime.version,
-    )
 
 
 def windows_status(project_root: Path) -> StatusReport:

@@ -172,51 +172,83 @@ class GithubPbsMetadataFetcher:
                         )
         return None
 
-    def find_install_only(
-        self, minor: str, target_triple: str, *, prefer: str | None = None
-    ) -> tuple[str, ReleaseAsset] | None:
-        """A final ``install_only`` build of CPython *minor* for *target_triple*.
+    def find_common_install_only(
+        self,
+        minor: str,
+        triples: tuple[str, ...],
+        *,
+        prefer: str | None = None,
+        variants: tuple[str, ...] = ("install_only_stripped", "install_only"),
+    ) -> tuple[str | None, dict[str, tuple[str, ReleaseAsset]]]:
+        """One final CPython *minor* build per triple, all the same version.
 
-        Returns ``(version, asset)``: *prefer* (an exact ``3.15.2``) when some
-        release has it, otherwise the newest final release of the minor, or
-        ``None`` when no release has the minor at all. Pre-releases never match:
-        their names put ``rc``/``a``/``b`` between the micro version and the
-        ``+``.
+        Returns ``(version, {triple: (variant, asset)})``. The version is
+        *prefer* (an exact ``3.15.2``) when every triple that has the minor has
+        it, otherwise the newest final release every such triple has. A triple
+        with no final build of the minor at all is left out of the mapping
+        (``no-build``); the others still share one version. ``(None, {})``
+        when no triple has the minor.
 
-        Releases are read newest first, and PBS keeps each minor's newest patch
-        in its newest release, so the search stops once *prefer* is out of
-        reach: when the newest release with the minor is already below it (not
-        published yet), or when an older release has passed it.
-
-        Unlike :meth:`fetch`, a failure to list the releases raises
-        :class:`RuntimeProviderError` rather than reading as "nothing found",
-        so a caller can tell no network from no build.
+        *variants* is a preference order within a release: the first
+        published for a triple wins (``install_only_stripped`` is roughly half
+        the size on Linux and Windows, and compiles identically). One
+        release's ``SHA256SUMS`` lists every triple, so each release is read
+        once for all of them, newest first, and the scan stops as soon as the
+        answer can't change. A failure to list releases raises
+        :class:`RuntimeProviderError`.
         """
         pattern = re.compile(
             rf"^cpython-{re.escape(minor)}\.(\d+)\+\d+-"
-            rf"{re.escape(target_triple)}-install_only\.tar\.gz$"
+            rf"({'|'.join(re.escape(t) for t in triples)})-"
+            rf"({'|'.join(re.escape(v) for v in variants)})\.tar\.gz$"
         )
         want = int(prefer.rsplit(".", 1)[1]) if prefer else None
+        # {triple: {micro: (variant, asset)}}, from the newest release that has it.
+        seen: dict[str, dict[int, tuple[str, ReleaseAsset]]] = {}
         tags = self._list_release_tags()
-        newest: tuple[str, ReleaseAsset] | None = None
+        done = False
+        first_hit: int | None = None
         for start in range(0, len(tags), _SUMS_BATCH):
+            # A triple still unseen one batch after the first match has no
+            # build of the minor: reading every older release won't change it.
+            if first_hit is not None and start > first_hit:
+                break
             batch = tags[start : start + _SUMS_BATCH]
             with ThreadPoolExecutor(max_workers=len(batch)) as pool:
                 sums = list(pool.map(self._release_sums, batch))
             for tag, listing in zip(batch, sums):
-                builds = _builds_in(listing, pattern)
-                if not builds:
+                here = _common_builds_in(listing, pattern, variants)
+                if not here:
                     continue
-                if newest is None:
-                    top = max(builds)
-                    newest = (f"{minor}.{top}", _asset(tag, builds[top]))
-                if want is None:
-                    return newest
-                if want in builds:
-                    return f"{minor}.{want}", _asset(tag, builds[want])
-                if max(builds) < want:
-                    return newest
-        return newest
+                for (triple, micro), (variant, line) in here.items():
+                    seen.setdefault(triple, {}).setdefault(
+                        micro, (variant, _asset(tag, line))
+                    )
+                if first_hit is None:
+                    first_hit = start
+                # Releases come newest first, so once every triple has been
+                # seen, "newest" is settled; a preferred patch is settled once
+                # every triple has it, or once releases have dropped below it.
+                newest_here = max(micro for (_t, micro) in here)
+                done = all(t in seen for t in triples) and (
+                    want is None
+                    or all(want in seen[t] for t in triples)
+                    or newest_here < want
+                )
+                if done:
+                    break
+            if done:
+                break
+        if not seen:
+            return None, {}
+        have = [set(builds) for builds in seen.values()]
+        common = set.intersection(*have)
+        if not common:
+            return None, {}
+        version = want if want is not None and want in common else max(common)
+        return f"{minor}.{version}", {
+            triple: builds[version] for triple, builds in seen.items()
+        }
 
     def _release_tags(self) -> list[str]:
         """Release tags, newest first; empty if they cannot be listed."""
@@ -338,22 +370,6 @@ class GithubPbsMetadataFetcher:
             ) from exc
 
 
-def _builds_in(listing: str | None, pattern: re.Pattern[str]) -> dict[int, str]:
-    """``{micro: archive name}`` for each *pattern* match in a ``SHA256SUMS``.
-
-    The value is the whole line's two columns, ``"<sha256> <name>"``, kept
-    together so :func:`_asset` needs no second lookup.
-    """
-    builds: dict[int, str] = {}
-    for line in (listing or "").splitlines():
-        parts = line.split()
-        if len(parts) == 2:
-            match = pattern.match(parts[1])
-            if match:
-                builds[int(match.group(1))] = line
-    return builds
-
-
 def _asset(tag: str, line: str) -> ReleaseAsset:
     sha256, name = line.split()
     # Quoted as GitHub's browser_download_url is ("+" as "%2B"), like
@@ -361,3 +377,24 @@ def _asset(tag: str, line: str) -> ReleaseAsset:
     return ReleaseAsset(
         url=f"{_DOWNLOAD}/{tag}/{urllib.parse.quote(name)}", sha256=sha256
     )
+
+
+def _common_builds_in(
+    listing: str | None, pattern: re.Pattern[str], variants: tuple[str, ...]
+) -> dict[tuple[str, int], tuple[str, str]]:
+    """``{(triple, micro): (variant, line)}`` for each match in a ``SHA256SUMS``,
+    keeping the most preferred variant when a release has several."""
+    builds: dict[tuple[str, int], tuple[str, str]] = {}
+    for line in (listing or "").splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        match = pattern.match(parts[1])
+        if match is None:
+            continue
+        key = (match.group(2), int(match.group(1)))
+        variant = match.group(3)
+        held = builds.get(key)
+        if held is None or variants.index(variant) < variants.index(held[0]):
+            builds[key] = (variant, line)
+    return builds

@@ -77,11 +77,12 @@ LOCK_WARNING = "KF-LOCK-WARNING"
 #: ``context`` names the ``tool`` looked for.
 BYTECOMPILE_NO_INTERP = "KF-BYTECOMPILE-NO-INTERP"
 
-#: ``kivyforge bytecompiler`` could not download the host CPython it chose: no
-#: network, a GitHub rate limit, or a download whose SHA-256 didn't match. Exit
-#: 3. Kept apart from ``BYTECOMPILE_NO_INTERP`` (no build of the minor exists)
-#: because the reaction differs: this one is fixed by retrying with network
-#: access. ``context`` carries the ``url`` tried.
+#: The host CPython the lock pins for byte-compiling could not be fetched (no
+#: network, a GitHub rate limit, an archive whose SHA-256 doesn't match the
+#: lock), or ``lock`` could not look the builds up. Exit 3. Kept apart from
+#: ``BYTECOMPILE_NO_INTERP`` (no build to compile with) because the reaction
+#: differs: usually a retry with network access; for a mismatch, the message
+#: says what to check. ``context`` carries the ``url`` tried.
 HOST_PYTHON_FETCH = "KF-HOST-PYTHON-FETCH"
 
 #: A package shipped unsigned or ad-hoc signed where real signing is

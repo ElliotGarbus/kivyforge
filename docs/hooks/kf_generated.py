@@ -82,8 +82,10 @@ _DIAGNOSTIC = {
     "KF-LOCK-INCOMPLETE": (
         "error",
         "The lock matches `pyproject.toml` but predates something kivyforge now "
-        "adds to it (Android: `pyjnius`, which Kivy needs at launch).",
-        "Re-lock with `kivyforge lock -p <platform> --update`.",
+        "adds to it: the host CPython that byte-compiles (iOS, Android, Linux "
+        "`aarch64`), or on Android `pyjnius`, which Kivy needs at launch.",
+        "For the host CPython, a plain `kivyforge lock -p <platform>` adds it and "
+        "keeps every other pin; for `pyjnius`, re-lock with `--update`.",
     ),
     "KF-LOCK-WARNING": (
         "warning",
@@ -92,17 +94,22 @@ _DIAGNOSTIC = {
     ),
     "KF-BYTECOMPILE-NO-INTERP": (
         "error or warning",
-        "`byte_compile` is on but no final CPython of the target's minor was found "
-        "on this machine. A warning when the build shipped source instead; an "
-        "error, exit 3, with `byte_compile = true`.",
-        "Run `kivyforge bytecompiler -p <platform>`, install that CPython yourself, "
-        "or set `byte_compile = false`.",
+        "No interpreter could byte-compile: the host CPython the lock pins has no "
+        "build of the minor yet, downloads are off and nothing is cached, or (on "
+        "desktop) the staged runtime is missing and no CPython of the minor was "
+        "found. A warning when the build shipped source; an error, exit 3, with "
+        "`byte_compile = true`.",
+        "Follow the message's `Fix:` line: re-lock once a build is published, run "
+        "`kivyforge upgrade -p <platform>` with network access, or set "
+        "`byte_compile = false`.",
     ),
     "KF-HOST-PYTHON-FETCH": (
         "error",
-        "`kivyforge bytecompiler` couldn't download its CPython: no network, a "
-        "GitHub rate limit, or a download that failed its SHA-256 check. Exit 3.",
-        "Retry with network access. In CI, set `GITHUB_TOKEN`.",
+        "The host CPython the lock pins couldn't be fetched or looked up: no "
+        "network, a GitHub rate limit, a SHA-256 mismatch, or another build "
+        "installing it. Exit 3.",
+        "Retry with network access; in CI, set `GITHUB_TOKEN`. For a mismatch, "
+        "check `KIVYFORGE_HOST_PYTHON_MIRROR`, or re-lock with `--update`.",
     ),
     "KF-SIGNING-UNCONFIGURED": (
         "warning",

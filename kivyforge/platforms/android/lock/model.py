@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from kivyforge.lock.host_python import HostPython
 from kivyforge.lock.model import LOCK_VERSION, LockedPackage
 from kivyforge.lock.model import LockedIncludeFile as LockedIncludeFile
 
@@ -98,6 +99,10 @@ class AndroidLockfile:
     android_libs: tuple[LockedAndroidLib, ...] = ()
     gradle: GradlePins = GradlePins()
     include_files: tuple[LockedIncludeFile, ...] = ()
+    #: ``[[tool.kivyforge.host_python]]`` (kivyforge.lock.host_python); ``None``
+    #: when the lock has no table: a platform that needs none, or a lock
+    #: written before the table existed.
+    host_python: tuple[HostPython, ...] | None = None
     schema_version: int = TOOL_SCHEMA_VERSION
     lock_version: str = LOCK_VERSION
     created_by: str = CREATED_BY

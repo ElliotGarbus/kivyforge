@@ -19,17 +19,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..build_outcome import discard_note
-from ..bundle.pycompile import (
-    Candidate,
-    PycompileError,
-    byte_compile,
-    no_interpreter,
-    select_compiler,
-)
+from ..bundle.hostpython import pinned_compiler
+from ..bundle.pycompile import PycompileError, byte_compile
 from ..config.model import DesktopBuildSettings
+from ..lock.host_python import HostPython
 from ..lock.model import LockedWheel
 from ..platforms.ios.lock.model import Lockfile
-from ..report.diagnostics import BYTECOMPILE_NO_INTERP
 from ..report.failures import ClassifiedError, reclassify
 from .cache import ArtifactCache
 from .download import Downloader, fetch_artifact
@@ -143,6 +138,8 @@ def collect_artifacts(
             build_settings=build_settings,
             echo=echo,
             note=note,
+            host_python=lock.host_python,
+            no_cache=no_cache,
         )
         _stamp_collected(slice_pip_deps)
         copy_wheel_frameworks(slice_pip_deps, layout.frameworks, existing=staged)
@@ -184,6 +181,8 @@ def _compile_pip_deps(
     build_settings: DesktopBuildSettings | None,
     echo: Callable[[str], None],
     note=discard_note,
+    host_python: tuple[HostPython, ...] | None = None,
+    no_cache: bool = False,
 ) -> None:
     """Byte-compile/strip a collected pip-deps slice, per ``build_settings``.
 
@@ -191,34 +190,26 @@ def _compile_pip_deps(
     Windows ``bundle.py``), with one iOS-specific simplification: the
     Python.xcframework ships no standalone interpreter binary to shell out to
     (it's a linkable library, not an executable), so the "staged interpreter"
-    rung of the compiler ladder never applies here — it always falls straight
-    to "this process's interpreter, if its CPython minor matches the target",
-    or degrades.
+    rung of the compiler ladder never applies here: the compiler is the host
+    CPython the lock pins for this machine (*host_python*), or none.
     """
     settings = build_settings or DesktopBuildSettings()
     if not _setting_applies(settings.byte_compile, release=release):
         return
-    searched: list[Candidate] = []
-    compiler = select_compiler(
-        staged_interpreter=Path(),
-        native=False,
+    compiler = pinned_compiler(
+        host_python,
+        platform="ios",
         python_version=python_version,
-        searched=searched,
+        byte_compile=settings.byte_compile,
+        table="tool.kivy.ios.python.build_settings",
+        what=" pip-deps",
+        error=CollectError,
+        echo=echo,
+        note=note,
+        context={"payload": "pip-deps"},
+        no_cache=no_cache,
     )
     if compiler is None:
-        table = "tool.kivy.ios.python.build_settings"
-        missing = no_interpreter(python_version, table=table, searched=searched)
-        if settings.byte_compile is True:
-            raise CollectError(missing.required(table), **missing.classification)
-        echo(
-            f"[stage] not byte-compiling pip-deps: {missing.headline}.\n"
-            f"{missing.detail()}"
-        )
-        note(
-            BYTECOMPILE_NO_INTERP,
-            f"not byte-compiling pip-deps: {missing.headline}.",
-            {"payload": "pip-deps"},
-        )
         return
     strip_source = _setting_applies(settings.strip_source, release=release)
     with_what = " ".join(compiler) if compiler else "this interpreter"

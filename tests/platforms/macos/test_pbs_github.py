@@ -317,16 +317,15 @@ class TestRateLimitHint:
         assert "GH_TOKEN" not in str(excinfo.value)
 
 
-class TestFindInstallOnly:
-    """The newest-of-the-minor lookup ``kivyforge bytecompiler`` installs from.
+class TestFindCommonInstallOnly:
+    """The lock's host-CPython lookup: one version for every triple, the
+    stripped variant where published, one pass over the releases."""
 
-    The exact shipped version wins when a release has it; otherwise the newest
-    final release of the minor. PBS keeps each minor's newest patch in its
-    newest release, so the search stops once the preferred patch is out of
-    reach rather than reading every release's SHA256SUMS.
-    """
-
-    TRIPLE = "aarch64-apple-darwin"
+    MAC, LINUX, WIN = (
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+    )
 
     class _Sums(GithubPbsMetadataFetcher):
         def __init__(self, sums, *, tags_error=None):
@@ -344,70 +343,91 @@ class TestFindInstallOnly:
             self.sums_read.append(tag)
             return self._sums.get(tag)
 
-    @classmethod
-    def _listing(cls, tag, *versions):
-        return "".join(
-            f"{v[-1] * 64}  cpython-{v}+{tag}-{cls.TRIPLE}-install_only.tar.gz\n"
-            for v in versions
+    @staticmethod
+    def _line(tag, version, triple, variant="install_only_stripped"):
+        return (
+            f"{version[-1] * 64}  cpython-{version}+{tag}-{triple}-{variant}.tar.gz\n"
         )
 
     def _fetcher(self, releases, **kw):
-        sums = {tag: self._listing(tag, *vs) for tag, vs in releases.items()}
+        sums = {
+            tag: "".join(self._line(tag, v, t, *extra) for v, t, *extra in rows)
+            for tag, rows in releases.items()
+        }
         return self._Sums(sums, **kw)
 
-    @staticmethod
-    def _find(f, *args, **kw):
-        found = f.find_install_only(*args, **kw)
-        assert found is not None
-        return found
-
-    def test_the_preferred_patch_in_the_newest_release(self):
-        f = self._fetcher({"20261101": ["3.15.2", "3.14.7"]})
-        version, asset = self._find(f, "3.15", self.TRIPLE, prefer="3.15.2")
-        assert version == "3.15.2"
-        assert asset.url.endswith(
-            "/20261101/cpython-3.15.2%2B20261101-aarch64-apple-darwin-install_only.tar.gz"
-        )
-        assert asset.sha256 == "2" * 64
-
-    def test_a_patch_not_published_yet_falls_back_to_the_newest(self):
-        """PBS lags a CPython patch release: 3.15.3 is out, PBS has 3.15.2."""
-        f = self._fetcher({"20261101": ["3.15.2"], "20261001": ["3.15.1"]})
-        version, _ = self._find(f, "3.15", self.TRIPLE, prefer="3.15.3")
-        assert version == "3.15.2"
-        assert f.sums_read[:1] == ["20261101"]
-
-    def test_an_older_patch_is_found_in_an_older_release(self):
+    def test_the_shipped_version_for_every_triple(self):
         f = self._fetcher(
-            {"20261201": ["3.15.4"], "20261101": ["3.15.2"], "20261001": ["3.15.1"]}
+            {
+                "20261101": [
+                    ("3.15.2", self.MAC),
+                    ("3.15.2", self.LINUX),
+                    ("3.15.2", self.WIN),
+                ]
+            }
         )
-        version, asset = self._find(f, "3.15", self.TRIPLE, prefer="3.15.2")
+        version, builds = f.find_common_install_only(
+            "3.15", (self.MAC, self.LINUX, self.WIN), prefer="3.15.2"
+        )
         assert version == "3.15.2"
-        assert "/20261101/" in asset.url
+        assert set(builds) == {self.MAC, self.LINUX, self.WIN}
+        assert builds[self.MAC][1].url.endswith(
+            "/20261101/cpython-3.15.2%2B20261101-aarch64-apple-darwin-install_only_stripped.tar.gz"
+        )
 
-    def test_an_older_patch_nobody_published_falls_back_to_the_newest(self):
-        f = self._fetcher({"20261201": ["3.15.4"], "20261101": ["3.15.1"]})
-        version, _ = self._find(f, "3.15", self.TRIPLE, prefer="3.15.2")
-        assert version == "3.15.4"
+    def test_otherwise_the_newest_version_they_all_have(self):
+        """3.15.3 for macOS alone doesn't count: one version for every host."""
+        f = self._fetcher(
+            {
+                "20261201": [("3.15.3", self.MAC)],
+                "20261101": [("3.15.2", self.MAC), ("3.15.2", self.LINUX)],
+            }
+        )
+        version, builds = f.find_common_install_only(
+            "3.15", (self.MAC, self.LINUX), prefer="3.15.9"
+        )
+        assert version == "3.15.2"
+        assert set(builds) == {self.MAC, self.LINUX}
 
-    def test_without_a_preference_the_newest_wins(self):
-        f = self._fetcher({"20261201": ["3.15.4", "3.15.3"], "20261101": ["3.15.2"]})
-        version, _ = self._find(f, "3.15", self.TRIPLE)
-        assert version == "3.15.4"
+    def test_stripped_wins_over_full_in_one_release(self):
+        f = self._fetcher(
+            {
+                "20261101": [
+                    ("3.15.2", self.LINUX, "install_only"),
+                    ("3.15.2", self.LINUX, "install_only_stripped"),
+                ]
+            }
+        )
+        _version, builds = f.find_common_install_only("3.15", (self.LINUX,))
+        assert builds[self.LINUX][0] == "install_only_stripped"
 
-    def test_pre_releases_and_other_minors_never_match(self):
+    def test_full_where_stripped_isnt_published(self):
+        f = self._fetcher({"20261101": [("3.15.2", self.WIN, "install_only")]})
+        _version, builds = f.find_common_install_only("3.15", (self.WIN,))
+        assert builds[self.WIN][0] == "install_only"
+
+    def test_a_triple_with_no_build_is_left_out(self):
+        f = self._fetcher({"20261101": [("3.15.2", self.MAC)]})
+        version, builds = f.find_common_install_only(
+            "3.15", (self.MAC, self.WIN), prefer="3.15.2"
+        )
+        assert version == "3.15.2"
+        assert set(builds) == {self.MAC}
+
+    def test_no_build_of_the_minor_at_all(self):
+        f = self._fetcher({"20261101": [("3.14.7", self.MAC)]})
+        assert f.find_common_install_only("3.15", (self.MAC,)) == (None, {})
+
+    def test_pre_releases_never_match(self):
         sums = {
-            "20261001": (
-                f"{'a' * 64}  cpython-3.16.0rc1+20261001-{self.TRIPLE}-install_only.tar.gz\n"
-                f"{'b' * 64}  cpython-3.15.2+20261001-x86_64-unknown-linux-gnu-install_only.tar.gz\n"
-                f"{'c' * 64}  cpython-3.150.1+20261001-{self.TRIPLE}-install_only.tar.gz\n"
-            )
+            "20261001": f"{'a' * 64}  cpython-3.16.0rc1+20261001-{self.MAC}-install_only_stripped.tar.gz\n"
         }
-        assert self._Sums(sums).find_install_only("3.16", self.TRIPLE) is None
-        assert self._Sums(sums).find_install_only("3.15", self.TRIPLE) is None
+        assert self._Sums(sums).find_common_install_only("3.16", (self.MAC,)) == (
+            None,
+            {},
+        )
 
-    def test_a_listing_failure_raises_rather_than_reading_as_nothing(self):
-        """So `bytecompiler` can tell no network from no build."""
+    def test_a_listing_failure_raises(self):
         f = self._fetcher({}, tags_error=RuntimeProviderError("rate limit"))
         with pytest.raises(RuntimeProviderError, match="rate limit"):
-            f.find_install_only("3.15", self.TRIPLE, prefer="3.15.2")
+            f.find_common_install_only("3.15", (self.MAC,))

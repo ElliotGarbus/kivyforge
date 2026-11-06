@@ -25,8 +25,8 @@ from ._output import output_options, reporting
     "--cache",
     "flush_cache",
     is_flag=True,
-    help="Also flush the artifact download cache, including any CPython "
-    "`kivyforge bytecompiler` installed there, and the generated Android "
+    help="Also flush the artifact download cache, including the host CPython "
+    "builds byte-compiling installed there, and the generated Android "
     "project's own Gradle cache. pip keeps its own cache, which this leaves "
     "alone (`pip cache purge` clears it).",
 )

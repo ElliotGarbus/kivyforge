@@ -20,7 +20,6 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
-from kivyforge.bundle.hostpython import ByteCompileNeed, byte_compile_need
 from kivyforge.cli._common import (
     ECHO_EVENTS,
     PROGRESS_ONLY_EVENTS,
@@ -261,23 +260,6 @@ def macos_package(
             "  Distribute the .app directly, or wrap it in a .dmg with an external "
             "tool (see docs).",
         )
-    )
-
-
-def macos_byte_compile_need(project_root: Path) -> ByteCompileNeed:
-    """macOS ships only arm64 and builds only on arm64, so the staged runtime
-    always compiles its own payload."""
-    config = _load_config(project_root)
-    return byte_compile_need(
-        "macos",
-        byte_compile=config.macos_required.build_settings.byte_compile,
-        host_compiler=False,
-        lock=_lock_status(project_root, config),
-        lock_version=lambda: (
-            load_macos_lock(
-                lockfile_path_for("macos", project_root)
-            ).python_runtime.version
-        ),
     )
 
 

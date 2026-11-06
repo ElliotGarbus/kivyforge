@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from kivyforge.config.model import ResolvedVersion
+from tests.conftest import pin_compiler
 from tests.platforms.ios.xcodebuild_fake import fake_xcodebuild
 
 _PYPROJECT = """\
@@ -141,6 +142,7 @@ def ios(desktop_project, monkeypatch):
         swift_packages=(),
         xcframeworks=(),
         include_files=(),
+        host_python=None,
     )
 
     def fake_create_staging(config, project_root, *, echo, **kw):
@@ -173,7 +175,6 @@ def android(tmp_path, monkeypatch):
     Returns the project root (the cwd), not the module: Android's pipeline runs
     for real up to the stubs, so tests mostly want paths under it.
     """
-    from kivyforge.platforms.android import cli
     from kivyforge.platforms.android import policy as policy_mod
     from kivyforge.platforms.android import signing as signing_mod
     from kivyforge.platforms.android.signing import ResolvedSigning
@@ -189,9 +190,9 @@ def android(tmp_path, monkeypatch):
     android_tests._patch_collaborators(
         monkeypatch, downloads=tmp_path / "downloads", calls={}
     )
-    # Pin the byte-compile decision: whether this host has a final CPython 3.14
-    # must not decide what the test expects to see.
-    monkeypatch.setattr(cli, "find_interpreter", lambda version, **_kw: None)
+    # Pin the byte-compile decision: whether this host has the locked host
+    # CPython must not decide what the test expects to see.
+    pin_compiler(monkeypatch, None)
     resolved = ResolvedSigning(
         keystore=Path("release.keystore"),
         key_alias="upload",

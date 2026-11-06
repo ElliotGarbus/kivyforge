@@ -28,13 +28,13 @@ from kivyforge.build_outcome import (
     discard_note,
 )
 from kivyforge.bundle import app_metadata, entry_launcher
-from kivyforge.bundle.hostpython import ByteCompileNeed, byte_compile_need
-from kivyforge.bundle.pycompile import Candidate, find_interpreter, no_interpreter
+from kivyforge.bundle.hostpython import pinned_compiler
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import AndroidConfig, Config, ResolvedVersion
 from kivyforge.config.version import android_version_code, with_version
+from kivyforge.lock.host_python import HostPython
 from kivyforge.lock.inputs import is_in_sync
 from kivyforge.lock.reader import LockError
 from kivyforge.report import diagnostics
@@ -251,6 +251,8 @@ def _resolve_byte_compile(
     *,
     python_version: str,
     debug: bool,
+    host_python: tuple[HostPython, ...] | None = None,
+    no_cache: bool = False,
     echo=click.echo,
     note=discard_note,
 ) -> tuple[tuple[str, ...] | None, bool]:
@@ -260,23 +262,25 @@ def _resolve_byte_compile(
     byte-compile. ``byte_compile = true`` is read as "I insist", so a missing
     interpreter is an error; the default ``"release"`` is read as "when it makes
     sense", so it degrades to shipping source with a warning rather than
-    breaking a build the user never configured.
+    breaking a build the user never configured. The interpreter is the host
+    CPython the lock pins for this machine (*host_python*), never another.
     """
     settings = android.build_settings
     if not _setting_applies(settings.byte_compile, release=not debug):
         return None, False
-    searched: list[Candidate] = []
-    compiler = find_interpreter(python_version, searched=searched)
+    compiler = pinned_compiler(
+        host_python,
+        platform="android",
+        python_version=python_version,
+        byte_compile=settings.byte_compile,
+        table="tool.kivy.android.build_settings",
+        what="",
+        error=AndroidBuildError,
+        echo=echo,
+        note=note,
+        no_cache=no_cache,
+    )
     if compiler is None:
-        table = "tool.kivy.android.build_settings"
-        missing = no_interpreter(python_version, table=table, searched=searched)
-        if settings.byte_compile is True:
-            raise AndroidBuildError(missing.required(table), **missing.classification)
-        echo(f"[stage] not byte-compiling: {missing.headline}.\n{missing.detail()}")
-        note(
-            diagnostics.BYTECOMPILE_NO_INTERP,
-            f"not byte-compiling: {missing.headline}.",
-        )
         return None, False
     # Documented as "ignored when byte_compile is off": stripping sources with
     # no .pyc beside them would ship a bundle that imports nothing.
@@ -481,6 +485,8 @@ def android_build(
         android,
         python_version=python_version,
         debug=debug,
+        host_python=lock.host_python,
+        no_cache=no_cache,
         echo=events.on_progress,
         note=events.note,
     )
@@ -1416,23 +1422,6 @@ def _check_required_values(dest: Path, copied: list[str]) -> None:
 
 
 @user_facing
-def android_byte_compile_need(project_root: Path) -> ByteCompileNeed:
-    """Android always compiles with a host interpreter: its runtime is built for
-    the device."""
-    config, _ = _load_config_only(project_root)
-    return byte_compile_need(
-        "android",
-        byte_compile=config.android_required.build_settings.byte_compile,
-        host_compiler=True,
-        lock=android_status(project_root).lock,
-        lock_version=lambda: (
-            lock_reader.load(project_root / "pylock.android.toml")
-            .python_android[0]
-            .version
-        ),
-    )
-
-
 @user_facing
 def android_status(project_root: Path) -> StatusReport:
     """Read-only project snapshot (android/06 §status)."""

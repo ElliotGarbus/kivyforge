@@ -100,6 +100,7 @@ The rest of the table depends on the target.
 | `[[tool.kivyforge.python_runtime.artifacts]]` | One runtime archive per architecture: `arch`, `url`, `sha256`, `archive_format`. |
 | `[[tool.kivyforge.native_binaries]]` | One entry per [native binary](../guides/cross-platform/native-binaries.md): `name`, `version`, `url` or `path`, `sha256`. |
 | `[[tool.kivyforge.include_files]]` | macOS only. One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
+| `[[tool.kivyforge.host_python]]` | Linux only, when `archs` includes `aarch64`. The CPython that byte-compiles on each build host, one entry per host: `triple`, `state` (`pinned`, `no-build` or `unresolved-offline`), `minor`, and for a pinned entry `version`, `variant`, `url`, `sha256`. See [the iOS reference](pyproject/ios.md#toolkivyiospythonbuild_settings). |
 
 ### iOS
 
@@ -110,6 +111,7 @@ The rest of the table depends on the target.
 | `[[tool.kivyforge.xcframeworks]]` | Standalone native xcframeworks: `name`, `version`, `url` or `path`, `sha256`, `slices`, `archive_format`, `link`, `embed`, and optional fields. |
 | `[[tool.kivyforge.swift_packages]]` | [Swift packages](../guides/ios/swift-packages.md): `name`, `url` or `path`, the requirement and resolved `revision` or `version`, `products`, `link`, `embed`. |
 | `[[tool.kivyforge.include_files]]` | One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
+| `[[tool.kivyforge.host_python]]` | The CPython that byte-compiles on each build host, one entry per host: `triple`, `state` (`pinned`, `no-build` or `unresolved-offline`), `minor`, and for a pinned entry `version`, `variant`, `url`, `sha256`. See [the iOS reference](pyproject/ios.md#toolkivyiospythonbuild_settings). |
 
 ### Android
 
@@ -121,6 +123,7 @@ The rest of the table depends on the target.
 | `[[tool.kivyforge.android_libs]]` | [`.aar` and `.jar` libraries](../guides/android/java-libraries.md): `name`, `kind`, `version`, `url` or `path`, `sha256`. |
 | `[tool.kivyforge.gradle]` | Present only when you declare Maven dependencies: the declared `dependencies` and `repositories`, the declared BOMs as `platforms` (only when you list any), plus `[[tool.kivyforge.gradle.resolved]]` entries, each with a `coordinate` and per-file SHA-256 `artifacts`. A dependency you declared without a version appears in `resolved` with the version its BOM chose. Gradle plugins are not recorded in the lock. |
 | `[[tool.kivyforge.include_files]]` | One entry per file copied by `include_files`: `source`, `dest`, `sha256`. |
+| `[[tool.kivyforge.host_python]]` | The CPython that byte-compiles on each build host, one entry per host: `triple`, `state` (`pinned`, `no-build` or `unresolved-offline`), `minor`, and for a pinned entry `version`, `variant`, `url`, `sha256`. See [the iOS reference](pyproject/ios.md#toolkivyiospythonbuild_settings). |
 
 ## Integrity
 

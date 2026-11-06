@@ -61,10 +61,10 @@ with `version` and `source` keys. See
 | `strip_source` | boolean or `"release"` | `"release"` | Remove `.py` files after compiling. Has no effect when nothing is compiled. |
 
 The bundled runtime compiles its own payload when it can run on the machine
-you build on. An `aarch64` target built on x86_64 can't, so its `.pyc` are
-written by a final CPython of the same minor on the build machine. Run
-`kivyforge bytecompiler -p linux` once to install one, or install one yourself
-so `python3.X` is on `PATH`. `kivyforge doctor -p linux` shows what it finds.
+you build on. An `aarch64` target built on x86_64 can't, so `kivyforge lock`
+pins a CPython for x86_64 Linux whenever `archs` includes `aarch64`, and the
+first release build downloads it (about 36 MB) and compiles with it.
+`kivyforge doctor -p linux` says whether it's installed yet.
 
 ## Example
 
