@@ -172,17 +172,67 @@ class GithubPbsMetadataFetcher:
                         )
         return None
 
+    def find_install_only(
+        self, minor: str, target_triple: str, *, prefer: str | None = None
+    ) -> tuple[str, ReleaseAsset] | None:
+        """A final ``install_only`` build of CPython *minor* for *target_triple*.
+
+        Returns ``(version, asset)``: *prefer* (an exact ``3.15.2``) when some
+        release has it, otherwise the newest final release of the minor, or
+        ``None`` when no release has the minor at all. Pre-releases never match:
+        their names put ``rc``/``a``/``b`` between the micro version and the
+        ``+``.
+
+        Releases are read newest first, and PBS keeps each minor's newest patch
+        in its newest release, so the search stops once *prefer* is out of
+        reach: when the newest release with the minor is already below it (not
+        published yet), or when an older release has passed it.
+
+        Unlike :meth:`fetch`, a failure to list the releases raises
+        :class:`RuntimeProviderError` rather than reading as "nothing found",
+        so a caller can tell no network from no build.
+        """
+        pattern = re.compile(
+            rf"^cpython-{re.escape(minor)}\.(\d+)\+\d+-"
+            rf"{re.escape(target_triple)}-install_only\.tar\.gz$"
+        )
+        want = int(prefer.rsplit(".", 1)[1]) if prefer else None
+        tags = self._list_release_tags()
+        newest: tuple[str, ReleaseAsset] | None = None
+        for start in range(0, len(tags), _SUMS_BATCH):
+            batch = tags[start : start + _SUMS_BATCH]
+            with ThreadPoolExecutor(max_workers=len(batch)) as pool:
+                sums = list(pool.map(self._release_sums, batch))
+            for tag, listing in zip(batch, sums):
+                builds = _builds_in(listing, pattern)
+                if not builds:
+                    continue
+                if newest is None:
+                    top = max(builds)
+                    newest = (f"{minor}.{top}", _asset(tag, builds[top]))
+                if want is None:
+                    return newest
+                if want in builds:
+                    return f"{minor}.{want}", _asset(tag, builds[want])
+                if max(builds) < want:
+                    return newest
+        return newest
+
     def _release_tags(self) -> list[str]:
         """Release tags, newest first; empty if they cannot be listed."""
-        tags: list[str] = []
         try:
-            for page in range(1, _TAG_PAGES + 1):
-                names = [t["name"] for t in self._get_json(_TAGS_URL.format(page=page))]
-                tags += [n for n in names if _DATE_TAG.match(n)]
-                if len(names) < 100:
-                    break
+            return self._list_release_tags()
         except RuntimeProviderError:
             return []  # the release-page search reports the failure
+
+    def _list_release_tags(self) -> list[str]:
+        """Release tags, newest first. Raises :class:`RuntimeProviderError`."""
+        tags: list[str] = []
+        for page in range(1, _TAG_PAGES + 1):
+            names = [t["name"] for t in self._get_json(_TAGS_URL.format(page=page))]
+            tags += [n for n in names if _DATE_TAG.match(n)]
+            if len(names) < 100:
+                break
         # Date tags sort chronologically as text.
         return sorted(set(tags), reverse=True)
 
@@ -286,3 +336,28 @@ class GithubPbsMetadataFetcher:
                 f"failed to query python-build-standalone metadata ({url}): {exc}"
                 + (_RATE_LIMIT_HINT if _is_rate_limited(exc) else "")
             ) from exc
+
+
+def _builds_in(listing: str | None, pattern: re.Pattern[str]) -> dict[int, str]:
+    """``{micro: archive name}`` for each *pattern* match in a ``SHA256SUMS``.
+
+    The value is the whole line's two columns, ``"<sha256> <name>"``, kept
+    together so :func:`_asset` needs no second lookup.
+    """
+    builds: dict[int, str] = {}
+    for line in (listing or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            match = pattern.match(parts[1])
+            if match:
+                builds[int(match.group(1))] = line
+    return builds
+
+
+def _asset(tag: str, line: str) -> ReleaseAsset:
+    sha256, name = line.split()
+    # Quoted as GitHub's browser_download_url is ("+" as "%2B"), like
+    # _from_checksums, so a URL reads the same whichever path found it.
+    return ReleaseAsset(
+        url=f"{_DOWNLOAD}/{tag}/{urllib.parse.quote(name)}", sha256=sha256
+    )

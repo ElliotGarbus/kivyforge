@@ -320,7 +320,7 @@ hosts = ["macos"]
 target = "iOS device `arm64`"
 tier = "T3 + T5"
 needs = [
-    "A final CPython 3.15 on the Mac's PATH as `python3.15` (`uv python install 3.15.0` works); `package` byte-compiles with it.",
+    "A final CPython 3.15 the byte-compile search finds: `kivyforge bytecompiler -p ios` installs one, or `python3.15` on the Mac's PATH (`uv python install 3.15.0` works); `package` byte-compiles with it.",
     "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`, unlocked.",
     "An Apple ID signed into Xcode whose team is passed with `--team-id`.",
     "`hello-kivy` pinned to a final 3.15 (`[tool.kivy.ios.python].version`). It tracks its lock: diff and report a changed lock, do not commit it.",

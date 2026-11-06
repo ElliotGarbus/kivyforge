@@ -1,7 +1,12 @@
 # Proposal — a command that installs the host Python that byte-compiles
 
-> Status: **decided 2026-11-05, not implemented.** Every question in section 4
-> is decided; nothing is built yet.
+> Status: **implemented 2026-11-05** on branch `bytecompiler`, not yet
+> released. The hermetic tests in section 8 pass. On 2026-11-05 a real install
+> and iOS release build on this Mac passed, and a `hello-kivy` release
+> byte-compiled by the installed CPython booted on an iPhone (`test-matrix.md`
+> §7, hardware pass `ios-strip-source`). Still open from section 8: the Android
+> run on a Linux host. Two details changed while implementing, each marked in
+> place: where the install lives (3.3) and which skips are diagnostics (3.7).
 >
 > Responds to [#209](https://github.com/ElliotGarbus/kivyforge/issues/209).
 > Writing `.pyc` for iOS or Android needs a final CPython of the shipped minor
@@ -76,11 +81,12 @@ Error: [tool.kivy.ios.python.build_settings].byte_compile = true, but no final C
 
 $ kivyforge bytecompiler -p ios
 [bytecompiler] ios ships CPython 3.15.2; no final 3.15 on this machine
-[bytecompiler] downloading CPython 3.15.2 (aarch64-apple-darwin) ...
-Installed CPython 3.15.2 for byte-compiling: ~/Library/Caches/kivyforge/host-python/3.15/bin/python3.15
+[bytecompiler] installing CPython 3.15.2 (aarch64-apple-darwin)
+[download] cpython-3.15.2+20261101-aarch64-apple-darwin-install_only.tar.gz  100% of 27.8 MB
+Installed CPython 3.15.2 for byte-compiling: ~/Library/Caches/kivyforge/artifacts/host-python/3.15/python/bin/python3.15
 
 $ kivyforge package -p ios
-[stage] byte-compiling app sources with ~/Library/Caches/kivyforge/host-python/3.15/bin/python3.15 (.pyc only)
+[stage] byte-compiling app sources with ~/Library/Caches/kivyforge/artifacts/host-python/3.15/python/bin/python3.15 (.pyc only)
 ...
 ```
 
@@ -135,9 +141,11 @@ nothing:
 
 ### 3.3 Where it goes, and the new search step
 
-The interpreter is extracted to a host-tools directory beside the artifact
-cache, one per minor: `<cache>/host-python/<major.minor>/`. The `.tar.gz`
-itself stays in `ArtifactCache` like any other download.
+The interpreter is extracted inside the artifact cache's root, one directory
+per minor: `<cache>/host-python/<major.minor>/python/`, so `clean --cache`
+removes it along with everything else. The `.tar.gz` itself stays in
+`ArtifactCache` like any other download. *(The draft put it beside the cache;
+inside it, `clean --cache` needs no change to remove it.)*
 
 `find_interpreter` gains a step right after "this interpreter": **a final
 CPython of the minor that kivyforge installed.** Putting it before `PATH` makes
@@ -204,8 +212,14 @@ Cost: one archive per host and minor, about 24 MB for `aarch64-apple-darwin`
   minor: `{"minor", "version", "path", "source": "installed" | "found" |
   "already-installed", "platforms": [...]}`. It is not `data.artifacts`: an
   interpreter is a tool, not a build product.
-- Skipped platforms (no lock, host can't build, `byte_compile = false`) are
-  `INFO` diagnostics, so an agent can see why a platform got nothing.
+- Skipped platforms are listed in `data.skipped`, each with `platform` and
+  `reason`, so an agent can see why a platform got nothing. A platform skipped
+  because this host can't build it, or because its lock is missing or stale,
+  also gets an `INFO` diagnostic with that existing code (`KF-HOST-INCAPABLE`,
+  `KF-LOCK-*`). The other reasons (`byte_compile = false`, a runtime that
+  compiles itself, a pre-release) have no diagnostic: each would need a new
+  code for something that isn't a problem. *(Changed while implementing; the
+  draft made every skip a diagnostic.)*
 
 ### 3.8 Failures
 
@@ -429,7 +443,7 @@ So this change updates one page for the search, not six.
 | `docs/guides/reference/pyproject/linux.md` | The same note, for an `aarch64` target. |
 | `docs/guides/concepts/build-vs-package.md` | It says `package` byte-compiles by default; add that this needs a host Python of the shipped minor, and how to get one. |
 | `docs/guides/get-started/hosts.md` | A line under the host requirements: building iOS or Android release packages byte-compiles, which needs a host CPython of the minor the app ships. |
-| `docs/guides/guides/cross-platform/ci-and-agents.md` | The CI recipe gets a `kivyforge bytecompiler` step before `package`. The exit-code table's `3` row mentions it as one fix. |
+| `docs/guides/guides/cross-platform/ci-and-agents.md` | A note after the example job, with a `kivyforge bytecompiler` step for iOS, Android and Linux `aarch64` jobs. The example itself builds a native x86_64 AppImage, where the step would install nothing, so it isn't added there. The exit-code table's `3` row mentions it as one fix. |
 | `docs/guides/troubleshooting/index.md` | A row in the codes table for `KF-BYTECOMPILE-NO-INTERP`, which it lacks, with the fix `kivyforge bytecompiler -p PLATFORM`. A row for `KF-HOST-PYTHON-FETCH`, with the fix "retry with network access, or install a Python yourself". |
 | `docs/guides/reference/json-output.md` | `bytecompiler`'s `data.interpreters` (3.7), next to `data.artifacts` and `data.version`. |
 | `README.md` | A line in the command list: `kivyforge bytecompiler`: install a host CPython that byte-compiles for your targets. |

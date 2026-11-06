@@ -246,9 +246,10 @@ class TestIos:
 _ANDROID_NO_BYTECOMPILE = (
     "[stage] not byte-compiling: no final CPython 3.14 found (this project ships "
     "3.14.6).\n"
-    "  Fix: install any final CPython 3.14.x (for example `uv python install "
-    "3.14`, or python.org) so python3.14 is on PATH, or set byte_compile = false "
-    "in [tool.kivy.android.build_settings].\n"
+    "  Fix: run `kivyforge bytecompiler -p android` to install a host CPython "
+    "3.14 for byte-compiling, or install any final CPython 3.14.x (for example "
+    "`uv python install 3.14`, or python.org) so python3.14 is on PATH, or set "
+    "byte_compile = false in [tool.kivy.android.build_settings].\n"
 )
 
 # Deliberate (proposal §5 step 1): the project gets a product line, so a plain

@@ -49,20 +49,24 @@ not depend on architecture or OS. So a compiler must be:
    executable, and Android's runtime is built for the device, so neither has
    this step.
 2. **kivyforge's own interpreter**, if it is a final release of the minor.
-3. **`py -3.X`**, Windows only. The PEP 397 launcher is the reliable way to
+3. **The CPython `kivyforge bytecompiler` installed** for the minor (below).
+   It comes before `PATH`, so that running the command always changes what the
+   build uses; any final release of the minor writes correct `.pyc`, so
+   preferring it loses nothing.
+4. **`py -3.X`**, Windows only. The PEP 397 launcher is the reliable way to
    reach a specific version there.
-4. **`python3.X`, `python3`, then `python` on `PATH`.**
-5. **`uv python find --no-project --no-python-downloads 3.X`**, only when uv is
+5. **`python3.X`, `python3`, then `python` on `PATH`.**
+6. **`uv python find --no-project --no-python-downloads 3.X`**, only when uv is
    installed. A uv-managed Python is often not on `PATH`. `--no-project` keeps
    the project's `.python-version` and `requires-python` out of the answer, and
    `--no-python-downloads` keeps the search off the network. uv is never
    required: without it, this step leaves no trace.
 
-Steps 3 to 5 each run the candidate once (`stdin=DEVNULL`, 30 s timeout) and
+Steps 3 to 6 each run the candidate once (`stdin=DEVNULL`, 30 s timeout) and
 read its `sys.version_info`. The first that is the right minor and final is
 used.
 
-In practice, iOS and Android always use steps 2 to 5. Desktop reaches them only
+In practice, iOS and Android always use steps 2 to 6. Desktop reaches them only
 when the staged interpreter can't run here: a Linux `aarch64` target built on an
 x86_64 host, the one cross-arch desktop build (macOS ships only arm64 and
 Windows only amd64), or a missing staged interpreter.
@@ -74,6 +78,47 @@ found by putting its directory first on `PATH`:
 ```bash
 PATH=/opt/python/3.15/bin:$PATH kivyforge package -p ios
 ```
+
+## Installing one: `kivyforge bytecompiler`
+
+When the search finds nothing, the message's first fix (for iOS, Android and
+Linux) is a command run once per machine: `kivyforge bytecompiler -p ios`.
+`build` and `package` never download a host Python themselves.
+
+- **Which minors.** Without `-p`, every platform the project configures; with
+  it, that one. For each, the backend reports what its build needs
+  (`Platform.byte_compile_need`): the runtime version its lock ships, read as
+  the build reads it, and whether it compiles with a host interpreter at all.
+  A platform is skipped, with a reason, when this host can't build it,
+  `byte_compile = false`, its build compiles with the runtime it ships, its
+  lock is missing or stale, or it ships a pre-release.
+- **Nothing twice.** Each minor is searched first, exactly as above. An
+  interpreter already found means nothing is installed; `--force` reinstalls
+  kivyforge's copy anyway.
+- **Which build.** A python-build-standalone `install_only` build for this
+  host's triple (`aarch64-apple-darwin`, `x86_64-unknown-linux-gnu` or
+  `x86_64-pc-windows-msvc`): the exact version the lock ships when a release
+  has it, otherwise the newest final release of the minor
+  (`GithubPbsMetadataFetcher.find_install_only`). Never a pre-release.
+- **Verified.** The SHA-256 comes from the release's own `SHA256SUMS`, checked
+  by `artifacts/verify.py` before extraction. This trusts the hash published
+  with the release over HTTPS, which is weaker than a hash committed in a lock;
+  it is accepted because the interpreter never ships, and the T3 magic check
+  verifies the `.pyc` it writes.
+- **Where.** The archive stays in the artifact cache, and the interpreter is
+  extracted to `<cache>/host-python/<minor>/`. The new tree is probed, and
+  must answer the minor and a final release, before it replaces an old one.
+  `clean --cache` removes it.
+- **Failures** are exit 3: `KF-HOST-PYTHON-FETCH` for no network, a GitHub
+  rate limit or a hash mismatch, which a retry can fix;
+  `KF-BYTECOMPILE-NO-INTERP` when no build of the minor exists for this host;
+  `KF-HOST-INCAPABLE` on a host outside the three above.
+
+`--json` reports `data.interpreters`, one entry per minor (`minor`, `version`,
+`path`, `source` of `installed`, `found` or `already-installed`, and
+`platforms`), and `data.skipped`, one entry per skipped platform with its
+reason. A platform skipped for its host or its lock also gets an `INFO`
+diagnostic carrying that code.
 
 ## When nothing qualifies
 
@@ -87,8 +132,12 @@ Error: [tool.kivy.ios.python.build_settings].byte_compile = true, but no final C
     python3.15: not found
     python3: 3.9.6
     python: not found
-  Fix: install any final CPython 3.15.x (for example `uv python install 3.15`, or python.org) so python3.15 is on PATH, or set byte_compile = false in [tool.kivy.ios.python.build_settings].
+  Fix: run `kivyforge bytecompiler -p ios` to install a host CPython 3.15 for byte-compiling, or install any final CPython 3.15.x (for example `uv python install 3.15`, or python.org) so python3.15 is on PATH, or set byte_compile = false in [tool.kivy.ios.python.build_settings].
 ```
+
+The `kivyforge bytecompiler` option appears for iOS, Android and Linux only
+(`pycompile.BYTECOMPILER_PLATFORMS`). macOS and Windows reach the search only
+when their staged runtime is missing, which the command doesn't fix.
 
 A pre-release of the right minor, if one was found, gets its own line saying
 why it doesn't count; otherwise pre-releases aren't mentioned.
@@ -126,9 +175,10 @@ Fixed for every platform (`pycompile.py`'s module docstring has the reasons):
 - The call sites, one per payload: `platforms/ios/staging.py` (app sources),
   `artifacts/collect.py` (iOS pip-deps), `platforms/android/cli.py`, and the
   `bundle.py` of macOS, Linux and Windows.
-- `doctor/checks_common.py::check_byte_compile`.
+- `doctor/checks_common.py::check_byte_compile`. Its PASS line names
+  kivyforge's own install as such ("via kivyforge's CPython (path)").
+- `kivyforge/bundle/hostpython.py`: the install, the host triples, and
+  `ByteCompileNeed`; `kivyforge/cli/bytecompiler.py`: the verb.
 
-A proposed change to this search, a command that installs a host CPython for
-byte-compiling, is in
+The design and the decisions behind the command are in
 [`host-python-download-proposal.md`](../dev/host-python-download-proposal.md).
-It is not implemented; when it is, this page gains its step.

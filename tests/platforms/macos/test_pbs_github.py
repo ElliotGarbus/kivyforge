@@ -315,3 +315,99 @@ class TestRateLimitHint:
         with pytest.raises(RuntimeProviderError) as excinfo:
             GithubPbsMetadataFetcher().fetch("3.13.14", "x86_64-unknown-linux-gnu")
         assert "GH_TOKEN" not in str(excinfo.value)
+
+
+class TestFindInstallOnly:
+    """The newest-of-the-minor lookup ``kivyforge bytecompiler`` installs from.
+
+    The exact shipped version wins when a release has it; otherwise the newest
+    final release of the minor. PBS keeps each minor's newest patch in its
+    newest release, so the search stops once the preferred patch is out of
+    reach rather than reading every release's SHA256SUMS.
+    """
+
+    TRIPLE = "aarch64-apple-darwin"
+
+    class _Sums(GithubPbsMetadataFetcher):
+        def __init__(self, sums, *, tags_error=None):
+            super().__init__()
+            self._sums = sums
+            self._tags_error = tags_error
+            self.sums_read: list[str] = []
+
+        def _list_release_tags(self):
+            if self._tags_error is not None:
+                raise self._tags_error
+            return sorted(self._sums, reverse=True)
+
+        def _release_sums(self, tag):
+            self.sums_read.append(tag)
+            return self._sums.get(tag)
+
+    @classmethod
+    def _listing(cls, tag, *versions):
+        return "".join(
+            f"{v[-1] * 64}  cpython-{v}+{tag}-{cls.TRIPLE}-install_only.tar.gz\n"
+            for v in versions
+        )
+
+    def _fetcher(self, releases, **kw):
+        sums = {tag: self._listing(tag, *vs) for tag, vs in releases.items()}
+        return self._Sums(sums, **kw)
+
+    @staticmethod
+    def _find(f, *args, **kw):
+        found = f.find_install_only(*args, **kw)
+        assert found is not None
+        return found
+
+    def test_the_preferred_patch_in_the_newest_release(self):
+        f = self._fetcher({"20261101": ["3.15.2", "3.14.7"]})
+        version, asset = self._find(f, "3.15", self.TRIPLE, prefer="3.15.2")
+        assert version == "3.15.2"
+        assert asset.url.endswith(
+            "/20261101/cpython-3.15.2%2B20261101-aarch64-apple-darwin-install_only.tar.gz"
+        )
+        assert asset.sha256 == "2" * 64
+
+    def test_a_patch_not_published_yet_falls_back_to_the_newest(self):
+        """PBS lags a CPython patch release: 3.15.3 is out, PBS has 3.15.2."""
+        f = self._fetcher({"20261101": ["3.15.2"], "20261001": ["3.15.1"]})
+        version, _ = self._find(f, "3.15", self.TRIPLE, prefer="3.15.3")
+        assert version == "3.15.2"
+        assert f.sums_read[:1] == ["20261101"]
+
+    def test_an_older_patch_is_found_in_an_older_release(self):
+        f = self._fetcher(
+            {"20261201": ["3.15.4"], "20261101": ["3.15.2"], "20261001": ["3.15.1"]}
+        )
+        version, asset = self._find(f, "3.15", self.TRIPLE, prefer="3.15.2")
+        assert version == "3.15.2"
+        assert "/20261101/" in asset.url
+
+    def test_an_older_patch_nobody_published_falls_back_to_the_newest(self):
+        f = self._fetcher({"20261201": ["3.15.4"], "20261101": ["3.15.1"]})
+        version, _ = self._find(f, "3.15", self.TRIPLE, prefer="3.15.2")
+        assert version == "3.15.4"
+
+    def test_without_a_preference_the_newest_wins(self):
+        f = self._fetcher({"20261201": ["3.15.4", "3.15.3"], "20261101": ["3.15.2"]})
+        version, _ = self._find(f, "3.15", self.TRIPLE)
+        assert version == "3.15.4"
+
+    def test_pre_releases_and_other_minors_never_match(self):
+        sums = {
+            "20261001": (
+                f"{'a' * 64}  cpython-3.16.0rc1+20261001-{self.TRIPLE}-install_only.tar.gz\n"
+                f"{'b' * 64}  cpython-3.15.2+20261001-x86_64-unknown-linux-gnu-install_only.tar.gz\n"
+                f"{'c' * 64}  cpython-3.150.1+20261001-{self.TRIPLE}-install_only.tar.gz\n"
+            )
+        }
+        assert self._Sums(sums).find_install_only("3.16", self.TRIPLE) is None
+        assert self._Sums(sums).find_install_only("3.15", self.TRIPLE) is None
+
+    def test_a_listing_failure_raises_rather_than_reading_as_nothing(self):
+        """So `bytecompiler` can tell no network from no build."""
+        f = self._fetcher({}, tags_error=RuntimeProviderError("rate limit"))
+        with pytest.raises(RuntimeProviderError, match="rate limit"):
+            f.find_install_only("3.15", self.TRIPLE, prefer="3.15.2")

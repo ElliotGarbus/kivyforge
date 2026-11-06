@@ -91,9 +91,18 @@ _DIAGNOSTIC = {
         "Read the note; no action is required unless it surprises you.",
     ),
     "KF-BYTECOMPILE-NO-INTERP": (
-        "warning",
-        "`byte_compile` is on but no compatible host interpreter was found, so source shipped instead.",
-        "Install a CPython matching the target's minor version, or set `byte_compile = false`.",
+        "error or warning",
+        "`byte_compile` is on but no final CPython of the target's minor was found "
+        "on this machine. A warning when the build shipped source instead; an "
+        "error, exit 3, with `byte_compile = true`.",
+        "Run `kivyforge bytecompiler -p <platform>`, install that CPython yourself, "
+        "or set `byte_compile = false`.",
+    ),
+    "KF-HOST-PYTHON-FETCH": (
+        "error",
+        "`kivyforge bytecompiler` couldn't download its CPython: no network, a "
+        "GitHub rate limit, or a download that failed its SHA-256 check. Exit 3.",
+        "Retry with network access. In CI, set `GITHUB_TOKEN`.",
     ),
     "KF-SIGNING-UNCONFIGURED": (
         "warning",

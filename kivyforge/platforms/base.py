@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from kivyforge.build_outcome import BuildEvents, BuildOutcome
+    from kivyforge.bundle.hostpython import ByteCompileNeed
     from kivyforge.config.model import ResolvedVersion
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
@@ -199,6 +200,14 @@ class Platform(ABC):
             f"`open` supports iOS (Xcode) and Android (Android Studio); "
             f"{self.name} has no IDE project to open."
         )
+
+    def byte_compile_need(self, project_root: Path) -> ByteCompileNeed:
+        """What byte-compiling this platform's build needs from the host.
+
+        Read by ``kivyforge bytecompiler``. Each backend answers from its own
+        config and lock, so the verb never knows a lock's layout.
+        """
+        raise NotImplementedError(f"{self.name}: byte_compile_need")
 
     def status(self, project_root: Path) -> StatusReport:
         raise NotImplementedError(f"status is not supported for {self.name!r}.")

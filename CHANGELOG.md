@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### `kivyforge bytecompiler` installs the Python that byte-compiles
+
+- **Added:** byte-compiling an iOS or Android release, or a Linux `aarch64`
+  one, needs a CPython of the minor the app ships on the machine that builds
+  ([#209](https://github.com/ElliotGarbus/kivyforge/issues/209)).
+  `kivyforge bytecompiler` installs one: for each minor the project's locks
+  ship that nothing on the machine can compile, it downloads a
+  python-build-standalone CPython for this host, checks it against the
+  release's published SHA-256, and keeps it in the artifact cache, where builds
+  find it. `-p` narrows it to one platform. It does nothing when the machine
+  already has a suitable Python; `--force` reinstalls. `build` and `package`
+  never download one themselves.
+- **Changed:** when a build finds no interpreter on iOS, Android or Linux, the
+  error's first fix is `kivyforge bytecompiler -p PLATFORM`. `doctor` prints
+  the same hint.
+- **Added:** `KF-HOST-PYTHON-FETCH`, exit 3, when the download fails (no
+  network, a GitHub rate limit, or a failed check). Retry with network access;
+  in CI, set `GITHUB_TOKEN`.
+- **Migration:** none needed. `clean --cache` removes the installed CPython with
+  the rest of the cache.
+
 ### iOS: `run` shows the app's Python output again
 
 - **Fixed:** with CPython 3.15 final, `kivyforge run -p ios` showed only native

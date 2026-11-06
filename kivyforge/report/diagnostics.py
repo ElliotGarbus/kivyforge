@@ -77,6 +77,13 @@ LOCK_WARNING = "KF-LOCK-WARNING"
 #: ``context`` names the ``tool`` looked for.
 BYTECOMPILE_NO_INTERP = "KF-BYTECOMPILE-NO-INTERP"
 
+#: ``kivyforge bytecompiler`` could not download the host CPython it chose: no
+#: network, a GitHub rate limit, or a download whose SHA-256 didn't match. Exit
+#: 3. Kept apart from ``BYTECOMPILE_NO_INTERP`` (no build of the minor exists)
+#: because the reaction differs: this one is fixed by retrying with network
+#: access. ``context`` carries the ``url`` tried.
+HOST_PYTHON_FETCH = "KF-HOST-PYTHON-FETCH"
+
 #: A package shipped unsigned or ad-hoc signed where real signing is
 #: configurable. WARNING: the artifact is usable, just not trusted.
 SIGNING_UNCONFIGURED = "KF-SIGNING-UNCONFIGURED"

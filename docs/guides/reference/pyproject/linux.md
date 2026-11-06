@@ -60,6 +60,12 @@ with `version` and `source` keys. See
 | `byte_compile` | boolean or `"release"` | `"release"` | Compile app and wheel sources to `.pyc`. `"release"` applies to `package` and `run --release` only. |
 | `strip_source` | boolean or `"release"` | `"release"` | Remove `.py` files after compiling. Has no effect when nothing is compiled. |
 
+The bundled runtime compiles its own payload when it can run on the machine
+you build on. An `aarch64` target built on x86_64 can't, so its `.pyc` are
+written by a final CPython of the same minor on the build machine. Run
+`kivyforge bytecompiler -p linux` once to install one, or install one yourself
+so `python3.X` is on `PATH`. `kivyforge doctor -p linux` shows what it finds.
+
 ## Example
 
 From `examples/desktop/dice-roller`:

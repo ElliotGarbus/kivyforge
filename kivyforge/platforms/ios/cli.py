@@ -26,6 +26,7 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
+from kivyforge.bundle.hostpython import ByteCompileNeed, byte_compile_need
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import (
     ECHO_EVENTS,
@@ -740,6 +741,20 @@ def ios_open(project_root: Path, *, events: BuildEvents = ECHO_EVENTS) -> Path:
 
 
 # ---- status -------------------------------------------------------------- #
+
+
+def ios_byte_compile_need(project_root: Path) -> ByteCompileNeed:
+    """iOS always compiles with a host interpreter: the xcframework is a library."""
+    config = _load_config(project_root / "pyproject.toml")
+    return byte_compile_need(
+        "ios",
+        byte_compile=config.ios_required.python_build_settings.byte_compile,
+        host_compiler=True,
+        lock=_lock_status(project_root, config),
+        lock_version=lambda: (
+            load(project_root / LOCKFILE_NAME).python_xcframework.version
+        ),
+    )
 
 
 def ios_status(project_root: Path) -> StatusReport:

@@ -202,11 +202,20 @@ in `pyproject.toml`.
 
 Compiling needs a final CPython of the same minor as the runtime you ship on
 the machine you build on, for example any 3.14.x for a project that ships
-3.14.6, because the Android runtime can't run there. kivyforge looks for
+3.14.6, because the Android runtime can't run there. The simplest way to get
+one is to run, once on each machine you build on:
+
+```bash
+kivyforge bytecompiler -p android
+```
+
+It installs a CPython of the minor your lock ships for kivyforge to use, and
+does nothing if the machine already has one. You can also install one
+yourself with `uv python install 3.X` or from python.org: kivyforge looks for
 `python3.X` (the minor you ship), `python3` and `python` on `PATH`, and asks
-`uv python find` when uv is installed. Install one with `uv python install 3.X`
-or from python.org. `kivyforge doctor -p android` shows what it finds. Without
-one, `"release"` ships source with a warning and `true` fails the build.
+`uv python find` when uv is installed. `kivyforge doctor -p android` shows what
+it finds. Without one, `"release"` ships source with a warning and `true`
+fails the build.
 
 If you have one that kivyforge doesn't find, for example from pyenv or conda,
 put its directory first on `PATH` for the build:
