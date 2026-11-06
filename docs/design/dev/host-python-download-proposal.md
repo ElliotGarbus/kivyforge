@@ -1,15 +1,18 @@
 # Proposal — pin the host Python that byte-compiles in the lock
 
-> Status: **implemented 2026-11-06** on branch `host-python-lock`, not yet
-> released. The hermetic tests in section 10 pass; the real-toolchain runs in
-> section 10 and the re-lock of the tracked example locks (section 11) are not
-> done yet. Every question in section 4 is decided, including the review's
-> (4.2). This design replaces
-> the `kivyforge bytecompiler` command of 2026-11-05, which was implemented on
-> branch `bytecompiler`
-> ([#213](https://github.com/ElliotGarbus/kivyforge/pull/213), not merged) and
-> is now superseded (section 6). #213 is reworked in place to this design
-> (Q15).
+> Status: **implemented 2026-11-06** on branch `host-python-lock`
+> ([#214](https://github.com/ElliotGarbus/kivyforge/pull/214)), not yet
+> released. The hermetic tests in section 10 pass. The iOS and Android
+> real-toolchain runs on macOS are in `test-matrix.md` §7 (2026-11-06), and
+> #214's CI downloaded and compiled with the Linux and Windows pins for
+> Android. The tracked example locks are re-locked (section 11). What only
+> Windows and Linux hosts can check is written up as
+> [`host-python-windows-prompt.md`](host-python-windows-prompt.md) and
+> [`host-python-linux-prompt.md`](host-python-linux-prompt.md). Every question
+> in section 4 is decided, including the review's (4.2). This design replaces
+> the `kivyforge bytecompiler` command of 2026-11-05
+> ([#213](https://github.com/ElliotGarbus/kivyforge/pull/213), merged but never
+> released), which this change removes (section 6).
 >
 > Responds to [#209](https://github.com/ElliotGarbus/kivyforge/issues/209).
 > Writing `.pyc` for iOS or Android needs a final CPython of the shipped minor
@@ -564,6 +567,13 @@ Generated, so they update themselves: `docs/guides/reference/cli.md` and
   network off: `package` extracts and compiles from the cache.
 - An older iOS lock: `lock --check` reports `KF-LOCK-INCOMPLETE`, a plain
   `lock` adds the table and nothing else changes.
+- On Windows and Linux hosts, what the Mac and CI can't reach: the prompts
+  [`host-python-windows-prompt.md`](host-python-windows-prompt.md) (path length,
+  the `msvcrt` install lock, reinstalling over an install, `never` mode, a
+  byte-identical re-lock) and
+  [`host-python-linux-prompt.md`](host-python-linux-prompt.md) (an `aarch64`
+  target, the mirror, a hash mismatch from a real server, a corrupt cache
+  entry, the `fcntl` install lock).
 
 ## 11. Migration
 
