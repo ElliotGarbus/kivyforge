@@ -1,8 +1,7 @@
 # Proposal — a command that installs the host Python that byte-compiles
 
-> Status: **draft 2026-11-05.** The verb's name, `bytecompiler`, is decided
-> (section 4, Q1); the other questions in section 4 are open. Nothing here is
-> implemented.
+> Status: **decided 2026-11-05, not implemented.** Every question in section 4
+> is decided; nothing is built yet.
 >
 > Responds to [#209](https://github.com/ElliotGarbus/kivyforge/issues/209).
 > Writing `.pyc` for iOS or Android needs a final CPython of the shipped minor
@@ -214,10 +213,10 @@ All of these are about the machine, so all are exit 3:
 
 | Case | Code | Message names |
 |---|---|---|
-| No network, or the fetch fails | Q6 | the URL tried |
-| GitHub rate limit (403/429) | Q6 | the existing fetcher's rate-limit hint |
+| No network, or the fetch fails | `KF-HOST-PYTHON-FETCH` | the URL tried |
+| GitHub rate limit (403/429) | `KF-HOST-PYTHON-FETCH` | the existing fetcher's rate-limit hint |
 | No final PBS build of the minor for this triple | `KF-BYTECOMPILE-NO-INTERP` | the triple and minor |
-| Hash mismatch | Q6 (`artifacts/verify.py::HashMismatch` is unclassified today) | the file and both hashes |
+| Hash mismatch | `KF-HOST-PYTHON-FETCH` (`artifacts/verify.py::HashMismatch` itself stays unclassified elsewhere) | the file and both hashes |
 | Host not in the table (3.5) | `KF-HOST-INCAPABLE` | the host |
 
 A project problem is exit 1 or 4 as elsewhere: no project found (1), or
@@ -244,17 +243,17 @@ Nothing is written to the project. The interpreter never ships, and which final
 lock records it. There is no new config key. The objections to the earlier
 draft's per-host-arch lock entries and forced re-lock don't arise.
 
-## 4. Questions (Q1 decided 2026-11-05; the rest open)
+## 4. Decisions (recorded 2026-11-05)
 
-| # | Question | Leaning |
+| # | Question | Decision |
 |---|---|---|
-| Q1 | **The verb's name.** | **Decided 2026-11-05: `bytecompiler`** (4.1). |
-| Q2 | **Search order.** Should kivyforge's own install come before `PATH` (deterministic once installed) or after it (a user's own Python wins)? | **Before**, so that running the command always changes what the build uses. Either works for `.pyc`, since any final release of the minor is correct. |
-| Q3 | **Is a `SHA256SUMS` hash from the release itself enough?** The alternative is pinning per host triple somewhere committed, which reopens the lock question. | **Yes, with the trust model documented** (3.6). |
-| Q4 | **Exact patch, or newest of the minor?** | **Exact when PBS has it, newest final of the minor otherwise** (3.4). |
-| Q5 | **Should `bytecompiler` also verify the `.pyc` it would write?** It could compile a one-line module and check its magic against the lock's runtime stdlib. | **No.** The T3 magic check already covers shipped `.pyc`; the probe in 3.6 covers the interpreter. |
-| Q6 | **A new code for download failures?** `KF-BYTECOMPILE-NO-INTERP` still fits the outcome; a new code (for example `KF-HOST-PYTHON-FETCH`) would let an agent tell "no network" from "nothing to download". | **New code** for the network, rate-limit and hash-mismatch rows; keep `NO-INTERP` for "PBS has no build". Classifying `HashMismatch` everywhere is a separate change. |
-| Q7 | **Upgrades and removal.** Does a plain `bytecompiler` replace an installed `3.15.0` with a newer `3.15.2`, or only `--force`? Is there an uninstall? | **Only `--force`.** An installed 3.15.0 already compiles correctly. No uninstall verb; `clean --cache` covers it. |
+| Q1 | **The verb's name.** | **`bytecompiler`** (4.1). |
+| Q2 | **Search order.** Should kivyforge's own install come before `PATH` (deterministic once installed) or after it (a user's own Python wins)? | **Before `PATH`**, right after kivyforge's own interpreter (3.3), so that running the command always changes what the build uses. Either order writes correct `.pyc`, since any final release of the minor will do. Putting it last was rejected: running `bytecompiler` could then change nothing, when `PATH` already held some other match. |
+| Q3 | **How is the downloaded interpreter's hash trusted?** | **The PBS release's own `SHA256SUMS`, read at download time** (3.6), as the desktop runtimes already are, with the trust model documented. Rejected: a table of approved builds and hashes shipped inside kivyforge, as uv embeds its download metadata. It is stronger, but a new CPython patch would then need a kivyforge release before `bytecompiler` could install it. Pinning per host triple in a committed file was rejected earlier, because it reopens the lock question. |
+| Q4 | **Which build is installed?** | **The exact version the lock ships when PBS has it for this host, otherwise the newest final release of that minor** (3.4). Rejected: always the newest of the minor (simpler, but needlessly different from what ships), and the exact version only (strictest, but blocked for days whenever PBS lags a CPython patch release). |
+| Q5 | **Should `bytecompiler` self-check the `.pyc` its interpreter would write?** | **No.** The installed interpreter is probed for minor and final release (3.6), and the T3 magic check already verifies shipped `.pyc`. A self-check would duplicate both. |
+| Q6 | **What code do download failures get?** | **One new code, `KF-HOST-PYTHON-FETCH`**, exit 3, for no network, a rate limit and a hash mismatch (3.8): the cases a retry with network or later can fix. `KF-BYTECOMPILE-NO-INTERP` stays for "PBS has no build of this minor". Rejected: reusing `NO-INTERP` for everything (an agent couldn't tell "retry" from "nothing to download"), and a code per case (three codes for one verb). The name is final once it ships; classifying `HashMismatch` for every other download is a separate change. |
+| Q7 | **Upgrades and removal.** | **A plain run keeps an installed patch**: an installed 3.15.0 already compiles correctly for a shipped 3.15.2, so the command reports it and installs nothing. **`--force` reinstalls**, taking the build 3.4 picks. No uninstall verb; `clean --cache` removes the installs. Rejected: upgrading on every run, which needs a network check each time and changes nothing about correctness. |
 
 ### 4.1 Q1: why `bytecompiler`
 
@@ -376,8 +375,9 @@ NDK), and hyphenated forms such as `install-python` (no verb is hyphenated).
 4. Download, verify, extract and probe (3.6), reusing `ArtifactCache` and
    `artifacts/verify.py`.
 5. `pycompile`: the new search step (3.3), recorded in `searched`.
-6. Failure classification (3.8); the `Fix:` line, `doctor` and `clean --cache`
-   help (3.9).
+6. Failure classification (3.8), with `KF-HOST-PYTHON-FETCH` defined in
+   `report/diagnostics.py`; the `Fix:` line, `doctor` and `clean --cache` help
+   (3.9).
 7. `capabilities --json` lists the verb.
 8. The documentation in section 7, and CHANGELOG under `[Unreleased]`.
 
@@ -430,7 +430,7 @@ So this change updates one page for the search, not six.
 | `docs/guides/concepts/build-vs-package.md` | It says `package` byte-compiles by default; add that this needs a host Python of the shipped minor, and how to get one. |
 | `docs/guides/get-started/hosts.md` | A line under the host requirements: building iOS or Android release packages byte-compiles, which needs a host CPython of the minor the app ships. |
 | `docs/guides/guides/cross-platform/ci-and-agents.md` | The CI recipe gets a `kivyforge bytecompiler` step before `package`. The exit-code table's `3` row mentions it as one fix. |
-| `docs/guides/troubleshooting/index.md` | A row in the codes table for `KF-BYTECOMPILE-NO-INTERP`, which it lacks, with the fix `kivyforge bytecompiler -p PLATFORM`. A row for the new download-failure code (Q6), if there is one. |
+| `docs/guides/troubleshooting/index.md` | A row in the codes table for `KF-BYTECOMPILE-NO-INTERP`, which it lacks, with the fix `kivyforge bytecompiler -p PLATFORM`. A row for `KF-HOST-PYTHON-FETCH`, with the fix "retry with network access, or install a Python yourself". |
 | `docs/guides/reference/json-output.md` | `bytecompiler`'s `data.interpreters` (3.7), next to `data.artifacts` and `data.version`. |
 | `README.md` | A line in the command list: `kivyforge bytecompiler`: install a host CPython that byte-compiles for your targets. |
 | `AGENTS.md`, "Driving kivyforge from an agent" | Exit 3 with `KF-BYTECOMPILE-NO-INTERP`: run `kivyforge bytecompiler -p <platform>`, then retry unchanged. |
@@ -478,7 +478,6 @@ A machine that already has the right Python is unaffected.
 
 ## 10. Done when
 
-- Section 4's remaining questions are decided and recorded here.
 - The hermetic tests in section 8 pass, and the iOS real-toolchain run is in
   `test-matrix.md` §7.
 - Every document in 7.2 and 7.3 is updated in the same change.
