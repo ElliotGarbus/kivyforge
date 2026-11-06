@@ -320,7 +320,7 @@ hosts = ["macos"]
 target = "iOS device `arm64`"
 tier = "T3 + T5"
 needs = [
-    "A final CPython 3.15 the byte-compile search finds: `kivyforge bytecompiler -p ios` installs one, or `python3.15` on the Mac's PATH (`uv python install 3.15.0` works); `package` byte-compiles with it.",
+    "`pylock.ios.toml` pinning the host CPython (`[[tool.kivyforge.host_python]]`; a plain `kivyforge lock` adds it to an older lock). `package` downloads it once and byte-compiles with it; no Python on PATH is needed.",
     "An iPhone paired with this Mac and listed by `xcrun devicectl list devices`, unlocked.",
     "An Apple ID signed into Xcode whose team is passed with `--team-id`.",
     "`hello-kivy` pinned to a final 3.15 (`[tool.kivy.ios.python].version`). It tracks its lock: diff and report a changed lock, do not commit it.",
@@ -338,7 +338,7 @@ commands = [
     "xcrun devicectl device copy from --device <udid> --domain-type appDataContainer --domain-identifier org.kivy.hello-kivy --source Documents/.kivy/logs/kivy_<yy-mm-dd>_<n>.txt --destination kivy.txt",
 ]
 pass = [
-    "`package` prints `byte-compiling app sources with python3.15` and `byte-compiling pip-deps with python3.15`, not `no final CPython 3.15 found`.",
+    "`package` prints `byte-compiling app sources with` and `byte-compiling pip-deps with` the interpreter under `host-python/` in kivyforge's cache, not `not byte-compiling`.",
     "The stripped T3 driver passes: no `.py` and no `__pycache__` in `app/` or `pip-deps/`, and every `.pyc` there carries the magic of the stdlib's own bytecode.",
     "The app launches on the phone, and its Kivy log shows Kivy imported from `pip-deps/kivy/__init__.pyc` and `Base: Start application main loop`.",
 ]

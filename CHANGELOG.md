@@ -2,26 +2,33 @@
 
 ## [Unreleased]
 
-### `kivyforge bytecompiler` installs the Python that byte-compiles
+### The lock pins the Python that byte-compiles iOS and Android
 
 - **Added:** byte-compiling an iOS or Android release, or a Linux `aarch64`
-  one, needs a CPython of the minor the app ships on the machine that builds
-  ([#209](https://github.com/ElliotGarbus/kivyforge/issues/209)).
-  `kivyforge bytecompiler` installs one: for each minor the project's locks
-  ship that nothing on the machine can compile, it downloads a
-  python-build-standalone CPython for this host, checks it against the
-  release's published SHA-256, and keeps it in the artifact cache, where builds
-  find it. `-p` narrows it to one platform. It does nothing when the machine
-  already has a suitable Python; `--force` reinstalls. `build` and `package`
-  never download one themselves.
-- **Changed:** when a build finds no interpreter on iOS, Android or Linux, the
-  error's first fix is `kivyforge bytecompiler -p PLATFORM`. `doctor` prints
-  the same hint.
-- **Added:** `KF-HOST-PYTHON-FETCH`, exit 3, when the download fails (no
-  network, a GitHub rate limit, or a failed check). Retry with network access;
-  in CI, set `GITHUB_TOKEN`.
-- **Migration:** none needed. `clean --cache` removes the installed CPython with
-  the rest of the cache.
+  one, needs a CPython of the shipped minor that runs on the machine that
+  builds ([#209](https://github.com/ElliotGarbus/kivyforge/issues/209)).
+  `kivyforge lock` now pins one python-build-standalone build of it for each
+  host that can build the platform, in `[[tool.kivyforge.host_python]]`, at
+  one version for all of them. The first release build on a machine downloads
+  this host's build, checks it against the lock's SHA-256, caches it, and
+  compiles with it. Nothing to install, and every machine building a lock
+  compiles with the same build. `kivyforge upgrade` fetches it ahead of time.
+- **Changed:** those platforms no longer compile with a Python found on the
+  machine (kivyforge's own interpreter, `PATH`, uv): only the pinned build is
+  used. macOS, Windows and native Linux builds still compile with the runtime
+  they ship.
+- **Added:** `KIVYFORGE_HOST_PYTHON_DOWNLOADS=never` keeps builds from
+  downloading it (they use a cached copy, or ship source or fail), and
+  `KIVYFORGE_HOST_PYTHON_MIRROR` downloads it from a mirror, still checked
+  against the lock's hash.
+- **Added:** `KF-HOST-PYTHON-FETCH`, exit 3, when the pinned build can't be
+  fetched (no network, a GitHub rate limit, a hash mismatch). Retry with
+  network access; in CI, set `GITHUB_TOKEN`.
+- **Migration:** re-lock once each iOS and Android lock, and each Linux lock
+  with `aarch64`, with a plain `kivyforge lock -p PLATFORM`: it adds the pin and
+  keeps every other one. Until then, `lock --check` fails with
+  `KF-LOCK-INCOMPLETE` (exit 4), and release builds ship source
+  (`byte_compile = "release"`) or fail (`true`).
 
 ### iOS: `run` shows the app's Python output again
 
@@ -40,6 +47,10 @@
 - **Migration:** none needed. The next `build` or `run` regenerates the project.
 
 ### Byte-compiling says what it searched, and finds uv's Pythons
+
+This search now applies only to a macOS, Windows or Linux build whose bundled
+runtime is missing; iOS, Android and Linux `aarch64` use the pinned build
+above.
 
 - **Fixed:** when no host interpreter could write the `.pyc` files, the message
   led with "Pre-releases do not count", which read as kivyforge treating a final

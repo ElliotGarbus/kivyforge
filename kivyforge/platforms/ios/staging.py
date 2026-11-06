@@ -10,15 +10,10 @@ from pathlib import Path
 
 from kivyforge.build_outcome import discard_note
 from kivyforge.bundle import app_metadata
-from kivyforge.bundle.pycompile import (
-    Candidate,
-    PycompileError,
-    byte_compile,
-    no_interpreter,
-    select_compiler,
-)
+from kivyforge.bundle.hostpython import pinned_compiler
+from kivyforge.bundle.pycompile import PycompileError, byte_compile
 from kivyforge.config.model import Config
-from kivyforge.report import diagnostics
+from kivyforge.lock.host_python import HostPython
 from kivyforge.report.failures import ClassifiedError, reclassify
 
 _APP_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
@@ -85,6 +80,8 @@ def create_staging(
     *,
     release: bool = False,
     python_version: str | None = None,
+    host_python: tuple[HostPython, ...] | None = None,
+    no_cache: bool = False,
     echo: Callable[[str], None] = lambda msg: None,
     note=discard_note,
 ) -> StagingLayout:
@@ -118,7 +115,14 @@ def create_staging(
     if release:
         assert python_version is not None  # checked before any directory exists
         _materialize_app_copy(
-            layout, project_root, config, python_version, echo, note=note
+            layout,
+            project_root,
+            config,
+            python_version,
+            echo,
+            note=note,
+            host_python=host_python,
+            no_cache=no_cache,
         )
     else:
         _refresh_app_symlink(layout, project_root, config.kivy.app_dir)
@@ -188,6 +192,9 @@ def _materialize_app_copy(
     python_version: str,
     echo: Callable[[str], None],
     note=discard_note,
+    *,
+    host_python: tuple[HostPython, ...] | None = None,
+    no_cache: bool = False,
 ) -> None:
     source = project_root / config.kivy.app_dir
     if not source.is_dir():
@@ -211,7 +218,15 @@ def _materialize_app_copy(
             "it and re-run build."
         )
     shutil.copytree(source, link, ignore=_APP_COPY_IGNORE)
-    _compile_app_copy(link, config, python_version, echo, note=note)
+    _compile_app_copy(
+        link,
+        config,
+        python_version,
+        echo,
+        note=note,
+        host_python=host_python,
+        no_cache=no_cache,
+    )
 
 
 def _setting_applies(value: bool | str, *, release: bool) -> bool:
@@ -227,6 +242,9 @@ def _compile_app_copy(
     python_version: str,
     echo: Callable[[str], None],
     note=discard_note,
+    *,
+    host_python: tuple[HostPython, ...] | None = None,
+    no_cache: bool = False,
 ) -> None:
     """Byte-compile/strip the materialized app copy, per ``build_settings``.
 
@@ -234,34 +252,26 @@ def _compile_app_copy(
     — this function is unreachable from the dev symlink path), so the
     tri-state resolves against ``release=True`` unconditionally. Mirrors
     ``artifacts/collect.py::_compile_pip_deps``: the Python.xcframework ships
-    no standalone interpreter to shell out to, so the compiler ladder always
-    falls to "this process's interpreter, if its CPython minor matches", or
-    degrades.
+    no standalone interpreter to shell out to, so the compiler is the host
+    CPython the lock pins for this machine (*host_python*), or none.
     """
     settings = config.ios_required.python_build_settings
     if not _setting_applies(settings.byte_compile, release=True):
         return
-    searched: list[Candidate] = []
-    compiler = select_compiler(
-        staged_interpreter=Path(),
-        native=False,
+    compiler = pinned_compiler(
+        host_python,
+        platform="ios",
         python_version=python_version,
-        searched=searched,
+        byte_compile=settings.byte_compile,
+        table="tool.kivy.ios.python.build_settings",
+        what=" app sources",
+        error=StagingError,
+        echo=echo,
+        note=note,
+        context={"payload": "app-sources"},
+        no_cache=no_cache,
     )
     if compiler is None:
-        table = "tool.kivy.ios.python.build_settings"
-        missing = no_interpreter(python_version, table=table, searched=searched)
-        if settings.byte_compile is True:
-            raise StagingError(missing.required(table), **missing.classification)
-        echo(
-            f"[stage] not byte-compiling app sources: {missing.headline}.\n"
-            f"{missing.detail()}"
-        )
-        note(
-            diagnostics.BYTECOMPILE_NO_INTERP,
-            f"not byte-compiling app sources: {missing.headline}.",
-            {"payload": "app-sources"},
-        )
         return
     strip_source = _setting_applies(settings.strip_source, release=True)
     with_what = " ".join(compiler) if compiler else "this interpreter"

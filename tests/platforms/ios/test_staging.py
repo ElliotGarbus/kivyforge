@@ -8,6 +8,7 @@ import pytest
 
 from kivyforge.platforms.ios import staging as staging_mod
 from kivyforge.platforms.ios.staging import StagingError, create_staging
+from tests.conftest import NO_HOST_PYTHON_FIX, NO_HOST_PYTHON_HEADLINE, pin_compiler
 
 
 class TestReleaseCopy:
@@ -20,7 +21,7 @@ class TestReleaseCopy:
         3.15.0 shipped and the macos-26-arm64 runner image (20261013.0424)
         made it ``python3``. Compiling is TestByteCompileResolution's job.
         """
-        monkeypatch.setattr(staging_mod, "select_compiler", lambda **kw: None)
+        pin_compiler(monkeypatch, None)
 
     def test_release_materializes_a_real_copy_not_a_symlink(self, config, project_root):
         layout = create_staging(
@@ -83,7 +84,7 @@ class TestByteCompileResolution:
     """
 
     def _select(self, monkeypatch, result):
-        monkeypatch.setattr(staging_mod, "select_compiler", lambda **kw: result)
+        pin_compiler(monkeypatch, result)
 
     def test_release_default_compiles_and_strips(
         self, make_config, project_root, monkeypatch
@@ -149,8 +150,8 @@ class TestByteCompileResolution:
         )
         assert any("not byte-compiling" in m for m in messages)
         # The notice must say how to fix it, not just what happened.
-        assert any("Fix: run `kivyforge bytecompiler -p ios`" in m for m in messages)
-        assert any("install any final CPython" in m for m in messages)
+        assert any(NO_HOST_PYTHON_HEADLINE in m for m in messages)
+        assert any(NO_HOST_PYTHON_FIX in m for m in messages)
         # Degraded: the copy is untouched source, not partially compiled.
         assert (layout.app / "main.py").is_file()
 

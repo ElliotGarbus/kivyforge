@@ -13,6 +13,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from ..host_python import emit as emit_host_python
+from ..host_python import parse as parse_host_python
 from ..model import LOCK_VERSION
 from ..pep751 import arr as _arr
 from ..pep751 import (
@@ -92,6 +94,7 @@ def dumps(lock: WheelRuntimeLock) -> str:
         emit_swift_package(lines, sp, target_settings=False)
 
     emit_include_files(lines, lock.include_files)
+    emit_host_python(lines, lock.host_python)
 
     return "\n".join(lines) + "\n"
 
@@ -140,6 +143,10 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
     )
 
     packages = tuple(_parse_package(p) for p in _as_list(raw, "packages", name))
+    try:
+        host_python = parse_host_python(tool)
+    except ValueError as exc:
+        raise LockError(f"{name} {exc}") from exc
 
     return WheelRuntimeLock(
         platform=platform,
@@ -160,6 +167,7 @@ def _from_raw(raw: dict, *, platform: str, name: str) -> WheelRuntimeLock:
         native_binaries=native_binaries,
         include_files=include_files,
         swift_packages=swift_packages,
+        host_python=host_python,
     )
 
 

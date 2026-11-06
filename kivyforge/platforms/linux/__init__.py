@@ -20,7 +20,6 @@ from ..base import HostCapabilityError, Platform
 
 if TYPE_CHECKING:
     from kivyforge.build_outcome import BuildEvents, BuildOutcome
-    from kivyforge.bundle.hostpython import ByteCompileNeed
     from kivyforge.config.model import ResolvedVersion
     from kivyforge.doctor.result import CheckResult
     from kivyforge.status import StatusReport
@@ -143,11 +142,6 @@ class LinuxPlatform(Platform):
             no_verify_lock=no_verify_lock,
             no_cache=no_cache,
         )
-
-    def byte_compile_need(self, project_root: Path) -> ByteCompileNeed:
-        from .cli import linux_byte_compile_need
-
-        return linux_byte_compile_need(project_root)
 
     def status(self, project_root: Path) -> StatusReport:
         from .cli import linux_status

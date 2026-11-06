@@ -1,8 +1,8 @@
-"""kivyforge.bundle.hostpython — the host CPython ``kivyforge bytecompiler`` installs.
+"""kivyforge.bundle.hostpython — the pinned host CPython, installed from the lock.
 
-Hermetic: the fetcher, the downloader and the interpreter probe are faked, so
-nothing here touches the network or runs a downloaded binary. The real install
-is a dated run in test-matrix.md section 7.
+Hermetic: the downloader and the interpreter probe are faked, so nothing here
+touches the network or runs a downloaded binary. The real install is a dated
+run in test-matrix.md section 7.
 """
 
 from __future__ import annotations
@@ -16,15 +16,11 @@ import pytest
 
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.bundle import hostpython
-from kivyforge.lock.wheelruntime.runtime import ReleaseAsset, RuntimeProviderError
+from kivyforge.lock import host_python as hp
 from kivyforge.report import diagnostics, exit_codes
-from kivyforge.status import LockState, LockStatus
 
 _PYCOMPILE = "kivyforge.bundle.pycompile"
-_URL = (
-    "https://github.com/astral-sh/python-build-standalone/releases/download/"
-    "20261101/cpython-3.15.2%2B20261101-aarch64-apple-darwin-install_only.tar.gz"
-)
+_BASE = hostpython.PBS_DOWNLOAD_BASE
 
 
 def _archive(members: dict[str, bytes]) -> bytes:
@@ -38,31 +34,33 @@ def _archive(members: dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
-_GOOD = _archive({"python/bin/python3.15": b"#!/bin/sh\n", "python/lib/x": b""})
+GOOD = _archive({"python/bin/python3.15": b"#!/bin/sh\n", "python/lib/x": b""})
 
 
-class _Fetcher:
-    def __init__(self, result=None, error: Exception | None = None):
-        self.result = result
-        self.error = error
-        self.calls: list[tuple[str, str, str | None]] = []
-
-    def find_install_only(self, minor, target_triple, *, prefer=None):
-        self.calls.append((minor, target_triple, prefer))
-        if self.error is not None:
-            raise self.error
-        return self.result
+def _entry(data=GOOD, *, sha=None, triple=hp.MACOS_ARM64, state=hp.PINNED):
+    name = f"cpython-3.15.2+20261101-{triple}-install_only_stripped.tar.gz"
+    return hp.HostPython(
+        triple,
+        state,
+        "3.15",
+        version="3.15.2",
+        variant="install_only_stripped",
+        url=f"{_BASE}/20261101/{name.replace('+', '%2B')}",
+        sha256=sha or hashlib.sha256(data).hexdigest(),
+    )
 
 
 class _Downloader:
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes = GOOD):
         self.data = data
+        self.urls: list[str] = []
 
     def fetch_to(self, url, dest):
+        self.urls.append(url)
         Path(dest).write_bytes(self.data)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mac(monkeypatch):
     """Pretend to be the Apple Silicon host whatever runs the tests."""
     monkeypatch.setattr("platform.system", lambda: "Darwin")
@@ -71,195 +69,245 @@ def mac(monkeypatch):
 
 @pytest.fixture
 def runs_as(monkeypatch):
-    """Make the installed interpreter's probe answer a chosen version."""
+    """Make every probe of an interpreter answer a chosen version."""
 
-    def answer(version: tuple[int, int, int, str, int] | None):
+    def answer(version=(3, 15, 2, "final", 0)):
         monkeypatch.setattr(f"{_PYCOMPILE}._probe_version", lambda argv: version)
 
+    answer()
     return answer
 
 
-def _install(tmp_path, data=_GOOD, sha=None, fetcher=None, **kw):
-    cache = ArtifactCache(tmp_path / "cache")
-    asset = ReleaseAsset(url=_URL, sha256=sha or hashlib.sha256(data).hexdigest())
-    fetcher = fetcher or _Fetcher(result=("3.15.2", asset))
-    installed = hostpython.install(
-        "3.15",
-        prefer="3.15.2",
-        fetcher=fetcher,
+@pytest.fixture
+def cache(tmp_path):
+    return ArtifactCache(tmp_path / "cache")
+
+
+def _compile(entries, cache, downloader=None, **kw):
+    return hostpython.compiler_for(
+        entries,
+        platform="ios",
+        python_version="3.15.2",
         cache=cache,
-        downloader=_Downloader(data),
+        downloader=downloader or _Downloader(),
         **kw,
     )
-    return installed, cache, fetcher
 
 
 class TestHostTriple:
     @pytest.mark.parametrize(
         ("system", "machine", "triple"),
         [
-            ("Darwin", "arm64", "aarch64-apple-darwin"),
-            ("Linux", "x86_64", "x86_64-unknown-linux-gnu"),
-            ("Windows", "amd64", "x86_64-pc-windows-msvc"),
+            ("Darwin", "arm64", hp.MACOS_ARM64),
+            ("Linux", "x86_64", hp.LINUX_X86_64),
+            ("Windows", "amd64", hp.WINDOWS_AMD64),
         ],
     )
     def test_the_three_build_hosts(self, system, machine, triple):
         assert hostpython.host_triple(system=system, machine=machine) == triple
 
     @pytest.mark.parametrize(
-        ("system", "machine"),
-        [("Darwin", "x86_64"), ("Linux", "aarch64"), ("Windows", "arm64")],
+        ("system", "machine"), [("Darwin", "x86_64"), ("Linux", "aarch64")]
     )
     def test_hosts_kivyforge_does_not_build_on(self, system, machine):
-        """An Intel Mac and aarch64 Linux are not build hosts."""
         assert hostpython.host_triple(system=system, machine=machine) is None
 
 
-class TestInstalledInterpreter:
-    def test_none_until_installed(self, tmp_path):
-        assert hostpython.installed_interpreter("3.15", root=tmp_path) is None
+class TestNoUsablePin:
+    def test_a_lock_without_the_table_is_incomplete(self, cache):
+        result = _compile(None, cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.LOCK_INCOMPLETE
+        assert result.classification.get("exit_code") == exit_codes.LOCK_DRIFT
+        assert "kivyforge lock -p ios" in result.detail()
 
-    def test_posix_layout(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("platform.system", lambda: "Darwin")
-        exe = tmp_path / "3.15" / "python" / "bin" / "python3.15"
-        exe.parent.mkdir(parents=True)
-        exe.write_text("")
-        assert hostpython.installed_interpreter("3.15", root=tmp_path) == exe
+    def test_no_entry_for_this_host(self, cache):
+        result = _compile((_entry(triple=hp.LINUX_X86_64),), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.LOCK_INCOMPLETE
 
-    def test_windows_layout(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("platform.system", lambda: "Windows")
-        exe = tmp_path / "3.15" / "python" / "python.exe"
-        exe.parent.mkdir(parents=True)
-        exe.write_text("")
-        assert hostpython.installed_interpreter("3.15", root=tmp_path) == exe
+    def test_unresolved_offline(self, cache):
+        entry = hp.HostPython(hp.MACOS_ARM64, hp.UNRESOLVED_OFFLINE, "3.15")
+        result = _compile((entry,), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert "locked offline" in result.headline
 
-    def test_lives_in_the_artifact_cache(self, tmp_path):
-        """So `clean --cache` removes it with the archive it came from."""
-        cache = ArtifactCache(tmp_path / "cache")
-        assert hostpython.install_root(cache) == cache.root / "host-python"
+    def test_no_build(self, cache):
+        entry = hp.HostPython(hp.MACOS_ARM64, hp.NO_BUILD, "3.15")
+        result = _compile((entry,), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.BYTECOMPILE_NO_INTERP
+        assert result.classification.get("exit_code") == exit_codes.ENVIRONMENT_ERROR
 
 
 class TestInstall:
-    def test_installs_the_preferred_build(self, tmp_path, mac, runs_as):
-        runs_as((3, 15, 2, "final", 0))
-        installed, cache, fetcher = _install(tmp_path)
-        assert fetcher.calls == [("3.15", "aarch64-apple-darwin", "3.15.2")]
-        assert installed.version == "3.15.2"
-        assert installed.interpreter == (
-            cache.root / "host-python" / "3.15" / "python" / "bin" / "python3.15"
-        )
-        assert installed.interpreter.is_file()
-        assert (
-            hostpython.installed_interpreter("3.15", root=cache.root / "host-python")
-            == installed.interpreter
-        )
+    def test_downloads_extracts_marks_and_uses_it(self, cache, runs_as):
+        downloader = _Downloader()
+        argv = _compile((_entry(),), cache, downloader)
+        exe = hostpython.install_dir(_entry(), cache) / "python" / "bin" / "python3.15"
+        assert argv == (str(exe),)
+        assert (hostpython.install_dir(_entry(), cache) / hostpython.MARKER).is_file()
+        assert len(downloader.urls) == 1
 
-    def test_replaces_an_existing_install(self, tmp_path, mac, runs_as):
-        runs_as((3, 15, 2, "final", 0))
-        root = tmp_path / "cache" / "host-python" / "3.15"
-        (root / "python").mkdir(parents=True)
-        (root / "python" / "stale").write_text("old")
-        installed, _, _ = _install(tmp_path)
-        assert not (root / "python" / "stale").exists()
-        assert installed.interpreter.is_file()
+    def test_the_install_is_keyed_by_the_full_hash(self, cache):
+        assert hostpython.install_dir(_entry(), cache).name == _entry().sha256
 
-    def test_a_failed_probe_keeps_the_old_install(self, tmp_path, mac, runs_as):
-        """The swap happens only after the new interpreter answered."""
-        runs_as((3, 14, 7, "final", 0))
-        old = tmp_path / "cache" / "host-python" / "3.15" / "python" / "bin"
-        old.mkdir(parents=True)
-        (old / "python3.15").write_text("old")
-        with pytest.raises(hostpython.HostPythonError, match="did not run as a final"):
-            _install(tmp_path)
-        assert (old / "python3.15").read_text() == "old"
+    def test_a_second_build_uses_the_install(self, cache, runs_as):
+        _compile((_entry(),), cache)
+        downloader = _Downloader()
+        _compile((_entry(),), cache, downloader)
+        assert downloader.urls == []
 
-    def test_a_prerelease_interpreter_is_refused(self, tmp_path, mac, runs_as):
+    def test_an_install_without_its_marker_is_rebuilt(self, cache, runs_as):
+        _compile((_entry(),), cache)
+        (hostpython.install_dir(_entry(), cache) / hostpython.MARKER).unlink()
+        argv = _compile((_entry(),), cache)
+        assert isinstance(argv, tuple)
+        assert (hostpython.install_dir(_entry(), cache) / hostpython.MARKER).is_file()
+
+    def test_an_interpreter_that_no_longer_runs_is_rebuilt(self, cache, runs_as):
+        _compile((_entry(),), cache)
+        runs_as(None)
+        result = _compile((_entry(),), cache)
+        # Rebuilt from the archive, then refused: it still won't run.
+        assert isinstance(result, hostpython.Unavailable)
+        assert "did not run as a final CPython 3.15" in result.headline
+
+    def test_a_prerelease_interpreter_is_refused(self, cache, runs_as):
         runs_as((3, 15, 0, "candidate", 1))
-        with pytest.raises(hostpython.HostPythonError, match="did not run as a final"):
-            _install(tmp_path)
+        result = _compile((_entry(),), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.BYTECOMPILE_NO_INTERP
 
-    def test_no_build_for_the_minor(self, tmp_path, mac):
-        with pytest.raises(hostpython.HostPythonError) as exc:
-            _install(tmp_path, fetcher=_Fetcher(result=None))
-        assert exc.value.code == diagnostics.BYTECOMPILE_NO_INTERP
-        assert exc.value.exit_code == exit_codes.ENVIRONMENT_ERROR
+    def test_a_hash_mismatch_says_what_to_check(self, cache, runs_as):
+        result = _compile((_entry(sha="0" * 64),), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.HOST_PYTHON_FETCH
+        assert "doesn't match the lock's SHA-256" in result.headline
+        assert "re-lock" in result.detail()
 
-    def test_no_network_is_a_fetch_failure(self, tmp_path, mac):
-        fetcher = _Fetcher(error=RuntimeProviderError("connection refused"))
-        with pytest.raises(hostpython.HostPythonError) as exc:
-            _install(tmp_path, fetcher=fetcher)
-        assert exc.value.code == diagnostics.HOST_PYTHON_FETCH
-        assert exc.value.exit_code == exit_codes.ENVIRONMENT_ERROR
-        assert "retry with network access" in str(exc.value)
+    def test_a_failed_download_is_a_fetch_failure(self, cache, runs_as):
+        class _Down:
+            def fetch_to(self, url, dest):
+                from kivyforge.artifacts.download import DownloadError
 
-    def test_a_hash_mismatch_is_a_fetch_failure(self, tmp_path, mac):
-        with pytest.raises(hostpython.HostPythonError) as exc:
-            _install(tmp_path, sha="0" * 64)
-        assert exc.value.code == diagnostics.HOST_PYTHON_FETCH
-        assert exc.value.context == {"url": _URL}
+                raise DownloadError("connection refused")
 
-    def test_a_host_with_no_build(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("platform.system", lambda: "Darwin")
-        monkeypatch.setattr("kivyforge.host.host_machine", lambda: "x86_64")
-        with pytest.raises(hostpython.HostPythonError) as exc:
-            _install(tmp_path)
-        assert exc.value.code == diagnostics.HOST_INCAPABLE
-        assert exc.value.exit_code == exit_codes.ENVIRONMENT_ERROR
+        result = _compile((_entry(),), cache, _Down())
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.HOST_PYTHON_FETCH
+        assert "retry with network access" in result.detail()
 
-    def test_an_archive_escaping_its_directory_is_refused(self, tmp_path, mac):
+    def test_an_archive_escaping_its_directory_is_refused(self, cache, runs_as):
         evil = _archive({"../escape": b"x"})
-        with pytest.raises(hostpython.HostPythonError, match="unsafe path"):
-            _install(tmp_path, data=evil)
-        assert not (tmp_path / "cache" / "host-python" / "escape").exists()
+        result = _compile((_entry(evil),), cache, _Downloader(evil))
+        assert isinstance(result, hostpython.Unavailable)
+        assert "unsafe path" in result.headline
 
-    def test_reports_the_download(self, tmp_path, mac, runs_as):
-        runs_as((3, 15, 2, "final", 0))
-        lines: list[str] = []
-        _install(tmp_path, on_progress=lines.append)
-        assert lines == [
-            "[bytecompiler] installing CPython 3.15.2 (aarch64-apple-darwin)"
-        ]
+    def test_messages_encode_for_a_redirected_stream(self, cache, runs_as):
+        result = _compile((_entry(sha="0" * 64),), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        result.required("tool.kivy.ios.python.build_settings").encode("cp1252")
 
-    def test_messages_encode_for_a_redirected_stream(self, tmp_path, mac):
-        fetcher = _Fetcher(error=RuntimeProviderError("x"))
+
+class TestDownloadSettings:
+    def test_never_extracts_a_cached_archive(self, cache, runs_as, monkeypatch):
+        entry = _entry()
+        cache.put_bytes(GOOD, entry.sha256 or "", hostpython.archive_filename(entry))
+        monkeypatch.setenv(hostpython.DOWNLOADS_VAR, "never")
+        downloader = _Downloader()
+        assert isinstance(_compile((entry,), cache, downloader), tuple)
+        assert downloader.urls == []
+
+    def test_never_without_a_cached_archive_ships_source(self, cache, monkeypatch):
+        monkeypatch.setenv(hostpython.DOWNLOADS_VAR, "never")
+        result = _compile((_entry(),), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.BYTECOMPILE_NO_INTERP
+        assert "kivyforge upgrade -p ios" in result.detail()
+
+    def test_no_cache_with_never_is_a_usage_error(self, cache, monkeypatch):
+        monkeypatch.setenv(hostpython.DOWNLOADS_VAR, "never")
         with pytest.raises(hostpython.HostPythonError) as exc:
-            _install(tmp_path, fetcher=fetcher)
-        str(exc.value).encode("cp1252")
+            _compile((_entry(),), cache, no_cache=True)
+        assert exc.value.exit_code == exit_codes.CONFIG_ERROR
+
+    def test_an_unknown_value_is_refused(self, cache, monkeypatch):
+        monkeypatch.setenv(hostpython.DOWNLOADS_VAR, "sometimes")
+        with pytest.raises(hostpython.HostPythonError) as exc:
+            _compile((_entry(),), cache)
+        assert exc.value.exit_code == exit_codes.CONFIG_ERROR
+
+    def test_the_mirror_replaces_the_base_and_the_hash_still_verifies(
+        self, cache, runs_as, monkeypatch
+    ):
+        monkeypatch.setenv(hostpython.MIRROR_VAR, "https://mirror.example/pbs/")
+        downloader = _Downloader()
+        assert isinstance(_compile((_entry(),), cache, downloader), tuple)
+        assert downloader.urls[0].startswith("https://mirror.example/pbs/20261101/")
+
+    def test_a_mirror_serving_other_bytes_fails_the_hash(
+        self, cache, runs_as, monkeypatch
+    ):
+        monkeypatch.setenv(hostpython.MIRROR_VAR, "https://mirror.example/pbs")
+        result = _compile((_entry(),), cache, _Downloader(b"not the archive"))
+        assert isinstance(result, hostpython.Unavailable)
+        assert hostpython.MIRROR_VAR in result.detail()
 
 
-class TestByteCompileNeed:
-    def test_an_in_sync_lock_gives_its_version(self):
-        need = hostpython.byte_compile_need(
-            "ios",
-            byte_compile=True,
-            host_compiler=True,
-            lock=LockStatus(LockState.IN_SYNC, "kivyforge lock"),
-            lock_version=lambda: "3.15.2",
+class TestPolicy:
+    """pinned_compiler: the setting decides what a missing compiler means."""
+
+    def _call(self, byte_compile, note_calls, echoed):
+        from kivyforge.report.failures import ClassifiedError
+
+        class _Err(ClassifiedError):
+            pass
+
+        return _Err, hostpython.pinned_compiler(
+            None,
+            platform="ios",
+            python_version="3.15.2",
+            byte_compile=byte_compile,
+            table="tool.kivy.ios.python.build_settings",
+            what=" pip-deps",
+            error=_Err,
+            echo=echoed.append,
+            note=lambda *a: note_calls.append(a),
+            context={"payload": "pip-deps"},
         )
-        assert need.python_version == "3.15.2"
-        assert need.lock_problem is None
 
-    @pytest.mark.parametrize(
-        ("state", "code"),
-        [
-            (LockState.MISSING, diagnostics.LOCK_MISSING),
-            (LockState.OUT_OF_DATE, diagnostics.LOCK_DRIFT),
-            (LockState.UNREADABLE, diagnostics.LOCK_UNREADABLE),
-        ],
-    )
-    def test_a_bad_lock_is_reported_not_read(self, state, code):
-        def unread() -> str:
-            raise AssertionError("a stale lock's version must not be used")
+    def test_release_ships_source_with_a_note(self):
+        notes, echoed = [], []
+        _err, result = self._call("release", notes, echoed)
+        assert result is None
+        assert notes[0][0] == diagnostics.LOCK_INCOMPLETE
+        assert notes[0][2] == {"payload": "pip-deps"}
+        assert echoed[0].startswith("[stage] not byte-compiling pip-deps:")
 
-        need = hostpython.byte_compile_need(
-            "android",
-            byte_compile="release",
-            host_compiler=True,
-            lock=LockStatus(state, "kivyforge lock -p android"),
-            lock_version=unread,
-        )
-        assert need.python_version is None
-        assert need.lock_problem is not None
-        assert need.lock_problem.code == code
-        assert need.lock_problem.exit_code == exit_codes.LOCK_DRIFT
-        assert "kivyforge lock -p android" in str(need.lock_problem)
+    def test_true_fails_with_the_reason_s_classification(self):
+        from kivyforge.report.failures import ClassifiedError
+
+        with pytest.raises(ClassifiedError) as exc:
+            self._call(True, [], [])
+        assert exc.value.code == diagnostics.LOCK_INCOMPLETE
+        assert exc.value.exit_code == exit_codes.LOCK_DRIFT
+
+
+class TestInstallLock:
+    @pytest.mark.requires_posix
+    def test_a_held_lock_times_out_instead_of_racing(self, cache, runs_as, monkeypatch):
+        """POSIX only: flock locks are per open file, so this process can hold
+        one and still be refused a second; msvcrt locks are per process."""
+        import fcntl
+
+        entry = _entry()
+        root = hostpython.install_root(cache)
+        root.mkdir(parents=True)
+        monkeypatch.setattr(hostpython, "LOCK_TIMEOUT_S", 0.0)
+        with open(root / f"{entry.sha256}.lock", "a+b") as held:
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX)
+            result = _compile((entry,), cache)
+        assert isinstance(result, hostpython.Unavailable)
+        assert result.code == diagnostics.HOST_PYTHON_FETCH
+        assert "another build" in result.headline

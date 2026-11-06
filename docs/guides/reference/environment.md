@@ -65,12 +65,28 @@ variables, set `store_password_env` and `key_password_env` in
 
 | Variable | Effect |
 |---|---|
-| `GH_TOKEN` | Token for the GitHub API, which `lock` queries to resolve the desktop Python runtime. Takes precedence over `GITHUB_TOKEN`. |
+| `GH_TOKEN` | Token for the GitHub API, which `lock` queries to resolve the desktop Python runtime and the host CPython that byte-compiles. Takes precedence over `GITHUB_TOKEN`. |
 | `GITHUB_TOKEN` | Same, used when `GH_TOKEN` is unset. On GitHub Actions, set it from `secrets.GITHUB_TOKEN`. |
 
 Unauthenticated, the GitHub API allows 60 requests per hour per IP address. A
 token raises the limit to 5,000 per hour. An empty or whitespace-only value is
 ignored, so an unset CI secret falls back to an anonymous request.
+
+## Host CPython for byte-compiling
+
+iOS and Android releases, and Linux `aarch64` ones, are byte-compiled by a
+CPython the lock pins for each build host, which the first release build
+downloads and caches. These two variables affect only that download: runtimes,
+wheels and other pinned artifacts download as before.
+
+| Variable | Effect |
+|---|---|
+| `KIVYFORGE_HOST_PYTHON_DOWNLOADS` | `automatic` (the default) or `never`. With `never`, a build compiles only with a host CPython already in the cache (installed, or as the archive `kivyforge upgrade` fetched), and otherwise ships source or fails, as `byte_compile` decides. `--no-cache` with `never` is an error, and so is any other value. |
+| `KIVYFORGE_HOST_PYTHON_MIRROR` | A base URL that replaces `https://github.com/astral-sh/python-build-standalone/releases/download` when downloading the pinned build, for networks that block GitHub or that serve reviewed copies. The lock's SHA-256 still checks what the mirror serves. It applies to builds only: `kivyforge lock` still needs GitHub to pin the build. |
+
+To prepare a machine that builds without network access, run `kivyforge
+upgrade -p PLATFORM` (or a full `kivyforge package`, which also fills the wheel
+cache) while it has access, then set `KIVYFORGE_HOST_PYTHON_DOWNLOADS=never`.
 
 ## Artifact cache location
 

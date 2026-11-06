@@ -781,13 +781,13 @@ alongside, and fails outright once `strip_source` has removed the source.
 
 kivyforge is installed under whatever Python the user has, which is usually *not*
 the version being shipped to the device, so it does not require being *run* under
-the target version. It searches the build machine for a final CPython of the
-shipped minor and compiles with that one. With none, the message's first fix
-is `kivyforge bytecompiler -p android`, which installs one. The search and the
-command are described once, in
+the target version. `pylock.android.toml` pins a host CPython of the shipped
+minor for each of the three build hosts (`[[tool.kivyforge.host_python]]`), at
+one version for all of them; the first release build on a host downloads its
+entry, and compiles with nothing else. The pin is described once, in
 [10 — byte-compiling](../../common/10-byte-compile.md).
 
-When no matching interpreter exists, the outcome depends on how the setting was
+When there is no usable pin, the outcome depends on how the setting was
 written, because the two spellings mean different things:
 
 - `byte_compile = "release"` (the default) means *when it makes sense*: kivyforge

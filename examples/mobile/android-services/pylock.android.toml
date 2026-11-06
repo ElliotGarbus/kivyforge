@@ -135,3 +135,30 @@ abi = "x86_64"
 url = "https://www.python.org/ftp/python/3.14.6/python-3.14.6-x86_64-linux-android.tar.gz"
 sha256 = "e04eb26607627e68d148f89de793372f54a345c91b13628567f24abcdd3bfa3e"
 min_api = 24
+
+[[tool.kivyforge.host_python]]
+triple = "aarch64-apple-darwin"
+state = "pinned"
+minor = "3.14"
+version = "3.14.6"
+variant = "install_only_stripped"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6%2B20260804-aarch64-apple-darwin-install_only_stripped.tar.gz"
+sha256 = "e0d4e5066aef3248c22e08a07546bfd5edeaca904c91fadc296be720998ec2ec"
+
+[[tool.kivyforge.host_python]]
+triple = "x86_64-pc-windows-msvc"
+state = "pinned"
+minor = "3.14"
+version = "3.14.6"
+variant = "install_only_stripped"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6%2B20260804-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+sha256 = "ada613a2af32c04cf7c54726243c56d76f0e59f5f61d2f28371d3b9d8efad566"
+
+[[tool.kivyforge.host_python]]
+triple = "x86_64-unknown-linux-gnu"
+state = "pinned"
+minor = "3.14"
+version = "3.14.6"
+variant = "install_only_stripped"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260804/cpython-3.14.6%2B20260804-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+sha256 = "ba960817e542642021135db330d875f410f4e14c64a62e2ae5faf3697ada08b2"

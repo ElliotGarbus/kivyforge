@@ -9,8 +9,6 @@ mirrors how the build reads the setting -- ``true`` is "I insist" (FAIL),
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from kivyforge.bundle.pycompile import Candidate
 from kivyforge.doctor.checks_common import (
     BYTE_COMPILE_NAME,
@@ -59,17 +57,6 @@ class TestCompilerFound:
         assert result.status is Status.PASS
         assert "this interpreter" in result.detail
 
-    def test_kivyforges_own_install_is_named_as_such(self, monkeypatch):
-        # str(Path(...)), as the search builds its argv: backslashes on Windows.
-        exe = str(Path("/cache/host-python/3.14/python/bin/python3.14"))
-        monkeypatch.setattr(
-            "kivyforge.doctor.checks_common.installed_interpreter",
-            lambda minor: Path(exe),
-        )
-        result = _check(byte_compile=True, probe=FakeProbe(byte_compiler=(exe,)))
-        assert result.status is Status.PASS
-        assert f"kivyforge's CPython ({exe})" in result.detail
-
 
 class TestCompilerMissing:
     """The two severities the roadmap specifies, and the remedy in both."""
@@ -87,7 +74,6 @@ class TestCompilerMissing:
     def test_both_severities_say_how_to_fix_it(self):
         for setting in (True, "release"):
             result = _check(byte_compile=setting, probe=FakeProbe(byte_compiler=None))
-            assert "kivyforge bytecompiler -p android" in result.hint
             assert "install any final CPython 3.14" in result.hint
             assert f"byte_compile = false in [{TABLE}]" in result.hint
             assert result.code == diagnostics.BYTECOMPILE_NO_INTERP

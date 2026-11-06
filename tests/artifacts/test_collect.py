@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from kivyforge.artifacts import collect as collect_mod
 from kivyforge.artifacts.cache import ArtifactCache
 from kivyforge.artifacts.collect import (
     CollectError,
@@ -30,6 +29,7 @@ from kivyforge.platforms.ios.lock.model import (
     PythonXcframework,
 )
 from kivyforge.platforms.ios.staging import StagingLayout
+from tests.conftest import NO_HOST_PYTHON_FIX, NO_HOST_PYTHON_HEADLINE, pin_compiler
 
 
 def _make_python_tarball(root: Path) -> Path:
@@ -539,7 +539,7 @@ class TestCompilePipDeps:
     """
 
     def _select(self, monkeypatch, result):
-        monkeypatch.setattr(collect_mod, "select_compiler", lambda **kw: result)
+        pin_compiler(monkeypatch, result)
 
     def _deps_with_module(self, tmp_path):
         deps = tmp_path / "pip-deps-device"
@@ -598,8 +598,8 @@ class TestCompilePipDeps:
         )
         assert any("not byte-compiling" in m for m in messages)
         # The notice must say how to fix it, not just what happened.
-        assert any("Fix: run `kivyforge bytecompiler -p ios`" in m for m in messages)
-        assert any("install any final CPython" in m for m in messages)
+        assert any(NO_HOST_PYTHON_HEADLINE in m for m in messages)
+        assert any(NO_HOST_PYTHON_FIX in m for m in messages)
 
     def test_explicit_true_fails_when_no_compiler_found(self, tmp_path, monkeypatch):
         self._select(monkeypatch, None)
@@ -632,7 +632,7 @@ class TestCollectArtifactsByteCompileWiring:
     def test_release_reaches_the_pip_deps_slice(
         self, tmp_path, layout, cache, monkeypatch
     ):
-        monkeypatch.setattr(collect_mod, "select_compiler", lambda **kw: ())
+        pin_compiler(monkeypatch, ())
         art = tmp_path / "art"
         art.mkdir()
         py_tar = _make_python_tarball(art)

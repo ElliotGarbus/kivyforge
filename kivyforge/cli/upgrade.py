@@ -55,7 +55,8 @@ from ._platform import platform_option, resolve_target
     default=None,
     help="Only refresh a specific artifact by name (iOS: an xcframework name "
     "or 'Python.xcframework'; Android: an .aar/.jar name or an ABI; "
-    "macOS/Linux: a locked arch, e.g. 'arm64').",
+    "macOS/Linux: a locked arch, e.g. 'arm64'; any platform: 'host-python', the "
+    "host CPython that byte-compiles).",
 )
 @output_options
 def upgrade(
@@ -95,6 +96,13 @@ def upgrade(
                 "or neither to refresh everything."
             )
 
+        if name == HOST_PYTHON_NAME:
+            refreshed = _upgrade_host_python(
+                report, backend.name, project_root, required=True
+            )
+            report.emit(ok=True, data={"refreshed": refreshed, "skipped": 0})
+            return
+
         if backend.name == "ios":
             refreshed, skipped = _upgrade_ios(
                 report, project_root, python_only, xcframeworks_only, name
@@ -122,7 +130,83 @@ def upgrade(
                 f"`kivyforge upgrade` does not support platform {backend.name!r} yet."
             )
 
+        # The host CPython rides with the runtime: fetched by default and with
+        # --python, never by a selector for some other half of the lock.
+        if not (xcframeworks_only or libs_only or name):
+            refreshed += _upgrade_host_python(
+                report, backend.name, project_root, required=False
+            )
+            report.record(refreshed=list(refreshed))
+
         report.emit(ok=True, data={"refreshed": refreshed, "skipped": skipped})
+
+
+#: ``upgrade --name`` for the host CPython that byte-compiles.
+HOST_PYTHON_NAME = "host-python"
+
+
+def _upgrade_host_python(
+    report: Report, platform: str, project_root: Path, *, required: bool
+) -> list[str]:
+    """Fetch this host's pinned host CPython archive, as ``upgrade`` re-fetches
+    every pinned artifact; the first build extracts it, offline if need be.
+
+    *required* (``--name host-python``) fails when there is nothing to fetch;
+    otherwise a lock without a usable pin for this host is passed over with a
+    line saying why.
+    """
+    from ..bundle import hostpython
+    from ..lock import host_python as hp
+
+    lock = _load_any_lock(platform, project_root)
+    triple = hostpython.host_triple()
+    entry = hp.entry_for(getattr(lock, "host_python", None), triple or "")
+    if entry is None or entry.state != hp.PINNED:
+        why = (
+            f"{lockfile_path_for(platform).name} pins no host CPython for this host"
+            + (f" ({entry.state})" if entry is not None else "")
+        )
+        if required:
+            raise ToolchainError(
+                f"{why}.\n  Fix: run `kivyforge lock -p {platform}` with network "
+                "access."
+            )
+        if hp.lock_triples(platform, lock):
+            report.progress(f"Not refreshing the host CPython: {why}.")
+        return []
+    try:
+        if not hostpython.downloads_allowed():
+            raise ToolchainError(
+                f"{hostpython.DOWNLOADS_VAR}=never forbids downloading the host "
+                "CPython.\n  Fix: unset it while running `kivyforge upgrade`, then "
+                "set it again.",
+            )
+        report.progress(
+            f"Refreshing the host CPython {entry.version} ({entry.triple}) ..."
+        )
+        hostpython.ensure_archive(entry, no_cache=True)
+    except hostpython.HostPythonError as exc:
+        raise ToolchainError.wrap(exc) from exc
+    report.line(f"Refreshed the host CPython {entry.version} ({entry.triple}).")
+    return [HOST_PYTHON_NAME]
+
+
+def _load_any_lock(platform: str, project_root: Path):
+    if platform == "ios":
+        return _load_ios_lock(project_root)
+    if platform == "android":
+        from ..platforms.android.lock import reader as android_reader
+
+        path = project_root / "pylock.android.toml"
+        if not path.is_file():
+            raise ToolchainError(
+                "no pylock.android.toml found. Run `kivyforge lock -p android` first."
+            )
+        try:
+            return android_reader.load(path)
+        except LockError as exc:
+            raise ToolchainError(str(exc)) from exc
+    return _load_wheelruntime_lock(platform, project_root)
 
 
 def _refreshed(report: Report, refreshed: list[str], name: str) -> None:

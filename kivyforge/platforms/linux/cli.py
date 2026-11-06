@@ -19,7 +19,6 @@ from kivyforge.build_outcome import (
     BuildOutcome,
     OutcomeBuilder,
 )
-from kivyforge.bundle.hostpython import ByteCompileNeed, byte_compile_need
 from kivyforge.cli._common import (
     ECHO_EVENTS,
     PROGRESS_ONLY_EVENTS,
@@ -29,7 +28,6 @@ from kivyforge.cli._common import (
 from kivyforge.config import ConfigError, load_config
 from kivyforge.config.model import Config, ResolvedVersion
 from kivyforge.config.version import with_version
-from kivyforge.host import host_runs_natively
 from kivyforge.lock.inputs import is_in_sync
 from kivyforge.lock.reader import LockError
 from kivyforge.report import failures
@@ -232,20 +230,6 @@ def linux_run(
     proc = subprocess.run([str(apprun)])
     if proc.returncode != 0:
         raise ToolchainError(f"{appdir.name} exited with status {proc.returncode}.")
-
-
-def linux_byte_compile_need(project_root: Path) -> ByteCompileNeed:
-    """Linux compiles with a host interpreter only for an arch this host can't
-    run: ``aarch64`` built on x86_64, the one cross-arch desktop build."""
-    config = _load_config(project_root)
-    linux = config.linux_required
-    return byte_compile_need(
-        "linux",
-        byte_compile=linux.build_settings.byte_compile,
-        host_compiler=not all(host_runs_natively(arch) for arch in linux.archs),
-        lock=_lock_status(project_root, config),
-        lock_version=lambda: _load_lock(project_root).python_runtime.version,
-    )
 
 
 def linux_status(project_root: Path) -> StatusReport:

@@ -63,3 +63,12 @@ tool_kivyforge_schema_version = 1
 version = "3.15.0"
 url = "https://www.python.org/ftp/python/3.15.0/python-3.15.0-iOS-XCframework.tar.gz"
 sha256 = "68e98ab35cc0643ba3a227a8c7768da45c2a5e67dbe1bc26598537e96680fd19"
+
+[[tool.kivyforge.host_python]]
+triple = "aarch64-apple-darwin"
+state = "pinned"
+minor = "3.15"
+version = "3.15.0"
+variant = "install_only_stripped"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261020/cpython-3.15.0%2B20261020-aarch64-apple-darwin-install_only_stripped.tar.gz"
+sha256 = "80af02b62e3675f653e79fd9560f90f7ab8ced848cd4a5a81ee7e3d6c8dc2a10"

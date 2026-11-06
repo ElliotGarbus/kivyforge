@@ -45,12 +45,12 @@ The key constraints:
 
 A **Yes** says the operating system can build the target. Whether the toolchain
 is installed is a separate question: `kivyforge doctor -p PLATFORM` answers it.
-
-Release packages for iOS and Android, and Linux packages for `aarch64`, also
-need a CPython of the minor the app ships, on the machine that builds, to
-byte-compile the app. Run `kivyforge bytecompiler` once on each such machine to
-install one, or install it yourself.
 Replace `PLATFORM` with the target name.
+
+Release packages for iOS and Android, and Linux packages for `aarch64`, are
+byte-compiled by a CPython that runs on the machine that builds. You don't
+install it: the lock pins one for each build host, and the first release build
+on a machine downloads it.
 
 ## Target selection versus host capability
 

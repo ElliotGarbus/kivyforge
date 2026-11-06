@@ -340,6 +340,13 @@ def _default_verbosity(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _default_host_python_settings(monkeypatch):
+    """Nor a developer's own host-CPython download settings."""
+    monkeypatch.delenv("KIVYFORGE_HOST_PYTHON_DOWNLOADS", raising=False)
+    monkeypatch.delenv("KIVYFORGE_HOST_PYTHON_MIRROR", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _allow_any_host(monkeypatch):
     """Neutralize the host gate for the suite.
 
@@ -354,3 +361,84 @@ def _allow_any_host(monkeypatch):
     from kivyforge.cli import _platform
 
     monkeypatch.setattr(_platform, "require_host", lambda backend: None)
+
+
+class FakeHostPythonFetcher:
+    """A python-build-standalone release list that publishes every final minor
+    for every triple, at the version asked for. Its URLs and hashes are made
+    up, which is all a lock test reads."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, tuple[str, ...], str | None]] = []
+
+    def find_common_install_only(self, minor, triples, *, prefer=None, variants=()):
+        import hashlib
+
+        from kivyforge.lock.wheelruntime.runtime import ReleaseAsset
+
+        self.calls.append((minor, tuple(triples), prefer))
+        version = prefer or f"{minor}.0"
+        return version, {
+            t: (
+                "install_only_stripped",
+                ReleaseAsset(
+                    url=f"https://pbs.invalid/cpython-{version}-{t}-install_only_stripped.tar.gz",
+                    sha256=hashlib.sha256(f"{version} {t}".encode()).hexdigest(),
+                ),
+            )
+            for t in triples
+        }
+
+
+@pytest.fixture(autouse=True)
+def host_python_fetcher(monkeypatch):
+    """Keep ``lock``'s host-CPython lookup off GitHub.
+
+    iOS and Android locks always pin a host CPython for byte-compiling
+    (``kivyforge.lock.host_python``), and the real lookup lists releases
+    through GitHub's API. The hermetic suite touches no network, so it gets a
+    fake; tests that need another answer replace it. The real fetcher's logic
+    is tested against canned release listings in
+    ``tests/platforms/macos/test_pbs_github.py``.
+    """
+    fetcher = FakeHostPythonFetcher()
+    monkeypatch.setattr(
+        "kivyforge.lock.host_python._default_fetcher", lambda progress: fetcher
+    )
+    return fetcher
+
+
+#: What a build reports when this host has no host CPython to compile with,
+#: fixed so a test's expected output can't depend on which host runs it.
+NO_HOST_PYTHON_HEADLINE = "the locked host CPython 3.14.6 isn't available"
+NO_HOST_PYTHON_FIX = "Fix: run `kivyforge lock`, or set byte_compile = false."
+
+
+def pin_compiler(monkeypatch, result=None):
+    """Make every byte-compile site get *result* from the host-CPython seam.
+
+    *result* is an argv (``()`` for "this interpreter") or ``None`` for "no
+    compiler on this host", which answers with the fixed
+    ``KF-BYTECOMPILE-NO-INTERP`` reason above. All four host-compiled sites
+    (iOS app sources and pip-deps, Android, Linux aarch64) reach the compiler
+    through ``kivyforge.bundle.hostpython.compiler_for``, so this is the one
+    seam.
+    """
+    from kivyforge.bundle import hostpython
+    from kivyforge.report import diagnostics, exit_codes
+
+    answer = (
+        result
+        if result is not None
+        else hostpython.Unavailable(
+            headline=NO_HOST_PYTHON_HEADLINE,
+            lines=(NO_HOST_PYTHON_FIX,),
+            classification={
+                "code": diagnostics.BYTECOMPILE_NO_INTERP,
+                "exit_code": exit_codes.ENVIRONMENT_ERROR,
+                "context": {"tool": "python3.14"},
+            },
+        )
+    )
+    monkeypatch.setattr(hostpython, "compiler_for", lambda *a, **kw: answer)
+    return answer

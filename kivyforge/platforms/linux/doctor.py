@@ -433,7 +433,15 @@ def run_linux_checks(
             byte_compile=linux.build_settings.byte_compile,
             python_version=linux.python_version,
             table="tool.kivy.linux.build_settings",
-            native=C.builds_natively(probe, linux.archs),
+            native=True,
+        )
+        if C.builds_natively(probe, linux.archs)
+        # A foreign arch (aarch64 on x86_64) compiles with the pinned host CPython.
+        else C.check_host_python(
+            platform="linux",
+            byte_compile=linux.build_settings.byte_compile,
+            lock=lock,
+            table="tool.kivy.linux.build_settings",
         ),
         check_linux_glibc_floor(config, lock),
         check_linux_arch_coverage(config, lock),

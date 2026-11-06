@@ -9,6 +9,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from kivyforge.lock.host_python import parse as parse_host_python
 from kivyforge.lock.pep751 import parse_include_file, parse_swift_package
 from kivyforge.lock.pep751 import parse_package as _parse_package
 from kivyforge.lock.reader import LockError
@@ -82,6 +83,10 @@ def _from_raw(raw: dict) -> Lockfile:
     include_files = tuple(
         parse_include_file(f) for f in _as_list(tool, "include_files")
     )
+    try:
+        host_python = parse_host_python(tool)
+    except ValueError as exc:
+        raise LockError(f"pylock.ios.toml {exc}") from exc
 
     return Lockfile(
         requires_python=raw.get("requires-python", ">=3.15"),
@@ -94,6 +99,7 @@ def _from_raw(raw: dict) -> Lockfile:
         xcframeworks=xcframeworks,
         swift_packages=swift_packages,
         include_files=include_files,
+        host_python=host_python,
         schema_version=schema_version,
         lock_version=lock_version,
         created_by=raw.get("created-by", "kivyforge"),

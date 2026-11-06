@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from ..bundle.hostpython import installed_interpreter
 from ..bundle.pycompile import Candidate, no_interpreter
 from ..config.model import AutoVersionCode, Config, StaticVersion
 from ..host import host_runs_natively
@@ -152,7 +151,7 @@ def check_byte_compile(
     searched: list[Candidate] = []
     compiler = probe.byte_compile_interpreter(python_version, searched=searched)
     if compiler is not None:
-        found = _compiler_label(compiler, minor)
+        found = "this interpreter" if compiler == () else " ".join(compiler)
         return CheckResult(
             BYTE_COMPILE_NAME,
             Status.PASS,
@@ -179,14 +178,101 @@ def check_byte_compile(
     )
 
 
-def _compiler_label(compiler: tuple[str, ...], minor: str) -> str:
-    """How the PASS line names the interpreter the search picked."""
-    if compiler == ():
-        return "this interpreter"
-    installed = installed_interpreter(minor)
-    if installed is not None and compiler == (str(installed),):
-        return f"kivyforge's CPython ({installed})"
-    return " ".join(compiler)
+def check_host_python(
+    *,
+    platform: str,
+    byte_compile: bool | str,
+    lock: object | None,
+    table: str,
+    cache=None,
+) -> CheckResult:
+    """For a build that compiles with a host interpreter: is this host's pin usable?
+
+    iOS, Android and a Linux ``aarch64`` target compile only with the host
+    CPython the lock pins for this machine (``kivyforge.bundle.hostpython``),
+    so the question is the pin's state, never what is on ``PATH``. ``doctor``
+    never downloads or extracts; it reports what the first release build will
+    do. Severity follows the setting, as for :func:`check_byte_compile`.
+    """
+    from ..bundle import hostpython
+    from ..lock import host_python as hp
+
+    if byte_compile is False:
+        return CheckResult(
+            BYTE_COMPILE_NAME, Status.SKIP, f"byte_compile = false in [{table}]"
+        )
+    setting = "true" if byte_compile is True else f'"{byte_compile}"'
+    lockfile = f"pylock.{platform}.toml"
+    relock = f"kivyforge lock -p {platform}"
+    if lock is None:
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            Status.SKIP,
+            f"no {lockfile} yet; `{relock}` pins the host CPython that byte-compiles",
+        )
+    triple = hostpython.host_triple()
+    if triple is None:
+        return CheckResult(
+            BYTE_COMPILE_NAME, Status.SKIP, "this host has no host CPython builds"
+        )
+    bad = Status.FAIL if byte_compile is True else Status.WARN
+    consequence = (
+        "the build will fail"
+        if byte_compile is True
+        else "release builds will ship source"
+    )
+    entries = getattr(lock, "host_python", None)
+    entry = hp.entry_for(entries, triple)
+    if entries is None or entry is None or entry.state == hp.UNRESOLVED_OFFLINE:
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            bad,
+            f"byte_compile = {setting}, but {lockfile} has no host CPython for "
+            f"{triple}; {consequence}",
+            hint=f"run `{relock}`; it adds the host CPython and keeps every other pin.",
+            code=diagnostics.LOCK_INCOMPLETE,
+        )
+    if entry.state == hp.NO_BUILD:
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            bad,
+            f"byte_compile = {setting}, but python-build-standalone had no final "
+            f"CPython {entry.minor} build for {triple} when the lock was written; "
+            f"{consequence}",
+            hint=f"once one is published, run `{relock}`.",
+            code=diagnostics.BYTECOMPILE_NO_INTERP,
+        )
+    try:
+        allowed = hostpython.downloads_allowed()
+    except hostpython.HostPythonError as exc:
+        return CheckResult(BYTE_COMPILE_NAME, Status.FAIL, str(exc).splitlines()[0])
+    pinned = f"the locked host CPython {entry.version} ({triple})"
+    exe = hostpython.installed(entry, cache)
+    if exe is not None:
+        return CheckResult(
+            BYTE_COMPILE_NAME, Status.PASS, f"byte_compile = {setting}; {pinned}: {exe}"
+        )
+    if hostpython.archive_cached(entry, cache):
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            Status.PASS,
+            f"byte_compile = {setting}; {pinned} is extracted on the first release build",
+        )
+    if allowed:
+        return CheckResult(
+            BYTE_COMPILE_NAME,
+            Status.PASS,
+            f"byte_compile = {setting}; {pinned} is downloaded on the first release build",
+        )
+    return CheckResult(
+        BYTE_COMPILE_NAME,
+        bad,
+        f"byte_compile = {setting}, but {pinned} isn't in the cache and "
+        f"{hostpython.DOWNLOADS_VAR}=never; {consequence}",
+        hint=f"run `kivyforge upgrade -p {platform}` with network access, or unset "
+        f"{hostpython.DOWNLOADS_VAR}.",
+        code=diagnostics.BYTECOMPILE_NO_INTERP,
+    )
 
 
 def check_app_dir(config: Config, project_root: Path) -> CheckResult:

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from kivyforge.lock.host_python import HostPython
+
 from ..model import (
     LOCK_VERSION,
     LockedIncludeFile,
@@ -100,3 +102,7 @@ class WheelRuntimeLock:
     include_files: tuple[LockedIncludeFile, ...] = ()
     #: macOS only: ``[tool.kivy.macos.native.swift_packages]`` pins (#201).
     swift_packages: tuple[LockedSwiftPackage, ...] = ()
+    #: ``[[tool.kivyforge.host_python]]`` (kivyforge.lock.host_python); ``None``
+    #: when the lock has no table: a platform that needs none, or a lock
+    #: written before the table existed.
+    host_python: tuple[HostPython, ...] | None = None
