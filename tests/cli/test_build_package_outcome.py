@@ -405,7 +405,7 @@ def test_ios_byte_compile_notes_carry_their_payload(tmp_path, monkeypatch):
         (
             diagnostics.BYTECOMPILE_NO_INTERP,
             f"not byte-compiling pip-deps: {NO_HOST_PYTHON_HEADLINE}.",
-            {"payload": "pip-deps"},
+            {"tool": "python3.14", "payload": "pip-deps"},
         )
     ]
     assert rec.progress and rec.progress[0].startswith("[stage] not byte-compiling")

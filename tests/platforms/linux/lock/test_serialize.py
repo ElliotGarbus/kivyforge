@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.lock.reader import LockError
-from kivyforge.platforms.linux.lock import build_linux_lockfile, dumps, loads
+from kivyforge.platforms.linux.lock import (
+    build_linux_lockfile,
+    dumps,
+    loads,
+    semantic_equal,
+)
 
 from .conftest import FakeLinuxResolver, FakeRuntimeProvider
 
@@ -34,6 +41,26 @@ class TestRoundTrip:
         assert again.python_runtime.provider == "python-build-standalone"
         assert again.python_runtime.floor == "2.17"
         assert {a.arch for a in again.python_runtime.artifacts} == {"x86_64"}
+
+    def test_reloaded_lock_equals_one_resolved_in_archs_order(
+        self, linux_pyproject, tmp_path
+    ):
+        """``archs = ["x86_64", "aarch64"]`` resolves runtimes in that order,
+        and the file holds them sorted. ``lock --check`` compares the two, and
+        reported drift with an empty diff right after ``lock`` wrote the file."""
+        lock = _build(linux_pyproject, tmp_path)
+        (x86,) = lock.python_runtime.artifacts
+        arm = dataclasses.replace(x86, arch="aarch64", sha256="d" * 64)
+        lock = dataclasses.replace(
+            lock,
+            archs=("x86_64", "aarch64"),
+            python_runtime=dataclasses.replace(
+                lock.python_runtime, artifacts=(x86, arm)
+            ),
+        )
+        again = loads(dumps(lock))
+        assert again.python_runtime.artifacts != lock.python_runtime.artifacts
+        assert semantic_equal(again, lock)
 
     def test_deterministic(self, linux_pyproject, tmp_path):
         lock = _build(linux_pyproject, tmp_path)

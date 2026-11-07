@@ -30,6 +30,25 @@
   `KF-LOCK-INCOMPLETE` (exit 4), and release builds ship source
   (`byte_compile = "release"`) or fail (`true`).
 
+### `lock --check` accepts a desktop lock whose `archs` aren't in alphabetical order
+
+- **Fixed:** with `archs = ["x86_64", "aarch64"]` on Linux (or, say,
+  `["arm64", "amd64"]` on Windows), `lock --check` failed with
+  `KF-LOCK-DRIFT` (exit 4) and an empty diff straight after `lock` wrote the
+  file. The file lists runtimes by arch and the check compared them in `archs`
+  order. Nothing to re-lock.
+
+### A build's byte-compile warning carries the same `context` as its error
+
+- **Fixed:** when a release build couldn't fetch the pinned host CPython (a
+  hash mismatch or a failed download), its `KF-HOST-PYTHON-FETCH` diagnostic,
+  the warning under `byte_compile = "release"` and the error under `true`,
+  had the URL only in the message. It is now also in `context.url`, as in
+  `upgrade`'s.
+- **Fixed:** the `KF-BYTECOMPILE-NO-INTERP` warning (no host CPython to
+  compile with, source shipped) now names the interpreter in `context.tool`,
+  as the error under `byte_compile = true` already did.
+
 ### `lock`: a dropped connection is no longer reported as a missing wheel
 
 - **Added:** `KF-LOCK-INDEX-UNREACHABLE`, exit 3, when pip loses its

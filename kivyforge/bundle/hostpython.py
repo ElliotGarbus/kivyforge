@@ -248,10 +248,13 @@ def compiler_for(
         )
     except HostPythonError as exc:
         lines = str(exc).splitlines()
+        classification: Classification = {"code": exc.code, "exit_code": exc.exit_code}
+        if exc.context:
+            classification["context"] = exc.context
         return Unavailable(
             headline=lines[0],
             lines=tuple(line.strip() for line in lines[1:]),
-            classification={"code": exc.code, "exit_code": exc.exit_code},
+            classification=classification,
         )
     except OSError as exc:
         raise HostPythonError(
@@ -299,14 +302,18 @@ def pinned_compiler(
             on_progress=echo,
         )
     except HostPythonError as exc:
-        raise error(str(exc), code=exc.code, exit_code=exc.exit_code) from exc
+        raise error(
+            str(exc), code=exc.code, exit_code=exc.exit_code, context=exc.context
+        ) from exc
     if not isinstance(compiler, Unavailable):
         return compiler
     if byte_compile is True:
         raise error(compiler.required(table), **compiler.classification)
     echo(f"[stage] not byte-compiling{what}: {compiler.headline}.\n{compiler.detail()}")
-    if context:
-        note(compiler.code, f"not byte-compiling{what}: {compiler.headline}.", context)
+    merged = {**compiler.classification.get("context", {}), **(context or {})}
+    detail = {key: value for key, value in merged.items() if value is not None}
+    if detail:
+        note(compiler.code, f"not byte-compiling{what}: {compiler.headline}.", detail)
     else:
         note(compiler.code, f"not byte-compiling{what}: {compiler.headline}.")
     return None
