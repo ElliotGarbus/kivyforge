@@ -30,6 +30,24 @@
   `KF-LOCK-INCOMPLETE` (exit 4), and release builds ship source
   (`byte_compile = "release"`) or fail (`true`).
 
+### `lock`: a dropped connection is no longer reported as a missing wheel
+
+- **Added:** `KF-LOCK-INDEX-UNREACHABLE`, exit 3, when pip loses its
+  connection to an index or file host partway through a resolve, on any
+  platform. Before this, the failure read "a dependency has no
+  wheel" and, under `lock --check`, `KF-LOCK-PINS-CONFLICT` with advice to
+  run `--update`. Neither was true. Retry with network access; `context`
+  names the `host`.
+- **Fixed:** after a dropped download, pip's HTTP cache can serve an empty
+  file for a GitHub-hosted wheel (Kivy's Android wheels are), so every later
+  `lock` failed with a hash mismatch until the cache was purged. pip 26.1.2
+  and 26.3 both do this. kivyforge now spots the empty file's hash, says so
+  on stderr, and resolves again once with `--no-cache-dir`. `pip cache purge`
+  removes the bad entry for good.
+- A host that can't be reached before pip has read the package's index page
+  still shows up as "no wheel", because pip itself reports it as "from
+  versions: none".
+
 ### iOS: `run` shows the app's Python output again
 
 - **Fixed:** with CPython 3.15 final, `kivyforge run -p ios` showed only native
