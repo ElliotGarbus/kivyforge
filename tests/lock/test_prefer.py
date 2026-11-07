@@ -229,3 +229,35 @@ class TestLockKeepsPins:
         assert result.exit_code == exit_codes.CONFIG_ERROR, result.output
         assert diagnostics.LOCK_PINS_CONFLICT in result.stdout
         assert "--update" in result.stdout
+
+    def test_a_lost_connection_is_not_a_pins_conflict(
+        self, fake_linux, tmp_path, monkeypatch
+    ):
+        """The pinned resolve lost the network, and the unpinned one would connect.
+
+        Read as a pins conflict, the fix offered was ``--update``, which moves
+        every package; nothing about the pins was wrong.
+        """
+        from kivyforge.lock.resolver import IndexUnreachable
+
+        real_resolve = fake_linux.resolve
+        unpinned = []
+
+        def resolve(requirements, **kwargs):
+            if kwargs.get("constraints"):
+                raise IndexUnreachable(
+                    "pip lost its connection to pypi.org", context={"host": "pypi.org"}
+                )
+            unpinned.append(requirements)
+            return real_resolve(requirements, **kwargs)
+
+        runner = CliRunner()
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            self._project(fs)
+            runner.invoke(lock, ["-p", "linux"])
+            monkeypatch.setattr(fake_linux, "resolve", resolve)
+            result = runner.invoke(lock, ["-p", "linux", "--check", "--json"])
+        assert result.exit_code == exit_codes.ENVIRONMENT_ERROR, result.output
+        assert diagnostics.LOCK_INDEX_UNREACHABLE in result.stdout
+        assert diagnostics.LOCK_PINS_CONFLICT not in result.stdout
+        assert unpinned == []

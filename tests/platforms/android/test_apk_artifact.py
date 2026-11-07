@@ -12,11 +12,13 @@ Skips without ``--android-apk`` so a local `pytest` run stays green.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from kivyforge.bundle.pycompile import find_interpreter
 from tests.artifact_checks import android_apk_problems, shipped_python_tags
 
 pytestmark = pytest.mark.integration
@@ -33,30 +35,60 @@ def apk(pytestconfig) -> Path:
     return path
 
 
+def _probe_magic(argv: list[str]) -> bytes | None:
+    """First four bytes of ``importlib.util.MAGIC_NUMBER`` from *argv*, or None."""
+    try:
+        probe = subprocess.run(
+            [
+                *argv,
+                "-c",
+                "import importlib.util,sys;"
+                "sys.stdout.buffer.write(importlib.util.MAGIC_NUMBER)",
+            ],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except OSError:
+        return None
+    if probe.returncode == 0 and len(probe.stdout) == 4:
+        return probe.stdout
+    return None
+
+
 def _expected_magic(apk: Path) -> bytes:
     """The ``.pyc`` header the runtime *this APK ships* will accept.
 
-    Taken from the running interpreter rather than a hard-coded table, which
+    Asked of an interpreter rather than taken from a hard-coded table, which
     would need editing every CPython release and would go stale in exactly the
-    silent way item 1 did. That makes the runner's Python part of the test
-    definition, so the job must run under the minor the APK ships — and when it
-    does not, this fails naming the *runner*, rather than downstream where the
-    same mismatch reads as "the artifact is broken".
+    silent way item 1 did. The APK's own ``libpython`` never runs on the host,
+    but magic is keyed to CPython minor, not arch, so any *final* CPython of the
+    shipped minor is an exact answer: this one when it matches, else the one
+    :func:`find_interpreter` finds. Only if the host has none does this fail,
+    naming the runner, rather than downstream where the same mismatch reads as
+    "the artifact is broken".
     """
     tags = shipped_python_tags(apk)
-    running = f"{sys.version_info.major}.{sys.version_info.minor}"
     if len(tags) != 1:
         pytest.fail(
             f"expected exactly one CPython runtime in {apk.name}, found {tags}; "
             "cannot tell which .pyc magic to require"
         )
-    if tags[0] != running:
-        pytest.fail(
-            f"{apk.name} ships CPython {tags[0]}, but this test is running under "
-            f"{running}, so it cannot know which .pyc magic that runtime accepts. "
-            f"Pin the CI job's setup-python to {tags[0]}."
-        )
-    return importlib.util.MAGIC_NUMBER
+
+    found = find_interpreter(tags[0])
+    if found == ():
+        return importlib.util.MAGIC_NUMBER
+    if found is not None:
+        magic = _probe_magic(list(found))
+        if magic is not None:
+            return magic
+
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    pytest.fail(
+        f"{apk.name} ships CPython {tags[0]}, but this test runs under {running} "
+        f"and no final CPython {tags[0]} is on this host, so the .pyc magic that "
+        f"runtime accepts is unknowable. Install CPython {tags[0]}, or run the "
+        "test under it."
+    )
 
 
 def test_the_apk_is_internally_consistent(apk, pytestconfig):

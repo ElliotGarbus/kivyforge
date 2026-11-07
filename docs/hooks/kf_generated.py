@@ -69,6 +69,12 @@ _DIAGNOSTIC = {
         "Pin the package to an index that has the wheel, or add the missing "
         "wheel to the `find_links` directory.",
     ),
+    "KF-LOCK-INDEX-UNREACHABLE": (
+        "error",
+        "pip lost its connection to a package index or file host while "
+        "resolving, and gave up. Exit 3. Nothing in the project is at fault.",
+        "Retry with network access; `context` names the `host` when pip did.",
+    ),
     "KF-LOCK-MISSING": (
         "error",
         "No `pylock.<platform>.toml` exists for the target.",

@@ -65,6 +65,12 @@ LOCK_PINS_CONFLICT = "KF-LOCK-PINS-CONFLICT"
 #: ``source`` (an index name or ``find_links``) and the ``variant``.
 LOCK_SOURCE_UNAVAILABLE = "KF-LOCK-SOURCE-UNAVAILABLE"
 
+#: pip lost its connection to a package index or file host while resolving, and
+#: gave up. Exit 3: neither the project, the pins nor the wheels are at fault,
+#: so the fix is a retry with network access. ``context`` names the ``host``
+#: when pip did.
+LOCK_INDEX_UNREACHABLE = "KF-LOCK-INDEX-UNREACHABLE"
+
 #: Resolution succeeded but made a judgement call worth surfacing (e.g. the
 #: macOS/Linux backends accepting a vendored plain ``linux_*`` wheel). Always
 #: WARNING: the lock written is usable, and the run is ``ok``.

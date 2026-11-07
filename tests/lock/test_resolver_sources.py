@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from kivyforge.lock import _pip_shim
+from kivyforge.lock.resolver import IndexUnreachable
 from kivyforge.lock.sources import (
     RECORD_KEY,
     SourceFilterUnavailable,
@@ -26,7 +27,11 @@ from kivyforge.platforms.android.lock import resolver as android_mod
 from kivyforge.platforms.android.lock.markers import android_marker_environment
 from kivyforge.platforms.ios.lock import resolver as ios_mod
 from kivyforge.platforms.ios.lock.markers import ios_marker_environment
+from kivyforge.report import diagnostics, exit_codes
 from tests.streaming_fake import streaming
+
+#: What pip reports as the hash of a download that had no body.
+EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 
 def _android(policy):
@@ -141,6 +146,81 @@ class TestRunReport:
             run(source_policy([str(tmp_path)], [], platform="android"))
         assert caught.value.context["distribution"] == "kivy"
         assert caught.value.context["source"] == "find_links"
+
+    def test_an_empty_file_from_pips_cache_is_retried_without_it(
+        self, module, run, monkeypatch
+    ):
+        poisoned = (
+            "ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS "
+            "FILE.\n    kivy==2.3.1 from https://github.com/x/Kivy.whl#sha256=0788:\n"
+            "        Expected sha256 20da914a3abff114448106df16161184eb283283d544\n"
+            f"             Got        {EMPTY_SHA256}\n"
+        )
+        cmds = []
+        good = _fake_pip(record={})
+
+        def fake(cmd, **kwargs):
+            cmds.append(list(cmd))
+            if len(cmds) == 1:
+                return _fake_pip(1, output=poisoned)(cmd, **kwargs)
+            return good(cmd, **kwargs)
+
+        monkeypatch.setattr(module, "run_streaming", fake)
+        report = run(source_policy([], []))
+        assert report["install"] == []
+        assert "--no-cache-dir" not in cmds[0]
+        assert cmds[1][cmds[1].index("install") + 1] == "--no-cache-dir"
+        assert sorted(cmds[1]) == sorted([*cmds[0], "--no-cache-dir"])
+
+    def test_a_real_hash_mismatch_is_not_retried(self, module, run, monkeypatch):
+        output = (
+            "ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS "
+            "FILE.\n        Expected sha256 20da914a\n             Got        78c5a39f\n"
+        )
+        calls = []
+
+        def fake(cmd, **kwargs):
+            calls.append(cmd)
+            return _fake_pip(1, output=output)(cmd, **kwargs)
+
+        monkeypatch.setattr(module, "run_streaming", fake)
+        with pytest.raises(Exception, match="pip could not resolve"):
+            run(source_policy([], []))
+        assert len(calls) == 1
+
+    def test_a_lost_connection_is_its_own_failure(self, module, run, monkeypatch):
+        output = (
+            "WARNING: Retrying (Retry(total=4, connect=None, read=None)) after "
+            "connection broken by 'ConnectionResetError(10054)': /simple/kivy/\n"
+            "ERROR: Could not install packages due to an OSError: "
+            "HTTPSConnectionPool(host='files.pythonhosted.org', port=443): Max "
+            "retries exceeded with url: /packages/pyjnius.whl.metadata (Caused by "
+            "NameResolutionError(\"Failed to resolve 'files.pythonhosted.org'\"))\n"
+        )
+        monkeypatch.setattr(module, "run_streaming", _fake_pip(1, output=output))
+        with pytest.raises(IndexUnreachable) as caught:
+            run(source_policy([], []))
+        assert caught.value.code == diagnostics.LOCK_INDEX_UNREACHABLE
+        assert caught.value.exit_code == exit_codes.ENVIRONMENT_ERROR
+        assert caught.value.context["host"] == "files.pythonhosted.org"
+        message = str(caught.value)
+        assert "no wheel" not in message
+        assert "retry with network access" in message
+        message.encode("cp1252")
+
+    def test_retries_that_recovered_do_not_make_a_lost_connection(
+        self, module, run, monkeypatch
+    ):
+        output = (
+            "WARNING: Retrying (Retry(total=4)) after connection broken by "
+            "'ReadTimeoutError(\"Read timed out.\")': /simple/kivy/\n"
+            "ERROR: Could not find a version that satisfies the requirement "
+            "kivy (from versions: none)"
+        )
+        monkeypatch.setattr(module, "run_streaming", _fake_pip(1, output=output))
+        with pytest.raises(Exception, match="pip could not resolve") as caught:
+            run(source_policy([], []))
+        assert not isinstance(caught.value, IndexUnreachable)
 
     def test_an_index_package_keeps_pips_own_failure(self, module, run, monkeypatch):
         output = (

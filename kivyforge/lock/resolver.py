@@ -14,6 +14,9 @@ import subprocess
 
 from packaging.requirements import InvalidRequirement, Requirement
 
+from ..report import diagnostics, exit_codes
+from ..report.failures import ClassifiedError
+
 # Minimum host pip that understands PEP 730 iOS platform tags (pip 24.3, 2024-10-27).
 # Earlier pip cannot match an ``ios_<dt>_*`` --platform request against a wheel
 # tagged at a lower floor (e.g. ios_13_0_*), so compatible wheels are reported as
@@ -36,6 +39,83 @@ def unresolved_requirement(pip_output: str) -> str | None:
     """
     match = _UNRESOLVED_RE.search(pip_output or "")
     return match.group(1) if match else None
+
+
+class IndexUnreachable(ClassifiedError):
+    """pip gave up on the connection to an index or file host mid-resolve."""
+
+    code = diagnostics.LOCK_INDEX_UNREACHABLE
+    exit_code = exit_codes.ENVIRONMENT_ERROR
+
+
+# pip's last word once its retries are spent. Only this line counts: the
+# "Retrying ... after connection broken" warnings before it also appear in runs
+# that recover.
+_UNREACHABLE_RE = re.compile(
+    r"Could not install packages due to an OSError:[^\n]*?"
+    r"(?:Max retries exceeded|NameResolutionError|Failed to resolve|"
+    r"Failed to establish a new connection|ConnectionResetError|"
+    r"ConnectionRefusedError|ReadTimeoutError)"
+)
+_HOST_RE = re.compile(r"host='([^']+)'")
+
+
+def index_unreachable(pip_output: str, resolving: str) -> IndexUnreachable | None:
+    """The failure to raise when pip stopped because the network did, or ``None``.
+
+    Kept apart from a resolution failure because it says nothing about the
+    project: without it the headline blamed a missing wheel, and with pins in
+    play a retry that happened to connect turned it into
+    ``KF-LOCK-PINS-CONFLICT``, whose fix (``--update``) moves every package.
+    *resolving* names what was being resolved, for the headline.
+    """
+    match = _UNREACHABLE_RE.search(pip_output or "")
+    if match is None:
+        return None
+    host = _HOST_RE.search(match.group(0))
+    where = host.group(1) if host else "a package host"
+    return IndexUnreachable(
+        f"pip lost its connection to {where} while resolving {resolving}.\n"
+        "  Fix: retry with network access; nothing in pyproject.toml or the lock "
+        "needs to change.\n"
+        f"  pip said:\n{_indent(pip_output)}",
+        context={"host": host.group(1) if host else None},
+    )
+
+
+#: SHA-256 of no bytes at all.
+_EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+#: Progress note for a resolve retried by :func:`without_cache`.
+CACHE_RETRY_NOTE = (
+    "pip's HTTP cache served an empty file; retrying without it "
+    "(`pip cache purge` removes the bad entry)"
+)
+
+
+def served_empty_file(pip_output: str) -> bool:
+    """pip hashed a download with no body, which its own cache served.
+
+    After a download it had to resume, pip caches the file under the URL it
+    asked for, before any redirect, with the server's ``ETag``. The next request
+    for that URL revalidates with the ETag; the redirect (every GitHub release
+    asset has one) carries it to a freshly signed URL with no cache entry, the
+    server answers ``304 Not Modified``, and pip hashes the empty body as the
+    file. Every resolve then fails the same way until the entry expires, 14 days
+    on. Seen in pip 26.1.2 and still in 26.3 (host-python-windows-findings.md).
+    """
+    text = pip_output or ""
+    return "DO NOT MATCH THE HASHES" in text and _EMPTY_SHA256 in text
+
+
+def without_cache(cmd: list[str]) -> list[str]:
+    """*cmd*, a ``pip install`` argv, with pip's HTTP cache turned off."""
+    at = cmd.index("install") + 1
+    return [*cmd[:at], "--no-cache-dir", *cmd[at:]]
+
+
+def _indent(text: str) -> str:
+    return "\n".join(f"    {line}" for line in (text or "").splitlines())
 
 
 def version_str(version: tuple[int, ...]) -> str:

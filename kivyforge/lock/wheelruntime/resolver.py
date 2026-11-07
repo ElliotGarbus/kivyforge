@@ -31,13 +31,17 @@ from ..model import canonical_name
 from ..pip_progress import PROGRESS_ARGS, PipProgress, without_progress
 from ..prefer import Pins, constraint_args
 from ..resolver import (
+    CACHE_RETRY_NOTE,
     MIN_PIP_VERSION,
     abi_tags,
     dep_names_for_environment,
+    index_unreachable,
     pip_python_version,
     pip_version,
+    served_empty_file,
     unresolved_requirement,
     version_str,
+    without_cache,
 )
 from ..sources import (
     RECORD_KEY,
@@ -284,19 +288,32 @@ class PipWheelResolver:
             progress = PipProgress(
                 label or platform_tags[0], self._on_progress, self._on_transfer
             )
+
             # Streamed, so a slow resolve shows its downloads instead of
             # looking like a hang; run_streaming decodes pip's UTF-8.
-            returncode, transcript = run_streaming(
-                cmd,
-                env=env,
-                on_segment=progress,
-                on_quiet=progress.quiet if self._on_progress else None,
-            )
+            def run(argv: list[str]) -> tuple[int, str]:
+                return run_streaming(
+                    argv,
+                    env=env,
+                    on_segment=progress,
+                    on_quiet=progress.quiet if self._on_progress else None,
+                )
+
+            returncode, transcript = run(cmd)
+            if returncode != 0 and served_empty_file(without_progress(transcript)):
+                if self._on_progress is not None:
+                    self._on_progress(
+                        f"[lock] {label or platform_tags[0]}: {CACHE_RETRY_NOTE}"
+                    )
+                returncode, transcript = run(without_cache(cmd))
             if returncode == SOURCE_FILTER_UNAVAILABLE:
                 raise SourceFilterUnavailable(without_progress(transcript).strip())
             if returncode != 0:
                 tags = ", ".join(platform_tags)
                 output = without_progress(transcript)
+                unreachable = index_unreachable(output, f"platform tag(s) {tags}")
+                if unreachable:
+                    raise unreachable
                 culprit = unresolved_requirement(output)
                 fixed = culprit and policy.unavailable(
                     culprit, label or platform_tags[0]
