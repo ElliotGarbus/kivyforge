@@ -1030,8 +1030,8 @@ jobs:
     #                     1's trap: a 3.14.0a7 once passed a bare version
     #                     check and wrote bytecode 3.14.6 refused to import);
     #   3.14 final:       what the project ships; the resolver must find it by
-    #                     searching, and T3 runs under it because the magic
-    #                     check reads its own MAGIC_NUMBER;
+    #                     searching, and T3 runs under it, so the magic check
+    #                     answers from its own MAGIC_NUMBER;
     #   3.13:             the default, and what kivyforge itself runs under.
     - name: Set up a Python 3.15 pre-release (to be rejected)
       # Pinned to an exact pre-release, not '3.15' + allow-prereleases: that
@@ -1119,8 +1119,8 @@ jobs:
       # The same three checks android_gradle runs, against an APK produced by
       # the Windows code path. --android-stripped is what makes the .pyc magic
       # assertion fire, which is item 1's actual failure mode. Under 3.14,
-      # not the default 3.13: the magic check compares against the running
-      # interpreter's MAGIC_NUMBER, and refuses a mismatched runner outright.
+      # not the default 3.13: the magic check needs a final CPython of the
+      # shipped minor, and running under it makes that this interpreter.
       shell: bash
       env:
         KIVYFORGE_REQUIRE_TOOLCHAIN: '1'
