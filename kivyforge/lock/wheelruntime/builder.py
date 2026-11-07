@@ -370,6 +370,13 @@ def _normalized(lock: WheelRuntimeLock) -> WheelRuntimeLock:
                 key=lambda p: p.sort_key,
             )
         ),
+        # In `archs` order when resolved, by arch on disk.
+        python_runtime=dataclasses.replace(
+            lock.python_runtime,
+            artifacts=tuple(
+                sorted(lock.python_runtime.artifacts, key=lambda a: a.arch)
+            ),
+        ),
         native_binaries=tuple(sorted(lock.native_binaries, key=lambda b: b.name)),
         include_files=tuple(sorted(lock.include_files, key=lambda p: p.key)),
         swift_packages=tuple(sorted(lock.swift_packages, key=lambda s: s.name)),

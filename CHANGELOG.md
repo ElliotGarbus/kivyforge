@@ -30,6 +30,14 @@
   `KF-LOCK-INCOMPLETE` (exit 4), and release builds ship source
   (`byte_compile = "release"`) or fail (`true`).
 
+### `lock --check` accepts a desktop lock whose `archs` aren't in alphabetical order
+
+- **Fixed:** with `archs = ["x86_64", "aarch64"]` on Linux (or, say,
+  `["arm64", "amd64"]` on Windows), `lock --check` failed with
+  `KF-LOCK-DRIFT` (exit 4) and an empty diff straight after `lock` wrote the
+  file. The file lists runtimes by arch and the check compared them in `archs`
+  order. Nothing to re-lock.
+
 ### iOS: `run` shows the app's Python output again
 
 - **Fixed:** with CPython 3.15 final, `kivyforge run -p ios` showed only native
