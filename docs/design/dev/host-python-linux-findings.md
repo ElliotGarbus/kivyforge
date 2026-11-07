@@ -20,20 +20,31 @@ test_reloaded_lock_equals_one_resolved_in_archs_order` fails without the fix
 and passes with it, and the real `lock --check` then exits `0`. CHANGELOG
 entry under `[Unreleased]`.
 
+**A second, smaller defect, fixed after review (`8a6400d7`).** A release
+build's `KF-HOST-PYTHON-FETCH` (Step 5, the warning and the `byte_compile =
+true` error) had the URL only in its message, while `upgrade`'s carried
+`context.url`. `compiler_for` turns the fetch error into an `Unavailable` and
+kept its code and exit status but not its context. The warning path also
+ignored the classification's own context, so the `KF-BYTECOMPILE-NO-INTERP`
+warning (Step 7) lacked the `context.tool` its error had. `diagnostics.py`
+documents both fields for the code, not for one severity. Three tests in
+`tests/bundle/test_hostpython.py::TestFetchFailureContext` fail without the
+fix; re-run on this host, both Step 5 builds then carry `context.url` and the
+Step 7 warning `context.tool` (verbatim under those steps).
+
 Every other step held as the prompt predicted. Of its six unproven items, all
 six are now observed on this host: `aarch64` packaging with the pin (Step 3),
 the mirror (4), a hash mismatch from a real server and a corrupted cache entry
 (5), the install lock (6, with the caveat there), `never` mode and `--no-cache`
 with it (7), and WSL2 (this host).
 
-Three things that are not defects, recorded so nobody rediscovers them:
+Two things that are not defects, recorded so nobody rediscovers them:
 
-- The hash-mismatch **build** diagnostics (Step 5, warning and error) carry no
-  `context.url`; `upgrade`'s error does. The URL is in their message, so
-  nothing is lost, but a consumer reading `context` gets it from one verb only.
 - `--no-cache` with `KIVYFORGE_HOST_PYTHON_DOWNLOADS=never` is `KF-ERROR`,
-  exit `1` (Step 7). The prompt expects exit `1`; the code is the unspecific
-  one, which AGENTS.md calls "never wrong".
+  exit `1` (Step 7). This is what the design decided
+  (`host-python-download-proposal.md` 3.7, "a usage error, exit 1"); the code
+  is the unspecific one, which AGENTS.md calls "never wrong", and nothing can
+  recover from it automatically, so a dedicated code would buy nothing.
 - `kivyforge --version` prints `0.1.0`: `main` released 0.1.0 as the first
   public beta (`4e2a44ef`) after the `3.0.0.dev1` series.
 
@@ -284,7 +295,7 @@ payload .py: 336, .pyc: 0
 
 `ok: true`, one `folder` artifact, one diagnostic
 `{"code": "KF-HOST-PYTHON-FETCH", "severity": "warning", "message": "not byte-compiling: ..."}`
-(no `context`). The bad bytes were not cached: afterwards the archive's `39/`
+(no `context`, the second defect). The bad bytes were not cached: afterwards the archive's `39/`
 folder was empty and `host-python/` held only `<PIN>.lock`.
 
 With `byte_compile = true` added under `[tool.kivy.linux.build_settings]`:
@@ -294,6 +305,24 @@ exit=3
 ```
 
 `ok: false`, `artifacts: []`, one `KF-HOST-PYTHON-FETCH` error: "[tool.kivy.linux.build_settings].byte_compile = true, but the host CPython archive doesn't match the lock's SHA-256 (...)", with the same `Fix:` and `remediation` (no `context`). Setting removed afterwards.
+
+**After `8a6400d7`**, the same two builds, the mirror restarted with
+`"$PY" -m http.server 8765 --bind 127.0.0.1 --directory "$W/mirror" & echo $!`
+(which records the server's own PID, so `kill` stops it):
+
+```json
+[{"code": "KF-HOST-PYTHON-FETCH", "severity": "warning",
+  "message": "not byte-compiling: the host CPython archive doesn't match the lock's SHA-256 (http://127.0.0.1:8765/20260805/cpython-3.13.14%2B20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz).",
+  "context": {"url": "http://127.0.0.1:8765/20260805/cpython-3.13.14%2B20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"}}]
+```
+```json
+[{"code": "KF-HOST-PYTHON-FETCH", "severity": "error",
+  "message": "[tool.kivy.linux.build_settings].byte_compile = true, but the host CPython archive doesn't match the lock's SHA-256 (...).\n  Fix: ...",
+  "remediation": "check that KIVYFORGE_HOST_PYTHON_MIRROR serves the pinned file unchanged; ...",
+  "context": {"url": "http://127.0.0.1:8765/20260805/cpython-3.13.14%2B20260805-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"}}]
+```
+
+Exit `0` and `3`, as before.
 
 Mirror stopped and `KIVYFORGE_HOST_PYTHON_MIRROR` unset; the good archive put
 back and truncated to 1 MB:
@@ -310,8 +339,10 @@ $ sha256sum <cached archive>
 39e82d05926bdcd206732026bcd878d9f00e288cd227d91c1fabf379b6ea4fa5
 ```
 
-The prompt's `kill "$(cat http.pid)"` did not stop the server here (the saved
-PID was not the server's), so it was still listening during this build. The
+The prompt's `kill "$(cat http.pid)"` did not stop the server here: `$!`
+inside `( cd ... && setsid nohup ... & )` is the PID of the backgrounded
+`cd && setsid` list, not of the Python server, so it was still listening
+during this build. A test-script problem, not kivyforge's. The
 server log shows no request after the up-check that found it, so the
 re-download came from GitHub, as intended; the server was stopped afterwards
 with `pkill -f 'http.server 8765'`.
@@ -371,7 +402,9 @@ exit=0
 ```
 
 `ok: true`, one `folder` artifact, one warning
-`{"code": "KF-BYTECOMPILE-NO-INTERP", "message": "not byte-compiling: the locked host CPython 3.13.14 (x86_64-unknown-linux-gnu) isn't in the cache, and KIVYFORGE_HOST_PYTHON_DOWNLOADS=never."}`.
+`{"code": "KF-BYTECOMPILE-NO-INTERP", "message": "not byte-compiling: the locked host CPython 3.13.14 (x86_64-unknown-linux-gnu) isn't in the cache, and KIVYFORGE_HOST_PYTHON_DOWNLOADS=never."}`,
+with no `context`. After `8a6400d7` the same run's warning carries
+`"context": {"tool": "python3.13"}`, exit `0`.
 The install and archive were put back (`.kivyforge-complete` present, archive
 hash `$PIN`).
 
