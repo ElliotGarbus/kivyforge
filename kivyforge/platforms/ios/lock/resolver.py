@@ -47,13 +47,17 @@ from kivyforge.lock.pip_progress import (
 )
 from kivyforge.lock.prefer import Pins, constraint_args
 from kivyforge.lock.resolver import (
+    CACHE_RETRY_NOTE,
     MIN_PIP_VERSION,
     abi_tags,
     dep_names_for_environment,
+    index_unreachable,
     pip_python_version,
     pip_version,
+    served_empty_file,
     unresolved_requirement,
     version_str,
+    without_cache,
 )
 from kivyforge.lock.sources import (
     RECORD_KEY,
@@ -336,16 +340,31 @@ class PipResolver:
             progress = PipProgress(
                 label or platform_tag, self._on_progress, self._on_transfer
             )
-            returncode, transcript = run_streaming(
-                cmd,
-                env=env,
-                on_segment=progress,
-                on_quiet=progress.quiet if self._on_progress else None,
-            )
+
+            def run(argv: list[str]) -> tuple[int, str]:
+                return run_streaming(
+                    argv,
+                    env=env,
+                    on_segment=progress,
+                    on_quiet=progress.quiet if self._on_progress else None,
+                )
+
+            returncode, transcript = run(cmd)
+            if returncode != 0 and served_empty_file(without_progress(transcript)):
+                if self._on_progress is not None:
+                    self._on_progress(
+                        f"[lock] {label or platform_tag}: {CACHE_RETRY_NOTE}"
+                    )
+                returncode, transcript = run(without_cache(cmd))
             if returncode == SOURCE_FILTER_UNAVAILABLE:
                 raise SourceFilterUnavailable(without_progress(transcript).strip())
             if returncode != 0:
                 output = without_progress(transcript)
+                unreachable = index_unreachable(
+                    output, f"the iOS slice {platform_tag!r}"
+                )
+                if unreachable:
+                    raise unreachable
                 culprit = unresolved_requirement(output)
                 fixed = culprit and policy.unavailable(culprit, platform_tag)
                 if fixed:
