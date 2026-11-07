@@ -294,6 +294,48 @@ class TestPolicy:
         assert exc.value.exit_code == exit_codes.LOCK_DRIFT
 
 
+class TestFetchFailureContext:
+    """A build's fetch failure names the URL in ``context``, as ``upgrade``'s does."""
+
+    def _mismatch(self, byte_compile, cache, notes, context=None):
+        from kivyforge.report.failures import ClassifiedError
+
+        return hostpython.pinned_compiler(
+            (_entry(sha="0" * 64),),
+            platform="ios",
+            python_version="3.15.2",
+            byte_compile=byte_compile,
+            table="tool.kivy.ios.python.build_settings",
+            what=" pip-deps",
+            error=ClassifiedError,
+            echo=lambda line: None,
+            note=lambda *a: notes.append(a),
+            context=context,
+            cache=cache,
+            downloader=_Downloader(),
+        )
+
+    def test_the_warning_carries_the_url_beside_the_caller_s_context(self, cache):
+        notes = []
+        assert self._mismatch("release", cache, notes, {"payload": "pip-deps"}) is None
+        ((code, _message, context),) = notes
+        assert code == diagnostics.HOST_PYTHON_FETCH
+        assert context == {"url": _entry().url, "payload": "pip-deps"}
+
+    def test_the_warning_carries_the_url_without_a_caller_context(self, cache):
+        notes = []
+        self._mismatch("release", cache, notes)
+        assert notes[0][2] == {"url": _entry().url}
+
+    def test_true_fails_with_the_url(self, cache):
+        from kivyforge.report.failures import ClassifiedError
+
+        with pytest.raises(ClassifiedError) as exc:
+            self._mismatch(True, cache, [])
+        assert exc.value.code == diagnostics.HOST_PYTHON_FETCH
+        assert exc.value.context == {"url": _entry().url}
+
+
 class TestInstallLock:
     @pytest.mark.requires_posix
     def test_a_held_lock_times_out_instead_of_racing(self, cache, runs_as, monkeypatch):

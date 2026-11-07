@@ -38,6 +38,17 @@
   file. The file lists runtimes by arch and the check compared them in `archs`
   order. Nothing to re-lock.
 
+### A build's byte-compile warning carries the same `context` as its error
+
+- **Fixed:** when a release build couldn't fetch the pinned host CPython (a
+  hash mismatch or a failed download), its `KF-HOST-PYTHON-FETCH` diagnostic,
+  the warning under `byte_compile = "release"` and the error under `true`,
+  had the URL only in the message. It is now also in `context.url`, as in
+  `upgrade`'s.
+- **Fixed:** the `KF-BYTECOMPILE-NO-INTERP` warning (no host CPython to
+  compile with, source shipped) now names the interpreter in `context.tool`,
+  as the error under `byte_compile = true` already did.
+
 ### iOS: `run` shows the app's Python output again
 
 - **Fixed:** with CPython 3.15 final, `kivyforge run -p ios` showed only native
