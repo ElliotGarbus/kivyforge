@@ -2,13 +2,31 @@
 
 Run of [`host-python-windows-prompt.md`](host-python-windows-prompt.md) on a
 Windows 11 host, 2026-11-06, from `main` at `758dc40e` (the merge of PR #214).
-Everything the prompt asked about the Windows install path **passed**. Two
-things did not go as the prompt predicted; neither is a defect in the host-CPython
-code, and one is unexplained. They come first.
+Everything the prompt asked about the Windows install path **passed**. Three
+things did not go as the prompt predicted. None is a defect in the host-CPython
+code; two were defects elsewhere and are fixed on branch
+`host-python-windows-findings`. They come first, each with its root cause.
 
 ## Defects and surprises
 
-### 1. Step 3's log has no `installing` or `[download]` line — unexplained, not reproduced
+### 1. Step 3's log has no `installing` or `[download]` line — the command ran twice
+
+**Root cause: the test harness, not kivyforge.** Step 3's `package` command ran
+twice; the log I kept is the second run's, which found the first run's install
+complete. Every `package -p android` makes two Gradle builds, and the Gradle
+daemon log (under the sandbox's `gradle\daemon\8.11.1\daemon-33136.out.log`)
+has two pairs before step 4:
+
+| Gradle builds | Which run |
+|---|---|
+| 17:26:05 (first build in a new daemon; "BUILD SUCCESSFUL in 8m 52s", counted from the client's start, about 17:20) to 17:30:19 | first `package`: made the install at 17:19:41-17:19:57 |
+| 17:31:32 to 17:31:52 | second `package`: the 83 s log, last written 17:31:52 |
+
+The first call was one the tool harness reported as rejected and ran anyway
+(it did that to other calls in this run too). Its output was never captured, so
+the `installing` and `[download]` lines went with it. No code change.
+
+The original analysis, kept because it still holds:
 
 The first release build after a cold start (`package -p android ... --json`, no
 Python on `PATH`) exited 0, compiled with
@@ -20,11 +38,8 @@ stderr (104 lines) contains neither
 What the filesystem says: the `host-python\<Pin>` directory and its `.lock` file
 were created at 17:19:41-17:19:57, but that build's log was last written at
 17:31:52 (it ran 83 s). So the install was made **by a different process, about
-ten minutes earlier**, and step 3 found it complete. I can't say which process
-that was: `doctor` (checked afterwards, with the install and archive moved away)
-creates nothing, and no other kivyforge command of mine ran at that time. It
-may have been a call that the tool harness reported as rejected and ran anyway;
-I can't show that.
+ten minutes earlier**, and step 3 found it complete. `doctor` (checked
+afterwards, with the install and archive moved away) creates nothing.
 
 The log lines are not lost to `--json`, to a cold archive cache or to a missing
 `host-python` directory. Three later builds reproduced each of those conditions
@@ -58,11 +73,43 @@ ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS FILE. ...
 
 `e3b0c442...` is the SHA-256 of zero bytes. The wheel itself downloads fine from
 this machine (8,889,878 bytes, SHA-256 `078870f0...`, the lock's value). The same
-`--check` passed at once with `PIP_NO_CACHE_DIR=1`, so pip's HTTP cache (here
-under a Cursor sandbox temp directory) holds a bad entry from the outage. I did
-not inspect the cache entry. This has nothing to do with the host CPython, but
-the diagnostic names the wrong cause. I ran every later step with
+`--check` passed at once with `PIP_NO_CACHE_DIR=1`. I ran every later step with
 `PIP_NO_CACHE_DIR=1`.
+
+**Root cause: two separate faults.**
+
+*The misleading message is kivyforge's.* The three pip resolvers (Android, iOS,
+and the wheel runtime the desktop platforms use) read any failed resolve as
+"a dependency has no wheel". Under `lock --check` that failure then made
+`resolve_preferring` retry without pins, which also failed, so it reported
+`KF-LOCK-PINS-CONFLICT` and advised `--update`. None of that was true: pip had
+said `Could not install packages due to an OSError: ... Max retries exceeded`.
+
+*The empty file is pip's.* The cache was copied aside (`C:\kf\hostpy\badcache`,
+pip's `http-v2` layout) and the failure reproduced with plain `pip install
+--dry-run` against it, in pip 26.1.2 and again in 26.3, so it is not kivyforge's
+invocation. The mechanism: when a download has to be resumed after a dropped
+connection, pip caches the finished file under the URL it *asked for*, before
+any redirect, together with the server's `ETag`. The next request for that URL
+revalidates with that `ETag`. A GitHub release asset always redirects to a
+freshly signed URL that has no cache entry of its own. The `ETag` goes with the
+redirect, the server answers `304 Not Modified`, and pip hashes the 304's empty
+body as the wheel. A healthy network doesn't help, so every resolve fails until
+the entry expires, 14 days later. Index-hosted wheels (PyPI) don't redirect and
+aren't affected. Kivy's Android wheels are GitHub release assets.
+
+**Fixed:**
+
+- pip losing its connection is now `KF-LOCK-INDEX-UNREACHABLE`, exit 3, naming
+  the `host` in `context`. It is classified before any "no wheel" reading, and
+  `resolve_preferring` doesn't catch it, so it never becomes a pins conflict.
+- A hash mismatch whose "Got" is the empty-input hash makes the resolver say so
+  on stderr and resolve once more with `--no-cache-dir`. Any other mismatch is
+  reported as before, without a retry.
+- Still open: a host that can't be reached before pip has read the package's
+  index page is reported by pip as "from versions: none", which kivyforge can't
+  tell apart from a package with no wheel. The bug in pip's cache also stays
+  until pip fixes it; `pip cache purge` clears an entry.
 
 ### 3. The prompt's APK check needs a Python 3.14 runner
 
@@ -70,7 +117,19 @@ Step 3 runs `tests/platforms/android/test_apk_artifact.py` with the repo venv's
 Python, which was 3.13 here, and the test fails by design: "ships CPython 3.14,
 but this test is running under 3.13 ... Pin the CI job's setup-python to 3.14."
 I ran it from a throwaway 3.14 venv (`py -3.14 -m venv`, `pip install -e ".[dev]"`
-from the repo, outside the repo tree) and it passed. The prompt should say so.
+from the repo, outside the repo tree) and it passed.
+
+**Root cause:** the check of the APK's `.pyc` magic numbers took the expected
+magic from the interpreter running the test, so it could only answer for one
+minor. The magic belongs to the shipped CPython minor, and kivyforge already
+knows how to find a final CPython of a given minor on the host
+(`find_interpreter` in `kivyforge/bundle/pycompile.py`).
+
+**Fixed:** the driver now asks a final CPython of the shipped minor for its
+`importlib.util.MAGIC_NUMBER`: itself when it is that minor, otherwise one found
+on the host (`py -3.14` here). It fails, saying what to install, only when the
+host has none. The same check from the 3.13 repo venv now passes. The `.aab`
+driver shares the code.
 
 ## Environment
 
@@ -110,7 +169,7 @@ Deviations from the prompt, all because of this host:
 | 0 | environment | table above |
 | 1 | pre-table `--check` exit 4 `KF-LOCK-INCOMPLETE`; `lock` exit 0; diff empty; `--check` exit 0 | **pass** (clean rerun; see defect 2 for the first attempt) |
 | 2 | doctor PASS "downloaded on the first release build" | **pass** |
-| 3 | package, no Python on `PATH`: exit 0, one APK, stripped APK passes T3 | **pass**, but the install lines are missing from this log (defect 1) |
+| 3 | package, no Python on `PATH`: exit 0, one APK, stripped APK passes T3 | **pass**; the install lines are in an earlier run of the same command (defect 1) |
 | 4 | second build: no install; reinstall over an install with the marker removed | **pass**, no `WinError` |
 | 5 | two concurrent builds, one install | **pass**: exactly one logged `installing` |
 | 6 | `never` warm and cold; `byte_compile = true` fails; two misuses | **pass** |
@@ -228,4 +287,8 @@ With the pin moved away and `byte_compile = true`:
 - Antivirus holding a fresh `python.exe` during step 4's rename: it did not
   happen, so the failure path was not exercised.
 - PowerShell 7; this ran under 5.1, with `cmd` doing the redirection.
-- Defect 1's missing log lines: a 4-for-4 clean result later, no cause found.
+- Defect 2's lost-connection classification is tested only hermetically, at the
+  seam where the resolvers call pip; it has not met a real outage. The cache
+  retry has: `lock -p android --check --json` with `PIP_CACHE_DIR` on a copy of
+  the poisoned cache logged `[lock] arm64_v8a: pip's HTTP cache served an empty
+  file; retrying without it ...` and exited 0, `ok: true`, `in_sync: true`.
