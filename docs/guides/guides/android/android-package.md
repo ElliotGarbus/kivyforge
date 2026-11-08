@@ -79,9 +79,10 @@ set_dark_mode_listener(lambda dark: print("dark mode:", dark))
 
 - `android.mActivity` is looked up each time you read it. `from android import
   mActivity` still binds it once, as before.
-- `remove_presplash()` and `android.loadingscreen.hide_loading_screen()` do
-  nothing: the app's splash is Android's system splash screen, which closes on
-  the first frame.
+- `remove_presplash()` and `android.loadingscreen.hide_loading_screen()` both
+  end the splash, which is Android's system splash screen. Kivy calls this for
+  you at its first frame, so you don't need to. If the app never gets that far,
+  the splash ends on its own after 30 seconds.
 - In a service, `android.mActivity` is `None`, because a service runs in its
   own process. Use `PythonService.mService`; see
   [Add a background service](services.md).

@@ -52,8 +52,14 @@ def __getattr__(name):
 
 
 def remove_presplash():
-    """Nothing to remove: the app's splash is the system splash screen, which
-    Android dismisses when the first frame draws."""
+    """End the splash, which the activity holds until the app has drawn.
+
+    Kivy 2.3.1 calls this at its first frame; it is the same release Kivy 3
+    makes through ``_kivy_bootstrap``.
+    """
+    from _kivy_bootstrap import remove_presplash
+
+    remove_presplash()
 
 
 def open_url(url):

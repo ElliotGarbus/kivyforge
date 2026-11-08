@@ -1,18 +1,22 @@
 """Generate the splash-screen resources (android/01 §splash, android/04).
 
 The splash model is the platform's: *a centered icon on a background*, driven
-entirely by ``windowSplashScreen*`` theme attributes with no runtime dependency
-and no code in the activity. Two layers of resources come out of one config:
+entirely by ``windowSplashScreen*`` theme attributes with no runtime dependency.
+Two layers of resources come out of one config:
 
 - ``values-v31/`` carries the real attributes. On Android 12+ the OS draws the
   system splash from them, so an ``AnimatedVectorDrawable`` source animates and
   ``animation_duration``/``branding`` mean what they say.
 - The base theme's ``android:windowBackground`` gets a generated layer-list of
-  the same background + icon. That is what fills the gap below API 31 — where no
-  system splash exists at all — and, on every API level, what the window shows
-  between the splash handing off and Kivy drawing its first frame. Without it
-  that handoff cuts to a blank window, which for a cold start (unpack the bundle,
-  boot CPython) is seconds of apparent hang.
+  the same background + icon. Below API 31, where no system splash exists, the
+  starting window drawn from it *is* the splash.
+
+Neither layer alone survives a cold start. Both are dismissed at the activity
+window's first draw, which comes right after ``onCreate``, and SDL's
+SurfaceView then shows black until Kivy renders — seconds, for a cold start
+that unpacks the bundle and boots CPython. So the generated ``PythonActivity``
+withholds that first draw until Kivy's first frame calls ``remove_presplash()``
+(or a fallback timeout fires); this module only produces the resources.
 
 **Icon sizing** follows the platform spec: the icon drawable is 288dp with the
 inner two thirds guaranteed visible, or 240dp/160dp when ``icon_background``

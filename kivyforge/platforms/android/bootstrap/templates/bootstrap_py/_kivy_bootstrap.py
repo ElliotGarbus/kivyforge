@@ -16,14 +16,20 @@ The Activity is read fresh on every call and never cached.  Android recreates it
 on rotation, on configuration change and after process death, so a stored
 instance both goes stale and pins a JNI reference to a dead Activity.
 
-Only ``get_activity()`` is implemented; the contract's optional members are
-deliberately absent.  ``get_context()`` would only repeat what Kivy already
-derives from the Activity.  ``remove_presplash()`` has nothing to do: kivyforge's
-splash is the platform's own — the system splash window on API 31+, and the
-theme's ``windowBackground`` below it — so it is dismissed by the framework when
-the first frame draws rather than being a View anyone can tear down, unlike
-python-for-android, which overlays a View and must remove it.  Kivy treats an
-absent hook as the no-op it is, so there is nothing to stub out.
+``get_activity()`` and the optional ``remove_presplash()`` are implemented;
+``get_context()`` is deliberately absent, since it would only repeat what Kivy
+already derives from the Activity.
+
+kivyforge's splash is the platform's own: the system splash on API 31+, and the
+starting window drawn from the theme's ``windowBackground`` below it.  Android
+dismisses either as soon as the activity's window first draws, which is right
+after ``onCreate`` and seconds before Kivy has drawn anything, so the activity
+holds its window's draws until ``remove_presplash()`` releases them.  That is
+the "keep-on-screen condition" Kivy's contract describes, rather than a View
+that python-for-android overlays and must remove.  Only Kivy knows when its
+first frame is ready, which is why the release is its call to make; the
+activity also gives up on its own after a timeout, for an app that never gets
+that far.
 """
 
 from jnius import autoclass
@@ -50,3 +56,15 @@ def get_activity():
         # Kivy's discovery import, where it would look like a missing module.
         _activity_class = autoclass(_ACTIVITY_CLASS)
     return _activity_class.mActivity
+
+
+def remove_presplash():
+    """Let the activity draw, ending the splash; Kivy calls this at its first frame.
+
+    Idempotent, as the contract asks: the activity ignores a second release.
+    With no Activity there is no splash to end.
+    """
+    activity = get_activity()
+    if activity is None:
+        return
+    activity.removePresplash()

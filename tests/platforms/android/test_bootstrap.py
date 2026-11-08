@@ -253,7 +253,56 @@ class TestRender:
         # The Activity is recreated on rotation and after process death, so it
         # has to be read per call rather than stashed at import.
         assert "return _activity_class.mActivity" in source
+        # The optional hook Kivy calls at its first frame, which ends the splash.
+        assert "def remove_presplash():" in source
         compile(source, "_kivy_bootstrap.py", "exec")
+
+    @pytest.mark.parametrize("present", [True, False])
+    def test_remove_presplash_releases_the_live_activity(self, monkeypatch, present):
+        import sys
+        import types
+        from unittest import mock
+
+        activity = mock.MagicMock(name="activity") if present else None
+        jnius = types.ModuleType("jnius")
+        jnius.autoclass = lambda _name: types.SimpleNamespace(  # type: ignore[attr-defined]
+            mActivity=activity
+        )
+        monkeypatch.setitem(sys.modules, "jnius", jnius)
+        namespace: dict[str, object] = {}
+        exec(kivy_bootstrap_source(), namespace)
+        remove_presplash = namespace["remove_presplash"]
+        assert callable(remove_presplash)
+        assert remove_presplash() is None
+        if activity is not None:
+            activity.removePresplash.assert_called_once_with()
+
+    @pytest.mark.parametrize("sdl", [2, 3])
+    def test_activity_holds_the_splash_until_released(self, sdl):
+        """Android drops the splash at the window's first draw, seconds before
+        Kivy renders; the activity must skip draws until Kivy releases it."""
+        activity = _by_path(render_bootstrap(sdl=sdl, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonActivity.java"
+        ]
+        assert "public void removePresplash() {" in activity
+        assert "private static volatile boolean splashReleased = false;" in activity
+        assert "addOnPreDrawListener(" in activity
+        assert "if (!splashReleased) {\n                            return false;" in (
+            activity
+        )
+        # Held whether or not a splash is configured: unconfigured, API 31+
+        # still shows the default splash, which beats a black window.
+        onCreate = activity[activity.index("protected void onCreate(") :]
+        onCreate = onCreate[: onCreate.index("\n    }\n")]
+        assert "holdSplash();" in onCreate
+        assert re.search(r"SPLASH_TIMEOUT_MS = \d{5,};", activity)
+        # androidx's SplashScreen would be the obvious route, and a dependency.
+        assert "import androidx" not in activity
+
+    def test_selftest_releases_the_splash_and_checks_the_member(self):
+        source = selftest_source()
+        assert "_kivy_bootstrap.remove_presplash()" in source
+        assert '"removePresplash",' in source
 
     def test_selftest_asserts_the_kivy_contract_on_device(self):
         # A unit test of the staging code cannot catch a bundle that starts and
