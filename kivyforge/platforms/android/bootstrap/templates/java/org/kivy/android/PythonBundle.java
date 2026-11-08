@@ -61,8 +61,16 @@ public class PythonBundle {
         }
         Log.i(TAG, "unpacking bundle...");
         long t0 = System.currentTimeMillis();
+        // The stamp is what declares the bundle complete, so it goes first and
+        // comes back last: a process killed mid-unpack (an install or a test
+        // runner force-stopping the app) must leave no stamp, or the next start
+        // skips the unpack and boots Python from a half-written bundle.
+        stamp.delete();
         deleteRecursive(target);
-        extractAssetDir(ctx, "_python_bundle", ctx.getFilesDir());
+        extractAssetDir(ctx, "_python_bundle", ctx.getFilesDir(), "_python_bundle/VERSION");
+        try (OutputStream out = new FileOutputStream(stamp)) {
+            out.write(wanted.getBytes(StandardCharsets.UTF_8));
+        }
         Log.i(TAG, "bundle unpacked in " + (System.currentTimeMillis() - t0) + " ms");
         Os.setenv("KF_UNPACK_SKIPPED", "0", true);
         return target;
@@ -100,7 +108,7 @@ public class PythonBundle {
         return bos.toByteArray();
     }
 
-    private static void extractAssetDir(Context ctx, String path, File targetDir)
+    private static void extractAssetDir(Context ctx, String path, File targetDir, String skip)
             throws Exception {
         String[] names = ctx.getAssets().list(path);
         if (names == null) throw new RuntimeException("cannot list asset " + path);
@@ -109,11 +117,12 @@ public class PythonBundle {
             throw new RuntimeException("mkdirs failed: " + subdir);
         for (String name : names) {
             String subPath = path + "/" + name;
+            if (subPath.equals(skip)) continue;
             InputStream in;
             try {
                 in = ctx.getAssets().open(subPath);
             } catch (FileNotFoundException e) {
-                extractAssetDir(ctx, subPath, targetDir);
+                extractAssetDir(ctx, subPath, targetDir, skip);
                 continue;
             }
             try (InputStream input = in;

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### An Android app killed while unpacking its Python bundle no longer stays broken
+
+- **Fixed:** if an Android app was stopped while it unpacked its Python bundle
+  on first launch, every start after that skipped the unpack and failed with
+  `Failed to import encodings module` in logcat, until the app was
+  reinstalled. An install could stop it this way, and so could a test runner
+  or the user. The most reliable way to hit it was
+  `kivyforge run -p android --device --smoke` straight after a plain
+  `kivyforge run`. The bundle's version stamp is now written only once the
+  unpack has finished, so an interrupted unpack starts again on the next
+  launch. Nothing to change in your project. A phone with an app already in
+  this state needs it reinstalled once (or `adb shell pm clear <package>`):
+  installing a rebuild over it keeps the stale stamp unless the app's Python
+  content changed too.
+
 ### The Android splash stays up until Kivy's first frame
 
 - **Fixed:** on Android 12 and later, the splash closed as soon as the app
