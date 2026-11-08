@@ -103,6 +103,27 @@ class TestRender:
             in files["java/org/kivy/android/PythonBundle.java"]
         )
 
+    def test_bundle_stamp_is_removed_first_and_written_last(self):
+        """A matching stamp makes the next start skip the unpack, so it may only
+        exist over a complete bundle. Unpacked with everything else, it landed
+        midway, and a test runner force-stopping the app during the unpack left
+        a stamped, half-written bundle: Python then failed to import encodings
+        on every start until the app was reinstalled."""
+        bundle = _by_path(render_bootstrap(sdl=2, python_version="3.14.6"))[
+            "java/org/kivy/android/PythonBundle.java"
+        ]
+        unpack = bundle[bundle.index('Log.i(TAG, "unpacking bundle...");') :]
+        order = [
+            "stamp.delete();",
+            "deleteRecursive(target);",
+            'extractAssetDir(ctx, "_python_bundle", ctx.getFilesDir(), "_python_bundle/VERSION");',
+            "new FileOutputStream(stamp)",
+            '"bundle unpacked in "',
+        ]
+        positions = [unpack.index(step) for step in order]
+        assert positions == sorted(positions)
+        assert "if (subPath.equals(skip)) continue;" in bundle
+
     @pytest.mark.parametrize(
         ("fullscreen", "literal"), [(True, "true"), (False, "false")]
     )
