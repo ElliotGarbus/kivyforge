@@ -78,7 +78,7 @@ Icons and splash screens are platform-specific. Android uses **adaptive icons**
 (a foreground + background layer, per [Android adaptive icons](https://developer.android.com/develop/ui/views/launch/icon_design_adaptive))
 and the **platform splash screen** — the system splash window on API 31+, which
 supports a static or **animated** (AnimatedVectorDrawable) icon natively, with no
-extra dependency and no code in the activity. Each is declared in its own
+extra dependency. Each is declared in its own
 subtable. If `[tool.kivy.android.icons]`
 or `[tool.kivy.android.splash]` is absent, kivyforge emits a plain default
 launcher icon / no custom splash. The overall app theme (the splash's parent and
@@ -110,12 +110,20 @@ the load-order-sensitive part of the activity.
 
 Because those attributes only exist from API 31, `kivyforge build` also generates
 a `windowBackground` layer-list (the same background color with the same icon
-centered on it) into the base theme. That layer covers two gaps: on API 24–30
-there is no system splash at all, and on *every* API level it is what the window
-shows between the system splash handing off and Kivy drawing its first frame —
-which for a cold start (unpack the bundle, boot CPython) is seconds of otherwise
-blank window. `animation_duration` and `branding` are API 31 concepts and are
-inert below it; the icon is static there.
+centered on it) into the base theme. On API 24–30 there is no system splash at
+all, and the starting window drawn from that layer is the splash.
+`animation_duration` and `branding` are API 31 concepts and are inert below it;
+the icon is static there.
+
+Both are dismissed at the activity window's first draw, which happens right
+after `onCreate` — long before Kivy renders, and SDL's surface is black in
+between. So the generated activity **holds the splash until Kivy's first
+frame**: it withholds its first draw until Kivy calls `remove_presplash()`
+(both Kivy generations do, at the first frame), with a fallback timeout for an
+app that never gets there. The hold applies whether or not a splash is
+configured, so an app without one keeps the plain launch window instead of
+black. See [gradle-project-generation §"Theme and splash
+resources"](04-gradle-project-generation.md#theme-and-splash-resources).
 
 A configured splash requires `compile_sdk >= 31`, since AAPT resolves attribute
 names against the compile SDK regardless of which `values-*` folder they sit in.

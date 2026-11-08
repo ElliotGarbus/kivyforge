@@ -10,9 +10,13 @@ import android.graphics.Color;
 import android.graphics.Insets;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.system.Os;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -78,6 +82,21 @@ public class PythonActivity extends SDLActivity {
     // §namespace preservation).
     public static PythonActivity mActivity = null;
 
+    // Android dismisses the splash (the system splash on API 31+, the starting
+    // window below) when this window first draws, right after onCreate, while
+    // SDL's surface stays black until Kivy renders. Draws are held until Kivy
+    // calls remove_presplash() (through _kivy_bootstrap) at its first frame.
+    // Kivy calls it once per process, so the flag is static: an activity
+    // recreated after that must not hold again.
+    private static volatile boolean splashReleased = false;
+    private static boolean splashTimeoutPosted = false;
+    private static long splashHeldAt = 0;
+
+    // Only an app that never reaches Kivy's event loop should hit this; it is
+    // generous because a slow device's cold start is legitimately long
+    // (android/04 §"Theme and splash resources").
+    private static final long SPLASH_TIMEOUT_MS = 30000;
+
     @Override
     protected String getMainFunction() {
         return "SDL_main";
@@ -111,8 +130,62 @@ public class PythonActivity extends SDLActivity {
             throw new RuntimeException(e);
         }
         super.onCreate(savedInstanceState);
+        // With broken libraries SDL shows an error dialog instead, and Python
+        // never starts to release the hold.
+        if (!mBrokenLibraries) {
+            holdSplash();
+        }
         if (PAD_SYSTEM_BARS && Build.VERSION.SDK_INT >= 30) {
             padForSystemBars();
+        }
+    }
+
+    // A pre-draw listener returning false is how androidx's
+    // setKeepOnScreenCondition holds the splash; this is the same mechanism
+    // without the dependency. Every listener still runs, so SDL's SurfaceView
+    // still creates its surface and SDL_main still starts.
+    private void holdSplash() {
+        if (splashReleased) {
+            return;
+        }
+        final View content = findViewById(android.R.id.content);
+        if (content == null) {
+            return;
+        }
+        content.getViewTreeObserver().addOnPreDrawListener(
+                new ViewTreeObserver.OnPreDrawListener() {
+                    @Override
+                    public boolean onPreDraw() {
+                        if (!splashReleased) {
+                            return false;
+                        }
+                        content.getViewTreeObserver().removeOnPreDrawListener(this);
+                        return true;
+                    }
+                });
+        if (!splashTimeoutPosted) {
+            splashTimeoutPosted = true;
+            splashHeldAt = SystemClock.uptimeMillis();
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (!splashReleased) {
+                    splashReleased = true;
+                    Log.w(TAG, "splash: the app did not call remove_presplash() within "
+                            + SPLASH_TIMEOUT_MS + " ms; showing the window");
+                }
+            }, SPLASH_TIMEOUT_MS);
+        }
+    }
+
+    /**
+     * Let the window draw, ending the splash. Kivy calls this through
+     * _kivy_bootstrap.remove_presplash() from the Python thread, once it is
+     * about to draw its first frame; calling it again does nothing.
+     */
+    public void removePresplash() {
+        if (!splashReleased) {
+            splashReleased = true;
+            Log.i(TAG, "splash: released by the app after "
+                    + (SystemClock.uptimeMillis() - splashHeldAt) + " ms");
         }
     }
 

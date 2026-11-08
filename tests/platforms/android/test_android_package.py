@@ -249,8 +249,12 @@ def device(tmp_path, monkeypatch):
     jnius.PythonJavaClass = _FakeJavaClass  # type: ignore[attr-defined]
     jnius.java_method = lambda *_a, **_k: lambda f: f  # type: ignore[attr-defined]
     bootstrap = types.ModuleType("_kivy_bootstrap")
-    state = types.SimpleNamespace(activity=mock.MagicMock(name="activity-1"))
+    state = types.SimpleNamespace(
+        activity=mock.MagicMock(name="activity-1"),
+        remove_presplash=mock.MagicMock(name="remove_presplash", return_value=None),
+    )
     bootstrap.get_activity = lambda: state.activity  # type: ignore[attr-defined]
+    bootstrap.remove_presplash = state.remove_presplash  # type: ignore[attr-defined]
     # The package registers a browser on import; keep it out of other tests.
     for registry in ("_browsers", "_tryorder"):
         value = getattr(webbrowser, registry)
@@ -290,10 +294,14 @@ class TestPackageRuntime:
         names = sorted(k for k in namespace if k != "__builtins__")
         assert names == sorted(device.android.__all__)
 
-    def test_presplash_and_loading_screen_are_no_ops(self, device):
+    def test_presplash_and_loading_screen_release_the_splash(self, device):
+        """Kivy 2.3.1 ends the splash through these; both must reach the same
+        release Kivy 3 makes through _kivy_bootstrap."""
         loadingscreen: Any = importlib.import_module("android.loadingscreen")
         assert device.android.remove_presplash() is None
         assert loadingscreen.hide_loading_screen() is None
+        assert device.state.remove_presplash.call_count == 2
+        # python-for-android's own method, which kivyforge's activity lacks.
         device.state.activity.removeLoadingScreen.assert_not_called()
 
     def test_open_url_starts_a_view_intent(self, device):

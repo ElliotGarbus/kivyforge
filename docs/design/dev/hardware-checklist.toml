@@ -134,6 +134,41 @@ pass = [
 record = ["Phone model and Android version.", "Host OS (the item runs from any host)."]
 
 [[item]]
+id = "android-splash-hold"
+title = "Android: the splash stays up until Kivy's first frame, with no black gap (both SDL generations)"
+status = "runnable"
+hosts = ["windows", "macos", "linux"]
+target = "Android `arm64_v8a` (physical device, Android 12 or later)"
+tier = "T5"
+needs = [
+    "An arm64 Android phone on Android 12 (API 31) or later, so the system splash is the one held, with USB debugging on, authorized for this host (`adb devices` shows `device`).",
+    "The phone unlocked with the screen on, and in view: the black gap is only visible on screen.",
+    "JDK 17, Android SDK and the pinned NDK: `kivyforge doctor -p android` passes.",
+    "Scratch copies of `examples/mobile/hello-sdl3` and `examples/mobile/hello-android` outside the repo, each with `[tool.kivy.android.splash]` and `background = \"#ff6600\"` appended to its `pyproject.toml`. Neither example configures a splash, and the gate examples track their locks, so the edit stays in the copies.",
+]
+# The window's first draw dismisses the system splash right after onCreate, and
+# SDL's surface is black until Kivy renders. An orange background makes the
+# splash, the black gap and the app's UI unmistakable on screen.
+commands = [
+    "cd <scratch copy of hello-sdl3>",
+    "kivyforge lock -p android",
+    "kivyforge run -p android --device --no-follow, watching the phone from the moment it installs",
+    "adb logcat -d -s kivyforge ActivityTaskManager | grep -E 'splash:|Displayed org.kivyforge.hellosdl3'",
+    "kivyforge run -p android --device --smoke",
+    "Press home, then reopen the app from the launcher",
+    "cd <scratch copy of hello-android> and repeat the lock, run and logcat steps with org.kivyforge.helloandroid",
+    "In the hello-sdl3 copy, add `import time; time.sleep(45)` as the first line of `src/main.py`, then repeat the run and logcat steps",
+]
+pass = [
+    "For each app, the phone shows the orange splash from launch until the app's label appears, and never a black screen in between.",
+    "For each app, logcat has `splash: released by the app after N ms`, and `Displayed` is at least N ms after launch: the window's first draw waited for Kivy.",
+    "`run --smoke` prints exactly `Contract smoke test PASSED.` and exits 0.",
+    "Reopening from the launcher shows the app straight away, with the same process id (`adb shell pidof`) and no `splash:` line added.",
+    "With the 45-second sleep, the splash stays up for 30 seconds, then logcat has `splash: the app did not call remove_presplash() within 30000 ms`, `Displayed` is about 30 s, and the app's label follows once the sleep ends.",
+]
+record = ["Phone model and Android version.", "N from each `released by the app` line.", "Host OS (the item runs from any host)."]
+
+[[item]]
 id = "android-gen2-system-bars"
 title = "Android: a Kivy 2.3.1 app keeps clear of the system bars on Android 15+"
 status = "runnable"

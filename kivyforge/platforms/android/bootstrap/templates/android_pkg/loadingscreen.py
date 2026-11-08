@@ -2,5 +2,7 @@
 
 
 def hide_loading_screen():
-    """Nothing to hide: the app's splash is the system splash screen, which
-    Android dismisses when the first frame draws."""
+    """End the splash, as ``android.remove_presplash()`` does."""
+    from _kivy_bootstrap import remove_presplash
+
+    remove_presplash()

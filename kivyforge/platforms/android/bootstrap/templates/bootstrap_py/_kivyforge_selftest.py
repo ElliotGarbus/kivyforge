@@ -89,6 +89,9 @@ def run() -> bool:
         assert activity is not None, "no Activity while the Activity is running"
         # Prove it is the live Activity rather than some retained husk.
         assert activity.getPackageName(), "Activity did not answer as a Context"
+        # The optional hook Kivy calls at its first frame. Self-test mode never
+        # runs Kivy, so without this the splash would hold until the timeout.
+        _kivy_bootstrap.remove_presplash()
         lines.append("KIVY_CONTRACT_OK")
     except Exception:
         ok = False
@@ -122,6 +125,7 @@ def run() -> bool:
             "changeKeyboard",
             "registerActivityResultListener",
             "registerNewIntentListener",
+            "removePresplash",
             "requestPermissionsWithRequestCode",
             "setDarkModeListener",
             "unregisterActivityResultListener",

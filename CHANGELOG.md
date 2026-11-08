@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### The Android splash stays up until Kivy's first frame
+
+- **Fixed:** on Android 12 and later, the splash closed as soon as the app
+  started, and the screen stayed black until Kivy drew its first frame: about
+  8 seconds of cold start on a Pixel 8a. Below Android 12 the launch window
+  closed early in the same way. The splash now stays up until Kivy's first
+  frame, for both Kivy generations, and for apps with no splash configured,
+  which keep the plain launch window instead of going black
+  ([kivy/kivy#9489](https://github.com/kivy/kivy/issues/9489)).
+- **Changed:** `android.remove_presplash()` and
+  `android.loadingscreen.hide_loading_screen()` now end the splash instead of
+  doing nothing. Kivy calls them for you. An app that never reaches its
+  first frame (a hang, or an error in `build()` that it catches) shows its
+  window after 30 seconds, and logcat warns that the splash was never
+  released. Nothing to change in your app.
+
 ### The lock pins the Python that byte-compiles iOS and Android
 
 - **Added:** byte-compiling an iOS or Android release, or a Linux `aarch64`
