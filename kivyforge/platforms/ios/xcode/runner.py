@@ -137,14 +137,22 @@ def simulator_window_commands(udid: str, developer_dir: str | None) -> list[list
     return commands
 
 
+def _developer_dir(runner) -> str | None:
+    proc = run_command(xcode_select_path(), runner=runner, check=False)
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
 def show_simulator(udid: str, *, runner=subprocess.run) -> bool:
     """Bring up the window showing simulator ``udid``. False if none opened."""
-    proc = run_command(xcode_select_path(), runner=runner, check=False)
-    developer_dir = proc.stdout.strip() if proc.returncode == 0 else None
-    for argv in simulator_window_commands(udid, developer_dir):
+    for argv in simulator_window_commands(udid, _developer_dir(runner)):
         if run_command(argv, runner=runner, check=False).returncode == 0:
             return True
     return False
+
+
+def show_simulator_command(udid: str, *, runner=subprocess.run) -> list[str]:
+    """The command that would show simulator ``udid``, for the user to run."""
+    return simulator_window_commands(udid, _developer_dir(runner))[0]
 
 
 @dataclass(frozen=True)
@@ -198,7 +206,11 @@ def resolve_simulator_destination(
     *,
     runner=subprocess.run,
 ) -> SimulatorDevice:
-    """Return the simulator to target, booting a default when none is running."""
+    """Return the simulator to target, booting it when it is not running.
+
+    The returned ``state`` is the one found, before any boot, so ``Booted``
+    means something else started the simulator.
+    """
     proc = run_command(simctl_list_json(), runner=runner)
     devices = parse_simctl_devices(json.loads(proc.stdout))
     device = pick_simulator(devices, destination)

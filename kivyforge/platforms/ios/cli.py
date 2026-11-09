@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import plistlib
 import re
+import shlex
 from collections.abc import Callable
 from pathlib import Path
 
@@ -69,6 +70,7 @@ from .xcode import (
     run_command,
     run_foreground,
     show_simulator,
+    show_simulator_command,
     simctl_install,
     simctl_launch,
     simctl_list,
@@ -612,7 +614,16 @@ def _run_simulator(destination: str | None, app: Path, bundle_id: str) -> None:
     label = f"{device.name} ({device.udid})"
     # Progress, so stderr: stdout belongs to the app console launched below,
     # which is `run`'s product (AGENTS.md).
-    if not show_simulator(device.udid):
+    if device.state == "Booted":
+        # Whatever booted it (Xcode, an IDE panel that docks the screen, an
+        # earlier run) owns how it is shown; a window here would duplicate it.
+        show = shlex.join(show_simulator_command(device.udid))
+        click.echo(
+            f"Simulator {label} was already running, so no window was opened "
+            f"for it. To show it: {show}",
+            err=True,
+        )
+    elif not show_simulator(device.udid):
         click.echo(
             f"Warning: could not open a window for simulator {label}; the app "
             "will run, but nothing shows it. Open Device Hub (Xcode 27) or "

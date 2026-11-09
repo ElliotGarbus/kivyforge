@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### iOS: `run --simulator` leaves an already-running simulator's window alone
+
+- **Changed:** `run -p ios --simulator` opens a window only for a simulator it
+  boots itself
+  ([#211](https://github.com/ElliotGarbus/kivyforge/issues/211)). If the
+  simulator was already running, whatever started it decides how it is shown,
+  so an IDE panel that docks the simulator's screen (the PyCharm and Android
+  Studio "iOS Simulator" plugin) no longer gets a second window from Device Hub
+  or Simulator.app on every run. `run` prints the command that shows the
+  simulator on stderr instead.
+- **Migration:** if you boot simulators with `xcrun simctl boot` and relied on
+  `run` to open the window, run the command it prints, or shut the simulator
+  down and let `run` boot it.
+
 ### An Android app killed while unpacking its Python bundle no longer stays broken
 
 - **Fixed:** if an Android app was stopped while it unpacked its Python bundle

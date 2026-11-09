@@ -20,6 +20,7 @@ from kivyforge.platforms.ios.xcode.runner import (
     run_command,
     run_foreground,
     show_simulator,
+    show_simulator_command,
     simctl_boot,
     simctl_install,
     simctl_launch,
@@ -228,7 +229,9 @@ class TestSimulatorSelection:
         device = resolve_simulator_destination(None, runner=fake)
         assert device.udid == "NEW-UDID"
         assert ["xcrun", "simctl", "boot", "NEW-UDID"] in calls
-        # Opening a window is show_simulator's job, done on every run.
+        # The state found, so the caller can tell it booted the simulator.
+        assert device.state == "Shutdown"
+        # Opening a window is show_simulator's job.
         assert not any(c[0] == "open" for c in calls)
 
 
@@ -289,6 +292,14 @@ class TestShowSimulator:
             ],
         )
         assert not show_simulator("U", runner=fake)
+
+    def test_command_to_show_it_is_the_best_window(self, tmp_path):
+        fake, calls = self._runner(tmp_path)
+        assert show_simulator_command("U", runner=fake) == [
+            "open",
+            "devices://device/open?id=U",
+        ]
+        assert not any(c[0] == "open" for c in calls), "nothing is opened"
 
 
 class TestDeviceSelection:
