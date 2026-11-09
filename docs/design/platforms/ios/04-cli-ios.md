@@ -184,7 +184,7 @@ If the lock is out of date (drift check fails in step 1), `run` propagates the s
 
 **Install and launch sequence:**
 
-1. For `--simulator`: boot the target simulator if not already running (`xcrun simctl boot`), install the `.app` (`xcrun simctl install`), launch (`xcrun simctl launch --console-pty`).
+1. For `--simulator`: boot the target simulator if not already running (`xcrun simctl boot`), install the `.app` (`xcrun simctl install`), launch (`xcrun simctl launch --console-pty`). A simulator that `run` boots gets a window (Device Hub under Xcode 27, the selected Xcode's Simulator.app before it). One that was already running is left as it is, because whatever started it decides how it is shown: an IDE panel that docks the simulator's screen, for example, would otherwise get a second window on every run (issue #211). `run` prints the command that would show it on stderr instead. This is decided by the simulator's state, not by a flag.
 2. For `--device`: install via `xcrun devicectl device install app` (Xcode 15+), then launch via `xcrun devicectl device process launch`. Falls back to `ios-deploy` if `devicectl` is unavailable.
 
 Implementation uses `xcrun simctl` for simulators and `xcrun devicectl` (or `ios-deploy` if needed) for devices.

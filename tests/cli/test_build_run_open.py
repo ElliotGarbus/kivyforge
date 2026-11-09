@@ -19,6 +19,7 @@ from kivyforge.platforms.ios.lock import (
     PythonXcframework,
     dumps,
 )
+from kivyforge.platforms.ios.xcode import SimulatorDevice
 from kivyforge.platforms.ios.xcode import runner as runner_mod
 from tests.lock_hash import inputs_sha
 from tests.platforms.ios.test_entitlements import write_profile
@@ -355,6 +356,27 @@ class TestRun:
             assert "could not open a window" in result.stderr
             assert "could not open a window" not in result.stdout
             assert launches, "the app still launches without a window"
+
+    def test_run_simulator_leaves_an_already_running_one_alone(
+        self, runner, tmp_path, record_xcodebuild, launches, monkeypatch
+    ):
+        """Issue #211: an IDE panel that docks a booted simulator's screen got
+        a second, separate window on every run."""
+        booted = SimulatorDevice("TEST-UDID", "iPhone 17", "Booted", "26.5")
+        monkeypatch.setattr(
+            ios_cli, "resolve_simulator_destination", lambda destination: booted
+        )
+        with runner.isolated_filesystem(temp_dir=tmp_path) as fs:
+            _write_project(fs)
+            app = Path(fs) / "myapp-ios/build/DerivedData/Build/Products"
+            (app / "Debug-iphonesimulator" / "myapp.app").mkdir(parents=True)
+            result = runner.invoke(run_cmd, ["--simulator"])
+            assert result.exit_code == 0, result.output
+            assert not any(c[0] == "open" for c in record_xcodebuild)
+            assert "was already running" in result.stderr
+            assert "'devices://device/open?id=TEST-UDID'" in result.stderr
+            assert "already running" not in result.stdout
+            assert launches
 
     def test_run_device_builds_for_the_chosen_phone(
         self, runner, tmp_path, record_xcodebuild, launches
