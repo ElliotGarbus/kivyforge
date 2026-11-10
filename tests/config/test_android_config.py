@@ -6,7 +6,7 @@ import pytest
 
 from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config_from_text
-from kivyforge.config.model import AutoVersionCode
+from kivyforge.config.model import AndroidUsesPermission, AutoVersionCode
 from kivyforge.config.version import android_version_code
 
 BASE = """
@@ -543,6 +543,85 @@ class TestServices:
             )
         )
         assert a.services[0].foreground_service_type == "mediaProcessing"
+
+
+def uses(*entries: str, sdk: tuple[str, ...] = ()) -> str:
+    """BASE with ``[tool.kivy.android.permissions].uses`` set to *entries*."""
+    return with_lines(
+        *sdk,
+        "[tool.kivy.android.permissions]",
+        "uses = [" + ", ".join(entries) + "]",
+    )
+
+
+class TestUsesPermissions:
+    def test_strings_and_tables_mix(self):
+        a = load_android(
+            uses(
+                '"INTERNET"',
+                '{ name = "BLUETOOTH", max_sdk_version = 30 }',
+                '{ name = "BLUETOOTH_SCAN", uses_permission_flags = "neverForLocation" }',
+            )
+        )
+        assert a.permissions.uses == (
+            AndroidUsesPermission("INTERNET"),
+            AndroidUsesPermission("BLUETOOTH", max_sdk_version=30),
+            AndroidUsesPermission(
+                "BLUETOOTH_SCAN", uses_permission_flags="neverForLocation"
+            ),
+        )
+
+    def test_identical_repeats_collapse_across_spellings(self):
+        a = load_android(
+            uses('"CAMERA"', '"android.permission.CAMERA"', '{ name = "CAMERA" }')
+        )
+        assert a.permissions.uses == (AndroidUsesPermission("CAMERA"),)
+
+    def test_repeats_that_disagree_are_rejected(self):
+        with pytest.raises(ConfigError, match="twice with different attributes"):
+            load_android(
+                uses('"BLUETOOTH"', '{ name = "BLUETOOTH", max_sdk_version = 30 }')
+            )
+
+    @pytest.mark.parametrize(
+        ("entry", "match"),
+        [
+            ('""', "non-empty permission name"),
+            ("30", "permission name or a"),
+            ("{ max_sdk_version = 30 }", r"\.name must be"),
+            ('{ name = "X", max_sdk_version = "30" }', "positive integer"),
+            ('{ name = "X", max_sdk_version = true }', "positive integer"),
+            ('{ name = "X", max_sdk_version = 0 }', "positive integer"),
+            ('{ name = "X", uses_permission_flags = "" }', "non-empty string"),
+            ('{ name = "X", uses_permission_flags = "sometimes" }', "unknown flag"),
+        ],
+    )
+    def test_bad_entries_rejected(self, entry, match):
+        with pytest.raises(ConfigError, match=match):
+            load_android(uses(entry))
+
+    def test_unknown_key_suggests_the_close_one(self):
+        with pytest.raises(ConfigError, match="unknown key 'max_sdk'") as info:
+            load_android(uses('{ name = "BLUETOOTH", max_sdk = 30 }'))
+        assert "max_sdk_version" in (info.value.hint or "")
+
+    def test_cap_below_min_sdk_rejected(self):
+        with pytest.raises(ConfigError, match="below min_sdk 31"):
+            load_android(
+                uses(
+                    '{ name = "BLUETOOTH", max_sdk_version = 30 }',
+                    sdk=("min_sdk = 31",),
+                )
+            )
+
+    def test_flags_need_compile_sdk_31(self):
+        with pytest.raises(ConfigError, match="needs compile_sdk >= 31"):
+            load_android(
+                uses(
+                    '{ name = "BLUETOOTH_SCAN", uses_permission_flags = "neverForLocation" }',
+                    sdk=("target_sdk = 30",),
+                )
+            )
 
 
 class TestPassthroughs:

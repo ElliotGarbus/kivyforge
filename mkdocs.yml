@@ -123,6 +123,7 @@ nav:
           - Build for Raspberry Pi: guides/linux/raspberry-pi.md
       - Cross-platform:
           - Handle mobile screen geometry: guides/cross-platform/mobile-geometry.md
+          - Declare permissions on Android and iOS: guides/cross-platform/permissions.md
           - Ship native binaries: guides/cross-platform/native-binaries.md
           - Manage dependencies and re-lock: guides/cross-platform/dependencies.md
           - Build a wheel from a GitHub repository: guides/cross-platform/wheel-from-github.md

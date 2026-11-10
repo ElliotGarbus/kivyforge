@@ -1,7 +1,8 @@
 """Generate ``AndroidManifest.xml`` (android/04 §manifest generation).
 
 Deterministic emission from ``AndroidConfig``: permissions (bare names
-auto-prefixed; nothing force-added beyond a foreground service's
+auto-prefixed, with any declared ``maxSdkVersion`` / ``usesPermissionFlags``;
+nothing force-added beyond a foreground service's
 ``FOREGROUND_SERVICE*`` pair), implied non-required ``<uses-feature>``
 synthesis (android/01 §auto_features), services/activities/intent filters,
 attribute passthrough, and substituted raw-XML fragments (well-formedness was
@@ -10,13 +11,17 @@ already enforced at config time; fragments are re-parsed here as a belt).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import replace
 from xml.sax.saxutils import quoteattr
 
 from kivyforge.config.model import (
     ANDROID_BOOTSTRAP_ACTIVITY,
     AndroidConfig,
     AndroidService,
+    AndroidUsesPermission,
     foreign_namespace_attr,
+    qualified_permission,
 )
 
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
@@ -107,9 +112,9 @@ RESERVED_APPLICATION_ATTRS: dict[str, str] = {
 }
 
 
-def qualified_permissions(uses: tuple[str, ...]) -> list[str]:
+def qualified_permissions(names: Iterable[str]) -> list[str]:
     """Bare names get the ``android.permission.`` prefix; dotted pass verbatim."""
-    return [p if "." in p else f"android.permission.{p}" for p in uses]
+    return [qualified_permission(p) for p in names]
 
 
 def implied_features(permissions: list[str]) -> list[str]:
@@ -159,24 +164,34 @@ def service_class_name(service: AndroidService) -> str:
     return f"org.kivy.android.Service{service.name}"
 
 
-def effective_permissions(android: AndroidConfig) -> list[str]:
-    """Every ``<uses-permission>`` this config emits, in emission order.
+def effective_uses_permissions(android: AndroidConfig) -> list[AndroidUsesPermission]:
+    """Every ``<uses-permission>`` this config emits, in emission order, with
+    its name qualified.
 
     Split out of :func:`generate_manifest` so the T3 merged-manifest content
     check (``tests/artifact_checks.py``) can ask what config declared instead
     of re-deriving the auto-add rule and drifting from it — the same reason the
     ELF and PE constants are imported by those checks rather than copied.
     """
-    permissions = qualified_permissions(android.permissions.uses)
+    permissions = [
+        replace(p, name=qualified_permission(p.name)) for p in android.permissions.uses
+    ]
     # A declared foreground service auto-adds FOREGROUND_SERVICE + the typed
-    # permission — the ONLY implicit permissions (android/01 §managed keys).
+    # permission — the ONLY implicit permissions (android/01 §managed keys). A
+    # declared entry for either keeps its attributes.
     for service in android.services:
         if service.foreground:
-            _add_unique(permissions, "android.permission.FOREGROUND_SERVICE")
             fstype = service.foreground_service_type or ""
             typed = "android.permission.FOREGROUND_SERVICE_" + _snake_upper(fstype)
-            _add_unique(permissions, typed)
+            for name in ("android.permission.FOREGROUND_SERVICE", typed):
+                if all(p.name != name for p in permissions):
+                    permissions.append(AndroidUsesPermission(name=name))
     return permissions
+
+
+def effective_permissions(android: AndroidConfig) -> list[str]:
+    """The names of :func:`effective_uses_permissions`."""
+    return [p.name for p in effective_uses_permissions(android)]
 
 
 def effective_features(android: AndroidConfig) -> list[tuple[str, bool]]:
@@ -204,14 +219,19 @@ def effective_features(android: AndroidConfig) -> list[tuple[str, bool]]:
 
 
 def generate_manifest(android: AndroidConfig, *, orientation: tuple[str, ...]) -> str:
-    permissions = effective_permissions(android)
-
     lines: list[str] = []
     lines.append('<?xml version="1.0" encoding="utf-8"?>')
     lines.append(f'<manifest xmlns:android="{ANDROID_NS}" xmlns:tools="{TOOLS_NS}">')
 
-    for permission in permissions:
-        lines.append(f"    <uses-permission android:name={quoteattr(permission)} />")
+    for permission in effective_uses_permissions(android):
+        permission_attrs = {"android:name": permission.name}
+        if permission.max_sdk_version is not None:
+            permission_attrs["android:maxSdkVersion"] = str(permission.max_sdk_version)
+        if permission.uses_permission_flags:
+            permission_attrs["android:usesPermissionFlags"] = (
+                permission.uses_permission_flags
+            )
+        lines.append(f"    <uses-permission {_attrs(permission_attrs)} />")
 
     for name, required in effective_features(android):
         lines.append(
@@ -371,8 +391,3 @@ def _snake_upper(camel: str) -> str:
             out.append("_")
         out.append(ch.upper())
     return "".join(out)
-
-
-def _add_unique(items: list[str], value: str) -> None:
-    if value not in items:
-        items.append(value)

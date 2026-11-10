@@ -370,7 +370,8 @@ version = "3.14.6"
 uses = [
     "android.permission.INTERNET",
     "android.permission.CAMERA",
-    "android.permission.WRITE_EXTERNAL_STORAGE",
+    { name = "WRITE_EXTERNAL_STORAGE", max_sdk_version = 28 },
+    { name = "BLUETOOTH_SCAN", uses_permission_flags = "neverForLocation" },
 ]
 features = [
     { name = "android.hardware.camera", required = false },
@@ -380,7 +381,27 @@ auto_features = true   # default; auto-add non-required <uses-feature> for hardw
 
 | Field      | Type            | Required | Description                                                                                                                                                                 |
 | ---------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uses`     | list of string  | no       | Each entry becomes a `<uses-permission android:name="...">` in the generated manifest. Bare permission names (`INTERNET`) are auto-prefixed with `android.permission.`; fully-qualified names (`android.permission.CAMERA`, or a custom/third-party permission) are written verbatim. |
+| `uses`     | list of string or table | no | Each entry becomes a `<uses-permission android:name="...">` in the generated manifest. Bare permission names (`INTERNET`) are auto-prefixed with `android.permission.`; fully-qualified names (`android.permission.CAMERA`, or a custom/third-party permission) are written verbatim. An entry that needs `<uses-permission>` attributes is a `{ name, max_sdk_version, uses_permission_flags }` table (below). |
+
+A table entry's keys map one-to-one onto the element's attributes, the same
+three python-for-android's `(name=...;maxSdkVersion=...;usesPermissionFlags=...)`
+form accepts:
+
+- `max_sdk_version` (positive integer) → `android:maxSdkVersion`. The
+  permission is requested only up to that API level, which is how a permission
+  that a newer one replaced is declared (Bluetooth's pre-API-31 pair; storage
+  permissions scoped storage made unnecessary). A value below `min_sdk` is
+  rejected: no device the app installs on would be granted it.
+- `uses_permission_flags` (string) → `android:usesPermissionFlags`. The only
+  value is `neverForLocation`, the assertion that lets `BLUETOOTH_SCAN` (and
+  `NEARBY_WIFI_DEVICES`) be used without location permission. It is an API 31
+  attribute, so AAPT rejects it below `compile_sdk = 31`, and the loader does
+  first.
+
+The same permission may appear more than once — `"CAMERA"` and
+`"android.permission.CAMERA"` are one entry — but only with identical
+attributes; entries that disagree are rejected rather than one silently
+winning. Every entry, capped or not, feeds the implied-feature mapping below.
 | `features` | list of table   | no       | Each `{ name, required }` becomes a `<uses-feature>`. `required` defaults to `true`. Use it to declare a feature explicitly — most often to *promote* an auto-added implied feature (below) to `required = true`, or to declare a hardware feature no permission implies. |
 | `auto_features` | bool       | no (default `true`) | Auto-add a **non-required** `<uses-feature>` for each hardware-implying permission (see the mapping below). |
 
@@ -426,9 +447,9 @@ The rationale matches Briefcase's model (declare permissions; don't get filtered
 off devices by accident), adapted to kivyforge's explicit-permission list rather
 than a cross-platform permission vocabulary.
 
-`uses-permission-sdk-23`, `<permission>` (custom-defined), and per-permission
-`maxSdkVersion` attributes are expressible via the manifest passthrough (see
-`[tool.kivy.android.manifest]`) until a dedicated schema grows for them.
+`uses-permission-sdk-23` and `<permission>` (custom-defined) are expressible via
+the manifest passthrough (see `[tool.kivy.android.manifest]`) until a dedicated
+schema grows for them.
 
 ### `[tool.kivy.android.native.aars]` and `[tool.kivy.android.native.jars]`
 

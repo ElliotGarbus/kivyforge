@@ -98,7 +98,11 @@ _BUILDOZER_MAP: tuple[tuple[str, tuple[str, ...], str], ...] = (
         ("tool.kivy.android.fullscreen",),
         "1 is true; buildozer treats a missing key as 1, kivyforge as false",
     ),
-    ("android.permissions", ("tool.kivy.android.permissions.uses",), ""),
+    (
+        "android.permissions",
+        ("tool.kivy.android.permissions.uses",),
+        '(name=X;maxSdkVersion=N) becomes { name = "X", max_sdk_version = N }',
+    ),
     ("android.features", ("tool.kivy.android.permissions.features",), ""),
     (
         "services",

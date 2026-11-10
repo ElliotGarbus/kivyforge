@@ -102,6 +102,11 @@ VALID_FOREGROUND_SERVICE_TYPES = frozenset(
     }
 )
 
+# <uses-permission android:usesPermissionFlags> values (android/01). The
+# attribute is API 31, so AAPT rejects it when compiling against anything older.
+VALID_USES_PERMISSION_FLAGS = frozenset({"neverForLocation"})
+USES_PERMISSION_FLAGS_MIN_COMPILE_SDK = 31
+
 # byte_compile / strip_source / strip_native_libs accept a bool or this string.
 ANDROID_RELEASE_ONLY = "release"
 VALID_ANDROID_DEBUG_SYMBOLS = frozenset({"symbol_table", "full", "none"})
@@ -688,11 +693,30 @@ class AndroidFeature:
     required: bool = True
 
 
+def qualified_permission(name: str) -> str:
+    """Bare names get the ``android.permission.`` prefix; dotted pass verbatim."""
+    return name if "." in name else f"android.permission.{name}"
+
+
+@dataclass(frozen=True)
+class AndroidUsesPermission:
+    """One ``[tool.kivy.android.permissions].uses`` entry.
+
+    ``name`` is as written: a bare name gets the ``android.permission.``
+    prefix at generation. ``max_sdk_version`` and ``uses_permission_flags``
+    are the ``<uses-permission>`` attributes of the same names.
+    """
+
+    name: str
+    max_sdk_version: int | None = None
+    uses_permission_flags: str | None = None
+
+
 @dataclass(frozen=True)
 class AndroidPermissions:
     """``[tool.kivy.android.permissions]`` (android/01)."""
 
-    uses: tuple[str, ...] = ()
+    uses: tuple[AndroidUsesPermission, ...] = ()
     features: tuple[AndroidFeature, ...] = ()
     auto_features: bool = True
 

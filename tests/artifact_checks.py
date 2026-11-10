@@ -60,7 +60,7 @@ from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64, machine_name
 from kivyforge.platforms.android.generate.manifest import (
     GENERATED_THEME,
     effective_features,
-    effective_permissions,
+    effective_uses_permissions,
     main_activity,
     screen_orientation,
     service_class_name,
@@ -837,13 +837,30 @@ def _manifest_identity_problems(
 def _manifest_permission_problems(
     root: ET.Element, *, android: AndroidConfig
 ) -> list[str]:
-    declared = {_android_attr(p, "name") for p in root.iter("uses-permission")}
-    return [
-        f"<uses-permission android:name={name!r}> is declared in config but "
-        "missing from the merged manifest"
-        for name in effective_permissions(android)
-        if name not in declared
-    ]
+    merged = {_android_attr(p, "name"): p for p in root.iter("uses-permission")}
+    problems = []
+    for permission in effective_uses_permissions(android):
+        elem = merged.get(permission.name)
+        if elem is None:
+            problems.append(
+                f"<uses-permission android:name={permission.name!r}> is declared "
+                "in config but missing from the merged manifest"
+            )
+            continue
+        # A library that needs the permission on every API level makes the
+        # merger drop the cap, which is the merger working. Only a lower cap
+        # than config declared loses something.
+        merged_max = _android_attr(elem, "maxSdkVersion")
+        if merged_max is not None and (
+            permission.max_sdk_version is None
+            or int(merged_max) < permission.max_sdk_version
+        ):
+            problems.append(
+                f"<uses-permission android:name={permission.name!r}> has "
+                f"android:maxSdkVersion={merged_max!r} in the merged manifest, "
+                f"but config declares {permission.max_sdk_version!r}"
+            )
+    return problems
 
 
 def _manifest_feature_problems(

@@ -85,7 +85,10 @@ recipes, the replacement is an Apple framework that you call through
 4. Using the map from step 1, move your settings into `[tool.kivy]` and
    `[tool.kivy.android]`. For example, `title` becomes `display_name`,
    `source.dir` becomes `app_dir`, and `android.permissions` becomes
-   `[tool.kivy.android.permissions].uses`. See
+   `[tool.kivy.android.permissions].uses`. A permission written as
+   `(name=android.permission.BLUETOOTH;maxSdkVersion=30)` becomes
+   `{ name = "android.permission.BLUETOOTH", max_sdk_version = 30 }`, and
+   `usesPermissionFlags` becomes `uses_permission_flags`. See
    [Configure your Android app](../android/configure.md) and the
    [Android overlay reference](../../reference/pyproject/android.md).
 
