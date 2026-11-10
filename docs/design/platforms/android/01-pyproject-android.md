@@ -382,6 +382,10 @@ auto_features = true   # default; auto-add non-required <uses-feature> for hardw
 | Field      | Type            | Required | Description                                                                                                                                                                 |
 | ---------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `uses`     | list of string or table | no | Each entry becomes a `<uses-permission android:name="...">` in the generated manifest. Bare permission names (`INTERNET`) are auto-prefixed with `android.permission.`; fully-qualified names (`android.permission.CAMERA`, or a custom/third-party permission) are written verbatim. An entry that needs `<uses-permission>` attributes is a `{ name, max_sdk_version, uses_permission_flags }` table (below). |
+| `features` | list of table   | no       | Each `{ name, required }` becomes a `<uses-feature>`. `required` defaults to `true`. Use it to declare a feature explicitly — most often to *promote* an auto-added implied feature (below) to `required = true`, or to declare a hardware feature no permission implies. |
+| `auto_features` | bool       | no (default `true`) | Auto-add a **non-required** `<uses-feature>` for each hardware-implying permission (see the mapping below). |
+
+#### `uses` entries with attributes
 
 A table entry's keys map one-to-one onto the element's attributes, the same
 three python-for-android's `(name=...;maxSdkVersion=...;usesPermissionFlags=...)`
@@ -402,8 +406,8 @@ The same permission may appear more than once — `"CAMERA"` and
 `"android.permission.CAMERA"` are one entry — but only with identical
 attributes; entries that disagree are rejected rather than one silently
 winning. Every entry, capped or not, feeds the implied-feature mapping below.
-| `features` | list of table   | no       | Each `{ name, required }` becomes a `<uses-feature>`. `required` defaults to `true`. Use it to declare a feature explicitly — most often to *promote* an auto-added implied feature (below) to `required = true`, or to declare a hardware feature no permission implies. |
-| `auto_features` | bool       | no (default `true`) | Auto-add a **non-required** `<uses-feature>` for each hardware-implying permission (see the mapping below). |
+A declared `FOREGROUND_SERVICE*` entry keeps its attributes; the one a
+foreground service would add is skipped rather than duplicated.
 
 #### Implied hardware features (`auto_features`)
 
@@ -445,7 +449,9 @@ suppress the behavior entirely and manage every `<uses-feature>` by hand.
 
 The rationale matches Briefcase's model (declare permissions; don't get filtered
 off devices by accident), adapted to kivyforge's explicit-permission list rather
-than a cross-platform permission vocabulary.
+than a cross-platform permission vocabulary — see [01-pyproject-kivy-spec
+§"Permissions are per-platform"](../../common/01-pyproject-kivy-spec.md#permissions-are-per-platform)
+for why there is none.
 
 `uses-permission-sdk-23` and `<permission>` (custom-defined) are expressible via
 the manifest passthrough (see `[tool.kivy.android.manifest]`) until a dedicated

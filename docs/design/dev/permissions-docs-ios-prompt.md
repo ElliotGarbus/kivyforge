@@ -201,7 +201,11 @@ Restore `NSLocationDefaultAccuracyReduced = true`. Then, one at a time:
 
 If location does **not** terminate the app, the guide's sentence "an app that
 uses a protected API without its description key is stopped by iOS when it
-calls the API" is wrong as written. Propose a correction in the findings.
+calls the API" is wrong as written. Propose a correction in the findings. The
+same claim appears in
+[`09-native-sidecar-contract.md`](../common/09-native-sidecar-contract.md)
+§"Why kivyforge wants it" ("a missing usage-description string terminates the
+app"); the correction covers both.
 
 ### Step 4 — on a device (C6, optional)
 
