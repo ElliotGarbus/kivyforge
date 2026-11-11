@@ -33,12 +33,12 @@ overlay for the common capabilities.
 |---|---|---|
 | Camera | `"CAMERA"` | `NSCameraUsageDescription` |
 | Microphone | `"RECORD_AUDIO"` | `NSMicrophoneUsageDescription` |
-| Approximate location | `"ACCESS_COARSE_LOCATION"` | `NSLocationWhenInUseUsageDescription`, and `NSLocationDefaultAccuracyReduced = true` |
+| Approximate location | `"ACCESS_COARSE_LOCATION"` | `NSLocationWhenInUseUsageDescription`, and `NSLocationDefaultAccuracyReduced = true` (see [Location](#location)) |
 | Precise location | `"ACCESS_FINE_LOCATION"` and `"ACCESS_COARSE_LOCATION"` | `NSLocationWhenInUseUsageDescription` |
 | Location in the background | Add `"ACCESS_BACKGROUND_LOCATION"` to one of the location rows above | `NSLocationWhenInUseUsageDescription`, `NSLocationAlwaysAndWhenInUseUsageDescription`, and `UIBackgroundModes = ["location"]` |
 | Bluetooth | See [Bluetooth](#bluetooth) | `NSBluetoothAlwaysUsageDescription` |
 | Contacts | `"READ_CONTACTS"` | `NSContactsUsageDescription` |
-| Notifications | `"POST_NOTIFICATIONS"` | Nothing to declare |
+| Notifications | `"POST_NOTIFICATIONS"` | Nothing to declare. Push notifications need the `aps-environment` entitlement; see [Run code in the iOS app lifecycle](../ios/lifecycle-hooks.md) |
 | Internet | `"INTERNET"` | Nothing to declare |
 
 For photos, see [Photos](#photos): which entries you need depends on whether
@@ -56,10 +56,11 @@ NSLocationWhenInUseUsageDescription = "Show your position on the map."
 ```
 
 Write each iOS description as the reason your app needs access, not as a
-description of the permission. App Review rejects vague descriptions, and an
-app that uses a protected API without its description key is stopped by iOS
-when it calls the API. Android shows its own fixed text and has no
-description to set.
+description of the permission. App Review rejects vague descriptions. If the
+description key is missing, iOS does not ask the user. For the camera, iOS
+terminates the app when it requests access. For location, iOS logs a warning
+and ignores the request, so the app never gets access. Android shows its own
+fixed text and has no description to set.
 
 ## Location
 
@@ -67,9 +68,14 @@ On Android 12 and later, an app that asks for precise location must also ask for
 approximate location, because the user can choose to grant only approximate
 location. Declare both.
 
-iOS has one location usage description for both accuracies.
-`NSLocationDefaultAccuracyReduced = true` makes approximate location the
-default.
+iOS has one location usage description for both accuracies. The user chooses
+precise or approximate location when iOS asks, and can change it later in
+Settings, so your app must work with either. `CLLocationManager`'s
+`accuracyAuthorization` tells your app which one it has.
+
+`NSLocationDefaultAccuracyReduced = true` asks iOS to start the prompt at
+approximate location. Do not rely on it: on iOS 27.2 the prompt still started
+at precise location with this key set. Check the prompt on a device.
 
 Location in the background needs extra review on both platforms:
 
@@ -136,7 +142,9 @@ microphone, location, contacts and the Bluetooth permissions, while it runs:
 
 - On Android, use `request_permissions` from the bundled `android` package. See
   [Use the android package](../android/android-package.md).
-- On iOS, the system asks the first time your app uses the protected API.
+- On iOS, the system asks when your app first requests access, for example
+  with `requestWhenInUseAuthorization` for location. It asks only once. The
+  answer stands until the app is deleted or the user changes it in Settings.
 
 ## Verify
 
@@ -160,6 +168,17 @@ Build the app and check the generated declarations:
 
 Then run the app and use each capability once, to confirm that the system asks
 for access.
+
+iOS asks only once per install. To see its prompt again, delete the app, or on
+the simulator run:
+
+```bash
+xcrun simctl privacy booted reset all BUNDLE_ID
+```
+
+Replace `BUNDLE_ID` with your `[tool.kivy.ios].bundle_id`. The simulator's
+location prompt has no map or Precise control, so check location accuracy on a
+device.
 
 ## What's next
 

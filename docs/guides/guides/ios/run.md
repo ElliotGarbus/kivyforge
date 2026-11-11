@@ -57,8 +57,10 @@ needs no signing, and on a connected iPhone or iPad, which does.
     kivyforge run -p ios --device
     ```
 
-    To choose between several connected devices, pass `--destination` with a
-    device name or UDID from `kivyforge run -p ios --list-devices`.
+    `run` skips paired devices that are switched off or out of range. To
+    choose between several devices it can reach, pass `--destination` with a
+    device name or UDID from `kivyforge run -p ios --list-devices`. Use the
+    UDID when two devices have the same name.
 
 `run` streams the app's console to your terminal until the app ends. To end
 it on the device, close it from the app switcher; going to the Home Screen

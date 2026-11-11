@@ -361,6 +361,26 @@ as noted below. Apart from D1 and D2:
 No correction is needed for C1 or C2: the Verify commands and the
 `<app>-ios/<app>-Info.plist` path are right as written.
 
+## Resolution (same day)
+
+Applied after this run:
+
+- Corrections 1, 3, 4, 5 and 6, in `permissions.md`. For correction 3, the
+  guide keeps the key in the Approximate location row, and its Location
+  section now says that the user picks the accuracy, that the app should read
+  `accuracyAuthorization`, and that on iOS 27.2 the key did not change where
+  the prompt started. The native-app check in D2 is still open.
+- Correction 2 is dropped: `09-native-sidecar-contract.md` is obsolete.
+- The incidental defect, in `pick_device()`. A paired device whose
+  `tunnelState` is `"unavailable"` now only loses ties: a sole paired device
+  is still picked, a name shared with an unreachable device matches the
+  reachable one, and the "multiple paired" message lists UDIDs and suggests
+  `--destination UDID`. `guides/ios/run.md` says so. Checked against this
+  Mac's real `devicectl` output (the same two phones): with no destination and
+  with `--destination "Elliot’s iPhone"`, it chose the iPhone 18 Pro Max
+  (`00008160-...`, `tunnelState` `disconnected`), not the unavailable
+  iPhone14,3.
+
 ## Clean-up
 
 Both scratch apps (`org.kivy.rubicon-deviceinfo` and `org.kivy.kfperm-fresh`)

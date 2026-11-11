@@ -274,6 +274,10 @@ class Device:
     def is_simulator(self) -> bool:
         return self.reality == "simulated"
 
+    @property
+    def is_reachable(self) -> bool:
+        return self.tunnel_state != "unavailable"
+
 
 def parse_devicectl_devices(payload: dict) -> list[Device]:
     """Flatten ``devicectl list devices -j`` output into a device list."""
@@ -306,6 +310,11 @@ def pick_device(devices: list[Device], destination: str | None = None) -> Device
     the tunnel themselves on demand, so a paired device is a valid target
     regardless of ``tunnelState``.
 
+    ``"unavailable"`` is different: devicectl cannot reach the device at all
+    (it is off, or out of range). Such a device only breaks ties: with several
+    paired devices the reachable one wins, and a name shared by an old and a
+    current phone matches the current one.
+
     Only iOS devices are candidates, so a name fragment cannot land on a paired
     Apple Watch. Xcode 27's devicectl also lists simulators, as paired iOS
     devices marked ``reality: "simulated"``; ``--device`` never targets one.
@@ -313,7 +322,9 @@ def pick_device(devices: list[Device], destination: str | None = None) -> Device
     """
     ios = [d for d in devices if d.platform == "iOS"]
     simulators = [d for d in ios if d.is_simulator]
-    devices = [d for d in ios if not d.is_simulator]
+    devices = sorted(
+        (d for d in ios if not d.is_simulator), key=lambda d: not d.is_reachable
+    )
     if destination:
         if not devices and not simulators:
             raise CommandError(
@@ -346,12 +357,16 @@ def pick_device(devices: list[Device], destination: str | None = None) -> Device
             "no paired iOS device found (connect it via USB/Wi-Fi and trust "
             "this Mac, then run `kivyforge run --list-devices`)",
         )
-    names = ", ".join(f"{d.name!r}" for d in paired)
+    reachable = [d for d in paired if d.is_reachable]
+    if len(reachable) == 1:
+        return reachable[0]
+    candidates = reachable or paired
+    listed = ", ".join(f"{d.name!r} ({d.udid or d.identifier})" for d in candidates)
     raise CommandError(
         ["devicectl"],
         1,
-        f"multiple paired iOS devices found ({names}) — pass one "
-        "explicitly, e.g. `kivyforge run --device --destination 'NAME'`",
+        f"multiple paired iOS devices found ({listed}) — pass one "
+        "explicitly, e.g. `kivyforge run --device --destination UDID`",
     )
 
 

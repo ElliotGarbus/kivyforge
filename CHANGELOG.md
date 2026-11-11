@@ -24,6 +24,17 @@
 - **Migration:** none needed. If you declared capped permissions in
   `extra_manifest_xml`, you can move them into `uses`.
 
+### iOS: `run --device` skips a paired device it cannot reach
+
+- **Fixed:** with two paired iPhones, one of them switched off or out of range,
+  `run -p ios --device` refused to choose and suggested
+  `--destination 'NAME'`, which cannot help when both phones have the same
+  name. It now picks the one devicectl can reach, and `--destination NAME`
+  prefers a reachable device when the name is shared. When it still cannot
+  choose, the message lists each device's UDID and suggests
+  `--destination UDID`.
+- **Migration:** none needed.
+
 ### iOS: `run --simulator` leaves an already-running simulator's window alone
 
 - **Changed:** `run -p ios --simulator` opens a window only for a simulator it
