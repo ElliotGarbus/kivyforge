@@ -123,9 +123,37 @@ Using App in the Device Hub window, the app logged
 `KFPERM location poll status 4 accuracy 0` with the key `true` and again with
 `false`.
 
-Not determined: whether this is iOS 27.2 ignoring the key or something about
-this app. Before rewriting the guide, the check that decides it is a native app
-from Xcode's iOS App template with the same key on the same phone.
+**Native-app check (same day, 17:2x): iOS 27.2, not kivyforge.** To rule out
+kivyforge, Kivy, SDL and Python, a minimal SwiftUI app was written by hand,
+shaped like Xcode's iOS App template (no project generator is installed on
+this Mac), in `/tmp/kfnative`, not committed. It has one `App.swift` and an
+explicit `Info.plist` holding only the standard bundle keys,
+`UIApplicationSceneManifest`, `UILaunchScreen`,
+`NSLocationWhenInUseUsageDescription` and
+`NSLocationDefaultAccuracyReduced = true`. Bundle ID `org.kivy.kfperm-native`,
+never installed before. It was built with `xcodebuild -scheme KFNative
+-destination id=00008160-... -allowProvisioningUpdates` (automatic signing,
+team `R5PKSQLUZY`), installed with `devicectl device install app`, and launched
+with `devicectl device process launch --console`. Two seconds after launch it
+calls `requestWhenInUseAuthorization()`, and it prints status and accuracy from
+`locationManagerDidChangeAuthorization`. It also reads the key back with
+`Bundle.main.object(forInfoDictionaryKey:)`:
+
+```
+KFNATIVE init: status 0 accuracy 0 plist NSLocationDefaultAccuracyReduced=Optional(1)
+KFNATIVE changed: status 0 accuracy 0 plist NSLocationDefaultAccuracyReduced=Optional(1)
+KFNATIVE before request: status 0 accuracy 0 plist NSLocationDefaultAccuracyReduced=Optional(1)
+KFNATIVE location requested
+KFNATIVE changed: status 4 accuracy 0 plist NSLocationDefaultAccuracyReduced=Optional(1)
+```
+
+The owner saw "Precise: On" and a zoomed-in map, and tapped Allow While Using
+App. Settings > Apps > KF Native > Location showed Precise Location **on**. That
+matches the Kivy app exactly. So iOS 27.2 does not apply the key even to an app
+with nothing of kivyforge in it. (The first `devicectl` install attempt failed
+with `CoreDeviceError error 4016`, "Connection reset by peer", over Wi-Fi; the
+retry installed.) Not checked: an earlier iOS version, where the key may still
+work as Apple documents.
 
 Contradicts: `permissions.md` line 36 (the Approximate location row) and lines
 70 to 72 ("`NSLocationDefaultAccuracyReduced = true` makes approximate location
@@ -339,11 +367,10 @@ as noted below. Apart from D1 and D2:
 3. **`permissions.md`, line 36 and lines 70 to 72.** Wrong, as observed on iOS
    27.2: "`NSLocationDefaultAccuracyReduced = true` makes approximate location
    the default." True: Apple documents that effect, but on iOS 27.2 the prompt
-   still started at "Precise: On" and iOS granted full accuracy (D2). Hold the
-   rewrite until the native-app check in D2 says whether the key or this app is
-   at fault. Until then, the lowest-risk text is to keep the key, attribute the
-   behaviour to Apple's documentation, and add that the user picks the accuracy
-   in the prompt and can change it in Settings.
+   still started at "Precise: On" and iOS granted full accuracy (D2), in a
+   native app as well. Keep the key, attribute the behaviour to Apple's
+   documentation, and add that the user picks the accuracy in the prompt and
+   can change it in Settings.
 4. **`permissions.md`, line 139.** Wrong in its implication: "the system asks
    the first time your app uses the protected API." True: "the system asks
    when your app first requests access (for location, the app calls
@@ -369,7 +396,8 @@ Applied after this run:
   guide keeps the key in the Approximate location row, and its Location
   section now says that the user picks the accuracy, that the app should read
   `accuracyAuthorization`, and that on iOS 27.2 the key did not change where
-  the prompt started. The native-app check in D2 is still open.
+  the prompt started. The native-app check in D2 then showed the same thing
+  in an app with no kivyforge in it, so that wording stands.
 - Correction 2 is dropped: `09-native-sidecar-contract.md` is obsolete.
 - The incidental defect, in `pick_device()`. A paired device whose
   `tunnelState` is `"unavailable"` now only loses ties: a sole paired device
