@@ -36,6 +36,7 @@ from kivyforge.config.model import (
     AndroidManifestConfig,
     AndroidPermissions,
     AndroidService,
+    AndroidUsesPermission,
 )
 from kivyforge.platforms.android.elf import EM_AARCH64, EM_X86_64
 from kivyforge.platforms.android.generate.manifest import (
@@ -692,7 +693,9 @@ def _mcheck(
 
 class TestMergedManifestCleanArtifacts:
     def test_a_plain_merged_manifest_has_no_problems(self):
-        android = _android(permissions=AndroidPermissions(uses=("INTERNET",)))
+        android = _android(
+            permissions=AndroidPermissions(uses=(AndroidUsesPermission("INTERNET"),))
+        )
         assert _mcheck(_merged(android), android) == []
 
     def test_library_contributed_content_is_not_a_fault(self):
@@ -708,7 +711,14 @@ class TestMergedManifestCleanArtifacts:
             version_code=417,
             icons=AndroidIconConfig(source="icon.png"),
             permissions=AndroidPermissions(
-                uses=("CAMERA", "INTERNET"),
+                uses=(
+                    AndroidUsesPermission("CAMERA"),
+                    AndroidUsesPermission("INTERNET"),
+                    AndroidUsesPermission("BLUETOOTH", max_sdk_version=30),
+                    AndroidUsesPermission(
+                        "BLUETOOTH_SCAN", uses_permission_flags="neverForLocation"
+                    ),
+                ),
                 features=(AndroidFeature(name="android.hardware.nfc", required=True),),
             ),
             services=(
@@ -791,12 +801,47 @@ class TestMergedManifestIdentity:
 
 class TestMergedManifestPermissions:
     def test_a_dropped_permission_is_reported(self):
-        android = _android(permissions=AndroidPermissions(uses=("INTERNET",)))
+        android = _android(
+            permissions=AndroidPermissions(uses=(AndroidUsesPermission("INTERNET"),))
+        )
         bad = _merged(android).replace(
             '<uses-permission android:name="android.permission.INTERNET" />', ""
         )
         problems = _mcheck(bad, android)
         assert any("android.permission.INTERNET" in p for p in problems)
+
+    def test_a_lowered_max_sdk_version_is_reported(self):
+        android = _android(
+            permissions=AndroidPermissions(
+                uses=(AndroidUsesPermission("BLUETOOTH", max_sdk_version=30),)
+            )
+        )
+        bad = _merged(android).replace(
+            'android:maxSdkVersion="30"', 'android:maxSdkVersion="28"'
+        )
+        problems = _mcheck(bad, android)
+        assert any("maxSdkVersion='28'" in p for p in problems)
+
+    def test_a_cap_on_an_uncapped_permission_is_reported(self):
+        android = _android(
+            permissions=AndroidPermissions(uses=(AndroidUsesPermission("BLUETOOTH"),))
+        )
+        bad = _merged(android).replace(
+            'android:name="android.permission.BLUETOOTH"',
+            'android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"',
+        )
+        problems = _mcheck(bad, android)
+        assert any("config declares None" in p for p in problems)
+
+    def test_a_dropped_cap_is_the_merger_working(self):
+        """A library needing the permission everywhere widens it; nothing lost."""
+        android = _android(
+            permissions=AndroidPermissions(
+                uses=(AndroidUsesPermission("BLUETOOTH", max_sdk_version=30),)
+            )
+        )
+        widened = _merged(android).replace(' android:maxSdkVersion="30"', "")
+        assert _mcheck(widened, android) == []
 
     def test_a_foreground_services_auto_added_pair_is_required_too(self):
         """The auto-adds are config's declarations as much as `uses` is."""
@@ -821,7 +866,9 @@ class TestMergedManifestPermissions:
 
 class TestMergedManifestFeatures:
     def test_a_dropped_implied_feature_is_reported(self):
-        android = _android(permissions=AndroidPermissions(uses=("NFC",)))
+        android = _android(
+            permissions=AndroidPermissions(uses=(AndroidUsesPermission("NFC"),))
+        )
         bad = _merged(android).replace(
             '<uses-feature android:name="android.hardware.nfc" '
             'android:required="false" />',

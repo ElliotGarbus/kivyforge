@@ -1143,7 +1143,7 @@ def _check_implied_features(config: Config) -> CheckResult:
             "Implied features", Status.SKIP, "permissions.auto_features is false"
         )
     explicit = {f.name for f in android.permissions.features}
-    permissions = qualified_permissions(android.permissions.uses)
+    permissions = qualified_permissions(p.name for p in android.permissions.uses)
     synthesized = [f for f in implied_features(permissions) if f not in explicit]
     if not synthesized:
         return CheckResult(

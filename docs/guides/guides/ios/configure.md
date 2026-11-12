@@ -93,6 +93,20 @@ full key list, see the [iOS overlay reference](../../reference/pyproject/ios.md)
 :   Dependencies to drop from the resolve, such as packages Kivy declares but
     your app does not use.
 
+## Declare permissions
+
+An app that uses the camera, the microphone, location, or another protected
+capability needs a usage description in `Info.plist`: the sentence iOS shows
+when it asks the user for access. Set it in `[tool.kivy.ios.info_plist]`:
+
+```toml
+[tool.kivy.ios.info_plist]
+NSCameraUsageDescription = "Scan the QR code on your ticket."
+```
+
+For the key each capability needs, and the matching Android permission, see
+[Declare permissions on Android and iOS](../cross-platform/permissions.md).
+
 ## Add files to the app bundle
 
 Some SDKs read a file from the app bundle rather than from your Python code.

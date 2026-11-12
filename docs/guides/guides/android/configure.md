@@ -209,6 +209,30 @@ Play does not hide your app from devices without that hardware:
 uses = ["INTERNET", "CAMERA"]
 ```
 
+Some permissions apply only to some Android versions, or need a flag. Write
+those as a table. Bluetooth is the usual case, because Android 12 (API 31)
+replaced the old Bluetooth permissions with new ones:
+
+```toml
+[tool.kivy.android.permissions]
+uses = [
+    { name = "BLUETOOTH", max_sdk_version = 30 },
+    { name = "BLUETOOTH_ADMIN", max_sdk_version = 30 },
+    { name = "ACCESS_FINE_LOCATION", max_sdk_version = 30 },
+    "BLUETOOTH_CONNECT",
+    { name = "BLUETOOTH_SCAN", uses_permission_flags = "neverForLocation" },
+]
+```
+
+`max_sdk_version` requests the permission only up to that API level.
+`neverForLocation` tells Android 12 and later that your app never uses Bluetooth
+scans to find the user's location, so scanning works without a location
+permission. Android 11 and earlier always need location permission to scan,
+which is what the capped `ACCESS_FINE_LOCATION` entry is for. Leave it out if
+your app only connects to devices that are already paired. For the equivalent
+iOS settings, see
+[Declare permissions on Android and iOS](../cross-platform/permissions.md).
+
 ## Verify
 
 A change to the dependencies, ABIs, `min_sdk`, or native libraries makes the

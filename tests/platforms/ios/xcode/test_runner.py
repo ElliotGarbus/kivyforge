@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from kivyforge.cli._common import ToolchainError
@@ -530,6 +532,94 @@ class TestDeviceSelection:
         }
         with pytest.raises(CommandError, match="no paired iOS device"):
             pick_device(parse_devicectl_devices(payload))
+
+    # Shaped like the 2026-11-10 Mac run: a current phone and an old one share
+    # a name, and the old one is paired but out of reach.
+    _SAME_NAME_PAYLOAD = {
+        "result": {
+            "devices": [
+                {
+                    "identifier": "53F2E521-OLD",
+                    "deviceProperties": {"name": "Elliot’s iPhone"},
+                    "hardwareProperties": {
+                        "platform": "iOS",
+                        "udid": "00008110-001135CE268A801E",
+                    },
+                    "connectionProperties": {
+                        "tunnelState": "unavailable",
+                        "pairingState": "paired",
+                    },
+                },
+                {
+                    "identifier": "0F7D0110-CURRENT",
+                    "deviceProperties": {"name": "Elliot’s iPhone"},
+                    "hardwareProperties": {
+                        "platform": "iOS",
+                        "reality": "physical",
+                        "udid": "00008160-0001192601A0000A",
+                    },
+                    "connectionProperties": {
+                        "tunnelState": "disconnected",
+                        "pairingState": "paired",
+                    },
+                },
+            ]
+        }
+    }
+
+    def test_pick_skips_an_unreachable_paired_device(self):
+        devices = parse_devicectl_devices(self._SAME_NAME_PAYLOAD)
+        assert pick_device(devices).identifier == "0F7D0110-CURRENT"
+
+    def test_pick_by_shared_name_prefers_the_reachable_device(self):
+        devices = parse_devicectl_devices(self._SAME_NAME_PAYLOAD)
+        assert pick_device(devices, "Elliot’s iPhone").identifier == "0F7D0110-CURRENT"
+
+    def test_pick_by_udid_still_reaches_an_unreachable_device(self):
+        devices = parse_devicectl_devices(self._SAME_NAME_PAYLOAD)
+        picked = pick_device(devices, "00008110-001135CE268A801E")
+        assert picked.identifier == "53F2E521-OLD"
+
+    def test_sole_paired_device_is_picked_even_if_unreachable(self):
+        payload = {
+            "result": {"devices": self._SAME_NAME_PAYLOAD["result"]["devices"][:1]}
+        }
+        devices = parse_devicectl_devices(payload)
+        assert pick_device(devices).identifier == "53F2E521-OLD"
+
+    def test_multiple_reachable_devices_are_listed_by_udid(self):
+        payload = json.loads(json.dumps(self._SAME_NAME_PAYLOAD))
+        payload["result"]["devices"][0]["connectionProperties"]["tunnelState"] = (
+            "connected"
+        )
+        devices = parse_devicectl_devices(payload)
+        with pytest.raises(CommandError) as exc:
+            pick_device(devices)
+        message = str(exc.value)
+        assert "00008110-001135CE268A801E" in message
+        assert "00008160-0001192601A0000A" in message
+        assert "--destination UDID" in message
+
+    def test_unreachable_devices_are_left_out_of_the_choice(self):
+        payload = json.loads(json.dumps(self._SAME_NAME_PAYLOAD))
+        payload["result"]["devices"].append(
+            {
+                "identifier": "IPAD-ID",
+                "deviceProperties": {"name": "iPad"},
+                "hardwareProperties": {"platform": "iOS", "udid": "IPAD-UDID"},
+                "connectionProperties": {
+                    "tunnelState": "connected",
+                    "pairingState": "paired",
+                },
+            }
+        )
+        devices = parse_devicectl_devices(payload)
+        with pytest.raises(CommandError) as exc:
+            pick_device(devices)
+        message = str(exc.value)
+        assert "IPAD-UDID" in message
+        assert "00008160-0001192601A0000A" in message
+        assert "00008110-001135CE268A801E" not in message
 
     def test_pick_unknown_destination_still_says_no_match(self):
         devices = parse_devicectl_devices(self._XCODE27_PAYLOAD)

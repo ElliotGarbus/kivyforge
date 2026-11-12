@@ -147,6 +147,18 @@ Where the launcher lives: Windows, macOS, Linux and Android write it into the bu
 
 Icons and splash screens are inherently platform-specific: iOS requires a 1024×1024 flat PNG (Xcode generates all sizes into an asset catalog); Android adaptive icons require separate foreground and background layers; splash-screen aspect ratios and conventions differ further. A single shared asset set cannot satisfy all platforms correctly, so **each platform declares its own icon and splash in its own overlay subtable** (e.g. `[tool.kivy.ios.icons]`). See the relevant overlay doc for the exact fields.
 
+## Permissions are per-platform
+
+There is no shared `[tool.kivy.permissions]` table. Android declares permissions in `[tool.kivy.android.permissions].uses` (string entries, or `{ name, max_sdk_version, uses_permission_flags }` tables for the `<uses-permission>` attributes); iOS declares usage-description strings in `[tool.kivy.ios.info_plist]`. A cross-platform guide, [Declare permissions on Android and iOS](../../guides/guides/cross-platform/permissions.md), pairs the two for each capability.
+
+A shared table keyed by capability, in the style of Briefcase's `[tool.briefcase.permission]`, was proposed in [#222](https://github.com/ElliotGarbus/kivyforge/issues/222) and declined (2026-11-10). The easy capabilities (camera, microphone, contacts) map one-to-one, and those are the ones a pairing table already covers. The hard ones do not map:
+
+- **Bluetooth** is one iOS key but, on Android, five permissions split at API 31: the legacy pair and fine location capped at 30, `BLUETOOTH_CONNECT`, and `BLUETOOTH_SCAN` with `neverForLocation` only if the app never derives location from scans. A generator would have to choose the scan flag for the app.
+- **Background location** needs two iOS keys plus a `UIBackgroundModes` entry, and an Android permission that Play reviews separately.
+- **Photos** differ by intent (pick, save, read), with different keys on each platform and nothing at all for the system picker.
+
+Each is a capability where the generated expansion is a policy decision kivyforge would be making silently. Briefcase resolves a collision between its generated entries and the platform's own table by letting the later one win; kivyforge's practice is to reject a disagreement rather than pick a winner, which a shared table would contradict wherever it overlapped an overlay. The cost of declining is that a cross-platform app writes each capability twice, which the guide keeps mechanical.
+
 ## Platform overlays
 
 Each `[tool.kivy.<platform>]` overlay is documented in its own file:

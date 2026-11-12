@@ -106,6 +106,59 @@ class TestManifest:
         names = [e.get(f"{NS}name") for e in tree.findall("uses-permission")]
         assert names == ["android.permission.INTERNET"]
 
+    def test_permission_attributes_emitted(self):
+        _, android = _android(
+            "[tool.kivy.android.permissions]\n"
+            "uses = [\n"
+            '  "INTERNET",\n'
+            '  { name = "BLUETOOTH", max_sdk_version = 30 },\n'
+            '  { name = "BLUETOOTH_SCAN", uses_permission_flags = "neverForLocation" },\n'
+            "]\n"
+        )
+        _, tree = _manifest_tree(android)
+        emitted = {
+            e.get(f"{NS}name"): (
+                e.get(f"{NS}maxSdkVersion"),
+                e.get(f"{NS}usesPermissionFlags"),
+            )
+            for e in tree.findall("uses-permission")
+        }
+        assert emitted == {
+            "android.permission.INTERNET": (None, None),
+            "android.permission.BLUETOOTH": ("30", None),
+            "android.permission.BLUETOOTH_SCAN": (None, "neverForLocation"),
+        }
+
+    def test_capped_permission_still_implies_its_feature(self):
+        _, android = _android(
+            "[tool.kivy.android.permissions]\n"
+            'uses = [{ name = "BLUETOOTH", max_sdk_version = 30 }]\n'
+        )
+        _, tree = _manifest_tree(android)
+        names = [e.get(f"{NS}name") for e in tree.findall("uses-feature")]
+        assert names == ["android.hardware.bluetooth"]
+
+    def test_declared_foreground_service_permission_keeps_attributes(self):
+        _, android = _android(
+            "[tool.kivy.android.permissions]\n"
+            'uses = [{ name = "FOREGROUND_SERVICE", max_sdk_version = 40 }]\n'
+            "[[tool.kivy.android.services]]\n"
+            'name = "Downloader"\n'
+            'entry_point = "svc"\n'
+            "foreground = true\n"
+            'foreground_service_type = "dataSync"\n'
+            'notification = { channel_id = "c", channel_name = "C", '
+            'title = "t", text = "x" }\n'
+        )
+        _, tree = _manifest_tree(android)
+        services = [
+            e
+            for e in tree.findall("uses-permission")
+            if e.get(f"{NS}name") == "android.permission.FOREGROUND_SERVICE"
+        ]
+        assert len(services) == 1
+        assert services[0].get(f"{NS}maxSdkVersion") == "40"
+
     def test_implied_features_non_required(self):
         _, android = _android('[tool.kivy.android.permissions]\nuses = ["CAMERA"]\n')
         _, tree = _manifest_tree(android)

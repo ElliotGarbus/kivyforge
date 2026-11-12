@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Android permissions can carry `maxSdkVersion` and `usesPermissionFlags`
+
+- **Added:** an entry in `[tool.kivy.android.permissions].uses` can be a table,
+  `{ name = "BLUETOOTH", max_sdk_version = 30 }` or
+  `{ name = "BLUETOOTH_SCAN", uses_permission_flags = "neverForLocation" }`,
+  which become the `<uses-permission>` attributes of the same names
+  ([#222](https://github.com/ElliotGarbus/kivyforge/issues/222)). Plain strings
+  work as before. This is what Bluetooth on Android 12 and later needs, and it
+  replaces writing those permissions as raw XML in `extra_manifest_xml`, which
+  also skipped their implied `<uses-feature>` entries. A `max_sdk_version`
+  below `min_sdk`, and `uses_permission_flags` with `compile_sdk` below 31, are
+  configuration errors.
+- **Added:** a guide,
+  [Declare permissions on Android and iOS](docs/guides/guides/cross-platform/permissions.md),
+  pairing each common capability's Android `uses` entries with its iOS
+  `info_plist` keys.
+- **Changed:** a permission listed twice in `uses`, including as `"CAMERA"` and
+  `"android.permission.CAMERA"`, is emitted once instead of twice. Two entries
+  for the same permission with different attributes are rejected.
+- **Migration:** none needed. If you declared capped permissions in
+  `extra_manifest_xml`, you can move them into `uses`.
+
+### iOS: `run --device` skips a paired device it cannot reach
+
+- **Fixed:** with two paired iPhones, one of them switched off or out of range,
+  `run -p ios --device` refused to choose and suggested
+  `--destination 'NAME'`, which cannot help when both phones have the same
+  name. It now picks the one devicectl can reach, and `--destination NAME`
+  prefers a reachable device when the name is shared. When it still cannot
+  choose, the message lists each device's UDID and suggests
+  `--destination UDID`.
+- **Migration:** none needed.
+
 ### iOS: `run --simulator` leaves an already-running simulator's window alone
 
 - **Changed:** `run -p ios --simulator` opens a window only for a simulator it

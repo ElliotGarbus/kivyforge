@@ -54,7 +54,7 @@ dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `uses` | list of string | `[]` | Permissions to request. Bare names such as `"CAMERA"` get the `android.permission.` prefix. |
+| `uses` | list of string or table | `[]` | Permissions to request. Bare names such as `"CAMERA"` get the `android.permission.` prefix. A permission that needs attributes is a table: `{ name = "BLUETOOTH", max_sdk_version = 30 }` requests it only up to API 30, and `{ name = "BLUETOOTH_SCAN", uses_permission_flags = "neverForLocation" }` declares that scanning is never used for location (needs `compile_sdk` 31 or higher). `max_sdk_version` may not be below `min_sdk`. Listing a permission twice is allowed only with the same attributes. |
 | `features` | list of table | `[]` | Each `{ name, required }` entry becomes a `<uses-feature>` element. `required` defaults to `true`. An entry overrides the synthesized feature of the same name. |
 | `auto_features` | bool | `true` | Add a non-required `<uses-feature>` for each permission that implies hardware, such as `CAMERA`. |
 

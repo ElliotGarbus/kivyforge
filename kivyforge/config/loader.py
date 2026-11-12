@@ -58,6 +58,7 @@ from .model import (
     SUPPORTED_LINUX_SCHEMA_VERSION,
     SUPPORTED_MACOS_SCHEMA_VERSION,
     SUPPORTED_WINDOWS_SCHEMA_VERSION,
+    USES_PERMISSION_FLAGS_MIN_COMPILE_SDK,
     VALID_ANDROID_ABIS,
     VALID_ANDROID_DEBUG_SYMBOLS,
     VALID_ANDROID_KIVY_GENERATIONS,
@@ -68,6 +69,7 @@ from .model import (
     VALID_ORIENTATIONS,
     VALID_SIMULATOR_ARCHS,
     VALID_SWIFT_REQUIREMENT_KINDS,
+    VALID_USES_PERMISSION_FLAGS,
     VALID_WINDOWS_ARCHS,
     VALID_WINDOWS_STORE_SCOPES,
     WINDOWS_APP_ID_MAX_LENGTH,
@@ -87,6 +89,7 @@ from .model import (
     AndroidSigningConfig,
     AndroidSplashConfig,
     AndroidSrcConfig,
+    AndroidUsesPermission,
     Author,
     AutoVersionCode,
     Config,
@@ -113,6 +116,7 @@ from .model import (
     WindowsSigningConfig,
     XcframeworkDep,
     foreign_namespace_attr,
+    qualified_permission,
 )
 from .version import android_auto_version_code, normalized
 
@@ -1853,7 +1857,9 @@ def _parse_android(
         key_path="tool.kivy.android.python.version",
     )
 
-    permissions = _parse_android_permissions(android, finder)
+    permissions = _parse_android_permissions(
+        android, finder, min_sdk=min_sdk, compile_sdk=compile_sdk
+    )
     icons = _parse_android_icons(android, finder)
     splash = _parse_android_splash(android, finder)
     aars = _parse_android_archives(android, "aars", finder)
@@ -2172,8 +2178,11 @@ def _validate_android_relpath(
     return value
 
 
+_USES_PERMISSION_KEYS = ("name", "max_sdk_version", "uses_permission_flags")
+
+
 def _parse_android_permissions(
-    android: dict, finder: _LineFinder
+    android: dict, finder: _LineFinder, *, min_sdk: int, compile_sdk: int
 ) -> AndroidPermissions:
     table = android.get("permissions")
     if table is None:
@@ -2183,15 +2192,23 @@ def _parse_android_permissions(
             "[tool.kivy.android.permissions] must be a table",
             key_path="tool.kivy.android.permissions",
         )
-    uses = table.get("uses", [])
-    if not isinstance(uses, list) or not all(
-        isinstance(p, str) and p.strip() for p in uses
-    ):
+    uses_raw = table.get("uses", [])
+    if not isinstance(uses_raw, list):
         raise ConfigError(
-            "[tool.kivy.android.permissions].uses must be a list of non-empty strings",
+            "[tool.kivy.android.permissions].uses must be a list of permission "
+            "names or { name = ... } tables",
             key_path="tool.kivy.android.permissions.uses",
             line=finder.line("uses"),
         )
+    uses = _dedupe_uses_permissions(
+        [
+            _parse_uses_permission(
+                entry, i, finder, min_sdk=min_sdk, compile_sdk=compile_sdk
+            )
+            for i, entry in enumerate(uses_raw)
+        ],
+        finder,
+    )
     features_raw = table.get("features", [])
     if not isinstance(features_raw, list):
         raise ConfigError(
@@ -2221,8 +2238,129 @@ def _parse_android_permissions(
             line=finder.line("auto_features"),
         )
     return AndroidPermissions(
-        uses=tuple(uses), features=tuple(features), auto_features=auto_features
+        uses=uses, features=tuple(features), auto_features=auto_features
     )
+
+
+def _parse_uses_permission(
+    entry: object, index: int, finder: _LineFinder, *, min_sdk: int, compile_sdk: int
+) -> AndroidUsesPermission:
+    key_path = f"tool.kivy.android.permissions.uses[{index}]"
+    line = finder.line("uses")
+    if isinstance(entry, str):
+        if not entry.strip():
+            raise ConfigError(
+                f"{key_path} must be a non-empty permission name",
+                key_path=key_path,
+                line=line,
+            )
+        return AndroidUsesPermission(name=entry)
+    if not isinstance(entry, dict):
+        raise ConfigError(
+            f"{key_path} must be a permission name or a {{ name = ... }} table, "
+            f"not {type(entry).__name__}",
+            key_path=key_path,
+            line=line,
+        )
+    for key in entry:
+        if key not in _USES_PERMISSION_KEYS:
+            close = difflib.get_close_matches(key, _USES_PERMISSION_KEYS, n=1)
+            raise ConfigError(
+                f"{key_path} has unknown key {key!r}",
+                key_path=f"{key_path}.{key}",
+                line=line,
+                hint=(
+                    f"did you mean {close[0]!r}?"
+                    if close
+                    else f"valid keys: {', '.join(_USES_PERMISSION_KEYS)}"
+                ),
+            )
+    name = entry.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ConfigError(
+            f"{key_path}.name must be a non-empty string",
+            key_path=f"{key_path}.name",
+            line=line,
+        )
+    max_sdk = entry.get("max_sdk_version")
+    if max_sdk is not None:
+        if isinstance(max_sdk, bool) or not isinstance(max_sdk, int) or max_sdk < 1:
+            raise ConfigError(
+                f"{key_path}.max_sdk_version must be a positive integer (an API level)",
+                key_path=f"{key_path}.max_sdk_version",
+                line=line,
+            )
+        if max_sdk < min_sdk:
+            raise ConfigError(
+                f"{key_path}.max_sdk_version {max_sdk} is below min_sdk {min_sdk}, "
+                f"so no device this app installs on would be granted {name}",
+                key_path=f"{key_path}.max_sdk_version",
+                line=line,
+                hint="remove the entry, or lower min_sdk if older devices need it.",
+            )
+    flags = entry.get("uses_permission_flags")
+    if flags is not None:
+        if not isinstance(flags, str) or not flags:
+            raise ConfigError(
+                f"{key_path}.uses_permission_flags must be a non-empty string",
+                key_path=f"{key_path}.uses_permission_flags",
+                line=line,
+            )
+        unknown = sorted(set(flags.split("|")) - VALID_USES_PERMISSION_FLAGS)
+        if unknown:
+            raise ConfigError(
+                f"{key_path}.uses_permission_flags has unknown flag(s): "
+                f"{', '.join(unknown)} (valid: "
+                f"{', '.join(sorted(VALID_USES_PERMISSION_FLAGS))})",
+                key_path=f"{key_path}.uses_permission_flags",
+                line=line,
+            )
+        if compile_sdk < USES_PERMISSION_FLAGS_MIN_COMPILE_SDK:
+            raise ConfigError(
+                f"{key_path}.uses_permission_flags needs compile_sdk >= "
+                f"{USES_PERMISSION_FLAGS_MIN_COMPILE_SDK} "
+                "(android:usesPermissionFlags is an API "
+                f"{USES_PERMISSION_FLAGS_MIN_COMPILE_SDK} attribute); compile_sdk "
+                f"is {compile_sdk}",
+                key_path=f"{key_path}.uses_permission_flags",
+                line=line,
+                hint="raise [tool.kivy.android].compile_sdk.",
+            )
+    return AndroidUsesPermission(
+        name=name, max_sdk_version=max_sdk, uses_permission_flags=flags
+    )
+
+
+def _dedupe_uses_permissions(
+    entries: list[AndroidUsesPermission], finder: _LineFinder
+) -> tuple[AndroidUsesPermission, ...]:
+    """Drop repeats of a permission; refuse repeats that disagree.
+
+    ``"CAMERA"`` and ``"android.permission.CAMERA"`` are the same permission.
+    Two entries for one permission with different attributes cannot both be
+    emitted, and picking one would silently drop the other's attributes.
+    """
+    seen: dict[str, AndroidUsesPermission] = {}
+    out: list[AndroidUsesPermission] = []
+    for entry in entries:
+        qualified = qualified_permission(entry.name)
+        prior = seen.get(qualified)
+        if prior is None:
+            seen[qualified] = entry
+            out.append(entry)
+            continue
+        if (prior.max_sdk_version, prior.uses_permission_flags) != (
+            entry.max_sdk_version,
+            entry.uses_permission_flags,
+        ):
+            raise ConfigError(
+                f"[tool.kivy.android.permissions].uses declares {qualified} "
+                "twice with different attributes",
+                key_path="tool.kivy.android.permissions.uses",
+                line=finder.line("uses"),
+                hint="keep one entry for it, with the attributes you want.",
+            )
+    return tuple(out)
 
 
 def _parse_android_icons(android: dict, finder: _LineFinder) -> AndroidIconConfig:

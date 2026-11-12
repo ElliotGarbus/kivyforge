@@ -398,7 +398,7 @@ UIFileSharingEnabled = true
 ```
 
 - **Type**: table of string → string, bool, integer, or list (TOML native types, mapped to plist equivalents).
-- **Semantics**: each key/value is merged into the generated `<app>-Info.plist`. Useful for usage-description strings (required by iOS for privacy-sensitive APIs), capability flags, and any other plist key that kivyforge does not expose through a dedicated schema field.
+- **Semantics**: each key/value is merged into the generated `<app>-Info.plist`. Useful for usage-description strings (required by iOS for privacy-sensitive APIs; this table is iOS's half of permissions, paired with Android's `uses` per capability in [Declare permissions on Android and iOS](../../../guides/guides/cross-platform/permissions.md)), capability flags, and any other plist key that kivyforge does not expose through a dedicated schema field.
 - **Conflict handling**: user-supplied keys that collide with kivyforge-managed keys are rejected with a diagnostic listing both the offending key and the kivyforge field that controls it.
 
 **kivyforge-managed `Info.plist` keys** — these are written automatically from the schema and cannot be set via `[tool.kivy.ios.info_plist]`:
