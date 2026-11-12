@@ -38,5 +38,6 @@ venv
 *.egg-info
 .build/
 .vscode/
+.idea/
 # MkDocs site output (roadmap item 6); built in CI and on Pages, never committed.
 site/
