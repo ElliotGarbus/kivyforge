@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v0.1.1](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.1) - 2026-11-13
 
 ### kivyforge's own version comes from its git tags
 

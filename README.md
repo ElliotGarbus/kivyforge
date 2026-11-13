@@ -436,6 +436,14 @@ Clone the repository and install it into a virtual environment:
       . .venv/bin/activate
       pip install -e ".[dev]"
 
+kivyforge's version comes from its git tags
+([setuptools-scm](https://setuptools-scm.readthedocs.io/)), so there is no version
+number in the tree. Between releases a build reports a version like
+`0.1.2.dev3+g1a2b3c4`, and a release is pushing a `v*` tag. Clone with full
+history: a shallow clone (`--depth 1`) can't see the last tag and builds as
+`0.1.devN`. An editable install records the version when you install it, so
+re-run `pip install -e .` if `kivyforge --version` should show a newer commit.
+
 Run the same four checks CI runs:
 
       pytest
