@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### kivyforge's own version comes from its git tags
+
+- **Changed:** kivyforge is versioned with setuptools-scm
+  ([#219](https://github.com/ElliotGarbus/kivyforge/issues/219)). A release is
+  pushing a `v*` tag; there is no version number in the tree to bump. A build
+  from any other commit is `X.Y.Z.devN+gHASH`, and `kivyforge --version`,
+  JSON reports, lockfile stamps and the User-Agent all read the installed
+  distribution, so they agree with what pip installed.
+- **Fixed:** `doctor`'s "newer kivyforge on PyPI" check compares PEP 440
+  versions. A development install no longer reads as newer than every release,
+  or as older than the release it was built from.
+- **Changed:** a source tree without `.git` (a GitHub ZIP download, `git
+  archive`, `pip install` of an `archive/<sha>.zip` URL) still builds, taking
+  its version from `.git_archival.txt`.
+- **Migration:** none needed. To build kivyforge from a clone, clone with full
+  history (a shallow clone builds `0.1.devN`).
+
 ### Android permissions can carry `maxSdkVersion` and `usesPermissionFlags`
 
 - **Added:** an entry in `[tool.kivy.android.permissions].uses` can be a table,

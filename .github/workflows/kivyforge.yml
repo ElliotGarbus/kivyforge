@@ -80,6 +80,10 @@ jobs:
     steps:
     - name: Checkout kivyforge
       uses: actions/checkout@v6
+      with:
+        # Full history, so setuptools-scm finds the last tag and builds the
+        # version a release from here would carry, not 0.1.devN.
+        fetch-depth: 0
     - name: Set up Python
       uses: actions/setup-python@v6
       with:

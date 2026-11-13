@@ -21,6 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
+      with:
+        # setuptools-scm reads the version from git tags. A tag push builds
+        # that tag at any depth, but the dry run needs the history back to the
+        # last tag to build the version it would really publish.
+        fetch-depth: 0
     - name: Set up Python 3.x
       uses: actions/setup-python@v6
       with:

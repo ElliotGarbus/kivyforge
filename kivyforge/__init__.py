@@ -8,4 +8,13 @@ it into that platform's project or bundle. See ``docs/design`` for the full
 specification.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+# The version comes from git tags at build time (setuptools-scm), so the only
+# place it exists is the installed distribution's metadata. A tree imported
+# without being installed has none; "0+unknown" is still a valid PEP 440
+# version, so nothing that parses it breaks.
+try:
+    __version__ = version("kivyforge")
+except PackageNotFoundError:  # pragma: no cover - only outside an install
+    __version__ = "0+unknown"

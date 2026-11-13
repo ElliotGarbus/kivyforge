@@ -417,10 +417,10 @@ def _check_kivyforge_version(
     """
     if offline:
         return CheckResult("kivyforge", Status.PASS, f"{current} (offline)")
-    from kivyforge.doctor.checks_common import _ver_tuple
+    from kivyforge.doctor.checks_common import is_newer_release
 
     latest = probe.latest_kivyforge_version()
-    if latest and _ver_tuple(latest) > _ver_tuple(current):
+    if latest and is_newer_release(latest, current):
         return CheckResult(
             "kivyforge",
             Status.WARN,
