@@ -33,7 +33,7 @@ Required.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `version` | string | Required | CPython version to bundle (python-build-standalone), such as `3.13.14`. Must satisfy `[project].requires-python`. |
+| `version` | string | Required | CPython version to bundle (python-build-standalone), such as `3.14.10`. Must satisfy `[project].requires-python`. |
 
 ### `[tool.kivy.windows.icons]`
 
@@ -77,7 +77,7 @@ app_id = "Example.DiceRoller"
 archs = ["amd64"]
 
 [tool.kivy.windows.python]
-version = "3.13.14"
+version = "3.14.10"
 
 [tool.kivy.windows.icons]
 source = "assets/icon.png"

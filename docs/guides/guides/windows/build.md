@@ -39,7 +39,7 @@ app_id = "Example.MyApp"
 archs = ["amd64"]
 
 [tool.kivy.windows.python]
-version = "3.13.14"
+version = "3.14.10"
 
 [tool.kivy.windows.icons]
 source = "assets/icon.png"

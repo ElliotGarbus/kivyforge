@@ -1,11 +1,11 @@
 [project]
 name = "dice-roller"
 version = "0.1.0"
-# Desktop-only example: macOS bundles CPython 3.13.14 (PBS) with Kivy 2.3.1
+# Desktop-only example: macOS bundles CPython 3.14.10 (PBS) with Kivy 2.3.2
 # wheels from PyPI. (Mobile needs Kivy 3.0 — see examples/mobile.)
 requires-python = ">=3.13"
 dependencies = [
-    "kivy>=2.3.1",
+    "kivy>=2.3.2",  # 2.3.2 is the first Kivy with CPython 3.14 wheels
 ]
 
 [tool.kivy]
@@ -37,13 +37,13 @@ exclude = [
 source = "assets/icon.png"
 
 [tool.kivy.macos.python]
-version = "3.13.14"
+version = "3.14.10"
 
 # No [tool.kivy.macos.signing]: the app is ad-hoc signed. To sign with your own
 # Developer ID and notarize, see docs/guides/guides/macos/signing.md.
 
 # One pyproject.toml, two desktop lockfiles: the same [project]/[tool.kivy] now
-# also targets Linux (AppImage/AppDir) from the same PyPI Kivy 2.3.1 wheels.
+# also targets Linux (AppImage/AppDir) from the same PyPI Kivy 2.3.2 wheels.
 [tool.kivy.linux]
 schema_version = 1
 app_id = "org.example.dice-roller"
@@ -67,11 +67,11 @@ source = "assets/icon.png"
 categories = ["Game"]
 
 [tool.kivy.linux.python]
-version = "3.13.14"
+version = "3.14.10"
 
 # The same [project]/[tool.kivy] also targets Windows: an onedir bundle (a
 # windowed launcher .exe beside a full python-build-standalone prefix) from the
-# same PyPI Kivy 2.3.1 win_amd64 wheels. app_id is the AppUserModelID (PascalCase
+# same PyPI Kivy 2.3.2 win_amd64 wheels. app_id is the AppUserModelID (PascalCase
 # CompanyName.ProductName style — different from the reverse-DNS ids above).
 [tool.kivy.windows]
 schema_version = 1
@@ -95,4 +95,4 @@ exclude = [
 source = "assets/icon.png"
 
 [tool.kivy.windows.python]
-version = "3.13.14"
+version = "3.14.10"

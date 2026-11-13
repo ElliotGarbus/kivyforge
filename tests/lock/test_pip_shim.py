@@ -85,9 +85,57 @@ class TestHostMarkers:
         from pip._vendor.packaging import markers
 
         before = markers.default_environment
+        monkeypatch.delenv(_pip_shim.TARGET_PYTHON_ENV_VAR, raising=False)
         monkeypatch.setattr(pip_main_mod, "main", lambda argv: 0)
         assert _pip_shim.main(["install", "kivy"]) == 0
         assert markers.default_environment is before
+
+    def test_target_python_replaces_only_the_python_version(self, monkeypatch):
+        # Kivy 2.3.2 picks kivy-deps.angle by python_version on Windows, so a
+        # 3.13 host locking a 3.14 runtime must answer 3.14 (and nothing else).
+        monkeypatch.delenv(_pip_shim.MARKER_ENV_VAR, raising=False)
+        monkeypatch.setenv(_pip_shim.HOST_MARKERS_ENV_VAR, "1")
+        monkeypatch.setenv(_pip_shim.TARGET_PYTHON_ENV_VAR, "3.14.10")
+        monkeypatch.delenv(_pip_shim.SOURCE_POLICY_ENV_VAR, raising=False)
+        from pip._internal.cli import main as pip_main_mod
+        from pip._vendor.packaging import markers
+
+        host = markers.default_environment()
+        monkeypatch.setattr(markers, "default_environment", markers.default_environment)
+        captured = {}
+
+        def fake_pip_main(argv):
+            captured["environment"] = markers.default_environment()
+            captured["angle_0_5"] = markers.Marker(
+                'sys_platform == "win32" and python_version >= "3.14"'
+            ).evaluate({"sys_platform": "win32"})
+            return 0
+
+        monkeypatch.setattr(pip_main_mod, "main", fake_pip_main)
+        assert _pip_shim.main(["install", "kivy"]) == 0
+
+        environment = captured["environment"]
+        assert environment["python_version"] == "3.14"
+        assert environment["python_full_version"] == "3.14.10"
+        assert environment["implementation_version"] == "3.14.10"
+        unchanged = set(host) - {
+            "python_version",
+            "python_full_version",
+            "implementation_version",
+        }
+        assert {k: environment[k] for k in unchanged} == {k: host[k] for k in unchanged}
+        assert captured["angle_0_5"] is True
+
+    def test_target_python_without_vendored_markers_fails_loudly(
+        self, monkeypatch, capsys
+    ):
+        from pip._vendor.packaging import markers as real_markers
+
+        monkeypatch.setenv(_pip_shim.HOST_MARKERS_ENV_VAR, "1")
+        monkeypatch.setenv(_pip_shim.TARGET_PYTHON_ENV_VAR, "3.14.10")
+        monkeypatch.delattr(real_markers, "default_environment", raising=False)
+        assert _pip_shim.main(["install", "kivy"]) == 3
+        assert "cannot retarget marker evaluation" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

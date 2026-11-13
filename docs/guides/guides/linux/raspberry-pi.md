@@ -22,7 +22,7 @@ under 64-bit Raspberry Pi OS. You do not install kivyforge on the Pi.
   desktop, which provides the Wayland or X11 session the app needs.
 - [Install kivyforge](../../get-started/install.md).
 - Optional: a Python interpreter on the build host with the same minor version
-  as your pinned runtime, for example `python3.13` for runtime `3.13.14`. See
+  as your pinned runtime, for example `python3.14` for runtime `3.14.10`. See
   [Byte-compiling on a cross-build](#byte-compiling-on-a-cross-build).
 
 ## Step 1: Set the architecture
@@ -36,7 +36,7 @@ app_id = "org.example.myapp"
 archs = ["aarch64"]
 
 [tool.kivy.linux.python]
-version = "3.13.14"
+version = "3.14.10"
 ```
 
 To build for both the Pi and x86_64 PCs from one lock, list both, for example

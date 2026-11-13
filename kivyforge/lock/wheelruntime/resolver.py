@@ -26,6 +26,7 @@ from .._pip_shim import (
     HOST_MARKERS_ENV_VAR,
     SOURCE_FILTER_UNAVAILABLE,
     SOURCE_POLICY_ENV_VAR,
+    TARGET_PYTHON_ENV_VAR,
 )
 from ..model import canonical_name
 from ..pip_progress import PROGRESS_ARGS, PipProgress, without_progress
@@ -169,8 +170,9 @@ class PipWheelResolver:
                 constraints=constraints,
                 sources=policy,
             )
-            # The markers pip evaluated (the host's, for a desktop lock), so the
-            # recorded edges are the ones it actually followed.
+            # The markers pip evaluated (the host's with the runtime's Python
+            # version, for a desktop lock), so the recorded edges are the ones
+            # it actually followed.
             environment = report.get("environment", {})
             for item in report.get("install", []):
                 self._absorb(item, merged, seen_filenames, environment)
@@ -246,7 +248,8 @@ class PipWheelResolver:
             report_path = Path(tmp) / "report.json"
             record_path = Path(tmp) / "sources.json"
             # Not "-m pip": the shim applies the source rules (#86). Markers
-            # stay the host's, as they always were for a desktop lock.
+            # stay the host's, as they always were for a desktop lock, except
+            # the Python version, which is the bundled runtime's.
             cmd = [
                 self._python,
                 str(_SHIM),
@@ -284,6 +287,7 @@ class PipWheelResolver:
 
             env = dict(os.environ)
             env[HOST_MARKERS_ENV_VAR] = "1"
+            env[TARGET_PYTHON_ENV_VAR] = python_version
             env[SOURCE_POLICY_ENV_VAR] = policy.environment(record_path)
             progress = PipProgress(
                 label or platform_tags[0], self._on_progress, self._on_transfer
