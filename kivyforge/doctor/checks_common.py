@@ -10,6 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from packaging.version import InvalidVersion, Version
+
 from ..bundle.pycompile import Candidate, no_interpreter
 from ..config.model import AutoVersionCode, Config, StaticVersion
 from ..host import host_runs_natively
@@ -48,6 +50,20 @@ def _ver_tuple(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def is_newer_release(latest: str, current: str) -> bool:
+    """Whether PyPI's *latest* kivyforge is newer than the running *current*.
+
+    Compared as PEP 440 versions, not with :func:`_ver_tuple`: a build between
+    tags is ``0.1.1.dev1+g813022a22``, which ``_ver_tuple`` reads as
+    ``(0, 1, 1, 181302222)`` -- newer than any release. A version that does not
+    parse never triggers the upgrade nudge.
+    """
+    try:
+        return Version(latest) > Version(current)
+    except InvalidVersion:
+        return False
+
+
 def check_pip_version(probe: Probe) -> CheckResult:
     """pip >= 24.3 is required to match PEP 730 iOS platform tags at lock time."""
     minimum = version_str(MIN_PIP_VERSION)
@@ -78,7 +94,7 @@ def check_kivyforge_version(
     if offline:
         return CheckResult("kivyforge version", Status.PASS, f"{current} (offline)")
     latest = probe.latest_kivyforge_version()
-    if latest and _ver_tuple(latest) > _ver_tuple(current):
+    if latest and is_newer_release(latest, current):
         return CheckResult(
             "kivyforge version",
             Status.WARN,

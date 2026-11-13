@@ -11,3 +11,15 @@ prune .git
 # it runs from the repo (tox/pytest), and the git tag is the reference for
 # anyone who wants it.
 prune tests
+
+# setuptools-scm adds every git-tracked file to the sdist. The sdist carries the
+# package and what building it needs, as before; docs, examples, CI and repo
+# housekeeping stay in the repo (12 MB / 643 files otherwise, against 1.3 MB).
+prune docs
+prune examples
+prune scripts
+prune .github
+prune .cursor
+exclude .coveragerc .git_archival.txt .gitattributes .gitignore
+exclude AGENTS.md CODE_OF_CONDUCT.md CONTACT.md CONTRIBUTING.md FAQ.md
+exclude mkdocs.yml pyrightconfig.json renovate.json tox.ini

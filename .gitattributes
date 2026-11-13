@@ -9,3 +9,7 @@ kivyforge/platforms/android/bootstrap/templates/p4a/** text eol=lf
 
 # PowerShell scripts are Windows-native; keep them CRLF.
 *.ps1 text eol=crlf
+
+# setuptools-scm reads the version from this file when building a tree that has
+# no .git (git archive, a GitHub ZIP download, a pip install of archive/<sha>.zip).
+.git_archival.txt export-subst

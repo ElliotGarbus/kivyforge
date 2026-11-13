@@ -1,10 +1,20 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
+
+# ---------------------------------------------------------------------------
+# Version: from git tags (setuptools-scm)
+# ---------------------------------------------------------------------------
+# A release is pushing a `v*` tag; there is no version number in the tree. A
+# tagged commit builds that version, any other commit `X.Y.Z.devN+gHASH`. Full
+# history is needed to find the last tag (CI checks out with fetch-depth: 0);
+# a tree without .git (git archive, GitHub ZIP) reads .git_archival.txt.
+# kivyforge.__version__ reads the installed distribution's metadata.
+[tool.setuptools_scm]
 
 [project]
 name = "kivyforge"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Declarative, PEP 621-aligned build toolchain for Kivy apps — successor to kivy-ios, python-for-android, and buildozer (iOS, Android, macOS, Linux, and Windows)"
 license = "MIT"
 readme = "README.md"
