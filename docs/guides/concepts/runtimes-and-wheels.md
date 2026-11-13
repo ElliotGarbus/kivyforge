@@ -42,7 +42,7 @@ You choose the version in the overlay's `python` table. For example:
 
 ```toml
 [tool.kivy.macos.python]
-version = "3.13.14"
+version = "3.14.10"
 ```
 
 ## What this means for your dependencies
@@ -83,7 +83,7 @@ resolve Kivy.
 |---|---|---|
 | iOS | 3.0 development snapshots | 3.15 |
 | Android | 2.3.1, or 3.0 development snapshots | 3.14 |
-| macOS, Linux, and Windows | 2.3.1 | 3.13 or earlier |
+| macOS, Linux, and Windows | 2.3.2 | 3.14 or earlier |
 
 ## Where packages come from
 

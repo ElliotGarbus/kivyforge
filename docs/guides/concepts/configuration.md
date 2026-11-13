@@ -31,7 +31,7 @@ name = "dice-roller"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "kivy>=2.3.1",
+    "kivy>=2.3.2",
 ]
 ```
 
@@ -69,7 +69,7 @@ bundle_id = "org.example.dice-roller"
 archs = ["arm64"]
 
 [tool.kivy.macos.python]
-version = "3.13.14"
+version = "3.14.10"
 
 [tool.kivy.windows]
 schema_version = 1
@@ -77,7 +77,7 @@ app_id = "Example.DiceRoller"
 archs = ["amd64"]
 
 [tool.kivy.windows.python]
-version = "3.13.14"
+version = "3.14.10"
 ```
 
 ## Why overlays

@@ -7,7 +7,12 @@ two pip internals, then hands control to pip unchanged:
   single function every ``Marker.evaluate()`` consults — with the target
   environment supplied as JSON in ``KIVYFORGE_TARGET_MARKER_ENV``. A desktop
   lock, which evaluates markers for the host on purpose, says so with
-  ``KIVYFORGE_HOST_MARKERS=1`` instead.
+  ``KIVYFORGE_HOST_MARKERS=1`` instead, and names its bundled runtime in
+  ``KIVYFORGE_TARGET_PYTHON``: the host answers every marker but the Python
+  version, which is the runtime's. Kivy 2.3.2 needs that: on Windows it asks
+  for ``kivy-deps.angle~=0.5.0`` only when ``python_version >= "3.14"``, and a
+  3.13 host locking a 3.14 runtime would otherwise ask for 0.4, which has no
+  cp314 wheel.
 - **Sources** (``KIVYFORGE_SOURCE_POLICY``, optional). It wraps
   ``PackageFinder.find_all_candidates`` so each project only sees candidates
   from the sources it may use: a pinned index, else the ``find_links``
@@ -44,6 +49,7 @@ from urllib.request import url2pathname
 
 MARKER_ENV_VAR = "KIVYFORGE_TARGET_MARKER_ENV"
 HOST_MARKERS_ENV_VAR = "KIVYFORGE_HOST_MARKERS"
+TARGET_PYTHON_ENV_VAR = "KIVYFORGE_TARGET_PYTHON"
 SOURCE_POLICY_ENV_VAR = "KIVYFORGE_SOURCE_POLICY"
 
 #: Exit status when this pip cannot be patched to apply the source rules. pip
@@ -89,6 +95,21 @@ def main(argv: list[str]) -> int:
 
 def _apply_markers() -> int:
     if os.environ.get(HOST_MARKERS_ENV_VAR) == "1":
+        target_python = os.environ.get(TARGET_PYTHON_ENV_VAR)
+        if not target_python:
+            return 0
+        markers = _vendored_markers()
+        if markers is None:
+            return 3
+        host = markers.default_environment
+        python = {
+            "python_full_version": target_python,
+            "python_version": ".".join(target_python.split(".")[:2]),
+            # pip resolves for CPython (--implementation cp), whose
+            # implementation version is its Python version.
+            "implementation_version": target_python,
+        }
+        markers.default_environment = lambda: {**host(), **python}
         return 0
     raw = os.environ.get(MARKER_ENV_VAR)
     if not raw:
@@ -99,6 +120,15 @@ def _apply_markers() -> int:
         return 2
     environment = json.loads(raw)
 
+    markers = _vendored_markers()
+    if markers is None:
+        return 3
+    markers.default_environment = lambda: dict(environment)
+    return 0
+
+
+def _vendored_markers():
+    """pip's vendored ``packaging.markers``, or ``None`` after saying why not."""
     try:
         from pip._vendor.packaging import markers
     except ImportError:
@@ -107,16 +137,14 @@ def _apply_markers() -> int:
             "expects it, so environment markers cannot be evaluated for the "
             "target platform. Please report the pip version.\n"
         )
-        return 3
+        return None
     if not hasattr(markers, "default_environment"):
         sys.stderr.write(
             "pip's vendored packaging has no default_environment(); kivyforge "
             "cannot retarget marker evaluation. Please report the pip version.\n"
         )
-        return 3
-
-    markers.default_environment = lambda: dict(environment)
-    return 0
+        return None
+    return markers
 
 
 class _Policy:

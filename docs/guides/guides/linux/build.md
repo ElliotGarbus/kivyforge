@@ -44,7 +44,7 @@ app_id = "org.example.myapp"
 archs = ["x86_64"]
 
 [tool.kivy.linux.python]
-version = "3.13.14"
+version = "3.14.10"
 
 [tool.kivy.linux.icons]
 source = "assets/icon.png"

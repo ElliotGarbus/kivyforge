@@ -2,7 +2,7 @@
 name = "hello-native"
 version = "0.1.0"
 # Desktop example (macOS + Linux): each backend bundles CPython 3.13.14 (PBS)
-# with Kivy 2.3.1 wheels from PyPI, plus two non-wheel native binaries built by
+# with Kivy 2.3 wheels from PyPI, plus two non-wheel native binaries built by
 # build_native.sh (a helper executable + a shared library).
 requires-python = ">=3.13"
 dependencies = [

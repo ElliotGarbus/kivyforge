@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased]
+
+### Desktop targets move to CPython 3.14 with Kivy 2.3.2
+
+- **Changed:** `kivyforge init -p macos`, `-p linux` and `-p windows` write
+  `version = "3.14.10"` in the overlay's `python` table, where they wrote
+  `3.13.14`. Kivy 2.3.2 (released 2026-11-08) is the first desktop Kivy with
+  CPython 3.14 wheels, for `win_amd64`, `macosx_10_15_universal2` and
+  manylinux `x86_64`/`aarch64`; 2.3.1 stops at 3.13. A lock of `kivy>=2.3.1`
+  on a 3.14 runtime resolves to 2.3.2, so the `kivy>=2.3.1` that `init`
+  suggests is unchanged; Android still needs it, because its Kivy 2 wheels
+  are 2.3.1.
+- **Fixed:** a desktop lock evaluates `python_version` markers for the
+  bundled runtime, not for the Python kivyforge runs on. Kivy 2.3.2 is the
+  first Kivy whose Windows dependencies depend on them (`kivy-deps.angle`
+  0.4 below 3.14, 0.5 from 3.14), so `lock -p windows` for a 3.14 runtime
+  failed on a 3.13 host, and a 3.13 runtime locked on a 3.14 host would get
+  the wrong ANGLE. Other markers still describe the host, as before.
+- **Changed:** the `dice-roller` example bundles CPython 3.14.10 and requires
+  `kivy>=2.3.2`. The README and the desktop guides say the desktop targets use
+  Kivy 2.3, and that CPython 3.14 needs 2.3.2.
+- **Migration:** none needed. An existing project keeps the version it pins, and
+  `init --force` preserves it. To move a desktop app to CPython 3.14, set
+  `version = "3.14.10"` in each desktop overlay's `python` table and run
+  `kivyforge lock --update -p <platform>`. A plain `lock` stops on Windows,
+  because it keeps the locked `kivy-deps.angle` 0.4. A project that requires
+  `kivy==2.3.1` cannot lock on 3.14.
+
 ## [v0.1.1](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.1) - 2026-11-13
 
 ### kivyforge's own version comes from its git tags
