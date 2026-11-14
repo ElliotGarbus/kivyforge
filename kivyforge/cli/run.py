@@ -232,7 +232,17 @@ def _run(
             from ..platforms.android import adb as adb_mod
 
             click.echo("Devices: " + (", ".join(adb_mod.connected_devices()) or "none"))
-            click.echo("AVDs: " + (", ".join(adb_mod.available_avds()) or "none"))
+            unready = adb_mod.unready_devices()
+            if unready:
+                listed = ", ".join(f"{s} ({state})" for s, state in unready)
+                click.echo(f"Not ready: {listed}")
+            # The emulator package is optional for anyone who runs only on a
+            # phone, and this is the command for diagnosing that setup.
+            try:
+                avds = ", ".join(adb_mod.available_avds()) or "none"
+            except adb_mod.ToolNotFoundError:
+                avds = "unavailable (the SDK's emulator package is not installed)"
+            click.echo("AVDs: " + avds)
             return
         version = resolve()
         if smoke:

@@ -121,21 +121,55 @@ class TestAndroidListDevices:
         monkeypatch.setattr(
             adb_mod, "connected_devices", lambda: ["emulator-5554", "ABC123"]
         )
+        monkeypatch.setattr(adb_mod, "unready_devices", lambda: [])
         monkeypatch.setattr(adb_mod, "available_avds", lambda: ["Pixel_API_35"])
         result = runner.invoke(run_cmd, ["--list-devices"])
         assert result.exit_code == 0, result.output
         assert "emulator-5554, ABC123" in result.output
         assert "Pixel_API_35" in result.output
+        assert "Not ready" not in result.output
 
     def test_none_when_nothing_available(self, runner, fake_project_root, monkeypatch):
         backend = _FakeBackend("android")
         _patch_resolve_target(monkeypatch, backend, fake_project_root)
         monkeypatch.setattr(adb_mod, "connected_devices", lambda: [])
+        monkeypatch.setattr(adb_mod, "unready_devices", lambda: [])
         monkeypatch.setattr(adb_mod, "available_avds", lambda: [])
         result = runner.invoke(run_cmd, ["--list-devices"])
         assert result.exit_code == 0, result.output
         assert "Devices: none" in result.output
         assert "AVDs: none" in result.output
+
+    def test_without_the_emulator_package(self, runner, fake_project_root, monkeypatch):
+        """The diagnostic for a phone-only setup must not fail in that setup."""
+        backend = _FakeBackend("android")
+        _patch_resolve_target(monkeypatch, backend, fake_project_root)
+        monkeypatch.setattr(adb_mod, "connected_devices", lambda: ["ABC123"])
+        monkeypatch.setattr(adb_mod, "unready_devices", lambda: [])
+
+        def no_emulator():
+            raise adb_mod.ToolNotFoundError("emulator not found: test")
+
+        monkeypatch.setattr(adb_mod, "available_avds", no_emulator)
+        result = runner.invoke(run_cmd, ["--list-devices"])
+        assert result.exit_code == 0, result.output
+        assert "Devices: ABC123" in result.output
+        assert "AVDs: unavailable (the SDK's emulator package is not installed)" in (
+            result.output
+        )
+
+    def test_names_devices_adb_cannot_use(self, runner, fake_project_root, monkeypatch):
+        backend = _FakeBackend("android")
+        _patch_resolve_target(monkeypatch, backend, fake_project_root)
+        monkeypatch.setattr(adb_mod, "connected_devices", lambda: [])
+        monkeypatch.setattr(
+            adb_mod, "unready_devices", lambda: [("ABC123", "unauthorized")]
+        )
+        monkeypatch.setattr(adb_mod, "available_avds", lambda: [])
+        result = runner.invoke(run_cmd, ["--list-devices"])
+        assert result.exit_code == 0, result.output
+        assert "Devices: none" in result.output
+        assert "Not ready: ABC123 (unauthorized)" in result.output
 
 
 class TestAndroidSmoke:

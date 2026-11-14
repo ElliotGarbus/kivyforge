@@ -13,11 +13,21 @@ from kivyforge.platforms.android import adb as adb_mod
 
 @pytest.fixture
 def fake_adb(monkeypatch):
-    """Replace connected_devices / available_avds / boot_emulator with fakes."""
-    state = {"devices": [], "avds": [], "booted": None}
+    """Replace connected_devices / available_avds / boot_emulator with fakes.
+
+    ``state["avds"] = None`` stands for an SDK without the emulator package.
+    """
+    state = {"devices": [], "unready": [], "avds": [], "booted": None}
 
     monkeypatch.setattr(adb_mod, "connected_devices", lambda: list(state["devices"]))
-    monkeypatch.setattr(adb_mod, "available_avds", lambda: list(state["avds"]))
+    monkeypatch.setattr(adb_mod, "unready_devices", lambda: list(state["unready"]))
+
+    def _avds():
+        if state["avds"] is None:
+            raise adb_mod.ToolNotFoundError("emulator not found: test")
+        return list(state["avds"])
+
+    monkeypatch.setattr(adb_mod, "available_avds", _avds)
 
     def _boot(avd):
         serial = f"emulator-{5554 + len(state['devices'])}"
@@ -72,6 +82,50 @@ class TestResolveDevice:
         with pytest.raises(adb_mod.AdbError, match="no device attached"):
             adb_mod.resolve_device()
 
+    def test_no_avd_error_names_an_unauthorized_phone(self, fake_adb):
+        fake_adb["unready"] = [("ABC123", "unauthorized")]
+        with pytest.raises(adb_mod.AdbError, match=r"ABC123 \(unauthorized\)"):
+            adb_mod.resolve_device()
+
+
+class TestNoEmulatorPackage:
+    """An SDK without the emulator package, as kept by someone who only ever
+    runs on a phone. When auto-selection finds no phone, the problem is the
+    phone, not the missing emulator."""
+
+    def test_names_the_missing_device_not_the_emulator(self, fake_adb):
+        fake_adb["avds"] = None
+        with pytest.raises(adb_mod.AdbError) as exc:
+            adb_mod.resolve_device()
+        message = str(exc.value)
+        assert not isinstance(exc.value, adb_mod.ToolNotFoundError)
+        assert message.startswith("no device attached")
+        assert "emulator package is not installed" in message
+        assert "Allow USB debugging?" in message
+        assert "--device" in message
+        assert "emulator not found" not in message
+
+    def test_names_an_unauthorized_phone(self, fake_adb):
+        fake_adb["avds"] = None
+        fake_adb["unready"] = [("ABC123", "unauthorized")]
+        with pytest.raises(adb_mod.AdbError, match=r"ABC123 \(unauthorized\)"):
+            adb_mod.resolve_device()
+
+    def test_a_running_emulator_is_still_used(self, fake_adb):
+        fake_adb["avds"] = None
+        fake_adb["devices"] = ["emulator-5554"]
+        assert adb_mod.resolve_device() == "emulator-5554"
+
+    def test_emulator_asked_for_reports_the_missing_emulator(self, fake_adb):
+        fake_adb["avds"] = None
+        with pytest.raises(adb_mod.ToolNotFoundError, match="emulator not found"):
+            adb_mod.resolve_device(prefer_emulator=True)
+
+    def test_avd_asked_for_reports_the_missing_emulator(self, fake_adb):
+        fake_adb["avds"] = None
+        with pytest.raises(adb_mod.ToolNotFoundError, match="emulator not found"):
+            adb_mod.resolve_device(avd="Pixel_API_35")
+
 
 class TestRequirePhysical:
     """`run --device` asks for hardware; quietly booting an AVD instead is the
@@ -103,6 +157,16 @@ class TestRequirePhysical:
     def test_multiple_physical_still_requires_serial(self, fake_adb):
         fake_adb["devices"] = ["ABC123", "DEF456"]
         with pytest.raises(adb_mod.AdbError, match="multiple devices"):
+            adb_mod.resolve_device(require_physical=True)
+
+    def test_names_an_unauthorized_phone(self, fake_adb):
+        fake_adb["unready"] = [("ABC123", "unauthorized")]
+        with pytest.raises(adb_mod.AdbError, match=r"ABC123 \(unauthorized\)"):
+            adb_mod.resolve_device(require_physical=True)
+
+    def test_needs_no_emulator_package(self, fake_adb):
+        fake_adb["avds"] = None
+        with pytest.raises(adb_mod.AdbError, match="adb sees none"):
             adb_mod.resolve_device(require_physical=True)
 
 
@@ -169,6 +233,30 @@ class TestParsing:
         monkeypatch.setattr(adb_mod, "adb", lambda *a, **k: out)
         assert adb_mod.connected_devices() == ["emulator-5554", "ABC123"]
 
+    def test_unready_devices_lists_what_connected_devices_leaves_out(self, monkeypatch):
+        out = (
+            "List of devices attached\n"
+            "ABC123\tdevice\n"
+            "DEF456\tunauthorized\n"
+            "GHI789\toffline\n"
+            "JKL012\tno permissions (missing udev rules? user is in the "
+            "plugdev group); see [http://developer.android.com/tools/device.html]\n"
+            "\n"
+        )
+        monkeypatch.setattr(adb_mod, "adb", lambda *a, **k: out)
+        assert adb_mod.unready_devices() == [
+            ("DEF456", "unauthorized"),
+            ("GHI789", "offline"),
+            ("JKL012", "no permissions"),
+        ]
+
+    def test_unready_note_is_empty_when_adb_cannot_answer(self, monkeypatch):
+        def boom():
+            raise adb_mod.AdbError("adb devices failed")
+
+        monkeypatch.setattr(adb_mod, "unready_devices", boom)
+        assert adb_mod._unready_note() == ""
+
 
 class TestSdkTool:
     def test_found_in_sdk_root(self, tmp_path, monkeypatch):
@@ -194,7 +282,7 @@ class TestSdkTool:
     def test_raises_when_nowhere_to_be_found(self, monkeypatch):
         monkeypatch.setattr(adb_mod, "_sdk_root", lambda: None)
         monkeypatch.setattr("shutil.which", lambda name: None)
-        with pytest.raises(adb_mod.AdbError, match="not found"):
+        with pytest.raises(adb_mod.ToolNotFoundError, match="not found"):
             adb_mod.sdk_tool("adb", subdir="platform-tools")
 
 
