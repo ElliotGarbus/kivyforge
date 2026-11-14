@@ -25,9 +25,11 @@ from Windows, macOS, or Linux. Android does not require a Mac.
   Android NDK. [Android Studio](https://developer.android.com/studio) installs
   the SDK. Add the NDK and command-line tools from its SDK Manager, then accept
   the SDK licenses (see [SDK licenses and `sdkmanager`](#sdk-licenses-and-sdkmanager)).
-- Somewhere to run the app: a physical device with USB debugging turned on, or
-  an AVD (Android Virtual Device, an emulator image) created in Android Studio's
-  Device Manager.
+- Somewhere to run the app: a physical device with USB debugging turned on (see
+  [Set up a physical device](../guides/android/run.md#set-up-a-physical-device)),
+  or an AVD (Android Virtual Device, an emulator image) created in Android
+  Studio's Device Manager. The SDK's emulator package is needed only for an
+  AVD.
 - [git](https://git-scm.com/), to fetch the example app.
 
 ### SDK licenses and `sdkmanager`
@@ -70,7 +72,8 @@ kivyforge doctor -p android
 
 `doctor` checks the JDK, the SDK and its licenses, build-tools, the NDK, the
 emulator, and `adb` (Android Debug Bridge). Fix any `FAIL` before you continue.
-It prints the `sdkmanager` command for anything that is missing.
+It prints the `sdkmanager` command for anything that is missing. If you run
+only on a phone, you can ignore the `WARN` for a missing AVD.
 
 ## Step 3: Build the debug APK
 
@@ -89,6 +92,8 @@ Python runtime and wheels, and drives Gradle to produce
 `hello-android-android/app/build/outputs/apk/debug/app-debug.apk`. The first
 build downloads Gradle and its dependencies, so it takes several minutes.
 
+`build` doesn't need a device or an emulator, so the phone can stay unplugged.
+
 ## Step 4: Run it
 
 ```bash
@@ -99,6 +104,16 @@ kivyforge run -p android
 emulator, else it boots your first AVD. It then rebuilds the debug APK for that
 target's ABI, installs it, launches it, and prints the app's log lines. The app
 opens full screen and shows **Hello from kivyforge**.
+
+To run only on a phone, add `--device`. `run` then never looks for an
+emulator, and it stops with an error if `adb` can't see the phone:
+
+```bash
+kivyforge run -p android --device
+```
+
+If the phone isn't found, see
+[Set up a physical device](../guides/android/run.md#set-up-a-physical-device).
 
 !!! tip "Contract smoke test"
     `kivyforge run -p android --smoke` runs an instrumented test that kivyforge

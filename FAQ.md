@@ -120,6 +120,26 @@ Moving to it is a larger change for kivyforge projects, so kivyforge stays on
 its current pin for now. See
 [issue #91](https://github.com/ElliotGarbus/kivyforge/issues/91).
 
+### `kivyforge run -p android` can't find my phone, or asks for an emulator
+
+Without `--device`, `run` uses the attached phone if `adb` sees one, and
+otherwise falls back to an emulator. So when the phone isn't visible, the error
+can be about the emulator even though you never use one. kivyforge 0.1.1 and
+earlier report "emulator not found" when the SDK has no emulator package.
+
+You don't need an emulator to build or to run on a phone. Run with `--device`,
+which uses only a physical device:
+
+```bash
+kivyforge run -p android --device
+```
+
+If that reports no device, run `adb devices`. A phone listed as `unauthorized`
+is waiting for you to accept **Allow USB debugging?** on its screen, and a
+phone that isn't listed at all usually has USB debugging turned off. See
+[Set up a physical device](docs/guides/guides/android/run.md#set-up-a-physical-device)
+for every state and its fix.
+
 ### macOS Developer ID signing fails with `errSecInternalComponent`
 
 If `kivyforge package -p macos` (with `[tool.kivy.macos.signing]` configured)
