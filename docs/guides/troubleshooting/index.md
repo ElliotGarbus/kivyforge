@@ -126,7 +126,8 @@ edit you make in that folder, so use it to diagnose a failure, not to fix it.
 
 The [FAQ](../faq.md) covers common platform problems, including:
 
-- Android: the harmless "SDK XML versions up to 3" warning.
+- Android: the harmless "SDK XML versions up to 3" warning, and `run` not
+  finding your phone.
 - iOS: the simulator SDK can't be located, a `Python.xcframework` download
   returns HTTP 404, and an invalid character in the bundle identifier.
 - macOS: Developer ID signing fails with `errSecInternalComponent`.

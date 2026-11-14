@@ -19,9 +19,45 @@ debug development loop and the on-device smoke test.
   `kivyforge lock -p android`.
 - Have one of the following:
     - A physical device with USB debugging enabled and this computer authorized
-      for `adb`.
+      for `adb`. See [Set up a physical device](#set-up-a-physical-device).
     - An AVD, created in Android Studio's Device Manager or with `avdmanager`.
       It does not need to be running.
+
+You don't need an emulator to build or to run on a phone. The SDK's emulator
+package is needed only for AVDs.
+
+## Set up a physical device
+
+1. On the phone, open **Settings > About phone** and tap **Build number** seven
+   times to turn on Developer options.
+2. Open **Settings > System > Developer options** and turn on **USB
+   debugging**. The menu path varies by phone maker.
+3. Connect the phone with a USB cable and unlock it.
+4. When the phone asks **Allow USB debugging?**, tap **Allow**. Select
+   **Always allow from this computer** to skip the prompt next time.
+5. Check that `adb` sees the phone. `adb` is in the `platform-tools` folder of
+   your Android SDK:
+
+    ```bash
+    adb devices
+    ```
+
+The phone's serial number should be listed with the state `device`. Any other
+result means `run` can't use the phone yet:
+
+| `adb devices` shows | Fix |
+|---|---|
+| `unauthorized` | Unlock the phone and accept the **Allow USB debugging?** prompt. If no prompt appears, unplug and reconnect the cable. |
+| `offline` | Unplug and reconnect the cable. If that doesn't help, run `adb kill-server` and try again. |
+| `no permissions` (Linux) | Add a udev rule for the phone and add your user to the `plugdev` group. See Android's [Run apps on a hardware device](https://developer.android.com/studio/run/device). |
+| Nothing | Check that USB debugging is still on: some phones turn it off when you revoke USB debugging authorizations. If the phone's USB notification says **Charging only**, switch it to **File transfer**. Try another cable or port, because some cables carry only power. On Windows, the phone may also need its maker's USB driver. |
+
+Then run on the phone with `--device`, so that `run` never looks for an
+emulator:
+
+```bash
+kivyforge run -p android --device
+```
 
 ## Run the app
 
@@ -59,6 +95,17 @@ kivyforge run -p android --list-devices
 ```
 
 `--device` cannot be combined with `--emulator` or `--avd`.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release.
+
+    `--list-devices` adds a `Not ready:` line for each device `adb` lists but
+    can't use, with its state, such as `Not ready: SERIAL (unauthorized)`.
+    Without the SDK's emulator package, it shows `AVDs: unavailable` instead
+    of failing. When no device is attached and there is no emulator package,
+    `run` says so and suggests `--device`; earlier releases reported
+    "emulator not found".
 
 ## Control the build
 
