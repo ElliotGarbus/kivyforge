@@ -1,7 +1,7 @@
 [project]
 name = "notes"
 version = "0.1.0"
-# Desktop-only example: macOS bundles CPython 3.13.14 (PBS) with Kivy 2.3.1
+# Desktop-only example: macOS bundles CPython 3.13.14 (PBS) with Kivy 2.3
 # wheels from PyPI. (Mobile needs Kivy 3.0 — see examples/mobile.)
 requires-python = ">=3.13"
 dependencies = [
@@ -39,7 +39,7 @@ source = "assets/icon.png"
 version = "3.13.14"
 
 # One pyproject.toml, two desktop lockfiles: the same [project]/[tool.kivy] now
-# also targets Linux (AppImage/AppDir) from the same PyPI Kivy 2.3.1 wheels.
+# also targets Linux (AppImage/AppDir) from the same PyPI Kivy 2.3 wheels.
 [tool.kivy.linux]
 schema_version = 1
 app_id = "org.example.notes"
@@ -66,7 +66,7 @@ categories = ["Utility"]
 version = "3.13.14"
 
 # The same [project]/[tool.kivy] also targets Windows: an onedir bundle from the
-# same PyPI Kivy 2.3.1 win_amd64 wheels. app_id is the AppUserModelID.
+# same PyPI Kivy 2.3 win_amd64 wheels. app_id is the AppUserModelID.
 [tool.kivy.windows]
 schema_version = 1
 app_id = "Example.Notes"

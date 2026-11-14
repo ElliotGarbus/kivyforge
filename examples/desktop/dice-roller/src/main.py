@@ -1,7 +1,7 @@
 """Dice Roller — a tiny cross-platform Kivy app.
 
 Tap the button to roll two dice. Deliberately uses only stdlib + core Kivy
-widgets so the same source runs on macOS (Kivy 2.3.1 from PyPI) and iOS (the
+widgets so the same source runs on macOS (Kivy 2.3.2 from PyPI) and iOS (the
 vendored 3.0 wheels).
 
 The dice faces are drawn with Kivy's canvas (a rounded square plus pips) rather

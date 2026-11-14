@@ -30,7 +30,7 @@ Required.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `version` | string | required | CPython version from python-build-standalone, for example `"3.13.14"`. `[project].requires-python` must allow it. |
+| `version` | string | required | CPython version from python-build-standalone, for example `"3.14.10"`. `[project].requires-python` must allow it. |
 
 ## `[tool.kivy.macos.icons]`
 
@@ -141,7 +141,7 @@ bundle_id = "org.example.dice-roller"
 archs = ["arm64"]
 
 [tool.kivy.macos.python]
-version = "3.13.14"
+version = "3.14.10"
 
 [tool.kivy.macos.icons]
 source = "assets/icon.png"

@@ -32,7 +32,7 @@ Required.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `version` | string | Required | CPython version to bundle (python-build-standalone), such as `3.13.14`. Must satisfy `[project].requires-python`. |
+| `version` | string | Required | CPython version to bundle (python-build-standalone), such as `3.14.10`. Must satisfy `[project].requires-python`. |
 
 ### `[tool.kivy.linux.icons]`
 
@@ -83,7 +83,7 @@ source = "assets/icon.png"
 categories = ["Game"]
 
 [tool.kivy.linux.python]
-version = "3.13.14"
+version = "3.14.10"
 ```
 
 ## What's next

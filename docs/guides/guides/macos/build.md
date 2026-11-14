@@ -42,7 +42,7 @@ its wheels, so it runs on a Mac that has no Python installed.
     bundle_id = "org.example.myapp"
 
     [tool.kivy.macos.python]
-    version = "3.13.14"
+    version = "3.14.10"
 
     [tool.kivy.macos.icons]
     source = "assets/icon.png"

@@ -38,7 +38,7 @@ troubleshooting.
 > **On iOS, kivyforge builds Kivy 3 only**, and Kivy 3.0 is not released yet, so
 > iOS apps use its development snapshots. Apps on Kivy 2.x stay on kivy-ios for
 > now. Android builds either Kivy 2.3.1 or a Kivy 3.0 snapshot, and the desktop
-> targets use Kivy 2.3.1 from PyPI.
+> targets use Kivy 2.3 from PyPI (2.3.2 or later on CPython 3.14).
 
 ## Help test kivyforge
 
@@ -232,7 +232,7 @@ optional; see
 
 The [`examples/`](https://github.com/ElliotGarbus/kivyforge/tree/main/examples)
 folder holds complete, copy-pasteable apps. None of them needs you to build a
-wheel: desktop examples use Kivy 2.3.1 from PyPI, and mobile examples get Kivy
+wheel: desktop examples use Kivy 2.3 from PyPI, and mobile examples get Kivy
 from the
 [kivy-mobile-wheels](https://github.com/ElliotGarbus/kivy-mobile-wheels) index.
 

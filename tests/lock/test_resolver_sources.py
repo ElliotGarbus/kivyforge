@@ -238,6 +238,8 @@ def test_desktop_resolver_keeps_host_markers(monkeypatch):
     monkeypatch.setattr(desktop_mod, "run_streaming", _fake_pip(seen=seen))
     _desktop(source_policy([], []))
     assert seen["env"][_pip_shim.HOST_MARKERS_ENV_VAR] == "1"
+    # ...but answers python_version for the bundled runtime, not the host.
+    assert seen["env"][_pip_shim.TARGET_PYTHON_ENV_VAR] == "3.14.0"
 
 
 @pytest.mark.parametrize(
