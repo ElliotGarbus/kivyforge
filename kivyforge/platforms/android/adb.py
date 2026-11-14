@@ -28,6 +28,15 @@ class AdbError(Exception):
     pass
 
 
+class ToolNotFoundError(AdbError):
+    """An SDK tool (adb, emulator) is neither in the SDK nor on PATH.
+
+    Its own class so a caller for whom the tool is optional can tell "not
+    installed" from "installed and failed": the emulator package is optional
+    for anyone who runs only on a phone.
+    """
+
+
 def sdk_tool(name: str, *, subdir: str) -> str:
     sdk = _sdk_root()
     if sdk is not None:
@@ -57,7 +66,7 @@ def sdk_tool(name: str, *, subdir: str) -> str:
                 "the default SDK location",
             )
             where = f"not in {sdk / subdir} (SDK root from {source})"
-        raise AdbError(
+        raise ToolNotFoundError(
             f"{name} not found: {where}, and not on PATH.\n"
             f"  Fix: point ANDROID_HOME at an SDK containing {subdir}/{name}"
             f"{_EXE}, or run `kivyforge doctor -p android` for the full "
@@ -94,6 +103,48 @@ def connected_devices() -> list[str]:
         if len(parts) == 2 and parts[1] == "device":
             devices.append(parts[0])
     return devices
+
+
+def unready_devices() -> list[tuple[str, str]]:
+    """``(serial, state)`` for each device adb lists but cannot use.
+
+    :func:`connected_devices` leaves these out, so on their own they look like
+    "nothing attached". A phone whose "Allow USB debugging?" prompt was never
+    accepted shows as ``unauthorized``; naming it is the whole diagnosis.
+    """
+    out = adb("devices")
+    unready = []
+    for line in out.splitlines()[1:]:
+        parts = line.split()
+        # Linux adds a sentence for missing udev access: "no permissions (...)".
+        if len(parts) >= 2 and parts[1] != "device":
+            unready.append((parts[0], " ".join(parts[1:]).split(" (")[0]))
+    return unready
+
+
+def _unready_note() -> str:
+    """A sentence naming devices adb sees but cannot use, or ``""``.
+
+    Only ever part of an error message, so a failure to ask is not reported:
+    the error being raised is the one that matters.
+    """
+    try:
+        unready = unready_devices()
+    except AdbError:
+        return ""
+    if not unready:
+        return ""
+    listed = ", ".join(f"{serial} ({state})" for serial, state in unready)
+    return (
+        f" adb lists {listed}: unlock the phone and accept its "
+        '"Allow USB debugging?" prompt, or unplug and reconnect it.'
+    )
+
+
+_PHONE_FIX = (
+    "  Fix: connect a phone with USB debugging on and accept its "
+    '"Allow USB debugging?" prompt; `adb devices` must list it as `device`.'
+)
 
 
 def available_avds() -> list[str]:
@@ -225,19 +276,35 @@ def resolve_device(
             attached = ", ".join(devices) or "none"
             raise AdbError(
                 "--device asks for a physical device, but adb sees none "
-                f"(attached: {attached}). Enable USB debugging and authorize "
-                "this host, or drop --device to use an emulator."
+                f"(attached: {attached}).{_unready_note()} Enable USB debugging "
+                "and authorize this host, or drop --device to use an emulator."
             )
     emulators = [d for d in devices if d.startswith("emulator-")]
     if emulators:
         return emulators[0]
-    avds = available_avds()
+    try:
+        avds = available_avds()
+    except ToolNotFoundError:
+        if prefer_emulator or avd is not None:
+            # An emulator was asked for, so its absence is the problem.
+            raise
+        # Auto-selection only reached for an emulator because no phone was
+        # found. "emulator not found" would send someone who never uses one
+        # to install it, when what is wrong is the phone.
+        raise AdbError(
+            "no device attached, and no emulator to fall back to (the SDK's "
+            f"emulator package is not installed).{_unready_note()}\n"
+            f"{_PHONE_FIX}\n"
+            "  Add --device to use only a physical device; kivyforge then "
+            "never looks for an emulator."
+        ) from None
     if avd is None:
         if not avds:
             raise AdbError(
-                "no device attached and no AVD exists; create one "
-                "(Android Studio Device Manager or avdmanager) or plug in a "
-                "device."
+                f"no device attached and no AVD exists.{_unready_note()}\n"
+                f"{_PHONE_FIX}\n"
+                "  Or create an AVD (Android Studio Device Manager or "
+                "avdmanager) to run on an emulator."
             )
         avd = avds[0]
     elif avd not in avds:

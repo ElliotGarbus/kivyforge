@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### `run -p android` works without the emulator package
+
+- **Fixed:** with no phone attached and no emulator package in the SDK,
+  `kivyforge run -p android` failed with "emulator not found", sending someone
+  who only runs on a phone to install an emulator. It now says no device is
+  attached, explains how to authorize a phone, and suggests `--device`, which
+  never looks for an emulator. Asking for an emulator (`--emulator`, `--avd`)
+  still reports the missing package.
+- **Fixed:** `kivyforge run -p android --list-devices` crashed without the
+  emulator package. It now lists the attached devices and shows
+  `AVDs: unavailable (the SDK's emulator package is not installed)`.
+- **Added:** when adb lists a device it cannot use (`unauthorized`, `offline`,
+  `no permissions`), `run`'s no-device errors and `--list-devices` name it and
+  its state. An unaccepted "Allow USB debugging?" prompt used to look the same
+  as no phone at all.
+- **Migration:** none needed.
+
 ## [v0.1.1](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.1) - 2026-11-13
 
 ### kivyforge's own version comes from its git tags
