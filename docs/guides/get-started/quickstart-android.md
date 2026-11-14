@@ -22,9 +22,14 @@ from Windows, macOS, or Linux. Android does not require a Mac.
   that range; `kivyforge doctor -p android` tells you. If it is, install a
   separate one, such as [Eclipse Temurin](https://adoptium.net/).
 - The Android SDK with command-line tools, build-tools, platform-tools, and the
-  Android NDK. [Android Studio](https://developer.android.com/studio) installs
-  the SDK. Add the NDK and command-line tools from its SDK Manager, then accept
-  the SDK licenses (see [SDK licenses and `sdkmanager`](#sdk-licenses-and-sdkmanager)).
+  NDK version listed in
+  [Supported versions](../guides/android/supported-versions.md#build-tools).
+  Builds use only that NDK version and ignore any other NDK you have installed,
+  such as a newer one. [Android Studio](https://developer.android.com/studio)
+  installs the SDK. Add the command-line tools and the NDK from its SDK Manager:
+  on the **SDK Tools** tab, select **Show Package Details** to pick the NDK
+  version. Then accept the SDK licenses (see
+  [SDK licenses and `sdkmanager`](#sdk-licenses-and-sdkmanager)).
 - Somewhere to run the app: a physical device with USB debugging turned on (see
   [Set up a physical device](../guides/android/run.md#set-up-a-physical-device)),
   or an AVD (Android Virtual Device, an emulator image) created in Android
@@ -34,8 +39,9 @@ from Windows, macOS, or Linux. Android does not require a Mac.
 
 ### SDK licenses and `sdkmanager`
 
-Gradle installs missing SDK packages during a build (CMake, for one), but only
-once the SDK license is recorded under `<sdk>/licenses/`.
+A build installs a missing NDK or CMake of the pinned version, and Gradle
+installs other missing SDK packages, but only once the SDK license is recorded
+under `<sdk>/licenses/`. The NDK is a download of several hundred MB.
 
 - Older command-line tools record it when you run `sdkmanager --licenses` and
   accept.
@@ -74,6 +80,15 @@ kivyforge doctor -p android
 emulator, and `adb` (Android Debug Bridge). Fix any `FAIL` before you continue.
 It prints the `sdkmanager` command for anything that is missing. If you run
 only on a phone, you can ignore the `WARN` for a missing AVD.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release.
+
+    `doctor` checks for the NDK version that builds use. If only other NDK
+    versions are installed, it warns that builds do not use them. A missing NDK
+    is a `WARN`, not a `FAIL`, because the first build installs it. To install
+    it ahead of time, run the `sdkmanager` command that `doctor` prints.
 
 ## Step 3: Build the debug APK
 
