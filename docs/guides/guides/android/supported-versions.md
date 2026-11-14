@@ -91,13 +91,22 @@ own JDK, which may be newer than that; if it is, install a separate JDK in the
 range and point `JAVA_HOME` at it.
 
 `kivyforge doctor -p android` checks the JDK you actually have, the Android
-SDK, build tools, and the pinned NDK and CMake. Only the pinned NDK is used: a
+SDK, build tools, the NDK, and the pinned CMake. Only the pinned NDK is used: a
 build ignores any other NDK version you have installed. If the pinned NDK or
-CMake is missing, `doctor` warns, and the first build installs it with
-`sdkmanager`. The NDK is a download of several hundred MB. To install it
-ahead of time, run the `sdkmanager` command that `doctor` prints. See
+CMake is missing, the first build installs it with `sdkmanager`. The NDK is a
+download of several hundred MB. See
 [SDK licenses and `sdkmanager`](../../get-started/quickstart-android.md#sdk-licenses-and-sdkmanager)
 for how the SDK licenses are recorded.
+
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release.
+
+    `doctor` checks for the pinned NDK, not just any NDK. If only other NDK
+    versions are installed, it warns that builds do not use them. A missing
+    pinned NDK is a `WARN`, like a missing CMake, because the first build
+    installs it. To install it ahead of time, run the `sdkmanager` command that
+    `doctor` prints.
 
 ## Check a combination on your device
 
