@@ -560,18 +560,31 @@ def _check_build_tools(
 
 
 def _check_ndk(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
+    """The pinned NDK, which the native launcher compile needs on every build.
+
+    Only the pinned version counts: the generated project names it as
+    ``ndkVersion``, so any other installed NDK is never used. Passing on "some
+    NDK is installed" told a user with r28 and r29 that all was well, and the
+    next build downloaded r27 without warning.
+
+    A missing one is a WARN, not a FAIL, as for CMake: the build installs it
+    before Gradle runs (``sdk_packages``). Reporting it here keeps that
+    several-hundred-MB download from being a surprise.
+    """
     if sdk is None:
         return CheckResult("NDK", Status.SKIP, "no SDK root to look in")
     versions = probe.ndk_versions(sdk)
-    if not versions:
-        return CheckResult(
-            "NDK",
-            Status.FAIL,
-            "no NDK installed (required for EVERY build — it compiles the native "
-            "launcher)",
-            hint="sdkmanager 'ndk;<version>' (r27+ recommended for 16 KB).",
-        )
-    return CheckResult("NDK", Status.PASS, ", ".join(versions))
+    if toolchain.NDK_VERSION in versions:
+        return CheckResult("NDK", Status.PASS, toolchain.NDK_VERSION)
+    found = f"found {', '.join(versions)}" if versions else "none installed"
+    unused = "; builds do not use those versions" if versions else ""
+    return CheckResult(
+        "NDK",
+        Status.WARN,
+        f"the pinned NDK {toolchain.NDK_VERSION} is not installed ({found}"
+        f"{unused}); the first build will download it",
+        hint=f"sdkmanager 'ndk;{toolchain.NDK_VERSION}'.",
+    )
 
 
 def _check_cmake(probe: AndroidProbe, sdk: Path | None) -> CheckResult:

@@ -45,6 +45,21 @@
   as no phone at all.
 - **Migration:** none needed.
 
+### `doctor -p android` checks for the NDK the build uses
+
+- **Fixed:** `doctor`'s NDK check passed when any NDK was installed, but a build
+  uses only the pinned NDK (27.3.13750724). With only r28 or r29 installed,
+  `doctor` reported all was well and the next build downloaded r27 without
+  warning ([#227](https://github.com/ElliotGarbus/kivyforge/issues/227)). It
+  now passes only for the pinned NDK and otherwise warns, naming the versions
+  it found and the `sdkmanager` command that installs the pinned one, as the
+  CMake check already did.
+- **Changed:** having no NDK at all is a warning, not a failure, because the
+  build installs the pinned NDK itself. `doctor` no longer exits non-zero for
+  a missing NDK alone.
+- **Migration:** none needed. To skip the download during your first build,
+  run the `sdkmanager 'ndk;27.3.13750724'` command `doctor` prints.
+
 ## [v0.1.1](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.1) - 2026-11-13
 
 ### kivyforge's own version comes from its git tags
