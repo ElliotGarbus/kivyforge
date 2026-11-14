@@ -132,7 +132,7 @@ def _healthy_probe(sdk: Path):
         which={"java": "/jdk/bin/java", "adb": "/sdk/platform-tools/adb"},
         java_home="/jdk",
         sdk=sdk,
-        ndk=["27.3.13750724"],
+        ndk=[toolchain.NDK_VERSION],
         cmake=[toolchain.CMAKE_VERSION],
         build_tools=["35.0.0"],
         platforms={35},
@@ -198,15 +198,39 @@ class TestEnvironmentChecks:
         )
         assert by["JDK"].status is Status.FAIL
 
-    def test_no_ndk_fails(self, tmp_path):
-        probe = FakeProbe(
-            which={"java": "/j"}, sdk=tmp_path, ndk=[], build_tools=["35.0.0"]
-        )
+    def test_no_ndk_warns_with_the_pinned_package_in_the_hint(self, tmp_path):
+        probe = _healthy_probe(tmp_path)
+        probe._ndk = []
         by = _by_name(
             android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
         )
-        assert by["NDK"].status is Status.FAIL
-        assert "every" in by["NDK"].detail.lower()
+        assert by["NDK"].status is Status.WARN
+        assert "none installed" in by["NDK"].detail
+        assert "download" in by["NDK"].detail
+        assert "do not use" not in by["NDK"].detail
+        assert by["NDK"].hint == f"sdkmanager 'ndk;{toolchain.NDK_VERSION}'."
+
+    def test_other_ndk_versions_do_not_satisfy_the_pin(self, tmp_path):
+        """A user with r28c and r29 was told all was well, then the build
+        downloaded r27: the generated project uses only the pinned version."""
+        probe = _healthy_probe(tmp_path)
+        probe._ndk = ["28.2.13676358", "29.0.14206865"]
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["NDK"].status is Status.WARN
+        assert "28.2.13676358, 29.0.14206865" in by["NDK"].detail
+        assert "do not use those versions" in by["NDK"].detail
+        assert f"ndk;{toolchain.NDK_VERSION}" in by["NDK"].hint
+
+    def test_pinned_ndk_passes_alongside_others(self, tmp_path):
+        probe = _healthy_probe(tmp_path)
+        probe._ndk = ["26.1.10909125", toolchain.NDK_VERSION, "29.0.14206865"]
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["NDK"].status is Status.PASS
+        assert by["NDK"].detail == toolchain.NDK_VERSION
 
     def test_no_sdk_fails(self, tmp_path):
         probe = FakeProbe(which={"java": "/j"}, sdk=None)
