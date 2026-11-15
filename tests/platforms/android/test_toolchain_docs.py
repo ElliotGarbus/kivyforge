@@ -48,6 +48,23 @@ def test_the_table_states_the_pinned_version(tool, pinned):
     assert pinned in _row(tool)
 
 
+def test_the_ndk_table_matches_the_selectable_majors():
+    """Choose the NDK restates ANDROID_NDK_VERSIONS; keep the copy honest."""
+    from kivyforge.config.model import ANDROID_NDK_VERSIONS, DEFAULT_ANDROID_NDK
+
+    rows = {}
+    for line in PAGE.read_text(encoding="utf-8").splitlines():
+        if line.startswith("| `") and line.count("|") == 3:
+            key, version = (cell.strip() for cell in line.strip("|").split("|"))
+            major = key.split("`")[1]
+            if major.isdigit():
+                rows[int(major)] = (version, "(default)" in key)
+    assert rows == {
+        major: (version, major == DEFAULT_ANDROID_NDK)
+        for major, version in ANDROID_NDK_VERSIONS.items()
+    }
+
+
 def test_the_jdk_ceiling_was_checked_for_this_gradle():
     """Bumping Gradle moves the newest JDK it runs on; this fails until someone
     reads Gradle's compatibility matrix and updates MAX_JDK to match."""

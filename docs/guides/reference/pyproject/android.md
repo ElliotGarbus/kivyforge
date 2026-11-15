@@ -34,6 +34,7 @@ dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
 | `target_sdk` | integer | `35` | Target API level. Must be at least `min_sdk`. |
 | `compile_sdk` | integer | value of `target_sdk` | API level the project compiles against. Must be at least `target_sdk`. |
 | `kivy_generation` | integer | `2` | `2` for Kivy 2.3.1 on SDL2, `3` for Kivy 3.0 on SDL3. Selects the SDL bootstrap only; it does not choose the Kivy version, which comes from `[project].dependencies`. `lock` and `doctor` warn if the two disagree. |
+| `ndk` | integer | `27` | NDK major version the build uses: `27`, `28`, or `29`. kivyforge maps it to a full version, listed in [Choose the NDK](../../guides/android/supported-versions.md#choose-the-ndk), and the first build installs that version if it is missing. Only `27` is tested on device; `build` and `doctor` say so when you select another. Changing it does not make the lock stale. |
 | `abis` | list of string | `["arm64_v8a", "x86_64"]` | ABIs (application binary interfaces) to build. Only `arm64_v8a` and `x86_64` are accepted. |
 | `extra_index_urls` | list of string | `[]` | Extra package indexes to resolve wheels from, such as the mobile wheel index. When indexes tie on a package version, the first listed wins. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
 | `find_links` | list of string | `[]` | Local directories of wheels. A package with a wheel here comes only from these directories. See [Where packages come from](../../concepts/runtimes-and-wheels.md#where-packages-come-from). |
@@ -43,14 +44,6 @@ dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
 | `fullscreen` | bool | `false` | Hide the status bar and the navigation bar. A swipe from the edge shows them for a moment. Replaces buildozer's `fullscreen = 1`. |
 | `main_activity` | string | `"org.kivy.android.PythonActivity"` | The launcher: your own public subclass of `org.kivy.android.PythonActivity`, fully qualified, from `[tool.kivy.android.src]`. Use it to run Java in the activity's `onCreate`. It may not be in `org.kivy.android`, `org.libsdl.app`, `org.jnius` or `org.renpy.android`. The build fails with javac's error if the class is missing, abstract, not a `PythonActivity`, or has no public no-argument constructor. Replaces buildozer's `android.entrypoint`. See [Java and Kotlin libraries](../../guides/android/java-libraries.md#run-java-when-the-activity-is-created). |
 | `gradle_properties` | table | `{}` | Extra `gradle.properties` entries. `android.useAndroidX` is reserved. |
-
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release.
-
-    | Key | Type | Default | Description |
-    |---|---|---|---|
-    | `ndk` | integer | `27` | NDK major version the build uses: `27`, `28`, or `29`. kivyforge maps it to a full version, listed in [Supported versions](../../guides/android/supported-versions.md#build-tools), and the first build installs that version if it is missing. Only `27` is tested on device; `build` and `doctor` say so when you select another. Changing it does not make the lock stale. |
 
 ## `[tool.kivy.android.python]`
 
