@@ -152,6 +152,7 @@ ANDROID: dict[str, Spec] = {
     "target_sdk": None,
     "compile_sdk": None,
     "kivy_generation": None,
+    "ndk": None,
     "abis": None,
     "base_theme": None,
     "fullscreen": None,

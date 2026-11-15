@@ -108,6 +108,25 @@ for how the SDK licenses are recorded.
     installs it. To install it ahead of time, run the `sdkmanager` command that
     `doctor` prints.
 
+    To build with a newer NDK, set `ndk` in `[tool.kivy.android]` to its
+    major version. kivyforge uses that major's version from this table instead
+    of the pin, and `doctor` checks for it:
+
+    | `ndk` | NDK version |
+    |---|---|
+    | `27` (default) | 27.3.13750724 |
+    | `28` | 28.2.13676358 |
+    | `29` | 29.0.14206865 |
+
+    ```toml
+    [tool.kivy.android]
+    ndk = 28
+    ```
+
+    Only `27` is tested on device. The NDK compiles only kivyforge's small
+    native launcher; your dependencies are prebuilt wheels, so a newer NDK
+    does not change them.
+
 ## Check a combination on your device
 
 To confirm that your app's combination works on a particular device, run the

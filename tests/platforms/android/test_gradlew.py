@@ -179,7 +179,9 @@ class TestVerbosity:
 
         monkeypatch.setattr(gradlew_mod.subprocess, "run", fake_run)
         monkeypatch.setattr(
-            gradlew_mod, "_install_missing_sdk_packages", lambda events: None
+            gradlew_mod,
+            "_install_missing_sdk_packages",
+            lambda project_dir, events: None,
         )
         return state
 
@@ -251,7 +253,9 @@ class TestVerbosity:
             lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0),
         )
         monkeypatch.setattr(
-            gradlew_mod, "_install_missing_sdk_packages", lambda events: None
+            gradlew_mod,
+            "_install_missing_sdk_packages",
+            lambda project_dir, events: None,
         )
         lines: list[str] = []
         with verbosity_to(1):

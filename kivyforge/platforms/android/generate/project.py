@@ -290,7 +290,7 @@ plugins {{
 android {{
     namespace '{android.package}'
     compileSdk {android.compile_sdk}
-    ndkVersion '{toolchain.NDK_VERSION}'
+    ndkVersion '{android.ndk_version}'
 {test_build_type_line}
     defaultConfig {{
         applicationId '{android.package}'

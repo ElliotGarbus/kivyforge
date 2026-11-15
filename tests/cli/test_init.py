@@ -391,6 +391,9 @@ class TestNoManifest:
         # The mapping, and the settings that have no counterpart at all.
         assert "[tool.kivy.android].package" in out
         assert "[tool.kivy.android].min_sdk" in out
+        # #227: android.ndk now has a counterpart, by major version.
+        assert "[tool.kivy.android].ndk" in out
+        assert "one of 27, 28, 29" in out
         assert "No kivyforge counterpart" in out
         assert "p4a" in out
         # A buildozer requirements line often lists `android`; kept, it now

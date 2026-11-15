@@ -1,4 +1,4 @@
-"""The pinned NDK/CMake are installed visibly before Gradle would do it (#74)."""
+"""The build's NDK and CMake are installed visibly before Gradle would (#74)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def sdk(tmp_path):
 
 
 def _install_all(sdk):
-    for package in sp.PINNED:
+    for package in sp.build_packages():
         (sdk / package.installed_dir).mkdir(parents=True)
 
 
@@ -44,10 +44,45 @@ class Recorder:
 
 
 def test_pins_follow_the_toolchain():
-    assert {p.package_id for p in sp.PINNED} == {
+    assert {p.package_id for p in sp.build_packages()} == {
         f"ndk;{NDK_VERSION}",
         f"cmake;{CMAKE_VERSION}",
     }
+
+
+def test_a_selected_ndk_replaces_the_default_one():
+    assert {p.package_id for p in sp.build_packages("28.2.13676358")} == {
+        "ndk;28.2.13676358",
+        f"cmake;{CMAKE_VERSION}",
+    }
+
+
+def test_installs_the_selected_ndk_not_the_default(sdk, monkeypatch):
+    """#227: with ndk = 28, an installed r27 does not count and r28 is fetched."""
+    _with_sdkmanager(sdk)
+    (sdk / "cmake" / CMAKE_VERSION).mkdir(parents=True)
+    (sdk / "ndk" / NDK_VERSION).mkdir(parents=True)
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd[-1])
+        (sdk / "ndk" / "28.2.13676358").mkdir(parents=True)
+        return 0, ""
+
+    monkeypatch.setattr(sp, "run_streaming", fake_run)
+    rec = Recorder()
+    sp.ensure_sdk_packages(sdk, ndk_version="28.2.13676358", on_progress=rec.progress)
+    assert calls == ["ndk;28.2.13676358"]
+    assert rec.lines[-1] == "[sdk] NDK 28.2.13676358: installed"
+
+
+def test_selected_ndk_already_installed_downloads_nothing(sdk, monkeypatch):
+    (sdk / "cmake" / CMAKE_VERSION).mkdir(parents=True)
+    (sdk / "ndk" / "29.0.14206865").mkdir(parents=True)
+    monkeypatch.setattr(sp, "run_streaming", lambda *a, **k: pytest.fail("ran"))
+    rec = Recorder()
+    sp.ensure_sdk_packages(sdk, ndk_version="29.0.14206865", on_progress=rec.progress)
+    assert rec.lines == []
 
 
 def test_no_sdk_is_left_to_doctor_and_gradle(sdk):
@@ -152,7 +187,7 @@ def test_run_gradle_installs_missing_packages_first(tmp_path, monkeypatch):
     monkeypatch.setattr(
         gradlew_mod,
         "_install_missing_sdk_packages",
-        lambda events: order.append(("sdk", events)),
+        lambda project_dir, events: order.append(("sdk", events)),
     )
 
     class Done:
@@ -165,6 +200,40 @@ def test_run_gradle_installs_missing_packages_first(tmp_path, monkeypatch):
     )
     gradlew_mod.run_gradle(project, ["assembleDebug"])
     assert [step[0] for step in order] == ["sdk", "gradle"]
+
+
+def _write_app_gradle(project, text):
+    (project / "app").mkdir(parents=True)
+    (project / "app" / "build.gradle").write_text(text, encoding="utf-8")
+
+
+def test_the_ndk_to_install_comes_from_the_generated_project(tmp_path):
+    """What Gradle will ask for, so run --smoke installs the same NDK as build."""
+    _write_app_gradle(
+        tmp_path,
+        "android {\n    namespace 'org.x'\n    ndkVersion '28.2.13676358'\n}\n",
+    )
+    assert gradlew_mod._project_ndk_version(tmp_path) == "28.2.13676358"
+
+
+def test_the_ndk_falls_back_to_the_pin(tmp_path):
+    assert gradlew_mod._project_ndk_version(tmp_path) == NDK_VERSION  # no file
+    _write_app_gradle(tmp_path, "android {\n}\n")
+    assert gradlew_mod._project_ndk_version(tmp_path) == NDK_VERSION  # no line
+
+
+def test_install_step_passes_the_project_ndk(tmp_path, monkeypatch):
+    _write_app_gradle(tmp_path, "android {\n    ndkVersion '29.0.14206865'\n}\n")
+    seen = {}
+
+    def fake_ensure(sdk, **kw):
+        seen.update(kw)
+
+    monkeypatch.setattr(sp, "ensure_sdk_packages", fake_ensure)
+    gradlew_mod._install_missing_sdk_packages(
+        tmp_path, gradlew_mod.PROGRESS_ONLY_EVENTS
+    )
+    assert seen["ndk_version"] == "29.0.14206865"
 
 
 @pytest.mark.parametrize("level", [0, 1, 2])

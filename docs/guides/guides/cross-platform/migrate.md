@@ -39,6 +39,14 @@ map to help you move the settings by hand.
 | `buildozer android release` | `kivyforge package -p android` |
 | kivy-ios recipe builds and an Xcode project | `kivyforge build -p ios` generates the Xcode project. Add `--simulator` or `--device` to build it as well. |
 
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release.
+
+    Buildozer's `android.ndk` has a counterpart: `ndk` in
+    `[tool.kivy.android]` selects the NDK major version, `27`, `28`, or `29`.
+    See [Supported versions](../android/supported-versions.md#build-tools).
+
 ## The recipe model is gone
 
 kivyforge has no recipe system and never builds a dependency from source. Every

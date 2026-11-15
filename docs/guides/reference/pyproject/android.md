@@ -44,6 +44,14 @@ dependencies, `abis`, `min_sdk`, `kivy_generation`, the indexes, `find_links`,
 | `main_activity` | string | `"org.kivy.android.PythonActivity"` | The launcher: your own public subclass of `org.kivy.android.PythonActivity`, fully qualified, from `[tool.kivy.android.src]`. Use it to run Java in the activity's `onCreate`. It may not be in `org.kivy.android`, `org.libsdl.app`, `org.jnius` or `org.renpy.android`. The build fails with javac's error if the class is missing, abstract, not a `PythonActivity`, or has no public no-argument constructor. Replaces buildozer's `android.entrypoint`. See [Java and Kotlin libraries](../../guides/android/java-libraries.md#run-java-when-the-activity-is-created). |
 | `gradle_properties` | table | `{}` | Extra `gradle.properties` entries. `android.useAndroidX` is reserved. |
 
+!!! note "Preview"
+    This describes behavior that is on `main` but not yet in a released
+    version. It will ship in a future release.
+
+    | Key | Type | Default | Description |
+    |---|---|---|---|
+    | `ndk` | integer | `27` | NDK major version the build uses: `27`, `28`, or `29`. kivyforge maps it to a full version, listed in [Supported versions](../../guides/android/supported-versions.md#build-tools), and the first build installs that version if it is missing. Only `27` is tested on device; `build` and `doctor` say so when you select another. Changing it does not make the lock stale. |
+
 ## `[tool.kivy.android.python]`
 
 | Key | Type | Default | Description |

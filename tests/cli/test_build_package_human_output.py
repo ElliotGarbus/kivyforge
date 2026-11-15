@@ -285,6 +285,23 @@ class TestAndroid:
             stdout=_ANDROID_GENERATED + ready,
         )
 
+    def test_build_notes_a_selected_ndk(self, android):
+        """#227: a non-default ndk builds with it and says it is untested. It
+        is not a lock input, so the committed lock still builds."""
+        pyproject = android / "pyproject.toml"
+        pyproject.write_text(
+            pyproject.read_text(encoding="utf-8").replace(
+                "[tool.kivy.android]\n", "[tool.kivy.android]\nndk = 28\n", 1
+            ),
+            encoding="utf-8",
+        )
+        result = _invoke(build, ["-p", "android"])
+        note = (
+            "[generate] NDK 28.2.13676358 (ndk = 28); only NDK 27 is tested on device\n"
+        )
+        assert "[generate] demoapp-android/ regenerated\n" + note in result.output
+        assert "NDK 28" not in result.stdout
+
     def test_build_debug(self, android):
         result = _invoke(build, ["-p", "android", "--debug"])
         built = f"Built {_ANDROID_OUTPUTS / 'apk' / 'debug' / 'app-debug.apk'}\n"
