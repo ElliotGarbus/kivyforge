@@ -22,6 +22,9 @@ _VERBOSE_FLAGS = ("--stacktrace", "--info")
 #: (``signing.signing_config_gradle``).
 _GETENV = re.compile(r"System\.getenv\('([^']+)'\)")
 
+#: The NDK the generated app/build.gradle asks AGP for.
+_NDK_VERSION = re.compile(r"^\s*ndkVersion '([^']+)'", re.MULTILINE)
+
 
 class GradleError(Exception):
     """Gradle could not do the job. ``returncode`` is set only if Gradle ran."""
@@ -31,16 +34,34 @@ class GradleError(Exception):
         self.returncode = returncode
 
 
-def _install_missing_sdk_packages(events: BuildEvents) -> None:
-    """Install a missing pinned NDK/CMake visibly, before AGP does it silently."""
+def _install_missing_sdk_packages(project_dir: Path, events: BuildEvents) -> None:
+    """Install a missing NDK/CMake visibly, before AGP does it silently."""
     from .doctor import RealAndroidProbe
     from .sdk_packages import ensure_sdk_packages
 
     ensure_sdk_packages(
         RealAndroidProbe().sdk_root(),
+        ndk_version=_project_ndk_version(project_dir),
         on_progress=events.on_progress,
         on_transfer=events.on_transfer,
     )
+
+
+def _project_ndk_version(project_dir: Path) -> str:
+    """The NDK the generated project builds with: what Gradle will ask for.
+
+    Read from app/build.gradle rather than the config, so every Gradle run
+    (``run --smoke`` included) installs exactly the NDK that run needs. Falls
+    back to the default pin when the file is unreadable.
+    """
+    from .toolchain import NDK_VERSION
+
+    try:
+        text = (project_dir / "app" / "build.gradle").read_text(encoding="utf-8")
+    except OSError:
+        return NDK_VERSION
+    match = _NDK_VERSION.search(text)
+    return match.group(1) if match else NDK_VERSION
 
 
 def gradle_flags(verbosity: int) -> list[str]:
@@ -100,7 +121,7 @@ def run_gradle(
         )
     _require_jdk()
     events = events or PROGRESS_ONLY_EVENTS
-    _install_missing_sdk_packages(events)
+    _install_missing_sdk_packages(project_dir, events)
     env = dict(os.environ)
     if env_overrides:
         env.update(env_overrides)

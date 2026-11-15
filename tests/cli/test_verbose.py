@@ -114,7 +114,7 @@ def gradle(monkeypatch):
     monkeypatch.setattr(gradlew_mod.subprocess, "run", fake_subprocess)
     monkeypatch.setattr(gradlew_mod, "_require_jdk", lambda: None)
     monkeypatch.setattr(
-        gradlew_mod, "_install_missing_sdk_packages", lambda events: None
+        gradlew_mod, "_install_missing_sdk_packages", lambda project_dir, events: None
     )
     monkeypatch.setattr(cli, "run_gradle", through)
     return state

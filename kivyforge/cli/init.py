@@ -31,6 +31,7 @@ import click
 
 from ..config import keys, read_pyproject_text
 from ..config.model import (
+    ANDROID_NDK_VERSIONS,
     DEFAULT_ANDROID_KEY_PASSWORD_ENV,
     DEFAULT_ANDROID_STORE_PASSWORD_ENV,
     DEFAULT_WINDOWS_STORE_SCOPE,
@@ -87,6 +88,13 @@ _BUILDOZER_MAP: tuple[tuple[str, tuple[str, ...], str], ...] = (
         "",
     ),
     ("android.minapi", ("tool.kivy.android.min_sdk",), "kivyforge's floor is 24"),
+    (
+        "android.ndk",
+        ("tool.kivy.android.ndk",),
+        "the major version only, one of "
+        f"{', '.join(str(m) for m in sorted(ANDROID_NDK_VERSIONS))}; for an "
+        "older NDK, leave it unset",
+    ),
     (
         "android.archs",
         ("tool.kivy.android.abis",),
@@ -182,7 +190,7 @@ _BUILDOZER_DROPPED: tuple[tuple[str, str], ...] = (
         "android.",
     ),
     (
-        "android.ndk, android.sdk, android.ndk_api, android.gradle_version",
+        "android.sdk, android.ndk_api, android.gradle_version",
         "kivyforge pins the toolchain itself; `kivyforge doctor -p android` "
         "checks the host against those pins.",
     ),

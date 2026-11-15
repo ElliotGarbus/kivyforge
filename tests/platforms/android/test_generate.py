@@ -12,6 +12,7 @@ from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.config.model import ResolvedVersion
 from kivyforge.config.version import with_version
+from kivyforge.platforms.android import gradlew as gradlew_mod
 from kivyforge.platforms.android.generate import project as project_mod
 from kivyforge.platforms.android.generate.manifest import (
     ManifestError,
@@ -439,6 +440,27 @@ class TestProjectFiles:
         text = (tmp_path / "app" / "build.gradle").read_text()
         assert "versionName '4.5.6'" in text
         assert "versionCode 4050603" in text
+
+    @pytest.mark.parametrize(
+        ("line", "version"),
+        [("", "27.3.13750724"), ("ndk = 28", "28.2.13676358")],
+    )
+    def test_ndk_version_follows_the_ndk_key(self, tmp_path, line, version):
+        """#227: the generated project asks AGP for the selected NDK."""
+        config, android = _android(line)
+        write_app_build_gradle(
+            tmp_path,
+            config,
+            android,
+            project_root=tmp_path,
+            python_version="3.14.6",
+            runtime_root=tmp_path / "python-runtime",
+            staged_libs=[],
+        )
+        text = (tmp_path / "app" / "build.gradle").read_text()
+        assert f"    ndkVersion '{version}'\n" in text
+        # gradlew reads it back to install the same NDK before Gradle runs.
+        assert gradlew_mod._project_ndk_version(tmp_path) == version
 
     def test_r8_keeps_every_bootstrap_namespace(self, tmp_path):
         """pyjnius reflects into these by name, so R8 must keep them; they are

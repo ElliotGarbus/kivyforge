@@ -77,6 +77,18 @@ DEFAULT_ANDROID_TARGET_SDK = 35
 VALID_ANDROID_KIVY_GENERATIONS = frozenset({2, 3})
 DEFAULT_ANDROID_KIVY_GENERATION = 2
 
+# NDK major versions ``[tool.kivy.android].ndk`` may select (issue #227), each
+# mapped to the newest stable release of that major. The NDK compiles only
+# kivyforge's C launcher; wheels are prebuilt and bring their own libc++, so a
+# newer major is low risk. Only the default is validated on device.
+# ``platforms/android/toolchain.NDK_VERSION`` is the default's entry.
+ANDROID_NDK_VERSIONS: dict[int, str] = {
+    27: "27.3.13750724",
+    28: "28.2.13676358",
+    29: "29.0.14206865",
+}
+DEFAULT_ANDROID_NDK = 27
+
 # Google Play's versionCode ceiling; the auto-derivation formula must stay
 # under it (android/01 §auto-derived version_code).
 ANDROID_VERSION_CODE_CEILING = 2_100_000_000
@@ -905,6 +917,9 @@ class AndroidConfig:
     target_sdk: int = DEFAULT_ANDROID_TARGET_SDK
     compile_sdk: int = DEFAULT_ANDROID_TARGET_SDK
     kivy_generation: int = DEFAULT_ANDROID_KIVY_GENERATION
+    #: NDK major version, a key of :data:`ANDROID_NDK_VERSIONS`. Not a lock
+    #: input: the NDK compiles only the launcher and never affects resolution.
+    ndk: int = DEFAULT_ANDROID_NDK
     abis: tuple[str, ...] = DEFAULT_ANDROID_ABIS
     extra_index_urls: tuple[str, ...] = ()
     find_links: tuple[str, ...] = ()
@@ -938,6 +953,11 @@ class AndroidConfig:
     signing: AndroidSigningConfig = field(default_factory=AndroidSigningConfig)
     gradle_properties: dict[str, object] = field(default_factory=dict)
     build_settings: AndroidBuildSettings = field(default_factory=AndroidBuildSettings)
+
+    @property
+    def ndk_version(self) -> str:
+        """The full NDK version this app builds with, such as ``27.3.13750724``."""
+        return ANDROID_NDK_VERSIONS[self.ndk]
 
     @property
     def python_required(self) -> AndroidPythonConfig:

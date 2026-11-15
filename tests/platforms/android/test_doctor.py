@@ -29,6 +29,7 @@ from kivyforge.platforms.android.doctor import (
     _check_include_files,
     _check_jdk,
     _check_lock_hosts,
+    _check_ndk,
     _check_pyjnius_contract,
     _check_sdk,
     _check_sdl_kivy_match,
@@ -1824,3 +1825,61 @@ class TestElf:
         (tmp_path / "arm64-v8a" / "bad.so").write_bytes(_make_elf(0x1000))
         bad = scan_alignment(tmp_path)
         assert [p.name for p, _ in bad] == ["bad.so"]
+
+
+def _android_with_ndk(major: int | None):
+    line = f"ndk = {major}\n" if major is not None else ""
+    text = (
+        '[project]\nname = "a"\nversion = "1.0"\ndependencies = ["kivy"]\n'
+        '[tool.kivy]\napp_dir = "src"\n'
+        '[tool.kivy.android]\nschema_version = 1\npackage = "org.a.a"\n'
+        f"{line}"
+        '[tool.kivy.android.python]\nversion = "3.14.6"\n'
+    )
+    return load_config_from_text(
+        text, require_ios=False, require_android=True
+    ).android_required
+
+
+class TestSelectedNdk:
+    """``[tool.kivy.android].ndk`` moves the check to that version (#227)."""
+
+    def test_selected_ndk_installed_passes_with_an_untested_note(self, tmp_path):
+        probe = FakeProbe(ndk=["28.2.13676358"])
+        result = _check_ndk(probe, tmp_path, _android_with_ndk(28))
+        assert result.status is Status.PASS
+        assert result.detail == (
+            "28.2.13676358 (ndk = 28; only NDK 27 is tested on device)"
+        )
+
+    def test_the_default_pin_does_not_satisfy_a_selected_ndk(self, tmp_path):
+        probe = FakeProbe(ndk=[toolchain.NDK_VERSION])
+        result = _check_ndk(probe, tmp_path, _android_with_ndk(29))
+        assert result.status is Status.WARN
+        assert "the NDK 29.0.14206865 that ndk = 29 selects" in result.detail
+        assert result.hint == "sdkmanager 'ndk;29.0.14206865'."
+
+    def test_explicit_default_reads_like_unset(self, tmp_path):
+        probe = FakeProbe(ndk=[toolchain.NDK_VERSION])
+        for android in (_android_with_ndk(27), _android_with_ndk(None), None):
+            result = _check_ndk(probe, tmp_path, android)
+            assert (result.status, result.detail) == (
+                Status.PASS,
+                toolchain.NDK_VERSION,
+            )
+
+    def test_android_doctor_reads_ndk_from_the_project(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "a"\nversion = "1.0"\ndependencies = ["kivy"]\n'
+            '[tool.kivy]\napp_dir = "src"\n'
+            '[tool.kivy.android]\nschema_version = 1\npackage = "org.a.a"\n'
+            "ndk = 28\n"
+            '[tool.kivy.android.python]\nversion = "3.14.6"\n',
+            encoding="utf-8",
+        )
+        probe = _healthy_probe(tmp_path)
+        by = _by_name(
+            android_doctor(tmp_path, kivyforge_version="0", offline=True, probe=probe)
+        )
+        assert by["NDK"].status is Status.WARN
+        assert "ndk;28.2.13676358" in by["NDK"].hint

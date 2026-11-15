@@ -1,9 +1,9 @@
-"""Install the pinned NDK and CMake before Gradle would, visibly (issue #74).
+"""Install the build's NDK and the pinned CMake before Gradle would (issue #74).
 
 AGP downloads a missing NDK or CMake itself, during the build, and says nothing
 while it does: the NDK is a download of several hundred MB. So before Gradle
-runs, kivyforge checks for the versions it pins and, when one is missing,
-installs it with the SDK's own ``sdkmanager`` and shows the progress.
+runs, kivyforge checks for the versions the build asks for and, when one is
+missing, installs it with the SDK's own ``sdkmanager`` and shows the progress.
 
 This is a convenience, never a gate. Without ``sdkmanager``, or when it does not
 install the package (an unaccepted license makes it print the license and exit
@@ -35,12 +35,14 @@ class SdkPackage:
     installed_dir: str  # relative to the SDK root
 
 
-PINNED = (
-    SdkPackage(f"NDK {NDK_VERSION}", f"ndk;{NDK_VERSION}", f"ndk/{NDK_VERSION}"),
-    SdkPackage(
-        f"CMake {CMAKE_VERSION}", f"cmake;{CMAKE_VERSION}", f"cmake/{CMAKE_VERSION}"
-    ),
-)
+def build_packages(ndk_version: str = NDK_VERSION) -> tuple[SdkPackage, ...]:
+    """The NDK (*ndk_version*, from ``[tool.kivy.android].ndk``) and CMake."""
+    return (
+        SdkPackage(f"NDK {ndk_version}", f"ndk;{ndk_version}", f"ndk/{ndk_version}"),
+        SdkPackage(
+            f"CMake {CMAKE_VERSION}", f"cmake;{CMAKE_VERSION}", f"cmake/{CMAKE_VERSION}"
+        ),
+    )
 
 
 def sdkmanager_path(sdk: Path) -> Path | None:
@@ -51,13 +53,15 @@ def sdkmanager_path(sdk: Path) -> Path | None:
 def ensure_sdk_packages(
     sdk: Path | None,
     *,
+    ndk_version: str = NDK_VERSION,
     on_progress: Callable[[str], None],
     on_transfer: Callable[[str, int, int, str], None] | None = None,
 ) -> None:
-    """Install whichever pinned SDK packages are missing, reporting progress."""
+    """Install whichever of the build's SDK packages are missing, with progress."""
     if sdk is None:
         return  # doctor reports a missing SDK; Gradle will fail with its own error
-    missing = [p for p in PINNED if not (sdk / p.installed_dir).is_dir()]
+    packages = build_packages(ndk_version)
+    missing = [p for p in packages if not (sdk / p.installed_dir).is_dir()]
     if not missing:
         return
     tool = sdkmanager_path(sdk)

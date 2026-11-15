@@ -9,6 +9,8 @@ rebuilding is how projects move across these pins.
 
 from __future__ import annotations
 
+from kivyforge.config.model import ANDROID_NDK_VERSIONS, DEFAULT_ANDROID_NDK
+
 # Gradle wrapper distribution the generated project pins (the python.org
 # testbed's own combo, proven with AGP below).
 GRADLE_VERSION = "8.11.1"
@@ -30,10 +32,12 @@ AGP_VERSION = "8.10.0"
 # non-empty).
 KOTLIN_VERSION = "1.9.22"
 
-# ndkVersion emitted into app/build.gradle: the launcher compile is
+# The default ndkVersion emitted into app/build.gradle: the launcher compile is
 # deterministic across hosts (android/04 §native launcher). r27.3 is the
 # proven prototype pin; cibuildwheel's wheels pin the same family.
-NDK_VERSION = "27.3.13750724"
+# [tool.kivy.android].ndk can select another major from ANDROID_NDK_VERSIONS
+# (issue #227); AndroidConfig.ndk_version is the version a build uses.
+NDK_VERSION = ANDROID_NDK_VERSIONS[DEFAULT_ANDROID_NDK]
 
 # CMake version emitted into app/build.gradle (externalNativeBuild.cmake.version).
 # It is AGP's own default, pinned explicitly so `doctor` checks the same package

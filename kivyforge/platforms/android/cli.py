@@ -32,7 +32,12 @@ from kivyforge.bundle.hostpython import pinned_compiler
 from kivyforge.bundle.workdir import copy_in
 from kivyforge.cli._common import ECHO_EVENTS, PROGRESS_ONLY_EVENTS, ToolchainError
 from kivyforge.config import ConfigError, load_config
-from kivyforge.config.model import AndroidConfig, Config, ResolvedVersion
+from kivyforge.config.model import (
+    DEFAULT_ANDROID_NDK,
+    AndroidConfig,
+    Config,
+    ResolvedVersion,
+)
 from kivyforge.config.version import android_version_code, with_version
 from kivyforge.lock.host_python import HostPython
 from kivyforge.lock.inputs import is_in_sync
@@ -653,6 +658,11 @@ def android_build(
         project_root, dest, android, lock, events, verify=not no_verify_lock
     )
     events.on_progress(f"[generate] {dest.name}/ regenerated")
+    if android.ndk != DEFAULT_ANDROID_NDK:
+        events.on_progress(
+            f"[generate] NDK {android.ndk_version} (ndk = {android.ndk}); only "
+            f"NDK {DEFAULT_ANDROID_NDK} is tested on device"
+        )
     # The [generate] line is progress; without this product line a plain
     # `build` would print nothing on stdout while claiming a project artifact.
     project_rel = dest.relative_to(project_root)

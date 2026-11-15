@@ -60,6 +60,24 @@
 - **Migration:** none needed. To skip the download during your first build,
   run the `sdkmanager 'ndk;27.3.13750724'` command `doctor` prints.
 
+### Choose the Android NDK by major version
+
+- **Added:** `ndk` in `[tool.kivy.android]` selects the NDK major version a
+  build uses: `27` (the default, 27.3.13750724), `28` (28.2.13676358), or `29`
+  (29.0.14206865) ([#227](https://github.com/ElliotGarbus/kivyforge/issues/227)).
+  The generated project's `ndkVersion`, the NDK install before Gradle runs,
+  and `doctor`'s NDK check all use the selected version, so an installed r28
+  or r29 is used instead of downloading r27. Any other value, a string, or a
+  full version is a config error that lists the supported majors.
+- **Added:** only r27 is tested on device. With another major, `build` prints
+  `[generate] NDK <version> (ndk = <major>); only NDK 27 is tested on device`
+  and `doctor`'s NDK line says the same.
+- **Changed:** `kivyforge init`'s Buildozer migration map now maps
+  `android.ndk` to `[tool.kivy.android].ndk` instead of listing it as having
+  no counterpart.
+- **Migration:** none needed. Leaving `ndk` unset builds exactly as before.
+  `ndk` is not a lock input, so changing it does not make the lock stale.
+
 ## [v0.1.1](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.1) - 2026-11-13
 
 ### kivyforge's own version comes from its git tags

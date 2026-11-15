@@ -727,3 +727,41 @@ class TestPassthroughs:
             ("com.google.gms.google-services", "4.4.2"),
             ("com.google.firebase.crashlytics", "3.0.2"),
         )
+
+
+class TestNdk:
+    """``ndk`` selects an NDK major version (issue #227)."""
+
+    def test_unset_is_the_default_pin(self):
+        from kivyforge.platforms.android import toolchain
+
+        a = load_android(BASE)
+        assert a.ndk == 27
+        assert a.ndk_version == toolchain.NDK_VERSION
+
+    @pytest.mark.parametrize(
+        ("major", "version"),
+        [(27, "27.3.13750724"), (28, "28.2.13676358"), (29, "29.0.14206865")],
+    )
+    def test_major_maps_to_a_full_version(self, major, version):
+        a = load_android(with_lines(f"ndk = {major}"))
+        assert (a.ndk, a.ndk_version) == (major, version)
+
+    @pytest.mark.parametrize(
+        "value", ["26", "30", "28.0", "true", '"28"', '"28.2.13676358"']
+    )
+    def test_anything_but_a_supported_integer_is_rejected(self, value):
+        with pytest.raises(ConfigError) as info:
+            load_android(with_lines(f"ndk = {value}"))
+        assert "must be one of 27, 28, 29" in str(info.value)
+        assert info.value.key_path == "tool.kivy.android.ndk"
+
+    def test_is_not_a_lock_input(self):
+        """The NDK compiles only the launcher, so changing it never re-locks."""
+        from kivyforge.lock.inputs import lock_inputs_sha256
+
+        default = load(BASE)
+        selected = load(with_lines("ndk = 29"))
+        assert lock_inputs_sha256(default, "android") == lock_inputs_sha256(
+            selected, "android"
+        )

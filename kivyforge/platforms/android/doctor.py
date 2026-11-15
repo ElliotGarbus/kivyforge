@@ -23,7 +23,12 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from kivyforge.config.errors import ConfigError
 from kivyforge.config.loader import load_config
-from kivyforge.config.model import AndroidConfig, Config
+from kivyforge.config.model import (
+    ANDROID_NDK_VERSIONS,
+    DEFAULT_ANDROID_NDK,
+    AndroidConfig,
+    Config,
+)
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.result import CheckResult, Status
 
@@ -559,11 +564,14 @@ def _check_build_tools(
     )
 
 
-def _check_ndk(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
-    """The pinned NDK, which the native launcher compile needs on every build.
+def _check_ndk(
+    probe: AndroidProbe, sdk: Path | None, android: AndroidConfig | None = None
+) -> CheckResult:
+    """The NDK the build uses, which the native launcher compile needs every time.
 
-    Only the pinned version counts: the generated project names it as
-    ``ndkVersion``, so any other installed NDK is never used. Passing on "some
+    That is the default pin, or the major ``[tool.kivy.android].ndk`` selects
+    (issue #227). Only that exact version counts: the generated project names it
+    as ``ndkVersion``, so any other installed NDK is never used. Passing on "some
     NDK is installed" told a user with r28 and r29 that all was well, and the
     next build downloaded r27 without warning.
 
@@ -573,17 +581,29 @@ def _check_ndk(probe: AndroidProbe, sdk: Path | None) -> CheckResult:
     """
     if sdk is None:
         return CheckResult("NDK", Status.SKIP, "no SDK root to look in")
+    major = android.ndk if android is not None else DEFAULT_ANDROID_NDK
+    version = ANDROID_NDK_VERSIONS[major]
+    selected = major != DEFAULT_ANDROID_NDK
     versions = probe.ndk_versions(sdk)
-    if toolchain.NDK_VERSION in versions:
-        return CheckResult("NDK", Status.PASS, toolchain.NDK_VERSION)
+    if version in versions:
+        untested = (
+            f" (ndk = {major}; only NDK {DEFAULT_ANDROID_NDK} is tested on device)"
+            if selected
+            else ""
+        )
+        return CheckResult("NDK", Status.PASS, f"{version}{untested}")
+    which = (
+        f"the NDK {version} that ndk = {major} selects"
+        if selected
+        else f"the pinned NDK {version}"
+    )
     found = f"found {', '.join(versions)}" if versions else "none installed"
     unused = "; builds do not use those versions" if versions else ""
     return CheckResult(
         "NDK",
         Status.WARN,
-        f"the pinned NDK {toolchain.NDK_VERSION} is not installed ({found}"
-        f"{unused}); the first build will download it",
-        hint=f"sdkmanager 'ndk;{toolchain.NDK_VERSION}'.",
+        f"{which} is not installed ({found}{unused}); the first build will download it",
+        hint=f"sdkmanager 'ndk;{version}'.",
     )
 
 
@@ -1239,7 +1259,7 @@ def android_doctor(
         _check_sdk(sdk),
         _check_sdk_licenses(probe, sdk),
         _check_build_tools(probe, sdk, android),
-        _check_ndk(probe, sdk),
+        _check_ndk(probe, sdk, android),
         _check_cmake(probe, sdk),
         _check_adb(probe, sdk),
         _check_emulator(probe, sdk),

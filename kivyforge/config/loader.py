@@ -25,6 +25,7 @@ from .model import (
     ANDROID_BOOTSTRAP_ACTIVITY,
     ANDROID_BOOTSTRAP_NAMESPACES,
     ANDROID_MIN_SDK_FLOOR,
+    ANDROID_NDK_VERSIONS,
     ANDROID_RELEASE_ONLY,
     ANDROID_VERSION_CODE_CEILING,
     CONDITIONAL_BUILD_SETTINGS,
@@ -33,6 +34,7 @@ from .model import (
     DEFAULT_ANDROID_KEY_PASSWORD_ENV,
     DEFAULT_ANDROID_KIVY_GENERATION,
     DEFAULT_ANDROID_MIN_SDK,
+    DEFAULT_ANDROID_NDK,
     DEFAULT_ANDROID_STORE_PASSWORD_ENV,
     DEFAULT_ANDROID_TARGET_SDK,
     DEFAULT_BUILD_BACKEND,
@@ -1812,6 +1814,7 @@ def _parse_android(
     version_code = _parse_android_version_code(android, finder, project, build=build)
     min_sdk, target_sdk, compile_sdk = _parse_android_sdk_levels(android, finder)
     kivy_generation = _parse_android_kivy_generation(android, finder)
+    ndk = _parse_android_ndk(android, finder)
     abis = _parse_android_abis(android, finder)
 
     extra_index_urls = android.get("extra_index_urls", [])
@@ -1889,6 +1892,7 @@ def _parse_android(
         target_sdk=target_sdk,
         compile_sdk=compile_sdk,
         kivy_generation=kivy_generation,
+        ndk=ndk,
         abis=abis,
         extra_index_urls=tuple(extra_index_urls),
         find_links=tuple(find_links),
@@ -2093,6 +2097,23 @@ def _parse_android_kivy_generation(android: dict, finder: _LineFinder) -> int:
             "kivy_generation = 3 targets Kivy 3.0 (SDL3).",
         )
     return generation
+
+
+def _parse_android_ndk(android: dict, finder: _LineFinder) -> int:
+    # A major version only (issue #227); the table maps it to a full version.
+    major = android.get("ndk", DEFAULT_ANDROID_NDK)
+    # type() rather than isinstance(): bool is an int, and 28.0 == 28.
+    if type(major) is not int or major not in ANDROID_NDK_VERSIONS:
+        supported = ", ".join(str(m) for m in sorted(ANDROID_NDK_VERSIONS))
+        raise ConfigError(
+            f"[tool.kivy.android].ndk must be one of {supported}, got {major!r}",
+            key_path="tool.kivy.android.ndk",
+            line=finder.line("ndk"),
+            hint=f"give the NDK major version as an integer, such as "
+            f"ndk = {DEFAULT_ANDROID_NDK}; leave it unset for the default "
+            f"({DEFAULT_ANDROID_NDK}).",
+        )
+    return major
 
 
 def _parse_android_abis(android: dict, finder: _LineFinder) -> tuple[str, ...]:
