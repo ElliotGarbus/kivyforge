@@ -94,18 +94,13 @@ To list attached devices and available AVDs without running anything:
 kivyforge run -p android --list-devices
 ```
 
-`--device` cannot be combined with `--emulator` or `--avd`.
+The list adds a `Not ready:` line for each device `adb` lists but can't use,
+with its state, such as `Not ready: SERIAL (unauthorized)`. Without the SDK's
+emulator package, it shows `AVDs: unavailable` instead of failing.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release.
-
-    `--list-devices` adds a `Not ready:` line for each device `adb` lists but
-    can't use, with its state, such as `Not ready: SERIAL (unauthorized)`.
-    Without the SDK's emulator package, it shows `AVDs: unavailable` instead
-    of failing. When no device is attached and there is no emulator package,
-    `run` says so and suggests `--device`; earlier releases reported
-    "emulator not found".
+`--device` cannot be combined with `--emulator` or `--avd`. When no device is
+attached and the SDK has no emulator package, `run` says so and suggests
+`--device`.
 
 ## Control the build
 

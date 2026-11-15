@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v0.1.2](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.2) - 2026-11-14
 
 ### Desktop targets move to CPython 3.14 with Kivy 2.3.2
 

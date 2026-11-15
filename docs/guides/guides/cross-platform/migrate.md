@@ -34,18 +34,11 @@ map to help you move the settings by hand.
 | `buildozer.spec` | `[project]`, `[tool.kivy]`, and `[tool.kivy.android]` or `[tool.kivy.ios]` in `pyproject.toml` |
 | `requirements =` in `buildozer.spec` | `[project].dependencies`, as standard Python requirement strings |
 | Recipes that cross-compile dependencies | Prebuilt wheels and runtimes, pinned in `pylock.<platform>.toml` |
-| `android.ndk`, `android.sdk`, and other toolchain pins | Pinned by kivyforge. `kivyforge doctor -p android` checks your host against them. |
+| `android.ndk` | `ndk` in `[tool.kivy.android]`, as a major version: `27`, `28`, or `29`. See [Choose the NDK](../android/supported-versions.md#choose-the-ndk). |
+| `android.sdk` and other toolchain pins | Pinned by kivyforge. `kivyforge doctor -p android` checks your host against them. |
 | `buildozer android debug` | `kivyforge build -p android --debug` |
 | `buildozer android release` | `kivyforge package -p android` |
 | kivy-ios recipe builds and an Xcode project | `kivyforge build -p ios` generates the Xcode project. Add `--simulator` or `--device` to build it as well. |
-
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release.
-
-    Buildozer's `android.ndk` has a counterpart: `ndk` in
-    `[tool.kivy.android]` selects the NDK major version, `27`, `28`, or `29`.
-    See [Supported versions](../android/supported-versions.md#build-tools).
 
 ## The recipe model is gone
 

@@ -77,7 +77,7 @@ releases.
 | Tool | Version |
 |---|---|
 | JDK | 17 to 23 (you install it) |
-| Android NDK | 27.3.13750724 |
+| Android NDK | 27.3.13750724 by default; `ndk` selects another (see [Choose the NDK](#choose-the-ndk)) |
 | CMake | 3.22.1 |
 | Android Gradle Plugin | 8.10.0 |
 | Gradle | 8.11.1 (downloaded by the Gradle wrapper) |
@@ -91,41 +91,37 @@ own JDK, which may be newer than that; if it is, install a separate JDK in the
 range and point `JAVA_HOME` at it.
 
 `kivyforge doctor -p android` checks the JDK you actually have, the Android
-SDK, build tools, the NDK, and the pinned CMake. Only the pinned NDK is used: a
-build ignores any other NDK version you have installed. If the pinned NDK or
-CMake is missing, the first build installs it with `sdkmanager`. The NDK is a
-download of several hundred MB. See
+SDK, build tools, and the NDK and CMake versions the build uses. A build uses
+only that NDK version and ignores any other NDK you have installed; with only
+other versions installed, `doctor` warns that builds do not use them. A missing
+NDK or CMake is a `WARN`, because the first build installs it with
+`sdkmanager`. The NDK is a download of several hundred MB; to install it ahead
+of time, run the `sdkmanager` command that `doctor` prints. See
 [SDK licenses and `sdkmanager`](../../get-started/quickstart-android.md#sdk-licenses-and-sdkmanager)
 for how the SDK licenses are recorded.
 
-!!! note "Preview"
-    This describes behavior that is on `main` but not yet in a released
-    version. It will ship in a future release.
+## Choose the NDK
 
-    `doctor` checks for the pinned NDK, not just any NDK. If only other NDK
-    versions are installed, it warns that builds do not use them. A missing
-    pinned NDK is a `WARN`, like a missing CMake, because the first build
-    installs it. To install it ahead of time, run the `sdkmanager` command that
-    `doctor` prints.
+To build with a newer NDK, set `ndk` in `[tool.kivy.android]` to its major
+version. kivyforge builds with that major's version from this table, and
+`doctor` checks for it:
 
-    To build with a newer NDK, set `ndk` in `[tool.kivy.android]` to its
-    major version. kivyforge uses that major's version from this table instead
-    of the pin, and `doctor` checks for it:
+| `ndk` | NDK version |
+|---|---|
+| `27` (default) | 27.3.13750724 |
+| `28` | 28.2.13676358 |
+| `29` | 29.0.14206865 |
 
-    | `ndk` | NDK version |
-    |---|---|
-    | `27` (default) | 27.3.13750724 |
-    | `28` | 28.2.13676358 |
-    | `29` | 29.0.14206865 |
+```toml
+[tool.kivy.android]
+ndk = 28
+```
 
-    ```toml
-    [tool.kivy.android]
-    ndk = 28
-    ```
-
-    Only `27` is tested on device. The NDK compiles only kivyforge's small
-    native launcher; your dependencies are prebuilt wheels, so a newer NDK
-    does not change them.
+If that version is already installed, the build uses it and downloads nothing.
+Only `27` is tested on device; with another major, `build` and `doctor` say so.
+The NDK compiles only kivyforge's small native launcher: your dependencies are
+prebuilt wheels, so a newer NDK does not change them, and changing `ndk` does
+not make the lock stale.
 
 ## Check a combination on your device
 
