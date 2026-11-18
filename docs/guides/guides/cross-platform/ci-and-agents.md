@@ -475,6 +475,12 @@ This app is built with kivyforge. Use it for every build, package, and run step.
 - After you change dependencies in pyproject.toml, run
   `kivyforge lock -p PLATFORM` and commit the lock with the change.
   Never pass `--no-verify-lock`, and never edit `pylock.*.toml` by hand.
+- A packaged desktop app started without a terminal writes Kivy's log,
+  including the traceback of an uncaught exception, to the newest
+  `kivy_*.txt` in the `logs` folder of Kivy's home directory. That is
+  `~/.kivy/logs` (`%USERPROFILE%\.kivy\logs` on Windows), unless the app sets
+  `KIVY_DESKTOP_PATH_ID` on Kivy 3.0 (`%APPDATA%\PATH_ID\.kivy\logs` on
+  Windows) or sets `KIVY_HOME`. Read it before you add logging of your own.
 - Diagnostics on an `ok: true` run are warnings. Report them; don't treat
   them as failures.
 - Take output paths from `data.artifacts`. Don't guess them.
