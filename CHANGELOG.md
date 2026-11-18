@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### `kivyforge --help` tells scripts and agents where to start
+
+- **Added:** the top-level help says to run `kivyforge capabilities --json`
+  first, that every command except `run` takes `--json`, and that the README's
+  "Working with agents" section has the rest. An agent that reads only
+  `--help` no longer misses the JSON interface.
+- **Migration:** none needed.
+
 ### `KF-LOCK-SOURCE-UNAVAILABLE` says why each local wheel was rejected
 
 - **Fixed:** when a package comes only from `find_links` and none of its wheels

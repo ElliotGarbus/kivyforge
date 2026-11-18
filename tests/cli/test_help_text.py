@@ -36,3 +36,24 @@ def test_top_level_help_names_every_platform():
     assert result.exit_code == 0
     for platform in ("Android", "iOS", "macOS", "Windows", "Linux"):
         assert platform in result.output
+
+
+def test_top_level_help_points_agents_at_capabilities_and_the_guide():
+    """An agent that reads only --help still finds where to start."""
+    result = CliRunner().invoke(main, ["--help"])
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert "kivyforge capabilities --json" in output
+    assert "'Working with agents' in the kivyforge README" in output
+
+
+def test_every_verb_but_run_takes_json_as_the_help_says():
+    """The help promises --json on every command except run; hold it to that."""
+    without = sorted(
+        name
+        for name, cmd in main.commands.items()
+        if not any(
+            "--json" in p.opts for p in cmd.params if isinstance(p, click.Option)
+        )
+    )
+    assert without == ["run"]
