@@ -481,13 +481,21 @@ This app is built with kivyforge. Use it for every build, package, and run step.
 - `kivyforge run -p android` follows the app's log until the app exits.
   Always add `--no-follow`. On desktop, `run` opens the app's window, so use
   it only when I ask to see the app.
+- `package` ships `.pyc` files without the `.py` source, and some code fails
+  only then. If a packaged app fails but `run` works, run
+  `kivyforge run -p PLATFORM --release`, which strips the source the same way,
+  and look for code that reads its own source or edits `__file__`.
 - Signing passwords are in my environment. Never ask me for them, print them,
   or write them to a file.
 ```
 
 Replace `PLATFORM` with the target the agent is working on. To give the agent
 fewer choices, name your targets in the section, for example "This app ships
-for Android and Windows."
+for Android and Windows." On iOS, `run` has no `--release`; tell the agent to
+use `kivyforge build -p ios --release` instead.
+
+The code that fails without its source is described in
+[Test the stripped build before you package](../../concepts/build-vs-package.md#test-the-stripped-build-before-you-package).
 
 ### Prompt the agent
 

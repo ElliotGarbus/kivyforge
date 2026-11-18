@@ -421,6 +421,12 @@ behalf. No verb prompts for input, and every verb but `run` accepts `--json`.
   guessing the layout, and only trust artifacts a run reports for *itself*: a
   failed run's `artifacts` never names a stale file left over from a previous
   one.
+- **`package` ships `.pyc` without the `.py` source.** Code that reads its own
+  source or edits `__file__` can fail only in the packaged app. Run
+  `kivyforge run -p PLATFORM --release` before `package`: it strips the source
+  the same way (on iOS, `kivyforge build -p ios --release`). See
+  [Build versus package](docs/guides/concepts/build-vs-package.md#test-the-stripped-build-before-you-package)
+  for the known problems.
 - **`run` is the one verb without `--json`.** It hands your app's own process
   the console directly (stdout/stderr pass through untouched), which is the
   point of the verb; script against `build`/`package` plus `status --json`
