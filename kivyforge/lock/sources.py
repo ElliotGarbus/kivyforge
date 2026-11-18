@@ -26,6 +26,10 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from packaging import tags as tags_module
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.tags import Tag, compatible_tags, cpython_tags
 from packaging.utils import InvalidWheelFilename, parse_wheel_filename
 
 from .. import __version__
@@ -125,12 +129,20 @@ class SourcePolicy:
             }
         )
 
-    def unavailable(self, requirement: str, variant: str) -> SourceUnavailable | None:
+    def unavailable(
+        self,
+        requirement: str,
+        variant: str,
+        *,
+        target: WheelTarget | None = None,
+    ) -> SourceUnavailable | None:
         """The failure for ``requirement`` having no wheel for ``variant``, if its
         source is fixed; None when pip's own message is the right one.
 
         ``requirement`` is what pip said it could not satisfy, which may carry a
-        specifier (``kivy==2.3.1``).
+        specifier (``kivy==2.3.1``). ``target`` is what pip was asked to fit;
+        with it, a local package's message says why each of its wheels was
+        rejected instead of only naming the variant.
         """
         match = re.match(r"[A-Za-z0-9._-]+", requirement)
         if match is None:
@@ -150,20 +162,203 @@ class SourcePolicy:
                 },
             )
         if self.is_local(package):
+            return self._local_unavailable(package, requirement, variant, target)
+        return None
+
+    def _local_unavailable(
+        self,
+        package: str,
+        requirement: str,
+        variant: str,
+        target: WheelTarget | None,
+    ) -> SourceUnavailable:
+        table = f"[tool.kivy.{self.platform or '<platform>'}]"
+        context: dict[str, str | None] = {
+            "distribution": package,
+            "source": FIND_LINKS,
+            "variant": variant,
+        }
+        head = (
+            f"{package} has wheels in {table}.find_links, so it comes only from "
+            f"there, and none of them fits {variant}"
+        )
+        if target is not None and not target.parses:
+            target = None
+        if target is None:
             return SourceUnavailable(
-                f"{package} has wheels in [tool.kivy.{self.platform or '<platform>'}]"
-                ".find_links, so "
-                f"it comes only from there, and none of them fits {variant}.\n"
-                f"  Fix: add a {variant} wheel for it to the find_links directory, "
+                f"{head}.\n"
+                f"  Fix: add a wheel for {variant} to the find_links directory, "
                 "remove its wheels to take it from an index, or pin it to an "
                 "index in sources.",
-                context={
-                    "distribution": package,
-                    "source": FIND_LINKS,
-                    "variant": variant,
-                },
+                context=context,
             )
+        rejected = [
+            target.rejection(wheel.name, requirement)
+            for wheel in local_wheels(self.find_links, package)
+        ]
+        # Context values are strings (json-output.md), so the lists are spelled
+        # as space- and comma-separated words; a wheel filename has no spaces,
+        # and its tags are in its name.
+        context.update(
+            {
+                "python": target.python,
+                "interpreter": target.interpreter,
+                "platforms": " ".join(target.platforms),
+                "wheels": " ".join(r.wheel for r in rejected),
+                "reasons": ",".join(sorted({x for r in rejected for x in r.reasons})),
+            }
+        )
+        listed = "".join(f"\n  {r.line()}" for r in rejected)
+        if rejected and all(r.reasons == ("interpreter",) for r in rejected):
+            fix = (
+                f"  Fix: build {package} for CPython {target.python} "
+                f"({target.interpreter}), the Python this lock targets, and put it "
+                "in the find_links directory; or set the target's Python to the "
+                "version the wheel was built for."
+            )
+        else:
+            fix = (
+                f"  Fix: add a {target.interpreter} wheel for {variant} to the "
+                "find_links directory, remove its wheels to take it from an "
+                "index, or pin it to an index in sources."
+            )
+        return SourceUnavailable(
+            f"{head} (CPython {target.python}, {target.interpreter}, "
+            f"{' or '.join(target.platforms)}):{listed}\n{fix}",
+            context=context,
+        )
+
+
+@dataclass(frozen=True)
+class Rejection:
+    """Why one ``find_links`` wheel does not fit a target."""
+
+    wheel: str
+    #: The wheel's tags, ``interpreter-abi-platform``, as its filename spells them.
+    tags: tuple[str, ...]
+    #: Any of ``interpreter``, ``platform``, ``tags``, ``version``; empty when
+    #: kivyforge cannot tell why pip passed it over.
+    reasons: tuple[str, ...]
+    detail: str
+
+    def line(self) -> str:
+        return f"{self.wheel}: {self.detail}"
+
+
+@dataclass(frozen=True)
+class WheelTarget:
+    """What pip was asked to fit for one variant: a CPython version, its ABIs,
+    and the platform tags as kivyforge passes them to ``--platform``."""
+
+    python_version: str
+    platforms: tuple[str, ...]
+    abis: tuple[str, ...] = ()
+
+    @property
+    def parses(self) -> bool:
+        """False when ``python_version`` has no major.minor to build tags from."""
+        return len(re.findall(r"\d+", self.python_version)) >= 2
+
+    @property
+    def _version(self) -> tuple[int, int]:
+        parts = re.findall(r"\d+", self.python_version)
+        if len(parts) < 2:
+            raise ValueError(f"not a Python version: {self.python_version!r}")
+        return int(parts[0]), int(parts[1])
+
+    @property
+    def python(self) -> str:
+        major, minor = self._version
+        return f"{major}.{minor}"
+
+    @property
+    def interpreter(self) -> str:
+        major, minor = self._version
+        return f"cp{major}{minor}"
+
+    def _expanded_platforms(self) -> set[str]:
+        """``platforms`` as pip expands them (older API levels and OS versions
+        of the same arch also fit), plus ``any``."""
+        out = {"any"}
+        for platform in self.platforms:
+            out.add(platform)
+            out.update(_older_platforms(platform))
+        return out
+
+    def _supported(self) -> set[Tag]:
+        version = self._version
+        abis = list(self.abis) or [self.interpreter]
+        platforms = sorted(self._expanded_platforms() - {"any"})
+        return {
+            *cpython_tags(version, abis=abis, platforms=platforms),
+            *compatible_tags(version, self.interpreter, platforms),
+        }
+
+    def rejection(self, wheel: str, requirement: str = "") -> Rejection:
+        """Why ``wheel`` does not fit, as far as its filename and ``requirement``
+        can tell."""
+        try:
+            _name, version, _build, tags = parse_wheel_filename(wheel)
+        except InvalidWheelFilename:
+            return Rejection(wheel, (), (), "not a valid wheel filename")
+        spelled = tuple(sorted(f"{t.interpreter}-{t.abi}-{t.platform}" for t in tags))
+        supported = self._supported()
+        pairs = {(t.interpreter, t.abi) for t in supported}
+        platforms = self._expanded_platforms()
+        reasons: list[str] = []
+        details: list[str] = []
+        if not any((t.interpreter, t.abi) in pairs for t in tags):
+            reasons.append("interpreter")
+            built = sorted({f"{t.interpreter}-{t.abi}" for t in tags})
+            details.append(
+                f"built for {', '.join(built)}, not CPython {self.python} "
+                f"({self.interpreter})"
+            )
+        if not any(t.platform in platforms for t in tags):
+            reasons.append("platform")
+            built = sorted({t.platform for t in tags})
+            details.append(
+                f"built for {', '.join(built)}, not {' or '.join(self.platforms)}"
+            )
+        if not reasons and not (set(tags) & supported):
+            reasons.append("tags")
+            details.append(
+                f"no tag in {'.'.join(spelled)} fits CPython {self.python} on "
+                f"{' or '.join(self.platforms)}"
+            )
+        specifier = _specifier(requirement)
+        if specifier is not None and not specifier.contains(version, prereleases=True):
+            reasons.append("version")
+            details.append(f"version {version} is not {specifier}")
+        if not reasons:
+            details.append(
+                f"its tags ({', '.join(spelled)}) fit, so pip passed it over for "
+                "another reason; its Requires-Python is the next thing to check"
+            )
+        return Rejection(wheel, spelled, tuple(reasons), "; ".join(details))
+
+
+def _specifier(requirement: str) -> SpecifierSet | None:
+    try:
+        parsed = Requirement(requirement)
+    except InvalidRequirement:
         return None
+    return parsed.specifier if str(parsed.specifier) else None
+
+
+def _older_platforms(platform: str) -> list[str]:
+    """The platform tags pip also accepts for ``platform``: older Android API
+    levels, iOS versions and macOS versions of the same arch."""
+    found = re.fullmatch(r"android_(\d+)_(.+)", platform)
+    if found and hasattr(tags_module, "android_platforms"):
+        return list(tags_module.android_platforms(int(found[1]), found[2]))
+    found = re.fullmatch(r"ios_(\d+)_(\d+)_(.+)", platform)
+    if found and hasattr(tags_module, "ios_platforms"):
+        return list(tags_module.ios_platforms((int(found[1]), int(found[2])), found[3]))
+    found = re.fullmatch(r"macosx_(\d+)_(\d+)_(.+)", platform)
+    if found:
+        return list(tags_module.mac_platforms((int(found[1]), int(found[2])), found[3]))
+    return []
 
 
 def source_policy(

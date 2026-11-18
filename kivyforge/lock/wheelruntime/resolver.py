@@ -49,6 +49,7 @@ from ..sources import (
     IndexTracker,
     SourceFilterUnavailable,
     SourcePolicy,
+    WheelTarget,
     read_record,
     source_policy,
 )
@@ -320,7 +321,9 @@ class PipWheelResolver:
                     raise unreachable
                 culprit = unresolved_requirement(output)
                 fixed = culprit and policy.unavailable(
-                    culprit, label or platform_tags[0]
+                    culprit,
+                    label or platform_tags[0],
+                    target=WheelTarget(python_version, tuple(platform_tags), abis),
                 )
                 if fixed:
                     raise fixed
