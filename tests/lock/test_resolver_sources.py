@@ -146,6 +146,13 @@ class TestRunReport:
             run(source_policy([str(tmp_path)], [], platform="android"))
         assert caught.value.context["distribution"] == "kivy"
         assert caught.value.context["source"] == "find_links"
+        # The resolver says what it asked pip to fit, so the message can say
+        # why the wheel did not.
+        context = caught.value.context
+        assert context is not None
+        assert context["wheels"] == "kivy-2.3.1-py3-none-any.whl"
+        assert context["reasons"] == ""
+        assert str(context["interpreter"]).startswith("cp3")
 
     def test_an_empty_file_from_pips_cache_is_retried_without_it(
         self, module, run, monkeypatch

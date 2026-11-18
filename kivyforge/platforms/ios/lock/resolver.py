@@ -64,6 +64,7 @@ from kivyforge.lock.sources import (
     IndexTracker,
     SourceFilterUnavailable,
     SourcePolicy,
+    WheelTarget,
     read_record,
     source_policy,
 )
@@ -366,7 +367,11 @@ class PipResolver:
                 if unreachable:
                     raise unreachable
                 culprit = unresolved_requirement(output)
-                fixed = culprit and policy.unavailable(culprit, platform_tag)
+                fixed = culprit and policy.unavailable(
+                    culprit,
+                    platform_tag,
+                    target=WheelTarget(python_version, (platform_tag,), abis),
+                )
                 if fixed:
                     raise fixed
                 what = (

@@ -14,6 +14,7 @@ from kivyforge.lock.sources import (
     IndexTracker,
     NamedIndex,
     SourceUnavailable,
+    WheelTarget,
     changed_local_wheels,
     drop_moved_pins,
     ignore_unrecorded_indexes,
@@ -143,6 +144,66 @@ class TestUnavailable:
         assert error is not None
         assert "[tool.kivy.android].find_links" in str(error)
         assert error.context["source"] == "find_links"
+
+    def test_local_package_names_the_python_a_wheel_was_built_for(self, tmp_path):
+        _wheel(tmp_path, "kivy-3.0.0.dev0-cp312-cp312-win_amd64.whl")
+        policy = source_policy([str(tmp_path)], [], platform="windows")
+        error = policy.unavailable(
+            "kivy==3.0.0.dev0",
+            "amd64",
+            target=WheelTarget("3.13.5", ("win_amd64",), ("cp313", "abi3", "none")),
+        )
+        assert error is not None
+        message = str(error)
+        assert "CPython 3.13, cp313, win_amd64" in message
+        assert (
+            "kivy-3.0.0.dev0-cp312-cp312-win_amd64.whl: built for cp312-cp312, "
+            "not CPython 3.13 (cp313)"
+        ) in message
+        assert "build kivy for CPython 3.13 (cp313)" in message
+        assert "a amd64" not in message
+        assert error.context["interpreter"] == "cp313"
+        assert error.context["python"] == "3.13"
+        assert error.context["platforms"] == "win_amd64"
+        assert error.context["wheels"] == "kivy-3.0.0.dev0-cp312-cp312-win_amd64.whl"
+        assert error.context["reasons"] == "interpreter"
+        message.encode("cp1252")
+
+    def test_local_package_wrong_platform_and_version(self, tmp_path):
+        _wheel(tmp_path, "kivy-2.3.0-cp313-cp313-win32.whl")
+        policy = source_policy([str(tmp_path)], [], platform="windows")
+        error = policy.unavailable(
+            "kivy==2.3.1", "amd64", target=WheelTarget("3.13", ("win_amd64",))
+        )
+        assert error is not None
+        assert error.context["reasons"] == "platform,version"
+        rejection = WheelTarget("3.13", ("win_amd64",)).rejection(
+            "kivy-2.3.0-cp313-cp313-win32.whl", "kivy==2.3.1"
+        )
+        assert rejection.tags == ("cp313-cp313-win32",)
+        assert rejection.reasons == ("platform", "version")
+        assert "built for win32, not win_amd64" in str(error)
+        assert "version 2.3.0 is not ==2.3.1" in str(error)
+        assert "Fix: add a cp313 wheel for amd64" in str(error)
+
+    def test_older_android_api_level_and_pure_wheels_fit_by_tags(self, tmp_path):
+        target = WheelTarget("3.14", ("android_24_arm64_v8a",), ("cp314",))
+        older = target.rejection("kivy-2.3.1-cp314-cp314-android_21_arm64_v8a.whl")
+        pure = target.rejection("kivy-2.3.1-py3-none-any.whl")
+        abi3 = target.rejection("kivy-2.3.1-cp311-abi3-android_24_arm64_v8a.whl")
+        for fits in (older, pure, abi3):
+            assert fits.reasons == ()
+            assert "Requires-Python" in fits.detail
+        newer = target.rejection("kivy-2.3.1-cp314-cp314-android_30_arm64_v8a.whl")
+        assert newer.reasons == ("platform",)
+
+    def test_an_unparseable_python_falls_back_to_the_short_message(self, tmp_path):
+        _wheel(tmp_path, "kivy-1-cp312-cp312-win_amd64.whl")
+        policy = source_policy([str(tmp_path)], [], platform="windows")
+        error = policy.unavailable("kivy", "amd64", target=WheelTarget("", ()))
+        assert error is not None
+        assert "wheels" not in error.context
+        assert "Fix: add a wheel for amd64" in str(error)
 
     def test_unpinned_index_package_keeps_pips_message(self):
         assert source_policy([], []).unavailable("numpy", "x") is None
