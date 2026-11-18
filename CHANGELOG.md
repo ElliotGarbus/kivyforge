@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### `KF-LOCK-SOURCE-UNAVAILABLE` says why each local wheel was rejected
+
+- **Fixed:** when a package comes only from `find_links` and none of its wheels
+  fits, `lock` named only the variant ("none of them fits amd64") and told you
+  to add "a amd64 wheel", even when the wheel was already `win_amd64` and the
+  real mismatch was the Python version. The message now names the target
+  (`CPython 3.13, cp313, win_amd64`) and lists each wheel with what does not
+  fit: the interpreter it was built for, its platform, or a version the
+  requirement excludes. When every wheel was built for another Python, the fix
+  says to build one for the target's CPython.
+- **Added:** the diagnostic's `context` carries `python` (`3.13`),
+  `interpreter` (`cp313`), `platforms` and `wheels` (space-separated), and
+  `reasons`: a comma-separated list of any of `interpreter`, `platform`,
+  `tags` and `version` across the rejected wheels. Like every `context` value,
+  each is a string.
+- **Migration:** none needed. The code and exit status are unchanged.
+
 ## [v0.1.2](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.2) - 2026-11-14
 
 ### Desktop targets move to CPython 3.14 with Kivy 2.3.2
