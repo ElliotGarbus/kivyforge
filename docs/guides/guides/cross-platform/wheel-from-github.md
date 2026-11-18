@@ -32,7 +32,9 @@ exactly the wheel you built, not whatever the branch holds that day.
   pure-Python wheel works on every target. A package with compiled code gives
   you a wheel for your development machine only, which an Android or iOS app
   can't use. See
-  [Prebuilt runtimes and wheels](../../concepts/runtimes-and-wheels.md).
+  [Prebuilt runtimes and wheels](../../concepts/runtimes-and-wheels.md). For
+  Kivy itself, see
+  [Package your app with a Kivy development build](kivy-dev-build.md).
 
 ## Build the wheel
 

@@ -141,7 +141,9 @@ next `lock` resolves that package again and leaves the others as they are.
 
 To use a package from GitHub that isn't released on PyPI, build its wheel with
 pip and add it the same way. See
-[Build a wheel from a GitHub repository](wheel-from-github.md).
+[Build a wheel from a GitHub repository](wheel-from-github.md). To test your
+app with your own build of Kivy, see
+[Package your app with a Kivy development build](kivy-dev-build.md).
 
 If the directory has a wheel for a package on one ABI but not another, `lock`
 fails with `KF-LOCK-SOURCE-UNAVAILABLE` and names the missing ABI. It does not
