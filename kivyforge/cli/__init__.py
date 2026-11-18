@@ -29,7 +29,10 @@ from . import (
     help=(
         "Build, run, and package Kivy apps for Android, iOS, "
         "macOS, Windows, and Linux from one pyproject.toml.\n\n"
-        "Run commands from the directory that contains your pyproject.toml."
+        "Run commands from the directory that contains your pyproject.toml.\n\n"
+        "Scripts and coding agents: run 'kivyforge capabilities --json' first. "
+        "Every command except run takes --json and prints one JSON document "
+        "on stdout. See 'Working with agents' in the kivyforge README."
     ),
 )
 @click.version_option(__version__, "-V", "--version", prog_name="kivyforge")

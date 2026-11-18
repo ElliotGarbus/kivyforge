@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### `kivyforge --help` tells scripts and agents where to start
+
+- **Added:** the top-level help says to run `kivyforge capabilities --json`
+  first, that every command except `run` takes `--json`, and that the README's
+  "Working with agents" section has the rest. An agent that reads only
+  `--help` no longer misses the JSON interface.
+- **Migration:** none needed.
+
 ## [v0.1.2](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.2) - 2026-11-14
 
 ### Desktop targets move to CPython 3.14 with Kivy 2.3.2
