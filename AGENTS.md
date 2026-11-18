@@ -139,5 +139,11 @@ result into `test-matrix.md` §7. Commit that row with the pass.
   with network access.
 - **`diagnostics` on an `ok: true` run are warnings**, not failures — an
   unsigned package, a byte-compile that degraded, a policy note.
+- **`package` strips the source.** Release builds ship `.pyc` without `.py`,
+  and code that reads its own source or edits `__file__` fails only there.
+  `run -p <platform> --release` (Android, macOS, Linux, Windows) strips the
+  same way, so try it before `package`; on iOS, `build -p ios --release`.
+  Known problems:
+  [`build-vs-package.md`](docs/guides/concepts/build-vs-package.md#test-the-stripped-build-before-you-package).
 - **Build outputs are in `data.artifacts`** as `{"path", "kind"}`, relative to
   the project root and posix-spelled. Read that instead of guessing the layout.
