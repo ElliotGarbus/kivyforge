@@ -128,6 +128,20 @@ A file that replaces a generated resource is copied and reported with
 `KF-ANDROID-INCLUDE-OVERRIDE`. A file removed from `sources` is removed from the
 generated project on the next build.
 
+## `[tool.kivy.android.proguard]`
+
+R8 keep rules for release builds with `minify = true`. See
+[Release builds with R8](../../guides/android/java-libraries.md#release-builds-with-r8).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `keep` | list of string | `[]` | R8/ProGuard directives, copied verbatim into the generated `app/proguard-rules.pro`. |
+| `rules_files` | list of string | `[]` | Project-relative `.pro` files, appended after `keep` in order. Each must be an existing file inside the project. `kivyforge lock` records each file's SHA-256, and `build` refuses a file that changed since (`KF-LOCK-DRIFT`); run `kivyforge lock -p android` to accept the change. |
+
+The generated file holds kivyforge's own rules first, then `keep`, then each
+rules file, each under a comment naming where it came from. It is written the
+same way when `minify` is off, when R8 does not read it.
+
 ## `[[tool.kivy.android.services]]`
 
 An array of tables. See [Add a background service](../../guides/android/services.md).
@@ -197,7 +211,7 @@ in `pyproject.toml`.
 | `strip_source` | bool or `"release"` | `"release"` | Drop `.py` files after compiling. Ignored when `byte_compile` is off. |
 | `strip_native_libs` | bool or `"release"` | `"release"` | Strip debug symbols from the shipped `.so` files. Libraries that stripping would corrupt (ones auditwheel's repair edited with patchelf) always keep their symbols, and the build says how many. |
 | `debug_symbols` | string | `"symbol_table"` | Native debug symbols to export: `symbol_table`, `full`, or `none`. |
-| `minify` | bool | `false` | Enable R8 for release builds. |
+| `minify` | bool | `false` | Enable R8 for release builds. Java that only Python reaches needs keep rules in [`[tool.kivy.android.proguard]`](#toolkivyandroidproguard). |
 | `shrink_resources` | bool | `false` | Remove unused resources. Requires `minify = true`. |
 | `multidex` | bool | `true` | Enable multidex. |
 

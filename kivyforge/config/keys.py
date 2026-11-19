@@ -218,6 +218,7 @@ ANDROID: dict[str, Spec] = {
         "v4_signing": None,
     },
     "gradle_properties": OPEN,
+    "proguard": {"keep": None, "rules_files": None},
     "build_settings": {
         "minify": None,
         "shrink_resources": None,

@@ -765,3 +765,83 @@ class TestNdk:
         assert lock_inputs_sha256(default, "android") == lock_inputs_sha256(
             selected, "android"
         )
+
+
+class TestProguard:
+    """[tool.kivy.android.proguard] (android/01): keep verbatim, rules_files
+    with the include_files path rules."""
+
+    HEADER = "[tool.kivy.android.proguard]"
+
+    def _text(self, *lines: str) -> str:
+        return BASE + "\n" + self.HEADER + "\n" + "\n".join(lines) + "\n"
+
+    def _load(self, text: str, root):
+        return load_config_from_text(
+            text, require_ios=False, require_android=True, project_root=root
+        ).android_required.proguard
+
+    def test_absent_table_declares_nothing(self):
+        proguard = load_android(BASE).proguard
+        assert proguard.keep == () and proguard.rules_files == ()
+        assert not proguard.declared
+
+    def test_keep_and_rules_files_parse_in_order(self, tmp_path):
+        (tmp_path / "proguard").mkdir()
+        (tmp_path / "proguard" / "b.pro").write_text("")
+        (tmp_path / "a.pro").write_text("")
+        proguard = self._load(
+            self._text(
+                'keep = ["-keep class b.** { *; }", "-keep class a.** { *; }"]',
+                'rules_files = ["proguard/b.pro", "a.pro"]',
+            ),
+            tmp_path,
+        )
+        assert proguard.keep == ("-keep class b.** { *; }", "-keep class a.** { *; }")
+        assert proguard.rules_files == ("proguard/b.pro", "a.pro")
+        assert proguard.declared
+
+    @pytest.mark.parametrize("key", ["keep", "rules_files"])
+    @pytest.mark.parametrize("value", ['"-keep class a.** { *; }"', "[1]", "true"])
+    def test_wrong_type_names_the_line(self, key, value):
+        text = self._text("# a comment", f"{key} = {value}")
+        with pytest.raises(ConfigError, match="must be a list of strings") as exc:
+            load(text)
+        assert exc.value.key_path == f"tool.kivy.android.proguard.{key}"
+        assert exc.value.line == text.splitlines().index(f"{key} = {value}") + 1
+
+    def test_table_must_be_a_table(self):
+        text = BASE.replace(
+            "\n[tool.kivy.android.python]",
+            '\nproguard = "x"\n[tool.kivy.android.python]',
+        )
+        with pytest.raises(ConfigError, match="must be a table"):
+            load(text)
+
+    @pytest.mark.parametrize(
+        "path",
+        ["../outside.pro", "/abs/rules.pro", "C:/abs/rules.pro", "a/../../x.pro", ""],
+    )
+    def test_rules_file_escape_rejected(self, tmp_path, path):
+        with pytest.raises(ConfigError, match="escapes the project") as exc:
+            self._load(self._text(f'rules_files = ["{path}"]'), tmp_path)
+        assert exc.value.key_path == "tool.kivy.android.proguard.rules_files"
+        assert exc.value.line is not None
+
+    def test_missing_rules_file_rejected(self, tmp_path):
+        with pytest.raises(ConfigError, match="'gone.pro' does not exist"):
+            self._load(self._text('rules_files = ["gone.pro"]'), tmp_path)
+
+    def test_directory_rules_file_rejected(self, tmp_path):
+        (tmp_path / "proguard").mkdir()
+        with pytest.raises(ConfigError, match="'proguard' is not a file"):
+            self._load(self._text('rules_files = ["proguard"]'), tmp_path)
+
+    def test_duplicate_rules_file_rejected(self, tmp_path):
+        (tmp_path / "a.pro").write_text("")
+        with pytest.raises(ConfigError, match="lists a file twice"):
+            self._load(self._text('rules_files = ["a.pro", "a.pro"]'), tmp_path)
+
+    def test_without_a_project_root_existence_is_not_checked(self):
+        proguard = load(self._text('rules_files = ["later.pro"]')).android_required
+        assert proguard.proguard.rules_files == ("later.pro",)

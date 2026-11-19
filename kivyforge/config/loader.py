@@ -86,6 +86,7 @@ from .model import (
     AndroidManifestConfig,
     AndroidNotification,
     AndroidPermissions,
+    AndroidProguardConfig,
     AndroidPythonConfig,
     AndroidService,
     AndroidSigningConfig,
@@ -1881,6 +1882,7 @@ def _parse_android(
     manifest = _parse_android_manifest(android, finder)
     signing = _parse_android_signing(android, finder)
     gradle_properties = _parse_android_gradle_properties(android, finder)
+    proguard = _parse_android_proguard(android, finder, project_root=project_root)
     build_settings = _parse_android_build_settings(android, finder)
 
     return AndroidConfig(
@@ -1915,6 +1917,7 @@ def _parse_android(
         manifest=manifest,
         signing=signing,
         gradle_properties=gradle_properties,
+        proguard=proguard,
         build_settings=build_settings,
     )
 
@@ -2797,6 +2800,70 @@ def _parse_android_src(
         return tuple(raw)
 
     return AndroidSrcConfig(java=_roots("java"), kotlin=_roots("kotlin"))
+
+
+def _parse_android_proguard(
+    android: dict, finder: _LineFinder, *, project_root: Path | None = None
+) -> AndroidProguardConfig:
+    # android/01 §proguard: ``keep`` verbatim, ``rules_files`` with the path
+    # rules of ``include_files`` sources (repo-relative, present, inside the
+    # project), except that each must be a file: a ruleset is one ``.pro``.
+    table = android.get("proguard")
+    if table is None:
+        return AndroidProguardConfig()
+    header = finder.table_line("tool", "kivy", "android", "proguard")
+    if not isinstance(table, dict):
+        raise ConfigError(
+            "[tool.kivy.android.proguard] must be a table",
+            key_path="tool.kivy.android.proguard",
+            line=finder.line("proguard"),
+        )
+
+    def _strings(key: str) -> tuple[str, ...]:
+        raw = table.get(key, [])
+        if not isinstance(raw, list) or not all(isinstance(v, str) for v in raw):
+            raise ConfigError(
+                f"[tool.kivy.android.proguard].{key} must be a list of strings",
+                key_path=f"tool.kivy.android.proguard.{key}",
+                line=_line(key),
+            )
+        return tuple(raw)
+
+    def _line(key: str) -> int | None:
+        if header is not None:
+            found = finder.key_line(key, after=header)
+            if found is not None:
+                return found
+        return finder.line(key) or header
+
+    keep = _strings("keep")
+    rules_files = _strings("rules_files")
+    for src in rules_files:
+        key_path = "tool.kivy.android.proguard.rules_files"
+        if not src or _is_absolute_source(src) or _posix_normpath(src).startswith(".."):
+            raise ConfigError(
+                f"[tool.kivy.android.proguard].rules_files entry escapes the "
+                f"project: {src!r}",
+                key_path=key_path,
+                line=_line("rules_files"),
+                hint="name a .pro file by its path relative to the project root.",
+            )
+        path = project_root / src if project_root is not None else None
+        if path is not None and not path.is_file():
+            what = "is not a file" if path.exists() else "does not exist"
+            raise ConfigError(
+                f"[tool.kivy.android.proguard].rules_files entry {src!r} {what}",
+                key_path=key_path,
+                line=_line("rules_files"),
+                hint="the path is relative to the project root.",
+            )
+    if len(set(rules_files)) != len(rules_files):
+        raise ConfigError(
+            "[tool.kivy.android.proguard].rules_files lists a file twice",
+            key_path="tool.kivy.android.proguard.rules_files",
+            line=_line("rules_files"),
+        )
+    return AndroidProguardConfig(keep=keep, rules_files=rules_files)
 
 
 def _parse_android_services(android: dict, finder: _LineFinder) -> list[AndroidService]:

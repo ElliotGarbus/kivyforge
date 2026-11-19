@@ -729,17 +729,15 @@ with a diagnostic.
 
 ### `[tool.kivy.android.proguard]` — R8 keep rules
 
-> **Status: specified, not implemented.** No release reads this table, and the
-> loader rejects it as an unknown key rather than build without the rules (it
-> used to be dropped silently, which shipped a release build missing every keep
-> rule it declared). The generated `proguard-rules.pro` carries only the
-> kivyforge baseline, and the doctor "R8 keep rules" check in
-> [cli-android](06-cli-android.md) does not exist yet. Until both land, an app
-> that reaches Java from Python should leave `minify` off.
+> **Implemented 2026-11-18.** Until then the loader rejected the table as an
+> unknown key, and before that it was dropped silently, which shipped a release
+> build missing every keep rule it declared.
 
 Extra keep-rules merged into the generated `app/proguard-rules.pro`. Only
 consulted when [`build_settings.minify`](#toolkivyandroidbuild_settings) is on;
-declaring rules with `minify = false` is harmless and ignored.
+declaring rules with `minify = false` is harmless and ignored. The file is
+written the same way either way (R8 reads it only when `minifyEnabled` is
+true), so turning `minify` on changes only the Gradle flag.
 
 ```toml
 [tool.kivy.android.proguard]
@@ -752,7 +750,15 @@ rules_files = ["proguard/vendor-sdk.pro"]
 | Field         | Type           | Required | Description                                                                                                                                                                                                                              |
 | ------------- | -------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `keep`        | list of string | no       | Individual R8/ProGuard directives, emitted verbatim into the generated file. The right shape for the two or three rules a typical app needs.                                                                                              |
-| `rules_files` | list of string | no       | Repo-relative `.pro` files, appended after `keep`. The right shape for a vendor-supplied ruleset you do not want to inline. `kivyforge lock` records each file's SHA-256 and `build` verifies it before staging, exactly like `include_files`. Entries must not escape the project directory. |
+| `rules_files` | list of string | no       | Repo-relative `.pro` files, appended after `keep`. The right shape for a vendor-supplied ruleset you do not want to inline. `kivyforge lock` records each file's SHA-256 and `build` verifies it before staging, exactly like `include_files`. Entries must not escape the project directory, and each must be an existing file (not a directory), listed once. |
+
+Pinning differs from `include_files` in one respect: the `rules_files` paths are
+not lock inputs, and neither is `keep`. Nothing `lock` resolves depends on either,
+so editing them never stales the lock. `build` still refuses a rules file that was
+added, removed or edited since locking (`KF-LOCK-DRIFT`), and a plain
+`kivyforge lock` re-records the pins without re-resolving anything. A rules file is
+read as UTF-8; its line endings are normalised and a BOM is dropped, so the
+generated file does not depend on how the checkout spelled it.
 
 **Why this exists.** R8 decides what to delete and rename by **static analysis**,
 and pyjnius is entirely reflective — `autoclass("org.example.Bridge")` resolves a
@@ -789,7 +795,7 @@ debug_symbols = "symbol_table"  # "symbol_table" | "full" | "none" — native sy
 
 | Field              | Type | Required | Default | Description                                                                                                                                    |
 | ------------------ | ---- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `minify`           | bool | no       | `false` | Enable R8 for release builds. Off by default — R8 on a Python app mostly shrinks the thin Java bootstrap and risks stripping reflected classes (pyjnius `autoclass` targets); enable only with a tested keep-rules set, declared in [`[tool.kivy.android.proguard]`](#toolkivyandroidproguard--r8-keep-rules). `kivyforge doctor` warns when `minify` is on and the app ships `src.java`/`src.kotlin` with no keep rules declared. |
+| `minify`           | bool | no       | `false` | Enable R8 for release builds. Off by default — R8 on a Python app mostly shrinks the thin Java bootstrap and risks stripping reflected classes (pyjnius `autoclass` targets); enable only with a tested keep-rules set, declared in [`[tool.kivy.android.proguard]`](#toolkivyandroidproguard--r8-keep-rules). `kivyforge doctor` warns when `minify` is on and the app ships Java that Python may reach (`src.java`/`src.kotlin`, `gradle.dependencies`, `native.aars`/`native.jars`) with no keep rules declared. |
 | `shrink_resources` | bool | no       | `false` | Resource shrinking (requires `minify = true`).                                                                                                 |
 | `multidex`         | bool | no       | `true`  | Enable multidex. On by default because bundled `.aar`s + bootstrap easily exceed the 64K method limit; harmless at `minSdk 24` (native multidex). |
 | `byte_compile`     | `"release"` \| bool | no | `"release"` | Byte-compile the Python payload (app code + pure-Python deps + stdlib) to `.pyc` when staging the asset bundle. `"release"` compiles for release packaging (`kivyforge package`, and a plain `kivyforge build` that stages for it) only — debug builds keep `.py` for readable tracebacks and fast iteration; `true`/`false` force it on/off for all builds. See ["Which interpreter writes the `.pyc`"](#which-interpreter-writes-the-pyc). |

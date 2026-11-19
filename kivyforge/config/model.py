@@ -791,6 +791,24 @@ class AndroidSrcConfig:
 
 
 @dataclass(frozen=True)
+class AndroidProguardConfig:
+    """``[tool.kivy.android.proguard]`` — the app's own R8 keep rules.
+
+    ``keep`` is emitted verbatim; ``rules_files`` are project-relative ``.pro``
+    files, appended after it in order and pinned by SHA-256 in the lock. Both
+    are written into ``app/proguard-rules.pro`` whether or not ``minify`` is
+    on, so turning ``minify`` on changes only the Gradle flag (android/04).
+    """
+
+    keep: tuple[str, ...] = ()
+    rules_files: tuple[str, ...] = ()
+
+    @property
+    def declared(self) -> bool:
+        return bool(self.keep or self.rules_files)
+
+
+@dataclass(frozen=True)
 class AndroidNotification:
     """The mandatory foreground-service notification (android/01 services)."""
 
@@ -952,6 +970,7 @@ class AndroidConfig:
     manifest: AndroidManifestConfig = field(default_factory=AndroidManifestConfig)
     signing: AndroidSigningConfig = field(default_factory=AndroidSigningConfig)
     gradle_properties: dict[str, object] = field(default_factory=dict)
+    proguard: AndroidProguardConfig = field(default_factory=AndroidProguardConfig)
     build_settings: AndroidBuildSettings = field(default_factory=AndroidBuildSettings)
 
     @property

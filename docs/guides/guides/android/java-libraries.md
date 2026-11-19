@@ -463,6 +463,50 @@ This example presents Stripe's PaymentSheet and returns the outcome to Python.
     check the request code. It runs on Android's UI thread, not Kivy's: use
     `Clock.schedule_once` to update widgets from it.
 
+## Release builds with R8
+
+`minify = true` under `[tool.kivy.android.build_settings]` runs R8 on release
+builds, which removes the classes it cannot see used and renames the rest. R8
+reads Java bytecode, so it cannot see a class that only your Python code
+reaches through `autoclass`: a Maven library, an `.aar` or `.jar`, or your own
+`src` classes. In a release build those classes are gone, and the app fails at
+run time with `ClassNotFoundException`. Debug builds don't run R8, so they
+work.
+
+If you turn `minify` on, keep each Java package your Python code uses. The
+ZXing example reaches the library only from Python:
+
+```toml
+[tool.kivy.android.build_settings]
+minify = true
+
+[tool.kivy.android.proguard]
+keep = ["-keep class com.google.zxing.** { *; }"]
+```
+
+For a longer ruleset, such as one a library vendor supplies, put it in a file
+and list it instead:
+
+```toml
+[tool.kivy.android.proguard]
+rules_files = ["proguard/vendor.pro"]
+```
+
+Lock after you add or edit a rules file, because the lock records its hash:
+
+```bash
+kivyforge lock -p android
+```
+
+Test the release build on a device or emulator before you package it:
+
+```bash
+kivyforge run -p android --release --emulator --abi x86_64
+```
+
+`kivyforge doctor -p android` warns when `minify` is on and the app ships Java
+with no keep rules.
+
 ## Verify
 
 Build the app:

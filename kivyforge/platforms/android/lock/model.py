@@ -3,7 +3,7 @@
 PEP 751-shaped ``[[packages]]`` (shared ``LockedPackage``/``LockedWheel``) plus
 the Android ``[tool.kivyforge]`` extension: the per-ABI python.org runtime,
 ``.aar``/``.jar`` pins, the Gradle/Maven resolved graph, and the
-``include_files`` drift pins.
+``include_files`` and ``proguard.rules_files`` drift pins.
 """
 
 from __future__ import annotations
@@ -87,6 +87,14 @@ class GradlePins:
 
 
 @dataclass(frozen=True)
+class LockedRulesFile:
+    """One ``[[tool.kivyforge.proguard_rules_files]]`` drift pin."""
+
+    source: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class AndroidLockfile:
     requires_python: str
     packages: tuple[LockedPackage, ...]
@@ -99,6 +107,8 @@ class AndroidLockfile:
     android_libs: tuple[LockedAndroidLib, ...] = ()
     gradle: GradlePins = GradlePins()
     include_files: tuple[LockedIncludeFile, ...] = ()
+    #: ``[tool.kivy.android.proguard].rules_files`` pins, sorted by source.
+    proguard_rules_files: tuple[LockedRulesFile, ...] = ()
     #: ``[[tool.kivyforge.host_python]]`` (kivyforge.lock.host_python); ``None``
     #: when the lock has no table: a platform that needs none, or a lock
     #: written before the table existed.

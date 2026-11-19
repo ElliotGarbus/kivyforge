@@ -60,6 +60,7 @@ from . import (
     WheelLayoutUnsupported,
     WheelWrongArch,
     WheelWrongSuffix,
+    proguard,
 )
 from .bootstrap.contract import (
     ContractError,
@@ -1453,7 +1454,7 @@ def android_status(project_root: Path) -> StatusReport:
             kivy_ver = kivy.version if kivy else "—"
             state = (
                 LockState.IN_SYNC
-                if include_files.lock_current(lock, config, "android", project_root)
+                if proguard.lock_current(lock, config, project_root)
                 else LockState.OUT_OF_DATE
             )
         except LockError:
@@ -1605,6 +1606,18 @@ def _load(project_root: Path, version: ResolvedVersion | None, *, no_verify_lock
             "generated.\n  Run: kivyforge lock -p android\n"
             "  Or:  kivyforge build --no-verify-lock   (not recommended)"
         )
+    if not no_verify_lock:
+        # Before anything is staged, as for the pyproject check above: the
+        # rules feed only a generated file, so a later failure would waste
+        # the whole staging step to report it.
+        try:
+            proguard.verify_pins(
+                config.android_required.proguard,
+                lock.proguard_rules_files,
+                project_root,
+            )
+        except proguard.ProguardError as exc:
+            raise LockDrift(str(exc), **reclassify(exc)) from exc
     return config, lock
 
 

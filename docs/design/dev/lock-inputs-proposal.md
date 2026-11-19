@@ -57,6 +57,20 @@ re-resolves, keeping the locked versions. A vendored wheel replaced in place
 still needs `lock --update`, because its new content can change what
 resolves.
 
+**Pin-only reads (2026-11-18).** Android's
+`[tool.kivy.android.proguard].rules_files` is the first field a builder reads
+only to record pins and that is *not* in the projection: it is listed in
+`PIN_INPUTS["android"]`, which the builder check accepts in place of
+`LOCK_INPUTS`. Adding, removing or editing a rules file therefore never stales
+the lock; `build` refuses the drift from the pins
+(`[[tool.kivyforge.proguard_rules_files]]`), and plain `lock` re-records them
+with no resolution. Two reasons not to follow the `include_files` precedent:
+nothing resolved depends on a rules file, so a full re-resolve on a new entry
+buys nothing; and a new projection path changes every lock's hash on its own,
+so it would have staled every existing Android lock, including the tracked gate
+locks, the day the key shipped. The inline `keep` strings are neither inputs nor
+pins: `build` reads them from `pyproject.toml` on every run, like the manifest.
+
 ### 2.2 Keep existing pins
 
 When a lock exists and `--update` is not given, `lock` resolves with the

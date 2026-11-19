@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Android: R8 keep rules with `[tool.kivy.android.proguard]`
+
+- **Added:** `[tool.kivy.android.proguard]` is now read. `keep` lists R8
+  directives copied verbatim into the generated `app/proguard-rules.pro`, and
+  `rules_files` lists project `.pro` files appended after them. The file holds
+  kivyforge's baseline first, then `keep`, then each rules file, each under a
+  comment naming where it came from. An app that reaches Java only from Python
+  (a Maven library such as ZXing or androidx.media3, an `.aar`, or its own
+  `src` classes) can now turn on `[tool.kivy.android.build_settings].minify`
+  without its release build failing at run time with `ClassNotFoundException`:
+  add `keep = ["-keep class com.google.zxing.** { *; }"]` for the packages
+  Python uses. See
+  [Release builds with R8](docs/guides/guides/android/java-libraries.md#release-builds-with-r8).
+- **Added:** `kivyforge lock -p android` records each rules file's SHA-256 in
+  a new `[[tool.kivyforge.proguard_rules_files]]` table, and `build` refuses
+  a rules file added, removed or edited since (`KF-LOCK-DRIFT`, exit 4). A
+  plain `kivyforge lock -p android` re-records the hashes without re-resolving
+  anything. Neither `keep` nor the `rules_files` paths are lock inputs, so
+  editing the table never stales the lock.
+- **Added:** a `kivyforge doctor -p android` check, "R8 keep rules". It warns
+  when `minify` is on and the app ships Java that Python may reach
+  (`src.java`/`src.kotlin`, `gradle.dependencies`, `native.aars`/`native.jars`)
+  but declares no keep rules, warns on rules-file drift, and fails on a rules
+  file that is missing or outside the project.
+- **Changed:** until this release the loader rejected the table with
+  `unknown key 'proguard' in [tool.kivy.android]`, and before that it was
+  dropped silently, so a release build shipped without the rules it declared.
+  The generated `proguard-rules.pro` also gains a two-line header saying it is
+  regenerated on every build.
+- **Migration:** none needed. Existing locks stay in sync, and a lock without
+  rules files is unchanged.
+
 ### `kivyforge --help` tells scripts and agents where to start
 
 - **Added:** the top-level help says to run `kivyforge capabilities --json`

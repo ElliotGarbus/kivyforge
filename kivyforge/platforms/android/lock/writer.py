@@ -72,6 +72,11 @@ def dumps(lock: AndroidLockfile) -> str:
             _emit_resolved_module(lines, module)
 
     emit_include_files(lines, lock.include_files)
+    for pin in sorted(lock.proguard_rules_files, key=lambda p: p.source):
+        lines.append("")
+        lines.append("[[tool.kivyforge.proguard_rules_files]]")
+        lines.append(f"source = {_s(pin.source)}")
+        lines.append(f"sha256 = {_s(pin.sha256)}")
     emit_host_python(lines, lock.host_python)
 
     return "\n".join(lines) + "\n"
