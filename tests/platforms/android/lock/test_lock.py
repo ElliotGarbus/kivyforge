@@ -894,3 +894,68 @@ class TestDeclaredMeansDeclaredForAndroid:
         )
         assert len(reqs) == 2
         assert lines == []
+
+
+class TestProguardRulesFilePins:
+    def test_round_trip_and_sorted(self):
+        from kivyforge.platforms.android.lock.model import LockedRulesFile
+
+        lock = dataclasses.replace(
+            _sample_lockfile(),
+            proguard_rules_files=(
+                LockedRulesFile(source="z.pro", sha256="3" * 64),
+                LockedRulesFile(source="a.pro", sha256="4" * 64),
+            ),
+        )
+        text = writer.dumps(lock)
+        assert text.index('source = "a.pro"') < text.index('source = "z.pro"')
+        parsed = reader.loads(text)
+        assert builder_mod.semantic_equal(parsed, lock)
+        assert [p.source for p in parsed.proguard_rules_files] == ["a.pro", "z.pro"]
+
+    def test_a_lock_without_the_table_has_no_pins(self):
+        assert reader.loads(writer.dumps(_sample_lockfile())).proguard_rules_files == ()
+        assert "proguard_rules_files" not in writer.dumps(_sample_lockfile())
+
+    def test_pin_changes_are_named(self):
+        from kivyforge.platforms.android.lock.model import LockedRulesFile
+
+        old = dataclasses.replace(
+            _sample_lockfile(),
+            proguard_rules_files=(
+                LockedRulesFile(source="a.pro", sha256="1" * 64),
+                LockedRulesFile(source="b.pro", sha256="1" * 64),
+            ),
+        )
+        new = dataclasses.replace(
+            old,
+            proguard_rules_files=(
+                LockedRulesFile(source="a.pro", sha256="2" * 64),
+                LockedRulesFile(source="c.pro", sha256="1" * 64),
+            ),
+        )
+        assert not builder_mod.semantic_equal(old, new)
+        assert builder_mod.diff_summary(old, new) == [
+            "  ~ proguard.rules_files: a.pro (changed)",
+            "  ~ proguard.rules_files: b.pro (removed)",
+            "  ~ proguard.rules_files: c.pro (added)",
+        ]
+
+    def test_missing_rules_file_at_lock_time_is_a_build_error(self, tmp_path):
+        # The loader already refuses a missing file; this is the builder's own
+        # guard for a config built without it.
+        from kivyforge.config.model import AndroidProguardConfig
+
+        config = _config()
+        android = dataclasses.replace(
+            config.android_required,
+            proguard=AndroidProguardConfig(rules_files=("nope.pro",)),
+        )
+        config = dataclasses.replace(config, android=android)
+        with pytest.raises(BuildError, match="does not exist"):
+            build_lockfile(
+                config,
+                project_root=tmp_path,
+                resolver=FakeResolver([_pkg()]),
+                python_provider=FakeProvider(),
+            )

@@ -12,10 +12,10 @@ import shutil
 import stat
 from pathlib import Path
 
-from kivyforge.config.model import ANDROID_BOOTSTRAP_NAMESPACES, AndroidConfig, Config
+from kivyforge.config.model import AndroidConfig, Config
 from kivyforge.config.version import android_version_code
 
-from .. import policy, toolchain
+from .. import policy, proguard, toolchain
 from ..lock.model import AndroidLockfile
 
 # Wheel-tag ABI spelling -> Android's dashed directory/filter names.
@@ -383,13 +383,21 @@ dependencies {{
 }}
 """
     _write(dest / "app" / "build.gradle", text)
+    write_proguard_rules(dest, android, project_root=project_root)
+
+
+def write_proguard_rules(
+    dest: Path, android: AndroidConfig, *, project_root: Path
+) -> None:
+    """Emit ``app/proguard-rules.pro`` (android/04 §"R8 / proguard-rules.pro").
+
+    Written the same whether ``minify`` is on or off, so that switching it
+    changes only ``minifyEnabled``. The rules-file pins are checked before
+    generation, when the build loads the lock (``cli._load``).
+    """
     _write(
         dest / "app" / "proguard-rules.pro",
-        "# kivyforge keep-rules: pyjnius reflects into these at runtime.\n"
-        + "".join(
-            f"-keep class {namespace}.** {{ *; }}\n"
-            for namespace in ANDROID_BOOTSTRAP_NAMESPACES
-        ),
+        proguard.compose(android.proguard, project_root),
     )
 
 

@@ -18,7 +18,12 @@ import pytest
 
 from kivyforge.config.loader import load_config_from_text
 from kivyforge.config.model import Config
-from kivyforge.lock.inputs import LOCK_INPUTS, is_in_sync, lock_inputs_sha256
+from kivyforge.lock.inputs import (
+    LOCK_INPUTS,
+    PIN_INPUTS,
+    is_in_sync,
+    lock_inputs_sha256,
+)
 from tests.platforms.android.lock import test_lock as android_lock_tests
 from tests.platforms.ios.lock.conftest import FakePythonProvider, FakeResolver
 from tests.platforms.linux.lock.conftest import FakeLinuxResolver
@@ -132,7 +137,7 @@ class _Recorder:
 
 
 def _uncovered(reads: set[str], platform: str) -> list[str]:
-    inputs = LOCK_INPUTS[platform]
+    inputs = LOCK_INPUTS[platform] + PIN_INPUTS.get(platform, ())
     return sorted(
         read
         for read in reads
@@ -311,6 +316,23 @@ class TestHash:
         signed = with_ios + '\n[tool.kivy.ios.signing]\nteam_id = "ABCDE12345"\n'
         assert _sha(with_ios, "android", root) == _sha(android, "android", root)
         assert _sha(signed, "android", root) == _sha(android, "android", root)
+
+    def test_proguard_does_not_count(self, root):
+        """Neither half of [tool.kivy.android.proguard] stales the lock:
+        ``keep`` is read on every build, and ``rules_files`` is carried by
+        pins that ``build`` verifies and ``lock`` refreshes (PIN_INPUTS)."""
+        (root / "vendor.pro").write_text("-keep class a.** { *; }\n")
+        android = textwrap.dedent(android_lock_tests.PYPROJECT)
+        with_rules = android + (
+            "\n[tool.kivy.android.proguard]\n"
+            'keep = ["-keep class com.google.zxing.** { *; }"]\n'
+            'rules_files = ["vendor.pro"]\n'
+        )
+        assert _sha(with_rules, "android", root) == _sha(android, "android", root)
+
+    def test_pin_inputs_are_not_also_hashed(self):
+        for platform, paths in PIN_INPUTS.items():
+            assert not set(paths) & set(LOCK_INPUTS[platform])
 
     @pytest.mark.parametrize(
         ("old", "new"),

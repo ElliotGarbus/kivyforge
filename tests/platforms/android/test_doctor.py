@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import struct
 import subprocess
@@ -1883,3 +1884,143 @@ class TestSelectedNdk:
         )
         assert by["NDK"].status is Status.WARN
         assert "ndk;28.2.13676358" in by["NDK"].hint
+
+
+class TestR8KeepRulesCheck:
+    """android/06 doctor table, "R8 keep rules"."""
+
+    MINIFY = "\n[tool.kivy.android.build_settings]\nminify = true\n"
+
+    def _check(self, tmp_path, extra="", *, lock=None, minify=True):
+        from kivyforge.platforms.android.proguard import doctor_check
+
+        (tmp_path / "android" / "java").mkdir(parents=True, exist_ok=True)
+        text = _PROJECT_PYPROJECT + (self.MINIFY if minify else "") + extra
+        config = load_config_from_text(
+            text, require_ios=False, require_android=True, project_root=tmp_path
+        )
+        return doctor_check(config, tmp_path, lock)
+
+    SRC = '\n[tool.kivy.android.src]\njava = ["android/java"]\n'
+    KEEP = '\n[tool.kivy.android.proguard]\nkeep = ["-keep class a.** { *; }"]\n'
+
+    def test_skip_when_minify_is_off(self, tmp_path):
+        result = self._check(tmp_path, self.SRC, minify=False)
+        assert result.name == "R8 keep rules"
+        assert result.status is Status.SKIP
+        assert "minify is off" in result.detail
+
+    def test_skip_when_no_java_ships(self, tmp_path):
+        result = self._check(tmp_path)
+        assert result.status is Status.SKIP
+        assert "no Java" in result.detail
+
+    @pytest.mark.parametrize(
+        ("extra", "what"),
+        [
+            (SRC, "src.java/src.kotlin"),
+            (
+                '\n[tool.kivy.android.gradle]\ndependencies = ["com.google.zxing:core:3.5.3"]\n',
+                "gradle dependencies",
+            ),
+        ],
+    )
+    def test_warn_when_minify_and_java_but_no_rules(self, tmp_path, extra, what):
+        result = self._check(tmp_path, extra)
+        assert result.status is Status.WARN
+        assert what in result.detail
+        assert result.hint is not None
+        assert "ClassNotFoundException" in result.hint
+
+    def test_warn_for_archives(self, tmp_path):
+        from kivyforge.config.model import AndroidArchiveDep
+        from kivyforge.platforms.android.proguard import doctor_check
+
+        config = load_config_from_text(
+            _PROJECT_PYPROJECT + self.MINIFY, require_ios=False, require_android=True
+        )
+        android = dataclasses.replace(
+            config.android_required,
+            aars=(AndroidArchiveDep(name="Sdk", version="1", source="x", kind="aar"),),
+        )
+        result = doctor_check(dataclasses.replace(config, android=android), tmp_path)
+        assert result.status is Status.WARN
+        assert "native.aars/native.jars" in result.detail
+
+    def test_pass_with_rules(self, tmp_path):
+        result = self._check(tmp_path, self.SRC + self.KEEP)
+        assert result.status is Status.PASS
+        assert "1 keep rule(s), 0 rules file(s)" in result.detail
+
+    def test_fail_on_missing_rules_file(self, tmp_path):
+        from kivyforge.config.model import AndroidProguardConfig
+        from kivyforge.platforms.android.proguard import doctor_check
+
+        config = _config(_PROJECT_PYPROJECT + self.MINIFY)
+        android = dataclasses.replace(
+            config.android_required,
+            proguard=AndroidProguardConfig(rules_files=("gone.pro",)),
+        )
+        result = doctor_check(dataclasses.replace(config, android=android), tmp_path)
+        assert result.status is Status.FAIL
+        assert "does not exist: gone.pro" in result.detail
+
+    def test_fail_on_escaping_rules_file_even_with_minify_off(self, tmp_path):
+        from kivyforge.config.model import AndroidProguardConfig
+        from kivyforge.platforms.android.proguard import doctor_check
+
+        root = tmp_path / "proj"
+        root.mkdir()
+        (tmp_path / "outside.pro").write_text("")
+        config = _config()
+        android = dataclasses.replace(
+            config.android_required,
+            proguard=AndroidProguardConfig(rules_files=("../outside.pro",)),
+        )
+        result = doctor_check(dataclasses.replace(config, android=android), root)
+        assert result.status is Status.FAIL
+        assert "escapes the project" in result.detail
+
+    def test_warn_on_rules_file_drift(self, tmp_path):
+        from kivyforge.platforms.android.lock.model import LockedRulesFile
+
+        (tmp_path / "r.pro").write_text("-keep class a.** { *; }\n")
+        extra = self.SRC + '\n[tool.kivy.android.proguard]\nrules_files = ["r.pro"]\n'
+        stale = dataclasses.replace(
+            _doctor_lock(),
+            proguard_rules_files=(LockedRulesFile(source="r.pro", sha256="0" * 64),),
+        )
+        result = self._check(tmp_path, extra, lock=stale)
+        assert result.status is Status.WARN
+        assert "r.pro (changed)" in result.detail
+        assert result.hint is not None
+        assert "kivyforge lock -p android" in result.hint
+
+        from kivyforge.platforms.android.proguard import hash_pins
+
+        config = load_config_from_text(
+            _PROJECT_PYPROJECT + self.MINIFY + extra,
+            require_ios=False,
+            require_android=True,
+            project_root=tmp_path,
+        )
+        fresh = dataclasses.replace(
+            _doctor_lock(),
+            proguard_rules_files=tuple(
+                hash_pins(config.android_required.proguard, tmp_path)
+            ),
+        )
+        assert self._check(tmp_path, extra, lock=fresh).status is Status.PASS
+
+    def test_reported_by_android_doctor(self, tmp_path):
+        (tmp_path / "src").mkdir()
+        (tmp_path / "pyproject.toml").write_text(_PROJECT_PYPROJECT, encoding="utf-8")
+        by = _by_name(
+            android_doctor(
+                tmp_path,
+                kivyforge_version="0",
+                offline=True,
+                probe=_healthy_probe(tmp_path),
+            )
+        )
+        assert by["R8 keep rules"].status is Status.SKIP

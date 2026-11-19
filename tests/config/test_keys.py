@@ -68,21 +68,56 @@ class TestRejected:
         assert exc.value.hint is not None
         assert "did you mean 'bundle_id'" in exc.value.hint
 
-    def test_unimplemented_subtable_points_at_its_header(self):
-        # Specified in android/01 but never built: it used to ship a release
-        # build with none of the keep rules the user asked for.
+    def test_unknown_subtable_points_at_its_header(self):
+        # A misspelt table would ship a release build with none of the keep
+        # rules the user asked for (as the proguard table did before it was
+        # implemented).
         text = (
             _BASE
             + _ANDROID
-            + '[tool.kivy.android.proguard]\nkeep = ["-keep class org.x.** { *; }"]\n'
+            + '[tool.kivy.android.proguards]\nkeep = ["-keep class org.x.** { *; }"]\n'
         )
         with pytest.raises(ConfigError) as exc:
             load(text)
         err = exc.value
-        assert err.message == "unknown key 'proguard' in [tool.kivy.android]"
-        assert err.line == line_of(text, "[tool.kivy.android.proguard]")
+        assert err.message == "unknown key 'proguards' in [tool.kivy.android]"
+        assert err.line == line_of(text, "[tool.kivy.android.proguards]")
         assert err.hint is not None
-        assert "Valid keys in [tool.kivy.android]: abis, activities," in err.hint
+        assert err.hint.startswith("did you mean 'proguard'?")
+
+    def test_proguard_table_is_accepted(self):
+        text = (
+            _BASE
+            + _ANDROID
+            + "[tool.kivy.android.proguard]\n"
+            + 'keep = ["-keep class org.x.** { *; }"]\nrules_files = []\n'
+        )
+        config = load(text)
+        assert config.android_required.proguard.keep == ("-keep class org.x.** { *; }",)
+
+    def test_misspelt_proguard_subkey_is_located_with_a_suggestion(self):
+        text = (
+            _BASE
+            + _ANDROID
+            + '[tool.kivy.android.proguard]\nkepp = ["-keep class org.x.** { *; }"]\n'
+        )
+        with pytest.raises(ConfigError) as exc:
+            load(text)
+        err = exc.value
+        assert err.message == "unknown key 'kepp' in [tool.kivy.android.proguard]"
+        assert err.key_path == "tool.kivy.android.proguard.kepp"
+        assert err.line == line_of(text, "kepp")
+        assert err.hint is not None
+        assert err.hint.startswith("did you mean 'keep'?")
+
+    def test_misspelt_proguard_dotted_subkey_is_located(self):
+        text = _BASE + _ANDROID + 'proguard.rules_file = ["a.pro"]\n'
+        with pytest.raises(ConfigError) as exc:
+            load(text)
+        assert exc.value.key_path == "tool.kivy.android.proguard.rules_file"
+        assert exc.value.line == line_of(text, "rules_file")
+        assert exc.value.hint is not None
+        assert "did you mean 'rules_files'" in exc.value.hint
 
     def test_dotted_key_is_located(self):
         text = _BASE + _IOS + 'signing.team_idd = "ABCDE12345"\n'

@@ -182,3 +182,154 @@ class TestStatus:
         assert android_status(project).lock.state is LockState.IN_SYNC
         (project / "config" / "google-services.json").write_text("[]")
         assert android_status(project).lock.state is LockState.OUT_OF_DATE
+
+
+RULES_PYPROJECT = PYPROJECT.replace(
+    "[tool.kivy.android.python]",
+    "[tool.kivy.android.proguard]\n"
+    'keep = ["-keep class com.google.zxing.** { *; }"]\n'
+    'rules_files = ["proguard/vendor.pro"]\n\n'
+    "[tool.kivy.android.python]",
+)
+
+
+@pytest.fixture
+def rules_project(tmp_path, monkeypatch) -> Path:
+    root = tmp_path / "app"
+    (root / "src").mkdir(parents=True)
+    (root / "proguard").mkdir()
+    (root / "proguard" / "vendor.pro").write_text(
+        "-keep class com.vendor.** { *; }\n", encoding="utf-8"
+    )
+    (root / "proguard" / "extra.pro").write_text("-dontwarn x.**\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text(RULES_PYPROJECT, encoding="utf-8")
+    monkeypatch.chdir(root)
+    return root
+
+
+def _rules_pins(root: Path) -> dict[str, str]:
+    locked = reader.load(root / "pylock.android.toml")
+    return {p.source: p.sha256 for p in locked.proguard_rules_files}
+
+
+def _set_rules_files(root: Path, *paths: str) -> None:
+    listed = ", ".join(f'"{p}"' for p in paths)
+    text = RULES_PYPROJECT.replace(
+        'rules_files = ["proguard/vendor.pro"]', f"rules_files = [{listed}]"
+    )
+    (root / "pyproject.toml").write_text(text, encoding="utf-8")
+
+
+def _build_load(root: Path):
+    from kivyforge.platforms.android.cli import _load
+
+    return _load(root, None, no_verify_lock=False)
+
+
+class TestProguardRulesFiles:
+    """rules_files are pinned like include_files (android/01 §proguard)."""
+
+    def test_lock_pins_each_rules_file(self, rules_project, resolver):
+        import hashlib
+
+        _lock()
+        digest = hashlib.sha256(
+            (rules_project / "proguard" / "vendor.pro").read_bytes()
+        ).hexdigest()
+        assert _rules_pins(rules_project) == {"proguard/vendor.pro": digest}
+        text = (rules_project / "pylock.android.toml").read_text()
+        assert (
+            "[[tool.kivyforge.proguard_rules_files]]\n"
+            'source = "proguard/vendor.pro"\n'
+            f'sha256 = "{digest}"\n'
+        ) in text
+        # keep is read on every build, never written to the lock.
+        assert "zxing" not in text
+
+    def test_build_accepts_a_fresh_lock(self, rules_project, resolver):
+        _lock()
+        _build_load(rules_project)
+
+    def test_build_refuses_an_edited_rules_file(self, rules_project, resolver):
+        from kivyforge.platforms.android import LockDrift
+        from kivyforge.report import diagnostics, exit_codes
+
+        _lock()
+        (rules_project / "proguard" / "vendor.pro").write_text("-keep class y.** {*;}")
+        with pytest.raises(LockDrift, match="has changed since the lock") as exc:
+            _build_load(rules_project)
+        assert exc.value.code == diagnostics.LOCK_DRIFT
+        assert exc.value.exit_code == exit_codes.LOCK_DRIFT
+        assert exc.value.context == {"source": "proguard/vendor.pro"}
+
+    def test_build_refuses_an_unpinned_rules_file(self, rules_project, resolver):
+        from kivyforge.platforms.android import LockDrift
+
+        _lock()
+        _set_rules_files(rules_project, "proguard/vendor.pro", "proguard/extra.pro")
+        with pytest.raises(LockDrift, match="records no hash for it"):
+            _build_load(rules_project)
+
+    def test_build_refuses_a_pin_nothing_declares(self, rules_project, resolver):
+        from kivyforge.platforms.android import LockDrift
+
+        _lock()
+        _set_rules_files(rules_project)
+        with pytest.raises(LockDrift, match="no longer declares"):
+            _build_load(rules_project)
+
+    def test_no_verify_lock_skips_the_pins(self, rules_project, resolver):
+        from kivyforge.platforms.android.cli import _load
+
+        _lock()
+        (rules_project / "proguard" / "vendor.pro").write_text("changed")
+        _load(rules_project, None, no_verify_lock=True)
+
+    def test_an_edit_is_re_recorded_without_resolving(self, rules_project, resolver):
+        _lock()
+        old = _rules_pins(rules_project)["proguard/vendor.pro"]
+        (rules_project / "proguard" / "vendor.pro").write_text("-dontwarn z.**\n")
+        assert _lock()["data"]["action"] == "wrote"
+        assert _rules_pins(rules_project)["proguard/vendor.pro"] != old
+        assert len(resolver.calls) == 1
+        _build_load(rules_project)
+
+    def test_an_added_and_a_removed_file_are_re_recorded(self, rules_project, resolver):
+        _lock()
+        _set_rules_files(rules_project, "proguard/extra.pro")
+        assert _lock()["data"]["action"] == "wrote"
+        assert set(_rules_pins(rules_project)) == {"proguard/extra.pro"}
+        # Not a lock input: the change is a pin refresh, not a re-resolve.
+        assert len(resolver.calls) == 1
+        _build_load(rules_project)
+
+    def test_a_keep_edit_leaves_the_lock_alone(self, rules_project, resolver):
+        _lock()
+        before = (rules_project / "pylock.android.toml").read_bytes()
+        text = RULES_PYPROJECT.replace("com.google.zxing", "com.example")
+        (rules_project / "pyproject.toml").write_text(text, encoding="utf-8")
+        assert _lock()["data"]["action"] == "unchanged"
+        assert (rules_project / "pylock.android.toml").read_bytes() == before
+        _build_load(rules_project)
+
+    def test_the_rewrite_is_reported(self, rules_project, resolver):
+        CliRunner().invoke(lock, ["-p", "android"])
+        (rules_project / "proguard" / "vendor.pro").write_text("x\n")
+        result = CliRunner().invoke(lock, ["-p", "android", "--no-color"])
+        assert result.exit_code == 0, result.output
+        assert "proguard.rules_files: proguard/vendor.pro (changed)" in result.stderr
+
+    def test_check_names_the_drifted_file(self, rules_project, resolver):
+        _lock()
+        (rules_project / "proguard" / "vendor.pro").write_text("x\n")
+        result = CliRunner().invoke(lock, ["-p", "android", "--json", "--check"])
+        assert result.exit_code != 0
+        assert json.loads(result.stdout)["data"]["diff"] == [
+            "  ~ proguard.rules_files: proguard/vendor.pro (changed)"
+        ]
+
+    def test_status_reads_drift_as_out_of_date(self, rules_project, resolver):
+        _lock()
+        assert android_status(rules_project).lock.state is LockState.IN_SYNC
+        (rules_project / "proguard" / "vendor.pro").write_text("x\n")
+        assert android_status(rules_project).lock.state is LockState.OUT_OF_DATE

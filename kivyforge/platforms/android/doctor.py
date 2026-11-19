@@ -32,7 +32,7 @@ from kivyforge.config.model import (
 from kivyforge.doctor import checks_common as C
 from kivyforge.doctor.result import CheckResult, Status
 
-from . import toolchain
+from . import proguard, toolchain
 from .bootstrap.contract import (
     COMPATIBLE_PYJNIUS,
     ContractError,
@@ -1301,6 +1301,7 @@ def android_doctor(
     results.append(_check_implied_features(config))
 
     lock_path = cwd / "pylock.android.toml"
+    lock = None
 
     # Android never has a runnable staged interpreter (the payload targets an
     # ARM/x86 device), so it compiles with the host CPython the lock pins.
@@ -1337,6 +1338,7 @@ def android_doctor(
             )
         )
         results.append(host_python_check(None))
+    results.append(proguard.doctor_check(config, cwd, lock))
 
     from .cli import project_dir_for
 

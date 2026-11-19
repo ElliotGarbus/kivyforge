@@ -45,6 +45,7 @@ from kivyforge.lock.sources import (
 from kivyforge.report import diagnostics
 from kivyforge.report.failures import ClassifiedError
 
+from .. import proguard
 from ..bootstrap.contract import COMPATIBLE_PYJNIUS
 from .archives import ArchiveResolverError, resolve_android_libs
 from .generation import expected_generation, mismatch_hint
@@ -264,6 +265,10 @@ def build_lockfile(
         raise BuildError(str(exc)) from exc
 
     include_files = _hash_include_files(android, root)
+    try:
+        rules_files = proguard.hash_pins(android.proguard, root)
+    except proguard.ProguardError as exc:
+        raise BuildError(str(exc)) from exc
 
     return AndroidLockfile(
         requires_python=config.project.requires_python or DEFAULT_REQUIRES_PYTHON,
@@ -277,6 +282,7 @@ def build_lockfile(
         android_libs=tuple(android_libs),
         gradle=gradle_pins,
         include_files=tuple(include_files),
+        proguard_rules_files=tuple(rules_files),
     )
 
 
@@ -341,15 +347,16 @@ def refresh_include_files(
     project_root: Path,
     now: datetime | None = None,
 ) -> AndroidLockfile:
-    """``lock`` with its ``include_files`` pins re-hashed from disk.
+    """``lock`` with its ``include_files`` and rules-file pins re-hashed from disk.
 
     Returns ``lock`` itself when no pin changed (``include_files.refresh``).
     """
     try:
-        return include_files.refresh(
+        lock = include_files.refresh(
             lock, config, project_root=project_root, platform="android", now=now
         )
-    except include_files.IncludeFilesError as exc:
+        return proguard.refresh(lock, config, project_root=project_root, now=now)
+    except (include_files.IncludeFilesError, proguard.ProguardError) as exc:
         raise BuildError(str(exc)) from exc
 
 
@@ -479,6 +486,9 @@ def _normalized(lock: AndroidLockfile) -> AndroidLockfile:
         include_files=tuple(
             sorted(lock.include_files, key=lambda p: (p.dest, p.source))
         ),
+        proguard_rules_files=tuple(
+            sorted(lock.proguard_rules_files, key=lambda p: p.source)
+        ),
         gradle=gradle,
     )
 
@@ -510,6 +520,7 @@ def diff_summary(old: AndroidLockfile, new: AndroidLockfile) -> list[str]:
     if old_rt != new_rt:
         out.append(f"  ~ python.org Android runtime: {old_rt} -> {new_rt}")
     out += include_files.pin_changes(old.include_files, new.include_files)
+    out += proguard.pin_changes(old.proguard_rules_files, new.proguard_rules_files)
     return out
 
 

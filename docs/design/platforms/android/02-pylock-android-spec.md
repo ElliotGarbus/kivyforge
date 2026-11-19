@@ -346,6 +346,31 @@ sha256 = "..."
 
 This array is empty unless `include_files` is declared.
 
+### `[[tool.kivyforge.proguard_rules_files]]` — R8 rules-file pins
+
+For `[tool.kivy.android.proguard].rules_files`. Each declared `.pro` file is
+hashed, so a ruleset edited after locking is caught as drift:
+
+```toml
+[[tool.kivyforge.proguard_rules_files]]
+source = "proguard/vendor-sdk.pro"
+sha256 = "..."
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `source` | string | yes | The project-relative path, as declared. |
+| `sha256` | string | yes | SHA-256 of the file's bytes, verified when `build` loads the lock. |
+
+Entries are sorted by `source`, and the array is absent unless `rules_files` is
+declared, so a lock without rules files is byte-identical to one written before
+the table existed. Unlike `include_files`, the declared paths are not lock inputs
+(`PIN_INPUTS` in `kivyforge/lock/inputs.py`): nothing resolved depends on them,
+and these pins already catch an added, removed or edited file. A plain
+`kivyforge lock` re-records them without re-resolving. The inline `keep`
+directives are not recorded at all; they are read from `pyproject.toml` on every
+build.
+
 ## Resolution semantics
 
 `kivyforge lock`:
@@ -361,7 +386,7 @@ This array is empty unless `include_files` is declared.
    - Records direct + transitive wheels as `[[packages]]` blocks (pinning `url` for hosted, or repo-relative `path` for vendored — the Kivy/pyjnius case). Marks direct requirements.
 4. For each `[tool.kivy.android.native.*]` entry: reads the artifact (download for a URL, local read for a path), computes its SHA-256, records `[[tool.kivyforge.android_libs]]`.
 5. For `[tool.kivy.android.gradle]`: emits a scratch `build.gradle` with the declared coordinates/repos (each declared BOM imported first as `platform(...)`, so versionless coordinates resolve exactly as they will in the app) and runs Gradle with dependency locking **and** verification (`--write-locks --write-verification-metadata sha256`). It parses the resulting transitive graph and per-artifact SHA-256 and records them under `[[tool.kivyforge.gradle.resolved]]` — the values are **embedded in the lock**, not referenced as a file inside the generated project. (Requires a reachable JDK+Gradle at lock time; skipped when `dependencies` is empty.)
-6. For each `[[tool.kivy.android.include_files]]` source (expanding directories): reads the file, computes its SHA-256, records `[[tool.kivyforge.include_files]]`.
+6. For each `[[tool.kivy.android.include_files]]` source (expanding directories): reads the file, computes its SHA-256, records `[[tool.kivyforge.include_files]]`. Likewise each `[tool.kivy.android.proguard].rules_files` entry, into `[[tool.kivyforge.proguard_rules_files]]`.
 7. Writes `pylock.android.toml` atomically (tempfile, fsync, rename).
 
 Entry order is **deterministic** (sorted by name, then version, then platform
@@ -382,8 +407,8 @@ Error: pyproject.toml has changed since pylock.android.toml was generated.
 Every artifact kivyforge downloads itself (wheel, runtime tarball, `.aar`/`.jar`)
 is verified against its declared `sha256` before use; a mismatch aborts with the
 artifact name, URL, expected/actual hash, and a tamper hint. Files staged from the
-repo (`[[tool.kivyforge.include_files]]`) are verified the same way, as drift
-detection.
+repo (`[[tool.kivyforge.include_files]]`, `[[tool.kivyforge.proguard_rules_files]]`)
+are verified the same way, as drift detection.
 
 **Maven artifacts are the exception**: Gradle downloads them and v1 does not
 enforce their hashes at build time — the graph + SHA-256 in

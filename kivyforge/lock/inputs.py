@@ -78,6 +78,18 @@ LOCK_INPUTS: dict[str, tuple[str, ...]] = {
 }
 
 
+#: Config paths a lock builder reads only to record file pins, and that are
+#: deliberately *not* hashed into ``lock_inputs_sha256``. Every build verifies
+#: those pins against the files on disk and refuses drift, and ``lock`` re-hashes
+#: them without re-resolving anything, so an added, removed or edited file is
+#: caught without making a lock stale. Hashing them would also have staled every
+#: existing lock the day the key was added, though nothing resolved depends on
+#: it. ``tests/lock/test_lock_inputs.py`` accepts a read of these paths only.
+PIN_INPUTS: dict[str, tuple[str, ...]] = {
+    "android": ("android.proguard.rules_files",),
+}
+
+
 class _HasInputsSha(Protocol):
     # Read-only, so frozen dataclass locks satisfy it.
     @property
