@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v0.1.3](https://github.com/ElliotGarbus/kivyforge/tree/v0.1.3) - 2026-11-19
 
 ### Android: R8 keep rules with `[tool.kivy.android.proguard]`
 
