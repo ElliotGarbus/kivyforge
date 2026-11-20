@@ -650,6 +650,34 @@ jobs:
       with:
         distribution: temurin
         java-version: '17'
+    - name: Cache Gradle's downloaded dependencies and wrapper distribution
+      # Every Android job used to start from an empty ~/.gradle, so each push
+      # ran seven cold downloads of AGP's whole classpath from Maven Central
+      # at once, from GitHub's shared runner addresses. Central throttles
+      # that. On 2026-11-19 it answered 429 Too Many Requests (run
+      # 44444873095) and, on another run, "not found" for artifacts it does
+      # host (run 44641825453). Each time one job failed while configuring
+      # the root project and a rerun passed. Everything on that classpath
+      # is a fixed version, so a warm job resolves it without contacting
+      # Central at all.
+      #
+      # actions/cache saves only when the job succeeds, so a failed
+      # resolution never caches its "not found" for later runs. The key
+      # covers what decides the dependency set: the AGP/Gradle/Kotlin pins
+      # (toolchain.py), the generator that writes the dependency lines
+      # (project.py) and the app's own pyproject.toml. restore-keys lets a
+      # pin bump start from the previous entry, so only the difference is
+      # downloaded. Only modules-2 (artifacts + metadata) and wrapper/dists
+      # are cached: transforms and the build cache need no network, and
+      # caching them would only make the entry bigger. The other Android
+      # jobs carry the same step for the same reason.
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.gradle/caches/modules-2
+          ~/.gradle/wrapper/dists
+        key: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.abi }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
+        restore-keys: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.abi }}-
     - name: Set up the Android SDK
       # The action's default `packages` is "tools platform-tools", but the
       # legacy `tools` package is gone from Google's SDK repository, so
@@ -868,6 +896,15 @@ jobs:
       with:
         distribution: temurin
         java-version: '17'
+    - name: Cache Gradle's downloaded dependencies and wrapper distribution
+      # Keeps this job off Maven Central's rate limit; see android_gradle.
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.gradle/caches/modules-2
+          ~/.gradle/wrapper/dists
+        key: gradle-${{ runner.os }}-${{ github.job }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
+        restore-keys: gradle-${{ runner.os }}-${{ github.job }}-
     - name: Set up the Android SDK
       uses: android-actions/setup-android@v4
       with:
@@ -1062,6 +1099,16 @@ jobs:
       with:
         distribution: temurin
         java-version: '17'
+    - name: Cache Gradle's downloaded dependencies and wrapper distribution
+      # Keeps this job off Maven Central's rate limit; see android_gradle.
+      # runner.os in the key keeps this Windows entry apart from the ubuntu ones.
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.gradle/caches/modules-2
+          ~/.gradle/wrapper/dists
+        key: gradle-${{ runner.os }}-${{ github.job }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
+        restore-keys: gradle-${{ runner.os }}-${{ github.job }}-
     - name: Set up the Android SDK
       uses: android-actions/setup-android@v4
       with:
@@ -1213,6 +1260,16 @@ jobs:
       with:
         distribution: temurin
         java-version: '17'
+    - name: Cache Gradle's downloaded dependencies and wrapper distribution
+      # Keeps this job off Maven Central's rate limit; see android_gradle.
+      # Per app, since each example declares its own dependencies.
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.gradle/caches/modules-2
+          ~/.gradle/wrapper/dists
+        key: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.app }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
+        restore-keys: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.app }}-
     - name: Set up the Android SDK
       uses: android-actions/setup-android@v4
       with:
