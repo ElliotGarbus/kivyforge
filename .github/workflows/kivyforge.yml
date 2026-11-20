@@ -673,12 +673,16 @@ jobs:
       # files are left out. Gradle recreates them, and the daemon a build
       # leaves running still holds them locked when the save runs. On
       # Windows that lock makes tar fail with "Device or resource busy",
-      # and the job saves nothing (android_windows_host, PR #242). The
-      # other Android jobs carry the same step for the same reason.
+      # and the job saves nothing (android_windows_host, PR #242). The path
+      # is modules-2/*, not modules-2: actions/cache globs without implicit
+      # descendants and tar recurses into each directory it gets, so `!`
+      # can only drop an entry the include pattern itself matched. With a
+      # bare modules-2 the lock went in anyway (#243). The other Android
+      # jobs carry the same step for the same reason.
       uses: actions/cache@v6
       with:
         path: |
-          ~/.gradle/caches/modules-2
+          ~/.gradle/caches/modules-2/*
           !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.abi }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
@@ -906,7 +910,7 @@ jobs:
       uses: actions/cache@v6
       with:
         path: |
-          ~/.gradle/caches/modules-2
+          ~/.gradle/caches/modules-2/*
           !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
@@ -1111,7 +1115,7 @@ jobs:
       uses: actions/cache@v6
       with:
         path: |
-          ~/.gradle/caches/modules-2
+          ~/.gradle/caches/modules-2/*
           !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
@@ -1273,7 +1277,7 @@ jobs:
       uses: actions/cache@v6
       with:
         path: |
-          ~/.gradle/caches/modules-2
+          ~/.gradle/caches/modules-2/*
           !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.app }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
