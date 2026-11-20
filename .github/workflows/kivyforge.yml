@@ -669,12 +669,17 @@ jobs:
       # pin bump start from the previous entry, so only the difference is
       # downloaded. Only modules-2 (artifacts + metadata) and wrapper/dists
       # are cached: transforms and the build cache need no network, and
-      # caching them would only make the entry bigger. The other Android
-      # jobs carry the same step for the same reason.
+      # caching them would only make the entry bigger. modules-2's *.lock
+      # files are left out. Gradle recreates them, and the daemon a build
+      # leaves running still holds them locked when the save runs. On
+      # Windows that lock makes tar fail with "Device or resource busy",
+      # and the job saves nothing (android_windows_host, PR #242). The
+      # other Android jobs carry the same step for the same reason.
       uses: actions/cache@v6
       with:
         path: |
           ~/.gradle/caches/modules-2
+          !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.abi }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
         restore-keys: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.abi }}-
@@ -902,6 +907,7 @@ jobs:
       with:
         path: |
           ~/.gradle/caches/modules-2
+          !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
         restore-keys: gradle-${{ runner.os }}-${{ github.job }}-
@@ -1106,6 +1112,7 @@ jobs:
       with:
         path: |
           ~/.gradle/caches/modules-2
+          !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
         restore-keys: gradle-${{ runner.os }}-${{ github.job }}-
@@ -1267,6 +1274,7 @@ jobs:
       with:
         path: |
           ~/.gradle/caches/modules-2
+          !~/.gradle/caches/modules-2/*.lock
           ~/.gradle/wrapper/dists
         key: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.app }}-${{ hashFiles('kivyforge/platforms/android/toolchain.py', 'kivyforge/platforms/android/generate/project.py', format('{0}/pyproject.toml', env.APP_DIR)) }}
         restore-keys: gradle-${{ runner.os }}-${{ github.job }}-${{ matrix.app }}-
